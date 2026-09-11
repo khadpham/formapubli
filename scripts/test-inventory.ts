@@ -24,9 +24,13 @@ async function runInventoryTests() {
   console.log(`🏢 Kho 2: ${whQuynhMai.name} (${whQuynhMai.code})`);
   console.log(`🏢 Kho 3: ${whDuPhong.name} (${whDuPhong.code})\n`);
 
-  // 2. Test 1: Nhập kho 1,000 cuốn từ Nhà in về Kho 2 (Quỳnh Mai)
-  console.log('--- TEST 1: Nhập kho từ Nhà in về Kho 2 (Quỳnh Mai) ---');
-  const receiptDoc = 'PNK-202609-001';
+  const baseAuCo = await InventoryService.getBalance(book.id, whAuCo.id, 'NEW');
+  const baseQuynhMai = await InventoryService.getBalance(book.id, whQuynhMai.id, 'NEW');
+  const baseDuPhong = await InventoryService.getBalance(book.id, whDuPhong.id, 'NEW');
+
+  // 2. Test 1: Nhập 1,000 cuốn vào Kho 2 (Quỳnh Mai) từ Nhà in
+  console.log('\n--- TEST 1: Nhập kho từ Nhà in về Kho 2 (Quỳnh Mai) ---');
+  const receiptDoc = `PNK-${Date.now()}`;
   const receiptResult = await InventoryService.recordMovement({
     editionId: book.id,
     warehouseId: whQuynhMai.id,
@@ -35,12 +39,13 @@ async function runInventoryTests() {
     documentRef: receiptDoc,
     actorId: 'Lan Anh (Kế toán kho)',
     note: 'Nhập in đợt 1 từ Nhà in Hội nhà văn',
+    idempotencyKey: `receipt-${Date.now()}`,
   });
   console.log(`✅ Đã nhập 1,000 cuốn vào Quỳnh Mai. Số dư mới: ${receiptResult.newQuantity}`);
 
   // 3. Test 2: Chuyển 200 cuốn từ Kho 2 (Quỳnh Mai) sang Kho 1 (Âu Cơ) để soạn đơn lẻ
   console.log('\n--- TEST 2: Chuyển kho (Quỳnh Mai ➔ Âu Cơ: 200 cuốn) ---');
-  const transferDoc = 'PCK-202609-001';
+  const transferDoc = `PCK-${Date.now()}`;
   const transferResult = await InventoryService.transfer({
     editionId: book.id,
     fromWarehouseId: whQuynhMai.id,
@@ -56,7 +61,7 @@ async function runInventoryTests() {
 
   // 4. Test 3: Xuất bán lẻ 50 cuốn từ Kho 1 (Âu Cơ) cho khách hàng
   console.log('\n--- TEST 3: Xuất bán lẻ 50 cuốn từ Kho 1 (Âu Cơ) ---');
-  const saleDoc = 'PXK-202609-001';
+  const saleDoc = `PXK-${Date.now()}`;
   const saleResult = await InventoryService.recordMovement({
     editionId: book.id,
     warehouseId: whAuCo.id,
@@ -65,6 +70,7 @@ async function runInventoryTests() {
     documentRef: saleDoc,
     actorId: 'Bộ phận Bán hàng Fanpage',
     note: 'Xuất giao các đơn đặt hàng đợt 1',
+    idempotencyKey: `sale-${Date.now()}`,
   });
   console.log(`✅ Xuất bán lẻ 50 cuốn thành công. Số dư tại Âu Cơ: ${saleResult.newQuantity} cuốn`);
 
@@ -74,16 +80,16 @@ async function runInventoryTests() {
   const h01Stock = matrix.find((item) => item.code === 'H01')!;
 
   console.log(`📊 Kết quả tồn kho thực tế của [${h01Stock.code}] ${h01Stock.title}:`);
-  console.log(`   - Kho 1 (Âu Cơ):     ${h01Stock.stockAuCo} cuốn (Kỳ vọng: 150)`);
-  console.log(`   - Kho 2 (Quỳnh Mai): ${h01Stock.stockQuynhMai} cuốn (Kỳ vọng: 800)`);
-  console.log(`   - Kho 3 (Dự phòng):  ${h01Stock.stockDuPhong} cuốn (Kỳ vọng: 0)`);
-  console.log(`   - TỔNG TOÀN HỆ THỐNG: ${h01Stock.totalStock} cuốn (Kỳ vọng: 950)`);
+  console.log(`   - Kho 1 (Âu Cơ):     ${h01Stock.stockAuCo} cuốn (Kỳ vọng: ${baseAuCo + 150})`);
+  console.log(`   - Kho 2 (Quỳnh Mai): ${h01Stock.stockQuynhMai} cuốn (Kỳ vọng: ${baseQuynhMai + 800})`);
+  console.log(`   - Kho 3 (Dự phòng):  ${h01Stock.stockDuPhong} cuốn (Kỳ vọng: ${baseDuPhong})`);
+  console.log(`   - TỔNG TOÀN HỆ THỐNG: ${h01Stock.totalStock} cuốn (Kỳ vọng: ${baseAuCo + baseQuynhMai + baseDuPhong + 950})`);
 
   if (
-    h01Stock.stockAuCo === 150 &&
-    h01Stock.stockQuynhMai === 800 &&
-    h01Stock.stockDuPhong === 0 &&
-    h01Stock.totalStock === 950
+    h01Stock.stockAuCo === baseAuCo + 150 &&
+    h01Stock.stockQuynhMai === baseQuynhMai + 800 &&
+    h01Stock.stockDuPhong === baseDuPhong &&
+    h01Stock.totalStock === baseAuCo + baseQuynhMai + baseDuPhong + 950
   ) {
     console.log('🎉 KHỚP SỐ DƯ TUYỆT ĐỐI 100%!');
   } else {
@@ -93,12 +99,13 @@ async function runInventoryTests() {
   // 6. Test 5: Kiểm chứng tính năng Chặn Âm Kho (Negative Stock Prevention)
   console.log('\n--- TEST 5: Kiểm chứng tính năng Chặn Xuất Âm Kho ---');
   try {
-    console.log('👉 Thử nghiệm xuất 200 cuốn từ Kho Âu Cơ (trong khi chỉ còn 150 cuốn)...');
+    const currentAuCo = await InventoryService.getBalance(book.id, whAuCo.id, 'NEW');
+    console.log(`👉 Thử nghiệm xuất ${currentAuCo + 100} cuốn từ Kho Âu Cơ (trong khi chỉ còn ${currentAuCo} cuốn)...`);
     await InventoryService.recordMovement({
       editionId: book.id,
       warehouseId: whAuCo.id,
       eventType: 'DISPATCH_SALE',
-      quantityDelta: -200,
+      quantityDelta: -(currentAuCo + 100),
       documentRef: 'PXK-FAIL-TEST',
       actorId: 'Tester',
       note: 'Cố tình xuất vượt tồn kho',

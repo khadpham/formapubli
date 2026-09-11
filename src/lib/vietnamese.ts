@@ -72,3 +72,11 @@ export function matchesVietnameseSearch(target: string | null | undefined, query
 
   return false;
 }
+
+/**
+ * Kiểm tra xem query tìm kiếm có khớp với bất kỳ trường dữ liệu nào trong danh sách hay không.
+ */
+export function matchesAnyVietnameseField(query: string, fields: (string | null | undefined)[]): boolean {
+  if (!query) return true;
+  return fields.some((field) => matchesVietnameseSearch(field, query));
+}
