@@ -30,6 +30,9 @@
 21. [Hệ sinh thái Độc giả & Quản trị Đăng ký Phát hành Theo Mùa (Customer CRM)](#21-hệ-sinh-thái-độc-giả--quản-trị-đăng-ký-phát-hành-theo-mùa-customer-crm--seasonal-subscription-engine)
 22. [Đặc tả Mô hình Dữ liệu Mở rộng (DDL: Customers, Bundles & Subscriptions)](#22-đặc-tả-mô-hình-dữ-liệu-mở-rộng-ddl-customers-bundles--subscriptions)
 23. [Quy chuẩn Kỷ luật Git & Quy trình Phát triển theo Nhánh](#23-quy-chuẩn-kỷ-luật-git--quy-trình-phát-triển-theo-nhánh-branching--rollback-protocol)
+24. [Kiến trúc Sổ Kép: Kế toán Thuế vs Sổ Quản trị Thực tế Nội bộ](#24-kiến-trúc-sổ-kép-kế-toán-thuế-vs-sổ-quản-trị-thực-tế-nội-bộ-dual-fiscal-bookkeeping--non-vat-sales-engine)
+25. [Động cơ POS Hội chợ Chạy Offline-First Đa Nhân viên](#25-động-cơ-pos-hội-chợ-chạy-offline-first-đa-nhân-viên-indexeddb-queue-uuid-v7-idempotency--conflict-resolution)
+26. [Định vị & Bản chất Sản phẩm: formapubli OS](#26-định-vị--bản-chất-sản-phẩm-formapubli-os-publishing-retail--inventory-operating-system)
 
 ---
 
@@ -794,3 +797,144 @@ Nhằm đảm bảo **an toàn tuyệt đối cho mã nguồn**, loại bỏ m�
 4. **Cơ chế Rollback tức thời**: Nếu phát hiện sai sót sau khi merge, hệ thống có thể hoàn tác (Revert) về commit ổn định trước đó trong vòng **30 giây** bằng lệnh git revert mà không làm mất mát bất kỳ dữ liệu nghiệp vụ nào đã ghi vào CSDL.
 
 ---
+
+---
+
+## 24. Kiến trúc Sổ Kép: Kế toán Thuế vs Sổ Quản trị Thực tế Nội bộ (Dual Fiscal Bookkeeping & Non-VAT Sales Engine)
+
+### 24.1. Nỗi đau thực tế ngành xuất bản & phân phối sách tại Việt Nam
+Trong thực tế kinh doanh sách tại Việt Nam, bài toán tài chính và kho vận luôn tồn tại một khoảng cách lớn giữa **thực tế vận hành vật lý** và **sổ sách kế toán thuế**:
+1. **Thực tế Kho Vật lý (Single Physical Truth):**
+   - Khi xuất 100 cuốn sách cho các đại lý bán buôn, đầu nậu (chợ sách Đinh Lễ, các sạp ngoài, các kênh phân phối sỉ) hoặc bán lẻ trực tiếp tại hội chợ cho độc giả không lấy hóa đơn: số sách thực tế trên giá kệ ở Kho 1 - Âu Cơ, Kho 2 - Quỳnh Mai hoặc Kho 3 - Hội chợ **mất đi 100 cuốn thật**.
+   - Nếu phần mềm không khấu trừ kho, thủ kho khi kiểm kê sẽ thấy "trên máy báo 500 cuốn mà trên kệ chỉ còn 400 cuốn" -> Gây ra tình trạng loạn kho, mất dấu vết hàng hóa, không thể kiểm soát thất thoát.
+2. **Thực tế Kế toán Thuế & Hóa đơn Điện tử:**
+   - Các đầu nậu và khách lẻ mua sách không lấy hóa đơn GTGT (VAT) thường yêu cầu chiết khấu thương mại rất sâu (35% - 50%).
+   - Tiền thanh toán thường được chi trả bằng tiền mặt trao tay hoặc chuyển khoản trực tiếp vào tài khoản cá nhân của chủ doanh nghiệp / người quản lý (chứ không vào tài khoản pháp nhân ngân hàng của công ty).
+   - Nếu ghi nhận những đơn hàng này vào doanh thu chính thức của công ty: doanh nghiệp sẽ bị áp thuế TNDN và thuế GTGT trên một dòng tiền không đi qua tài khoản ngân hàng công ty, đồng thời bị cơ quan thuế yêu cầu giải trình về việc không xuất hóa đơn điện tử theo Nghị định 123/2020/NĐ-CP.
+   - Ngược lại, nếu giấu không nhập vào phần mềm: chủ doanh nghiệp hoàn toàn mù tịt về doanh số thực tế, không biết lãi lỗ thật, không quản lý được công nợ đầu nậu, và kho bị lệch hoàn toàn.
+
+### 24.2. Giải pháp Kiến trúc Sổ Kép (Dual Projection Architecture)
+Hệ thống formapubli giải quyết triệt để và tinh tế bài toán này thông qua cơ chế **Sổ Kép Cách Ly Tuyệt Đối**:
+
+```mermaid
+flowchart TD
+    A["Giao dịch Xuất Bán Sách (Order / Dispatch)"] --> B["Thẻ Kho Bất Biến (Physical Ledger)"]
+    B -->|Trừ tồn kho vật lý 100%| C[("Kho Thực Tế: Âu Cơ / Quỳnh Mai / Hội Chợ")]
+    
+    A --> D{"Cờ Định Tuyến Tài Chính (fiscal_scope)"}
+    
+    D -->|fiscal_scope = 'OFFICIAL_TAX'| E["Sổ Kế Toán Thuế (Tax View)"]
+    E --> E1["Hóa đơn điện tử VAT"]
+    E --> E2["Báo cáo Doanh thu nộp Chi cục Thuế"]
+    E --> E3["Tài khoản Ngân hàng Doanh nghiệp"]
+    
+    D -->|fiscal_scope = 'INTERNAL_MANAGEMENT'| F["Sổ Quản Trị Thực Tế (Internal Executive View)"]
+    F --> F1["Bán đầu nậu Đinh Lễ chiết khấu 40-50%"]
+    F --> F2["Bán lẻ Hội chợ thu tiền mặt / QR cá nhân"]
+    F --> F3["Báo cáo Lãi/Lỗ Thực & Dòng tiền Thật cho Chủ"]
+```
+
+1. **Nguyên tắc 1: Kho vật lý là Nguồn Chân lý Duy nhất (Single Physical Truth):**
+   - Mọi cuốn sách rời kho (dù bán có VAT, bán không hóa đơn, biếu tặng hay lưu chiểu) đều phải tạo 1 dòng ghi Thẻ kho (`inventory_ledger_entries`). Đảm bảo **Sách trên phần mềm = Sách trên giá kệ 100%**.
+2. **Nguyên tắc 2: Phân loại Cờ Nghiệp vụ Tài chính (`fiscal_scope`):**
+   - `fiscal_scope: 'OFFICIAL_TAX'` -> Đơn hàng B2B xuất hóa đơn GTGT, đối tác chuyển khoản công ty, báo cáo thuế minh bạch, sạch và chuẩn.
+   - `fiscal_scope: 'INTERNAL_MANAGEMENT'` -> Đơn bán đầu nậu, sạp ngoài, tiền mặt, chiết khấu sâu không VAT.
+3. **Nguyên tắc 3: Hai Tầng Báo Cáo Cách Ly Hoàn Toàn (Two Isolated Reporting Views):**
+   - **Chế độ Sổ Sách Thuế (Tax View):** Chỉ trích xuất các đơn có `fiscal_scope = 'OFFICIAL_TAX'`. Số liệu doanh thu, thuế GTGT đầu ra, giá vốn khớp 100% với hóa đơn điện tử để làm việc với kế toán thuế và đoàn thanh tra kiểm tra thuế.
+   - **Chế độ Sổ Quản Trị Thực Tế (Executive Reality View):** Hiển thị toàn bộ dữ liệu gồm cả 2 phạm vi (`OFFICIAL_TAX` + `INTERNAL_MANAGEMENT`). Chủ doanh nghiệp nhìn thấy chính xác: Tổng số cuốn bán ra, tổng tiền thực thu về, công nợ thực của từng đầu nậu, và lợi nhuận ròng thực sự.
+4. **Nguyên tắc 4: An toàn Dữ liệu & Phân quyền Bảo vệ (Zero-Leak Security):**
+   - Tài khoản kế toán thuế hoặc nhân viên thông thường chỉ nhìn thấy dữ liệu chính thức (`OFFICIAL_TAX`).
+   - Chỉ tài khoản `Super Admin / Chủ Quản lý` mới có thẩm quyền mở giao diện Quản trị Thực tế Toàn cảnh.
+
+---
+
+## 25. Động cơ POS Hội chợ Chạy Offline-First Đa Nhân viên (IndexedDB Queue, UUID v7, Idempotency & Conflict Resolution)
+
+### 25.1. Bối cảnh Vận hành Thực tế tại Hội chợ Sách
+- Không gian hội chợ thường tập trung hàng ngàn người, sóng 4G/Wifi thường xuyên nghẽn mạng, chập chờn hoặc mất hẳn trong nhiều giờ liên tục (4 - 8 tiếng).
+- Tại gian hàng, có 2 - 5 nhân viên cùng dùng điện thoại cá nhân, máy tính bảng hoặc laptop để tính tiền, quét mã vạch và chốt đơn cho khách đọc.
+- **Yêu cầu sống còn:** 
+  1. Tuyệt đối không được dừng bán hàng vì mất mạng.
+  2. Bán xong là ghi nhận ngay, không mất đơn khi tắt trình duyệt hay hết pin.
+  3. Khi có mạng trở lại (sau buổi bán hoặc khi về văn phòng), toàn bộ đơn hàng của tất cả nhân viên phải được đẩy lên hệ thống mượt mà, không trùng đơn, không mất đơn, và tự động khấu trừ vào Kho 3 (Hội chợ).
+
+### 25.2. Bộ Ba Công nghệ Cốt lõi của Động cơ Offline-First
+
+```mermaid
+sequenceDiagram
+    participant Staff as "Nhân viên tại Hội chợ (Device A/B/C)"
+    participant BrowserDB as "Trình duyệt (IndexedDB Local Queue)"
+    participant Server as "Cloudflare Worker / Server D1"
+    participant Stock as "Thẻ Kho Hội Chợ (Inventory Ledger)"
+
+    Note over Staff,BrowserDB: MẤT MẠNG INTERNET HOÀN TOÀN (4 TIẾNG)
+    Staff->>BrowserDB: 1. Quét ISBN / Chọn sách
+    Staff->>BrowserDB: 2. Sinh UUID v7 + Idempotency Key
+    BrowserDB->>BrowserDB: 3. Ghi đơn hàng vào Local Queue (Status: PENDING_SYNC)
+    Staff->>Staff: 4. In bill Bluetooth / Thu tiền / Giao sách cho khách
+
+    Note over Staff,Server: CÓ MẠNG TRỞ LẠI (VỀ VĂN PHÒNG HOẶC MỞ 4G)
+    BrowserDB->>Server: 5. Background Auto-Sync: Gửi Batch [Order_1, Order_2, ...] kèm Idempotency Key
+    Server->>Server: 6. Kiểm tra Idempotency Key (Trùng lặp -> Bỏ qua; Mới -> Ghi nhận)
+    Server->>Stock: 7. Tự động sinh bút toán Thẻ kho trừ sách Kho Hội Chợ
+    Server-->>BrowserDB: 8. Phản hồi 200 OK (Sync thành công)
+    BrowserDB->>BrowserDB: 9. Đổi trạng thái Local Queue -> SYNCED (Đã đồng bộ)
+```
+
+1. **UUID v7 (Time-Ordered Universally Unique Identifier):**
+   - Thay vì phụ thuộc vào Server để lấy mã đơn (như Auto-Increment ID `1, 2, 3...` vốn sẽ bị xung đột nếu nhiều máy cùng tạo offline), mỗi máy client tự sinh mã đơn dạng UUID v7.
+   - UUID v7 tích hợp sẵn timestamp cấp mili-giây ở phần đầu mã, giúp các đơn hàng tự động sắp xếp theo thứ tự thời gian phát sinh thực tế khi đẩy lên server.
+2. **Idempotency Key (Khóa Bất Biến Chống Trùng Lặp):**
+   - Mỗi đơn hàng được gắn một khóa duy nhất: `idempotency_key = sha256(device_id + client_order_uuid + created_at)`.
+   - Khi mạng chập chờn, client có thể gửi lại 3-5 lần một đơn hàng. Server tiếp nhận sẽ kiểm tra: Nếu `idempotency_key` đã tồn tại trong CSDL, server lập tức trả về kết quả thành công mà **không xử lý lại, không trừ kho lần thứ hai, không nhân đôi doanh thu**.
+3. **IndexedDB Local Storage Queue:**
+   - Trình duyệt lưu trữ toàn bộ giỏ hàng và đơn chờ sync vào IndexedDB (dung lượng lưu trữ lên tới hàng GB, vượt trội so với hạn mức 5MB của LocalStorage thông thường).
+   - Đảm bảo an toàn 100%: Dù nhân viên vô tình tắt trình duyệt, F5 refresh trang, hay máy sập nguồn vì hết pin, dữ liệu đơn hàng vẫn nằm nguyên vẹn trong máy.
+
+---
+
+## 26. Định vị & Bản chất Sản phẩm: formapubli OS (Publishing Retail & Inventory Operating System)
+
+### 26.1. Chúng ta đang xây dựng cái gì?
+Dự án không phải là một phần mềm chắp vá, mà là một **Hệ Điều Hành Chuyên Biệt cho Doanh Nghiệp Xuất Bản & Bán Lẻ Sách (Vertical Operating System for Publishing & Retail)**.
+- **Tên thương mại quốc tế:** **formapubli OS** (hoặc **BookOS**).
+- **Tên định danh tiếng Việt:** **Hệ Điều Hành Xuất Bản & Kho Vận Bán Lẻ Chuyên Dụng**.
+
+### 26.2. So sánh Định vị với các Giải pháp trên Thị trường
+
+| Tiêu chí so sánh | POS Truyền thống (KiotViet, Sapo) | ERP Doanh nghiệp (Odoo, SAP) | formapubli OS (Hệ thống của chúng ta) |
+| :--- | :--- | :--- | :--- |
+| **Chi phí vận hành** | 2 - 5 triệu VNĐ/năm/cửa hàng | Hàng chục đến hàng trăm triệu VNĐ | **0 VNĐ trọn đời (100% Free Forever trên Cloudflare)** |
+| **Đặc thù Ngành Sách** | Không hiểu (không có ISBN tái bản, không có dịch giả, tác quyền, lưu chiểu) | Phải tùy biến rất đắt đỏ và phức tạp | **Thiết kế đo ni đóng giày cho 81 đầu sách và xuất bản** |
+| **Thẻ kho Bất biến** | Cho phép sửa/xóa tồn kho tùy tiện -> Dễ gian lận | Có kế toán kho nhưng rất cồng kềnh | **Append-only Ledger: Bất biến, chống âm kho tuyệt đối** |
+| **Sổ Kép Thuế vs Thực** | Không có (hoặc làm thủ công 2 tài khoản rời nhau) | Phức tạp, dễ lộ dữ liệu nhạy cảm | **Phân tách `fiscal_scope`: Sổ Thuế sạch vs Sổ Quản trị Thật** |
+| **Tốc độ nhập liệu** | Chuột và chạm màn hình, chậm chạp | Giao diện biểu mẫu hành chính nặng nề | **Bàn phím siêu tốc: Phím tắt + Gõ tắt 2-3 ký tự + Giọng nói** |
+| **Khả năng Offline** | Phụ thuộc mạng, rớt mạng dễ treo | Cần mạng nội bộ ổn định | **Offline-first: IndexedDB + UUID v7 + Idempotency** |
+
+### 26.3. Mô hình 3 Khối Vận Hành Thực Dụng (The Operational Triad)
+Để đưa hệ thống vào sử dụng ngay mà không bị choáng ngợp bởi lý thuyết, toàn bộ 6 domain kỹ thuật được tinh gọn thành **3 Khối Màn Hình Vận Hành Trực Quan Hàng Ngày**:
+
+```mermaid
+graph LR
+    subgraph "formapubli OS - Khung Vận Hành 3 Khối"
+        K1["KHỐI 1: KHO HÀNG & THẺ KHO<br/>(Inventory Ledger)"]
+        K2["KHỐI 2: QUẦY THU NGÂN POS<br/>(Speed Checkout & Offline)"]
+        K3["KHỐI 3: DOANH SỐ & DÒNG TIỀN<br/>(Dual Sales & Analytics)"]
+    end
+
+    K1 <-->|Khấu trừ tức thì / Luân chuyển| K2
+    K2 -->|Ghi nhận doanh thu / Phân loại Thuế & Nội bộ| K3
+    K3 -.->|Đối soát số lượng bán & giá vốn| K1
+```
+
+1. **Khối 1 - Kho Hàng & Thẻ Kho (WMS Core):**
+   - Giám sát tồn kho vật lý tại 3 kho: Âu Cơ, Quỳnh Mai, Hội Chợ.
+   - Thẻ kho bất biến ghi nhận mọi bút toán Nhập / Xuất / Chuyển kho / Điều chỉnh.
+2. **Khối 2 - Quầy Thu Ngân Bán Sách (POS Checkout):**
+   - Tìm sách siêu tốc (phím `/`, gõ tên không dấu, gõ mã H, gõ chữ cái đầu, hoặc bấm nói giọng nói tiếng Việt).
+   - Chọn đối tượng: Khách lẻ hội chợ hoặc Đại lý/Đầu nậu (áp chiết khấu nhanh 35%, 40%, 45%).
+   - Đánh dấu cờ xuất hóa đơn VAT hay không.
+   - Nhấn `Ctrl + Enter`: Khấu trừ kho tức thì, in bill hoặc xuất biên nhận, lưu offline nếu mất mạng.
+3. **Khối 3 - Doanh Số & Sổ Kép Dòng Tiền (Financial Analytics):**
+   - Nhật ký doanh thu và số lượng sách bán theo Ngày / Tháng / Năm.
+   - Bộ lọc chuyển đổi linh hoạt 1-click: **Xem Báo Cáo Thuế (Clean VAT)** vs **Xem Quản Trị Toàn Cảnh (Chủ Doanh Nghiệp)**.
