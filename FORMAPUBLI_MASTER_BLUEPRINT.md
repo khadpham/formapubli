@@ -37,6 +37,7 @@
 28. [Kiến Trúc Sidebar Dọc & Bảng Quản Trị Toàn Cảnh (Executive Master Dashboard)](#28-kiến-trúc-sidebar-dọc--bảng-quản-trị-toàn-cảnh-executive-master-dashboard)
 29. [Kiến Trúc PWA & Ứng Dụng Thiết Bị Cầm Tay (PWA Architecture & Hardware Capabilities)](#29-kiến-trúc-pwa--ứng-dụng-thiết-bị-cầm-tay-pwa-architecture--hardware-capabilities)
 30. [Hệ Sinh Thái Trí Tuệ Nhân Tạo Tinh Gọn (Zero-Cost Lean AI & Copilot Engine)](#30-hệ-sinh-thái-trí-tuệ-nhân-tạo-tinh-gọn-zero-cost-lean-ai--copilot-engine)
+31. ["Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)](#31-súng-quét-mã-vạch-0-đồng-bằng-camera-pwa-in-app-barcode-scanner-engine)
 
 ---
 
@@ -63,31 +64,43 @@ formapubli không đặt mục tiêu ôm đồm toàn bộ các chức năng k�
 
 ---
 
-## 02. Lộ trình Triển khai theo Phase
+## 02. Lộ trình Triển khai Chuẩn Hóa Theo 6 Phase (Master Implementation Roadmap)
 
-Thay vì ép buộc một khung thời gian cố định gây cắt xén chất lượng kiểm soát, formapubli chia nhỏ thành các **Phase mục tiêu**. Mỗi phase chỉ được coi là hoàn tất khi đã vượt qua các tiêu chí nghiệm thu khắt khe (*Definition of Done*).
+Thay vì một khung kế hoạch dàn trải, formapubli OS được tái cấu trúc thành **6 Phase mục tiêu độc lập, lũy tiến và có ranh giới nghiệm thu minh bạch**. Mỗi Phase được đo lường bằng tiêu chuẩn kỹ thuật khắt khe (*Definition of Done - DoD*), tích hợp các ý tưởng đột phá về PWA, Camera Barcode Scanner, Sổ Kép và Hệ sinh thái AI tinh gọn 0 đồng:
 
 ```text
-[Phase 0: Khung Dữ liệu & Tiếp nhận Sheets]
-                     │
-                     ▼
-[Phase 1: Lõi Kho vận & Sổ cái Tồn kho (MVP)]
-                     │
-                     ▼
-[Phase 2: Mở rộng Thương mại & Quy trình Nghiệp vụ]
-                     │
-                     ▼
-[Phase 3: Tích hợp Hệ sinh thái & Đa kênh]
+[Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho] ─── (🟢 100% HOÀN THÀNH)
+                      │
+                      ▼
+[Phase 2: Động Cơ Bán Hàng Sổ Kép, Quầy POS & 5 Roles] ─── (🟢 100% HOÀN THÀNH)
+                      │
+                      ▼
+[Phase 3: Di Động Hóa Quầy, Camera Barcode Scanner & Offline Sync] ─── (🟡 KẾ HOẠCH TIẾP THEO)
+                      │
+                      ▼
+[Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp] ─── (⚪ CHỜ TRIỂN KHAI)
+                      │
+                      ▼
+[Phase 5: Hệ Sinh Thái AI Tinh Gọn & Báo Cáo Thông Minh] ─── (⚪ CHỜ TRIỂN KHAI)
+                      │
+                      ▼
+[Phase 6: Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện] ─── (⚪ TẦM NHÌN DÀI HẠN)
 ```
 
-### Chi tiết các Phase:
+---
 
-| Phase | Trọng tâm | Đầu ra nghiệm thu chính | Điều kiện chuyển Phase |
-|---|---|---|---|
-| **Phase 0** | **Khung Dữ liệu & Tiếp nhận Sheets** | - Tiếp nhận Google Sheets và bản thuyết minh từ chủ dự án.<br>- Hoàn thiện Data Dictionary & Danh mục ISBN.<br>- Bộ quy tắc làm sạch dữ liệu và cấu trúc vị trí kho. | Toàn bộ danh mục đầu sách, vị trí kho và số dư ban đầu được định hình trên giấy và đối soát logic. |
-| **Phase 1 (MVP)** | **Lõi Kho vận & Sổ cái Tồn kho Bất biến** | - Master Data (Đầu sách, ISBN, Vị trí kho/kệ, Đối tác, Pháp nhân).<br>- Sổ cái kho Append-Only Inventory Ledger & Balance Projection.<br>- Luồng Nhập kho, Chuyển kho 2 bước, Xuất ký gửi, Xuất bán cơ bản.<br>- Kiểm kê kho & Điều chỉnh tồn.<br>- Hỗ trợ súng quét mã vạch USB.<br>- Báo cáo tồn vật lý, tồn khả dụng theo thời gian thực. | Hệ thống chạy trơn tru với dữ liệu thực tế tại 1 kho tổng và 1 điểm ký gửi; 0 lỗi âm kho; tổng biến động luôn cân bằng. |
-| **Phase 2** | **Vận hành Thương mại & Luồng Mở rộng** | - Quản lý đơn hàng thương mại chi tiết & Bảng giá theo đối tác.<br>- Quy trình đổi trả hàng (RMA) & Khu vực cách ly kiểm định.<br>- Nghiệp vụ Đặt trước (Pre-order) & Quy tắc phân bổ tồn kho.<br>- Quản lý công nợ vận hành với đối tác ký gửi. | Luồng thương mại và đổi trả chạy khép kín; các trạng thái đơn/thanh toán/hàng hóa tách biệt rõ ràng. |
-| **Phase 3** | **Tích hợp Hệ sinh thái & Kênh ngoài** | - Cơ chế kết nối hóa đơn điện tử chuyên biệt (MSInvoice).<br>- Tích hợp sàn TMĐT (Shopee Open Platform) dựa trên hạn ngạch tồn.<br>- Đồng bộ tồn 2 chiều với Website phát hành.<br>- Báo cáo tài chính quản trị và tuổi tồn chuyên sâu. | Các hệ thống ngoài kết nối an toàn qua Outbox/Inbox Pattern; không làm gián đoạn hay treo transaction kho nội bộ. |
+### Bảng Chi Tiết 6 Phase Master Roadmap:
+
+| Phase | Tên Phase & Trọng tâm | Trạng thái | Mục tiêu Cốt lõi | Đầu ra Nghiệm thu Kỹ thuật (DoD) |
+| :---: | :--- | :---: | :--- | :--- |
+| **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý** | 🟢 **HOÀN THÀNH 100%** | Khống chế tuyệt đối dòng chảy vật lý của sách, xóa bỏ tình trạng tồn kho ảo trên Google Sheets. | - Danh mục chuẩn 81 ấn bản sách (SKU H01-H81, ISBN-13).<br/>- CSDL Kép: Local SQLite + Cloudflare D1.<br/>- Sổ cái kho bất biến (`inventory_ledger`) Append-only, cấm sửa/xóa.<br/>- Tự động cập nhật `stock_balances` theo thời gian thực.<br/>- Chặn đứng xuất âm kho tuyệt đối.<br/>- Tìm kiếm tiếng Việt không dấu & chuẩn hóa ngữ âm (`ch/tr`, `s/x`).<br/>- Micro giọng nói Web Speech & Phím tắt hệ thống (`/`, `Esc`, `Alt+Shift+V`).<br/>- 100% test cases đạt chuẩn (`test-inventory.ts`). |
+| **Phase 2** | **Động Cơ Bán Hàng Sổ Kép, Quầy POS & Trung Tâm 5 Roles** | 🟢 **HOÀN THÀNH 100%** | Giải quyết bài toán bán lẻ tại quầy/hội chợ và bán sỉ đầu nậu, tự động khấu trừ kho và phân tách Sổ Kép tài chính. | - 2 bảng thương mại: `orders` và `order_items`.<br/>- Quầy POS siêu tốc (`PosCheckoutTerminal.tsx`) với phím tắt `Ctrl+Enter` chốt đơn.<br/>- Bán sỉ đầu nậu chiết khấu 35-50%, bán lẻ giảm 0-10%.<br/>- Tự động liên kết Thẻ kho trừ sách vật lý tức thì (kho máy = kho kệ).<br/>- Động cơ Sổ Kép (`getSalesSummary`): Tách bạch Sổ Thuế VAT sạch sẽ (`OFFICIAL_TAX`) và Sổ Quản trị Thực tế cho Chủ sở hữu (`INTERNAL_MANAGEMENT`).<br/>- Menu Sidebar dọc 7 phân hệ điều hướng & Executive Dashboard KPI.<br/>- Trình mô phỏng phân quyền 5 nhóm người dùng (RBAC Simulator).<br/>- Trung tâm Cài đặt 6 phân hệ (lưu cấu hình bền vững vào `localStorage`).<br/>- 100% test cases bán hàng vượt qua (`test-order-sales.ts`), build production 0 lỗi. |
+| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Mã Vạch Camera & Offline Sync** | 🟡 **KẾ HOẠCH TIẾP THEO (Chuẩn bị thi công)** | Đưa hệ thống lên điện thoại/tablet của nhân viên hội chợ với chi phí thiết bị 0 đồng, bán hàng mượt mà kể cả khi rớt mạng 4-8 tiếng. | - **PWA Standalone:** File `manifest.json`, icon ứng dụng, Service Worker cache giúp mở app từ màn hình chính như app Native.<br/>- **"Súng" Quét Mã Vạch Camera 0 Đồng:** Tích hợp Web Barcode Detection API / Camera stream trên điện thoại, lia qua ISBN sau bìa kêu "bíp" trừ kho tức thì (tiết kiệm 1-2 triệu/máy quét súng).<br/>- **Động cơ Bán hàng Rớt mạng Offline-First:** Bộ đệm `IndexedDB` lưu đơn hàng ngoại tuyến, sinh mã UUID v7 + Idempotency Key, tự động đẩy lên D1 khi có mạng trở lại mà không trùng lặp đơn.<br/>- **Báo cáo Doanh số Chi tiết:** Lọc theo Ngày/Tuần/Tháng/Năm, bộ chuyển đổi 1-click Sổ Thuế vs Sổ Thực, xuất file Excel/CSV. |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp** | ⚪ **CHỜ TRIỂN KHAI** | Xử lý các nghiệp vụ đặc thù chiều sâu của ngành sách Việt Nam. | - **Động cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine):** Khách mua 1 Boxset $\rightarrow$ Hệ thống tự động trừ đồng thời $N$ cuốn sách lẻ và 1 vỏ hộp trong kho vật lý, đảm bảo tồn kho linh kiện luôn chuẩn xác.<br/>- **Phân hệ Sổ Cái Ký Gửi Phố Sách (Consignment Ledger):** Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM; lập biên bản đối soát định kỳ, bóc tách sách đã bán, sách rách hỏng và sách thất thoát.<br/>- **Quản lý Hạn ngạch Bản quyền & Nhuận bút Tác giả (Royalties & Rights Ledger):** Tự động đếm số cuốn in thực tế theo hợp đồng cấp phép, cảnh báo khi chạm trần số lượng được in hoặc sắp hết hạn hợp đồng 5 năm, tính nhuận bút % giá bìa. |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Báo Cáo Phân Tích Thông Minh** | ⚪ **CHỜ TRIỂN KHAI** | Trợ lý đắc lực hỗ trợ quầy bán và giám đốc với chi phí 0 VNĐ/tháng (Free Tier first). | - **Smart Voice POS Dispatcher:** Nhân viên đọc 1 câu tự nhiên $\rightarrow$ Groq Whisper + LLaMA 3.3 trích xuất đúng SKU, số lượng, chiết khấu và tự điền giỏ hàng trong 0.3 giây.<br/>- **Executive AI Copilot (Text-to-Insight):** Giám đốc hỏi đáp dòng tiền, tồn kho bằng tiếng Việt tự nhiên qua Gemini 1.5 Flash (chế độ Read-only an toàn tuyệt đối).<br/>- **Dự Báo Tái Bản Thông Minh (Reprint Runout Forecasting):** Đo vận tốc bán ($V_{\text{sale}}$) và cảnh báo ký lệnh in tái bản trước 30-45 ngày để tránh đứt hàng.<br/>- **Hồ Sơ Độc Giả Thân Thiết (Reader Persona CRM):** Phân hạng độc giả mua gói mùa, người sưu tầm sách giới hạn, tự động gợi ý danh sách độc giả thân thiết khi phát hành sách mới. |
+| **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện** | ⚪ **TẦM NHÌN DÀI HẠN** | Mở rộng quy mô phân phối đa kênh và kết nối hệ thống tài chính quốc gia. | - Đồng bộ tồn kho 2 chiều với các sàn TMĐT (Shopee, TikTok Shop).<br/>- Kết nối API phần mềm Hóa đơn điện tử chính thức (VNPT / Viettel / MISA).<br/>- Chuyển giao tài liệu kỹ thuật, hoàn thiện quy trình bảo trì và sao lưu tự động trọn đời. |
+
+---
 
 ---
 
@@ -1104,4 +1117,28 @@ graph LR
   - Nếu là `ROLE_TAX`: LLM chỉ nhận dữ liệu đã qua bộ lọc `where fiscal_type = 'OFFICIAL_TAX'`.
   - Nếu là `ROLE_CASHIER`: LLM bị tước quyền truy cập toàn bộ các hàm tính toán lợi nhuận gộp và doanh thu tổng.
 - **Không gửi dữ liệu định danh khách hàng:** Mọi câu lệnh AI chỉ truyền mã ấn bản, tên sách, số lượng và số tiền; loại bỏ hoàn toàn thông tin nhạy cảm của khách hàng trước khi gửi ra ngoài.
+
+---
+
+## 31. "Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)
+
+### 31.1. Bối Cảnh & Nỗi Đau Thiết Bị Phần Cứng
+Trong các đợt hội chợ sách hoặc kiểm kê kho định kỳ, doanh nghiệp thường gặp hai trở ngại lớn:
+1. **Chi phí thiết bị:** Một máy quét mã vạch không dây (Bluetooth/Wireless Barcode Scanner) loại tốt có giá từ 1.200.000 đ – 2.500.000 đ/chiếc. Khi hội chợ có từ 3 – 5 nhân viên cùng bán, chi phí đầu tư thiết bị lên tới cả chục triệu đồng và dễ bị rơi vỡ, thất lạc.
+2. **Bất tiện cồng kềnh:** Nhân viên phải vừa cầm điện thoại/máy tính bảng, vừa cầm thêm một "tay súng" quét cồng kềnh, gây vướng víu khi vừa tư vấn sách cho bạn đọc vừa tính tiền.
+
+### 31.2. Giải Pháp "Súng Quét 0 Đồng": Biến Camera Điện Thoại Thành Máy Quét Chuyên Nghiệp
+Tận dụng nền tảng PWA trên thiết bị di động, formapubli OS tích hợp trực tiếp động cơ quét mã vạch bằng camera:
+- **Chuẩn công nghệ:** Sử dụng **Barcode Detection API** (chuẩn native của trình duyệt hiện đại trên Android/Chrome) kết hợp thư viện quét mã vạch siêu nhẹ dựa trên canvas cho iOS WebKit.
+- **Định dạng nhận diện:** Tối ưu riêng biệt cho chuẩn mã vạch sách quốc tế **EAN-13 / ISBN-13** in ở bìa sau của toàn bộ 81 tác phẩm.
+- **Giao diện Trải nghiệm Quầy (UX):**
+  - Tại Quầy POS và Màn hình Nhập kho, bố trí nút bấm biểu tượng **Quét Barcode [ 📷 ]**.
+  - Khi chạm vào nút, một khung ngắm camera nhỏ (Viewfinder) bật lên ngay trên giao diện với đường quét laser màu đỏ/xanh lá.
+  - Khi camera lia qua mã vạch ISBN sau bìa sách:
+    1. Hệ thống tự động nhận diện chuỗi 13 số trong vòng 100 mili-giây.
+    2. Loa điện thoại phát ra tiếng "Bíp" xác nhận trong trẻo (tổng hợp từ Web Audio API).
+    3. Cuốn sách lập tức được thêm vào Giỏ hàng POS (hoặc tăng số lượng lên +1 nếu sách đã có trong giỏ).
+    4. Khung quét camera tiếp tục duy trì trạng thái sẵn sàng để quét liên tiếp cuốn tiếp theo mà không cần bấm lại nút.
+- **Tiết kiệm 100% chi phí:** Tận dụng chính smartphone của nhân viên, không tốn 1 đồng chi phí mua sắm thiết bị ngoại vi!
+
 

@@ -6,13 +6,16 @@
 
 ---
 
-## 1. Bảng Tổng Quan Tiến Độ Các Phase (Milestone Tracker)
+## 1. Bảng Tổng Quan Tiến Độ Các Phase (Master 6-Phase Tracker)
 
 | Phase | Trọng tâm Nghiệp vụ | Trạng thái | Mức độ Hoàn thành | Nhánh Git Phụ trách |
 | :---: | :--- | :---: | :---: | :--- |
-| **Phase 1** | **Lõi Kho Vận & Thẻ Kho Bất Biến**<br/>(Catalog 81 sách, 3 kho vật lý, Thẻ kho Append-Only, Tìm kiếm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
-| **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính**<br/>(Orders, Order Items, Khấu trừ kho tự động, Bán lẻ hội chợ, Bán sỉ đầu nậu, Phân tách Sổ Thuế vs Sổ Thực) | 🟡 **ĐANG THI CÔNG** | **85%** (Baby-Step 1 & 2 Done) | `feat/sales-order-engine-and-dual-ledger` |
-| **Phase 3** | **CRM Độc Giả & Đăng Ký Gói Mùa**<br/>(Hồ sơ độc giả 360 độ, Gói mùa Xuân/Hạ/Thu/Đông, Subscription, Tủ sách sở hữu, Chống trùng quà tặng) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/customer-crm-and-bundles` |
+| **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
+| **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
+| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟡 **KẾ HOẠCH TIẾP THEO** | **0%** (Chuẩn bị thi công) | `feat/pwa-mobile-and-offline-pos` |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/boxset-bundles-and-consignment` |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/lean-ai-copilot-and-crm` |
+| **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
 ---
 
@@ -106,28 +109,124 @@
     - Toàn bộ tùy chọn cài đặt được lưu trữ bền vững trong `localStorage` (`formapubli_settings`).
   - Biên dịch kiểm thử thành công `npm run build` (0 lỗi), 100% test cases đạt chuẩn.
 
-## 3. Các Hạng Mục Tiếp Theo & Kế Hoạch Triển Khai (Roadmap)
+## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
-### 📌 Baby-Step 2: Giao diện Quầy Thu Ngân Bán Sách (POS UI) - [ĐÃ HOÀN THÀNH 100%]
-- [x] Thiết kế Component `PosCheckoutModal.tsx` / `PosTerminal.tsx`.
-- [x] Chọn sách vào giỏ siêu tốc qua bàn phím (`/`, gõ tắt, barcode) hoặc giọng nói.
-- [x] Chọn kho xuất bán (Kho 1 Âu Cơ hoặc Kho 3 Hội Chợ).
-- [x] Chọn nhóm khách hàng: Khách lẻ (giảm 0-10%) hoặc Đầu nậu Đinh Lễ (chiết khấu 35-45%).
-- [x] Chọn cờ tài chính: Xuất VAT (Thuế) hoặc Không hóa đơn (Nội bộ).
-- [x] Phím tắt thanh toán `Ctrl + Enter`: Khấu trừ kho tức thì và hiển thị biên nhận tóm tắt.
-- [x] Sửa lỗi phím tắt và đồng bộ giao diện Micro thu âm.
+### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]
+- [x] Khởi tạo CSDL kép: Local SQLite (`formapubli.db`) + Cloudflare D1.
+- [x] Nạp danh mục chuẩn 81 ấn bản sách (SKU H01-H81, ISBN-13).
+- [x] Sổ cái kho bất biến (`inventory_ledger`) Append-only, cấm sửa/xóa.
+- [x] Cơ chế chặn xuất âm kho tuyệt đối (Negative Stock Prevention).
+- [x] Ma trận tồn kho 3 kho vật lý: Kho 1 Âu Cơ, Kho 2 Quỳnh Mai, Kho 3 Hội Chợ.
+- [x] Thuật toán tìm kiếm tiếng Việt không dấu & khử lệch ngữ âm (`ch/tr`, `s/x`, `gi/d/r`).
+- [x] Nhận diện giọng nói Web Speech API & Phím tắt hệ thống (`/`, `Esc`, `Alt+Shift+V`).
+- [x] Đạt 100% test cases kiểm thử tự động (`scripts/test-inventory.ts`).
 
-### 📌 Baby-Step 3: Bảng Báo Cáo Doanh Số & Dòng Tiền (Sales Analytics Dashboard)
-- [ ] Báo cáo tổng số cuốn bán và doanh thu theo Ngày / Tháng / Năm.
-- [ ] Nút chuyển đổi 1-click: **Góc nhìn Kế toán Thuế** vs **Góc nhìn Thực tế Toàn cảnh (Chủ Doanh Nghiệp)**.
+---
+
+### 🟢 Phase 2: Động Cơ Bán Hàng Sổ Kép, Quầy POS & Trung Tâm 5 Roles - [ĐÃ HOÀN THÀNH 100%]
+- [x] Khai báo 2 bảng thương mại: `orders` và `order_items` với cờ tài chính `fiscal_type`.
+- [x] Dịch vụ bán hàng (`order.service.ts`): Bán lẻ giảm 0-10%, Bán sỉ đầu nậu chiết khấu 35-50%.
+- [x] Tự động liên kết Thẻ kho khấu trừ sách vật lý tức thì (kho máy = kho kệ 100%).
+- [x] Phân tách Sổ Kép (`getSalesSummary`): Sổ Thuế VAT sạch sẽ vs Sổ Quản trị Thực tế Toàn cảnh.
+- [x] Quầy POS Bán sách Siêu tốc (`PosCheckoutTerminal.tsx`): Lọc sách, chọn kho, phím tắt `Ctrl+Enter` chốt đơn.
+- [x] Sửa lỗi phím tắt và đồng bộ giao diện Micro thu âm (chớp đỏ `animate-pulse`).
+- [x] Sidebar điều hướng dọc 7 phân hệ (`AppSidebar.tsx`) tối ưu đa thiết bị (260px desktop, Drawer cảm ứng mobile).
+- [x] Bảng Quản trị Vận hành Toàn cảnh (`ExecutiveDashboard.tsx`) với 4 thẻ KPI và phân bổ dòng tiền.
+- [x] Ma trận phân quyền 5 nhóm người dùng (RBAC Simulator: Owner, Manager, Cashier, Warehouse, Tax).
+- [x] Trung tâm Cài đặt & Tùy biến Hệ thống 6 phân hệ (`SettingsRbacView.tsx`) lưu bền vững vào `localStorage`.
+- [x] Đạt 100% test cases bán hàng (`scripts/test-order-sales.ts`), đóng gói Next.js build với **0 lỗi**.
+
+---
+
+### 🟡 Phase 3: Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync - [KẾ HOẠCH TRƯỚC MẮT]
+*Mục tiêu: Đưa ứng dụng lên điện thoại/tablet của nhân viên bán hội chợ với chi phí thiết bị 0 đồng, bán hàng trơn tru kể cả khi rớt mạng 4-8 tiếng.*
+
+#### 📌 3.1. Đóng gói PWA Cài Đặt 1-Chạm (Progressive Web App Standalone)
+- [ ] Khai báo `manifest.json` chuẩn PWA (tên formapubli OS, theme color `#4f46e5`, start_url, display: standalone).
+- [ ] Thiết kế bộ icon ứng dụng đầy đủ kích thước (192px, 512px, maskable icon cho Android/iOS).
+- [ ] Cấu hình Service Worker cache tài nguyên tĩnh để app khởi động tức thì dưới 0.5s kể cả khi không có mạng.
+- [ ] Hỗ trợ nút "Thêm vào màn hình chính" (Add to Home Screen) trên Safari iOS và Chrome Android.
+
+#### 📌 3.2. "Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner)
+- [ ] Tích hợp Barcode Detection API / Camera stream (`getUserMedia`) trên thiết bị di động.
+- [ ] Nút biểu tượng quét mã vạch `[ 📷 ]` tại Quầy POS và Màn hình Nhập kho.
+- [ ] Bật khung ngắm camera (Viewfinder) nhận diện mã vạch ISBN-13 / EAN-13 sau bìa sách trong 100ms.
+- [ ] Tự động phát âm thanh "Bíp" xác nhận (Web Audio API) và thêm sách vào giỏ hàng hoặc tăng số lượng +1.
+- [ ] Quét liên tục nhiều cuốn sách mà không cần bấm lại nút (Continuous scanning mode).
+
+#### 📌 3.3. Động Cơ Bán Hàng Ngoại Tuyến Đa Nhân Viên (Offline-First POS Engine)
+- [ ] Xây dựng bộ đệm `IndexedDB` lưu danh mục sách và giỏ hàng cục bộ trên trình duyệt thiết bị.
+- [ ] Sinh khóa duy nhất bằng UUID v7 (sắp xếp tự nhiên theo thời gian) kết hợp `idempotency_key` cho từng đơn bán offline.
+- [ ] Hàng đợi đồng bộ nền (Sync Queue): Tự động phát hiện khi có mạng trở lại (Online Event) và gửi đơn hàng lên máy chủ Cloudflare D1 theo thứ tự.
+- [ ] Cơ chế giải quyết xung đột (Conflict Resolution) và chặn trùng lặp đơn hàng tuyệt đối.
+
+#### 📌 3.4. Báo Cáo Doanh Số & Sổ Sách Đa Chiều (Advanced Sales Analytics)
+- [ ] Hoàn thiện bộ lọc báo cáo theo Ngày / Tuần / Tháng / Năm trên `SalesLedgerView.tsx`.
+- [ ] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
+- [ ] Xuất biên bản kê khai doanh số ra file Excel/CSV phục vụ đối soát.
+
+---
+
+### ⚪ Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [CHỜ TRIỂN KHAI]
+*Mục tiêu: Xử lý các nghiệp vụ đặc thù chiều sâu của ngành sách Việt Nam.*
+
+#### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine)
+- [ ] Khai báo cấu trúc sản phẩm phức hợp (Composite Item): 1 mã Combo bao gồm danh sách $N$ mã ấn bản lẻ + 1 vỏ hộp.
+- [ ] Khi bán 1 Combo tại Quầy POS, hệ thống tự động sinh bút toán Thẻ kho trừ đồng thời toàn bộ các cuốn sách lẻ thành phần và vỏ hộp.
+- [ ] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component).
+
+#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger)
+- [ ] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM.
+- [ ] Phân định rõ ràng: Đại lý giữ sách (*Custodian*) nhưng quyền sở hữu (*Owner*) vẫn thuộc công ty cho đến khi bán được.
+- [ ] Màn hình lập biên bản đối soát định kỳ: So sánh số sách gửi ban đầu với số đếm thực tế để bóc tách: Sách đã bán cần đòi tiền, sách rách hỏng cần thu hồi và sách thất thoát.
+
+#### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger)
+- [ ] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa).
+- [ ] Tự động đếm lũy kế số cuốn đã in thực tế qua Thẻ kho để cảnh báo trước khi vượt hạn ngạch cấp phép.
+- [ ] Bảng tính tiền nhuận bút tự động theo tỷ lệ % giá bìa nhân với số cuốn bán thực tế.
+
+---
+
+### ⚪ Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [CHỜ TRIỂN KHAI]
+*Mục tiêu: Đưa trí tuệ nhân tạo vào hỗ trợ trực tiếp nhân viên và giám đốc với chi phí 0 VNĐ/tháng (Free Tier First).*
+
+#### 📌 5.1. Smart Voice POS Dispatcher (Trợ Lý Lên Đơn Thần Tốc Bằng Giọng Nói)
+- [ ] Tích hợp Groq Whisper Large v3 (chuyển âm thanh tiếng Việt thành text chuẩn xác trong 0.3s).
+- [ ] LLM Function Calling (LLaMA 3.3 / Gemini Flash) bóc tách thực thể: Mã SKU, số lượng, kho xuất, tỷ lệ chiết khấu, cờ sổ kép.
+- [ ] Tự động điền dữ liệu vào Giỏ hàng POS theo nguyên tắc "Human-in-the-loop" (thu ngân kiểm tra và bấm xác nhận).
+
+#### 📌 5.2. Executive AI Copilot (Trợ Lý Điều Hành Giám Đốc)
+- [ ] Trợ lý đối thoại hỏi đáp bằng tiếng Việt tự nhiên qua Gemini 1.5 Flash.
+- [ ] Chế độ an toàn Read-only: Chỉ gọi các API đọc số liệu doanh thu, tồn kho; cấm tuyệt đối can thiệp sửa đổi CSDL.
+- [ ] Cơ chế RBAC Scope Guard: Không rò rỉ dữ liệu Sổ Quản trị nội bộ cho tài khoản vai trò Kế toán thuế.
+
+#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting)
+- [ ] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực.
+- [ ] Cảnh báo điểm cạn kho trước 30-45 ngày để Giám đốc kịp làm việc với NXB và Nhà in.
+
+#### 📌 5.4. Hồ Sơ Độc Giả Thân Thiết & Đọc Sách Theo Mùa (Reader Persona CRM)
+- [ ] Quản lý lịch sử mua sắm và sở thích đọc của từng bạn đọc.
+- [ ] Phân loại nhóm độc giả sưu tầm (sách bản đặc biệt, bìa cứng) vs độc giả mua combo theo mùa.
+- [ ] AI gợi ý danh sách bạn đọc phù hợp nhất khi ra mắt tác phẩm mới cùng dịch giả hoặc cùng chủ đề.
+
+---
+
+### ⚪ Phase 6: Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện - [TẦM NHÌN DÀI HẠN]
+- [ ] Đồng bộ tồn kho 2 chiều với Shopee Open Platform & TikTok Shop theo hạn ngạch an toàn.
+- [ ] Kết nối API phần mềm Hóa đơn điện tử chính thức (VNPT / Viettel / MISA) cho các đơn `OFFICIAL_TAX`.
+- [ ] Đóng gói tài liệu bàn giao kỹ thuật, thiết lập cơ chế sao lưu CSDL tự động lên Google Drive hàng ngày.
 
 ---
 
 ## 4. Điểm Cần Cải Thiện & Hạng Mục Tối Ưu (Improvement Backlog)
 
-| Hạng mục | Vấn đề hiện tại / Mục tiêu | Giải pháp kỹ thuật đề xuất | Độ ưu tiên |
-| :--- | :--- | :--- | :---: |
-| **Responsive & Cảm ứng** | Nhân viên hội chợ dùng điện thoại, quầy văn phòng dùng máy tính màn hình ngang | - **Màn hình ngang (Desktop):** Split-view 2 cột (Danh mục sách bên trái, Giỏ hàng bên phải).<br/>- **Màn hình dọc (Mobile):** Stacked Drawer, nút bấm cảm ứng lớn $\ge 44\text{px}$, thanh toán 1 ngón tay cái. | 🔴 Cao (Áp dụng ngay Baby-Step 2) |
-| **Offline-First POS** | Hội chợ sách nghẽn mạng 4G/Wifi từ 4-8 tiếng | Tích hợp IndexedDB Queue + UUID v7 + Idempotency Key tự động sync khi có mạng. | 🟡 Trung bình (Phase 2 hoàn thiện) |
-| **In Biên Nhận Cầm Tay** | Khách lẻ hoặc đầu nậu cần phiếu giao hàng/biên nhận | Tích hợp Web Bluetooth / Web Serial kết nối máy in hóa đơn nhiệt mini K57/K80. | 🟡 Trung bình |
-| **Cài Đặt Dạng App (PWA)** | Nhân viên muốn mở app từ màn hình chính điện thoại không cần gõ URL | Khai báo `manifest.json` và Service Worker để cài đặt PWA (Progressive Web App). | 🟢 Thấp |
+| Hạng mục | Vấn đề hiện tại / Mục tiêu | Giải pháp kỹ thuật triển khai | Độ ưu tiên | Phase thực hiện |
+| :--- | :--- | :--- | :---: | :---: |
+| **"Súng" quét mã vạch 0 đồng** | Máy quét mã vạch đắt tiền (1-2 triệu), cồng kềnh tại hội chợ | Tích hợp Camera Barcode Detection API quét ISBN sau bìa sách tít tít trừ kho | 🔴 Khẩn cấp | **Phase 3** (Mục 3.2) |
+| **Cài đặt dạng App (PWA)** | Cần mở app toàn màn hình trên điện thoại/tablet không qua App Store | File `manifest.json`, icon app, Service Worker cache cho iOS & Android | 🔴 Khẩn cấp | **Phase 3** (Mục 3.1) |
+| **Bán hàng khi rớt mạng** | Hội chợ sách nghẽn sóng 4G/Wifi từ 4 - 8 tiếng liên tục | `IndexedDB` Queue + UUID v7 + Idempotency Key tự động sync khi có mạng | 🔴 Khẩn cấp | **Phase 3** (Mục 3.3) |
+| **Bán sách Combo / Tuyển tập** | Bán 1 hộp sách cần trừ đồng thời các cuốn lẻ và vỏ hộp | Động cơ Boxset / Bundle Engine tự động trừ Thẻ kho cho từng linh kiện | 🟡 Quan trọng | **Phase 4** (Mục 4.1) |
+| **Đối soát ký gửi Đinh Lễ** | Số lượng sách gửi ký gửi thường xuyên lệch sau 3-6 tháng | Sổ cái ký gửi riêng biệt + Thuật toán so lệch kiểm đếm thực tế | 🟡 Quan trọng | **Phase 4** (Mục 4.2) |
+| **Lên đơn giọng nói bằng AI** | Hội chợ ồn ào hoặc đơn sỉ nhiều đầu sách cần lên nhanh | Groq Whisper + LLaMA 3.3 tự động bóc tách thực thể nạp vào Giỏ POS | 🟢 Trung hạn | **Phase 5** (Mục 5.1) |
+| **Cảnh báo tái bản sách** | In sách mất 30-40 ngày, để hết sách mới in sẽ mất mùa bán | Thuật toán đo vận tốc bán $V_{\text{sale}}$ cảnh báo trước điểm cạn kho | 🟢 Trung hạn | **Phase 5** (Mục 5.3) |
+
