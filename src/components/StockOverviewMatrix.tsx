@@ -203,28 +203,63 @@ export function StockOverviewMatrix({
     window.location.reload();
   };
 
-  // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT)
-  const showMagnetBar = isScrolledPast && (searchTerm.trim().length > 0 || isInputFocused);
+  // Tự động focus ô tìm kiếm tương ứng khi kích hoạt Micro giọng nói
+  useEffect(() => {
+    if (isListening) {
+      if (isScrolledPast && magnetInputRef.current) {
+        magnetInputRef.current.focus();
+      } else if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }
+  }, [isListening, isScrolledPast]);
+
+  // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT hoặc ĐANG BẬT MICRO GIỌNG NÓI)
+  const showMagnetBar = isScrolledPast && (searchTerm.trim().length > 0 || isInputFocused || isListening);
 
   return (
     <div className="space-y-6">
       {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR) */}
       {showMagnetBar && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl border border-indigo-200 py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200">
-          <Search className="w-5 h-5 text-indigo-600 shrink-0" />
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
+            isListening
+              ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
+              : 'bg-white/95 border-indigo-200'
+          }`}
+        >
+          <Search
+            className={`w-5 h-5 shrink-0 transition-colors ${
+              isListening ? 'text-rose-600 animate-pulse' : 'text-indigo-600'
+            }`}
+          />
           <input
             ref={magnetInputRef}
             type="text"
-            placeholder="Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro..."
+            placeholder={
+              isListening
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+            }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
-            className="flex-1 text-sm font-medium text-slate-800 bg-transparent border-none focus:outline-none placeholder:text-slate-400"
+            className={`flex-1 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
+              isListening
+                ? 'text-rose-950 font-semibold placeholder:text-rose-600'
+                : 'text-slate-800 placeholder:text-slate-400'
+            }`}
           />
 
-          <span className="text-xs font-mono text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full shrink-0 font-bold border border-indigo-100">
-            {filteredBooks.length} sách
+          <span
+            className={`text-xs font-mono px-2.5 py-1 rounded-full shrink-0 font-bold border transition-colors ${
+              isListening
+                ? 'bg-rose-200/80 text-rose-800 border-rose-300'
+                : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+            }`}
+          >
+            {isListening ? '🎙️ Đang nghe' : `${filteredBooks.length} sách`}
           </span>
 
           {searchTerm && (

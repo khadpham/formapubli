@@ -47,6 +47,7 @@ export function AppSidebar({
       shortLabel: 'Tổng quan',
       icon: LayoutDashboard,
       badge: 'Master',
+      shortcut: 'Alt+1',
       color: 'text-indigo-600',
     },
     {
@@ -55,6 +56,7 @@ export function AppSidebar({
       shortLabel: 'Bán hàng',
       icon: ShoppingCart,
       badge: 'Speed',
+      shortcut: 'Alt+2',
       color: 'text-emerald-600',
     },
     {
@@ -63,6 +65,7 @@ export function AppSidebar({
       shortLabel: 'Kho hàng',
       icon: Boxes,
       badge: '3 Kho',
+      shortcut: 'Alt+3',
       color: 'text-amber-600',
     },
     {
@@ -71,6 +74,7 @@ export function AppSidebar({
       shortLabel: 'Doanh số',
       icon: Receipt,
       badge: 'Dual',
+      shortcut: 'Alt+4',
       color: 'text-sky-600',
     },
     {
@@ -79,6 +83,7 @@ export function AppSidebar({
       shortLabel: 'Đối tác',
       icon: Users,
       badge: 'B2B',
+      shortcut: 'Alt+5',
       color: 'text-purple-600',
     },
     {
@@ -87,6 +92,7 @@ export function AppSidebar({
       shortLabel: 'Độc giả',
       icon: BookOpenCheck,
       badge: 'CRM',
+      shortcut: 'Alt+6',
       color: 'text-rose-600',
     },
     {
@@ -95,6 +101,7 @@ export function AppSidebar({
       shortLabel: 'Cài đặt',
       icon: Settings,
       badge: 'RBAC',
+      shortcut: 'Alt+7',
       color: 'text-slate-600',
     },
   ];
@@ -193,7 +200,7 @@ export function AppSidebar({
                   onSelectTab(item.id);
                   onCloseMobile();
                 }}
-                title={isCollapsed ? item.label : undefined}
+                title={isCollapsed ? `${item.label} (${item.shortcut})` : undefined}
                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-medium text-sm transition-all duration-200 min-h-[48px] ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25'
@@ -206,17 +213,28 @@ export function AppSidebar({
                   }`}
                 />
                 {!isCollapsed && (
-                  <div className="flex items-center justify-between flex-1 truncate">
+                  <div className="flex items-center justify-between flex-1 truncate gap-2">
                     <span className="truncate">{item.label}</span>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold shrink-0 ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium hidden sm:inline ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}
+                      >
+                        {item.shortcut}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    </div>
                   </div>
                 )}
               </button>

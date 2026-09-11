@@ -41,6 +41,35 @@ export function MasterAppShell({
     }
   }, [currentRole, currentTab, roleConfig]);
 
+  // Phím tắt bàn phím toàn cục chuyển Tab siêu tốc: Alt + 1..7 (hoặc Alt + Shift + 1..7)
+  React.useEffect(() => {
+    const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
+      // Bắt tổ hợp Alt + [1-7] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        const keyMap: Record<string, string> = {
+          '1': 'dashboard',
+          '2': 'pos',
+          '3': 'inventory',
+          '4': 'sales',
+          '5': 'partners',
+          '6': 'customers',
+          '7': 'settings',
+        };
+
+        const targetTab = keyMap[e.key];
+        if (targetTab) {
+          e.preventDefault();
+          if (roleConfig.allowedNavItems.includes(targetTab)) {
+            setCurrentTab(targetTab);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalNavShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalNavShortcuts);
+  }, [roleConfig]);
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
       {/* Vertical Sidebar Navigation */}
@@ -74,14 +103,14 @@ export function MasterAppShell({
               <span className="font-bold text-slate-800 text-sm hidden sm:inline">
                 Khung Vận Hành:
               </span>
-              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                {currentTab === 'dashboard' && 'Bảng Quản Trị Toàn Cảnh'}
-                {currentTab === 'pos' && 'Quầy Bán Hàng POS'}
-                {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho Bất Biến'}
-                {currentTab === 'sales' && 'Doanh Số & Sổ Kép'}
-                {currentTab === 'partners' && 'Đối Tác & Kênh Sỉ'}
-                {currentTab === 'customers' && 'Độc Giả & Gói Mùa'}
-                {currentTab === 'settings' && 'Phân Quyền & Cài Đặt'}
+              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5">
+                {currentTab === 'dashboard' && 'Bảng Quản Trị (Alt+1)'}
+                {currentTab === 'pos' && 'Quầy Bán Hàng POS (Alt+2)'}
+                {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho (Alt+3)'}
+                {currentTab === 'sales' && 'Doanh Số & Sổ Kép (Alt+4)'}
+                {currentTab === 'partners' && 'Đối Tác & Đại Lý (Alt+5)'}
+                {currentTab === 'customers' && 'Độc Giả CRM (Alt+6)'}
+                {currentTab === 'settings' && 'Cài Đặt & Phân Quyền (Alt+7)'}
               </span>
             </div>
           </div>
