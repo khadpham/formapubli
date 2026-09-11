@@ -33,6 +33,8 @@
 24. [Kiến trúc Sổ Kép: Kế toán Thuế vs Sổ Quản trị Thực tế Nội bộ](#24-kiến-trúc-sổ-kép-kế-toán-thuế-vs-sổ-quản-trị-thực-tế-nội-bộ-dual-fiscal-bookkeeping--non-vat-sales-engine)
 25. [Động cơ POS Hội chợ Chạy Offline-First Đa Nhân viên](#25-động-cơ-pos-hội-chợ-chạy-offline-first-đa-nhân-viên-indexeddb-queue-uuid-v7-idempotency--conflict-resolution)
 26. [Định vị & Bản chất Sản phẩm: formapubli OS](#26-định-vị--bản-chất-sản-phẩm-formapubli-os-publishing-retail--inventory-operating-system)
+27. [Ma Trận Phân Quyền Đa Cấp & An Toàn Dữ Liệu Sổ Kép (RBAC Architecture)](#27-ma-trận-phân-quyền-đa-cấp--an-toàn-dữ-liệu-sổ-kép-rbac-architecture)
+28. [Kiến Trúc Sidebar Dọc & Bảng Quản Trị Toàn Cảnh (Executive Master Dashboard)](#28-kiến-trúc-sidebar-dọc--bảng-quản-trị-toàn-cảnh-executive-master-dashboard)
 
 ---
 
@@ -938,3 +940,90 @@ graph LR
 3. **Khối 3 - Doanh Số & Sổ Kép Dòng Tiền (Financial Analytics):**
    - Nhật ký doanh thu và số lượng sách bán theo Ngày / Tháng / Năm.
    - Bộ lọc chuyển đổi linh hoạt 1-click: **Xem Báo Cáo Thuế (Clean VAT)** vs **Xem Quản Trị Toàn Cảnh (Chủ Doanh Nghiệp)**.
+
+---
+
+## 27. Ma Trận Phân Quyền Đa Cấp & An Toàn Dữ Liệu Sổ Kép (RBAC Architecture)
+
+### 27.1. Bối cảnh Vận hành Thực tế của Doanh nghiệp Xuất bản
+Trong một nhà xuất bản hoặc đơn vị phát hành sách độc lập, sự rò rỉ dữ liệu tài chính hoặc số liệu kho có thể dẫn đến rủi ro pháp lý và quản trị nghiêm trọng:
+- **Nhân viên bán hàng hội chợ (Cashier/Staff):** Thường là cộng tác viên, sinh viên hoặc nhân viên bán thời gian. Họ cần thao tác bán hàng cực nhanh nhưng **tuyệt đối không được xem doanh thu tổng của công ty, không thấy giá vốn, không thấy lợi nhuận, và không biết thông tin về sổ sách thuế**.
+- **Thủ kho (Warehouse Keeper):** Cần tập trung 100% vào sự chính xác của số lượng sách trên giá kệ vật lý. Họ quản lý thẻ kho, nhập/xuất/chuyển kho nhưng không cần và không được can thiệp vào các con số doanh thu tài chính.
+- **Kế toán thuế (Tax Accountant):** Chịu trách nhiệm làm việc với hóa đơn điện tử và Chi cục Thuế. **Hệ thống bắt buộc phải tự động cách ly, chỉ cung cấp cho Kế toán thuế duy nhất các số liệu chính thức (`OFFICIAL_TAX`)**, tuyệt đối không để lộ các đơn bán đầu nậu hay dòng tiền nội bộ (`INTERNAL_MANAGEMENT`).
+- **Quản lý vận hành (Manager):** Điều phối quầy bán và kho vận hàng ngày, duyệt chuyển kho, áp chiết khấu theo khung cho phép.
+- **Chủ doanh nghiệp (Owner / Super Admin):** Nắm giữ quyền lực tối cao, nhìn thấy toàn cảnh bức tranh thực tế (Total Reality View).
+
+### 27.2. Ma Trận Phân Quyền Chi Tiết (Role-Based Permission Matrix)
+
+| Quyền hạn Nghiệp vụ (Permissions) | Chủ Doanh Nghiệp (`ROLE_OWNER`) | Quản Lý (`ROLE_MANAGER`) | Thu Ngân Hội Chợ (`ROLE_CASHIER`) | Thủ Kho (`ROLE_WAREHOUSE`) | Kế Toán Thuế (`ROLE_TAX`) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Bảng Quản trị Toàn cảnh (Executive Reality View)** | ✅ Toàn quyền | ❌ | ❌ | ❌ | ❌ |
+| **Báo cáo Thuế Chính thức (Tax View VAT)** | ✅ Xem/Xuất | ✅ Xem | ❌ | ❌ | ✅ **Toàn quyền** |
+| **Bán hàng tại Quầy POS (Tạo Đơn)** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Áp Chiết khấu Sâu Đầu Nậu (>20% - 50%)** | ✅ | ✅ | ❌ (Chỉ áp $\le 15\%$) | ❌ | ❌ |
+| **Xem Giá Vốn / Tỷ Suất Lợi Nhuận** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Xem Tồn Kho Vật Lý 3 Kho** | ✅ | ✅ | ✅ (Chỉ xem kho đang bán) | ✅ (Toàn bộ 3 kho) | ❌ (Chỉ xem kho thuế) |
+| **Lập Phiếu Nhập Kho từ Nhà In** | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Lập Phiếu Chuyển Kho (Transfer)** | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Điều Chỉnh Kho (Stock Adjustment)** | ✅ Phê duyệt | ❌ | ❌ | ⚠️ Lập đề xuất | ❌ |
+| **Quản lý Nhân Viên & Cấp Quyền Users** | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+### 27.3. Cơ Chế Bảo Mật Chống Rò Rỉ Dữ Liệu ở Tầng Mã Nguồn (Zero-Leak Data Guard)
+1. **Lọc dữ liệu tự động ở tầng Database (Query-Level Scope Guard):**  
+   Khi người dùng có vai trò `ROLE_TAX_ACCOUNTANT` gửi yêu cầu lấy dữ liệu doanh thu hoặc tồn kho, Drizzle ORM tự động nối thêm điều kiện `WHERE fiscal_scope = 'OFFICIAL_TAX'`. Kế toán thuế dù có tìm cách soi Network Tab hay kiểm tra API response cũng không thể nhìn thấy bất kỳ dấu vết nào của các giao dịch nội bộ.
+2. **Khóa API Endpoint (Endpoint Authorization Middleware):**  
+   Mọi API truy vấn báo cáo tài chính quản trị tổng thể đều kiểm tra token: nếu vai trò không phải `ROLE_OWNER`, server lập tức phản hồi mã lỗi `403 Forbidden`.
+
+---
+
+## 28. Kiến Trúc Sidebar Dọc & Bảng Quản Trị Toàn Cảnh (Executive Master Dashboard)
+
+### 28.1. Cấu Trúc Menu Điều Hướng Dọc Bên Trái (Left Vertical Sidebar Navigation)
+Để người quản lý và nhân viên bao quát toàn bộ bức tranh vận hành một cách trực quan, hệ thống sử dụng bố cục **Sidebar Dọc Hiện Đại**:
+
+```mermaid
+graph TD
+    A["Sidebar Dọc Bên Trái (formapubli OS Navigation)"] --> B1["📊 1. Bảng Quản Trị Toàn Cảnh (Executive Dashboard)"]
+    A --> B2["🛒 2. Quầy Thu Ngân Bán Sách (POS Speed Checkout)"]
+    A --> B3["📦 3. Kho Hàng & Thẻ Kho (WMS Logistics & Ledger)"]
+    A --> B4["💰 4. Doanh Số & Sổ Kép (Sales & Fiscal Analytics)"]
+    A --> B5["🤝 5. Đối Tác & Kênh Sỉ (Partners & B2B Channels)"]
+    A --> B6["👥 6. Độc Giả & Gói Mùa (Customers CRM & Bundles)"]
+    A --> B7["⚙️ 7. Phân Quyền & Hệ Thống (User Roles & Audit Log)"]
+```
+
+- **Đầu trang Sidebar (Header):**
+  - Logo formapubli OS.
+  - Thông tin người dùng đăng nhập & Badge hiển thị Vai trò hiện tại (Ví dụ: `CHỦ QUẢN LÝ - SUPER ADMIN` màu tím hoặc `THU NGÂN - CASHIER` màu xanh).
+  - Bộ chọn nhanh Kho đang làm việc (Kho 1 Âu Cơ / Kho 3 Hội Chợ).
+- **Thân Sidebar (Navigation Items):**
+  - **1. Bảng Quản Trị Toàn Cảnh:** Điểm chạm trung tâm của Chủ doanh nghiệp.
+  - **2. Quầy Thu Ngân POS:** Chế độ bán hàng siêu tốc, giỏ hàng, phím tắt, rớt mạng offline.
+  - **3. Kho Hàng & Thẻ Kho:** Ma trận 3 kho, thẻ kho bất biến, lập phiếu nhập/xuất/chuyển kho.
+  - **4. Doanh Số & Sổ Kép:** Nhật ký đơn hàng, công tắc chuyển đổi góc nhìn Sổ Thuế vs Sổ Quản Trị Thực Tế.
+  - **5. Đối Tác & Kênh Sỉ:** Quản lý danh bạ đầu nậu Đinh Lễ, nhà in, mức chiết khấu.
+  - **6. Độc Giả & Gói Mùa:** Quản lý độc giả thân thiết, các gói đăng ký sách mùa Xuân/Hạ/Thu/Đông.
+  - **7. Phân Quyền & Hệ Thống:** Quản trị tài khoản nhân sự, phân quyền RBAC, nhật ký thao tác (Audit Trail).
+- **Chân trang Sidebar (Footer):**
+  - Trạng thái kết nối Cloudflare D1 (Xanh lá: Online Sync | Vàng: Offline Mode).
+  - Nút thu gọn Sidebar (Collapse toggle) để mở rộng tối đa diện tích làm việc.
+
+### 28.2. Thiết Kế Bảng Quản Trị Toàn Cảnh (The Executive Master Dashboard)
+Màn hình này cung cấp **Bức Tranh Toàn Cảnh Vận Hành Thực Tế** trong một nháy mắt:
+1. **Hàng Thẻ Chỉ Số Trọng Yếu (Top KPI Metric Cards):**
+   - **Doanh Thu Thực Hôm Nay:** Tổng tiền thực thu (kèm so sánh % với ngày hôm trước).
+   - **Doanh Thu Kê Khai Thuế:** Doanh số hóa đơn điện tử chính thức trong tháng.
+   - **Tổng Tồn Kho Vật Lý:** Tổng số cuốn sách còn lại trên giá kệ của cả 3 kho (Âu Cơ, Quỳnh Mai, Hội Chợ).
+   - **Đơn Hàng Trong Ngày:** Số lượng đơn bán lẻ + đơn bán sỉ đầu nậu đã chốt.
+2. **Khu Vực Cảnh Báo Vận Hành Tức Thì (Real-Time Operational Alerts):**
+   - **Cảnh báo Sắp Hết Sách (Low-Stock Alerts):** Liệt kê các đầu sách có số lượng tồn kho vật lý $< 15$ cuốn để kịp thời lên kế hoạch tái bản hoặc chuyển hàng từ Kho tổng Quỳnh Mai về Kho 1 Âu Cơ.
+   - **Cảnh báo Đơn Chờ Sync:** Số lượng đơn hàng bán offline tại hội chợ chưa được đẩy lên máy chủ đám mây.
+3. **Biểu Đồ Luồng Tiền & Cơ Cấu Kênh Bán (Cash Flow & Channel Breakdown):**
+   - Biểu đồ phân bổ doanh thu theo hình thức: Khách lẻ hội chợ vs Đại lý/Đầu nậu sỉ vs Doanh nghiệp xuất VAT.
+   - Biểu đồ tỷ trọng thanh toán: Tiền mặt trao tay vs Chuyển khoản ngân hàng.
+
+### 28.3. Khả Năng Thích Ứng Đa Thiết Bị (Responsive Behavior)
+- **Trên Màn Hình Desktop / Laptop (Quầy Âu Cơ):**  
+  Sidebar nằm cố định bên trái (chiều rộng 260px), nội dung dashboard hiển thị dạng lưới đa cột rộng rãi. Có nút thu gọn thành thanh icon (64px).
+- **Trên Máy Tính Bảng / Điện Thoại Cảm Ứng (Nhân viên tại Hội Chợ):**  
+  Sidebar tự động thu gọn thành Drawer ẩn. Người dùng chỉ cần chạm vào biểu tượng Menu ☰ ở góc trên bên trái, thanh điều hướng sẽ trượt ra mượt mà từ cạnh trái màn hình với các nút bấm kích thước lớn chuẩn cảm ứng ($\ge 44	ext{px}$).

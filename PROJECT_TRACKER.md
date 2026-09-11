@@ -70,6 +70,15 @@
 
 ---
 
+
+#### 🔹 [Mã: ENG-20260911-06] Kiến Trúc Sidebar Dọc, Dashboard Quản Trị & Ma Trận Phân Quyền RBAC 5 Roles
+- **Nhánh:** `feat/sales-order-engine-and-dual-ledger`
+- **Nội dung:**
+  - Bổ sung Chương 27 vào Master Blueprint: Ma trận phân quyền 5 nhóm người dùng (`ROLE_OWNER`, `ROLE_MANAGER`, `ROLE_CASHIER`, `ROLE_WAREHOUSE`, `ROLE_TAX_ACCOUNTANT`).
+  - Cơ chế bảo vệ chống rò rỉ dữ liệu (Query-level Scope Guard): Kế toán thuế chỉ xem số liệu hóa đơn điện tử VAT (`OFFICIAL_TAX`), chủ doanh nghiệp xem toàn cảnh thực tế (`INTERNAL_MANAGEMENT` + `OFFICIAL_TAX`), thu ngân không thấy doanh thu tổng.
+  - Bổ sung Chương 28 vào Master Blueprint: Kiến trúc Menu Sidebar dọc bên trái (7 module điều hướng), thiết kế Bảng Quản trị Toàn cảnh (KPI Doanh thu, Cảnh báo sắp hết sách, Cơ cấu tiền mặt/chuyển khoản).
+  - Tối ưu tương thích đa thiết bị: Cố định 260px trên Desktop màn hình ngang, tự động thu gọn dạng Drawer cảm ứng trên điện thoại/máy tính bảng.
+
 ## 3. Các Hạng Mục Tiếp Theo & Kế Hoạch Triển Khai (Roadmap)
 
 ### 📌 Baby-Step 2 (Kế hoạch trước mắt): Giao diện Quầy Thu Ngân Bán Sách (POS UI)
