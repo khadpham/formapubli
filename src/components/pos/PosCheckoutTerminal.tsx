@@ -39,6 +39,7 @@ import {
   OfflineOrder,
 } from '@/lib/offline-db';
 import { UserRole } from '@/lib/roles';
+import { printThermalReceipt, PaperPreset } from '@/lib/thermalReceipt';
 
 interface BookItem {
   id: string;
@@ -92,7 +93,11 @@ export function PosCheckoutTerminal({
   const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [isScrolledPast, setIsScrolledPast] = useState(false);
+  const [paperPreset, setPaperPreset] = useState<PaperPreset>('K80');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const magnetInputRef = useRef<HTMLInputElement>(null);
 
   // Micro giọng nói tiếng Việt đồng bộ
   const {
@@ -203,6 +208,29 @@ export function PosCheckoutTerminal({
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Lắng nghe cuộn trang để kích hoạt thanh tìm kiếm nam châm (Magnet Bar)
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!searchContainerRef.current) return;
+      const rect = searchContainerRef.current.getBoundingClientRect();
+      setIsScrolledPast(rect.bottom < 0);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Tự động focus ô tìm kiếm tương ứng khi kích hoạt Micro giọng nói
+  useEffect(() => {
+    if (isListening) {
+      if (isScrolledPast && magnetInputRef.current) {
+        magnetInputRef.current.focus();
+      } else if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }
+  }, [isListening, isScrolledPast]);
 
   // Xử lý khi Súng Quét Mã Vạch Camera đọc được mã ISBN-13
   const handleBarcodeScan = (scannedCode: string) => {
@@ -521,6 +549,9 @@ export function PosCheckoutTerminal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen]);
 
+  // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT hoặc ĐANG BẬT MICRO GIỌNG NÓI)
+  const showMagnetBar = isScrolledPast && (searchQuery.trim().length > 0 || isInputFocused || isListening);
+
   return (
     <div className="space-y-6">
       {/* Top Header Controls */}
@@ -598,12 +629,98 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
+      {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR CHO POS) */}
+      {showMagnetBar && (
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
+            isListening
+              ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
+              : 'bg-white/95 border-emerald-300 ring-4 ring-emerald-500/10 shadow-emerald-600/10'
+          }`}
+        >
+          <Search
+            className={`w-5 h-5 shrink-0 transition-colors ${
+              isListening ? 'text-rose-600 animate-pulse' : 'text-emerald-600'
+            }`}
+          />
+          <input
+            ref={magnetInputRef}
+            type="text"
+            placeholder={
+              isListening
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+            }
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
+            className={`flex-1 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
+              isListening
+                ? 'text-rose-950 font-semibold placeholder:text-rose-600'
+                : 'text-slate-900 placeholder-slate-400'
+            }`}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                magnetInputRef.current?.focus();
+              }}
+              className="p-1 hover:bg-slate-200/60 rounded-full text-slate-400 hover:text-slate-600 transition"
+              title="Xóa tìm kiếm (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Nút Quét Barcode Trên Magnet Bar */}
+          <button
+            type="button"
+            onClick={() => setIsScannerOpen(true)}
+            className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
+            title="Bật Súng Quét Mã Vạch Camera 0 Đồng (Alt + Shift + C)"
+          >
+            <Camera className="w-4 h-4" />
+          </button>
+
+          {/* Micro Button trên Magnet Bar */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={
+              isListening
+                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
+            }
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+              isListening
+                ? 'bg-rose-600 text-white shadow-rose-600/40 ring-2 ring-rose-400 animate-pulse'
+                : 'bg-emerald-600 text-white hover:bg-emerald-700'
+            }`}
+          >
+            {isListening ? (
+              <>
+                <MicOff className="w-4 h-4 animate-bounce" />
+                <span>Đang nghe...</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4" />
+                <span className="hidden sm:inline">Nói</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Main Split-View: Left Products (2 Cols) + Right Cart (1 Col) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Side: Search & Book Catalog Selection */}
         <div className="lg:col-span-7 space-y-4">
           {/* Search Box with Voice Mic */}
-          <div className="relative">
+          <div ref={searchContainerRef} className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-5 h-5" />
             </div>
@@ -1080,141 +1197,51 @@ export function PosCheckoutTerminal({
                 : '✅ Thẻ kho vật lý đã được khấu trừ tức thì. Kho máy = Kho kệ 100%!'}
             </p>
 
+            {/* Paper Size Preset Switcher (K80 vs K57) */}
+            <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">Khổ giấy in nhiệt:</span>
+              <div className="inline-flex rounded-lg bg-slate-200 p-0.5 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setPaperPreset('K80')}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    paperPreset === 'K80'
+                      ? 'bg-white text-slate-900 shadow-sm font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  K80 (80mm tiêu chuẩn)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaperPreset('K57')}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    paperPreset === 'K57'
+                      ? 'bg-white text-slate-900 shadow-sm font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  K57 (57mm nhỏ gọn)
+                </button>
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <button
-                onClick={() => window.print()}
-                className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+                type="button"
+                onClick={() => printThermalReceipt(completedOrder, paperPreset, currentRole)}
+                className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                In Phiếu Giao Hàng (K80)
+                In Biên Lai ({paperPreset})
               </button>
               <button
+                type="button"
                 onClick={() => setCompletedOrder(null)}
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs"
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-xl text-xs shadow-sm transition-all cursor-pointer"
               >
                 Tạo Đơn Tiếp Theo
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dedicated 80mm POS Thermal Receipt for K80/Continuous Roll Printing */}
-      {completedOrder && (
-        <div id="thermal-receipt-print" className="hidden print:block text-black bg-white">
-          <div className="text-[12px] leading-tight font-mono w-[72mm] max-w-[72mm] mx-auto py-1">
-            {/* Header */}
-            <div className="text-center pb-2 border-b border-dashed border-black">
-              <h1 className="text-sm font-black uppercase tracking-wider">FORMAPUBLI OS</h1>
-              <p className="text-[10px]">HỆ THỐNG XUẤT BẢN & PHÁT HÀNH SÁCH</p>
-              <p className="text-[10px]">Hotline: 098.xxx.xxxx | Hà Nội</p>
-              <div className="my-1.5 border-t border-black"></div>
-              <h2 className="text-xs font-black uppercase">PHIẾU BÁN HÀNG & GIAO KHO</h2>
-              <p className="text-[10px] italic">
-                {completedOrder.fiscalScope === 'OFFICIAL_TAX'
-                  ? '(Hóa đơn thương mại / Kê khai VAT)'
-                  : '(Phiếu xuất kho & thanh toán nội bộ)'}
-              </p>
-            </div>
-
-            {/* Order Info */}
-            <div className="py-2 border-b border-dashed border-black text-[11px] space-y-1">
-              <div className="flex justify-between">
-                <span>Số phiếu:</span>
-                <span className="font-bold">{completedOrder.orderCode}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Thời gian:</span>
-                <span>{completedOrder.date || new Date().toLocaleString('vi-VN')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Thu ngân:</span>
-                <span>{completedOrder.cashierId || `User-${currentRole}`}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Khách hàng:</span>
-                <span className="font-bold">{completedOrder.customerName || 'Khách vãng lai'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Kho xuất:</span>
-                <span>
-                  {completedOrder.warehouseId === 'wh-au-co'
-                    ? 'Kho 1 - Âu Cơ'
-                    : completedOrder.warehouseId === 'wh-du-phong'
-                    ? 'Kho 3 - Hội Chợ'
-                    : 'Kho 2 - Quỳnh Mai'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Hình thức TT:</span>
-                <span className="font-semibold">
-                  {completedOrder.paymentMethod === 'CASH'
-                    ? 'Tiền mặt'
-                    : completedOrder.paymentMethod === 'BANK_TRANSFER'
-                    ? 'Chuyển khoản'
-                    : 'Mã QR'}
-                </span>
-              </div>
-            </div>
-
-            {/* Items Table */}
-            <div className="py-2 border-b border-dashed border-black">
-              <div className="grid grid-cols-12 font-bold text-[11px] pb-1 border-b border-black">
-                <span className="col-span-7">Tên sách / SKU</span>
-                <span className="col-span-2 text-center">SL</span>
-                <span className="col-span-3 text-right">T.Tiền</span>
-              </div>
-              <div className="space-y-1.5 pt-1.5">
-                {completedOrder.items?.map((item: any, idx: number) => {
-                  const unitPrice = item.coverPrice || item.unitCoverPrice || 0;
-                  const itemTotal = unitPrice * item.quantity;
-                  return (
-                    <div key={idx} className="text-[11px]">
-                      <div className="font-semibold leading-tight">{item.title}</div>
-                      <div className="grid grid-cols-12 text-[10px] text-gray-800 pt-0.5">
-                        <span className="col-span-7 font-mono">[{item.code}]</span>
-                        <span className="col-span-2 text-center font-bold">x{item.quantity}</span>
-                        <span className="col-span-3 text-right font-mono">
-                          {itemTotal.toLocaleString('vi-VN')} đ
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Totals */}
-            <div className="py-2 border-b border-dashed border-black text-[11px] space-y-1">
-              <div className="flex justify-between">
-                <span>Tổng số lượng:</span>
-                <span className="font-bold">{completedOrder.totalQuantity} cuốn</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Tổng tiền bìa:</span>
-                <span className="font-mono">{(completedOrder.subtotal || 0).toLocaleString('vi-VN')} đ</span>
-              </div>
-              {completedOrder.discountAmount > 0 && (
-                <div className="flex justify-between">
-                  <span>Chiết khấu ({Math.round((completedOrder.discountRate || 0) * 100)}%):</span>
-                  <span className="font-mono">-{(completedOrder.discountAmount || 0).toLocaleString('vi-VN')} đ</span>
-                </div>
-              )}
-              <div className="flex justify-between text-xs font-bold pt-1.5 border-t border-black text-black">
-                <span className="uppercase">TỔNG THỰC THU:</span>
-                <span className="font-mono text-sm font-black">
-                  {(completedOrder.finalAmount || 0).toLocaleString('vi-VN')} đ
-                </span>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="pt-2 text-center text-[10px] space-y-1">
-              <p className="font-medium">Quý khách vui lòng kiểm tra sách trước khi rời quầy.</p>
-              <p className="font-bold uppercase tracking-wider">CẢM ƠN QUÝ KHÁCH & HẸN GẶP LẠI!</p>
-              <p className="text-[9px] text-gray-600 pt-1">
-                {completedOrder.orderCode} • {completedOrder.isOffline ? 'OFFLINE_PENDING_SYNC' : 'SYNCED'}
-              </p>
             </div>
           </div>
         </div>

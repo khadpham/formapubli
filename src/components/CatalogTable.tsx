@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, BookOpen, Warehouse, CheckCircle2, AlertCircle, Mic, MicOff, X } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
@@ -27,6 +27,12 @@ interface CatalogTableProps {
 
 export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: CatalogTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isScrolledPast, setIsScrolledPast] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const magnetInputRef = useRef<HTMLInputElement>(null);
 
   // Voice Search Hook
   const {
@@ -40,6 +46,65 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
   } = useVoiceSearch((text) => {
     setSearchTerm(text);
   });
+
+  // Lắng nghe cuộn trang
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!searchContainerRef.current) return;
+      const rect = searchContainerRef.current.getBoundingClientRect();
+      setIsScrolledPast(rect.bottom < 0);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Tự động focus input tương ứng khi kích hoạt giọng nói
+  useEffect(() => {
+    if (isListening) {
+      if (isScrolledPast && magnetInputRef.current) {
+        magnetInputRef.current.focus();
+      } else if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }
+  }, [isListening, isScrolledPast]);
+
+  // Phím tắt bàn phím
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      const isTypingInInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
+
+      if (e.key === '/' && !isTypingInInput) {
+        e.preventDefault();
+        if (isScrolledPast && magnetInputRef.current) {
+          magnetInputRef.current.focus();
+          magnetInputRef.current.select();
+        } else if (searchInputRef.current) {
+          searchInputRef.current.focus();
+          searchInputRef.current.select();
+        }
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (searchTerm) {
+          setSearchTerm('');
+        }
+        return;
+      }
+
+      if (e.altKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
+        e.preventDefault();
+        toggleListening();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchTerm, isScrolledPast, toggleListening]);
 
   const filteredBooks = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -65,13 +130,92 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
     });
   }, [searchTerm, initialBooks]);
 
+  const showMagnetBar = isScrolledPast && (searchTerm.trim().length > 0 || isInputFocused || isListening);
+
   return (
     <div className="space-y-6">
+      {/* THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR) */}
+      {showMagnetBar && (
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
+            isListening
+              ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
+              : 'bg-white/95 border-indigo-200 ring-4 ring-indigo-500/10 shadow-indigo-600/10'
+          }`}
+        >
+          <Search
+            className={`w-5 h-5 shrink-0 transition-colors ${
+              isListening ? 'text-rose-600 animate-pulse' : 'text-indigo-600'
+            }`}
+          />
+          <input
+            ref={magnetInputRef}
+            type="text"
+            placeholder={
+              isListening
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+            }
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
+            className={`flex-1 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
+              isListening
+                ? 'text-rose-950 font-semibold placeholder:text-rose-600'
+                : 'text-slate-900 placeholder-slate-400'
+            }`}
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                magnetInputRef.current?.focus();
+              }}
+              className="p-1 hover:bg-slate-200/60 rounded-full text-slate-400 hover:text-slate-600 transition"
+              title="Xóa tìm kiếm (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Micro Button trên Magnet Bar */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={
+              isListening
+                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
+            }
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+              isListening
+                ? 'bg-rose-600 text-white shadow-rose-600/40 ring-2 ring-rose-400 animate-pulse'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+          >
+            {isListening ? (
+              <>
+                <MicOff className="w-4 h-4 animate-bounce" />
+                <span>Đang nghe...</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4" />
+                <span className="hidden sm:inline">Nói</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Search Input Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+      <div ref={searchContainerRef} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
         <div className="relative flex items-center">
           <Search className="absolute left-3.5 top-3 h-5 w-5 text-slate-400" />
           <input
+            ref={searchInputRef}
             type="text"
             placeholder={
               isListening
@@ -80,6 +224,8 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
             }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
             className={`w-full pl-11 pr-28 py-2.5 text-sm border rounded-lg outline-none transition-all font-medium ${
               isListening
                 ? 'border-rose-500 ring-2 ring-rose-300 bg-rose-50/20 text-slate-900'
