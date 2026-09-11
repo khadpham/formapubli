@@ -51,6 +51,9 @@ npm run db:push
 # Nạp toàn bộ 81 đầu sách và 3 kho vật lý vào CSDL
 npm run db:seed
 
+# Chạy kiểm thử tự động Sổ Cái Bất Biến & Luân chuyển 3 Kho (6 kịch bản kiểm thử)
+npx tsx scripts/test-inventory.ts
+
 # Khởi chạy giao diện thử nghiệm
 npm run dev
 ```
