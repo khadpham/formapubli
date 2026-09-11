@@ -22,10 +22,22 @@ import {
   X,
   Layers,
   Camera,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  CloudUpload,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
+import { generateUUIDv7 } from '@/lib/uuidv7';
+import {
+  saveOfflineOrder,
+  getPendingOfflineOrders,
+  removeOfflineOrder,
+  getPendingOrdersCount,
+  OfflineOrder,
+} from '@/lib/offline-db';
 import { UserRole } from '@/lib/roles';
 
 interface BookItem {
@@ -76,12 +88,113 @@ export function PosCheckoutTerminal({
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Micro giọng nói tiếng Việt đồng bộ
   const { isListening, isSupported, toggleListening } = useVoiceSearch((text) => {
     setSearchQuery(text);
   });
+
+  // Xử lý đồng bộ các đơn hàng ngoại tuyến lên máy chủ
+  const syncPendingOrders = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const pending = await getPendingOfflineOrders();
+      if (pending.length === 0) {
+        setPendingOfflineCount(0);
+        setIsSyncing(false);
+        return;
+      }
+      let successCount = 0;
+      for (const order of pending) {
+        try {
+          const res = await fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: order.id,
+              orderCode: order.orderCode,
+              idempotencyKey: order.idempotencyKey,
+              createdAt: order.createdAt,
+              warehouseId: order.warehouseId,
+              channel: order.channel,
+              customerName: order.customerName,
+              discountRate: order.discountRate,
+              paymentMethod: order.paymentMethod,
+              fiscalScope: order.fiscalScope,
+              cashierId: order.cashierId,
+              note: order.note,
+              items: order.items.map((it) => ({
+                editionId: it.editionId,
+                quantity: it.quantity,
+                unitCoverPrice: it.unitCoverPrice,
+              })),
+            }),
+          });
+          const resData = await res.json();
+          if (resData.success) {
+            await removeOfflineOrder(order.id);
+            successCount++;
+          } else {
+            console.error('Lỗi khi đồng bộ đơn', order.orderCode, resData.error);
+            break;
+          }
+        } catch (err) {
+          console.error('Mạng gián đoạn trong khi sync:', err);
+          break;
+        }
+      }
+      const remaining = await getPendingOrdersCount();
+      setPendingOfflineCount(remaining);
+      if (successCount > 0) {
+        setSyncToast(`🎉 Đã đồng bộ thành công ${successCount} đơn hàng ngoại tuyến lên máy chủ!`);
+        setTimeout(() => setSyncToast(null), 4000);
+        if (onOrderCompleted) onOrderCompleted();
+      }
+    } catch (err: any) {
+      console.error('Lỗi đồng bộ:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Lắng nghe sự kiện Online/Offline của mạng và đếm đơn chờ sync
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    setIsOnline(navigator.onLine);
+
+    const checkCount = async () => {
+      const count = await getPendingOrdersCount();
+      setPendingOfflineCount(count);
+    };
+    checkCount();
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncToast('🟢 Đã có kết nối mạng trở lại! Đang tự động đồng bộ đơn hàng...');
+      syncPendingOrders();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncToast('🔴 Mất kết nối mạng! Chuyển sang chế độ bán hàng ngoại tuyến (Offline-First).');
+      setTimeout(() => setSyncToast(null), 5000);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Xử lý khi Súng Quét Mã Vạch Camera đọc được mã ISBN-13
   const handleBarcodeScan = (scannedCode: string) => {
@@ -201,7 +314,7 @@ export function PosCheckoutTerminal({
   const finalAmount = subtotal - discountAmount;
   const totalCopies = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Xử lý nộp đơn bán hàng
+  // Xử lý nộp đơn bán hàng (Offline-First: Lưu IndexedDB khi mất mạng, Sync khi có mạng)
   const handleCheckout = async () => {
     if (cart.length === 0) {
       setErrorMessage('Giỏ hàng trống! Vui lòng chọn ít nhất 1 cuốn sách.');
@@ -211,18 +324,104 @@ export function PosCheckoutTerminal({
     setIsSubmitting(true);
     setErrorMessage(null);
 
+    const orderUuid = generateUUIDv7();
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const shortSuffix = orderUuid.slice(-5).toUpperCase();
+    const channel = selectedWarehouseId === 'wh-du-phong' ? 'FAIR_EVENT' : 'RETAIL_OFFICE';
+    const cashierId = `User-${currentRole}`;
+    const orderTimestamp = new Date().toISOString();
+    const idempotencyKey = `idem-${orderUuid}`;
+
+    // Helper lưu ngoại tuyến vào IndexedDB
+    const fallbackToOffline = async (reason?: string) => {
+      try {
+        const offlineOrderCode = `OFF-${dateStr}-${shortSuffix}`;
+        const offlineOrder: OfflineOrder = {
+          id: orderUuid,
+          orderCode: offlineOrderCode,
+          idempotencyKey,
+          warehouseId: selectedWarehouseId,
+          customerName,
+          channel,
+          discountRate,
+          paymentMethod,
+          fiscalScope,
+          cashierId,
+          note,
+          items: cart.map((c) => ({
+            editionId: c.editionId,
+            code: c.code,
+            title: c.title,
+            quantity: c.quantity,
+            unitCoverPrice: c.coverPrice,
+          })),
+          subtotal,
+          discountAmount,
+          finalAmount,
+          totalQuantity: totalCopies,
+          createdAt: orderTimestamp,
+          syncStatus: 'PENDING',
+        };
+
+        await saveOfflineOrder(offlineOrder);
+        const count = await getPendingOrdersCount();
+        setPendingOfflineCount(count);
+
+        setCompletedOrder({
+          id: orderUuid,
+          orderCode: offlineOrderCode,
+          warehouseId: selectedWarehouseId,
+          customerName,
+          fiscalScope,
+          subtotal,
+          discountAmount,
+          finalAmount,
+          totalQuantity: totalCopies,
+          items: [...cart],
+          discountRate,
+          paymentMethod,
+          date: new Date().toLocaleString('vi-VN'),
+          isOffline: true,
+        });
+
+        setCart([]);
+        setNote('');
+        setSyncToast(
+          reason
+            ? `⚠️ ${reason} Đơn đã lưu ngoại tuyến an toàn vào máy (IndexedDB).`
+            : `💾 Đã ghi nhận đơn ngoại tuyến [${offlineOrderCode}]. Hệ thống sẽ tự động đồng bộ khi có mạng!`
+        );
+        setTimeout(() => setSyncToast(null), 6000);
+      } catch (err: any) {
+        setErrorMessage('Lỗi lưu đơn hàng ngoại tuyến: ' + err.message);
+      }
+    };
+
+    // A. Nếu trình duyệt đang rớt mạng: Lưu vào IndexedDB ngay lập tức
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await fallbackToOffline();
+      setIsSubmitting(false);
+      return;
+    }
+
+    // B. Nếu có mạng: Thử gửi lên Máy chủ qua REST API
     try {
+      const orderCode = `ORD-${dateStr}-${shortSuffix}`;
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: orderUuid,
+          orderCode,
+          idempotencyKey,
+          createdAt: orderTimestamp,
           warehouseId: selectedWarehouseId,
-          channel: selectedWarehouseId === 'wh-du-phong' ? 'FAIR_EVENT' : 'RETAIL_OFFICE',
+          channel,
           customerName,
           discountRate,
           paymentMethod,
           fiscalScope,
-          cashierId: `User-${currentRole}`,
+          cashierId,
           note,
           items: cart.map((item) => ({
             editionId: item.editionId,
@@ -242,6 +441,7 @@ export function PosCheckoutTerminal({
         discountRate,
         paymentMethod,
         date: new Date().toLocaleString('vi-VN'),
+        isOffline: false,
       });
 
       // Xóa giỏ hàng
@@ -249,7 +449,12 @@ export function PosCheckoutTerminal({
       setNote('');
       if (onOrderCompleted) onOrderCompleted();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
+      // Nếu rớt mạng bất ngờ giữa chừng hoặc fetch thất bại
+      if (err.name === 'TypeError' || err.message?.includes('fetch') || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        await fallbackToOffline('Mất kết nối mạng đột ngột!');
+      } else {
+        setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -322,23 +527,68 @@ export function PosCheckoutTerminal({
           </p>
         </div>
 
-        {/* Warehouse Selector */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <span className="text-xs font-bold text-slate-500 shrink-0">Kho xuất bán:</span>
-          <select
-            value={selectedWarehouseId}
-            onChange={(e) => {
-              setSelectedWarehouseId(e.target.value);
-              setCart([]); // Reset giỏ khi đổi kho để đảm bảo tồn kho
-            }}
-            className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer min-h-[44px]"
-          >
-            <option value="wh-au-co">Kho 1 - Âu Cơ (Văn phòng chính)</option>
-            <option value="wh-du-phong">Kho 3 - Hội Chợ (Gian hàng sự kiện)</option>
-            <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
-          </select>
+        {/* Network Status & Warehouse Selector */}
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {/* Online/Offline Status Indicator */}
+          <div className="flex items-center gap-2">
+            {isOnline ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Trực tuyến</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse">
+                <WifiOff className="w-3.5 h-3.5 text-amber-600" />
+                <span>Ngoại tuyến (Offline)</span>
+              </span>
+            )}
+
+            {/* Offline Pending Orders Badge & Sync Button */}
+            {pendingOfflineCount > 0 && (
+              <button
+                type="button"
+                onClick={syncPendingOrders}
+                disabled={isSyncing || !isOnline}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
+                title={isOnline ? "Bấm để đồng bộ đơn hàng lên máy chủ ngay" : "Cần có mạng internet để đồng bộ"}
+              >
+                <CloudUpload className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Đang sync...' : `${pendingOfflineCount} đơn chờ`}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Warehouse Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 shrink-0">Kho:</span>
+            <select
+              value={selectedWarehouseId}
+              onChange={(e) => {
+                setSelectedWarehouseId(e.target.value);
+                setCart([]); // Reset giỏ khi đổi kho để đảm bảo tồn kho
+              }}
+              className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer min-h-[40px]"
+            >
+              <option value="wh-au-co">Kho 1 - Âu Cơ (Văn phòng chính)</option>
+              <option value="wh-du-phong">Kho 3 - Hội Chợ (Gian hàng sự kiện)</option>
+              <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Toast thông báo mạng / Đồng bộ */}
+      {syncToast && (
+        <div className="p-3 bg-slate-900 text-slate-100 border border-slate-700 text-xs font-semibold rounded-2xl flex items-center justify-between shadow-lg animate-slide-up">
+          <div className="flex items-center gap-2">
+            <CloudUpload className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{syncToast}</span>
+          </div>
+          <button onClick={() => setSyncToast(null)} className="text-slate-400 hover:text-white p-1 ml-2">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Main Split-View: Left Products (2 Cols) + Right Cart (1 Col) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -700,7 +950,7 @@ export function PosCheckoutTerminal({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-base">
                 <CheckCircle2 className="w-6 h-6" />
-                <span>Bán Hàng Thành Công!</span>
+                <span>{completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến (Offline)!' : 'Bán Hàng Thành Công!'}</span>
               </div>
               <button
                 onClick={() => setCompletedOrder(null)}
@@ -710,10 +960,24 @@ export function PosCheckoutTerminal({
               </button>
             </div>
 
+            {completedOrder.isOffline && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs font-medium space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                  <WifiOff className="w-4 h-4 text-amber-600" />
+                  <span>Đơn hàng ngoại tuyến (Chưa sync lên server)</span>
+                </div>
+                <p className="text-[11px] text-amber-700 leading-relaxed">
+                  Dữ liệu đã lưu an toàn vào IndexedDB với khóa thời gian UUID v7. Hệ thống sẽ tự động đồng bộ và khấu trừ kho máy chủ ngay khi có mạng trở lại.
+                </p>
+              </div>
+            )}
+
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs font-mono">
               <div className="flex justify-between font-bold text-slate-900">
                 <span>MÃ ĐƠN:</span>
-                <span className="text-indigo-600">{completedOrder.orderCode}</span>
+                <span className={completedOrder.isOffline ? 'text-amber-600' : 'text-indigo-600'}>
+                  {completedOrder.orderCode}
+                </span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Khách hàng:</span>
@@ -721,7 +985,13 @@ export function PosCheckoutTerminal({
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Kho xuất:</span>
-                <span>{completedOrder.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : 'Kho Hội Chợ'}</span>
+                <span>
+                  {completedOrder.warehouseId === 'wh-au-co'
+                    ? 'Kho Âu Cơ'
+                    : completedOrder.warehouseId === 'wh-du-phong'
+                    ? 'Kho Hội Chợ'
+                    : 'Kho Quỳnh Mai'}
+                </span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Phân loại sổ:</span>
@@ -740,7 +1010,9 @@ export function PosCheckoutTerminal({
             </div>
 
             <p className="text-[11px] text-emerald-700 text-center font-medium bg-emerald-50 py-1.5 rounded-lg border border-emerald-200">
-              ✅ Thẻ kho vật lý đã được khấu trừ tức thì. Kho máy = Kho kệ 100%!
+              {completedOrder.isOffline
+                ? '💾 Đã chốt bill ngoại tuyến thành công. Có thể in phiếu giao hàng ngay!'
+                : '✅ Thẻ kho vật lý đã được khấu trừ tức thì. Kho máy = Kho kệ 100%!'}
             </p>
 
             <div className="flex gap-2">

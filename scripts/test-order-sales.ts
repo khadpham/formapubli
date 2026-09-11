@@ -82,7 +82,7 @@ async function runTests() {
 
   console.log(`✅ Tạo đơn thành công: [${retailOrder.orderCode}]`);
   console.log(`   - Tổng giá bìa: ${retailOrder.subtotal.toLocaleString('vi-VN')} đ`);
-  console.log(`   - Tiền chiết khấu (10%): ${retailOrder.discountAmount.toLocaleString('vi-VN')} đ`);
+  console.log(`   - Tiền chiết khấu (10%): ${(retailOrder.discountAmount || 0).toLocaleString('vi-VN')} đ`);
   console.log(`   - Thực thu: ${retailOrder.finalAmount.toLocaleString('vi-VN')} đ`);
 
   const balAfterRetail = await InventoryService.getBalance(bookA.id, whHoiCho, 'NEW');
@@ -108,7 +108,7 @@ async function runTests() {
 
   console.log(`✅ Tạo đơn sỉ thành công: [${wholesaleOrder.orderCode}]`);
   console.log(`   - Tổng giá bìa: ${wholesaleOrder.subtotal.toLocaleString('vi-VN')} đ`);
-  console.log(`   - Tiền chiết khấu (40%): ${wholesaleOrder.discountAmount.toLocaleString('vi-VN')} đ`);
+  console.log(`   - Tiền chiết khấu (40%): ${(wholesaleOrder.discountAmount || 0).toLocaleString('vi-VN')} đ`);
   console.log(`   - Thực thu: ${wholesaleOrder.finalAmount.toLocaleString('vi-VN')} đ`);
 
   const balAfterWholesaleA = await InventoryService.getBalance(bookA.id, whAuCo, 'NEW');

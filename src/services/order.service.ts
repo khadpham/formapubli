@@ -10,6 +10,9 @@ export interface OrderItemInput {
 }
 
 export interface CreateOrderParams {
+  id?: string;
+  orderCode?: string;
+  createdAt?: string;
   warehouseId: string;
   channel?: 'FAIR_EVENT' | 'RETAIL_OFFICE' | 'WHOLESALE_PARTNER' | 'ONLINE';
   partnerId?: string;
@@ -60,6 +63,30 @@ export class OrderService {
 
     if (!items || items.length === 0) {
       throw new Error('Đơn hàng phải có ít nhất 1 đầu sách.');
+    }
+
+    // 0. Bảo vệ Idempotency (Tránh ghi trùng lặp khi Sync đơn Offline hoặc Retry)
+    if (params.idempotencyKey) {
+      const existing = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.idempotencyKey, params.idempotencyKey))
+        .limit(1);
+      if (existing.length > 0) {
+        return {
+          orderId: existing[0].id,
+          orderCode: existing[0].orderCode,
+          warehouseId: existing[0].warehouseId,
+          customerName: existing[0].customerName,
+          subtotal: existing[0].subtotal,
+          discountAmount: existing[0].discountAmount,
+          finalAmount: existing[0].finalAmount,
+          fiscalScope: existing[0].fiscalScope,
+          itemsCount: items.length,
+          totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
+          isDuplicate: true,
+        };
+      }
     }
 
     // 1. Kiểm tra tồn kho trước cho toàn bộ sản phẩm (Pre-flight Stock Check)
@@ -120,9 +147,10 @@ export class OrderService {
     // 4. Sinh mã đơn hàng và Idempotency Key
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderCode = `ORD-${dateStr}-${randomSuffix}`;
-    const orderId = `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const orderCode = params.orderCode || `ORD-${dateStr}-${randomSuffix}`;
+    const orderId = params.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const idempotencyKey = params.idempotencyKey || `idem-order-${orderId}`;
+    const createdAt = params.createdAt || new Date().toISOString();
 
     // 5. Ghi nhận Đơn hàng vào CSDL
     await db.insert(orders).values({
@@ -147,6 +175,7 @@ export class OrderService {
       cashierId,
       idempotencyKey,
       note,
+      createdAt,
     });
 
     // 6. Ghi nhận các dòng sản phẩm của đơn hàng

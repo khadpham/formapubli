@@ -12,7 +12,7 @@
 | :---: | :--- | :---: | :---: | :--- |
 | **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
-| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟡 **ĐANG THI CÔNG** | **50%** (3.1 & 3.2 Hoàn thành) | `feat/pwa-mobile-and-offline-pos` |
+| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
 | **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/boxset-bundles-and-consignment` |
 | **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/lean-ai-copilot-and-crm` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
@@ -140,6 +140,26 @@
   - Kiểm toán bảo toàn sổ cái `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
   - Biên dịch Next.js production build (`npm run build`): First Load JS chỉ 116 kB, **0 lỗi**.
 
+#### 🔹 [Mã: ENG-20260911-11] Động Cơ POS Ngoại Tuyến (Offline-First), Khóa UUID v7, Đồng Bộ Tự Động & Báo Cáo Doanh Số Đa Chiều
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - Xây dựng `src/lib/uuidv7.ts`: Thuật toán sinh UUID v7 chuẩn RFC 9562 với 48-bit timestamp và tính tăng đơn điệu (monotonic ordering), cho phép trích xuất mili-giây chuẩn xác.
+  - Xây dựng `src/lib/offline-db.ts`: Bộ đệm IndexedDB cục bộ (`formapubli_offline_db`) không phụ thuộc thư viện bên ngoài, zero-cost, lưu trữ an toàn đơn hàng ngoại tuyến.
+  - Tích hợp Offline-First vào `PosCheckoutTerminal.tsx`:
+    - Bán hàng bình thường khi mất mạng, tự động lưu IndexedDB với mã đơn `OFF-YYYYMMDD-XXXX`.
+    - Tự động phát hiện mạng trở lại qua sự kiện `online` và đồng bộ hàng loạt lên máy chủ.
+    - Huy hiệu mạng trực quan (`🟢 Trực tuyến` vs `🟡 Mất mạng (Chế độ Offline)`) kèm nút bấm `[ 🔄 Đồng bộ ngay ]`.
+    - Phiếu giao hàng thông minh nhận biết đơn ngoại tuyến và thông báo rõ ràng cho thu ngân.
+  - Bảo vệ Idempotency trong `OrderService.createOrder` và API `/api/orders`: Loại trừ hoàn toàn nguy cơ trùng đơn hoặc trừ thẻ kho hai lần khi sync lại.
+  - Nâng cấp `SalesLedgerView.tsx`:
+    - Bộ lọc thời gian đa chiều: Tất cả, Hôm nay, 7 ngày qua, Tháng này, Tùy chọn (Custom Range).
+    - Bộ lọc theo Kho xuất hàng: Toàn hệ thống, Kho 1 - Âu Cơ, Kho 3 - Hội Chợ, Kho 2 - Quỳnh Mai.
+    - Nút xuất file Excel/CSV chuẩn UTF-8 BOM hiển thị chuẩn xác 100% tiếng Việt có dấu.
+  - Bộ kiểm thử tự động `scripts/test-offline-engine.ts` vượt qua **9/9 test cases (100%)**.
+  - Kiểm thử quét mã vạch `scripts/test-barcode-engine.ts`: **7/7 test cases (100%)**.
+  - Kiểm toán tổng thể `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+  - Đóng gói Next.js production build (`npm run build`): **0 lỗi biên dịch, First Load JS chỉ 120 kB**.
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]
@@ -169,7 +189,7 @@
 
 ---
 
-### 🟡 Phase 3: Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync - [ĐANG THI CÔNG 50%]
+### 🟢 Phase 3: Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync - [ĐÃ HOÀN THÀNH 100%]
 *Mục tiêu: Đưa ứng dụng lên điện thoại/tablet của nhân viên bán hội chợ với chi phí thiết bị 0 đồng, bán hàng trơn tru kể cả khi rớt mạng 4-8 tiếng.*
 
 #### 📌 3.1. Đóng gói PWA Cài Đặt 1-Chạm (Progressive Web App Standalone) - [ĐÃ HOÀN THÀNH]
@@ -186,16 +206,18 @@
 - [x] Khóa 1.5s chống đúp mã và hỗ trợ quét liên tục nhiều cuốn sách (Continuous scanning mode).
 - [x] Bảng mã vạch test mẫu 6 cuốn sách kiểm thử ngay lập tức trên mọi thiết bị.
 
-#### 📌 3.3. Động Cơ Bán Hàng Ngoại Tuyến Đa Nhân Viên (Offline-First POS Engine)
-- [ ] Xây dựng bộ đệm `IndexedDB` lưu danh mục sách và giỏ hàng cục bộ trên trình duyệt thiết bị.
-- [ ] Sinh khóa duy nhất bằng UUID v7 (sắp xếp tự nhiên theo thời gian) kết hợp `idempotency_key` cho từng đơn bán offline.
-- [ ] Hàng đợi đồng bộ nền (Sync Queue): Tự động phát hiện khi có mạng trở lại (Online Event) và gửi đơn hàng lên máy chủ Cloudflare D1 theo thứ tự.
-- [ ] Cơ chế giải quyết xung đột (Conflict Resolution) và chặn trùng lặp đơn hàng tuyệt đối.
+#### 📌 3.3. Động Cơ Bán Hàng Ngoại Tuyến Đa Nhân Viên (Offline-First POS Engine) - [ĐÃ HOÀN THÀNH]
+- [x] Xây dựng bộ đệm `IndexedDB` (`formapubli_offline_db`) lưu đơn hàng cục bộ an toàn trên trình duyệt thiết bị (`src/lib/offline-db.ts`).
+- [x] Sinh khóa định danh duy nhất bằng UUID v7 chuẩn RFC 9562 (sắp xếp tự nhiên theo thời gian phát sinh đơn) kết hợp `idempotencyKey` (`src/lib/uuidv7.ts`).
+- [x] Hàng đợi đồng bộ nền (Sync Queue): Tự động phát hiện khi có mạng trở lại (`online` event) và gửi đơn hàng lên máy chủ theo đúng trình tự thời gian.
+- [x] Cơ chế giải quyết xung đột và bảo vệ Idempotency trong `OrderService.createOrder` chống ghi trùng lặp / trừ thẻ kho 2 lần khi sync lại.
+- [x] Giao diện POS hiển thị huy hiệu mạng `🟢 Trực tuyến` / `🟡 Mất mạng (Chế độ Offline)` và nút `[ 🔄 Đồng bộ ngay ]`.
 
-#### 📌 3.4. Báo Cáo Doanh Số & Sổ Sách Đa Chiều (Advanced Sales Analytics)
-- [ ] Hoàn thiện bộ lọc báo cáo theo Ngày / Tuần / Tháng / Năm trên `SalesLedgerView.tsx`.
-- [ ] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
-- [ ] Xuất biên bản kê khai doanh số ra file Excel/CSV phục vụ đối soát.
+#### 📌 3.4. Báo Cáo Doanh Số & Sổ Sách Đa Chiều (Advanced Sales Analytics) - [ĐÃ HOÀN THÀNH]
+- [x] Hoàn thiện bộ lọc báo cáo đa chiều theo Preset: Tất cả, Hôm nay, 7 ngày qua, Tháng này, Tùy chọn trên `SalesLedgerView.tsx`.
+- [x] Bộ lọc theo Kho hàng: Toàn hệ thống, Kho 1 - Âu Cơ, Kho 3 - Hội Chợ, Kho 2 - Quỳnh Mai.
+- [x] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
+- [x] Xuất bảng tính Excel / CSV với mã UTF-8 BOM chuẩn xác 100% tiếng Việt có dấu, không lỗi font.
 
 ---
 

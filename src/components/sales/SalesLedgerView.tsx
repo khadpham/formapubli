@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FileSpreadsheet,
+  Printer,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 
@@ -25,6 +26,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeScope, setActiveScope] = useState<'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT'>('ALL');
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('ALL');
+  const [datePreset, setDatePreset] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'>('ALL');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
@@ -36,11 +41,46 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     }
   }, [currentRole, isTaxAccountant]);
 
+  // Xử lý chuyển đổi Preset ngày
+  const handleDatePresetChange = (preset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM') => {
+    setDatePreset(preset);
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
+    if (preset === 'ALL') {
+      setStartDate('');
+      setEndDate('');
+    } else if (preset === 'TODAY') {
+      setStartDate(todayStr);
+      setEndDate(todayStr + 'T23:59:59');
+    } else if (preset === 'WEEK') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      setStartDate(weekAgo);
+      setEndDate(todayStr + 'T23:59:59');
+    } else if (preset === 'MONTH') {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      setStartDate(monthAgo);
+      setEndDate(todayStr + 'T23:59:59');
+    }
+  };
+
   const fetchOrders = async () => {
     setLoading(true);
     try {
       const scopeParam = isTaxAccountant ? 'OFFICIAL_TAX' : activeScope;
-      const res = await fetch(`/api/orders?fiscalScope=${scopeParam}`);
+      const params = new URLSearchParams();
+      params.set('fiscalScope', scopeParam);
+      if (selectedWarehouse !== 'ALL') {
+        params.set('warehouseId', selectedWarehouse);
+      }
+      if (startDate) {
+        params.set('startDate', startDate);
+      }
+      if (endDate) {
+        params.set('endDate', endDate);
+      }
+
+      const res = await fetch(`/api/orders?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setOrders(data.orders || []);
@@ -55,7 +95,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   useEffect(() => {
     fetchOrders();
-  }, [activeScope, currentRole]);
+  }, [activeScope, currentRole, selectedWarehouse, startDate, endDate]);
 
   const filteredOrders = orders.filter((ord) => {
     if (!searchQuery) return true;
@@ -66,6 +106,54 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       ord.vatInvoiceCode?.toLowerCase().includes(q)
     );
   });
+
+  // Xuất file CSV chuẩn UTF-8 BOM cho Excel
+  const exportToCSV = () => {
+    if (filteredOrders.length === 0) {
+      alert('Không có dữ liệu đơn hàng để xuất CSV.');
+      return;
+    }
+
+    const headers = [
+      'Mã Đơn Hàng',
+      'Kho Xuất',
+      'Khách Hàng',
+      'Phương Thức TT',
+      'Tổng Giá Bìa (VND)',
+      'Tiền Chiết Khấu (VND)',
+      'Thực Thu (VND)',
+      'Phân Loại Sổ',
+      'Số HĐ VAT',
+      'Thời Gian',
+    ];
+
+    const rows = filteredOrders.map((ord) => [
+      `"${ord.orderCode || ''}"`,
+      `"${ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai'}"`,
+      `"${(ord.customerName || '').replace(/"/g, '""')}"`,
+      `"${ord.paymentMethod || ''}"`,
+      ord.subtotal || 0,
+      ord.discountAmount || 0,
+      ord.finalAmount || 0,
+      `"${ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ / Đầu nậu'}"`,
+      `"${ord.vatInvoiceCode || ''}"`,
+      `"${ord.createdAt || ''}"`,
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `Bao_Cao_Doanh_So_FormaPubli_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -82,26 +170,35 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <button
             onClick={fetchOrders}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Làm mới
+            <span>Làm mới</span>
+          </button>
+          <button
+            onClick={exportToCSV}
+            disabled={filteredOrders.length === 0}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+            title="Xuất bảng tính Excel/CSV tương thích font tiếng Việt"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Xuất Excel/CSV</span>
           </button>
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            Xuất Báo Cáo
+            <Printer className="w-3.5 h-3.5" />
+            <span>In Phiếu</span>
           </button>
         </div>
       </div>
 
-      {/* Scope Switcher Banner (Chỉ cho phép Chủ quản lý & Quản lý vận hành chuyển đổi) */}
+      {/* Scope Switcher Banner (Chỉ cho phép Quản lý & Điều hành chuyển đổi) */}
       {!isTaxAccountant ? (
         <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl">
           <button
@@ -143,6 +240,75 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </span>
         </div>
       )}
+
+      {/* Multi-Dimensional Filter Bar: Date Presets & Warehouse Filter */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+        {/* Date Filter Presets */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            Thời gian:
+          </span>
+          {(
+            [
+              { id: 'ALL', label: 'Tất cả' },
+              { id: 'TODAY', label: 'Hôm nay' },
+              { id: 'WEEK', label: '7 ngày qua' },
+              { id: 'MONTH', label: 'Tháng này' },
+              { id: 'CUSTOM', label: 'Tùy chọn' },
+            ] as const
+          ).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => handleDatePresetChange(p.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                datePreset === p.id
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+
+          {/* Custom Date Inputs if CUSTOM selected */}
+          {datePreset === 'CUSTOM' && (
+            <div className="flex items-center gap-1.5 ml-2">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <span className="text-xs text-slate-400">-</span>
+              <input
+                type="date"
+                value={endDate.slice(0, 10)}
+                onChange={(e) => setEndDate(e.target.value ? e.target.value + 'T23:59:59' : '')}
+                className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Warehouse Filter */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <span className="text-xs font-bold text-slate-500 shrink-0 flex items-center gap-1">
+            <Building2 className="w-3.5 h-3.5 text-slate-400" />
+            Kho hàng:
+          </span>
+          <select
+            value={selectedWarehouse}
+            onChange={(e) => setSelectedWarehouse(e.target.value)}
+            className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer min-h-[36px]"
+          >
+            <option value="ALL">Tất cả các kho (Toàn hệ thống)</option>
+            <option value="wh-au-co">Kho 1 - Âu Cơ (VP chính)</option>
+            <option value="wh-du-phong">Kho 3 - Hội Chợ (Sự kiện)</option>
+            <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
+          </select>
+        </div>
+      </div>
 
       {/* Financial Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

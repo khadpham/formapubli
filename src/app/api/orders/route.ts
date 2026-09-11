@@ -33,6 +33,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
+      id,
+      orderCode,
+      createdAt,
+      idempotencyKey,
       warehouseId,
       channel,
       partnerId,
@@ -57,6 +61,10 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await OrderService.createOrder({
+      id,
+      orderCode,
+      createdAt,
+      idempotencyKey,
       warehouseId,
       channel,
       partnerId,

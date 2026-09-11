@@ -177,7 +177,7 @@ async function runMasterAudit() {
   assert(
     retailOrder.discountAmount === Math.round(retailOrder.subtotal * 0.1),
     'Tính chiết khấu đơn hàng chuẩn xác 100%',
-    `Giá bìa: ${retailOrder.subtotal.toLocaleString()} đ | Giảm 10%: ${retailOrder.discountAmount.toLocaleString()} đ | Thực thu: ${retailOrder.finalAmount.toLocaleString()} đ`
+    `Giá bìa: ${retailOrder.subtotal.toLocaleString()} đ | Giảm 10%: ${(retailOrder.discountAmount || 0).toLocaleString()} đ | Thực thu: ${retailOrder.finalAmount.toLocaleString()} đ`
   );
 
   // -------------------------------------------------------------
