@@ -35,6 +35,8 @@
 26. [Định vị & Bản chất Sản phẩm: formapubli OS](#26-định-vị--bản-chất-sản-phẩm-formapubli-os-publishing-retail--inventory-operating-system)
 27. [Ma Trận Phân Quyền Đa Cấp & An Toàn Dữ Liệu Sổ Kép (RBAC Architecture)](#27-ma-trận-phân-quyền-đa-cấp--an-toàn-dữ-liệu-sổ-kép-rbac-architecture)
 28. [Kiến Trúc Sidebar Dọc & Bảng Quản Trị Toàn Cảnh (Executive Master Dashboard)](#28-kiến-trúc-sidebar-dọc--bảng-quản-trị-toàn-cảnh-executive-master-dashboard)
+29. [Kiến Trúc PWA & Ứng Dụng Thiết Bị Cầm Tay (PWA Architecture & Hardware Capabilities)](#29-kiến-trúc-pwa--ứng-dụng-thiết-bị-cầm-tay-pwa-architecture--hardware-capabilities)
+30. [Hệ Sinh Thái Trí Tuệ Nhân Tạo Tinh Gọn (Zero-Cost Lean AI & Copilot Engine)](#30-hệ-sinh-thái-trí-tuệ-nhân-tạo-tinh-gọn-zero-cost-lean-ai--copilot-engine)
 
 ---
 
@@ -1026,4 +1028,80 @@ Màn hình này cung cấp **Bức Tranh Toàn Cảnh Vận Hành Thực Tế** 
 - **Trên Màn Hình Desktop / Laptop (Quầy Âu Cơ):**  
   Sidebar nằm cố định bên trái (chiều rộng 260px), nội dung dashboard hiển thị dạng lưới đa cột rộng rãi. Có nút thu gọn thành thanh icon (64px).
 - **Trên Máy Tính Bảng / Điện Thoại Cảm Ứng (Nhân viên tại Hội Chợ):**  
-  Sidebar tự động thu gọn thành Drawer ẩn. Người dùng chỉ cần chạm vào biểu tượng Menu ☰ ở góc trên bên trái, thanh điều hướng sẽ trượt ra mượt mà từ cạnh trái màn hình với các nút bấm kích thước lớn chuẩn cảm ứng ($\ge 44	ext{px}$).
+  Sidebar tự động thu gọn thành Drawer ẩn. Người dùng chỉ cần chạm vào biểu tượng Menu ☰ ở góc trên bên trái, thanh điều hướng sẽ trượt ra mượt mà từ cạnh trái màn hình với các nút bấm kích thước lớn chuẩn cảm ứng ($\ge 44\text{px}$).
+
+---
+
+## 29. Kiến Trúc PWA & Ứng Dụng Thiết Bị Cầm Tay (PWA Architecture & Hardware Capabilities)
+
+### 29.1. Khái Niệm & Cơ Chế Hoạt Động (Progressive Web App)
+formapubli OS được thiết kế theo kiến trúc **PWA First-Class**, cho phép nhân viên bán sách tại hội chợ hoặc thủ kho cài đặt ứng dụng thẳng vào màn hình chính (Add to Home Screen) trên iPhone, iPad, điện thoại và máy tính bảng Android mà không cần thông qua Apple App Store hay Google Play Store (tiết kiệm 100% phí lập trình viên $99/năm).
+
+- **Chế độ hiển thị độc lập (Standalone Display):** Khi mở từ màn hình chính, app hiển thị toàn màn hình, biến mất thanh địa chỉ URL và các nút điều hướng trình duyệt. Trải nghiệm vuốt chạm, chuyển trang nhanh và mượt như app Native.
+- **Tập tin định danh (`manifest.json`):** Khai báo tên ứng dụng (`formapubli OS`), màu chủ đạo (`#4f46e5` Indigo), biểu tượng ứng dụng chuẩn kích thước (192px, 512px, maskable icon) và định hướng màn hình tối ưu (Any orientation).
+- **Service Worker & Cache Storage:** Lưu trữ mã nguồn tĩnh (JS, CSS, Font) vào bộ nhớ cục bộ, giúp ứng dụng khởi động ngay lập tức dưới 0.5 giây kể cả khi thiết bị đang ở chế độ máy bay.
+
+### 29.2. Khả Năng Tương Tác Phần Cứng Trên Thiết Bị Di Động
+| Tính năng phần cứng | Android PWA (Chrome / Edge) | iOS / iPadOS PWA (Safari WebKit) | Giải pháp kỹ thuật trong formapubli OS |
+| :--- | :---: | :---: | :--- |
+| **Microphone & Giọng nói** | ✅ Hỗ trợ 100% | ⚠️ Giới hạn Web Speech nền | Kiến trúc Micro Lai (Hybrid Resilient Mic): Web Speech API cục bộ trên Android/Desktop; Ghi âm thô qua `MediaRecorder` gửi API nhận diện tiếng Việt siêu tốc (Groq Whisper) trên iOS. |
+| **Âm thanh phản hồi (Speaker)** | ✅ Hỗ trợ 100% | ✅ Hỗ trợ 100% | Sử dụng Native Web Audio API (`AudioContext`) tổng hợp tần số 880Hz trong trẻo, không phụ thuộc file âm thanh ngoài. |
+| **Bộ nhớ cục bộ rớt mạng** | ✅ Hỗ trợ 100% | ✅ Hỗ trợ 100% | Bộ đệm `IndexedDB` lưu trữ hàng nghìn đơn hàng bán lẻ ngoại tuyến cùng hàng đợi đồng bộ Idempotency Key. |
+| **Camera Quét Mã Vạch** | ✅ Hỗ trợ 100% | ✅ Hỗ trợ 100% | Sử dụng Web Barcode Detection API / Camera Stream (`navigator.mediaDevices.getUserMedia`) quét trực tiếp ISBN/EAN-13 sau bìa sách mà không cần mua súng quét mã vạch chuyên dụng. |
+| **In Nhiệt Hóa Đơn (Printer)** | ✅ Hỗ trợ 100% | ✅ Hỗ trợ 100% | Hộp thoại in hệ thống chuẩn (`window.print()`) kết nối trực tiếp với máy in nhiệt K80/K57 qua Wifi hoặc Bluetooth. |
+
+---
+
+## 30. Hệ Sinh Thái Trí Tuệ Nhân Tạo Tinh Gọn (Zero-Cost Lean AI & Copilot Engine)
+
+### 30.1. Tuyên Ngôn Kiến Trúc AI: "Lean, Free & Human-in-the-Loop"
+1. **Zero-Cost & Free-Tier First:** Khai thác triệt để các API mô hình ngôn ngữ lớn (LLM) có hạn mức miễn phí vĩnh viễn (Groq, Google AI Studio, Cloudflare Workers AI) với chi phí vận hành **0 VNĐ/tháng**.
+2. **Nguyên tắc "Human-in-the-Loop" (Con người kiểm duyệt cuối cùng):** AI không bao giờ được phép tự ý sửa đổi cơ sở dữ liệu (`INSERT/UPDATE/DELETE`) một cách âm thầm. AI chỉ đóng vai trò:
+   - **Thư ký điền giỏ hàng:** Đọc hiểu lời nói $\rightarrow$ Tạo sẵn giỏ hàng trên quầy POS $\rightarrow$ Thu ngân kiểm tra bằng mắt trong 1 giây và bấm chốt đơn.
+   - **Trợ lý giải trình:** Đọc số liệu read-only $\rightarrow$ Trả lời câu hỏi phân tích cho nhà quản lý.
+
+```mermaid
+graph LR
+    UserSpeech["🗣️ Giọng nói nhân viên: 'Lên đơn Đinh Lễ 50 cuốn Bệnh tưởng...'"] --> WhisperAPI["🎙️ Groq Whisper Large v3 (0.3s)"]
+    WhisperAPI --> CleanText["📝 Văn bản tiếng Việt chính xác 100%"]
+    CleanText --> LLMEngine["🧠 LLM Function Calling (Llama 3.3 / Gemini Flash)"]
+    LLMEngine --> StructuredJSON["📦 JSON Cấu Trúc: {sku: 'H01', qty: 50, discount: 40}"]
+    StructuredJSON --> POSCart["🛒 Tự động nạp vào Giỏ Hàng POS"]
+    POSCart --> CashierReview["👀 Thu ngân kiểm tra & bấm [Ctrl + Enter] chốt trừ kho"]
+```
+
+### 30.2. 5 Use Case Thực Chiến Đỉnh Cao Cho Ngành Sách & Xuất Bản
+1. **Use Case 1: Lên Đơn Hàng Siêu Tốc Bằng Lời Nói (Smart Voice POS Dispatcher):**
+   - *Tình huống:* Hội chợ ồn ào hoặc khách sỉ Đinh Lễ gọi điện đọc một danh sách 5-10 đầu sách kèm yêu cầu chiết khấu và kho xuất.
+   - *Cách hoạt động:* Nhân viên chỉ cần nhấn giữ phím micro và đọc tự nhiên. AI tự động đối chiếu tên sách với danh mục 81 tác phẩm, trích xuất mã SKU, số lượng, tỷ lệ chiết khấu, tự động chọn đúng kho và cờ sổ kép. Toàn bộ giỏ hàng xuất hiện sẵn sàng sau 0.5 giây.
+2. **Use Case 2: Siêu Trợ Lý Quản Trị Giám Đốc (Executive AI Copilot / Text-to-Insight):**
+   - *Tình huống:* Giám đốc đang đi công tác, cần tra cứu nhanh tình hình kinh doanh qua điện thoại.
+   - *Câu hỏi mẫu:* *"Hôm nay Hội chợ thu tiền mặt được bao nhiêu?", "Sách nào sắp hết ở kho Âu Cơ?", "Tháng này đầu nậu nào lấy nhiều sách nhất?"*
+   - *Cách hoạt động:* AI sinh truy vấn chỉ đọc (Read-only API query), đọc dữ liệu thực tế và tổng hợp thành đoạn trả lời ngắn gọn, rành mạch bằng tiếng Việt.
+3. **Use Case 3: Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Intelligent Reprint & Runout Forecasting):**
+   - *Đặc thù ngành sách:* In sách mất từ 25 - 40 ngày (xin giấy phép tái bản NXB, chế bản kẽm, in ấn, gia công bìa cứng). Nếu để cạn kho mới in sẽ mất trắng doanh thu cả tháng cao điểm.
+   - *Cách hoạt động:* AI tự động tính toán **Vận tốc bán trung bình** ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo mùa. Khi tồn kho chạm ngưỡng an toàn dự báo ($Tồn \le V_{\text{sale}} \times 35\text{ ngày}$), hệ thống tự động phát cảnh báo cho Giám đốc xuất bản: *"Cần ký lệnh in tái bản 2.000 cuốn tác phẩm [H01] ngay hôm nay để tránh đứt hàng vào ngày 15 tháng sau"*.
+4. **Use Case 4: Trợ Lý Đối Soát Ký Gửi Phố Sách (Consignment Reconciliation Assistant):**
+   - *Đặc thù ngành sách:* Sách gửi tại các đại lý phố sách Đinh Lễ hoặc Đường sách thường xuyên lệch số liệu sau 3-6 tháng (do khách làm rách, đại lý bán nhưng chưa kịp báo, thất thoát).
+   - *Cách hoạt động:* Nhân viên nhập hoặc đọc biên bản kiểm kê thực tế tại sạp đại lý. AI tự động chạy thuật toán so lệch (Diff Matcher) giữa *Số lượng trên sổ cái formapubli OS* và *Số lượng kiểm đếm thực tế*, lập bảng kê rõ: Số cuốn đã bán cần đòi tiền, số cuốn hư hỏng cần thu hồi và số cuốn chênh lệch cần lập biên bản đối soát.
+5. **Use Case 5: Tự Động Trích Xuất Phiếu Giao Nhận Bằng Ảnh (OCR Slip to Inventory Transfer):**
+   - *Tình huống:* Nhà in giao 5 bó sách kèm hóa đơn giấy viết tay hoặc biên bản giao nhận của nhà xe.
+   - *Cách hoạt động:* Thủ kho chụp ảnh biên nhận bằng camera điện thoại. Vision LLM (Gemini 1.5 Flash hoặc LLaMA Vision) tự động đọc chữ viết tay/in ấn, trích xuất mã sách, số lượng và tạo nháp một **Phiếu Nhập Kho (RECEIPT)** sẵn sàng trên màn hình. Thủ kho chỉ việc đếm lại và ký duyệt.
+
+### 30.3. Bảng Phân Tích & Đánh Giá Các Nhà Cung Cấp LLM Miễn Phí (Free Tier Providers)
+1. **Groq API (Khuyên dùng số 1 cho Voice & POS Realtime):**
+   - **Ưu điểm:** Tốc độ suy luận vô địch thế giới (300 - 800 tokens/giây) nhờ kiến trúc phần cứng LPU chuyên biệt. Mô hình `Whisper-large-v3` của Groq nhận diện giọng nói tiếng Việt chuẩn xác nhất hiện nay, khử tạp âm xuất sắc tại hội chợ sách đông đúc.
+   - **Hạn mức miễn phí:** Rất lớn (Whisper: ~7.200 lượt ghi âm/ngày; LLaMA 3.3 70B: ~30 yêu cầu/phút; LLaMA 3.1 8B: ~14.400 yêu cầu/ngày). Hoàn toàn miễn phí trọn đời cho quy mô doanh nghiệp xuất bản vừa và nhỏ.
+2. **Google Gemini API qua Google AI Studio (Khuyên dùng số 1 cho Báo cáo Quản trị & Vision OCR):**
+   - **Ưu điểm:** Khả năng đọc hiểu tiếng Việt xuất sắc nhất thị trường (Google có kho dữ liệu ngữ nghĩa tiếng Việt khổng lồ). Cửa sổ ngữ cảnh lên tới 1 triệu tokens và khả năng xử lý hình ảnh (Vision) cực tốt để đọc hóa đơn giấy viết tay.
+   - **Hạn mức miễn phí:** Miễn phí 15 requests/phút (RPM), 1.500 requests/ngày (RPD). Đảm bảo xuất chuẩn 100% JSON Schema qua tham số `response_schema`.
+3. **Cloudflare Workers AI (Dự phòng tích hợp sâu cùng hạ tầng Cloudflare):**
+   - **Ưu điểm:** Chạy trực tiếp trên cùng Edge Network với formapubli OS mà không cần gọi ra dịch vụ bên thứ ba.
+   - **Hạn mức miễn phí:** 10.000 Neurons/ngày miễn phí vĩnh viễn.
+
+### 30.4. Nguyên Tắc An Toàn Sổ Kép & Phân Quyền Trong AI (RBAC Scope Guard)
+- **Tuyệt đối không rò rỉ Sổ Quản trị:** Khi prompt được chuẩn bị gửi tới LLM, middleware của formapubli OS tự động lọc dữ liệu dựa trên vai trò (`user.role`):
+  - Nếu là `ROLE_TAX`: LLM chỉ nhận dữ liệu đã qua bộ lọc `where fiscal_type = 'OFFICIAL_TAX'`.
+  - Nếu là `ROLE_CASHIER`: LLM bị tước quyền truy cập toàn bộ các hàm tính toán lợi nhuận gộp và doanh thu tổng.
+- **Không gửi dữ liệu định danh khách hàng:** Mọi câu lệnh AI chỉ truyền mã ấn bản, tên sách, số lượng và số tiền; loại bỏ hoàn toàn thông tin nhạy cảm của khách hàng trước khi gửi ra ngoài.
+
