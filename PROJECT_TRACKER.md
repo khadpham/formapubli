@@ -11,7 +11,7 @@
 | Phase | Trọng tâm Nghiệp vụ | Trạng thái | Mức độ Hoàn thành | Nhánh Git Phụ trách |
 | :---: | :--- | :---: | :---: | :--- |
 | **Phase 1** | **Lõi Kho Vận & Thẻ Kho Bất Biến**<br/>(Catalog 81 sách, 3 kho vật lý, Thẻ kho Append-Only, Tìm kiếm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
-| **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính**<br/>(Orders, Order Items, Khấu trừ kho tự động, Bán lẻ hội chợ, Bán sỉ đầu nậu, Phân tách Sổ Thuế vs Sổ Thực) | 🟡 **ĐANG THI CÔNG** | **40%** (Baby-Step 1 Done) | `feat/sales-order-engine-and-dual-ledger` |
+| **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính**<br/>(Orders, Order Items, Khấu trừ kho tự động, Bán lẻ hội chợ, Bán sỉ đầu nậu, Phân tách Sổ Thuế vs Sổ Thực) | 🟡 **ĐANG THI CÔNG** | **85%** (Baby-Step 1 & 2 Done) | `feat/sales-order-engine-and-dual-ledger` |
 | **Phase 3** | **CRM Độc Giả & Đăng Ký Gói Mùa**<br/>(Hồ sơ độc giả 360 độ, Gói mùa Xuân/Hạ/Thu/Đông, Subscription, Tủ sách sở hữu, Chống trùng quà tặng) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/customer-crm-and-bundles` |
 
 ---
@@ -78,6 +78,18 @@
   - Cơ chế bảo vệ chống rò rỉ dữ liệu (Query-level Scope Guard): Kế toán thuế chỉ xem số liệu hóa đơn điện tử VAT (`OFFICIAL_TAX`), chủ doanh nghiệp xem toàn cảnh thực tế (`INTERNAL_MANAGEMENT` + `OFFICIAL_TAX`), thu ngân không thấy doanh thu tổng.
   - Bổ sung Chương 28 vào Master Blueprint: Kiến trúc Menu Sidebar dọc bên trái (7 module điều hướng), thiết kế Bảng Quản trị Toàn cảnh (KPI Doanh thu, Cảnh báo sắp hết sách, Cơ cấu tiền mặt/chuyển khoản).
   - Tối ưu tương thích đa thiết bị: Cố định 260px trên Desktop màn hình ngang, tự động thu gọn dạng Drawer cảm ứng trên điện thoại/máy tính bảng.
+
+
+#### 🔹 [Mã: ENG-20260911-07] Baby-Step 2: Quầy POS Bán Hàng Siêu Tốc, Dashboard Quản Trị & Sidebar Dọc 5 Roles
+- **Nhánh:** `feat/sales-order-engine-and-dual-ledger` | **Commit:** `fffa627`
+- **Nội dung:**
+  - Xây dựng Component điều hướng `AppSidebar.tsx` (Menu dọc bên trái, 7 phân hệ, thu gọn 80px/260px, drawer cảm ứng trên mobile).
+  - Xây dựng Component tổng quan `ExecutiveDashboard.tsx` (4 thẻ chỉ số KPI, phân tách dòng tiền Sổ Kép, cảnh báo tồn kho, bảng đơn hàng gần đây).
+  - Xây dựng Component bán hàng quầy `PosCheckoutTerminal.tsx` (Tìm sách gõ tắt/giọng nói, chọn kho xuất Âu Cơ/Hội Chợ, chiết khấu 0-40%, chọn cờ VAT/Nội bộ, phím tắt thanh toán `Ctrl + Enter` trừ kho tức thì, in phiếu giao hàng).
+  - Xây dựng Component sổ sách doanh số `SalesLedgerView.tsx` (Bộ lọc 1-click Sổ Thuế VAT vs Sổ Thực Tế Nội Bộ, lọc tìm kiếm theo mã đơn/khách hàng).
+  - Tích hợp Ma trận Phân quyền 5 vai trò (`ROLE_OWNER`, `ROLE_MANAGER`, `ROLE_CASHIER`, `ROLE_WAREHOUSE`, `ROLE_TAX`).
+  - Xây dựng API Endpoint `/api/orders` (GET danh sách & tổng hợp, POST tạo đơn bán).
+  - Kiểm thử tự động đạt 100% test cases và biên dịch Next.js production với **0 lỗi**.
 
 ## 3. Các Hạng Mục Tiếp Theo & Kế Hoạch Triển Khai (Roadmap)
 
