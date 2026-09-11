@@ -20,6 +20,16 @@
 11. [Thiết kế Trải nghiệm theo 3 Vai trò Vận hành (Role-Based UX)](#11-thiết-kế-trải-nghiệm-theo-3-vai-trò-vận-hành-role-based-ux)
 12. [Chiến lược Kiểm thử & Tiêu chuẩn Nghiệm thu (DoD)](#12-chiến-lược-kiểm-thử--tiêu-chuẩn-nghiệm-thu-dod)
 13. [Định hướng Phát triển cho các Phase Tiếp theo](#13-định-hướng-phát-triển-cho-các-phase-tiếp-theo)
+14. [Tổng hợp Kiến thức Kiểm toán 55 Sheets con](#14-tổng-hợp-kiến-thức-kiểm-toán-55-sheets-con-audited-sheets-synthesis)
+15. [Kiến trúc Kỹ thuật Đám mây, Bảo mật SSL & Tối ưu Hiệu năng](#15-kiến-trúc-kỹ-thuật-đám-mây-bảo-mật-ssl--tối-ưu-hiệu-năng)
+16. [Cấu trúc Thực thể & Chi tiết Vận hành Độc quyền formapubli](#16-cấu-trúc-thực-thể--chi-tiết-vận-hành-độc-quyền-formapubli)
+17. [Tối ưu Chi phí Tuyệt đối (100% Free Forever Tier) & Động cơ CSDL Không Chi phí](#17-tối-ưu-chi-phí-tuyệt-đối-100-free-forever-tier--động-cơ-csdl-không-chi-phí)
+18. [Cơ chế Nhập liệu Bàn phím Siêu tốc: Gõ tắt 2-3 Ký tự Đầu Tên Sách](#18-cơ-chế-nhập-liệu-bàn-phím-siêu-tốc-gõ-tắt-2-3-ký-tự-đầu-tên-sách-fuzzy-acronym-matcher)
+19. [Hệ thống Báo cáo Quản trị Trực quan Đẳng cấp Quốc tế (BI Dashboard)](#19-hệ-thống-báo-cáo-quản-trị-trực-quan-đẳng-cấp-quốc-tế-interactive-analytics-bi-dashboard)
+20. [Kiến trúc Cơ sở Dữ liệu Kép Tuyệt đối An toàn (Cloudflare D1 + SQLite Nhúng + Drive Sync)](#20-kiến-trúc-cơ-sở-dữ-liệu-kép-tuyệt-đối-an-toàn-dual-engine-cloudflare-d1--sqlite-nhúng--google-drive-sync)
+21. [Hệ sinh thái Độc giả & Quản trị Đăng ký Phát hành Theo Mùa (Customer CRM)](#21-hệ-sinh-thái-độc-giả--quản-trị-đăng-ký-phát-hành-theo-mùa-customer-crm--seasonal-subscription-engine)
+22. [Đặc tả Mô hình Dữ liệu Mở rộng (DDL: Customers, Bundles & Subscriptions)](#22-đặc-tả-mô-hình-dữ-liệu-mở-rộng-ddl-customers-bundles--subscriptions)
+23. [Quy chuẩn Kỷ luật Git & Quy trình Phát triển theo Nhánh](#23-quy-chuẩn-kỷ-luật-git--quy-trình-phát-triển-theo-nhánh-branching--rollback-protocol)
 
 ---
 
@@ -621,5 +631,166 @@ Hệ thống cung cấp một phân hệ Báo cáo Trực quan tương tác cao 
 - **Biểu đồ Donut & Treemap:** Tỷ trọng kênh phân phối và tỷ trọng ngân sách sách biếu tặng/ngoại giao.
 - **Bộ lọc Tương tác 1-Click (Cross-filtering):** Click vào một Đại lý trên biểu đồ tròn -> Toàn bộ bảng số liệu phía dưới tự động lọc danh sách các cuốn sách đại lý đó đang giữ và số tiền công nợ tương ứng.
 - **Xuất Báo cáo Tiêu chuẩn Quốc tế:** Cho phép xuất hình ảnh biểu đồ độ phân giải cao (PNG/SVG) hoặc xuất toàn bộ bảng số liệu sang file Excel/PDF đã được định dạng kẻ bảng đẹp mắt chỉ với 1 click.
+
+---
+
+---
+
+## 20. Kiến trúc Cơ sở Dữ liệu Kép Tuyệt đối An toàn (Dual-Engine: Cloudflare D1 + SQLite Nhúng + Google Drive Sync)
+
+### 20.1. Tuyên ngôn An toàn Dữ liệu & Độc lập Hạ tầng
+Để đảm bảo **an toàn 100% cho doanh nghiệp**, loại bỏ mọi rủi ro về việc bị nhà cung cấp đám mây khóa tài khoản, tạm dừng dự án (Pause), đòi thu phí hay sự cố đứt cáp quang quốc tế, formapubli áp dụng **Kiến trúc Cơ sở Dữ liệu Kép (Dual-Engine Hybrid Architecture)**:
+
+- **1. Động cơ Đám mây Chính (Primary Cloud Engine): Cloudflare D1**
+  - Công nghệ: Serverless SQLite tại 300+ Edge Data Centers toàn cầu.
+  - Chi phí: 0 VNĐ vĩnh viễn (5 GB dung lượng, 5 triệu lượt đọc/ngày, 100.000 lượt ghi/ngày).
+  - Đặc tính: **KHÔNG BAO GIỜ NGỦ ĐÔNG (Zero Pause)**, khởi động tức thời 0ms.
+  - Khôi phục thảm họa: Có sẵn 7 ngày Time Travel (Point-in-Time Recovery).
+- **2. Động cơ Cục bộ Nhúng & Sao lưu Độc lập (Local Embedded & Google Drive Sync)**
+  - Công nghệ: SQLite Engine nhúng cục bộ (Single file ormapubli.db).
+  - Tự chủ: Doanh nghiệp sở hữu 100% dữ liệu offline, không phụ thuộc internet.
+  - Tự động hóa: Script Service Account xuất Snapshot nén (AES-256) hàng ngày lên Google Drive 15GB miễn phí có sẵn của công ty lúc 23:59.
+  - Khả năng cắm chạy: Copy file ormapubli.db sang bất kỳ máy tính nào là chạy ngay lập tức, không cần cài đặt phần mềm máy chủ phức tạp.
+
+### 20.2. Cơ chế Đồng bộ Tự động sang Google Drive (Automated Zero-cost Drive Backup)
+1. **Google Service Account**: Sử dụng tài khoản dịch vụ Google Cloud miễn phí, kết nối trực tiếp vào thư mục Google Drive của công ty.
+2. **Lịch trình Snapshot**: Cứ mỗi cuối ngày hoặc sau mỗi đợt kiểm kho lớn, hệ thống tự động xuất bản ghi Ledger và Balance thành file SQLite (ormapubli_backup_YYYYMMDD.db) và file nén JSON/CSV đẩy thẳng vào Google Drive.
+3. **An toàn kép**: Dù Cloudflare có sự cố hay máy tính văn phòng hỏng ổ cứng, dữ liệu vẫn luôn an toàn 100% trên cả 2 nơi.
+
+---
+
+## 21. Hệ sinh thái Độc giả & Quản trị Đăng ký Phát hành Theo Mùa (Customer CRM & Seasonal Subscription Engine)
+
+### 21.1. Bản chất Nghiệp vụ Phát hành Theo Mùa tại formapubli
+Không giống như các đơn vị bán lẻ sách đại trà, formapubli vận hành theo nhịp điệu phát hành tinh hoa 4 Mùa trong năm:
+- **Kỳ Mùa Xuân (Spring Release)**
+- **Kỳ Mùa Hạ (Summer Release - ví dụ: Kỳ Hạ 16/6: 340k)**
+- **Kỳ Mùa Thu (Autumn Release - ví dụ: Kỳ L'été 22/9: 398k, Bộ thu x 3)**
+- **Kỳ Mùa Đông (Winter Release - ví dụ: Kỳ Sober Harmony, SĐ, VP)**
+
+Mỗi mùa, ban biên tập phát hành một bộ gồm 4 đến 5 đầu sách mới có chung chủ đề tư tưởng. Độc giả quen thuộc (Loyalty Readers) sẽ đăng ký mua theo các hình thức rất đa dạng:
+
+| Hình thức Mua theo Mùa | Hành vi của Độc giả | Cơ chế Giá & Ưu đãi | Thách thức Nhập liệu Cũ | Giải pháp formapubli ERP |
+| :--- | :--- | :--- | :--- | :--- |
+| **Mua Trọn gói (Full Seasonal Bundle)** | Đăng ký nhận toàn bộ 4-5 cuốn mới ra của mùa. | Mức giá Combo ưu đãi cố định (rẻ hơn 15-25% so với mua lẻ từng cuốn cộng lại). | Gõ tay tên khách, dò từng cột trong 81 cột ngang trên Google Sheets để đánh số 1. | 1-Click chọn "Gói Mùa"; hệ thống tự động điền đủ sách trong gói và áp giá ưu đãi trọn gói. |
+| **Mua Bán phần (Partial Bundle)** | Đăng ký mùa nhưng chỉ chọn 2-3 cuốn theo sở thích cá nhân. | Tính theo giá bìa trừ chiết khấu độc giả thân thiết (ví dụ: 10-15%). | Nhân viên phải ghi chú bằng chữ vào ô địa chỉ: "chỉ lấy cuốn A và B". | Cho phép tick bỏ chọn các cuốn không lấy; hệ thống tự tính lại tổng tiền chính xác. |
+| **Mua Kèm (Add-on Readers)** | Mua gói mùa mới và tiện thể đặt mua thêm các tựa sách cũ (XBK). | Gói mùa tính giá combo, sách cũ tính theo giá thanh lý/giá bìa. | Dễ tính nhầm tiền ship và sót sách cũ khi đóng gói. | Hiển thị giỏ hàng hợp nhất: Gói mùa + Sách mua kèm; tự động trừ kho đúng từng ấn bản. |
+| **Gửi Dồn Kỳ Sau (Deferred Shipping)** | Độc giả chuyển khoản trước để giữ sách, nhưng yêu cầu: *"Chờ mùa sau ra sách rồi gửi chung 1 kiện để tiết kiệm phí ship"*. | Đã thu tiền (hoặc cọc), chưa xuất hàng vật lý khỏi kho. | Ghi chú viết tay chi chít trong sheet Theo dõi, đến mùa sau rất dễ quên gửi sách cũ! | Trạng thái đơn hàng: PAID_HOLD_FOR_NEXT_SEASON. Đến mùa sau, hệ thống tự động cảnh báo: *"Khách này có 2 cuốn kỳ trước đang chờ gửi kèm"* khi in nhãn đóng gói. |
+
+### 21.2. Hồ sơ Độc giả 360 Độ (Customer 360 Profile)
+Hệ thống xây dựng cơ sở dữ liệu khách hàng trung tâm (Single Source of Customer Truth):
+1. **Thông tin Định danh**: Tên, Số điện thoại, Email, Link trang cá nhân (Facebook / Instagram / Zalo).
+2. **Phân hạng Khách hàng (Segment)**:
+   - LOYALTY_READER: Độc giả thân thiết theo mùa.
+   - LIBRARY_PARTNER: Thư viện, viện nghiên cứu, trường học.
+   - WHOLESALE_BUYER: Khách mua sỉ số lượng lớn (ví dụ: Chị Quỳnh Anh gửi sang Mỹ).
+   - INFLUENCER_REVIEWER: KOL, Reviewer sách (thuộc danh sách 141 tài khoản truyền thông).
+   - VIP_DIPLOMAT: Học giả, dịch giả, nhà báo (danh sách "Thu Phục").
+3. **Địa chỉ Chuẩn hóa**: Tách bạch Tỉnh / Thành phố, Quận / Huyện, Phường / Xã, Địa chỉ chi tiết. Tích hợp sẵn chuẩn địa chỉ của các đơn vị bưu cục (GHN, GHTK, Viettel Post) để in vận đơn 1 chạm.
+4. **Tủ Sách Đã Sở Hữu (Owned Bookshelf)**: Lưu vết toàn bộ các cuốn sách khách đã từng mua từ trước đến nay. Nhân viên khi tư vấn chỉ cần liếc qua là biết ngay khách đã có cuốn nào, tránh tư vấn trùng sách cũ và nắm bắt chính xác gu đọc sách của từng người.
+
+---
+
+## 22. Đặc tả Mô hình Dữ liệu Mở rộng (DDL: Customers, Bundles & Subscriptions)
+
+Hệ thống bổ sung các bảng dữ liệu chuyên biệt trên cơ sở dữ liệu SQLite / Cloudflare D1 (tương thích hoàn toàn với Drizzle ORM):
+
+`sql
+-- 1. Bảng Khách hàng & Độc giả 360 độ (Customers)
+CREATE TABLE customers (
+    id TEXT PRIMARY KEY, -- UUID
+    code TEXT UNIQUE NOT NULL, -- CUST-0001, CUST-0002...
+    full_name TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    channel TEXT DEFAULT 'FACEBOOK', -- FACEBOOK, INSTAGRAM, ZALO, TIKTOK, WEBSITE, DIRECT
+    channel_url TEXT,                -- Link trang cá nhân
+    segment TEXT DEFAULT 'RETAIL',   -- LOYALTY_READER, WHOLESALE, LIBRARY, REVIEWER, DIPLOMAT, RETAIL
+    address_province TEXT,           -- Tỉnh / Thành phố
+    address_district TEXT,           -- Quận / Huyện
+    address_ward TEXT,               -- Phường / Xã
+    address_detail TEXT,             -- Số nhà, tên đường
+    shipping_note TEXT,              -- Ghi chú giao hàng (ví dụ: Gọi trước khi giao, giao giờ hành chính)
+    total_spent REAL DEFAULT 0.0,    -- Tổng tiền tích lũy
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX idx_customers_phone ON customers(phone);
+CREATE INDEX idx_customers_name ON customers(full_name);
+
+-- 2. Bảng Gói Phát hành Theo Mùa (Seasonal Bundles)
+CREATE TABLE seasonal_bundles (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,      -- BUNDLE_HA_2024, BUNDLE_THU_2024, BUNDLE_XUAN_2026
+    season_name TEXT NOT NULL,      -- Mùa Hạ 2024, Mùa Thu 2024, Mùa Xuân 2026
+    release_date TEXT NOT NULL,     -- Ngày công bố gói
+    combo_price REAL NOT NULL,      -- Giá ưu đãi trọn gói (ví dụ: 340.000đ, 398.000đ)
+    total_cover_price REAL NOT NULL,-- Tổng giá bìa nếu mua lẻ từng cuốn
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- 3. Bảng Chi tiết Ấn bản trong Gói Mùa (Bundle Items)
+CREATE TABLE bundle_items (
+    id TEXT PRIMARY KEY,
+    bundle_id TEXT NOT NULL REFERENCES seasonal_bundles(id) ON DELETE CASCADE,
+    edition_id TEXT NOT NULL REFERENCES editions(id) ON DELETE RESTRICT,
+    quantity_in_bundle INTEGER DEFAULT 1,
+    is_mandatory INTEGER DEFAULT 1 -- 1: Bắt buộc trong gói; 0: Sách tùy chọn thêm
+);
+
+-- 4. Bảng Đăng ký Mua theo Kỳ của Độc giả (Customer Subscriptions)
+CREATE TABLE customer_subscriptions (
+    id TEXT PRIMARY KEY,
+    subscription_code TEXT UNIQUE NOT NULL, -- SUB-2026-0001
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    bundle_id TEXT NOT NULL REFERENCES seasonal_bundles(id) ON DELETE RESTRICT,
+    subscription_type TEXT NOT NULL, -- FULL_BUNDLE, PARTIAL_BUNDLE, ADDON_ONLY
+    total_amount REAL NOT NULL,
+    payment_status TEXT DEFAULT 'PENDING', -- PENDING, PAID_LA, PAID_COMPANY
+    fulfillment_status TEXT DEFAULT 'UNFULFILLED', -- UNFULFILLED, READY_TO_PACK, SHIPPED, HOLD_FOR_NEXT_SEASON
+    destination_warehouse_id TEXT REFERENCES warehouses(id), -- Kho xuất hàng (Kho 1 Tây Hồ)
+    shipping_fee REAL DEFAULT 0.0,
+    carrier_tracking_code TEXT,      -- Mã bưu cục GHN/GHTK
+    hold_until_season TEXT,          -- Ghi chú giữ lại gửi cùng kỳ nào (nếu có)
+    notes TEXT,
+    created_by TEXT NOT NULL,        -- Nhân viên thao tác (Lan Anh)
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- 5. Bảng Sách Khách đã Sở hữu (Customer Owned Bookshelf)
+CREATE TABLE customer_owned_books (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    edition_id TEXT NOT NULL REFERENCES editions(id) ON DELETE RESTRICT,
+    order_ref TEXT,                  -- Mã đơn hàng hoặc mã subscription
+    acquired_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    CONSTRAINT uq_customer_edition UNIQUE (customer_id, edition_id)
+);
+`
+
+---
+
+## 23. Quy chuẩn Kỷ luật Git & Quy trình Phát triển theo Nhánh (Branching & Rollback Protocol)
+
+Nhằm đảm bảo **an toàn tuyệt đối cho mã nguồn**, loại bỏ mọi nguy cơ hỏng hóc hay xung đột code trên môi trường vận hành thực tế:
+
+### 23.1. Phân định Trách nhiệm giữa Nhánh main và Nhánh Tính năng
+- **Nhánh main (Production Branch):**
+  - Chỉ chứa mã nguồn đã kiểm thử 100% thành công và tài liệu thiết kế đã được người phê duyệt thông qua.
+  - Trong giai đoạn thảo luận thiết kế và cập nhật tài liệu kiến trúc (Blueprint, Knowledge Base), mọi cập nhật tài liệu được thực hiện trực tiếp trên main để duy trì một **Nguồn Sự Thật Duy Nhất (Single Source of Truth)**.
+- **Nhánh Tính năng (Feature Branches - eat/*):**
+  - **Bắt buộc áp dụng ngay khi bắt tay vào viết code**: Mỗi module, mỗi tính năng hoặc mỗi phase code đều phải tách nhánh riêng biệt từ main.
+  - Quy ước đặt tên nhánh:
+    - eat/database-d1-setup: Thiết lập CSDL Cloudflare D1 và Drizzle Schema.
+    - eat/keyboard-lookup-ui: Giao diện tra cứu 4 số cuối ISBN & phím tắt acronym.
+    - eat/inventory-ledger-core: Lõi sổ cái kho bất biến và giao dịch chuyển kho.
+    - eat/customer-crm-bundle: Module quản lý khách hàng và đăng ký gói mùa.
+    - ix/<tên-lỗi>: Dành cho các nhánh sửa lỗi cụ thể.
+
+### 23.2. Quy trình Nghiệm thu & Khả năng Rollback 100%
+1. **Kiểm tra Độc lập**: Code trên nhánh tính năng phải vượt qua kiểm thử đơn vị (Unit Test) và kiểm tra kiểu dữ liệu (TypeScript Typecheck) với 0 lỗi.
+2. **Đối soát Thực địa**: Demo tính năng cho người dùng thử nghiệm trên môi trường Staging/Preview.
+3. **Merge an toàn**: Chỉ merge vào main khi có sự đồng thuận chính thức.
+4. **Cơ chế Rollback tức thời**: Nếu phát hiện sai sót sau khi merge, hệ thống có thể hoàn tác (Revert) về commit ổn định trước đó trong vòng **30 giây** bằng lệnh git revert mà không làm mất mát bất kỳ dữ liệu nghiệp vụ nào đã ghi vào CSDL.
 
 ---
