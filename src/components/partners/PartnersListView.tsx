@@ -23,10 +23,10 @@ export function PartnersListView({ partners }: PartnersListViewProps) {
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Users className="w-5 h-5 text-purple-600" />
-            Đối Tác & Kênh Sỉ Đầu Nậu (Partners & B2B)
+            Đối Tác & Kênh Phân Phối Sỉ (Partners & B2B)
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quản lý mạng lưới đối tác phát hành, nhà in ấn, NXB liên kết và các đầu nậu Đinh Lễ
+            Quản lý mạng lưới đối tác phát hành, nhà in ấn, NXB liên kết và các đại lý sỉ Đinh Lễ
           </p>
         </div>
       </div>

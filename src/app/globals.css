@@ -53,3 +53,67 @@ body {
   animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* ==========================================================================
+   80mm POS Thermal Receipt Printing Rules (K80 Continuous Roll)
+   Isolates only the #thermal-receipt-print container, hiding all web app UI
+   ========================================================================== */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0mm !important;
+  }
+
+  html, body {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 12px !important;
+  }
+
+  /* Hide entire web application hierarchy */
+  body > * {
+    display: none !important;
+  }
+
+  #__next,
+  #root,
+  aside,
+  nav,
+  header,
+  footer,
+  .pwa-install-banner,
+  .offline-badge,
+  .fixed,
+  button,
+  dialog {
+    display: none !important;
+  }
+
+  /* Exclusively reveal and style the thermal receipt */
+  #thermal-receipt-print {
+    display: block !important;
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 2mm 3mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace, -apple-system, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #thermal-receipt-print * {
+    visibility: visible !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+  }
+}
+
+

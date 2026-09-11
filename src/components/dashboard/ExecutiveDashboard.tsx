@@ -119,7 +119,7 @@ export function ExecutiveDashboard({
             )}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Gồm bán lẻ hội chợ & đầu nậu Đinh Lễ
+            Gồm bán lẻ hội chợ & đại lý sỉ Đinh Lễ
           </p>
         </div>
 
@@ -249,7 +249,7 @@ export function ExecutiveDashboard({
               </p>
               <div className="mt-3 text-xs text-indigo-800 space-y-1">
                 <div className="flex justify-between">
-                  <span>Đơn đầu nậu & bán lẻ:</span>
+                  <span>Đơn đại lý & bán lẻ:</span>
                   <span className="font-bold">{summary?.internalManagement?.ordersCount || 0} đơn</span>
                 </div>
                 <div className="flex justify-between">
@@ -380,7 +380,7 @@ export function ExecutiveDashboard({
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                          Nội bộ / Đầu nậu
+                          Sổ Quản trị Nội bộ
                         </span>
                       )}
                     </td>

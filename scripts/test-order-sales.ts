@@ -89,17 +89,17 @@ async function runTests() {
   console.log(`✅ Tồn kho Sách A tại Hội Chợ sau khi bán: ${balAfterRetail} cuốn (Giảm đúng 2 cuốn: ${initBalHcA} -> ${balAfterRetail})\n`);
   if (balAfterRetail !== initBalHcA - 2) throw new Error('Sai lệch tồn kho sau bán lẻ!');
 
-  // BƯỚC 3: Bán buôn cho Đầu Nậu Đinh Lễ (Chiết khấu 40%, chuyển khoản cá nhân, không hóa đơn)
-  console.log('--- 3. Test Bán Sỉ Đầu Nậu (Wholesale Partner - INTERNAL_MANAGEMENT) ---');
+  // BƯỚC 3: Bán buôn cho Đại Lý Sỉ Đinh Lễ (Chiết khấu 40%, chuyển khoản cá nhân, không hóa đơn)
+  console.log('--- 3. Test Bán Sỉ Đại Lý (Wholesale Partner - INTERNAL_MANAGEMENT) ---');
   const wholesaleOrder = await OrderService.createOrder({
     warehouseId: whAuCo,
     channel: 'WHOLESALE_PARTNER',
-    customerName: 'Đầu nậu Đinh Lễ (Nhà sách sỉ)',
-    discountRate: 0.40, // Chiết khấu sâu 40%
+    customerName: 'Đại lý sỉ Đinh Lễ (Nhà sách sỉ)',
+    discountRate: 0.40, // Chiết khấu sỉ 40%
     paymentMethod: 'BANK_TRANSFER',
-    fiscalScope: 'INTERNAL_MANAGEMENT',
-    cashierId: 'quanly-kinhdoanh',
-    note: 'Xuất sỉ đầu nậu Đinh Lễ, tiền về tài khoản cá nhân quản lý',
+    fiscalScope: 'INTERNAL_MANAGEMENT', // Bán buôn sỉ thực tế cho quản trị nội bộ
+    cashierId: 'user-sales-lead',
+    note: 'Xuất đại lý sỉ Đinh Lễ, tiền về tài khoản cá nhân quản lý',
     items: [
       { editionId: bookA.id, quantity: 20 },
       { editionId: bookB.id, quantity: 10 },
@@ -175,7 +175,7 @@ async function runTests() {
   console.log(`   - Tổng doanh thu thực tế thu về: ${realitySummary.totalRevenue.toLocaleString('vi-VN')} đ`);
   console.log(`   - Tổng tiền chiết khấu hỗ trợ: ${realitySummary.totalDiscount.toLocaleString('vi-VN')} đ`);
   console.log(`   - Chi tiết Thuế (Official): ${realitySummary.officialTax.ordersCount} đơn | ${realitySummary.officialTax.revenue.toLocaleString('vi-VN')} đ`);
-  console.log(`   - Chi tiết Nội bộ (Đầu nậu/Khách lẻ): ${realitySummary.internalManagement.ordersCount} đơn | ${realitySummary.internalManagement.revenue.toLocaleString('vi-VN')} đ`);
+  console.log(`   - Chi tiết Nội bộ (Đại lý sỉ/Khách lẻ): ${realitySummary.internalManagement.ordersCount} đơn | ${realitySummary.internalManagement.revenue.toLocaleString('vi-VN')} đ`);
 
   console.log('\n===============================================================');
   console.log('🎉 TẤT CẢ 6/6 TEST CASES NGHIỆP VỤ BÁN HÀNG & SỔ KÉP ĐÃ VƯỢT QUA 100%!');

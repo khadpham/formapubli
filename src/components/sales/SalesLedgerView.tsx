@@ -135,7 +135,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       ord.subtotal || 0,
       ord.discountAmount || 0,
       ord.finalAmount || 0,
-      `"${ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ / Đầu nậu'}"`,
+      `"${ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'}"`,
       `"${ord.vatInvoiceCode || ''}"`,
       `"${ord.createdAt || ''}"`,
     ]);
@@ -229,7 +229,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Nội Bộ / Đầu Nậu
+            Sổ Quản Trị Nội Bộ
           </button>
         </div>
       ) : (
@@ -364,7 +364,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               <tr>
                 <th className="p-3.5">Mã Đơn Hàng</th>
                 <th className="p-3.5">Kho Xuất</th>
-                <th className="p-3.5">Khách Hàng / Đầu Nậu</th>
+                <th className="p-3.5">Khách Hàng / Đại Lý</th>
                 <th className="p-3.5">Thanh Toán</th>
                 <th className="p-3.5">Tổng Bìa</th>
                 <th className="p-3.5">Chiết Khấu</th>
@@ -417,7 +417,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                          Nội bộ / Đầu nậu
+                          Sổ Quản trị Nội bộ
                         </span>
                       )}
                     </td>

@@ -873,7 +873,7 @@ export function PosCheckoutTerminal({
             <div className="pt-2 border-t border-slate-100 space-y-3">
               <div>
                 <label className="text-[11px] font-bold text-slate-500 block mb-1">
-                  Khách hàng / Đầu nậu:
+                  Khách hàng / Đại lý sỉ:
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <input
@@ -890,7 +890,7 @@ export function PosCheckoutTerminal({
                         setDiscountRate(0.10);
                         setFiscalScope('INTERNAL_MANAGEMENT');
                       } else if (e.target.value === 'DAU_NAU') {
-                        setCustomerName('Đầu nậu Đinh Lễ (Sỉ)');
+                        setCustomerName('Đại lý sỉ Đinh Lễ');
                         setDiscountRate(0.40);
                         setFiscalScope('INTERNAL_MANAGEMENT');
                       } else if (e.target.value === 'VAT') {
@@ -903,7 +903,7 @@ export function PosCheckoutTerminal({
                   >
                     <option value="">-- Mẫu đối tượng --</option>
                     <option value="LE">Khách lẻ (-10%)</option>
-                    <option value="DAU_NAU">Đầu nậu Đinh Lễ (-40%)</option>
+                    <option value="DAU_NAU">Đại lý sỉ Đinh Lễ (-40%)</option>
                     <option value="VAT">Doanh nghiệp (Xuất VAT)</option>
                   </select>
                 </div>
@@ -948,7 +948,7 @@ export function PosCheckoutTerminal({
                     onChange={(e) => setFiscalScope(e.target.value as any)}
                     className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                   >
-                    <option value="INTERNAL_MANAGEMENT">Nội bộ / Đầu nậu</option>
+                    <option value="INTERNAL_MANAGEMENT">Sổ Quản trị Nội bộ</option>
                     <option value="OFFICIAL_TAX">Xuất Hóa đơn VAT</option>
                   </select>
                 </div>
@@ -1061,7 +1061,7 @@ export function PosCheckoutTerminal({
               <div className="flex justify-between text-slate-600">
                 <span>Phân loại sổ:</span>
                 <span className="font-bold">
-                  {completedOrder.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ / Đầu nậu'}
+                  {completedOrder.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'}
                 </span>
               </div>
               <div className="flex justify-between text-slate-600">
@@ -1083,10 +1083,10 @@ export function PosCheckoutTerminal({
             <div className="flex gap-2">
               <button
                 onClick={() => window.print()}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors"
               >
                 <Printer className="w-4 h-4" />
-                In Phiếu Giao Hàng
+                In Phiếu Giao Hàng (K80)
               </button>
               <button
                 onClick={() => setCompletedOrder(null)}
@@ -1094,6 +1094,127 @@ export function PosCheckoutTerminal({
               >
                 Tạo Đơn Tiếp Theo
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated 80mm POS Thermal Receipt for K80/Continuous Roll Printing */}
+      {completedOrder && (
+        <div id="thermal-receipt-print" className="hidden print:block text-black bg-white">
+          <div className="text-[12px] leading-tight font-mono w-[72mm] max-w-[72mm] mx-auto py-1">
+            {/* Header */}
+            <div className="text-center pb-2 border-b border-dashed border-black">
+              <h1 className="text-sm font-black uppercase tracking-wider">FORMAPUBLI OS</h1>
+              <p className="text-[10px]">HỆ THỐNG XUẤT BẢN & PHÁT HÀNH SÁCH</p>
+              <p className="text-[10px]">Hotline: 098.xxx.xxxx | Hà Nội</p>
+              <div className="my-1.5 border-t border-black"></div>
+              <h2 className="text-xs font-black uppercase">PHIẾU BÁN HÀNG & GIAO KHO</h2>
+              <p className="text-[10px] italic">
+                {completedOrder.fiscalScope === 'OFFICIAL_TAX'
+                  ? '(Hóa đơn thương mại / Kê khai VAT)'
+                  : '(Phiếu xuất kho & thanh toán nội bộ)'}
+              </p>
+            </div>
+
+            {/* Order Info */}
+            <div className="py-2 border-b border-dashed border-black text-[11px] space-y-1">
+              <div className="flex justify-between">
+                <span>Số phiếu:</span>
+                <span className="font-bold">{completedOrder.orderCode}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Thời gian:</span>
+                <span>{completedOrder.date || new Date().toLocaleString('vi-VN')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Thu ngân:</span>
+                <span>{completedOrder.cashierId || `User-${currentRole}`}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Khách hàng:</span>
+                <span className="font-bold">{completedOrder.customerName || 'Khách vãng lai'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Kho xuất:</span>
+                <span>
+                  {completedOrder.warehouseId === 'wh-au-co'
+                    ? 'Kho 1 - Âu Cơ'
+                    : completedOrder.warehouseId === 'wh-du-phong'
+                    ? 'Kho 3 - Hội Chợ'
+                    : 'Kho 2 - Quỳnh Mai'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Hình thức TT:</span>
+                <span className="font-semibold">
+                  {completedOrder.paymentMethod === 'CASH'
+                    ? 'Tiền mặt'
+                    : completedOrder.paymentMethod === 'BANK_TRANSFER'
+                    ? 'Chuyển khoản'
+                    : 'Mã QR'}
+                </span>
+              </div>
+            </div>
+
+            {/* Items Table */}
+            <div className="py-2 border-b border-dashed border-black">
+              <div className="grid grid-cols-12 font-bold text-[11px] pb-1 border-b border-black">
+                <span className="col-span-7">Tên sách / SKU</span>
+                <span className="col-span-2 text-center">SL</span>
+                <span className="col-span-3 text-right">T.Tiền</span>
+              </div>
+              <div className="space-y-1.5 pt-1.5">
+                {completedOrder.items?.map((item: any, idx: number) => {
+                  const unitPrice = item.coverPrice || item.unitCoverPrice || 0;
+                  const itemTotal = unitPrice * item.quantity;
+                  return (
+                    <div key={idx} className="text-[11px]">
+                      <div className="font-semibold leading-tight">{item.title}</div>
+                      <div className="grid grid-cols-12 text-[10px] text-gray-800 pt-0.5">
+                        <span className="col-span-7 font-mono">[{item.code}]</span>
+                        <span className="col-span-2 text-center font-bold">x{item.quantity}</span>
+                        <span className="col-span-3 text-right font-mono">
+                          {itemTotal.toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className="py-2 border-b border-dashed border-black text-[11px] space-y-1">
+              <div className="flex justify-between">
+                <span>Tổng số lượng:</span>
+                <span className="font-bold">{completedOrder.totalQuantity} cuốn</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tổng tiền bìa:</span>
+                <span className="font-mono">{(completedOrder.subtotal || 0).toLocaleString('vi-VN')} đ</span>
+              </div>
+              {completedOrder.discountAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>Chiết khấu ({Math.round((completedOrder.discountRate || 0) * 100)}%):</span>
+                  <span className="font-mono">-{(completedOrder.discountAmount || 0).toLocaleString('vi-VN')} đ</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs font-bold pt-1.5 border-t border-black text-black">
+                <span className="uppercase">TỔNG THỰC THU:</span>
+                <span className="font-mono text-sm font-black">
+                  {(completedOrder.finalAmount || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 text-center text-[10px] space-y-1">
+              <p className="font-medium">Quý khách vui lòng kiểm tra sách trước khi rời quầy.</p>
+              <p className="font-bold uppercase tracking-wider">CẢM ƠN QUÝ KHÁCH & HẸN GẶP LẠI!</p>
+              <p className="text-[9px] text-gray-600 pt-1">
+                {completedOrder.orderCode} • {completedOrder.isOffline ? 'OFFLINE_PENDING_SYNC' : 'SYNCED'}
+              </p>
             </div>
           </div>
         </div>

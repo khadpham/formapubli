@@ -210,20 +210,20 @@ export function StockOverviewMatrix({
     <div className="space-y-6">
       {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR) */}
       {showMagnetBar && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl border border-indigo-200 py-2.5 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200">
-          <Search className="w-4 h-4 text-indigo-600 shrink-0" />
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl border border-indigo-200 py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200">
+          <Search className="w-5 h-5 text-indigo-600 shrink-0" />
           <input
             ref={magnetInputRef}
             type="text"
-            placeholder="Tìm theo tên không dấu, 4 số cuối hoặc bấm Micro..."
+            placeholder="Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
-            className="flex-1 text-xs font-semibold text-slate-800 bg-transparent border-none focus:outline-none placeholder-slate-400"
+            className="flex-1 text-sm font-medium text-slate-800 bg-transparent border-none focus:outline-none placeholder:text-slate-400"
           />
 
-          <span className="text-[11px] font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full shrink-0 font-bold">
+          <span className="text-xs font-mono text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full shrink-0 font-bold border border-indigo-100">
             {filteredBooks.length} sách
           </span>
 
@@ -231,10 +231,10 @@ export function StockOverviewMatrix({
             <button
               type="button"
               onClick={() => setSearchTerm('')}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0 transition-colors"
               title="Xóa tìm kiếm (Esc)"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           )}
 
@@ -247,16 +247,16 @@ export function StockOverviewMatrix({
                 ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
                 : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
             }
-            className={`p-1.5 rounded-lg text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[32px] min-w-[32px] cursor-pointer ${
+            className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[36px] min-w-[36px] cursor-pointer ${
               isListening
                 ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
                 : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
             }`}
           >
             {isListening ? (
-              <MicOff className="w-3.5 h-3.5 text-white animate-bounce" />
+              <MicOff className="w-4 h-4 text-white animate-bounce" />
             ) : (
-              <Mic className="w-3.5 h-3.5" />
+              <Mic className="w-4 h-4" />
             )}
           </button>
         </div>
@@ -265,11 +265,11 @@ export function StockOverviewMatrix({
       {/* 2. THANH CÔNG CỤ BAN ĐẦU (IN-FLOW TOOLBAR) */}
       <div
         ref={searchContainerRef}
-        className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4"
+        className="bg-white p-4 md:p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4"
       >
         {/* Search Input with Voice & Shortcut Badge */}
         <div className="relative flex-1 flex items-center">
-          <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
           <input
             ref={searchInputRef}
             type="text"
@@ -282,16 +282,28 @@ export function StockOverviewMatrix({
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
-            className={`w-full pl-10 pr-28 py-2 text-xs border rounded-lg outline-none font-medium transition-all ${
+            className={`w-full pl-11 pr-28 py-2.5 text-sm font-medium border rounded-xl outline-none transition-all min-h-[44px] ${
               isListening
                 ? 'border-rose-500 ring-2 ring-rose-300 bg-rose-50/20 text-slate-900'
-                : 'border-slate-300 focus:ring-2 focus:ring-indigo-500 text-slate-800'
+                : 'border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-slate-900 placeholder:text-slate-400 bg-white'
             }`}
           />
 
+          {/* Clear Search Button */}
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="absolute right-12 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              title="Xóa tìm kiếm (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Shortcut hint badge: [/] */}
           {!searchTerm && !isInputFocused && !isListening && (
-            <span className="absolute right-20 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded pointer-events-none hidden sm:inline">
+            <span className="absolute right-12 text-[11px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md pointer-events-none hidden sm:inline font-semibold">
               /
             </span>
           )}
@@ -305,16 +317,16 @@ export function StockOverviewMatrix({
                 ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
                 : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
             }
-            className={`absolute right-2 p-1.5 rounded-lg text-xs font-bold transition-all min-h-[32px] min-w-[32px] flex items-center justify-center cursor-pointer ${
+            className={`absolute right-2 p-2 rounded-xl text-xs font-bold transition-all min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer ${
               isListening
                 ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
                 : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
             }`}
           >
             {isListening ? (
-              <MicOff className="w-3.5 h-3.5 text-white animate-bounce" />
+              <MicOff className="w-4 h-4 text-white animate-bounce" />
             ) : (
-              <Mic className="w-3.5 h-3.5" />
+              <Mic className="w-4 h-4" />
             )}
           </button>
         </div>

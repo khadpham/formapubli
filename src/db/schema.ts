@@ -175,9 +175,9 @@ export const orders = sqliteTable('orders', {
   orderCode: text('order_code').notNull().unique(), // e.g. ORD-20260911-0001
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   channel: text('channel').notNull().default('FAIR_EVENT'), // FAIR_EVENT, RETAIL_OFFICE, WHOLESALE_PARTNER, ONLINE
-  partnerId: text('partner_id').references(() => partners.id), // Đại lý / Đầu nậu nếu bán buôn
+  partnerId: text('partner_id').references(() => partners.id), // Đại lý / Đối tác phân phối sỉ nếu bán buôn
   customerId: text('customer_id').references(() => customers.id), // Độc giả thân thiết (tùy chọn)
-  customerName: text('customer_name'), // Tên khách hàng (vãng lai hoặc đầu nậu)
+  customerName: text('customer_name'), // Tên khách hàng (vãng lai hoặc đại lý phân phối)
   subtotal: real('subtotal').notNull(), // Tổng giá bìa trước chiết khấu
   discountRate: real('discount_rate').default(0.0), // Chiết khấu tổng (%): e.g. 0.35, 0.40
   discountAmount: real('discount_amount').default(0.0), // Tiền chiết khấu

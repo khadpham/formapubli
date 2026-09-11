@@ -203,7 +203,7 @@ async function runMasterAudit() {
   const hasInternalLeaked = taxOrders.some((o) => o.fiscalScope === 'INTERNAL_MANAGEMENT');
   assert(
     !hasInternalLeaked,
-    'Sổ Kế Toán Thuế hoàn toàn sạch bóng đơn Nội Bộ/Đầu Nậu (Zero-Leakage)',
+    'Sổ Kế Toán Thuế hoàn toàn sạch bóng đơn Nội Bộ/Đại Lý Sỉ (Zero-Leakage)',
     `Tổng số đơn thuế: ${taxOrders.length} đơn, không chứa bất kỳ đơn nội bộ nào`
   );
 

@@ -75,7 +75,7 @@ export function AppSidebar({
     },
     {
       id: 'partners',
-      label: 'Đối Tác & Đầu Nậu',
+      label: 'Đối Tác & Đại Lý',
       shortLabel: 'Đối tác',
       icon: Users,
       badge: 'B2B',
