@@ -109,6 +109,19 @@
     - Toàn bộ tùy chọn cài đặt được lưu trữ bền vững trong `localStorage` (`formapubli_settings`).
   - Biên dịch kiểm thử thành công `npm run build` (0 lỗi), 100% test cases đạt chuẩn.
 
+#### 🔹 [Mã: ENG-20260911-09] Kiểm Toán Toàn Diện Hệ Thống (Master Audit Test Suite) Cho Phase 1 & 2
+- **Nhánh:** `feat/sales-order-engine-and-dual-ledger` | **Commit:** `5eba86a`
+- **Nội dung:**
+  - Xây dựng bộ kiểm toán tự động tổng thể `scripts/test-master-audit.ts` gồm 13 bài kiểm tra khắt khe:
+    1. Kiểm toán Master Data: 81 ấn bản (H01-H81), 80 tác phẩm gốc, 3 kho vật lý.
+    2. Định luật Bảo toàn Số dư Sổ Cái: $\sum \Delta Q_{\text{ledger}} = Q_{\text{balance}}$ khớp 100% qua ma trận 5 ấn bản x 3 kho, 0 dòng âm kho.
+    3. Kiểm toán Chặn lỗi Xuất kho: Từ chối xuất vượt quá tồn kho hiện tại.
+    4. Kiểm toán Động cơ Bán hàng POS: Chặn đơn rỗng, chặn số lượng $\le 0$, tự động khấu trừ kho vật lý, tính chiết khấu lẻ/sỉ chính xác.
+    5. Kiểm toán Cách ly Sổ Kép Tài chính: Góc nhìn Kế toán thuế (`OFFICIAL_TAX`) lọc sạch 100% đơn nội bộ/đầu nậu (`INTERNAL_MANAGEMENT`), không rò rỉ 1 đồng doanh thu ngầm; Góc nhìn Chủ quản lý hiển thị toàn cảnh thực tế hợp nhất.
+  - Kết quả kiểm toán: **13/13 bài test đạt 100%**.
+  - Kiểm thử tìm kiếm tiếng Việt không dấu: **10/10 bài test đạt 100%**.
+  - Đóng gói Next.js Production (`npm run build`): Thành công với **0 lỗi**.
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]
