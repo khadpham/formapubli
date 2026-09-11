@@ -23,3 +23,8 @@ Thumbs.db
 *.tmp
 *.bak
 __pycache__/
+
+# Local Databases
+*.db
+*.sqlite
+*.sqlite3
