@@ -234,14 +234,17 @@ export function StockOverviewMatrix({
               type="button"
               onClick={toggleListening}
               title="Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)"
-              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shrink-0 ${
+              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[32px] min-w-[32px] ${
                 isListening
-                  ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300'
-                  : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-100'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/40 animate-pulse'
+                  : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
               }`}
             >
-              <Mic className={`w-3.5 h-3.5 ${isListening ? 'text-rose-600 animate-bounce' : ''}`} />
-              <span className="text-[10px] hidden sm:inline">{isListening ? 'Nghe...' : 'Nói'}</span>
+              {isListening ? (
+                <MicOff className="w-3.5 h-3.5 animate-bounce" />
+              ) : (
+                <Mic className="w-3.5 h-3.5" />
+              )}
             </button>
           )}
         </div>
@@ -279,22 +282,16 @@ export function StockOverviewMatrix({
               type="button"
               onClick={toggleListening}
               title="Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)"
-              className={`absolute right-2 px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${
+              className={`absolute right-2 p-1.5 rounded-lg text-xs font-bold transition-all min-h-[32px] min-w-[32px] flex items-center justify-center ${
                 isListening
-                  ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300 shadow-sm'
-                  : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-100'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/40 animate-pulse'
+                  : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
               }`}
             >
               {isListening ? (
-                <>
-                  <Mic className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-                  <span className="text-[10px]">Đang nghe...</span>
-                </>
+                <MicOff className="w-3.5 h-3.5 animate-bounce" />
               ) : (
-                <>
-                  <Mic className="w-3.5 h-3.5" />
-                  <span className="text-[10px] hidden sm:inline">Giọng nói</span>
-                </>
+                <Mic className="w-3.5 h-3.5" />
               )}
             </button>
           )}

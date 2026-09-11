@@ -71,15 +71,13 @@ export function PosCheckoutTerminal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Micro giọng nói
-  const { isListening, transcript, isSupported, startListening, stopListening } = useVoiceSearch();
-
-  useEffect(() => {
-    if (transcript) {
-      setSearchQuery(transcript);
-    }
-  }, [transcript]);
+  // Micro giọng nói tiếng Việt đồng bộ
+  const { isListening, isSupported, toggleListening } = useVoiceSearch((text) => {
+    setSearchQuery(text);
+  });
 
   // Bộ lọc sách thời gian thực
   const filteredBooks = useMemo(() => {
@@ -225,17 +223,51 @@ export function PosCheckoutTerminal({
     }
   };
 
-  // Phím tắt Ctrl + Enter để thanh toán
+  // Lắng nghe phím tắt toàn cục không xung đột cho màn hình POS:
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      const isTypingInInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
+
+      // 1. Phím '/' -> Nhảy vào ô tìm kiếm (chỉ khi không đang gõ trong input khác)
+      if (e.key === '/' && !isTypingInInput) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      // 2. Phím 'Escape' -> Xóa tìm kiếm hoặc đóng modal
+      if (e.key === 'Escape') {
+        if (completedOrder) {
+          setCompletedOrder(null);
+        } else if (searchQuery) {
+          setSearchQuery('');
+          searchInputRef.current?.focus();
+        } else if (isTypingInInput) {
+          (e.target as HTMLElement)?.blur();
+        }
+        return;
+      }
+
+      // 3. Tổ hợp Alt + Shift + V -> Bật/Tắt Micro giọng nói tiếng Việt
+      if (e.altKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+        e.preventDefault();
+        toggleListening();
+        return;
+      }
+
+      // 4. Tổ hợp Ctrl + Enter (hoặc Cmd + Enter) -> Thanh toán & Khấu trừ kho
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleCheckout();
+        return;
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope]);
+  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening]);
 
   return (
     <div className="space-y-6">
@@ -279,33 +311,48 @@ export function PosCheckoutTerminal({
               <Search className="w-5 h-5" />
             </div>
             <input
+              ref={searchInputRef}
               type="text"
               id="pos-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Gõ tên không dấu (truong), mã (H01), 4 số cuối ISBN..."
-              className="w-full pl-10 pr-20 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none shadow-sm min-h-[48px]"
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              placeholder="Gõ tên không dấu (truong, benh), mã (H01), 4 số cuối (7507)..."
+              className="w-full pl-10 pr-24 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none shadow-sm min-h-[48px]"
             />
+            {/* Shortcut hint badge: [/] */}
+            {!searchQuery && !isInputFocused && (
+              <span className="absolute right-12 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded pointer-events-none hidden sm:inline">
+                /
+              </span>
+            )}
             <div className="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
                   className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
+                  title="Xóa tìm kiếm (Esc)"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
               {isSupported && (
                 <button
-                  onClick={isListening ? stopListening : startListening}
-                  className={`p-2 rounded-xl text-xs font-bold transition-all min-h-[40px] min-w-[40px] flex items-center justify-center ${
+                  type="button"
+                  onClick={toggleListening}
+                  className={`p-2 rounded-xl text-xs font-bold transition-all min-h-[36px] min-w-[36px] flex items-center justify-center ${
                     isListening
-                      ? 'bg-rose-600 text-white animate-pulse'
-                      : 'text-slate-500 hover:bg-slate-100'
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/40 animate-pulse'
+                      : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
                   }`}
-                  title="Nói giọng nói tiếng Việt"
+                  title="Tìm bằng giọng nói tiếng Việt (Alt + Shift + V)"
                 >
-                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {isListening ? <MicOff className="w-4 h-4 animate-bounce" /> : <Mic className="w-4 h-4" />}
                 </button>
               )}
             </div>

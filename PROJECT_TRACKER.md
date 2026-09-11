@@ -91,15 +91,31 @@
   - Xây dựng API Endpoint `/api/orders` (GET danh sách & tổng hợp, POST tạo đơn bán).
   - Kiểm thử tự động đạt 100% test cases và biên dịch Next.js production với **0 lỗi**.
 
+#### 🔹 [Mã: ENG-20260911-08] Sửa Phím Tắt POS, Đồng Bộ Micro Giọng Nói & Hoàn Thiện Suite Cài Đặt Hệ Thống
+- **Nhánh:** `feat/sales-order-engine-and-dual-ledger`
+- **Nội dung:**
+  - Sửa lỗi phím tắt tại Quầy POS: Bổ sung lắng nghe sự kiện bàn phím cho `/` (focus thanh tìm kiếm), `Escape` (xóa/hủy), `Alt+Shift+V` (bật/tắt micro), `Ctrl+Enter` (thanh toán). Thêm badge trực quan `[/]` khi nhàn rỗi.
+  - Đồng bộ thiết kế nút Micro giọng nói giữa Màn hình Tồn kho (`StockOverviewMatrix.tsx`) và Quầy Bán hàng (`PosCheckoutTerminal.tsx`): Nút biểu tượng bo tròn mềm mại, chuyển đổi trạng thái nhấp nháy đỏ (`bg-rose-600 animate-pulse`) khi đang thu âm, kết nối phím tắt `Alt+Shift+V`.
+  - Hoàn thiện Trung tâm Cài đặt & Tùy biến Hệ thống (`SettingsRbacView.tsx`) với 6 phân hệ chuyên sâu:
+    1. **Phân quyền người dùng (RBAC Simulator):** Chuyển đổi linh hoạt giữa 5 vai trò và xem trước ma trận thẩm quyền.
+    2. **Phím tắt điều khiển (Shortcuts Manager):** Bảng tra cứu 7 phím tắt, công tắc bật/tắt toàn hệ thống, và Hộp Test Phím Tắt tương tác trực tiếp (Interactive Keypress Tester).
+    3. **Giao diện hiển thị (Appearance):** Tùy biến Chủ đề (Sáng / Tối / Tự động theo hệ thống), Mật độ bảng (Thoải mái cho màn cảm ứng / Thu gọn cho máy tính để bàn).
+    4. **Âm thanh & Cảnh báo (Audio & Alerts):** Bật/tắt âm thanh phản hồi quầy thu ngân với nút Nghe Thử Tone (Web Audio API Synthesizer tích hợp), tùy biến ngưỡng cảnh báo sắp hết sách.
+    5. **Máy in nhiệt POS (Thermal Printer):** Chọn khổ giấy hóa đơn (K80 80mm hoặc K57 57mm), bật/tắt tự động in khi hoàn tất đơn hàng, tùy chỉnh dòng chữ chân trang phiếu thu.
+    6. **Ngôn ngữ hệ thống (Language):** Tiếng Việt (mặc định) & English.
+    - Toàn bộ tùy chọn cài đặt được lưu trữ bền vững trong `localStorage` (`formapubli_settings`).
+  - Biên dịch kiểm thử thành công `npm run build` (0 lỗi), 100% test cases đạt chuẩn.
+
 ## 3. Các Hạng Mục Tiếp Theo & Kế Hoạch Triển Khai (Roadmap)
 
-### 📌 Baby-Step 2 (Kế hoạch trước mắt): Giao diện Quầy Thu Ngân Bán Sách (POS UI)
-- [ ] Thiết kế Component `PosCheckoutModal.tsx` / `PosTerminal.tsx`.
-- [ ] Chọn sách vào giỏ siêu tốc qua bàn phím (`/`, gõ tắt, barcode) hoặc giọng nói.
-- [ ] Chọn kho xuất bán (Kho 1 Âu Cơ hoặc Kho 3 Hội Chợ).
-- [ ] Chọn nhóm khách hàng: Khách lẻ (giảm 0-10%) hoặc Đầu nậu Đinh Lễ (chiết khấu 35-45%).
-- [ ] Chọn cờ tài chính: Xuất VAT (Thuế) hoặc Không hóa đơn (Nội bộ).
-- [ ] Phím tắt thanh toán `Ctrl + Enter`: Khấu trừ kho tức thì và hiển thị biên nhận tóm tắt.
+### 📌 Baby-Step 2: Giao diện Quầy Thu Ngân Bán Sách (POS UI) - [ĐÃ HOÀN THÀNH 100%]
+- [x] Thiết kế Component `PosCheckoutModal.tsx` / `PosTerminal.tsx`.
+- [x] Chọn sách vào giỏ siêu tốc qua bàn phím (`/`, gõ tắt, barcode) hoặc giọng nói.
+- [x] Chọn kho xuất bán (Kho 1 Âu Cơ hoặc Kho 3 Hội Chợ).
+- [x] Chọn nhóm khách hàng: Khách lẻ (giảm 0-10%) hoặc Đầu nậu Đinh Lễ (chiết khấu 35-45%).
+- [x] Chọn cờ tài chính: Xuất VAT (Thuế) hoặc Không hóa đơn (Nội bộ).
+- [x] Phím tắt thanh toán `Ctrl + Enter`: Khấu trừ kho tức thì và hiển thị biên nhận tóm tắt.
+- [x] Sửa lỗi phím tắt và đồng bộ giao diện Micro thu âm.
 
 ### 📌 Baby-Step 3: Bảng Báo Cáo Doanh Số & Dòng Tiền (Sales Analytics Dashboard)
 - [ ] Báo cáo tổng số cuốn bán và doanh thu theo Ngày / Tháng / Năm.
