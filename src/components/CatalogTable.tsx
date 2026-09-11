@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, BookOpen, Warehouse, CheckCircle2, AlertCircle, Mic, MicOff } from 'lucide-react';
+import { Search, BookOpen, Warehouse, CheckCircle2, AlertCircle, Mic, MicOff, X } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 
@@ -29,7 +29,15 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
   const [searchTerm, setSearchTerm] = useState('');
 
   // Voice Search Hook
-  const { isListening, isSupported, toggleListening } = useVoiceSearch((text) => {
+  const {
+    isListening,
+    isSupported,
+    error: voiceError,
+    startListening,
+    stopListening,
+    toggleListening,
+    clearError: clearVoiceError,
+  } = useVoiceSearch((text) => {
     setSearchTerm(text);
   });
 
@@ -65,39 +73,91 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
           <Search className="absolute left-3.5 top-3 h-5 w-5 text-slate-400" />
           <input
             type="text"
-            placeholder="Tra cứu tức thì: Gõ tên không dấu (vd: truong, benh), 4 số cuối ISBN (7507), mã tắt (bt) hoặc bấm Micro..."
+            placeholder={
+              isListening
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                : 'Tra cứu tức thì: Gõ tên không dấu (vd: truong, benh), 4 số cuối ISBN (7507), mã tắt (bt) hoặc bấm Micro...'
+            }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-24 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium text-slate-800 placeholder-slate-400"
+            className={`w-full pl-11 pr-28 py-2.5 text-sm border rounded-lg outline-none transition-all font-medium ${
+              isListening
+                ? 'border-rose-500 ring-2 ring-rose-300 bg-rose-50/20 text-slate-900'
+                : 'border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 placeholder-slate-400'
+            }`}
             autoFocus
           />
 
           {/* Voice Search Button */}
-          {isSupported && (
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={
+              isListening
+                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                : 'Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)'
+            }
+            className={`absolute right-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              isListening
+                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
+                : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+            }`}
+          >
+            {isListening ? (
+              <>
+                <MicOff className="w-4 h-4 text-white animate-bounce" />
+                <span className="font-bold">Đang nghe...</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4" />
+                <span className="hidden sm:inline">Nói để tìm</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Banner trạng thái Micro đang lắng nghe */}
+        {isListening && (
+          <div className="p-3 bg-rose-950/90 border border-rose-500/60 text-rose-100 rounded-2xl flex items-center justify-between shadow-xl animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+              </span>
+              <span className="text-xs font-bold text-white">
+                Đang thu âm giọng nói tiếng Việt:
+              </span>
+              <span className="text-[11px] text-rose-200 font-medium hidden sm:inline">
+                Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "H01", "7507")
+              </span>
+            </div>
             <button
               type="button"
-              onClick={toggleListening}
-              title={isListening ? 'Đang nghe tiếng Việt... Bấm để dừng' : 'Tìm kiếm bằng giọng nói tiếng Việt'}
-              className={`absolute right-2.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                isListening
-                  ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300 shadow-sm'
-                  : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-100'
-              }`}
+              onClick={stopListening}
+              className="px-2.5 py-1 bg-rose-800 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold transition"
             >
-              {isListening ? (
-                <>
-                  <Mic className="w-4 h-4 text-rose-600 animate-bounce" />
-                  <span>Đang nghe...</span>
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4" />
-                  <span className="hidden sm:inline">Nói để tìm</span>
-                </>
-              )}
+              Dừng Nghe
             </button>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Banner thông báo lỗi Micro nếu có */}
+        {voiceError && (
+          <div className="p-3 bg-amber-950/95 border border-amber-500/60 text-amber-100 rounded-2xl flex items-center justify-between shadow-xl">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-medium">{voiceError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={clearVoiceError}
+              className="p-1 text-amber-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-3">
             <span>

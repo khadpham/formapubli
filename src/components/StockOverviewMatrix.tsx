@@ -9,6 +9,7 @@ import {
   History,
   ShieldCheck,
   AlertTriangle,
+  AlertCircle,
   Mic,
   MicOff,
   X,
@@ -83,7 +84,15 @@ export function StockOverviewMatrix({
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Khởi tạo Custom Hook Voice Search
-  const { isListening, isSupported, toggleListening, error: voiceError } = useVoiceSearch((text) => {
+  const {
+    isListening,
+    isSupported,
+    error: voiceError,
+    startListening,
+    stopListening,
+    toggleListening,
+    clearError: clearVoiceError,
+  } = useVoiceSearch((text) => {
     setSearchTerm(text);
   });
 
@@ -129,8 +138,8 @@ export function StockOverviewMatrix({
         return;
       }
 
-      // Tổ hợp Alt + Shift + V -> Bật/Tắt Micro giọng nói tiếng Việt
-      if (e.altKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+      // Phím tắt Alt + V hoặc Alt + Shift + V -> Bật/Tắt Micro giọng nói tiếng Việt
+      if (e.altKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
         e.preventDefault();
         toggleListening();
         return;
@@ -229,24 +238,27 @@ export function StockOverviewMatrix({
             </button>
           )}
 
-          {isSupported && (
-            <button
-              type="button"
-              onClick={toggleListening}
-              title="Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)"
-              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[32px] min-w-[32px] ${
-                isListening
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/40 animate-pulse'
-                  : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
-              }`}
-            >
-              {isListening ? (
-                <MicOff className="w-3.5 h-3.5 animate-bounce" />
-              ) : (
-                <Mic className="w-3.5 h-3.5" />
-              )}
-            </button>
-          )}
+          {/* Magnet Voice Search Button */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={
+              isListening
+                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
+            }
+            className={`p-1.5 rounded-lg text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[32px] min-w-[32px] cursor-pointer ${
+              isListening
+                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
+                : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+            }`}
+          >
+            {isListening ? (
+              <MicOff className="w-3.5 h-3.5 text-white animate-bounce" />
+            ) : (
+              <Mic className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
       )}
 
@@ -261,40 +273,50 @@ export function StockOverviewMatrix({
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="Tìm theo tên không dấu (truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro..."
+            placeholder={
+              isListening
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                : 'Tìm theo tên không dấu (truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro...'
+            }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
-            className="w-full pl-10 pr-28 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+            className={`w-full pl-10 pr-28 py-2 text-xs border rounded-lg outline-none font-medium transition-all ${
+              isListening
+                ? 'border-rose-500 ring-2 ring-rose-300 bg-rose-50/20 text-slate-900'
+                : 'border-slate-300 focus:ring-2 focus:ring-indigo-500 text-slate-800'
+            }`}
           />
 
           {/* Shortcut hint badge: [/] */}
-          {!searchTerm && !isInputFocused && (
+          {!searchTerm && !isInputFocused && !isListening && (
             <span className="absolute right-20 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded pointer-events-none hidden sm:inline">
               /
             </span>
           )}
 
           {/* Voice Search Button */}
-          {isSupported && (
-            <button
-              type="button"
-              onClick={toggleListening}
-              title="Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)"
-              className={`absolute right-2 p-1.5 rounded-lg text-xs font-bold transition-all min-h-[32px] min-w-[32px] flex items-center justify-center ${
-                isListening
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/40 animate-pulse'
-                  : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
-              }`}
-            >
-              {isListening ? (
-                <MicOff className="w-3.5 h-3.5 animate-bounce" />
-              ) : (
-                <Mic className="w-3.5 h-3.5" />
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={
+              isListening
+                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
+            }
+            className={`absolute right-2 p-1.5 rounded-lg text-xs font-bold transition-all min-h-[32px] min-w-[32px] flex items-center justify-center cursor-pointer ${
+              isListening
+                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
+                : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+            }`}
+          >
+            {isListening ? (
+              <MicOff className="w-3.5 h-3.5 text-white animate-bounce" />
+            ) : (
+              <Mic className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
 
         {/* Tab & Action Buttons with Keyboard Shortcut Tooltips */}
@@ -356,6 +378,48 @@ export function StockOverviewMatrix({
           </button>
         </div>
       </div>
+
+      {/* Banner trạng thái Micro đang lắng nghe */}
+      {isListening && (
+        <div className="p-3 bg-rose-950/90 border border-rose-500/60 text-rose-100 rounded-2xl flex items-center justify-between shadow-xl animate-pulse">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+            </span>
+            <span className="text-xs font-bold text-white">
+              Đang thu âm giọng nói tiếng Việt:
+            </span>
+            <span className="text-[11px] text-rose-200 font-medium hidden sm:inline">
+              Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "H01", "7507")
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={stopListening}
+            className="px-2.5 py-1 bg-rose-800 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold transition"
+          >
+            Dừng Nghe
+          </button>
+        </div>
+      )}
+
+      {/* Banner thông báo lỗi Micro nếu có */}
+      {voiceError && (
+        <div className="p-3 bg-amber-950/95 border border-amber-500/60 text-amber-100 rounded-2xl flex items-center justify-between shadow-xl">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs font-medium">{voiceError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={clearVoiceError}
+            className="p-1 text-amber-400 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Main View: Matrix vs Ledger */}
       {activeTab === 'MATRIX' ? (
