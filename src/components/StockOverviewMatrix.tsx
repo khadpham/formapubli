@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
 import {
   Warehouse,
   Search,
@@ -12,7 +11,10 @@ import {
   AlertTriangle,
   Mic,
   MicOff,
+  X,
+  Keyboard,
 } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
@@ -73,11 +75,92 @@ export function StockOverviewMatrix({
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER'>('MATRIX');
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isScrolledPast, setIsScrolledPast] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const magnetInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Khởi tạo Custom Hook Voice Search
   const { isListening, isSupported, toggleListening, error: voiceError } = useVoiceSearch((text) => {
     setSearchTerm(text);
   });
+
+  // 1. Lắng nghe cuộn trang để kích hoạt Magnet Search có điều kiện
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!searchContainerRef.current) return;
+      const rect = searchContainerRef.current.getBoundingClientRect();
+      // Khi đáy của thanh search vượt qua mép trên cửa sổ
+      setIsScrolledPast(rect.bottom < 0);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 2. Lắng nghe phím tắt toàn cục không xung đột (Non-Conflicting Keyboard Shortcuts)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      const isTypingInInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
+
+      // Phím '/' -> Nhảy vào ô tìm kiếm (chỉ khi không đang gõ trong input khác)
+      if (e.key === '/' && !isTypingInInput) {
+        e.preventDefault();
+        if (isScrolledPast && magnetInputRef.current) {
+          magnetInputRef.current.focus();
+          magnetInputRef.current.select();
+        } else if (searchInputRef.current) {
+          searchInputRef.current.focus();
+          searchInputRef.current.select();
+        }
+        return;
+      }
+
+      // Phím 'Escape' -> Xóa tìm kiếm hoặc đóng modal
+      if (e.key === 'Escape') {
+        if (modalOpen) {
+          setModalOpen(false);
+        } else if (searchTerm) {
+          setSearchTerm('');
+        }
+        return;
+      }
+
+      // Tổ hợp Alt + Shift + V -> Bật/Tắt Micro giọng nói tiếng Việt
+      if (e.altKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+        e.preventDefault();
+        toggleListening();
+        return;
+      }
+
+      // Tổ hợp Alt + Shift + T -> Mở Phiếu Chuyển Kho (Transfer)
+      if (e.altKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+        e.preventDefault();
+        openAction('TRANSFER');
+        return;
+      }
+
+      // Tổ hợp Alt + Shift + R -> Mở Phiếu Nhập Kho (Receipt)
+      if (e.altKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+        e.preventDefault();
+        openAction('RECEIPT');
+        return;
+      }
+
+      // Tổ hợp Alt + Shift + X -> Mở Phiếu Xuất Kho (Dispatch)
+      if (e.altKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) {
+        e.preventDefault();
+        openAction('DISPATCH');
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modalOpen, searchTerm, isScrolledPast, toggleListening]);
 
   const filteredBooks = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -111,27 +194,91 @@ export function StockOverviewMatrix({
     window.location.reload();
   };
 
+  // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT)
+  const showMagnetBar = isScrolledPast && (searchTerm.trim().length > 0 || isInputFocused);
+
   return (
     <div className="space-y-6">
-      {/* Action Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Search with Voice Recognition */}
+      {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR) */}
+      {showMagnetBar && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl border border-indigo-200 py-2.5 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200">
+          <Search className="w-4 h-4 text-indigo-600 shrink-0" />
+          <input
+            ref={magnetInputRef}
+            type="text"
+            placeholder="Tìm theo tên không dấu, 4 số cuối hoặc bấm Micro..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
+            className="flex-1 text-xs font-semibold text-slate-800 bg-transparent border-none focus:outline-none placeholder-slate-400"
+          />
+
+          <span className="text-[11px] font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full shrink-0 font-bold">
+            {filteredBooks.length} sách
+          </span>
+
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0"
+              title="Xóa tìm kiếm (Esc)"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {isSupported && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              title="Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)"
+              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shrink-0 ${
+                isListening
+                  ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300'
+                  : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-100'
+              }`}
+            >
+              <Mic className={`w-3.5 h-3.5 ${isListening ? 'text-rose-600 animate-bounce' : ''}`} />
+              <span className="text-[10px] hidden sm:inline">{isListening ? 'Nghe...' : 'Nói'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 2. THANH CÔNG CỤ BAN ĐẦU (IN-FLOW TOOLBAR) */}
+      <div
+        ref={searchContainerRef}
+        className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4"
+      >
+        {/* Search Input with Voice & Shortcut Badge */}
         <div className="relative flex-1 flex items-center">
           <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
           <input
+            ref={searchInputRef}
             type="text"
-            placeholder="Tìm theo tên không dấu (vd: truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro..."
+            placeholder="Tìm theo tên không dấu (truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-20 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
+            className="w-full pl-10 pr-28 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
           />
+
+          {/* Shortcut hint badge: [/] */}
+          {!searchTerm && !isInputFocused && (
+            <span className="absolute right-20 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded pointer-events-none hidden sm:inline">
+              /
+            </span>
+          )}
 
           {/* Voice Search Button */}
           {isSupported && (
             <button
               type="button"
               onClick={toggleListening}
-              title={isListening ? 'Đang nghe tiếng Việt... Bấm để dừng' : 'Tìm kiếm bằng giọng nói tiếng Việt'}
+              title="Tìm kiếm bằng giọng nói tiếng Việt (Alt + Shift + V)"
               className={`absolute right-2 px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${
                 isListening
                   ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300 shadow-sm'
@@ -153,8 +300,8 @@ export function StockOverviewMatrix({
           )}
         </div>
 
-        {/* Tab & Action Buttons */}
-        <div className="flex items-center gap-2">
+        {/* Tab & Action Buttons with Keyboard Shortcut Tooltips */}
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="bg-slate-100 p-1 rounded-lg flex text-xs font-semibold">
             <button
               type="button"
@@ -181,28 +328,34 @@ export function StockOverviewMatrix({
             </button>
           </div>
 
-          <div className="h-6 w-px bg-slate-200 mx-1"></div>
+          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
           <button
             type="button"
             onClick={() => openAction('TRANSFER')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            title="Chuyển kho giữa 3 kho (Alt + Shift + T)"
+            className="flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
+            <span className="text-[9px] opacity-70 bg-indigo-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+T</span>
           </button>
           <button
             type="button"
             onClick={() => openAction('RECEIPT')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            title="Nhập kho nhà in (Alt + Shift + R)"
+            className="flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <PlusCircle className="w-3.5 h-3.5" /> Nhập in
+            <span className="text-[9px] opacity-70 bg-emerald-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+R</span>
           </button>
           <button
             type="button"
             onClick={() => openAction('DISPATCH')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            title="Xuất bán / Quà tặng (Alt + Shift + X)"
+            className="flex items-center gap-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <MinusCircle className="w-3.5 h-3.5" /> Xuất bán
+            <span className="text-[9px] opacity-70 bg-rose-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+X</span>
           </button>
         </div>
       </div>
