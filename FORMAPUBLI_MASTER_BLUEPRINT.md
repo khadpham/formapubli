@@ -471,7 +471,7 @@ Khi sách tái bản đổi giá bìa (ví dụ từ 120k lên 140k), formapubli
 - **Tầng 2 - Ấn bản / Lô in (Edition / Lot):** Gắn liền với ISBN-13 duy nhất, giá bìa cụ thể, năm xuất bản và đợt in. Thủ kho xuất/nhập ghi nhận chính xác đến từng Ấn bản để áp đúng giá vốn và giá bìa.
 
 ### 16.2. Cấu trúc 3 Kho Vật lý & Quản lý Không gian Kệ sách
-1. **Kho 1 - Văn phòng kiêm Kho Soạn hàng (Tây Hồ / Main Office):** Lưu sách rời, đóng gói đơn lẻ, đơn tặng và chuyển phát nhanh.
+1. **Kho 1 - Văn phòng kiêm Kho Soạn hàng (Âu Cơ / Main Office):** Lưu sách rời, đóng gói đơn lẻ, đơn tặng và chuyển phát nhanh.
 2. **Kho 2 - Kho Lưu trữ Kiện lớn (Quỳnh Mai / Bulk Storage):** Nhận xe tải từ nhà in; lưu sách nguyên thùng/kiện; xuất buôn lô lớn và chuyển tiếp ứng Kho 1.
 3. **Kho 3 - Kho Dự phòng / Trung chuyển (Warehouse 3 / Reserve):** Lưu trữ dự phòng, cách ly kiểm đếm hoặc phân loại sách cũ/hội chợ.
 
@@ -525,7 +525,7 @@ CREATE INDEX idx_editions_isbn_last4 ON editions(isbn_last4);
 -- 3. Bảng Kho vật lý (Warehouses)
 CREATE TABLE warehouses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code VARCHAR(50) UNIQUE NOT NULL, -- KHO_TAY_HO, KHO_QUYNH_MAI, KHO_DU_PHONG
+    code VARCHAR(50) UNIQUE NOT NULL, -- KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG
     name VARCHAR(255) NOT NULL,
     address TEXT,
     is_active BOOLEAN DEFAULT true,
@@ -748,7 +748,7 @@ CREATE TABLE customer_subscriptions (
     total_amount REAL NOT NULL,
     payment_status TEXT DEFAULT 'PENDING', -- PENDING, PAID_LA, PAID_COMPANY
     fulfillment_status TEXT DEFAULT 'UNFULFILLED', -- UNFULFILLED, READY_TO_PACK, SHIPPED, HOLD_FOR_NEXT_SEASON
-    destination_warehouse_id TEXT REFERENCES warehouses(id), -- Kho xuất hàng (Kho 1 Tây Hồ)
+    destination_warehouse_id TEXT REFERENCES warehouses(id), -- Kho xuất hàng (Kho 1 Âu Cơ)
     shipping_fee REAL DEFAULT 0.0,
     carrier_tracking_code TEXT,      -- Mã bưu cục GHN/GHTK
     hold_until_season TEXT,          -- Ghi chú giữ lại gửi cùng kỳ nào (nếu có)

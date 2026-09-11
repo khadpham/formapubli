@@ -21,8 +21,10 @@ export const works = sqliteTable('works', {
 // 2. Editions / ISBN Lots (Tầng 2: Ấn bản & Lô in)
 export const editions = sqliteTable('editions', {
   id: text('id').primaryKey(),
+  code: text('code').notNull().unique(), // SKU code from sheet: e.g. H01, H21, H36, H81
   workId: text('work_id').notNull().references(() => works.id),
-  isbn: text('isbn').notNull().unique(), // 13-digit standard ISBN
+  title: text('title'), // Specific edition title if variant (e.g. 'Le Spleen de Paris (Bìa tím)')
+  isbn: text('isbn').notNull(), // 13-digit standard ISBN (non-unique to support re-prints with same ISBN like H21 & H36)
   isbnLast4: text('isbn_last4').notNull(), // Last 4 digits for rapid lookup
   editionNumber: integer('edition_number').default(1),
   coverPrice: real('cover_price').notNull(),
@@ -30,11 +32,14 @@ export const editions = sqliteTable('editions', {
   formatSize: text('format_size'),
   pages: integer('pages'),
   publicationYear: integer('publication_year'),
+  publisher: text('publisher'), // e.g. 'NXB Hội nhà văn', 'NXB Tri thức'
   suggestedLocation: text('suggested_location'), // e.g. 'Kệ A2, tầng 3'
+  status: text('status').default('IN_STOCK'), // 'IN_STOCK', 'SOLD_OUT', 'PREORDER'
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
-  isbnIdx: uniqueIndex('idx_editions_isbn').on(table.isbn),
+  codeIdx: uniqueIndex('idx_editions_code').on(table.code),
+  isbnIdx: index('idx_editions_isbn').on(table.isbn),
   isbnLast4Idx: index('idx_editions_isbn_last4').on(table.isbnLast4),
   workIdIdx: index('idx_editions_work_id').on(table.workId),
 }));
@@ -42,7 +47,7 @@ export const editions = sqliteTable('editions', {
 // 3. Physical Warehouses (3 Kho vật lý)
 export const warehouses = sqliteTable('warehouses', {
   id: text('id').primaryKey(),
-  code: text('code').notNull().unique(), // KHO_TAY_HO, KHO_QUYNH_MAI, KHO_DU_PHONG
+  code: text('code').notNull().unique(), // KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG
   name: text('name').notNull(),
   address: text('address'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),

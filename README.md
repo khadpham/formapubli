@@ -21,14 +21,56 @@ Toàn bộ tài liệu thiết kế và hồ sơ kiểm toán được tổ ch�
 ---
 
 ## 3. Các Trụ cột Kiến trúc Đột phá
-1. **Kiến trúc Thực thể 2 Tầng:** Tác phẩm (*Work / Master Title*) cho báo cáo tổng thể cấp điều hành và Ấn bản (*Edition / Lot*) cho quản lý mã vạch ISBN, giá vốn, giá bìa tái bản.
-2. **Cấu trúc 3 Kho Vật lý:** Kho 1 (Văn phòng / Tây Hồ - Sách rời), Kho 2 (Quỳnh Mai - Kiện lớn / Nhà in), Kho 3 (Dự phòng / Hội chợ / Kiểm định).
-3. **Thao tác Bàn phím Siêu tốc (Keyboard-First):** Tra cứu nhanh bằng 4 số cuối ISBN (isbn_last4) hoặc gõ tắt 2-3 ký tự đầu tên sách (short_code), điều hướng bằng phím mũi tên và Enter trong vòng **2-3 giây**. Hỗ trợ cả súng quét mã vạch USB.
-4. **Sổ cái Kho Bất biến (Append-Only Inventory Ledger):** Nghiêm cấm sửa (UPDATE) hoặc xóa (DELETE) lịch sử kho. Bảo đảm 6 bất biến hệ thống, triệt tiêu race condition và không bao giờ bán âm kho.
-5. **Đám mây Không Chi phí (100% Free-tier Forever):** Chạy trên PostgreSQL Managed Cloud (Supabase/Neon), Vercel Serverless, và mạng lưới bảo vệ Cloudflare SSL/WAF với chi phí vận hành 0 VNĐ.
-6. **Báo cáo BI Đa chiều Chuẩn Quốc tế:** Trực quan hóa dữ liệu theo phong cách Tableau/PowerBI, phân tích đa chiều theo Kênh, Chiết khấu, Mùa vụ và Dòng sách.
+1. **Kiến trúc Thực thể 2 Tầng:** Tác phẩm (*Work / Master Title*) cho báo cáo tổng quan điều hành và Ấn bản (*Edition / Lot*) quản lý SKU mã vạch ISBN, giá vốn, giá bìa tái bản (hỗ trợ các trường hợp dùng chung ISBN như H21 và H36 tái bản).
+2. **Cấu trúc 3 Kho Vật lý:**
+   - **Kho 1 - Âu Cơ:** Văn phòng chính, bán lẻ, soạn đơn hàng ngày (sách rời).
+   - **Kho 2 - Quỳnh Mai:** Kho tổng, tiếp nhận lưu kho kiện lớn từ nhà in, bán buôn sỉ.
+   - **Kho 3 - Dự phòng:** Gian hàng lưu động hội chợ, lưu chuyển kiểm định tạm thời.
+3. **Thao tác Bàn phím Siêu tốc (Keyboard-First):** Tra cứu tức thì bằng **4 số cuối ISBN** (`isbn_last4`) hoặc **tên viết tắt** (`short_code`, vd: `bt` -> Bệnh tưởng, `nbl` -> Người biển lận, `dddhc` -> Dưỡng đường đồng hồ cát) trong **2-3 giây**.
+4. **Sổ cái Kho Bất biến (Append-Only Inventory Ledger):** Nghiêm cấm sửa (UPDATE) hoặc xóa (DELETE) lịch sử kho.
+5. **Đám mây Không Chi phí (0 VNĐ vĩnh viễn):**
+   - **Cloudflare D1:** SQLite serverless tại Edge, 5GB dung lượng miễn phí, 5 triệu lượt đọc/ngày, không bao giờ rơi vào trạng thái ngủ đông (No Pause Trap).
+   - **SQLite cục bộ (`formapubli.db`):** Nhúng trực tiếp tại máy trạm, chạy offline siêu tốc khi đứt cáp hoặc mất mạng.
+   - **Tự động sao lưu Google Drive:** Snapshot sao lưu CSDL hàng ngày hoàn toàn tự động 0 chi phí.
+6. **Mô hình Khách hàng CRM 360 & Gói Phát Hành Theo Mùa:**
+   - Quản lý hội viên (Standard, Silver, Gold, Platinum).
+   - Quản lý gói mùa (Xuân, Hạ, Thu, Đông) với cơ chế chọn linh hoạt, mua kèm sách cũ và xuất hóa đơn bù thu/dồn kỳ.
 
 ---
 
-## 4. Bản quyền & Phân phối
+## 4. Hướng dẫn Phát triển Cục bộ (Local Development)
+
+### Cài đặt và Khởi tạo CSDL
+```bash
+# Cài đặt thư viện phụ thuộc
+npm install
+
+# Đồng bộ lược đồ bảng CSDL (11 bảng)
+npm run db:push
+
+# Nạp toàn bộ 81 đầu sách và 3 kho vật lý vào CSDL
+npm run db:seed
+
+# Khởi chạy giao diện thử nghiệm
+npm run dev
+```
+
+Truy cập: `http://localhost:3000`
+
+---
+
+## 5. Hướng dẫn Triển khai Cloudflare Pages / Workers (0 VNĐ)
+
+Hệ thống đã được tích hợp sẵn cấu hình tương thích hoàn toàn với Cloudflare Pages:
+- File cấu hình: `wrangler.toml` (tương thích `nodejs_compat`, binding `DB` D1)
+- Lệnh biên dịch trên Cloudflare Pages Build Settings:
+  - **Framework Preset:** Next.js
+  - **Build Command:** `npx @cloudflare/next-on-pages`
+  - **Build Output Directory:** `.vercel/output/static`
+  - **Environment Variables:** `NODE_VERSION = 20`
+  - **D1 Database Binding:** Variable Name: `DB`, Database: `formapubli-db`
+
+---
+
+## 6. Bản quyền & Phân phối
 Dự án được bảo hộ và phát triển nội bộ cho **formapubli**.
