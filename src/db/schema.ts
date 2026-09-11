@@ -168,3 +168,49 @@ export const stockBalances = sqliteTable('stock_balances', {
 }, (table) => ({
   bucketIdx: uniqueIndex('uq_stock_bucket').on(table.editionId, table.warehouseId, table.condition),
 }));
+
+// 12. Commercial Sales Orders (Đơn hàng Bán sách - Sổ Kép)
+export const orders = sqliteTable('orders', {
+  id: text('id').primaryKey(), // UUID v7 or unique client ID
+  orderCode: text('order_code').notNull().unique(), // e.g. ORD-20260911-0001
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  channel: text('channel').notNull().default('FAIR_EVENT'), // FAIR_EVENT, RETAIL_OFFICE, WHOLESALE_PARTNER, ONLINE
+  partnerId: text('partner_id').references(() => partners.id), // Đại lý / Đầu nậu nếu bán buôn
+  customerId: text('customer_id').references(() => customers.id), // Độc giả thân thiết (tùy chọn)
+  customerName: text('customer_name'), // Tên khách hàng (vãng lai hoặc đầu nậu)
+  subtotal: real('subtotal').notNull(), // Tổng giá bìa trước chiết khấu
+  discountRate: real('discount_rate').default(0.0), // Chiết khấu tổng (%): e.g. 0.35, 0.40
+  discountAmount: real('discount_amount').default(0.0), // Tiền chiết khấu
+  finalAmount: real('final_amount').notNull(), // Tiền thực thu sau chiết khấu
+  paymentMethod: text('payment_method').notNull().default('CASH'), // CASH, BANK_TRANSFER, QR_CODE
+  fiscalScope: text('fiscal_scope').notNull().default('INTERNAL_MANAGEMENT'), // OFFICIAL_TAX vs INTERNAL_MANAGEMENT
+  vatRate: real('vat_rate').default(0.0), // 0.05 hoặc 0.0
+  vatInvoiceRequired: integer('vat_invoice_required', { mode: 'boolean' }).default(false),
+  vatInvoiceCode: text('vat_invoice_code'), // Số hóa đơn điện tử nếu có
+  status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
+  syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
+  cashierId: text('cashier_id').notNull().default('staff-admin'),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  fiscalScopeIdx: index('idx_orders_fiscal_scope').on(table.fiscalScope),
+  warehouseIdx: index('idx_orders_warehouse').on(table.warehouseId),
+  createdAtIdx: index('idx_orders_created_at').on(table.createdAt),
+}));
+
+// 13. Order Line Items (Chi tiết từng cuốn sách trong đơn)
+export const orderItems = sqliteTable('order_items', {
+  id: text('id').primaryKey(),
+  orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull(), // Số lượng bán (> 0)
+  unitCoverPrice: real('unit_cover_price').notNull(), // Giá bìa niêm yết
+  unitDiscountRate: real('unit_discount_rate').default(0.0), // Chiết khấu riêng nếu có
+  unitSellingPrice: real('unit_selling_price').notNull(), // Đơn giá thực bán
+  totalAmount: real('total_amount').notNull(), // Thành tiền = quantity * unitSellingPrice
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  orderIdIdx: index('idx_order_items_order_id').on(table.orderId),
+  editionIdIdx: index('idx_order_items_edition_id').on(table.editionId),
+}));

@@ -15,6 +15,13 @@
       "when": 1789102863952,
       "tag": "0001_secret_master_mold",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789126703730,
+      "tag": "0002_chubby_saracen",
+      "breakpoints": true
     }
   ]
 }
