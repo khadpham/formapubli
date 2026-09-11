@@ -10,8 +10,12 @@ import {
   History,
   ShieldCheck,
   AlertTriangle,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { StockMovementModal } from './StockMovementModal';
+import { matchesVietnameseSearch } from '@/lib/vietnamese';
+import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 
 interface MatrixBookItem {
   id: string;
@@ -70,19 +74,30 @@ export function StockOverviewMatrix({
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER'>('MATRIX');
 
+  // Khởi tạo Custom Hook Voice Search
+  const { isListening, isSupported, toggleListening, error: voiceError } = useVoiceSearch((text) => {
+    setSearchTerm(text);
+  });
+
   const filteredBooks = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return initialBooks;
 
     return initialBooks.filter((b) => {
-      return (
-        b.code.toLowerCase().includes(q) ||
-        b.title.toLowerCase().includes(q) ||
-        b.isbn.includes(q) ||
-        b.isbnLast4.includes(q) ||
-        b.shortCode?.toLowerCase().includes(q) ||
-        b.author.toLowerCase().includes(q)
-      );
+      // 1. Khớp 4 số cuối hoặc toàn bộ ISBN
+      if (b.isbnLast4.includes(q) || b.isbn.includes(q)) return true;
+      // 2. Khớp mã SKU (H01, H02...)
+      if (b.code.toLowerCase().includes(q)) return true;
+      // 3. Khớp mã viết tắt (bt, nbl, dddhc...)
+      if (b.shortCode && b.shortCode.toLowerCase() === q) return true;
+      // 4. Khớp tiếng Việt không dấu trên Tên sách
+      if (matchesVietnameseSearch(b.title, q)) return true;
+      // 5. Khớp tiếng Việt không dấu trên Tác giả
+      if (matchesVietnameseSearch(b.author, q)) return true;
+      // 6. Khớp tiếng Việt không dấu trên Dịch giả
+      if (matchesVietnameseSearch(b.translator, q)) return true;
+
+      return false;
     });
   }, [searchTerm, initialBooks]);
 
@@ -100,16 +115,42 @@ export function StockOverviewMatrix({
     <div className="space-y-6">
       {/* Action Toolbar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Search */}
-        <div className="relative flex-1">
+        {/* Search with Voice Recognition */}
+        <div className="relative flex-1 flex items-center">
           <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Tìm theo 4 số cuối ISBN (vd: 7507), mã tắt (vd: bt), mã SKU (H01) hoặc tên sách..."
+            placeholder="Tìm theo tên không dấu (vd: truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+            className="w-full pl-10 pr-20 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
           />
+
+          {/* Voice Search Button */}
+          {isSupported && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              title={isListening ? 'Đang nghe tiếng Việt... Bấm để dừng' : 'Tìm kiếm bằng giọng nói tiếng Việt'}
+              className={`absolute right-2 px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${
+                isListening
+                  ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300 shadow-sm'
+                  : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-100'
+              }`}
+            >
+              {isListening ? (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                  <span className="text-[10px]">Đang nghe...</span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-3.5 h-3.5" />
+                  <span className="text-[10px] hidden sm:inline">Giọng nói</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Tab & Action Buttons */}

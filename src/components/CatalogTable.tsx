@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, BookOpen, Warehouse, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Search, BookOpen, Warehouse, CheckCircle2, AlertCircle, Mic, MicOff } from 'lucide-react';
+import { matchesVietnameseSearch } from '@/lib/vietnamese';
+import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 
 interface BookItem {
   code: string;
@@ -26,28 +28,32 @@ interface CatalogTableProps {
 export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: CatalogTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Voice Search Hook
+  const { isListening, isSupported, toggleListening } = useVoiceSearch((text) => {
+    setSearchTerm(text);
+  });
+
   const filteredBooks = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return initialBooks;
 
     return initialBooks.filter((book) => {
-      const codeMatch = book.code.toLowerCase().includes(query);
-      const titleMatch = book.title.toLowerCase().includes(query);
-      const isbnMatch = book.isbn.includes(query);
-      const isbnLast4Match = book.isbnLast4.includes(query);
-      const shortCodeMatch = book.shortCode?.toLowerCase().includes(query);
-      const authorMatch = book.author.toLowerCase().includes(query);
-      const translatorMatch = book.translator?.toLowerCase().includes(query);
+      // 1. Khớp ISBN hoặc 4 số cuối
+      if (book.isbn.includes(query) || book.isbnLast4.includes(query)) return true;
+      // 2. Khớp mã SKU
+      if (book.code.toLowerCase().includes(query)) return true;
+      // 3. Khớp mã viết tắt
+      if (book.shortCode && book.shortCode.toLowerCase() === query) return true;
+      // 4. Khớp tiếng Việt không dấu trên Tên sách
+      if (matchesVietnameseSearch(book.title, query)) return true;
+      // 5. Khớp tiếng Việt không dấu trên Tác giả
+      if (matchesVietnameseSearch(book.author, query)) return true;
+      // 6. Khớp tiếng Việt không dấu trên Dịch giả
+      if (matchesVietnameseSearch(book.translator, query)) return true;
+      // 7. Khớp tiếng Việt không dấu trên Thể loại / NXB
+      if (matchesVietnameseSearch(book.category, query) || matchesVietnameseSearch(book.publisher, query)) return true;
 
-      return (
-        codeMatch ||
-        titleMatch ||
-        isbnMatch ||
-        isbnLast4Match ||
-        shortCodeMatch ||
-        authorMatch ||
-        translatorMatch
-      );
+      return false;
     });
   }, [searchTerm, initialBooks]);
 
@@ -55,16 +61,42 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
     <div className="space-y-6">
       {/* Search Input Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-        <div className="relative">
+        <div className="relative flex items-center">
           <Search className="absolute left-3.5 top-3 h-5 w-5 text-slate-400" />
           <input
             type="text"
-            placeholder="Tra cứu tức thì: Gõ 4 số cuối ISBN (vd: 7507), tên tắt (vd: bt, nbl), mã sách (H01) hoặc tên sách..."
+            placeholder="Tra cứu tức thì: Gõ tên không dấu (vd: truong, benh), 4 số cuối ISBN (7507), mã tắt (bt) hoặc bấm Micro..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium text-slate-800 placeholder-slate-400"
+            className="w-full pl-11 pr-24 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium text-slate-800 placeholder-slate-400"
             autoFocus
           />
+
+          {/* Voice Search Button */}
+          {isSupported && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              title={isListening ? 'Đang nghe tiếng Việt... Bấm để dừng' : 'Tìm kiếm bằng giọng nói tiếng Việt'}
+              className={`absolute right-2.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                isListening
+                  ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-300 shadow-sm'
+                  : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-100'
+              }`}
+            >
+              {isListening ? (
+                <>
+                  <Mic className="w-4 h-4 text-rose-600 animate-bounce" />
+                  <span>Đang nghe...</span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  <span className="hidden sm:inline">Nói để tìm</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-3">
