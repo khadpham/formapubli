@@ -21,9 +21,11 @@ import {
   Printer,
   X,
   Layers,
+  Camera,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
+import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { UserRole } from '@/lib/roles';
 
 interface BookItem {
@@ -72,12 +74,42 @@ export function PosCheckoutTerminal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Micro giọng nói tiếng Việt đồng bộ
   const { isListening, isSupported, toggleListening } = useVoiceSearch((text) => {
     setSearchQuery(text);
   });
+
+  // Xử lý khi Súng Quét Mã Vạch Camera đọc được mã ISBN-13
+  const handleBarcodeScan = (scannedCode: string) => {
+    setErrorMessage(null);
+    const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
+
+    // Tìm trong danh mục 81 sách
+    const matchedBook = books.find((b) => {
+      const cleanIsbn = b.isbn ? b.isbn.replace(/[^0-9X]/gi, '') : '';
+      return (
+        cleanIsbn === cleanScanned ||
+        b.code.toLowerCase() === scannedCode.toLowerCase() ||
+        (b.isbnLast4 && cleanScanned.endsWith(b.isbnLast4))
+      );
+    });
+
+    if (matchedBook) {
+      addToCart(matchedBook);
+      setScanToast({
+        title: matchedBook.title,
+        code: matchedBook.code,
+        isbn: matchedBook.isbn || cleanScanned,
+      });
+      setTimeout(() => setScanToast(null), 3000);
+    } else {
+      setErrorMessage(`Không tìm thấy ấn bản nào trong danh mục có mã ISBN: ${scannedCode}`);
+    }
+  };
 
   // Bộ lọc sách thời gian thực
   const filteredBooks = useMemo(() => {
@@ -257,7 +289,14 @@ export function PosCheckoutTerminal({
         return;
       }
 
-      // 4. Tổ hợp Ctrl + Enter (hoặc Cmd + Enter) -> Thanh toán & Khấu trừ kho
+      // 4. Tổ hợp Alt + Shift + C -> Bật/Tắt Súng Quét Mã Vạch Camera
+      if (e.altKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+        e.preventDefault();
+        setIsScannerOpen((prev) => !prev);
+        return;
+      }
+
+      // 5. Tổ hợp Ctrl + Enter (hoặc Cmd + Enter) -> Thanh toán & Khấu trừ kho
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleCheckout();
@@ -267,7 +306,7 @@ export function PosCheckoutTerminal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening]);
+  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen]);
 
   return (
     <div className="space-y-6">
@@ -319,11 +358,11 @@ export function PosCheckoutTerminal({
               onFocus={() => setIsInputFocused(true)}
               onBlur={() => setIsInputFocused(false)}
               placeholder="Gõ tên không dấu (truong, benh), mã (H01), 4 số cuối (7507)..."
-              className="w-full pl-10 pr-24 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none shadow-sm min-h-[48px]"
+              className="w-full pl-10 pr-32 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none shadow-sm min-h-[48px]"
             />
             {/* Shortcut hint badge: [/] */}
             {!searchQuery && !isInputFocused && (
-              <span className="absolute right-12 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded pointer-events-none hidden sm:inline">
+              <span className="absolute right-24 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded pointer-events-none hidden sm:inline">
                 /
               </span>
             )}
@@ -341,6 +380,15 @@ export function PosCheckoutTerminal({
                   <X className="w-4 h-4" />
                 </button>
               )}
+              {/* Nút Quét Barcode Bằng Camera 0 Đồng */}
+              <button
+                type="button"
+                onClick={() => setIsScannerOpen(true)}
+                className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
+                title="Bật Súng Quét Mã Vạch Camera 0 Đồng (Alt + Shift + C)"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
               {isSupported && (
                 <button
                   type="button"
@@ -713,6 +761,30 @@ export function PosCheckoutTerminal({
           </div>
         </div>
       )}
+
+      {/* Súng Quét Mã Vạch Bằng Camera 0 Đồng (In-App Barcode Scanner) */}
+      <InAppBarcodeScanner
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScan={handleBarcodeScan}
+        sampleBooks={books.map((b) => ({ code: b.code, title: b.title, isbn: b.isbn }))}
+      />
+
+      {/* Toast thông báo đã quét Barcode thành công */}
+      {scanToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border border-emerald-500/50 text-emerald-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-slide-up">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs font-extrabold text-white">Đã Quét Thành Công (+1 cuốn vào giỏ):</p>
+            <p className="text-[11px] text-emerald-300 truncate max-w-xs font-medium">
+              [{scanToast.code}] {scanToast.title}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

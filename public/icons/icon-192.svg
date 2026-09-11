@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="192" height="192">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4338ca"/>
+      <stop offset="50%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#0f172a" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <!-- Background with rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  
+  <!-- Outer Glow Ring -->
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
+
+  <!-- Stylized Open Book & Operating Core -->
+  <g filter="url(#shadow)" transform="translate(96, 116)">
+    <!-- Left Book Leaf -->
+    <path d="M 160,260 C 100,230 40,240 10,250 L 10,60 C 40,50 100,40 160,70 Z" fill="#ffffff" opacity="0.95"/>
+    <!-- Right Book Leaf -->
+    <path d="M 160,260 C 220,230 280,240 310,250 L 310,60 C 280,50 220,40 160,70 Z" fill="#ffffff" opacity="0.95"/>
+    
+    <!-- Spine Center Bar -->
+    <path d="M 152,65 L 168,65 L 168,265 L 152,265 Z" fill="url(#accentGrad)"/>
+    
+    <!-- Accent Decorative Ribbon -->
+    <path d="M 160,255 L 160,295 L 145,280 L 130,295 L 130,255 Z" fill="#38bdf8"/>
+    
+    <!-- Stylized Book Text Lines Left -->
+    <rect x="35" y="95" width="85" height="12" rx="6" fill="#e0e7ff"/>
+    <rect x="35" y="125" width="95" height="12" rx="6" fill="#e0e7ff"/>
+    <rect x="35" y="155" width="75" height="12" rx="6" fill="#e0e7ff"/>
+    <rect x="35" y="185" width="90" height="12" rx="6" fill="#e0e7ff"/>
+
+    <!-- Stylized Book Text Lines Right -->
+    <rect x="190" y="95" width="90" height="12" rx="6" fill="#e0e7ff"/>
+    <rect x="190" y="125" width="75" height="12" rx="6" fill="#e0e7ff"/>
+    <rect x="190" y="155" width="95" height="12" rx="6" fill="#e0e7ff"/>
+    <rect x="190" y="185" width="80" height="12" rx="6" fill="#e0e7ff"/>
+  </g>
+</svg>

@@ -1,0 +1,41 @@
+{
+  "name": "formapubli OS — Hệ Điều Hành Xuất Bản & Bán Lẻ",
+  "short_name": "formapubli OS",
+  "description": "Hệ điều hành Kho vận, Quầy POS Bán Sách & Sổ Kép Xuất Bản formapubli",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "orientation": "any",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Quầy POS Bán Sách",
+      "short_name": "POS",
+      "description": "Mở nhanh Quầy bán sách siêu tốc",
+      "url": "/?tab=pos",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Kho Hàng & Thẻ Kho",
+      "short_name": "Kho",
+      "description": "Tra cứu ma trận tồn kho 3 địa điểm",
+      "url": "/?tab=inventory",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    }
+  ]
+}
