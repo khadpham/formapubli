@@ -2,7 +2,7 @@ import { UserRole } from './roles';
 import { db, auditLogs } from '@/db';
 
 export interface AuditLogParams {
-  action: 'VIEW_FISCAL_MANAGEMENT' | 'EXPORT_SALES_REPORT' | 'VOID_ORDER' | 'ADJUST_STOCK' | 'MUTATE_ORDER';
+  action: 'VIEW_FISCAL_MANAGEMENT' | 'EXPORT_SALES_REPORT' | 'VOID_ORDER' | 'ADJUST_STOCK' | 'MUTATE_ORDER' | 'MANAGER_DISCOUNT_APPROVED' | 'MANAGER_DISCOUNT_DENIED';
   actorRole: UserRole | string;
   actorId: string;
   resource: string;

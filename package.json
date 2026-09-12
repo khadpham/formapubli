@@ -12,6 +12,9 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
     "db:studio": "drizzle-kit studio",
+    "test:setup": "npx tsx scripts/setup-test-db.ts",
+    "test:discount-guard": "npx tsx scripts/test-discount-guard.ts",
+    "test:isolated": "npx tsx scripts/run-isolated.ts",
     "pages:build": "npx @cloudflare/next-on-pages"
   },
   "dependencies": {
