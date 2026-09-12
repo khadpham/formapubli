@@ -264,3 +264,46 @@ export const cashboxSessions = sqliteTable('cashbox_sessions', {
   openedAtIdx: index('idx_cashbox_opened_at').on(table.openedAt),
 }));
 
+// 16. Counter Allocations ("Chia Mâm" Sách Bàn Quầy Hội Chợ)
+export const counterAllocations = sqliteTable('counter_allocations', {
+  id: text('id').primaryKey(),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  counterName: text('counter_name').notNull(), // Tên bàn quầy: e.g. "Bàn 1 - Thiếu nhi"
+  cashboxSessionId: text('cashbox_session_id').references(() => cashboxSessions.id),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  allocatedQuantity: integer('allocated_quantity').notNull().default(0), // Hạn ngạch giao cho bàn
+  soldQuantity: integer('sold_quantity').notNull().default(0), // Số lượng đã bán từ bàn này
+  status: text('status').notNull().default('ACTIVE'), // ACTIVE, CLOSED, RECONCILED
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  counterIdx: index('idx_counter_alloc_name').on(table.counterName),
+  editionIdx: index('idx_counter_alloc_edition').on(table.editionId),
+  warehouseIdx: index('idx_counter_alloc_warehouse').on(table.warehouseId),
+  sessionIdx: index('idx_counter_alloc_session').on(table.cashboxSessionId),
+}));
+
+// 17. RMA & Defective Quarantine Tickets (Cách Ly Sách Lỗi & Đổi Trả)
+export const rmaTickets = sqliteTable('rma_tickets', {
+  id: text('id').primaryKey(), // e.g. RMA-202609-0001
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  orderId: text('order_id').references(() => orders.id),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull(),
+  defectReason: text('defect_reason').notNull(), // PRINT_DEFECT, BINDING_DEFECT, TRANSIT_DAMAGE, CUSTOMER_RETURN, WATER_DAMAGE, OTHER
+  quarantineCondition: text('quarantine_condition').notNull().default('QUARANTINE'), // QUARANTINE, DEFECTIVE
+  resolutionAction: text('resolution_action').default('HOLD_IN_QUARANTINE'), // HOLD_IN_QUARANTINE, RETURN_TO_SUPPLIER, WRITE_OFF_SCRAP, REPAIRED_RESTOCK
+  inspectedBy: text('inspected_by').notNull().default('staff-admin'),
+  status: text('status').notNull().default('QUARANTINED'), // PENDING_INSPECTION, QUARANTINED, RESOLVED, SCRAPPED
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  resolvedAt: text('resolved_at'),
+}, (table) => ({
+  warehouseIdx: index('idx_rma_warehouse').on(table.warehouseId),
+  editionIdx: index('idx_rma_edition').on(table.editionId),
+  orderIdx: index('idx_rma_order').on(table.orderId),
+  statusIdx: index('idx_rma_status').on(table.status),
+}));
+
+

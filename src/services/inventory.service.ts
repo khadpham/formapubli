@@ -9,8 +9,9 @@ export interface RecordMovementParams {
   condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
   documentRef: string;
   note?: string;
-  actorId: string;
+  actorId?: string;
   idempotencyKey?: string;
+
   ownerId?: string;
   lotId?: string;
   unitCostSnapshot?: number;
@@ -38,8 +39,9 @@ export class InventoryService {
   static async getBalance(
     editionId: string,
     warehouseId: string,
-    condition: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' = 'NEW'
+    condition: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE' = 'NEW'
   ): Promise<number> {
+
     const existing = await db
       .select()
       .from(stockBalances)
@@ -68,7 +70,7 @@ export class InventoryService {
       condition = 'NEW',
       documentRef,
       note,
-      actorId,
+      actorId = 'system',
       idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       ownerId,
       lotId,

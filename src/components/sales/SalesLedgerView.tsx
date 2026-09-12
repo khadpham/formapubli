@@ -16,6 +16,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
+import { appendExportWatermark } from '@/lib/export-hash';
 
 interface SalesLedgerViewProps {
   currentRole: UserRole;
@@ -127,6 +128,19 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       'Thời Gian',
     ];
 
+    const rawObjectsForHash = filteredOrders.map((ord) => ({
+      orderCode: ord.orderCode || '',
+      warehouseId: ord.warehouseId,
+      customerName: ord.customerName || '',
+      paymentMethod: ord.paymentMethod || '',
+      subtotal: Number(ord.subtotal || 0),
+      discountAmount: Number(ord.discountAmount || 0),
+      finalAmount: Number(ord.finalAmount || 0),
+      fiscalScope: ord.fiscalScope,
+      vatInvoiceCode: ord.vatInvoiceCode || '',
+      createdAt: ord.createdAt || '',
+    }));
+
     const rows = filteredOrders.map((ord) => [
       `"${ord.orderCode || ''}"`,
       `"${ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai'}"`,
@@ -140,7 +154,15 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       `"${ord.createdAt || ''}"`,
     ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const baseCsv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const watermarkedCsv = appendExportWatermark(baseCsv, rawObjectsForHash, {
+      actorId: 'cashier-pos',
+      actorRole: currentRole,
+      reportName: 'BÁO CÁO DOANH SỐ BÁN SÁCH & DÒNG TIỀN (SỔ KÉP)',
+      fiscalScope: activeScope,
+    });
+
+    const csvContent = '\uFEFF' + watermarkedCsv;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -154,6 +176,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
 
   return (
     <div className="space-y-6">

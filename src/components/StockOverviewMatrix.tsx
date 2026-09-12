@@ -14,10 +14,15 @@ import {
   MicOff,
   X,
   Keyboard,
+  PackageSearch,
+  ShieldAlert,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
+import { PickListModal } from './inventory/PickListModal';
+import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
+
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 
 interface MatrixBookItem {
@@ -73,7 +78,10 @@ export function StockOverviewMatrix({
 }: StockOverviewMatrixProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [pickListOpen, setPickListOpen] = useState(false);
+  const [rmaModalOpen, setRmaModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
+
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER'>('MATRIX');
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -423,8 +431,29 @@ export function StockOverviewMatrix({
             <MinusCircle className="w-3.5 h-3.5" /> Xuất bán
             <span className="text-[9px] opacity-70 bg-rose-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+X</span>
           </button>
+
+          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+          <button
+            type="button"
+            onClick={() => setPickListOpen(true)}
+            title="Danh sách soạn sách gom hàng theo kệ (Shelf Pick List)"
+            className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <PackageSearch className="w-3.5 h-3.5" /> Soạn Kệ
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRmaModalOpen(true)}
+            title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly (RMA)"
+            className="flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly RMA
+          </button>
         </div>
       </div>
+
 
       {/* Banner trạng thái Micro đang lắng nghe */}
       {isListening && (
@@ -638,6 +667,23 @@ export function StockOverviewMatrix({
         selectedBook={selectedBookForAction}
         onSuccess={handleRefresh}
       />
+
+      {/* Pick List Modal */}
+      <PickListModal
+        isOpen={pickListOpen}
+        onClose={() => setPickListOpen(false)}
+        books={initialBooks}
+        warehouses={warehouses}
+      />
+
+      {/* RMA Ticket Modal */}
+      <RmaTicketModal
+        isOpen={rmaModalOpen}
+        onClose={() => setRmaModalOpen(false)}
+        books={initialBooks}
+        warehouses={warehouses}
+        onSuccess={handleRefresh}
+      />
     </div>
   );
-}
+}

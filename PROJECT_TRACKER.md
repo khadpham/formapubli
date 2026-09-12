@@ -213,6 +213,33 @@
     - `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
     - Đóng gói Next.js Production (`npm run build`): Thành công mỹ mãn với **0 lỗi biên dịch**, First Load JS giữ vững mức **128 kB** ($\le$ 130 kB ngân sách).
 
+#### 🔹 [Mã: ENG-20260913-14] Triển Khai Phase D3 & D4: Hạn Ngạch Chia Mâm Quầy, Soạn Sách Kệ Kho (Pick List), Cách Ly Sách Lỗi (RMA) & Đóng Dấu Băm SHA-256
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - **Kiến trúc Module Hóa Không Xung Đột (Non-Colliding Architecture):**
+    - Migration Additive-only `0005_d3_d4_quota_rma.sql`: Tạo 2 bảng mới `counter_allocations` và `rma_tickets` với chỉ mục đầy đủ, bảo toàn 100% các bảng cũ.
+  - **D3: Hạn Ngạch Bàn Quầy "Chia Mâm" (`allocation.service.ts`):**
+    - Trưởng quầy phân bổ số lượng sách cho từng bàn (`counter_allocations`).
+    - Kiểm tra hạn ngạch thời gian thực (`checkCounterQuota`): Cảnh báo thu ngân khi sách trên bàn quầy sắp hết để tiếp tế từ kho đệm hội chợ.
+    - Cập nhật số lượng đã bán (`recordCounterSales`) khi hoàn tất giao dịch.
+  - **D3: Danh Sách Soạn Sách Kệ Kho (Shelf Pick List):**
+    - Hàm `generatePickList`: Tự động tra cứu vị trí kệ (`suggestedLocation`) từ danh mục ấn bản, gom nhóm theo vị trí kệ kho và sắp xếp tối ưu thứ tự nhặt sách.
+    - Component `PickListModal.tsx`: Bảng soạn hàng trực quan có checkbox đánh dấu từng cuốn đã lấy, nút in phiếu soạn hàng (Print Pick List).
+  - **D4: Quy Trình Tiếp Nhận & Cách Ly Sách Lỗi/Đổi Trả (RMA Quarantine Workflow):**
+    - Dịch vụ `rma.service.ts`: Tiếp nhận sách lỗi in (`PRINT_DEFECT`), bung gáy (`BINDING_DEFECT`), dập góc (`TRANSIT_DAMAGE`), khách trả (`CUSTOMER_RETURN`), ẩm mốc (`WATER_DAMAGE`).
+    - Tự động trừ tồn kho `NEW` và tăng kho `QUARANTINE` / `DEFECTIVE` trong Ledger bất biến $\rightarrow$ Tuyệt đối không để lẫn sách hỏng vào tồn bán cho độc giả.
+    - Hàm `resolveTicket`: Xử lý sau kiểm định gồm tiêu hủy phế liệu (`WRITE_OFF_SCRAP`), xuất trả NXB (`RETURN_TO_SUPPLIER`), hoặc phục hồi về `NEW` (`REPAIRED_RESTOCK`).
+    - Component `RmaTicketModal.tsx` trên giao diện Ma trận Kho cho phép nhân viên tạo phiếu RMA 1 chạm.
+  - **D4: Đóng Dấu Watermark & Khóa Băm Toàn Vẹn SHA-256 Cho File Xuất Báo Cáo:**
+    - Tiện ích `src/lib/export-hash.ts`: Thuật toán pure TypeScript SHA-256 (0-dependency, chạy mượt mà trên cả Node.js, Web Browser và PWA Worker).
+    - Tính mã băm SHA-256 trên dữ liệu chuẩn hóa và thêm Watermark Footer ở cuối file CSV doanh số (`SalesLedgerView.tsx`): Ghi nhận vai trò, mã người xuất, ngày giờ UTC, và mã băm 64 ký tự.
+    - Hàm `verifyExportIntegrity`: Phát hiện ngay lập tức nếu file bảng tính bị sửa đổi dù chỉ 1 ký tự số tiền.
+  - **Kiểm Thử Toàn Diện & Đóng Gói:**
+    - Viết mới `scripts/test-d3-d4.ts`: Đạt **20/20 test cases (100%)**.
+    - Chạy lại toàn bộ: `test-p0-verification.ts` (10/10 PASS), `test-inventory.ts` (6/6 PASS), `test-master-audit.ts` (13/13 PASS) $\rightarrow$ **Tổng 49/49 test cases PASS 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi, 0 cảnh báo type**, First Load JS chỉ 132 kB.
+
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]
