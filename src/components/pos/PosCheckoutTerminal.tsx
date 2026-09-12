@@ -116,6 +116,8 @@ export function PosCheckoutTerminal({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [isManagerOverride, setIsManagerOverride] = useState(false);
+  const [approvedPin, setApprovedPin] = useState<string | null>(null);
+
 
   // Micro giọng nói tiếng Việt đồng bộ
   const {
@@ -334,7 +336,9 @@ export function PosCheckoutTerminal({
     // Mã PIN chuẩn quản lý hội chợ: 9999 hoặc 1234
     if (pinInput === '9999' || pinInput === '1234' || pinInput === '8888') {
       setIsManagerOverride(true);
+      setApprovedPin(pinInput);
       if (pendingDiscountRate !== null) {
+
         setDiscountRate(pendingDiscountRate);
       }
       setIsPinModalOpen(false);
@@ -601,6 +605,7 @@ export function PosCheckoutTerminal({
           fiscalScope,
           cashierId,
           cashboxSessionId: activeSession?.id,
+          managerPin: approvedPin || undefined,
           note,
           items: cart.map((item) => ({
             editionId: item.editionId,
@@ -626,8 +631,11 @@ export function PosCheckoutTerminal({
       // Xóa giỏ hàng
       setCart([]);
       setNote('');
+      setApprovedPin(null);
+      setIsManagerOverride(false);
       fetchActiveCashboxSession();
       if (onOrderCompleted) onOrderCompleted();
+
     } catch (err: any) {
       // Nếu rớt mạng bất ngờ giữa chừng hoặc fetch thất bại
       if (err.name === 'TypeError' || err.message?.includes('fetch') || (typeof navigator !== 'undefined' && !navigator.onLine)) {

@@ -239,6 +239,33 @@
     - Chạy lại toàn bộ: `test-p0-verification.ts` (10/10 PASS), `test-inventory.ts` (6/6 PASS), `test-master-audit.ts` (13/13 PASS) $\rightarrow$ **Tổng 49/49 test cases PASS 100%**.
     - Next.js Production Build (`npm run build`): Thành công với **0 lỗi, 0 cảnh báo type**, First Load JS chỉ 132 kB.
 
+#### 🔹 [Mã: ENG-20260913-15] Hợp Nhất Phân Hệ Bảo Vệ Server-Enforce Discount/PIN & Cô Lập Toàn Bộ 9 Test Suites (Clean Slate Runner)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/server-discount-test-db` & `feat/isolate-all-test-suites`)
+- **Nội dung:**
+  - **Server-Side Discount Hard-Cap 15% & PIN Check (`src/app/api/orders/route.ts`):**
+    - Đặt hằng số `MAX_CASHIER_DISCOUNT_RATE = 0.15` (15%), danh sách PIN quản lý `['9999', '1234', '8888']`.
+    - Tính `effectiveItemDiscounts` bằng `Math.max` của cả `discountRate` tổng lẫn `unitDiscountRate` từng dòng (chặn đứng mọi thủ thuật lách chiết khấu từng cuốn).
+    - Phân quyền kép: `ROLE_OWNER` / `ROLE_MANAGER` được miễn trừ tự nhiên; `ROLE_CASHIER` gửi đơn vượt 15% mà không có PIN hoặc sai PIN sẽ bị chặn cứng với HTTP 403 Forbidden.
+    - Ghi nhận `MANAGER_DISCOUNT_APPROVED` và `MANAGER_DISCOUNT_DENIED` vào `audit_logs` — **tuyệt đối không lưu mã PIN vào log kiểm toán**.
+  - **Cô Lập Toàn Bộ CSDL Kiểm Thử (Clean Slate Test DB Runner):**
+    - `scripts/test-guard.ts`: Hàm `assertIsolatedTestDb()` tự động ném `exit 2` chặn ngay lập tức nếu bất kỳ file test nào trỏ vào `formapubli.db` production.
+    - `scripts/setup-test-db.ts`: Xóa file `formapubli_test.db` cũ $\rightarrow$ Dựng schema qua `drizzle-kit push` $\rightarrow$ Seed chuẩn xác 81 ấn bản từ CSV + 3 kho + 5 đối tác + `OPENING_BALANCE` 50 cuốn/ấn bản tại Âu Cơ ghi đồng thời cả Ledger lẫn Stock Balance (đảm bảo luật bảo toàn số dư).
+    - `scripts/run-isolated.ts` & `npm run test:isolated`: Chạy tuần tự 9 suites test hoàn toàn trong môi trường cách ly, đối chiếu mtime và file size của `formapubli.db` trước/sau để bảo vệ 100% tính trong sạch của DB thật.
+  - **Kết Quả Nghiệm Thu:**
+    - Toàn bộ **9/9 test suites** đạt **89/89 test cases PASS (100%)**:
+      - `test-discount-guard`: 8/8 PASS
+      - `test-p0-verification`: 10/10 PASS
+      - `test-inventory`: 6/6 PASS
+      - `test-order-sales`: 6/6 PASS
+      - `test-offline-engine`: 9/9 PASS
+      - `test-d3-d4`: 20/20 PASS
+      - `test-master-audit`: 13/13 PASS
+      - `test-vietnamese-search`: 10/10 PASS
+      - `test-barcode-engine`: 7/7 PASS
+    - `formapubli.db` production nguyên vẹn 100%, không bị ô nhiễm dù chỉ 1 byte.
+    - Đóng gói Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch, 0 type error**, First Load JS giữ ở mức **132 kB**.
+
+
 
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
