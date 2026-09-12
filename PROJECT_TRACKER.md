@@ -265,6 +265,34 @@
     - `formapubli.db` production nguyên vẹn 100%, không bị ô nhiễm dù chỉ 1 byte.
     - Đóng gói Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch, 0 type error**, First Load JS giữ ở mức **132 kB**.
 
+#### 🔹 [Mã: ENG-20260913-16] Triển Khai Phân Hệ Luân Chuyển 2 Bước (IN_TRANSIT Two-Step Engine via Virtual Hub)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/in-transit-two-step`)
+- **Nội dung:**
+  - **Kho Ảo Chung `wh-in-transit` (`KHO_IN_TRANSIT`):**
+    - Tránh bùng nổ tổ hợp kho ảo $N \times (N-1)$ tuyến; toàn bộ xe hàng đang lưu thông trên đường đều lưu chuyển qua trạm trung chuyển logic này.
+  - **Migration `0006_transfer_shipments.sql`:**
+    - Khởi tạo 2 bảng `transfer_shipments` và `transfer_shipment_items` quản lý mã phiếu `TRF-YYYYMMDD-XXXX`, kho gửi/nhận, người điều phối/người nhận, trạng thái luân chuyển (`IN_TRANSIT`, `RECEIVED_FULL`, `RECEIVED_DISCREPANCY`, `CANCELLED`).
+    - Script `scripts/apply-migration-0006.ts` áp dụng vào LibSQL độc lập.
+  - **Động Cơ Luân Chuyển 2 Bước Chống Mất Hàng (`TransferService`):**
+    - **Bước 1 (Dispatch):** Trừ kho gửi $\rightarrow$ Tăng `wh-in-transit`. Chặn đứng ngay nếu xuất vượt tồn kho gửi (Negative Stock Guard), không sinh phiếu rác.
+    - **Bước 2 (Receive):** Biên bản thực nhận bắt buộc bảo toàn phương trình:
+      $$\text{Lành (R)} + \text{Hỏng (D)} + \text{Mất (L)} = \text{Tổng hàng gửi (X)}$$
+      - Sách lành $(R) \rightarrow$ Cộng kho đích `NEW`.
+      - Sách rách/ướt trên đường $(D) \rightarrow$ Đưa thẳng vào condition `'QUARANTINE'` chờ RMA/sửa chữa.
+      - Sách thất lạc/rơi thùng $(L) \rightarrow$ Ghi bút toán `'TRANSFER_LOSS'` trừ sạch tồn transit về 0.
+      - Trạng thái phiếu: Tự động đánh dấu `RECEIVED_FULL` (nếu nhận đủ) hoặc `RECEIVED_DISCREPANCY` (nếu có chênh lệch/mất/hỏng).
+    - **Cơ Chế Cancel & Cảnh Báo Xe Kẹt (Stale Shipments):**
+      - Cho phép hủy phiếu khi còn đang `IN_TRANSIT` để thu hồi sách về lại kho xuất an toàn.
+      - Hàm `getStaleShipments`: Tự động lọc các chuyến xe đi đường quá 12 tiếng để đội điều phối gọi lái xe đối soát.
+  - **API `/api/transfers` & Bảo Mật:**
+    - Hỗ trợ đầy đủ hành động: `dispatch`, `receive`, `cancel`, `stale`, tra cứu chi tiết phiếu.
+    - Chặn cứng vai trò `ROLE_TAX` với HTTP 403 Forbidden; tự động ghi vết audit logs cho mọi lượt dispatch, receive, cancel.
+  - **Kiểm Thử Toàn Diện:**
+    - Test suite `scripts/test-in-transit.ts` đạt **17/17 PASS**.
+    - Nâng tổng số test suites lên **10 suites cách ly / 106 test cases đạt chuẩn 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ ở mức **132 kB**.
+
+
 
 
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
