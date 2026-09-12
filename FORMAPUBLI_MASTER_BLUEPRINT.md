@@ -39,6 +39,7 @@
 30. [Hệ Sinh Thái Trí Tuệ Nhân Tạo Tinh Gọn (Zero-Cost Lean AI & Copilot Engine)](#30-hệ-sinh-thái-trí-tuệ-nhân-tạo-tinh-gọn-zero-cost-lean-ai--copilot-engine)
 31. ["Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)](#31-súng-quét-mã-vạch-0-đồng-bằng-camera-pwa-in-app-barcode-scanner-engine)
 32. [Ba Chuẩn Mực Vận Hành Thực Địa Mới (The 3 Grounded Operational Standards)](#32-ba-chuẩn-mực-vận-hành-thực-địa-mới-the-3-grounded-operational-standards)
+33. [Quy Chuẩn Kỹ Thuật Đúc Kết Từ Thực Địa (Hardened Engineering Specifications)](#33-quy-chuẩn-kỹ-thuật-đúc-kết-từ-thực-địa-hardened-engineering-specifications)
 
 ---
 
@@ -1213,6 +1214,54 @@ Tận dụng nền tảng PWA trên thiết bị di động, formapubli OS tích
   2. Ký biên bản kiểm kê chốt số lượng vật lý thực tế hiện có.
   3. Khởi tạo 1 bút toán duy nhất trong Sổ cái bất biến: `OPENING_BALANCE` với chữ ký số của Giám đốc điều hành.
   4. Lịch sử Google Sheets cũ được đóng băng làm tài liệu lưu trữ tham khảo đối chiếu (Archived Reference), không can thiệp vào số dư động cơ mới.
+
+---
+
+## 33. Quy Chuẩn Kỹ Thuật Đúc Kết Từ Thực Địa (Hardened Engineering Specifications)
+> *Chương này đúc kết toàn bộ các nguyên tắc kiến trúc, quy chuẩn mã nguồn và mẫu thiết kế (design patterns) phát sinh trong quá trình thi công các phân hệ lõi, giải thích lý do vì sao hệ thống được xây dựng như hiện tại để kỹ sư mới tiếp nhận có thể hiểu và tuân thủ tuyệt đối.*
+
+### 33.1. Atomic Guard & Khấu Trừ Kho Bất Biến (Atomic Decrement Pattern)
+- **Vấn đề triệt tiêu:** Trong môi trường phân tán hoặc nhiều tab/quầy POS cùng ghi dữ liệu, việc đọc tồn trước bằng câu lệnh `SELECT`, kiểm tra điều kiện trên ứng dụng rồi mới chạy `UPDATE` sẽ dẫn đến lỗi tương tranh nghiêm trọng (Race Condition / Lost-Update).
+- **Quy chuẩn kỹ thuật:** Mọi câu lệnh cập nhật số dư tồn kho (`stock_balances`) bắt buộc phải nhúng điều kiện bảo toàn vật lý trực tiếp vào mệnh đề `WHERE` của câu lệnh `UPDATE`:
+  ```sql
+  UPDATE stock_balances
+  SET physical_quantity = physical_quantity + :delta,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE edition_id = :editionId
+    AND warehouse_id = :warehouseId
+    AND condition = :condition
+    AND (physical_quantity + :delta >= 0);
+  ```
+- **Xử lý kết quả:** Luôn đọc `rowsAffected` từ driver database. Nếu `rowsAffected === 0`, giao dịch bị từ chối ngay lập tức vì không đủ tồn vật lý.
+
+### 33.2. Mẫu Xử Lý Bán Vượt Hạn Ngạch Quầy (Overdraft Pattern & Fair Variance)
+- **Bối cảnh thực địa:** Tại hội chợ sách thực tế, tình huống "thực tế cầm sách trên tay nhưng máy tính báo hết hàng do chưa kịp nhập bổ sung từ thùng" diễn ra thường xuyên. Nếu chặn cứng, thu ngân sẽ không thể bán được sách cho khách đang xếp hàng.
+- **Quy chuẩn:** Phân hệ quầy POS hỗ trợ cờ `allowOverdraft = true`. Khi xảy ra thiếu tồn tại quầy:
+  1. Thay vì hủy đơn, hệ thống tự động sinh một bút toán điều chỉnh `FAIR_VARIANCE` hoặc `ADJUSTMENT` để bù lượng âm tức thì vào thẻ kho quầy.
+  2. Bút toán ghi rõ `correlationId` gắn với đơn hàng và người phê duyệt (`actorId`).
+  3. Ghi vết kiểm toán cảnh báo để trưởng gian hàng đối soát và xuất bù từ thùng dự phòng cuối ngày.
+
+### 33.3. Mốc Con Trỏ Thứ Tự Sổ Cái Ký Gửi (Opening Ledger RowID Marker)
+- **Vấn đề độ chính xác:** SQLite và LibSQL có hàm thời gian mặc định `CURRENT_TIMESTAMP` chỉ đạt độ chính xác tới đơn vị **giây**. Khi các thao tác luân chuyển, báo bán và chốt kỳ ký gửi phát sinh cùng một giây trong các bài kiểm thử hoặc giao dịch tự động, việc truy vấn theo mốc thời gian `effective_at >= start_time` sẽ dẫn đến lỗi sót hoặc trùng bút toán.
+- **Quy chuẩn:** Bảng kỳ đối soát ký gửi (`consignment_statements`) lưu trường `opening_ledger_rowid` (khóa tự tăng `rowid` của bút toán mở kỳ trên `inventory_ledger`). Mọi truy vấn phát sinh trong kỳ đều căn cứ theo:
+  `WHERE id > :opening_ledger_rowid AND id <= :closing_ledger_rowid`
+  Đảm bảo tính chính xác tuyệt đối 100% không phụ thuộc vào độ trễ đồng hồ hệ thống.
+
+### 33.4. Vỏ Hộp Là SKU Vật Lý Thực Tế (`BOX-...` Pseudo-SKU Architecture)
+- **Bối cảnh nghiệp vụ:** Một bộ sách combo/boxset (như Tuyển tập Molière, Dostoevsky) bao gồm các cuốn sách lẻ và một vỏ hộp carton cứng chuyên dụng. Chi phí vỏ hộp đáng kể và số lượng vỏ hộp in có giới hạn. Nếu chỉ quản lý sách lẻ mà không trừ kho vỏ hộp, quầy sẽ bán vượt quá số lượng hộp thực tế đang có.
+- **Quy chuẩn:**
+  1. Vỏ hộp được khai báo như một SKU ấn bản trong bảng `editions` với tiền tố quy ước: `BOX-<TEN_COMBO>` (ví dụ: `BOX-MOLIERE-2026`).
+  2. Do vỏ hộp không mang mã vạch sách thương mại ISBN, hệ thống quy định tiền tố ISBN của vỏ hộp là `BOX-...`.
+  3. **Bộ lọc an toàn (Scanner/Search Guard):** Động cơ quét mã vạch Barcode Scanner và tìm kiếm tiếng Việt loại trừ hoặc xử lý an toàn các mã phi số có tiền tố `BOX-`, ngăn chặn làm nhiễu danh mục 81 ấn bản sách chính thức.
+  4. Tồn kho combo khả dụng tuân thủ luật thắt nút cổ chai:
+     `available_combos = MIN(FLOOR(stock_i / req_i))` tính trên toàn bộ linh kiện VÀ vỏ hộp.
+
+### 33.5. Quy Ước Cách Ly Ấn Bản Kiểm Thử (The `FC-` Test SKU Convention)
+- **Nguyên tắc bất biến của kiểm toán:** Bộ test suite toàn diện (`test-master-audit.ts` và `test-vietnamese-search.ts`) assert bất biến nghiêm ngặt: hệ thống có đúng 81 ấn bản sách chuẩn (`H01` đến `H81`).
+- **Quy chuẩn kiểm thử:**
+  1. Bất kỳ suite kiểm thử nào cần tạo mới ấn bản sách tạm thời để test nghiệp vụ riêng (như `test-forecast.ts`) bắt buộc phải đặt mã SKU với tiền tố `FC-` (ví dụ `FC-FAST-SELLER`, `FC-SLOW-SELLER`).
+  2. Các suite này phải được sắp xếp chạy ở **cuối runner** (`scripts/run-isolated.ts`), sau khi các bài test kiểm toán danh mục chuẩn 81 ấn bản đã hoàn tất và đạt 100% kết quả xanh.
+
 
 
 

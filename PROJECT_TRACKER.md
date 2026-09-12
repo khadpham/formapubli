@@ -13,8 +13,8 @@
 | **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
 | **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
-| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟡 **ĐANG TRIỂN KHAI** | **65%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger` |
-| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | 🟡 **ĐANG TRIỂN KHAI** | **25%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/runout-forecasting-v-sale` |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟡 **ĐANG TRIỂN KHAI** | **~90%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/in-transit-two-step` |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | 🟡 **ĐANG TRIỂN KHAI** | **~20%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/runout-forecasting-v-sale` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
 ---
@@ -443,9 +443,7 @@
 - [x] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
 - [x] Xuất bảng tính Excel / CSV với mã UTF-8 BOM chuẩn xác 100% tiếng Việt có dấu, không lỗi font.
 
----
-
-### ⚪ Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [CHỜ TRIỂN KHAI]
+### 🟡 Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [ĐANG TRIỂN KHAI ~90%]
 *Mục tiêu: Xử lý các nghiệp vụ đặc thù chiều sâu của ngành sách Việt Nam.*
 
 #### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine) - [ĐÃ HOÀN THÀNH]
@@ -454,10 +452,12 @@
 - [x] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component) và tính toán số lượng khả dụng MIN(FLOOR(stock_i / req_i)).
 - [x] Phân bổ giá bán combo theo tỷ trọng giá bìa (Weighted Proration), triệt tiêu dòng 0 VNĐ.
 
-#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger)
-- [ ] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM.
-- [ ] Phân định rõ ràng: Đại lý giữ sách (*Custodian*) nhưng quyền sở hữu (*Owner*) vẫn thuộc công ty cho đến khi bán được.
-- [ ] Màn hình lập biên bản đối soát định kỳ: So sánh số sách gửi ban đầu với số đếm thực tế để bóc tách: Sách đã bán cần đòi tiền, sách rách hỏng cần thu hồi và sách thất thoát.
+#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger) - [ĐÃ HOÀN THÀNH LÕI SỔ CÁI & ĐỐI SOÁT AR]
+- [x] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM qua kho ảo riêng biệt `wh-consign-<code>`.
+- [x] Phân định rõ ràng: Đại lý giữ sách (*Custodian*) nhưng quyền sở hữu (*Owner*) gắn chặt `part-formapubli` cho đến khi bán được.
+- [x] Màn hình lập biên bản đối soát định kỳ `DRAFT` $\rightarrow$ `CONFIRMED`: Tự động so khớp phương trình đối soát $Tồn đầu + Gửi = Bán + Thu hồi + Hỏng/Mất + Tồn cuối$.
+- [x] Chốt công nợ phải thu ròng AR, phân tách góc nhìn Thuế vs Nội bộ, tự động xuất kho bán/mất, ngăn chặn thặng dư bất thường.
+- [ ] Thu tiền thanh toán công nợ ký gửi (Consignment Settlement & Cash/Bank reconciliation).
 
 #### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger)
 - [ ] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa).
@@ -466,7 +466,19 @@
 
 ---
 
-### ⚪ Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [CHỜ TRIỂN KHAI]
+### 🛡️ Phụ Lục: Hạ Tầng Phòng Thủ & Chuẩn Hóa Production (Production Hardening & Reliability)
+*Mục tiêu: Đảm bảo tính toàn vẹn dữ liệu kế toán, bảo mật cấp độ doanh nghiệp và khả năng sẵn sàng triển khai Cloudflare D1 100%.*
+
+- [x] **Luân Chuyển Hàng 2 Bước Chống Mất Mát (`IN_TRANSIT` Two-Step Engine):** Trạm trung chuyển ảo `wh-in-transit`, phương trình bảo toàn $R + D + L = X$, bóc tách sách lành NEW, hỏng QUARANTINE nối RMA, và thất thoát `TRANSFER_LOSS`.
+- [x] **Bảo Mật Két Tiền & Chống Thất Thoát Chiết Khấu (`Cashbox & Discount Hard-Cap`):** Trần chiết khấu thu ngân 15%, thẩm quyền Manager PIN mở khóa, phân quyền xem doanh số theo vai trò, nhật ký kiểm toán Audit Trail.
+- [x] **Mã Hóa PIN Quản Lý Zero-Dependency (`src/lib/manager-pin.ts`):** Băm `sha256(PIN + salt)` thuần TypeScript qua `export-hash.ts`, nạp danh sách hash từ biến môi trường `MANAGER_PIN_HASHES`, tương thích ngược 100% với giao diện POS client.
+- [x] **Cách Ly DB Kiểm Thử & Chống Ô Nhiễm Prod (`assertIsolatedTestDb`):** Tự động phát hiện và chặn đứng mọi script kiểm thử chạm vào `formapubli.db`, bảo toàn dữ liệu thật 100%.
+- [x] **Đồng Bộ Drizzle Migration Journal (`scripts/migrate-fresh.ts`):** Khôi phục tính nhất quán chuỗi migration từ `0000` đến `0008` (21 bảng), xử lý triệt để lỗi parse comment của LibSQL, chuẩn bị sẵn sàng cho lệnh `wrangler d1 migrations apply`.
+- [x] **Hệ Thống Kiểm Thử Tự Động 13 Suites / 141 Test Cases:** Đạt tỷ lệ bao phủ và vượt qua 100% tất cả các kịch bản kiểm thử luân chuyển, kế toán sổ kép, chiết khấu, ký gửi, combo đóng hộp và dự báo tái bản.
+
+---
+
+### 🟡 Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [ĐANG TRIỂN KHAI ~20%]
 *Mục tiêu: Đưa trí tuệ nhân tạo vào hỗ trợ trực tiếp nhân viên và giám đốc với chi phí 0 VNĐ/tháng (Free Tier First).*
 
 #### 📌 5.1. Smart Voice POS Dispatcher (Trợ Lý Lên Đơn Thần Tốc Bằng Giọng Nói)
