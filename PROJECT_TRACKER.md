@@ -14,7 +14,7 @@
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
 | **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
 | **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟡 **ĐANG TRIỂN KHAI** | **65%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger` |
-| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/lean-ai-copilot-and-crm` |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | 🟡 **ĐANG TRIỂN KHAI** | **25%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/runout-forecasting-v-sale` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
 ---
@@ -353,10 +353,30 @@
     - Chẩn đoán chính xác nguyên nhân lỗi SQLite `ADD COLUMN ... REFERENCES` trên migration `0003_slim_caretaker.sql`: các khối chú thích `/* ... */` gây lỗi ảo trong LibSQL engine; giữ nguyên vẹn 100% nội dung SQL đã deploy production.
     - Khôi phục tính toàn vẹn của Drizzle ORM: bổ sung đầy đủ các entries `0005` đến `0008` vào `_journal.json` cùng snapshot chuẩn `0008_snapshot.json` (kiểm tra `drizzle-kit generate` báo "No schema changes").
     - Xây dựng công cụ chạy migration an toàn `migrate-fresh.ts` tự động kiểm tra bảng, loại trừ comment, tuyệt đối chặn nhầm DB production. Chuyển `setup-test-db.ts` sang dùng cơ chế này.
+#### 🔹 [Mã: ENG-20260913-20] Động Cơ Dự Báo Tái Bản Theo Vận Tốc Bán Thực Tế (Reprint Runout Forecasting by V_sale)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/runout-forecasting-v-sale`) | **Commit:** `b6ca81b`
+- **Nội dung:**
+  - **Đo Lường Vận Tốc Bán Dựa Trên Sự Thật Vật Lý:**
+    - Tính toán $V_{\text{sale}}$ dựa trên các bút toán thẻ kho `DISPATCH_SALE` và `CONSIGNMENT_SOLD` (phản ánh toàn bộ lượng tiêu thụ thật trên toàn mạng lưới phát hành, kể cả quầy nhà và đại lý ký gửi).
+    - Cửa sổ quan sát linh hoạt (mặc định 30 ngày, tùy chọn $N$ ngày như 7 ngày, 60 ngày).
+  - **Công Thức Tính Số Ngày Tồn Kho (Days of Inventory - DoI):**
+    - `DoI = Tong_ton_kho_kha_dung / V_sale`
+    - Tồn khả dụng lấy từ các kho vật lý ở tình trạng `NEW`, loại trừ bảo thủ hàng đang đi đường (`wh-in-transit`) và hàng cách ly hỏng hóc để tránh rủi ro đứt hàng ngoài dự tính.
+    - Xử lý mượt mà trường hợp $V_{\text{sale}} = 0$: coi là sách chậm luân chuyển (`HEALTHY_NORMAL`, `DoI = Infinity`, `EOQ = 0`), không tạo cảnh báo giả.
+  - **Phân Cấp Cảnh Báo Sớm 3 Tầng:**
+    - `RED_ALERT` ($\text{DoI} \le 30$ ngày): Nguy cơ đứt hàng trước khi kịp tái bản, cần hành động khẩn cấp.
+    - `YELLOW_WARNING` ($30 < \text{DoI} \le 45$ ngày): Bắt đầu chuẩn bị kế hoạch tái bản và liên hệ đối tác in ấn.
+    - `HEALTHY_NORMAL` ($\text{DoI} > 45$ ngày): Mức tồn an toàn.
+  - **Tính Lượng Đặt Hàng Tối Ưu (EOQ):**
+    - `EOQ = CEIL(V_sale * (lead_time + buffer_days + co_so_an_toan_60_ngay))` = `CEIL(V_sale * 105)`.
+  - **API `/api/forecast` & RBAC Guard:**
+    - Cung cấp API tra cứu theo cờ cảnh báo, kho hàng, và số ngày cửa sổ quan sát; tự động ưu tiên các đầu sách `RED_ALERT` lên đầu.
+    - Chặn cứng vai trò `ROLE_CASHIER` và `ROLE_TAX` với HTTP 403 Forbidden.
   - **Kiểm Thử Toàn Diện:**
-    - Bổ sung kiểm thử mã hóa PIN và biến môi trường trong `scripts/test-discount-guard.ts` (10/10 PASS).
-    - Replay thành công chuỗi 9 migration files (`0000` $\rightarrow$ `0008`), khởi tạo đầy đủ 21 bảng.
-    - Toàn bộ **12 suites / 133 tests PASS 100%**, `formapubli.db` prod nguyên vẹn, Next.js build giữ vững First Load JS **132 kB**.
+    - Test suite `scripts/test-forecast.ts` đạt **8/8 PASS**.
+    - Nâng tổng số test suites lên **13 suites cách ly / 141 test cases đạt chuẩn 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
 
 
 
@@ -459,9 +479,11 @@
 - [ ] Chế độ an toàn Read-only: Chỉ gọi các API đọc số liệu doanh thu, tồn kho; cấm tuyệt đối can thiệp sửa đổi CSDL.
 - [ ] Cơ chế RBAC Scope Guard: Không rò rỉ dữ liệu Sổ Quản trị nội bộ cho tài khoản vai trò Kế toán thuế.
 
-#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting)
-- [ ] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực.
-- [ ] Cảnh báo điểm cạn kho trước 30-45 ngày để Giám đốc kịp làm việc với NXB và Nhà in.
+#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting) - [ĐÃ HOÀN THÀNH]
+- [x] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực từ thẻ kho vật lý.
+- [x] Cảnh báo phân cấp 3 tầng: RED_ALERT ($\le$ 30 ngày), YELLOW_WARNING (30-45 ngày), HEALTHY_NORMAL (> 45 ngày).
+- [x] Tính số lượng in kinh tế tối ưu EOQ dựa trên tổng chu kỳ lead time + buffer + an toàn 105 ngày.
+- [x] API `/api/forecast` phục vụ Dashboard quản trị và báo cáo ban giám đốc.
 
 #### 📌 5.4. Hồ Sơ Độc Giả Thân Thiết & Đọc Sách Theo Mùa (Reader Persona CRM)
 - [ ] Quản lý lịch sử mua sắm và sở thích đọc của từng bạn đọc.
