@@ -13,7 +13,7 @@
 | **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
 | **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
-| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/boxset-bundles-and-consignment` |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟡 **ĐANG TRIỂN KHAI** | **65%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger` |
 | **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/lean-ai-copilot-and-crm` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
@@ -317,7 +317,31 @@
   - **Kiểm Thử Toàn Diện:**
     - Test suite `scripts/test-consignment.ts` đạt **15/15 PASS**.
     - Nâng tổng số test suites lên **11 suites cách ly / 121 test cases đạt chuẩn 100%**.
-    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ ở mức **132 kB**.
+#### 🔹 [Mã: ENG-20260913-18] Triển Khai Động Cơ Bán Sách Combo/Đóng Hộp & Chặn Điểm Nghẽn Kho (Boxset & Bundle Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/boxset-engine`) | **Commit:** `1f39bad`
+- **Nội dung:**
+  - **Vỏ Hộp Là SKU Thực Tế Trong Kho (Pseudo-SKU):**
+    - Đưa quy cách đóng gói vỏ hộp vào CSDL với mã SKU quy ước (ví dụ `BOX-MOLIERE-2026`, `BOX-TEST`).
+    - Khấu trừ tồn kho vỏ hộp như sách thật, triệt tiêu rủi ro nhận đơn vượt quá số lượng bao bì đóng gói.
+  - **Migration `0008_boxset_bundles.sql`:**
+    - Mở rộng bảng `order_items` với 2 cột nullable `bundle_id` và `bundle_qty`.
+    - Cho phép POS gom nhóm hiển thị theo từng bộ hộp trên hóa đơn/giao diện, trong khi tầng kế toán và thẻ kho vẫn phân rã trừ từng linh kiện sách lẻ chuẩn xác.
+    - Script `scripts/apply-migration-0008.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Phân Bổ Giá Bìa Theo Tỷ Trọng (Weighted Proration Pricing):**
+    - Giá bán combo được phân bổ theo tỷ trọng giá bìa của từng linh kiện thành phần:
+      `unit_price_i = ROUND(combo_price * (cover_price_i / sum_cover_price))`
+    - Phần chênh lệch làm tròn được tự động dồn vào dòng sản phẩm cuối cùng, bảo đảm tổng tiền khớp 100% `comboPrice` và không xuất hiện dòng kế toán 0 VNĐ.
+  - **Chặn Cứng Điểm Nghẽn Tồn Kho (Bottleneck Inventory Guard):**
+    - Tính toán số lượng combo khả dụng tối đa theo linh kiện có tồn kho hạn chế nhất:
+      `available_combos = MIN(FLOOR(stock_i / req_i))`
+    - Từ chối tạo đơn ngay lập tức nếu bất kỳ linh kiện nào (hoặc vỏ hộp) bị thiếu hụt, đồng thời nêu đích danh đầu sách bị cạn và số lượng thiếu.
+  - **Miễn Trừ Hợp Lệ Với Hard-Cap Chiết Khấu Quầy:**
+    - Giá combo là giá niêm yết do ban quản lý quy định trước; các dòng chi tiết combo mang `unitDiscountRate = 0`, ngăn chặn double-dipping chiết khấu và miễn trừ hợp lệ qua trần 15% của thu ngân.
+  - **Kiểm Thử Toàn Diện & Tối Ưu:**
+    - Test suite `scripts/test-bundle-engine.ts` đạt **10/10 PASS**.
+    - Nâng tổng số test suites lên **12 suites cách ly / 131 test cases đạt chuẩn 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
 
 
 
@@ -387,10 +411,11 @@
 ### ⚪ Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [CHỜ TRIỂN KHAI]
 *Mục tiêu: Xử lý các nghiệp vụ đặc thù chiều sâu của ngành sách Việt Nam.*
 
-#### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine)
-- [ ] Khai báo cấu trúc sản phẩm phức hợp (Composite Item): 1 mã Combo bao gồm danh sách $N$ mã ấn bản lẻ + 1 vỏ hộp.
-- [ ] Khi bán 1 Combo tại Quầy POS, hệ thống tự động sinh bút toán Thẻ kho trừ đồng thời toàn bộ các cuốn sách lẻ thành phần và vỏ hộp.
-- [ ] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component).
+#### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine) - [ĐÃ HOÀN THÀNH]
+- [x] Khai báo cấu trúc sản phẩm phức hợp (Composite Item): 1 mã Combo bao gồm danh sách $N$ mã ấn bản lẻ + 1 vỏ hộp.
+- [x] Khi bán 1 Combo tại Quầy POS, hệ thống tự động sinh bút toán Thẻ kho trừ đồng thời toàn bộ các cuốn sách lẻ thành phần và vỏ hộp.
+- [x] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component) và tính toán số lượng khả dụng MIN(FLOOR(stock_i / req_i)).
+- [x] Phân bổ giá bán combo theo tỷ trọng giá bìa (Weighted Proration), triệt tiêu dòng 0 VNĐ.
 
 #### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger)
 - [ ] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM.
