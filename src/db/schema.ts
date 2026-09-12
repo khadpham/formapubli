@@ -219,6 +219,8 @@ export const orderItems = sqliteTable('order_items', {
   unitDiscountRate: real('unit_discount_rate').default(0.0), // Chiết khấu riêng nếu có
   unitSellingPrice: real('unit_selling_price').notNull(), // Đơn giá thực bán
   totalAmount: real('total_amount').notNull(), // Thành tiền = quantity * unitSellingPrice
+  bundleId: text('bundle_id').references(() => seasonalBundles.id), // Combo chứa dòng này (null = bán lẻ)
+  bundleQty: integer('bundle_qty'), // Số bộ combo của dòng này (null = bán lẻ)
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   orderIdIdx: index('idx_order_items_order_id').on(table.orderId),

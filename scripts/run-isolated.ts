@@ -21,6 +21,7 @@ const ALL_SUITES = [
   'scripts/test-offline-engine.ts',
   'scripts/test-in-transit.ts',
   'scripts/test-consignment.ts',
+  'scripts/test-bundle-engine.ts',
   'scripts/test-d3-d4.ts',
   'scripts/test-master-audit.ts',
   'scripts/test-vietnamese-search.ts',

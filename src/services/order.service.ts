@@ -1,5 +1,6 @@
 import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions } from '../db';
 import { InventoryService } from './inventory.service';
+import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 
@@ -31,7 +32,8 @@ export interface CreateOrderParams {
   note?: string;
   isOfflineSync?: boolean; // Cờ báo hiệu đơn sync từ hàng đợi ngoại tuyến hội chợ
   allowOverdraft?: boolean; // Cho phép áp dụng pattern bù tồn kho chênh lệch hội chợ
-  items: OrderItemInput[];
+  items?: OrderItemInput[];
+  bundles?: Array<{ bundleId: string; quantity: number }>; // Combo/boxset (giá do management định, không cộng CK đơn)
 }
 
 export interface OrderFilterParams {
@@ -66,8 +68,15 @@ export class OrderService {
       items,
     } = params;
 
-    if (!items || items.length === 0) {
-      throw new Error('Đơn hàng phải có ít nhất 1 đầu sách.');
+    const looseItems = items || [];
+    const bundleOrders = params.bundles || [];
+    const approxItemsCount = looseItems.length + bundleOrders.length;
+    const approxTotalQty =
+      looseItems.reduce((sum, i) => sum + i.quantity, 0) +
+      bundleOrders.reduce((sum, b) => sum + b.quantity, 0);
+
+    if ((!items || items.length === 0) && (!params.bundles || params.bundles.length === 0)) {
+      throw new Error('Đơn hàng phải có ít nhất 1 đầu sách hoặc 1 combo.');
     }
 
     // 0. Bảo vệ Idempotency (Tránh ghi trùng lặp khi Sync đơn Offline hoặc Retry)
@@ -87,18 +96,44 @@ export class OrderService {
           discountAmount: existing[0].discountAmount,
           finalAmount: existing[0].finalAmount,
           fiscalScope: existing[0].fiscalScope,
-          itemsCount: items.length,
-          totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
+          itemsCount: approxItemsCount,
+          totalQuantity: approxTotalQty,
           isDuplicate: true,
         };
       }
     }
 
-    // 1. Kiểm tra tồn kho trước cho toàn bộ sản phẩm (Pre-flight Stock Check)
+    // 0b. Mở rộng combo thành dòng linh kiện (bottleneck validate + tỉ trọng giá).
+    // Combo do management định giá sẵn nên KHÔNG cộng chiết khấu đơn (unitDiscountRate = 0).
+    const bundleLines: Array<{
+      editionId: string;
+      quantity: number;
+      unitCoverPrice: number;
+      unitDiscountRate: number;
+      unitSellingPrice: number;
+      totalAmount: number;
+      bundleId: string;
+      bundleQty: number;
+    }> = [];
+    for (const b of bundleOrders) {
+      if (b.quantity <= 0) {
+        throw new Error(`Số lượng combo ${b.bundleId} phải lớn hơn 0.`);
+      }
+      await BundleService.validateAvailability(b.bundleId, warehouseId, b.quantity);
+      const priced = await BundleService.priceLines(b.bundleId, b.quantity);
+      for (const p of priced) {
+        bundleLines.push({ ...p, unitDiscountRate: 0 });
+      }
+    }
+
+    const allItems: OrderItemInput[] = [...looseItems];
+
+    // 1. Kiểm tra tồn kho trước cho toàn bộ sản phẩm (lẻ + linh kiện combo)
     const isOfflineOrOverdraftAllowed = Boolean(params.isOfflineSync || params.allowOverdraft);
     const overdraftItems: Array<{ editionId: string; deficit: number }> = [];
+    const stockCheckItems = [...looseItems, ...bundleLines];
 
-    for (const item of items) {
+    for (const item of stockCheckItems) {
       if (item.quantity <= 0) {
         throw new Error(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
       }
@@ -120,7 +155,7 @@ export class OrderService {
     }
 
     // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có
-    const editionIds = items.map((i) => i.editionId);
+    const editionIds = stockCheckItems.map((i) => i.editionId);
     const dbEditions = await db
       .select({
         id: editions.id,
@@ -137,26 +172,47 @@ export class OrderService {
     let calculatedSubtotal = 0;
     let calculatedFinalAmount = 0;
 
-    const preparedItems = items.map((item) => {
-      const edition = editionMap.get(item.editionId);
-      const coverPrice = item.unitCoverPrice ?? (edition?.coverPrice || 0);
-      const itemDiscountRate = item.unitDiscountRate ?? discountRate;
-      const unitSellingPrice = Math.round(coverPrice * (1 - itemDiscountRate));
-      const lineTotal = item.quantity * unitSellingPrice;
+    const preparedItems = [
+      ...looseItems.map((item) => {
+        const edition = editionMap.get(item.editionId);
+        const coverPrice = item.unitCoverPrice ?? (edition?.coverPrice || 0);
+        const itemDiscountRate = item.unitDiscountRate ?? discountRate;
+        const unitSellingPrice = Math.round(coverPrice * (1 - itemDiscountRate));
+        const lineTotal = item.quantity * unitSellingPrice;
 
-      calculatedSubtotal += item.quantity * coverPrice;
-      calculatedFinalAmount += lineTotal;
+        calculatedSubtotal += item.quantity * coverPrice;
+        calculatedFinalAmount += lineTotal;
 
-      return {
-        id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-        editionId: item.editionId,
-        quantity: item.quantity,
-        unitCoverPrice: coverPrice,
-        unitDiscountRate: itemDiscountRate,
-        unitSellingPrice,
-        totalAmount: lineTotal,
-      };
-    });
+        return {
+          id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          editionId: item.editionId,
+          quantity: item.quantity,
+          unitCoverPrice: coverPrice,
+          unitDiscountRate: itemDiscountRate,
+          unitSellingPrice,
+          totalAmount: lineTotal,
+          bundleId: undefined as string | undefined,
+          bundleQty: undefined as number | undefined,
+        };
+      }),
+      // Dòng linh kiện combo: giá tỉ trọng đã chốt, không cộng CK đơn.
+      ...bundleLines.map((line) => {
+        calculatedSubtotal += line.quantity * line.unitCoverPrice;
+        calculatedFinalAmount += line.totalAmount;
+
+        return {
+          id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          editionId: line.editionId,
+          quantity: line.quantity,
+          unitCoverPrice: line.unitCoverPrice,
+          unitDiscountRate: line.unitDiscountRate,
+          unitSellingPrice: line.unitSellingPrice,
+          totalAmount: line.totalAmount,
+          bundleId: line.bundleId as string | undefined,
+          bundleQty: line.bundleQty as number | undefined,
+        };
+      }),
+    ];
 
     const calculatedDiscountAmount = calculatedSubtotal - calculatedFinalAmount;
 
@@ -221,6 +277,8 @@ export class OrderService {
           });
 
           // B3: Ghi nhận các dòng sản phẩm của đơn hàng
+          // (dòng combo mang bundleId/bundleQty để POS gom hiển thị theo bộ)
+          let lineIdx = 0;
           for (const item of preparedItems) {
             await tx.insert(orderItems).values({
               id: item.id,
@@ -231,9 +289,12 @@ export class OrderService {
               unitDiscountRate: item.unitDiscountRate,
               unitSellingPrice: item.unitSellingPrice,
               totalAmount: item.totalAmount,
+              bundleId: item.bundleId,
+              bundleQty: item.bundleQty,
             });
 
             // B4: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
+            // Mỗi linh kiện 1 bút toán, chung correlationId = mã đơn (nguyên tử all-or-nothing).
             await InventoryService.recordMovement({
               editionId: item.editionId,
               warehouseId,
@@ -241,12 +302,15 @@ export class OrderService {
               quantityDelta: -item.quantity,
               condition: 'NEW',
               documentRef: orderCode,
-              note: `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
+              note: item.bundleId
+                ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
+                : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
               actorId: cashierId,
               correlationId: orderId,
-              idempotencyKey: `idem-stock-${orderId}-${item.editionId}`,
+              idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
               tx,
             });
+            lineIdx++;
           }
         });
       });
@@ -271,7 +335,7 @@ export class OrderService {
             finalAmount: existing[0].finalAmount,
             fiscalScope: existing[0].fiscalScope,
             itemsCount: preparedItems.length,
-            totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
+            totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
             isDuplicate: true,
           };
         }
@@ -289,7 +353,7 @@ export class OrderService {
       finalAmount: calculatedFinalAmount,
       fiscalScope,
       itemsCount: preparedItems.length,
-      totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
+      totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
     };
   }
 

@@ -108,15 +108,16 @@ export async function POST(req: NextRequest) {
       cashboxSessionId,
       note,
       items,
+      bundles,
       isOfflineSync,
       allowOverdraft,
       managerPin,
       managerApprovalCode,
     } = body;
 
-    if (!warehouseId || !items || !Array.isArray(items) || items.length === 0) {
+    if (!warehouseId || ((!items || !Array.isArray(items) || items.length === 0) && (!bundles || !Array.isArray(bundles) || bundles.length === 0))) {
       return NextResponse.json(
-        { success: false, error: 'Thiếu kho xuất hàng (warehouseId) hoặc danh sách sản phẩm (items).' },
+        { success: false, error: 'Thiếu kho xuất hàng (warehouseId) hoặc danh sách sản phẩm (items/bundles).' },
         { status: 400 }
       );
     }
@@ -127,11 +128,13 @@ export async function POST(req: NextRequest) {
     // SERVER-ENFORCE DISCOUNT HARD-CAP:
     // Chặn cả chiết khấu tổng đơn LẪN chiết khấu từng dòng (line item),
     // vì OrderService cho phép unitDiscountRate kế thừa discountRate tổng.
+    // Dòng combo (bundles) do management định giá sẵn nên miễn trần này.
+    const safeItems = Array.isArray(items) ? items : [];
     const parsedOrderDiscount =
       discountRate !== undefined && discountRate !== null && `${discountRate}` !== ''
         ? parseFloat(discountRate)
         : 0;
-    const effectiveItemDiscounts = (items as any[]).map((it) => {
+    const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
       const v = it?.unitDiscountRate;
       const parsed =
         v !== undefined && v !== null && `${v}` !== '' ? parseFloat(v) : parsedOrderDiscount;
@@ -188,7 +191,10 @@ export async function POST(req: NextRequest) {
       note,
       isOfflineSync: isLegitOfflineSync,
       allowOverdraft: safeAllowOverdraft,
-      items,
+      items: safeItems,
+      bundles: Array.isArray(bundles)
+        ? bundles.map((b: any) => ({ bundleId: b.bundleId, quantity: parseInt(b.quantity ?? 0, 10) }))
+        : undefined,
     });
 
     recordAuditLog({

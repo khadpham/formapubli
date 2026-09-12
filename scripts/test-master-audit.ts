@@ -37,10 +37,12 @@ async function runMasterAudit() {
   console.log('--- PHẦN 1: KIỂM TOÁN MASTER DATA & TỒN TẠI VẬT LÝ ---');
 
   const allEditions = await db.select().from(editions);
-  assert(allEditions.length === 81, 'Danh mục ấn bản sách chuẩn hóa', `Có đúng ${allEditions.length}/81 ấn bản (H01-H81)`);
+  const bookEditions = allEditions.filter((e) => !e.code.startsWith('BOX-'));
+  assert(bookEditions.length === 81, 'Danh mục ấn bản sách chuẩn hóa', `Có đúng ${bookEditions.length}/81 ấn bản sách (H01-H81, chưa kể SKU vỏ hộp BOX-)`);
 
   const allWorks = await db.select().from(works);
-  assert(allWorks.length === 80, 'Danh mục tác phẩm gốc', `Có đúng ${allWorks.length}/80 tác phẩm (H21 và H36 chung tác phẩm Baudelaire)`);
+  const bookWorks = allWorks.filter((w) => !w.code.startsWith('W-BOX-'));
+  assert(bookWorks.length === 80, 'Danh mục tác phẩm gốc', `Có đúng ${bookWorks.length}/80 tác phẩm (H21 và H36 chung tác phẩm Baudelaire, chưa kể tác phẩm vỏ hộp)`);
 
   const allWarehouses = await db.select().from(warehouses);
   const warehouseCodes = allWarehouses.map((w) => w.code);
