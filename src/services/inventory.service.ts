@@ -6,11 +6,18 @@ export interface RecordMovementParams {
   warehouseId: string;
   eventType: 'RECEIPT' | 'DISPATCH_SALE' | 'DISPATCH_GIFT' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'ADJUSTMENT' | 'OPENING_BALANCE';
   quantityDelta: number; // positive or negative, must be non-zero
-  condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE';
+  condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
   documentRef: string;
   note?: string;
   actorId: string;
   idempotencyKey?: string;
+  ownerId?: string;
+  lotId?: string;
+  unitCostSnapshot?: number;
+  correlationId?: string;
+  reversalOf?: string;
+  effectiveAt?: string;
+  tx?: any; // Cho phép truyền transaction context bên ngoài
 }
 
 export interface TransferParams {
@@ -18,7 +25,7 @@ export interface TransferParams {
   fromWarehouseId: string;
   toWarehouseId: string;
   quantity: number;
-  condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE';
+  condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
   documentRef: string;
   actorId: string;
   note?: string;
@@ -63,70 +70,105 @@ export class InventoryService {
       note,
       actorId,
       idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      ownerId,
+      lotId,
+      unitCostSnapshot,
+      correlationId,
+      reversalOf,
+      effectiveAt,
+      tx: externalTx,
     } = params;
 
     if (quantityDelta === 0) {
       throw new Error('Độ biến động tồn kho (quantityDelta) phải khác 0.');
     }
 
-    // 1. Kiểm tra tồn kho trước khi xuất (nếu delta < 0)
-    const currentQty = await this.getBalance(editionId, warehouseId, condition);
-    if (quantityDelta < 0 && currentQty + quantityDelta < 0) {
-      throw new Error(
-        `LỖI XUẤT ÂM KHO: Tồn kho hiện tại là ${currentQty}, không đủ để xuất ${Math.abs(quantityDelta)} cuốn!`
-      );
-    }
+    const executeWork = async (tx: any) => {
+      // 1. Kiểm tra tồn kho trước khi xuất (ngay trong transaction)
+      const existing = await tx
+        .select()
+        .from(stockBalances)
+        .where(
+          and(
+            eq(stockBalances.editionId, editionId),
+            eq(stockBalances.warehouseId, warehouseId),
+            eq(stockBalances.condition, condition)
+          )
+        )
+        .limit(1);
 
-    const ledgerId = `led-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const currentQty = existing.length > 0 ? existing[0].physicalQuantity : 0;
+      if (quantityDelta < 0 && currentQty + quantityDelta < 0) {
+        throw new Error(
+          `LỖI XUẤT ÂM KHO: Tồn kho hiện tại là ${currentQty}, không đủ để xuất ${Math.abs(quantityDelta)} cuốn!`
+        );
+      }
 
-    // 2. Ghi bút toán vào Sổ cái bất biến (Append-Only)
-    await db.insert(inventoryLedger).values({
-      id: ledgerId,
-      editionId,
-      warehouseId,
-      eventType,
-      quantityDelta,
-      condition,
-      documentRef,
-      note,
-      actorId,
-      idempotencyKey,
-    });
+      const ledgerId = `led-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    // 3. Cập nhật bảng cân đối tồn kho tức thời (Stock Balance)
-    const newQty = currentQty + quantityDelta;
-    const bucketId = `sb-${editionId}-${warehouseId}-${condition}`;
-
-    await db
-      .insert(stockBalances)
-      .values({
-        id: bucketId,
+      // 2. Ghi bút toán vào Sổ cái bất biến (Append-Only)
+      await tx.insert(inventoryLedger).values({
+        id: ledgerId,
         editionId,
         warehouseId,
+        ownerId,
+        lotId,
+        eventType,
+        quantityDelta,
+        unitCostSnapshot,
         condition,
-        physicalQuantity: newQty,
-      })
-      .onConflictDoUpdate({
-        target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
-        set: {
-          physicalQuantity: newQty,
-          updatedAt: sql`CURRENT_TIMESTAMP`,
-        },
+        documentRef,
+        note,
+        actorId,
+        correlationId,
+        reversalOf,
+        idempotencyKey,
+        effectiveAt: effectiveAt || new Date().toISOString(),
       });
 
-    return {
-      ledgerId,
-      editionId,
-      warehouseId,
-      previousQuantity: currentQty,
-      newQuantity: newQty,
-      quantityDelta,
+      // 3. Cập nhật bảng cân đối tồn kho tức thời (Stock Balance)
+      const newQty = currentQty + quantityDelta;
+      const bucketId = `sb-${editionId}-${warehouseId}-${condition}`;
+
+      await tx
+        .insert(stockBalances)
+        .values({
+          id: bucketId,
+          editionId,
+          warehouseId,
+          condition,
+          physicalQuantity: newQty,
+        })
+        .onConflictDoUpdate({
+          target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
+          set: {
+            physicalQuantity: newQty,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          },
+        });
+
+      return {
+        ledgerId,
+        editionId,
+        warehouseId,
+        previousQuantity: currentQty,
+        newQuantity: newQty,
+        quantityDelta,
+      };
     };
+
+    if (externalTx) {
+      return await executeWork(externalTx);
+    }
+    return await db.transaction(async (tx) => {
+      return await executeWork(tx);
+    });
   }
 
   /**
    * Thực hiện điều chuyển sách giữa 2 kho vật lý (ví dụ: Quỳnh Mai ➔ Âu Cơ, hoặc Âu Cơ ➔ Dự phòng).
    * Tạo 2 bút toán liên kết trong cùng nghiệp vụ: TRANSFER_OUT và TRANSFER_IN.
+   * Chạy nguyên tử trong một Transaction duy nhất.
    */
   static async transfer(params: TransferParams) {
     const {
@@ -148,49 +190,51 @@ export class InventoryService {
       throw new Error('Kho xuất và kho nhập phải khác nhau.');
     }
 
-    // Kiểm tra số dư kho nguồn
-    const sourceQty = await this.getBalance(editionId, fromWarehouseId, condition);
-    if (sourceQty < quantity) {
-      throw new Error(
-        `Kho xuất không đủ hàng: Hiện chỉ có ${sourceQty} cuốn, yêu cầu chuyển ${quantity} cuốn.`
-      );
-    }
+    const transferBatchId = `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-    const transferBatchId = `trf-${Date.now()}`;
+    return await db.transaction(async (tx) => {
+      // 1. Xuất kho nguồn (TRANSFER_OUT)
+      const outResult = await this.recordMovement({
+        editionId,
+        warehouseId: fromWarehouseId,
+        eventType: 'TRANSFER_OUT',
+        quantityDelta: -quantity,
+        condition,
+        documentRef,
+        actorId,
+        correlationId: transferBatchId,
+        note: `Chuyển kho tới kho đích [${toWarehouseId}]. ${note}`.trim(),
+        idempotencyKey: `${transferBatchId}-out`,
+        tx,
+      });
 
-    // 1. Xuất kho nguồn (TRANSFER_OUT)
-    const outResult = await this.recordMovement({
-      editionId,
-      warehouseId: fromWarehouseId,
-      eventType: 'TRANSFER_OUT',
-      quantityDelta: -quantity,
-      condition,
-      documentRef,
-      actorId,
-      note: `Chuyển kho tới kho đích [${toWarehouseId}]. ${note}`.trim(),
-      idempotencyKey: `${transferBatchId}-out`,
+      // 2. Nhập kho đích (TRANSFER_IN)
+      const inResult = await this.recordMovement({
+        editionId,
+        warehouseId: toWarehouseId,
+        eventType: 'TRANSFER_IN',
+        quantityDelta: quantity,
+        condition,
+        documentRef,
+        actorId,
+        correlationId: transferBatchId,
+        note: `Tiếp nhận chuyển kho từ kho nguồn [${fromWarehouseId}]. ${note}`.trim(),
+        idempotencyKey: `${transferBatchId}-in`,
+        tx,
+      });
+
+      return {
+        transferBatchId,
+        editionId,
+        fromWarehouseId,
+        toWarehouseId,
+        quantity,
+        outLedgerId: outResult.ledgerId,
+        inLedgerId: inResult.ledgerId,
+        fromWarehouse: outResult,
+        toWarehouse: inResult,
+      };
     });
-
-    // 2. Nhập kho đích (TRANSFER_IN)
-    const inResult = await this.recordMovement({
-      editionId,
-      warehouseId: toWarehouseId,
-      eventType: 'TRANSFER_IN',
-      quantityDelta: quantity,
-      condition,
-      documentRef,
-      actorId,
-      note: `Tiếp nhận chuyển kho từ kho nguồn [${fromWarehouseId}]. ${note}`.trim(),
-      idempotencyKey: `${transferBatchId}-in`,
-    });
-
-    return {
-      transferBatchId,
-      documentRef,
-      quantity,
-      fromWarehouse: outResult,
-      toWarehouse: inResult,
-    };
   }
 
   /**

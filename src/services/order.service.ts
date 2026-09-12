@@ -1,6 +1,7 @@
 import { db, orders, orderItems, editions, warehouses, partners, customers } from '../db';
 import { InventoryService } from './inventory.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
+import { withDbRetry } from '../lib/db-retry';
 
 export interface OrderItemInput {
   editionId: string;
@@ -27,6 +28,8 @@ export interface CreateOrderParams {
   cashierId?: string;
   idempotencyKey?: string;
   note?: string;
+  isOfflineSync?: boolean; // Cờ báo hiệu đơn sync từ hàng đợi ngoại tuyến hội chợ
+  allowOverdraft?: boolean; // Cho phép áp dụng pattern bù tồn kho chênh lệch hội chợ
   items: OrderItemInput[];
 }
 
@@ -90,6 +93,9 @@ export class OrderService {
     }
 
     // 1. Kiểm tra tồn kho trước cho toàn bộ sản phẩm (Pre-flight Stock Check)
+    const isOfflineOrOverdraftAllowed = Boolean(params.isOfflineSync || params.allowOverdraft);
+    const overdraftItems: Array<{ editionId: string; deficit: number }> = [];
+
     for (const item of items) {
       if (item.quantity <= 0) {
         throw new Error(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
@@ -97,9 +103,17 @@ export class OrderService {
 
       const currentBalance = await InventoryService.getBalance(item.editionId, warehouseId, 'NEW');
       if (currentBalance < item.quantity) {
-        throw new Error(
-          `KHÔNG ĐỦ TỒN KHO: Ấn bản ${item.editionId} tại kho chỉ còn ${currentBalance} cuốn, không đủ để bán ${item.quantity} cuốn!`
-        );
+        if (!isOfflineOrOverdraftAllowed) {
+          throw new Error(
+            `KHÔNG ĐỦ TỒN KHO: Ấn bản ${item.editionId} tại kho chỉ còn ${currentBalance} cuốn, không đủ để bán ${item.quantity} cuốn!`
+          );
+        } else {
+          // Bán lẻ hội chợ / Sync ngoại tuyến: Ghi nhận lượng thiếu hụt để bù kiểm đếm
+          overdraftItems.push({
+            editionId: item.editionId,
+            deficit: item.quantity - currentBalance,
+          });
+        }
       }
     }
 
@@ -151,58 +165,115 @@ export class OrderService {
     const orderId = params.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const idempotencyKey = params.idempotencyKey || `idem-order-${orderId}`;
     const createdAt = params.createdAt || new Date().toISOString();
+    const hasOverdraft = overdraftItems.length > 0;
 
-    // 5. Ghi nhận Đơn hàng vào CSDL
-    await db.insert(orders).values({
-      id: orderId,
-      orderCode,
-      warehouseId,
-      channel,
-      partnerId,
-      customerId,
-      customerName,
-      subtotal: calculatedSubtotal,
-      discountRate,
-      discountAmount: calculatedDiscountAmount,
-      finalAmount: calculatedFinalAmount,
-      paymentMethod,
-      fiscalScope,
-      vatRate,
-      vatInvoiceRequired,
-      vatInvoiceCode,
-      status: 'COMPLETED',
-      syncStatus: 'SYNCED',
-      cashierId,
-      idempotencyKey,
-      note,
-      createdAt,
-    });
+    // 5. Ghi nhận Đơn hàng & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
+    try {
+      await withDbRetry(async () => {
+        await db.transaction(async (tx) => {
+          // B1: Nếu có sản phẩm bán lệch tồn kho hội chợ, tự động sinh bút toán bù kiểm đếm
+          // Pattern: ADJUSTMENT (+K cuốn) trước -> CHECK (physical_quantity >= 0) luôn thỏa mãn!
+          for (const over of overdraftItems) {
+            await InventoryService.recordMovement({
+              editionId: over.editionId,
+              warehouseId,
+              eventType: 'ADJUSTMENT',
+              quantityDelta: over.deficit,
+              condition: 'NEW',
+              documentRef: orderCode,
+              correlationId: orderId,
+              note: `Bù lệch kiểm kê hội chợ (FAIR_VARIANCE) cho đơn ${orderCode}`,
+              actorId: cashierId || 'Hội chợ',
+              idempotencyKey: `idem-variance-${orderId}-${over.editionId}`,
+              tx,
+            });
+          }
 
-    // 6. Ghi nhận các dòng sản phẩm của đơn hàng
-    for (const item of preparedItems) {
-      await db.insert(orderItems).values({
-        id: item.id,
-        orderId,
-        editionId: item.editionId,
-        quantity: item.quantity,
-        unitCoverPrice: item.unitCoverPrice,
-        unitDiscountRate: item.unitDiscountRate,
-        unitSellingPrice: item.unitSellingPrice,
-        totalAmount: item.totalAmount,
+          // B2: Lưu đơn hàng
+          await tx.insert(orders).values({
+            id: orderId,
+            orderCode,
+            warehouseId,
+            channel,
+            partnerId,
+            customerId,
+            customerName,
+            subtotal: calculatedSubtotal,
+            discountRate,
+            discountAmount: calculatedDiscountAmount,
+            finalAmount: calculatedFinalAmount,
+            paymentMethod,
+            fiscalScope,
+            vatRate,
+            vatInvoiceRequired,
+            vatInvoiceCode,
+            status: 'COMPLETED',
+            syncStatus: hasOverdraft ? 'SYNCED_WITH_OVERDRAFT_WARNING' : 'SYNCED',
+            cashierId,
+            idempotencyKey,
+            note: hasOverdraft
+              ? `${note ? note + ' | ' : ''}[CẢNH BÁO: Bán lệch kiểm kê hội chợ +${overdraftItems.reduce((s, o) => s + o.deficit, 0)} cuốn]`
+              : note,
+            createdAt,
+          });
+
+          // B3: Ghi nhận các dòng sản phẩm của đơn hàng
+          for (const item of preparedItems) {
+            await tx.insert(orderItems).values({
+              id: item.id,
+              orderId,
+              editionId: item.editionId,
+              quantity: item.quantity,
+              unitCoverPrice: item.unitCoverPrice,
+              unitDiscountRate: item.unitDiscountRate,
+              unitSellingPrice: item.unitSellingPrice,
+              totalAmount: item.totalAmount,
+            });
+
+            // B4: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
+            await InventoryService.recordMovement({
+              editionId: item.editionId,
+              warehouseId,
+              eventType: 'DISPATCH_SALE',
+              quantityDelta: -item.quantity,
+              condition: 'NEW',
+              documentRef: orderCode,
+              note: `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
+              actorId: cashierId,
+              correlationId: orderId,
+              idempotencyKey: `idem-stock-${orderId}-${item.editionId}`,
+              tx,
+            });
+          }
+        });
       });
+    } catch (err: any) {
+      // Bắt lỗi Race Condition nếu 2 luồng cùng mang 1 idempotencyKey ghi cùng lúc
+      const errMsg = (err?.message || '').toLowerCase();
+      if (errMsg.includes('unique') || errMsg.includes('sqlite_constraint')) {
+        const existing = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.idempotencyKey, idempotencyKey))
+          .limit(1);
 
-      // 7. Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
-      await InventoryService.recordMovement({
-        editionId: item.editionId,
-        warehouseId,
-        eventType: 'DISPATCH_SALE',
-        quantityDelta: -item.quantity,
-        condition: 'NEW',
-        documentRef: orderCode,
-        note: `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
-        actorId: cashierId,
-        idempotencyKey: `idem-stock-${orderId}-${item.editionId}`,
-      });
+        if (existing.length > 0) {
+          return {
+            orderId: existing[0].id,
+            orderCode: existing[0].orderCode,
+            warehouseId: existing[0].warehouseId,
+            customerName: existing[0].customerName,
+            subtotal: existing[0].subtotal,
+            discountAmount: existing[0].discountAmount,
+            finalAmount: existing[0].finalAmount,
+            fiscalScope: existing[0].fiscalScope,
+            itemsCount: preparedItems.length,
+            totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
+            isDuplicate: true,
+          };
+        }
+      }
+      throw err;
     }
 
     return {

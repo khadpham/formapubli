@@ -154,11 +154,36 @@
   - Nâng cấp `SalesLedgerView.tsx`:
     - Bộ lọc thời gian đa chiều: Tất cả, Hôm nay, 7 ngày qua, Tháng này, Tùy chọn (Custom Range).
     - Bộ lọc theo Kho xuất hàng: Toàn hệ thống, Kho 1 - Âu Cơ, Kho 3 - Hội Chợ, Kho 2 - Quỳnh Mai.
-    - Nút xuất file Excel/CSV chuẩn UTF-8 BOM hiển thị chuẩn xác 100% tiếng Việt có dấu.
-  - Bộ kiểm thử tự động `scripts/test-offline-engine.ts` vượt qua **9/9 test cases (100%)**.
+    - Bộ kiểm thử tự động `scripts/test-offline-engine.ts` vượt qua **9/9 test cases (100%)**.
   - Kiểm thử quét mã vạch `scripts/test-barcode-engine.ts`: **7/7 test cases (100%)**.
   - Kiểm toán tổng thể `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
   - Đóng gói Next.js production build (`npm run build`): **0 lỗi biên dịch, First Load JS chỉ 120 kB**.
+
+#### 🔹 [Mã: ENG-20260913-12] Vá Toàn Diện Lỗ Hổng Kỹ Thuật Cốt Lõi (Priority P0 Technical Audit Fixes)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - **Vá ACID Transaction cho Thẻ Kho & Bán Hàng (Triệt tiêu B1):**
+    - Viết lại `InventoryService.recordMovement` và `InventoryService.transfer` bọc 100% trong `db.transaction(async (tx) => { ... })`. Gom kiểm tra tồn, insert thẻ kho và upsert balance vào một giao dịch nguyên tử, tự động rollback sạch sẽ nếu lỗi.
+    - Viết lại `OrderService.createOrder` thực thi nguyên tử trong một Transaction (All-or-Nothing): Tạo đơn hàng, lưu chi tiết đơn hàng và trừ thẻ kho từng cuốn sách đồng thời. Nếu 1 cuốn sách thiếu hàng, toàn bộ đơn tự động hủy bỏ, không sinh đơn rác.
+  - **Nâng cấp Schema `inventory_ledger` & Ràng buộc CSDL (Triệt tiêu B2):**
+    - Bổ sung 6 trường kiểm toán nền móng: `owner_id`, `lot_id`, `unit_cost_snapshot`, `correlation_id`, `reversal_of`, `effective_at`.
+    - Mở rộng enum `condition` hỗ trợ `QUARANTINE`.
+    - Thêm ràng buộc `nonNegativeCheck: check('check_stock_non_negative', sql`physical_quantity >= 0`)` trên bảng `stock_balances`.
+    - Áp dụng thành công migration `0003_slim_caretaker.sql` trên `formapubli.db`.
+  - **Xây Dựng Lá Chắn Bảo Mật Server-side Cho Sổ Kép & Audit Logs (Triệt tiêu B3 & B4):**
+    - Xây dựng `src/lib/rbac-guard.ts` với hàm `enforceFiscalScope`: Server tự động ép chặt `ROLE_TAX` chỉ được xem `OFFICIAL_TAX`, chặn đứng 100% việc sửa tham số trên URL để đọc trộm Sổ Quản trị nội bộ.
+    - Tạo bảng CSDL `audit_logs` tự động ghi vết mọi lượt truy cập dữ liệu quản trị nội bộ hoặc thao tác tạo đơn hàng.
+  - **Gia Cố Concurrency & Xử Lý Lệch Tồn Hội Chợ (Theo Góp Ý Chuyên Gia):**
+    - Tiện ích `src/lib/db-retry.ts` (`withDbRetry`): Bọc cơ chế thử lại tự động với Exponential Backoff và Random Jitter khi gặp `SQLITE_BUSY` hoặc `database is locked`.
+    - **Pattern Offline Overdraft 2 bước:** Khi đơn sync ngoại tuyến bán vượt số tồn, hệ thống tự động sinh `ADJUSTMENT (+K)` với ghi chú `FAIR_VARIANCE` rồi mới trừ `SALE (-K)` $\rightarrow$ Ràng buộc `CHECK (physical_quantity >= 0)` luôn thỏa mãn 100%, số dư không bị âm, đơn hàng gắn cờ `SYNCED_WITH_OVERDRAFT_WARNING` để đối soát cuối ca.
+    - **Khắc phục Race Condition của Idempotency Key:** Bắt lỗi `SQLITE_CONSTRAINT_UNIQUE` khi 2 luồng gửi cùng 1 key đồng thời, tự động truy vấn và trả về kết quả cũ 200 thay vì sập lỗi 500.
+  - **Kiểm Thử & Đóng Gói:**
+    - Xây dựng bộ test chuyên sâu `scripts/test-p0-verification.ts`: Vượt qua **7/7 test cases (100%)**.
+    - Bộ kiểm thử `scripts/test-inventory.ts`: **6/6 test cases (100%)**.
+    - Bộ kiểm thử `scripts/test-order-sales.ts`: **6/6 test cases (100%)**.
+    - Bộ kiểm thử `scripts/test-offline-engine.ts`: **9/9 test cases (100%)**.
+    - Bộ kiểm toán Master Audit `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+    - Đóng gói Next.js Production (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS chỉ 125 kB.
 
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
@@ -263,12 +288,18 @@
 - [ ] Phân loại nhóm độc giả sưu tầm (sách bản đặc biệt, bìa cứng) vs độc giả mua combo theo mùa.
 - [ ] AI gợi ý danh sách bạn đọc phù hợp nhất khi ra mắt tác phẩm mới cùng dịch giả hoặc cùng chủ đề.
 
+#### 📌 5.5. Báo Cáo Tự Động Hàng Tháng Cho Giám Đốc Qua Email (Automated Monthly Executive Email Dispatcher)
+- [ ] Thiết kế mẫu Email HTML Responsive trực quan (Scorecards Doanh thu ròng, Cơ cấu Sổ kép Thuế vs Nội bộ, Top 5 tựa sách bán chạy, Cảnh báo đỏ sách sắp cạn kho).
+- [ ] Tích hợp AI Executive Briefing (Gemini Flash tóm lược nhận định 3 dòng: Điểm sáng - Rủi ro - Quyết sách tháng tới).
+- [ ] Tự động hóa gửi mail vào 07:00 sáng ngày mùng 1 hàng tháng bằng Cloudflare Cron / Resend API (0đ chi phí).
+- [ ] Tự động đính kèm file bảng tính Excel/CSV đối soát chi tiết cho ban điều hành.
+
 ---
 
 ### ⚪ Phase 6: Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện - [TẦM NHÌN DÀI HẠN]
 - [ ] Đồng bộ tồn kho 2 chiều với Shopee Open Platform & TikTok Shop theo hạn ngạch an toàn.
 - [ ] Kết nối API phần mềm Hóa đơn điện tử chính thức (VNPT / Viettel / MISA) cho các đơn `OFFICIAL_TAX`.
-- [ ] Đóng gói tài liệu bàn giao kỹ thuật, thiết lập cơ chế sao lưu CSDL tự động lên Google Drive hàng ngày.
+- [ ] Đóng gói tài liệu bàn giao kỹ thuật, thiết lập cơ chế sao lưu CSDL tự động lên Google Drive hàng ngày/hàng tuần linh hoạt.
 
 ---
 
@@ -283,4 +314,5 @@
 | **Đối soát ký gửi Đinh Lễ** | Số lượng sách gửi ký gửi thường xuyên lệch sau 3-6 tháng | Sổ cái ký gửi riêng biệt + Thuật toán so lệch kiểm đếm thực tế | 🟡 Quan trọng | **Phase 4** (Mục 4.2) |
 | **Lên đơn giọng nói bằng AI** | Hội chợ ồn ào hoặc đơn sỉ nhiều đầu sách cần lên nhanh | Groq Whisper + LLaMA 3.3 tự động bóc tách thực thể nạp vào Giỏ POS | 🟢 Trung hạn | **Phase 5** (Mục 5.1) |
 | **Cảnh báo tái bản sách** | In sách mất 30-40 ngày, để hết sách mới in sẽ mất mùa bán | Thuật toán đo vận tốc bán $V_{\text{sale}}$ cảnh báo trước điểm cạn kho | 🟢 Trung hạn | **Phase 5** (Mục 5.3) |
+| **Email Báo Cáo Giám Đốc Hàng Tháng** | Cần nắm toàn cảnh doanh thu, dòng tiền, tựa sách hot mà không cần đăng nhập ERP | Email HTML tự động ngày 1 hàng tháng + AI Briefing 3 dòng + File Excel đính kèm (Resend 0đ) | 🟢 Trung hạn | **Phase 5** (Mục 5.5) |
 

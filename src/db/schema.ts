@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, check } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // 1. Works / Master Titles (Tầng 1: Tác phẩm)
@@ -143,18 +143,25 @@ export const inventoryLedger = sqliteTable('inventory_ledger', {
   id: text('id').primaryKey(),
   editionId: text('edition_id').notNull().references(() => editions.id),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  ownerId: text('owner_id').references(() => partners.id), // PARTNER_FORMAPUBLI or consignment partner
+  lotId: text('lot_id'), // Printing lot or batch identifier
   eventType: text('event_type').notNull(), // RECEIPT, DISPATCH_SALE, DISPATCH_GIFT, TRANSFER_OUT, TRANSFER_IN, ADJUSTMENT, OPENING_BALANCE
   quantityDelta: integer('quantity_delta').notNull(), // Positive or negative non-zero
-  condition: text('condition').default('NEW'), // NEW, MINOR_DAMAGE, DEFECTIVE
+  unitCostSnapshot: real('unit_cost_snapshot'), // Cost of goods snapshot at transaction time
+  condition: text('condition').default('NEW'), // NEW, MINOR_DAMAGE, DEFECTIVE, QUARANTINE
   documentRef: text('document_ref').notNull(), // Goods Receipt, Dispatch Note, Stocktake Voucher
   note: text('note'),
   actorId: text('actor_id').notNull(), // Operator identifier
+  correlationId: text('correlation_id'), // Linked transaction ID (e.g. transfer pair)
+  reversalOf: text('reversal_of'), // Reversal link to an original ledger entry
   idempotencyKey: text('idempotency_key').notNull().unique(), // Replay prevention
+  effectiveAt: text('effective_at').default(sql`CURRENT_TIMESTAMP`),
   recordedAt: text('recorded_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   editionWarehouseIdx: index('idx_ledger_edition_warehouse').on(table.editionId, table.warehouseId),
   eventIdx: index('idx_ledger_event_type').on(table.eventType),
   idempotencyIdx: uniqueIndex('idx_ledger_idempotency').on(table.idempotencyKey),
+  correlationIdx: index('idx_ledger_correlation_id').on(table.correlationId),
 }));
 
 // 11. Real-time Stock Balances (Bảng cân đối tồn kho tức thời)
@@ -162,11 +169,12 @@ export const stockBalances = sqliteTable('stock_balances', {
   id: text('id').primaryKey(),
   editionId: text('edition_id').notNull().references(() => editions.id),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
-  condition: text('condition').default('NEW'), // NEW, MINOR_DAMAGE, DEFECTIVE
+  condition: text('condition').default('NEW'), // NEW, MINOR_DAMAGE, DEFECTIVE, QUARANTINE
   physicalQuantity: integer('physical_quantity').notNull().default(0),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   bucketIdx: uniqueIndex('uq_stock_bucket').on(table.editionId, table.warehouseId, table.condition),
+  nonNegativeCheck: check('check_stock_non_negative', sql`${table.physicalQuantity} >= 0`),
 }));
 
 // 12. Commercial Sales Orders (Đơn hàng Bán sách - Sổ Kép)
@@ -213,4 +221,20 @@ export const orderItems = sqliteTable('order_items', {
 }, (table) => ({
   orderIdIdx: index('idx_order_items_order_id').on(table.orderId),
   editionIdIdx: index('idx_order_items_edition_id').on(table.editionId),
+}));
+
+// 14. Audit Logs (Nhật ký kiểm toán truy cập Sổ Kép & Thao tác nhạy cảm)
+export const auditLogs = sqliteTable('audit_logs', {
+  id: text('id').primaryKey(),
+  action: text('action').notNull(), // VIEW_FISCAL_MANAGEMENT, EXPORT_SALES_REPORT, VOID_ORDER, ADJUST_STOCK
+  actorRole: text('actor_role').notNull(),
+  actorId: text('actor_id').notNull(),
+  resource: text('resource').notNull(), // e.g. /api/orders, SalesLedgerView
+  details: text('details'), // JSON string or description
+  ipAddress: text('ip_address'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  actionIdx: index('idx_audit_logs_action').on(table.action),
+  actorIdx: index('idx_audit_logs_actor').on(table.actorId),
+  createdAtIdx: index('idx_audit_logs_created_at').on(table.createdAt),
 }));

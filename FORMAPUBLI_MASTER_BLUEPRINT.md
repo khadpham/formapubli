@@ -674,7 +674,12 @@ Hệ thống cung cấp một phân hệ Báo cáo Trực quan tương tác cao 
 
 ### 20.2. Cơ chế Đồng bộ Tự động sang Google Drive (Automated Zero-cost Drive Backup)
 1. **Google Service Account**: Sử dụng tài khoản dịch vụ Google Cloud miễn phí, kết nối trực tiếp vào thư mục Google Drive của công ty.
-2. **Lịch trình Snapshot**: Cứ mỗi cuối ngày hoặc sau mỗi đợt kiểm kho lớn, hệ thống tự động xuất bản ghi Ledger và Balance thành file SQLite (ormapubli_backup_YYYYMMDD.db) và file nén JSON/CSV đẩy thẳng vào Google Drive.
+2. **Lịch trình Sao lưu Linh hoạt (Daily vs. Weekly Tiered Strategy)**:
+   - *Đánh giá tần suất vận hành:* Với quy mô vừa và nhỏ (< 100 đơn/ngày), dung lượng file `formapubli.db` chỉ dao động từ 1MB – 15MB (nén gzip còn < 2MB).
+   - *Cơ chế linh hoạt:* Hệ thống hỗ trợ 2 chế độ tùy chỉnh trong phần Cài đặt:
+     - **Chế độ Tuần (Weekly - Mặc định tinh gọn):** Tự động đóng gói và đẩy snapshot lên Google Drive vào 23:59 Chủ nhật hàng tuần. Phù hợp giai đoạn thấp điểm, tối giản tác vụ nền.
+     - **Chế độ Ngày (Daily Snapshot xoay vòng 7 ngày):** Lưu trữ xoay vòng 7 bản gần nhất lúc 23:59 mỗi đêm, giúp RPO (Recovery Point Objective) an toàn tuyệt đối — nếu máy tính hỏng ổ cứng thì tối đa chỉ mất số liệu trong ngày hôm đó thay vì mất cả tuần giao dịch.
+   - *Bản lưu trữ tháng (Monthly Archive):* Tự động lưu 1 snapshot cố định vào ngày cuối cùng của tháng để phục vụ đối soát kế toán và lưu trữ dài hạn.
 3. **An toàn kép**: Dù Cloudflare có sự cố hay máy tính văn phòng hỏng ổ cứng, dữ liệu vẫn luôn an toàn 100% trên cả 2 nơi.
 
 ---
@@ -1117,6 +1122,39 @@ graph LR
   - Nếu là `ROLE_TAX`: LLM chỉ nhận dữ liệu đã qua bộ lọc `where fiscal_type = 'OFFICIAL_TAX'`.
   - Nếu là `ROLE_CASHIER`: LLM bị tước quyền truy cập toàn bộ các hàm tính toán lợi nhuận gộp và doanh thu tổng.
 - **Không gửi dữ liệu định danh khách hàng:** Mọi câu lệnh AI chỉ truyền mã ấn bản, tên sách, số lượng và số tiền; loại bỏ hoàn toàn thông tin nhạy cảm của khách hàng trước khi gửi ra ngoài.
+
+### 30.5. Hệ Thống Gửi Email Báo Cáo Tự Động Hàng Tháng Cho Cấp Quản Lý (Automated Monthly Executive Email Dispatcher)
+Nhằm hiện thực hóa tôn chỉ *"Tự động hóa thông minh - Nói ít hiểu nhiều"*, hệ thống tích hợp bộ tự động gửi báo cáo quản trị tổng kết tháng (Executive Monthly Digest) trực tiếp vào hòm thư Giám đốc/Chủ sở hữu vào **07:00 sáng ngày mùng 1 hàng tháng**:
+
+#### 1. Triết Lý Thiết Kế: "3 Phút Nắm Toàn Cảnh Doanh Nghiệp"
+Email không dàn trải số liệu vụn vặt của nhân viên thu ngân, mà được cấu trúc như một **Executive Cockpit Dashboard** theo chuẩn Responsive HTML Email (hiển thị hoàn hảo trên iPhone, iPad, Outlook, Gmail):
+- **Phần 1: Nhận Định Điều Hành 1 Phút (AI Executive Briefing - Powered by Gemini Flash):**
+  - Tóm tắt 3 dòng ngắn gọn:
+    1. *Điểm sáng tháng qua:* Ví dụ: *"Doanh thu thực tế đạt 145 triệu (+18% MoM), đóng góp chủ yếu từ Hội chợ sách Mùa Thu."*
+    2. *Điểm nghẽn cần lưu ý:* Ví dụ: *"Tỷ lệ đơn thanh toán chuyển khoản chiếm 82%, kiểm tra đối soát sao kê tài khoản Techcombank."*
+    3. *Hành động ưu tiên tháng tới:* Ví dụ: *"Tác phẩm Baudelaire (H21) chỉ còn 12 cuốn tại kho Âu Cơ, cần ký lệnh tái bản trước ngày 10."*
+- **Phần 2: Bộ 4 Thẻ KPI Tài Chính Sổ Kép (Financial Scorecards):**
+  - **Tổng Thực Thu (Net Cashflow):** Tổng tiền thực thu về sau khi trừ toàn bộ chiết khấu.
+  - **Tách Bạch Sổ Kép:** Tỷ trọng Sổ Thuế (`OFFICIAL_TAX`) vs Sổ Quản Trị Nội Bộ (`INTERNAL_MANAGEMENT`) để chủ doanh nghiệp kiểm soát rủi ro kiểm toán.
+  - **Quy Mô Bán Hàng:** Tổng số đơn hàng chốt thành công & Giá trị trung bình/đơn (AOV - Average Order Value).
+  - **Cơ Cấu Thanh Toán:** % Tiền mặt tại quầy vs % Chuyển khoản QR code.
+- **Phần 3: Ma Trận Doanh Số Theo Kênh & Kho:**
+  - Kho 1 - Âu Cơ (Bán lẻ / Cửa hàng / Online).
+  - Kho 3 - Hội Chợ (Sự kiện phát hành sách / Doanh thu đột biến).
+  - Kho 2 - Quỳnh Mai (Đại lý sỉ, xuất kho tổng).
+- **Phần 4: Bảng Xếp Hạng Top 5 Best-Sellers & Vận Tốc Tiêu Thụ ($V_{\text{sale}}$):**
+  - Biểu đồ thanh ngang CSS thuần (CSS Bar Chart - tải ngay lập tức, không bị trình duyệt chặn ảnh ngoại vi).
+  - Thể hiện rõ: Tên tác phẩm, số cuốn bán, doanh thu mang lại và tăng trưởng so với tháng trước.
+- **Phần 5: Khối Cảnh Báo Đỏ - Điểm Cạn Kho & Dự Báo Tái Bản:**
+  - Danh sách các ấn bản có mức tồn kho dưới ngưỡng an toàn 30 ngày.
+  - Gợi ý số lượng in tối ưu dựa trên tốc độ bán thực tế.
+- **Phần 6: Tệp Đính Kèm Tự Động (Auto-Attached Financial Ledger):**
+  - Đính kèm file `formapubli_sales_report_YYYY_MM.xlsx` (hoặc CSV UTF-8) có chữ ký số xác thực để Giám đốc chuyển tiếp 1-click cho kế toán trưởng.
+
+#### 2. Kiến Trúc Kỹ Thuật 0 Đồng (Zero-Cost Email Pipeline)
+- **Lịch biểu (Trigger):** Cloudflare Workers Cron Trigger hoặc GitHub Actions / Vercel Cron chạy vào ngày đầu tiên mỗi tháng.
+- **Động cơ Email:** Tích hợp **Resend API** (Hạn mức miễn phí 3.000 email/tháng, tỷ lệ vào Inbox 99.9%) hoặc Mailchannels SMTP miễn phí trên Cloudflare Workers.
+- **Bảo mật tuyệt đối:** Cấu hình danh sách email nhận báo cáo độc quyền (`EXECUTIVE_EMAIL_RECIPIENTS`), chặn hoàn toàn việc rò rỉ sang các tài khoản nhân viên hoặc đối tác.
 
 ---
 

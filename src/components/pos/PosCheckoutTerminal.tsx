@@ -22,6 +22,7 @@ import {
   X,
   Layers,
   Camera,
+  Barcode,
   Wifi,
   WifiOff,
   RefreshCw,
@@ -89,6 +90,7 @@ export function PosCheckoutTerminal({
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
+  const [ambiguousMatches, setAmbiguousMatches] = useState<BookItem[] | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -237,8 +239,8 @@ export function PosCheckoutTerminal({
     setErrorMessage(null);
     const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
 
-    // Tìm trong danh mục 81 sách
-    const matchedBook = books.find((b) => {
+    // Tìm toàn bộ các ấn bản trùng khớp trong danh mục 81 sách
+    const matchedBooks = books.filter((b) => {
       const cleanIsbn = b.isbn ? b.isbn.replace(/[^0-9X]/gi, '') : '';
       return (
         cleanIsbn === cleanScanned ||
@@ -247,7 +249,8 @@ export function PosCheckoutTerminal({
       );
     });
 
-    if (matchedBook) {
+    if (matchedBooks.length === 1) {
+      const matchedBook = matchedBooks[0];
       addToCart(matchedBook);
       setScanToast({
         title: matchedBook.title,
@@ -255,6 +258,9 @@ export function PosCheckoutTerminal({
         isbn: matchedBook.isbn || cleanScanned,
       });
       setTimeout(() => setScanToast(null), 3000);
+    } else if (matchedBooks.length > 1) {
+      // Bật Modal chọn ấn bản khi phát hiện trùng ISBN (ví dụ H21 Bìa tím vs H36 Tái bản bìa trắng)
+      setAmbiguousMatches(matchedBooks);
     } else {
       setErrorMessage(`Không tìm thấy ấn bản nào trong danh mục có mã ISBN: ${scannedCode}`);
     }
@@ -1243,6 +1249,74 @@ export function PosCheckoutTerminal({
                 Tạo Đơn Tiếp Theo
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Xử Lý Trùng Mã Vạch ISBN (Disambiguation Modal) */}
+      {ambiguousMatches && ambiguousMatches.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                <Barcode className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Phát Hiện Trùng Mã Vạch ISBN</h3>
+                <p className="text-xs text-slate-500">Mã ISBN này gắn liền với {ambiguousMatches.length} ấn bản khác nhau. Vui lòng chọn bản bạn đang cầm:</p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 my-4">
+              {ambiguousMatches.map((book) => {
+                const stock = selectedWarehouseId === 'wh-au-co'
+                  ? book.stockAuCo
+                  : selectedWarehouseId === 'wh-du-phong'
+                  ? book.stockDuPhong
+                  : book.stockQuynhMai;
+
+                return (
+                  <button
+                    key={book.id}
+                    type="button"
+                    onClick={() => {
+                      addToCart(book);
+                      setScanToast({
+                        title: book.title,
+                        code: book.code,
+                        isbn: book.isbn || '',
+                      });
+                      setAmbiguousMatches(null);
+                      setTimeout(() => setScanToast(null), 3000);
+                    }}
+                    className="w-full text-left p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 transition-all flex items-center justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                          {book.code}
+                        </span>
+                        <span className="font-bold text-slate-900 text-sm">{book.title}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Giá bìa: {book.coverPrice.toLocaleString('vi-VN')} đ • Tồn kho: <span className={stock > 0 ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>{stock} cuốn</span>
+                      </p>
+                    </div>
+                    <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
+                      Chọn ➔
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAmbiguousMatches(null)}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+            >
+              Hủy Bỏ
+            </button>
           </div>
         </div>
       )}
