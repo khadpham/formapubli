@@ -372,10 +372,31 @@
   - **API `/api/forecast` & RBAC Guard:**
     - Cung cấp API tra cứu theo cờ cảnh báo, kho hàng, và số ngày cửa sổ quan sát; tự động ưu tiên các đầu sách `RED_ALERT` lên đầu.
     - Chặn cứng vai trò `ROLE_CASHIER` và `ROLE_TAX` với HTTP 403 Forbidden.
+#### 🔹 [Mã: ENG-20260913-21] Phân Hệ Thu Tiền Công Nợ Ký Gửi & Khép Kín Vòng Đời Phiếu Thu (Consignment Settlement & AR Cash Collection)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/consignment-settlement`) | **Commit:** `d8407c9`
+- **Nội dung:**
+  - **Migration `0009_consignment_settlements.sql`:**
+    - Khởi tạo bảng `consignment_settlements` lưu vết từng đợt thu tiền: mã phiếu `PT-YYYYMMDD-XXXX`, `statement_id`, `partner_id`, phương thức (`CASH`, `BANK_TRANSFER`), mã tham chiếu giao dịch bắt buộc (`reference`), số tiền thu ròng `amount`, `cashbox_session_id` (nếu thu tại quầy hội chợ), trạng thái phiếu (`VALID`, `VOIDED`).
+    - Cập nhật định nghĩa bảng `consignment_statements` hỗ trợ trạng thái `PAID`.
+    - Script `scripts/apply-migration-0009.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Động Cơ Thu Tiền Bất Biến & Chặn Trả Thừa (`SettlementService`):**
+    - Cho phép đại lý thanh toán nhiều lần cho một kỳ đối soát.
+    - Chặn đứng trả vượt số dư nợ còn lại (Overpayment Prevention): kiểm tra tổng số tiền đã thu hợp lệ (`VALID`), từ chối ngay nếu khoản nạp mới làm tổng tiền vượt quá công nợ kỳ (AR).
+    - Tự động chuyển trạng thái kỳ đối soát từ `CONFIRMED` sang **`PAID`** khi số tiền đã thu đạt 100% công nợ phải thu.
+  - **Cơ Chế Hủy Phiếu Thu An Toàn (`VOID`):**
+    - Nghiêm cấm xóa cứng dữ liệu giao dịch tiền tệ; phiếu thu sai sót được đánh dấu trạng thái `VOIDED` kèm lý do giải trình bắt buộc (`voidReason`).
+    - Khi phiếu bị void: tự động hoàn trả lại hạn mức nợ cho kỳ đối soát, và lùi trạng thái kỳ từ `PAID` về lại `CONFIRMED`.
+  - **Phân Quyền RBAC & Audit Trail Đa Cấp:**
+    - Quyền lập phiếu thu: `ROLE_OWNER`, `ROLE_MANAGER`, `ROLE_CASHIER` (cho phép thu ngân thu tiền mặt trực tiếp tại hội chợ).
+    - Quyền hủy phiếu (`VOID`): Chỉ cấp riêng cho `ROLE_OWNER` và `ROLE_MANAGER`.
+    - Kế toán thuế `ROLE_TAX` chỉ được xem các phiếu thu gắn với kỳ có cờ `OFFICIAL_TAX`, hoàn toàn cách ly dòng tiền nội bộ.
+  - **Tính Toàn Vẹn Của Drizzle Migration Journal:**
+    - Đăng ký entry migration thứ 9 (`idx: 9`, tag `0009_consignment_settlements`) vào `_journal.json` cùng snapshot chuẩn `0009_snapshot.json`. Chuỗi replay 10 files migration (`0000` $\rightarrow$ `0009`) chạy trơn tru từ đầu đến cuối.
   - **Kiểm Thử Toàn Diện:**
-    - Test suite `scripts/test-forecast.ts` đạt **8/8 PASS**.
-    - Nâng tổng số test suites lên **13 suites cách ly / 141 test cases đạt chuẩn 100%**.
+    - Test suite `scripts/test-settlement.ts` đạt **10/10 PASS**.
+    - Nâng tổng số test suites lên **14 suites cách ly / 151 test cases đạt chuẩn 100%**.
     - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
 
 
 
@@ -452,12 +473,12 @@
 - [x] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component) và tính toán số lượng khả dụng MIN(FLOOR(stock_i / req_i)).
 - [x] Phân bổ giá bán combo theo tỷ trọng giá bìa (Weighted Proration), triệt tiêu dòng 0 VNĐ.
 
-#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger) - [ĐÃ HOÀN THÀNH LÕI SỔ CÁI & ĐỐI SOÁT AR]
+#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger & Settlement) - [ĐÃ HOÀN THÀNH 100%]
 - [x] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM qua kho ảo riêng biệt `wh-consign-<code>`.
 - [x] Phân định rõ ràng: Đại lý giữ sách (*Custodian*) nhưng quyền sở hữu (*Owner*) gắn chặt `part-formapubli` cho đến khi bán được.
 - [x] Màn hình lập biên bản đối soát định kỳ `DRAFT` $\rightarrow$ `CONFIRMED`: Tự động so khớp phương trình đối soát $Tồn đầu + Gửi = Bán + Thu hồi + Hỏng/Mất + Tồn cuối$.
 - [x] Chốt công nợ phải thu ròng AR, phân tách góc nhìn Thuế vs Nội bộ, tự động xuất kho bán/mất, ngăn chặn thặng dư bất thường.
-- [ ] Thu tiền thanh toán công nợ ký gửi (Consignment Settlement & Cash/Bank reconciliation).
+- [x] Thu tiền thanh toán công nợ ký gửi (Consignment Settlement): Phiếu thu `PT-YYYYMMDD-XXXX`, thanh toán nhiều lần $\le$ dư nợ, chặn overpay, cơ chế `VOID` bất biến, tự động chuyển trạng thái `PAID`.
 
 #### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger)
 - [ ] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa).
