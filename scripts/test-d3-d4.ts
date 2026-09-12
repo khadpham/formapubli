@@ -9,6 +9,9 @@ import {
   generateExportHash,
   verifyExportIntegrity,
 } from '../src/lib/export-hash';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-d3-d4');
 
 let passedTests = 0;
 let totalTests = 0;

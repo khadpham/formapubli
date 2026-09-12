@@ -2,6 +2,9 @@ import { db, works, editions, warehouses, stockBalances, inventoryLedger, orders
 import { InventoryService } from '../src/services/inventory.service';
 import { OrderService } from '../src/services/order.service';
 import { eq } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-order-sales');
 
 async function runTests() {
   console.log('🧪 BẮT ĐẦU KIỂM THỬ ĐỘNG CƠ BÁN HÀNG SỔ KÉP (SALES ORDER & DUAL BOOKKEEPING TEST)\n');

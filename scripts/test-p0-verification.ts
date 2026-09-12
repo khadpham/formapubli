@@ -3,6 +3,9 @@ import { InventoryService } from '../src/services/inventory.service';
 import { OrderService, CashboxService } from '../src/services/order.service';
 import { enforceFiscalScope, recordAuditLog } from '../src/lib/rbac-guard';
 import { eq, and, sql } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-p0-verification');
 
 async function runP0Tests() {
   console.log('🛡️ =========================================================');

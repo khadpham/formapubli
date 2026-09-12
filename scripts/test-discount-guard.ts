@@ -7,18 +7,15 @@
  * (hoặc qua npm run test:isolated).
  */
 import { db, auditLogs } from '../src/db';
+import { editions } from '../src/db/schema';
 import { POST } from '../src/app/api/orders/route';
 import { desc, eq } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
 
-const dbUrl = process.env.DATABASE_URL || '';
-if (!dbUrl.includes('formapubli_test')) {
-  console.error(
-    `⛔ REFUSED: test-discount-guard chỉ chạy trên formapubli_test.db (DATABASE_URL hiện tại: '${dbUrl || '(trống -> formapubli.db production)'}').`
-  );
-  process.exit(2);
-}
+assertIsolatedTestDb('test-discount-guard');
 
 let seq = 0;
+let guardEditionId = 'ed-h01'; // Seed full dùng ID ed-<code>; run() sẽ nạp ID thật từ DB.
 function baseBody(overrides: Record<string, any> = {}) {
   seq++;
   return {
@@ -28,7 +25,7 @@ function baseBody(overrides: Record<string, any> = {}) {
     cashierId: 'test-cashier-guard',
     paymentMethod: 'CASH',
     fiscalScope: 'INTERNAL_MANAGEMENT',
-    items: [{ editionId: 'ed-t01', quantity: 1 }],
+    items: [{ editionId: guardEditionId, quantity: 1 }],
     ...overrides,
   };
 }
@@ -50,6 +47,10 @@ async function postOrder(body: Record<string, any>, role: string, actor = 'test-
 
 async function run() {
   console.log('🛡️ KIỂM THỬ SERVER-ENFORCE DISCOUNT HARD-CAP 15% (DB cách ly)');
+  const seeded = await db.select({ id: editions.id }).from(editions).limit(1);
+  if (seeded.length === 0) throw new Error('Test DB chưa được seed (chạy setup-test-db trước).');
+  const testEditionId = seeded[0].id;
+  guardEditionId = testEditionId;
   let passed = 0;
   const total = 8;
   const ok = (name: string, cond: boolean, extra = '') => {
@@ -96,14 +97,14 @@ async function run() {
 
   // 6. Lách qua line item 40% (tổng 0%) không PIN -> 403.
   r = await postOrder(
-    baseBody({ discountRate: 0, items: [{ editionId: 'ed-t01', quantity: 1, unitDiscountRate: 0.4 }] }),
+    baseBody({ discountRate: 0, items: [{ editionId: guardEditionId, quantity: 1, unitDiscountRate: 0.4 }] }),
     'ROLE_CASHIER'
   );
   ok('Lách line-item 40% không PIN bị chặn 403', r.status === 403, `status=${r.status}`);
 
   // 7. Line item 40% + PIN 8888 -> cho qua.
   r = await postOrder(
-    baseBody({ discountRate: 0, managerPin: '8888', items: [{ editionId: 'ed-t01', quantity: 1, unitDiscountRate: 0.4 }] }),
+    baseBody({ discountRate: 0, managerPin: '8888', items: [{ editionId: guardEditionId, quantity: 1, unitDiscountRate: 0.4 }] }),
     'ROLE_CASHIER'
   );
   ok('Line-item 40% + PIN 8888 được duyệt', r.status === 200 && r.json?.success === true, `status=${r.status}`);

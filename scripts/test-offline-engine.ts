@@ -2,6 +2,9 @@ import { generateUUIDv7, extractTimestampFromUUIDv7 } from '../src/lib/uuidv7';
 import { OrderService } from '../src/services/order.service';
 import { db, orders, editions, warehouses } from '../src/db';
 import { eq } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-offline-engine');
 
 /**
  * AUTOMATED AUDIT TEST SUITE: OFFLINE-FIRST POS ENGINE & MULTI-DIMENSIONAL SALES LEDGER

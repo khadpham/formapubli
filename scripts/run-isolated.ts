@@ -1,15 +1,33 @@
 /**
  * Runner kiểm thử cách ly (cross-platform, không phụ thuộc cú pháp shell).
  *
- * 1. Dựng formapubli_test.db từ Clean Slate (xóa cũ -> migrate -> seed tối thiểu).
- * 2. Chụp mtime/size của formapubli.db production trước khi chạy test.
- * 3. Chạy các suite với DATABASE_URL=file:formapubli_test.db.
- * 4. Đối chiếu formapubli.db sau khi chạy — phải nguyên vẹn từng byte.
+ * - Mặc định: dựng formapubli_test.db từ Clean Slate (full seed 81 ấn bản),
+ *   chạy TOÀN BỘ suites với DATABASE_URL=file:formapubli_test.db,
+ *   rồi đối chiếu formapubli.db production phải nguyên vẹn từng byte.
+ * - Lọc suite:  npx tsx scripts/run-isolated.ts --only=test-p0,test-d3-d4
+ * - Bỏ qua setup (dùng DB test hiện có): ... --no-setup
+ * - Liệt kê suites: ... --list
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { setupTestDb, TEST_DB_FILE } from './setup-test-db';
+
+const ALL_SUITES = [
+  'scripts/test-discount-guard.ts',
+  'scripts/test-p0-verification.ts',
+  'scripts/test-inventory.ts',
+  'scripts/test-order-sales.ts',
+  'scripts/test-offline-engine.ts',
+  'scripts/test-d3-d4.ts',
+  'scripts/test-master-audit.ts',
+  'scripts/test-vietnamese-search.ts',
+  'scripts/test-barcode-engine.ts',
+];
+
+function suiteShortName(p: string): string {
+  return path.basename(p, '.ts');
+}
 
 function statOrNull(p: string) {
   try {
@@ -21,27 +39,52 @@ function statOrNull(p: string) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.includes('--list')) {
+    console.log('Suites kiểm thử cách ly:');
+    for (const s of ALL_SUITES) console.log(` - ${suiteShortName(s)} (${s})`);
+    return;
+  }
+
+  const onlyArg = args.find((a) => a.startsWith('--only='));
+  const suites = onlyArg
+    ? ALL_SUITES.filter((s) =>
+        onlyArg
+          .slice('--only='.length)
+          .split(',')
+          .map((x) => x.trim())
+          .includes(suiteShortName(s))
+      )
+    : ALL_SUITES;
+
+  if (suites.length === 0) {
+    console.error(`⛔ --only không khớp suite nào. Dùng --list để xem danh sách.`);
+    process.exit(1);
+  }
+
   const prodDb = path.resolve(process.cwd(), 'formapubli.db');
   const before = statOrNull(prodDb);
 
-  await setupTestDb();
+  if (!args.includes('--no-setup')) {
+    await setupTestDb();
+  } else {
+    console.log('⏩ Bỏ qua setup, dùng test DB hiện có.');
+  }
 
-  const suites = ['scripts/test-discount-guard.ts'];
+  let failed = 0;
   for (const suite of suites) {
     console.log(`\n▶ Chạy suite cách ly: ${suite}`);
-    const res = spawnSync(
-      'npx',
-      ['tsx', suite],
-      {
-        cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: `file:${TEST_DB_FILE}` },
-        stdio: 'inherit',
-        shell: true,
-      }
-    );
+    const res = spawnSync('npx', ['tsx', suite], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: `file:${TEST_DB_FILE}` },
+      stdio: 'inherit',
+      shell: true,
+    });
     if (res.status !== 0) {
-      console.error(`❌ Suite ${suite} thất bại (exit ${res.status}).`);
-      process.exit(res.status ?? 1);
+      console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Dừng chuỗi.`);
+      failed = res.status ?? 1;
+      break;
     }
   }
 
@@ -58,6 +101,9 @@ async function main() {
     process.exit(1);
   }
   console.log('\n🔒 formapubli.db production nguyên vẹn 100% (mtime + size không đổi).');
+
+  if (failed !== 0) process.exit(failed);
+  console.log(`\n🎉 TOÀN BỘ ${suites.length} SUITES CÁCH LY ĐẠT!`);
 }
 
 main().catch((err) => {

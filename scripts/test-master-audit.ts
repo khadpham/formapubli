@@ -2,6 +2,9 @@ import { db, works, editions, warehouses, stockBalances, inventoryLedger, orders
 import { InventoryService } from '../src/services/inventory.service';
 import { OrderService } from '../src/services/order.service';
 import { eq, sql } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-master-audit');
 
 /**
  * MASTER COMPREHENSIVE AUDIT SUITE (PHASE 1 & PHASE 2 VERIFICATION)

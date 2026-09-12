@@ -1,4 +1,7 @@
 import { db, editions } from '../src/db';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-barcode-engine');
 
 /**
  * AUTOMATED TEST SUITE: IN-APP BARCODE & ISBN RESOLVER ENGINE

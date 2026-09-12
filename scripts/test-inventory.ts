@@ -1,6 +1,9 @@
 import { InventoryService } from '../src/services/inventory.service';
 import { db, editions, warehouses, inventoryLedger } from '../src/db';
 import { eq } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-inventory');
 
 async function runInventoryTests() {
   console.log('🧪 ===============================================');

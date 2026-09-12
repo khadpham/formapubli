@@ -1,6 +1,9 @@
 import { matchesVietnameseSearch, removeAccents, generateAcronym } from '../src/lib/vietnamese';
 import { db, editions, works } from '../src/db';
 import { eq } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-vietnamese-search');
 
 async function runVietnameseSearchTests() {
   console.log('🧪 ========================================================');
