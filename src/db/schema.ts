@@ -264,6 +264,46 @@ export const cashboxSessions = sqliteTable('cashbox_sessions', {
   openedAtIdx: index('idx_cashbox_opened_at').on(table.openedAt),
 }));
 
+// 20. Consignment Statements (Biên bản đối soát kỳ ký gửi + chốt AR phải thu)
+export const consignmentStatements = sqliteTable('consignment_statements', {
+  id: text('id').primaryKey(), // e.g. CS-202609-AB12CD
+  partnerId: text('partner_id').notNull().references(() => partners.id),
+  periodStart: text('period_start').notNull(), // YYYY-MM-DD
+  periodEnd: text('period_end').notNull(), // YYYY-MM-DD
+  discountOverride: real('discount_override'), // Chiết khấu riêng kỳ (nếu null dùng partners.discount_rate)
+  fiscalScope: text('fiscal_scope').notNull().default('INTERNAL_MANAGEMENT'), // OFFICIAL_TAX vs INTERNAL_MANAGEMENT
+  status: text('status').notNull().default('DRAFT'), // DRAFT, CONFIRMED
+  totalReceivable: real('total_receivable').default(0), // Tổng AR chốt khi CONFIRMED
+  openingLedgerRowid: integer('opening_ledger_rowid'), // Mốc rowid ledger lúc mở kỳ (tính hàng gửi thêm, miễn nhiễm trùng giây)
+  notes: text('notes'),
+  createdBy: text('created_by').notNull(),
+  confirmedAt: text('confirmed_at'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  partnerIdx: index('idx_consign_stmt_partner').on(table.partnerId),
+  statusIdx: index('idx_consign_stmt_status').on(table.status),
+  fiscalIdx: index('idx_consign_stmt_fiscal').on(table.fiscalScope),
+}));
+
+// 21. Consignment Statement Lines (Chi tiết từng ấn bản trong kỳ đối soát)
+export const consignmentStatementLines = sqliteTable('consignment_statement_lines', {
+  id: text('id').primaryKey(),
+  statementId: text('statement_id').notNull().references(() => consignmentStatements.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  openingQty: integer('opening_qty').notNull().default(0), // Tồn quầy đầu kỳ (snapshot)
+  sentQty: integer('sent_qty').notNull().default(0), // Gửi thêm trong kỳ (từ ledger)
+  reportedSoldQty: integer('reported_sold_qty').notNull().default(0), // Đối tác báo bán
+  returnedNewQty: integer('returned_new_qty').notNull().default(0), // Thu hồi lành
+  returnedDamagedQty: integer('returned_damaged_qty').notNull().default(0), // Thu hồi hỏng
+  lostQty: integer('lost_qty').notNull().default(0), // Thất thoát chốt khi CONFIRMED
+  closingQty: integer('closing_qty').notNull().default(0), // Tồn quầy cuối kỳ
+  unitCoverPrice: real('unit_cover_price').notNull().default(0), // Giá bìa snapshot
+  lineAmount: real('line_amount').notNull().default(0), // sold * cover * (1 - discount)
+}, (table) => ({
+  statementIdx: index('idx_consign_line_stmt').on(table.statementId),
+  editionIdx: index('idx_consign_line_edition').on(table.editionId),
+}));
+
 // 16. Counter Allocations ("Chia Mâm" Sách Bàn Quầy Hội Chợ)
 export const counterAllocations = sqliteTable('counter_allocations', {
   id: text('id').primaryKey(),
