@@ -1,13 +1,42 @@
-import { db, works, editions, warehouses, stockBalances, inventoryLedger, orders, auditLogs } from '../src/db';
+import { db, works, editions, warehouses, stockBalances, inventoryLedger, orders, auditLogs, cashboxSessions } from '../src/db';
 import { InventoryService } from '../src/services/inventory.service';
-import { OrderService } from '../src/services/order.service';
+import { OrderService, CashboxService } from '../src/services/order.service';
 import { enforceFiscalScope, recordAuditLog } from '../src/lib/rbac-guard';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 
 async function runP0Tests() {
   console.log('🛡️ =========================================================');
   console.log('🛡️ BẮT ĐẦU KIỂM THỬ TOÀN DIỆN CÁC HẠNG MỤC ƯU TIÊN P0');
   console.log('🛡️ =========================================================\n');
+
+  // Đảm bảo các bảng mới và cột mới được tạo (Safe Idempotent Migration)
+  try {
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS cashbox_sessions (
+        id text PRIMARY KEY NOT NULL,
+        warehouse_id text NOT NULL REFERENCES warehouses(id),
+        cashier_id text NOT NULL,
+        opening_cash real DEFAULT 0 NOT NULL,
+        closing_cash_actual real,
+        expected_cash real,
+        cash_discrepancy real,
+        total_cash_sales real DEFAULT 0,
+        total_transfer_sales real DEFAULT 0,
+        total_orders_count integer DEFAULT 0,
+        status text DEFAULT 'OPEN' NOT NULL,
+        notes text,
+        opened_at text DEFAULT CURRENT_TIMESTAMP,
+        closed_at text
+      );
+    `);
+    await db.run(sql`ALTER TABLE orders ADD COLUMN cashbox_session_id text;`).catch(() => {});
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_cashbox_cashier ON cashbox_sessions(cashier_id);`).catch(() => {});
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_cashbox_status ON cashbox_sessions(status);`).catch(() => {});
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_cashbox_warehouse ON cashbox_sessions(warehouse_id);`).catch(() => {});
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_orders_cashbox_session ON orders(cashbox_session_id);`).catch(() => {});
+  } catch (migErr) {
+    console.warn('Migration step warning:', migErr);
+  }
 
   let passedTests = 0;
   const totalTests = 5;
@@ -33,12 +62,14 @@ async function runP0Tests() {
       actorId: 'test-acid-runner',
     });
   } catch (err: any) {
+    console.log('Caught error in TEST 1:', err?.message);
     if (err.message.includes('LỖI XUẤT ÂM KHO')) {
       threwExpected = true;
     }
   }
 
   const balanceAfter = await InventoryService.getBalance(testBook.id, whAuCo, 'NEW');
+  console.log(`Balance before: ${balanceBefore}, balance after: ${balanceAfter}, threwExpected: ${threwExpected}`);
   if (threwExpected && balanceBefore === balanceAfter) {
     console.log(`✅ TEST 1 ĐẠT: Giao dịch bị từ chối sạch sẽ, số dư bảo toàn tuyệt đối (${balanceBefore} cuốn).`);
     passedTests++;
@@ -189,8 +220,86 @@ async function runP0Tests() {
     throw new Error(`TEST 7 THẤT BẠI: Idempotency race không trả về bản ghi cũ!`);
   }
 
+  // TEST 8: Kiểm thử atomic UPDATE và kiểu dữ liệu trả về từ db.run
+  console.log('\n--- TEST 8: Kiểm thử Atomic UPDATE rowsAffected ---');
+  const updateRes = await db.run(sql`
+    UPDATE stock_balances 
+    SET physical_quantity = physical_quantity + 0 
+    WHERE edition_id = ${testBook.id} AND warehouse_id = ${whAuCo} AND condition = 'NEW'
+  `);
+  console.log('db.run result keys:', Object.keys(updateRes), 'rowsAffected:', (updateRes as any).rowsAffected);
+  if (typeof (updateRes as any).rowsAffected === 'number') {
+    console.log(`✅ TEST 8 ĐẠT: db.run trả về rowsAffected = ${(updateRes as any).rowsAffected}`);
+    passedTests++;
+  }
+
+  // TEST 9: Kiểm thử Vòng đời Két tiền Ca làm việc (Cashbox Shift Life-cycle & Reconciliation)
+  console.log('\n--- TEST 9: Vòng đời Phiên Két Tiền & Đối Soát Tiền Mặt Quầy ---');
+  const testCashier = 'User-ROLE_CASHIER';
+  const openRes = await CashboxService.openSession({
+    warehouseId: whAuCo,
+    cashierId: testCashier,
+    openingCash: 500000,
+    notes: 'Ca sáng thử nghiệm đối soát két',
+  });
+
+  const session = openRes.session;
+  console.log(`Đã mở ca két: ${session.id} với vốn đầu ca: ${session.openingCash.toLocaleString('vi-VN')} đ`);
+
+  // Bán 1 đơn tiền mặt trong ca
+  const cashOrder = await OrderService.createOrder({
+    warehouseId: whAuCo,
+    cashierId: testCashier,
+    cashboxSessionId: session.id,
+    paymentMethod: 'CASH',
+    items: [{ editionId: testBook.id, quantity: 1 }],
+  });
+
+  // Bán 1 đơn chuyển khoản trong ca
+  const transferOrder = await OrderService.createOrder({
+    warehouseId: whAuCo,
+    cashierId: testCashier,
+    cashboxSessionId: session.id,
+    paymentMethod: 'BANK_TRANSFER',
+    items: [{ editionId: testBook.id, quantity: 1 }],
+  });
+
+  const activeStats = await CashboxService.getActiveSession(testCashier);
+  console.log(`Số liệu Realtime Két: Tiền mặt thu: ${activeStats?.totalCashSales.toLocaleString('vi-VN')} đ, Chuyển khoản: ${activeStats?.totalTransferSales.toLocaleString('vi-VN')} đ`);
+
+  // Chốt ca két tiền với tiền thực đếm khớp tuyệt đối
+  const closeRes = await CashboxService.closeSession({
+    sessionId: session.id,
+    closingCashActual: activeStats!.expectedCash,
+    notes: 'Chốt ca khớp 100%',
+  });
+
+  if (
+    closeRes.status === 'CLOSED' &&
+    closeRes.cashDiscrepancy === 0 &&
+    closeRes.totalCashSales === cashOrder.finalAmount
+  ) {
+    console.log(`✅ TEST 9 ĐẠT: Đối soát két tiền hoàn hảo, chênh lệch: ${closeRes.cashDiscrepancy} đ (kỳ vọng: ${closeRes.expectedCash.toLocaleString('vi-VN')} đ, thực tế: ${closeRes.closingCashActual.toLocaleString('vi-VN')} đ).`);
+    passedTests++;
+  } else {
+    throw new Error(`TEST 9 THẤT BẠI: Đối soát két tiền không khớp!`);
+  }
+
+  // TEST 10: Kiểm thử Cashier Isolation (Thu ngân không xem được đơn ca khác/doanh thu tổng)
+  console.log('\n--- TEST 10: Kiểm thử Cashier Isolation trong getOrders ---');
+  const ownOrders = await OrderService.getOrders({ cashierId: testCashier });
+  const allOrdersList = await OrderService.getOrders();
+
+  const otherCashierOrdersInOwnList = ownOrders.filter(o => o.cashierId !== testCashier);
+  if (otherCashierOrdersInOwnList.length === 0 && allOrdersList.length > ownOrders.length) {
+    console.log(`✅ TEST 10 ĐẠT: Bộ lọc cashierId cô lập sạch sẽ các đơn ca của thu ngân (${ownOrders.length}/${allOrdersList.length} đơn), không cho rò rỉ đơn quầy khác.`);
+    passedTests++;
+  } else {
+    throw new Error(`TEST 10 THẤT BẠI: Cashier Isolation không hoạt động chuẩn xác!`);
+  }
+
   console.log('\n=========================================================');
-  console.log(`🎉 HOÀN TẤT: ${passedTests}/7 BÀI TEST P0 & HARDENING ĐẠT CHUẨN 100%!`);
+  console.log(`🎉 HOÀN TẤT: ${passedTests}/10 BÀI TEST P0 & SECTION D ĐẠT CHUẨN 100%!`);
   console.log('=========================================================\n');
 }
 

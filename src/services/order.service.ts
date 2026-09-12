@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions } from '../db';
 import { InventoryService } from './inventory.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
@@ -26,6 +26,7 @@ export interface CreateOrderParams {
   vatInvoiceRequired?: boolean;
   vatInvoiceCode?: string;
   cashierId?: string;
+  cashboxSessionId?: string;
   idempotencyKey?: string;
   note?: string;
   isOfflineSync?: boolean; // Cờ báo hiệu đơn sync từ hàng đợi ngoại tuyến hội chợ
@@ -39,6 +40,7 @@ export interface OrderFilterParams {
   fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT' | 'ALL';
   warehouseId?: string;
   partnerId?: string;
+  cashierId?: string;
 }
 
 export class OrderService {
@@ -210,6 +212,7 @@ export class OrderService {
             status: 'COMPLETED',
             syncStatus: hasOverdraft ? 'SYNCED_WITH_OVERDRAFT_WARNING' : 'SYNCED',
             cashierId,
+            cashboxSessionId: params.cashboxSessionId,
             idempotencyKey,
             note: hasOverdraft
               ? `${note ? note + ' | ' : ''}[CẢNH BÁO: Bán lệch kiểm kê hội chợ +${overdraftItems.reduce((s, o) => s + o.deficit, 0)} cuốn]`
@@ -294,7 +297,7 @@ export class OrderService {
    * Truy vấn danh sách đơn hàng có lọc theo Sổ Kép (Thuế vs Toàn cảnh Nội bộ).
    */
   static async getOrders(filters: OrderFilterParams = {}) {
-    const { fiscalScope = 'ALL', warehouseId, partnerId, startDate, endDate } = filters;
+    const { fiscalScope = 'ALL', warehouseId, partnerId, cashierId, startDate, endDate } = filters;
 
     let query = db.select().from(orders);
     const conditions = [];
@@ -307,6 +310,9 @@ export class OrderService {
     }
     if (partnerId) {
       conditions.push(eq(orders.partnerId, partnerId));
+    }
+    if (cashierId) {
+      conditions.push(eq(orders.cashierId, cashierId));
     }
     if (startDate) {
       conditions.push(gte(orders.createdAt, startDate));
@@ -373,3 +379,214 @@ export class OrderService {
     };
   }
 }
+
+export interface OpenCashboxParams {
+  warehouseId: string;
+  cashierId: string;
+  openingCash: number;
+  notes?: string;
+}
+
+export interface CloseCashboxParams {
+  sessionId: string;
+  closingCashActual: number;
+  notes?: string;
+}
+
+export class CashboxService {
+  /**
+   * Mở ca làm việc mới cho thu ngân (Open Shift / Cashbox Session).
+   * Mỗi thu ngân tại một kho chỉ được có tối đa 1 phiên OPEN tại một thời điểm.
+   */
+  static async openSession(params: OpenCashboxParams) {
+    const { warehouseId, cashierId, openingCash = 0, notes } = params;
+
+    const existingOpen = await db
+      .select()
+      .from(cashboxSessions)
+      .where(
+        and(
+          eq(cashboxSessions.cashierId, cashierId),
+          eq(cashboxSessions.status, 'OPEN')
+        )
+      )
+      .limit(1);
+
+    if (existingOpen.length > 0) {
+      return {
+        session: existingOpen[0],
+        isExisting: true,
+      };
+    }
+
+    const sessionId = `cbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const newSession = {
+      id: sessionId,
+      warehouseId,
+      cashierId,
+      openingCash: Math.max(0, openingCash),
+      status: 'OPEN' as const,
+      notes: notes || null,
+      openedAt: new Date().toISOString(),
+      totalCashSales: 0,
+      totalTransferSales: 0,
+      totalOrdersCount: 0,
+    };
+
+    await withDbRetry(async () => {
+      await db.insert(cashboxSessions).values(newSession);
+    });
+
+    return {
+      session: newSession,
+      isExisting: false,
+    };
+  }
+
+  /**
+   * Lấy phiên két tiền hiện tại đang hoạt động của thu ngân.
+   */
+  static async getActiveSession(cashierId: string) {
+    const sessions = await db
+      .select()
+      .from(cashboxSessions)
+      .where(
+        and(
+          eq(cashboxSessions.cashierId, cashierId),
+          eq(cashboxSessions.status, 'OPEN')
+        )
+      )
+      .limit(1);
+
+    if (sessions.length === 0) return null;
+
+    const session = sessions[0];
+    const stats = await this.calculateSessionStats(session.id);
+
+    return {
+      ...session,
+      ...stats,
+      expectedCash: session.openingCash + stats.totalCashSales,
+    };
+  }
+
+  /**
+   * Tính toán doanh thu tiền mặt, chuyển khoản và số đơn hàng thuộc phiên làm việc.
+   */
+  static async calculateSessionStats(sessionId: string) {
+    const sessionOrders = await db
+      .select({
+        finalAmount: orders.finalAmount,
+        paymentMethod: orders.paymentMethod,
+      })
+      .from(orders)
+      .where(eq(orders.cashboxSessionId, sessionId));
+
+    let totalCashSales = 0;
+    let totalTransferSales = 0;
+    let totalOrdersCount = sessionOrders.length;
+
+    for (const ord of sessionOrders) {
+      if (ord.paymentMethod === 'CASH') {
+        totalCashSales += ord.finalAmount;
+      } else {
+        totalTransferSales += ord.finalAmount;
+      }
+    }
+
+    return {
+      totalCashSales,
+      totalTransferSales,
+      totalOrdersCount,
+    };
+  }
+
+  /**
+   * Chốt ca thu ngân (Close Shift) & Đối soát chênh lệch tiền két (Reconciliation).
+   */
+  static async closeSession(params: CloseCashboxParams) {
+    const { sessionId, closingCashActual, notes } = params;
+
+    const existing = await db
+      .select()
+      .from(cashboxSessions)
+      .where(eq(cashboxSessions.id, sessionId))
+      .limit(1);
+
+    if (existing.length === 0) {
+      throw new Error(`Không tìm thấy phiên két tiền: ${sessionId}`);
+    }
+
+    const session = existing[0];
+    if (session.status === 'CLOSED') {
+      throw new Error(`Phiên két tiền ${sessionId} đã được đóng trước đó.`);
+    }
+
+    const stats = await this.calculateSessionStats(sessionId);
+    const expectedCash = session.openingCash + stats.totalCashSales;
+    const cashDiscrepancy = closingCashActual - expectedCash;
+
+    const closedAt = new Date().toISOString();
+
+    await withDbRetry(async () => {
+      await db
+        .update(cashboxSessions)
+        .set({
+          closingCashActual,
+          expectedCash,
+          cashDiscrepancy,
+          totalCashSales: stats.totalCashSales,
+          totalTransferSales: stats.totalTransferSales,
+          totalOrdersCount: stats.totalOrdersCount,
+          status: 'CLOSED',
+          notes: notes ? `${session.notes ? session.notes + ' | ' : ''}${notes}` : session.notes,
+          closedAt,
+        })
+        .where(eq(cashboxSessions.id, sessionId));
+    });
+
+    return {
+      sessionId,
+      cashierId: session.cashierId,
+      warehouseId: session.warehouseId,
+      openingCash: session.openingCash,
+      closingCashActual,
+      expectedCash,
+      cashDiscrepancy,
+      totalCashSales: stats.totalCashSales,
+      totalTransferSales: stats.totalTransferSales,
+      totalOrdersCount: stats.totalOrdersCount,
+      openedAt: session.openedAt,
+      closedAt,
+      status: 'CLOSED',
+    };
+  }
+
+  /**
+   * Liệt kê lịch sử các phiên két tiền (cho Quản lý kiểm toán).
+   */
+  static async listSessions(filters: { cashierId?: string; warehouseId?: string; limit?: number } = {}) {
+    const { cashierId, warehouseId, limit = 50 } = filters;
+    const conditions = [];
+
+    if (cashierId) conditions.push(eq(cashboxSessions.cashierId, cashierId));
+    if (warehouseId) conditions.push(eq(cashboxSessions.warehouseId, warehouseId));
+
+    if (conditions.length > 0) {
+      return await db
+        .select()
+        .from(cashboxSessions)
+        .where(and(...conditions))
+        .orderBy(desc(cashboxSessions.openedAt))
+        .limit(limit);
+    }
+
+    return await db
+      .select()
+      .from(cashboxSessions)
+      .orderBy(desc(cashboxSessions.openedAt))
+      .limit(limit);
+  }
+}
+

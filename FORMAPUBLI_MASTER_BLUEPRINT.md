@@ -38,6 +38,7 @@
 29. [Kiến Trúc PWA & Ứng Dụng Thiết Bị Cầm Tay (PWA Architecture & Hardware Capabilities)](#29-kiến-trúc-pwa--ứng-dụng-thiết-bị-cầm-tay-pwa-architecture--hardware-capabilities)
 30. [Hệ Sinh Thái Trí Tuệ Nhân Tạo Tinh Gọn (Zero-Cost Lean AI & Copilot Engine)](#30-hệ-sinh-thái-trí-tuệ-nhân-tạo-tinh-gọn-zero-cost-lean-ai--copilot-engine)
 31. ["Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)](#31-súng-quét-mã-vạch-0-đồng-bằng-camera-pwa-in-app-barcode-scanner-engine)
+32. [Ba Chuẩn Mực Vận Hành Thực Địa Mới (The 3 Grounded Operational Standards)](#32-ba-chuẩn-mực-vận-hành-thực-địa-mới-the-3-grounded-operational-standards)
 
 ---
 
@@ -1178,5 +1179,40 @@ Tận dụng nền tảng PWA trên thiết bị di động, formapubli OS tích
     3. Cuốn sách lập tức được thêm vào Giỏ hàng POS (hoặc tăng số lượng lên +1 nếu sách đã có trong giỏ).
     4. Khung quét camera tiếp tục duy trì trạng thái sẵn sàng để quét liên tiếp cuốn tiếp theo mà không cần bấm lại nút.
 - **Tiết kiệm 100% chi phí:** Tận dụng chính smartphone của nhân viên, không tốn 1 đồng chi phí mua sắm thiết bị ngoại vi!
+
+---
+
+## 32. Ba Chuẩn Mực Vận Hành Thực Địa Mới (The 3 Grounded Operational Standards)
+
+### 32.1. Tiêu Chuẩn 1: Atomic Lost-Update Guard Phía Database
+- **Vấn đề triệt tiêu:** Trong SQLite/LibSQL ở môi trường mạng chập chờn, mô hình đọc trước kiểm tra rồi ghi sau (`select -> check -> upsert`) dễ gặp xung đột Lost-Update khi nhiều thu ngân bấm thanh toán cùng lúc.
+- **Giải pháp chuẩn:** Thực thi trực tiếp biểu thức cập nhật nguyên tử:
+  ```sql
+  UPDATE stock_balances
+  SET physical_quantity = physical_quantity + :delta,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE edition_id = :editionId
+    AND warehouse_id = :warehouseId
+    AND condition = :condition
+    AND (physical_quantity + :delta >= 0);
+  ```
+- **Nguyên tắc xử lý:** Đọc `rowsAffected` ngay trong transaction. Nếu `rowsAffected = 0`: kho không đủ hàng hoặc bị tranh chấp, hệ thống rẽ nhánh sang bù lệch kiểm kê hội chợ (`FAIR_VARIANCE`) nếu có cờ `allowOverdraft`, hoặc rollback an toàn tuyệt đối.
+
+### 32.2. Tiêu Chuẩn 2: Chiến Lược "Chia Mâm" Phân Bổ Hạn Ngạch Quầy (Counter Quota)
+- **Bối cảnh hội chợ:** Gian hàng hội chợ có nhiều thu ngân (ví dụ 3 thu ngân). Không để toàn bộ thu ngân cùng tranh chấp 1 kho vật lý chung khi ngoại tuyến.
+- **Cơ chế hạn ngạch:** Đầu ngày hoặc đầu ca, Trưởng gian hàng thực hiện "chia mâm" sách vật lý ra các quầy/bàn thu ngân:
+  - Bàn A: 50 cuốn mỗi tựa.
+  - Bàn B: 50 cuốn mỗi tựa.
+  - Thùng dự phòng chung: lượng còn lại.
+- Khi rớt mạng, mỗi máy thu ngân chỉ được trừ kho ngoại tuyến trong hạn ngạch bàn mình được giao. Khi chạm ngưỡng 0, máy phát cảnh báo "Hết sách tại mâm — Yêu cầu tiếp tế từ thùng dự phòng", chặn đứng 100% tình trạng bán ảo vượt quá tổng số sách thực tế mang đi hội chợ.
+
+### 32.3. Tiêu Chuẩn 3: Chính Sách Khởi Tạo Tồn Kho Tờ Giấy Trắng (Clean Slate Opening Stock)
+- **Quy tắc tuyệt đối:** Không cố gắng nhập toàn bộ lịch sử biến động hỗn loạn từ 55 Google Sheets con cũ vào Sổ Cái mới.
+- **Thủ tục Clean Slate:**
+  1. Ngày chuyển giao (Cut-over Day): Tiến hành tổng kiểm kê vật lý thực tế tại 3 kho (Âu Cơ, Quỳnh Mai, Hội Chợ).
+  2. Ký biên bản kiểm kê chốt số lượng vật lý thực tế hiện có.
+  3. Khởi tạo 1 bút toán duy nhất trong Sổ cái bất biến: `OPENING_BALANCE` với chữ ký số của Giám đốc điều hành.
+  4. Lịch sử Google Sheets cũ được đóng băng làm tài liệu lưu trữ tham khảo đối chiếu (Archived Reference), không can thiệp vào số dư động cơ mới.
+
 
 

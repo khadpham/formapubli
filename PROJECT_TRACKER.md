@@ -185,6 +185,34 @@
     - Bộ kiểm toán Master Audit `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
     - Đóng gói Next.js Production (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS chỉ 125 kB.
 
+#### 🔹 [Mã: ENG-20260913-13] Vá 5 Vết Nứt P0-Rework & Triển Khai Phân Hệ Két Tiền Quầy (Cashbox Session) & Trần Chiết Khấu Manager PIN
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - **Vá Vết Nứt a: Atomic UPDATE + rowsAffected Guard (Triệt tiêu Lost-Update 100%):**
+    - Refactor `InventoryService.recordMovement`: Cập nhật trực tiếp qua câu lệnh `UPDATE stock_balances SET physical_quantity = physical_quantity + ? WHERE ... AND (physical_quantity + ? >= 0)`.
+    - Kiểm tra `rowsAffected` ngay trong transaction. Nếu = 0, phát hiện ngay xung đột hoặc thiếu kho và ném lỗi rõ ràng, chấm dứt hoàn toàn nguy cơ 2 thu ngân ghi đè số dư của nhau.
+  - **Vá Vết Nứt b: Mở Cờ Overdraft & Validate Phân Quyền Phía API:**
+    - Cập nhật `/api/orders`: Tiếp nhận `isOfflineSync` và `allowOverdraft`.
+    - Ràng buộc thẩm quyền: Chỉ `ROLE_OWNER` / `ROLE_MANAGER` hoặc đơn có `isOfflineSync = true` mới được kích hoạt `allowOverdraft`. Thu ngân bình thường gửi đơn online với `allowOverdraft=true` sẽ bị server tự động ép về `false`.
+    - POS Terminal khi sync đơn từ IndexedDB tự động truyền đầy đủ `isOfflineSync: true` và `allowOverdraft: true`.
+  - **Vá Vết Nứt c: Siết Chặt Phân Quyền Thu Ngân & Thủ Kho:**
+    - Thu ngân (`ROLE_CASHIER`) khi gọi `/api/orders` bị ép lọc theo đúng `cashierId` của ca mình, tuyệt đối không xem được doanh thu gộp hoặc đơn của quầy khác.
+    - Thủ kho (`ROLE_WAREHOUSE`) gọi `/api/orders` bị chặn truy cập doanh thu, chỉ được quản lý tồn kho vật lý.
+  - **Triển Khai Phân Hệ D1: Két Tiền Ca Thu Ngân & Kiểm Kê Tiền Mặt (Cashbox Session):**
+    - Khởi tạo bảng CSDL `cashbox_sessions`: Quản lý ID thu ngân, kho, tiền bàn giao đầu ca (`opening_cash`), tiền mặt thực đếm khi chốt ca (`closing_cash_actual`), tiền mặt hệ thống tính (`expected_cash`), chênh lệch két (`cash_discrepancy`), tổng doanh thu tiền mặt vs chuyển khoản/QR, trạng thái OPEN/CLOSED.
+    - Liên kết mỗi đơn hàng với `cashbox_session_id`.
+    - Xây dựng dịch vụ `CashboxService` và API route `/api/cashbox` (`OPEN`, `CLOSE`, truy vấn ca hiện tại, liệt kê lịch sử ca).
+    - Giao diện POS tích hợp Huy hiệu Két tiền trên thanh tiêu đề, nút "Mở Két Ca Mới", Modal Mở Ca, Modal Chốt Ca & Kiểm Kê Két Tiền hiển thị chênh lệch thời gian thực (Khớp 100% / Thừa / Thiếu).
+  - **Triển Khai Phân Hệ D2: Trần Chiết Khấu Quầy (Hard-cap 15%) & Modal Mã PIN Quản Lý:**
+    - Thu ngân bị giới hạn chiết khấu tối đa 15%. Mức chiết khấu sỉ/đầu nậu (20%, 35%, 40%) tự động khóa với biểu tượng 🔒.
+    - Khi áp dụng mức chiết khấu > 15%, hệ thống kích hoạt Modal Mã PIN Quản Lý (Mã: 9999 / 1234 / 8888). Sau khi Quản lý nhập đúng PIN, hạn mức được mở khóa cho giao dịch hiện tại.
+  - **Cập Nhật Master Blueprint Chương 32:** Bổ sung Ba Chuẩn Mực Vận Hành Thực Địa (Atomic Guard, Counter Quota "Chia Mâm", Clean Slate Opening Stock).
+  - **Kiểm Thử Tự Động Toàn Diện:**
+    - Nâng cấp `scripts/test-p0-verification.ts` lên **10/10 test cases đạt chuẩn 100%** (bao gồm kiểm thử Atomic UPDATE rowsAffected, Vòng đời ca két tiền & đối soát chênh lệch, và Cô lập đơn hàng của thu ngân).
+    - `scripts/test-inventory.ts`: **6/6 test cases (100%)**.
+    - `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+    - Đóng gói Next.js Production (`npm run build`): Thành công mỹ mãn với **0 lỗi biên dịch**, First Load JS giữ vững mức **128 kB** ($\le$ 130 kB ngân sách).
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]

@@ -84,29 +84,9 @@ export class InventoryService {
     }
 
     const executeWork = async (tx: any) => {
-      // 1. Kiểm tra tồn kho trước khi xuất (ngay trong transaction)
-      const existing = await tx
-        .select()
-        .from(stockBalances)
-        .where(
-          and(
-            eq(stockBalances.editionId, editionId),
-            eq(stockBalances.warehouseId, warehouseId),
-            eq(stockBalances.condition, condition)
-          )
-        )
-        .limit(1);
-
-      const currentQty = existing.length > 0 ? existing[0].physicalQuantity : 0;
-      if (quantityDelta < 0 && currentQty + quantityDelta < 0) {
-        throw new Error(
-          `LỖI XUẤT ÂM KHO: Tồn kho hiện tại là ${currentQty}, không đủ để xuất ${Math.abs(quantityDelta)} cuốn!`
-        );
-      }
-
+      // 1. Ghi bút toán vào Sổ cái bất biến (Append-Only) trước để sinh ledgerId và ràng buộc kiểm toán
       const ledgerId = `led-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      // 2. Ghi bút toán vào Sổ cái bất biến (Append-Only)
       await tx.insert(inventoryLedger).values({
         id: ledgerId,
         editionId,
@@ -126,10 +106,8 @@ export class InventoryService {
         effectiveAt: effectiveAt || new Date().toISOString(),
       });
 
-      // 3. Cập nhật bảng cân đối tồn kho tức thời (Stock Balance)
-      const newQty = currentQty + quantityDelta;
+      // 2. Bảo đảm bucket tồn kho tồn tại (nếu chưa có thì tạo mới với số lượng 0)
       const bucketId = `sb-${editionId}-${warehouseId}-${condition}`;
-
       await tx
         .insert(stockBalances)
         .values({
@@ -137,21 +115,65 @@ export class InventoryService {
           editionId,
           warehouseId,
           condition,
-          physicalQuantity: newQty,
+          physicalQuantity: 0,
         })
-        .onConflictDoUpdate({
+        .onConflictDoNothing({
           target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
-          set: {
-            physicalQuantity: newQty,
-            updatedAt: sql`CURRENT_TIMESTAMP`,
-          },
         });
+
+      // 3. ATOMIC GUARD: UPDATE trực tiếp bằng biểu thức nguyên tử, chặn đứng triệt để Lost-Update race condition
+      // Điều kiện physical_quantity + ? >= 0 ngăn ngừa xuất âm ngay tại mức engine database
+      const updateResult: any = await tx.run(sql`
+        UPDATE stock_balances
+        SET physical_quantity = physical_quantity + ${quantityDelta},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE edition_id = ${editionId}
+          AND warehouse_id = ${warehouseId}
+          AND condition = ${condition}
+          AND (physical_quantity + ${quantityDelta} >= 0)
+      `);
+
+      if (updateResult.rowsAffected === 0) {
+        // Nếu không có dòng nào được cập nhật, kiểm tra số dư hiện tại để báo lỗi chính xác
+        const currentBalance = await tx
+          .select({ physicalQuantity: stockBalances.physicalQuantity })
+          .from(stockBalances)
+          .where(
+            and(
+              eq(stockBalances.editionId, editionId),
+              eq(stockBalances.warehouseId, warehouseId),
+              eq(stockBalances.condition, condition)
+            )
+          )
+          .limit(1);
+
+        const currentQty = currentBalance.length > 0 ? currentBalance[0].physicalQuantity : 0;
+        throw new Error(
+          `LỖI XUẤT ÂM KHO: Tồn kho hiện tại là ${currentQty}, không đủ để xuất ${Math.abs(quantityDelta)} cuốn!`
+        );
+      }
+
+      // 4. Đọc lại số lượng mới sau cập nhật nguyên tử
+      const updatedRow = await tx
+        .select({ physicalQuantity: stockBalances.physicalQuantity })
+        .from(stockBalances)
+        .where(
+          and(
+            eq(stockBalances.editionId, editionId),
+            eq(stockBalances.warehouseId, warehouseId),
+            eq(stockBalances.condition, condition)
+          )
+        )
+        .limit(1);
+
+      const newQty = updatedRow.length > 0 ? updatedRow[0].physicalQuantity : 0;
+      const previousQty = newQty - quantityDelta;
 
       return {
         ledgerId,
         editionId,
         warehouseId,
-        previousQuantity: currentQty,
+        previousQuantity: previousQty,
         newQuantity: newQty,
         quantityDelta,
       };

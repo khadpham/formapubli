@@ -198,12 +198,14 @@ export const orders = sqliteTable('orders', {
   status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
   syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
   cashierId: text('cashier_id').notNull().default('staff-admin'),
+  cashboxSessionId: text('cashbox_session_id'), // ID phiên két tiền ca làm việc
   idempotencyKey: text('idempotency_key').notNull().unique(),
   note: text('note'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   fiscalScopeIdx: index('idx_orders_fiscal_scope').on(table.fiscalScope),
   warehouseIdx: index('idx_orders_warehouse').on(table.warehouseId),
+  cashboxSessionIdx: index('idx_orders_cashbox_session').on(table.cashboxSessionId),
   createdAtIdx: index('idx_orders_created_at').on(table.createdAt),
 }));
 
@@ -238,3 +240,27 @@ export const auditLogs = sqliteTable('audit_logs', {
   actorIdx: index('idx_audit_logs_actor').on(table.actorId),
   createdAtIdx: index('idx_audit_logs_created_at').on(table.createdAt),
 }));
+
+// 15. Cashbox Sessions (Két Tiền Ca Thu Ngân & Kiểm Kê Tiền Mặt Quầy)
+export const cashboxSessions = sqliteTable('cashbox_sessions', {
+  id: text('id').primaryKey(), // UUID v7 or cbs-xxx
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  cashierId: text('cashier_id').notNull(), // Tên hoặc ID thu ngân
+  openingCash: real('opening_cash').notNull().default(0), // Tiền bàn giao đầu ca
+  closingCashActual: real('closing_cash_actual'), // Tiền mặt thực đếm khi chốt ca
+  expectedCash: real('expected_cash'), // Tiền mặt hệ thống tính = openingCash + tổng đơn CASH
+  cashDiscrepancy: real('cash_discrepancy'), // Chênh lệch = closingCashActual - expectedCash
+  totalCashSales: real('total_cash_sales').default(0), // Tổng tiền mặt thu trong ca
+  totalTransferSales: real('total_transfer_sales').default(0), // Tổng chuyển khoản / QR trong ca
+  totalOrdersCount: integer('total_orders_count').default(0), // Tổng số đơn trong ca
+  status: text('status').notNull().default('OPEN'), // OPEN, CLOSED
+  notes: text('notes'),
+  openedAt: text('opened_at').default(sql`CURRENT_TIMESTAMP`),
+  closedAt: text('closed_at'),
+}, (table) => ({
+  cashierIdx: index('idx_cashbox_cashier').on(table.cashierId),
+  statusIdx: index('idx_cashbox_status').on(table.status),
+  warehouseIdx: index('idx_cashbox_warehouse').on(table.warehouseId),
+  openedAtIdx: index('idx_cashbox_opened_at').on(table.openedAt),
+}));
+

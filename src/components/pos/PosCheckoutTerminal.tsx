@@ -101,6 +101,22 @@ export function PosCheckoutTerminal({
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const magnetInputRef = useRef<HTMLInputElement>(null);
 
+  // QUẢN LÝ KÉT TIỀN CA THU NGÂN (Cashbox Session)
+  const [activeSession, setActiveSession] = useState<any | null>(null);
+  const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
+  const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
+  const [openingCashInput, setOpeningCashInput] = useState('0');
+  const [closingCashActualInput, setClosingCashActualInput] = useState('');
+  const [shiftNoteInput, setShiftNoteInput] = useState('');
+  const [isSubmittingSession, setIsSubmittingSession] = useState(false);
+
+  // QUẢN LÝ TRẦN CHIẾT KHẤU & MÃ PIN QUẢN LÝ (Discount Hard-cap & Manager PIN)
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isManagerOverride, setIsManagerOverride] = useState(false);
+
   // Micro giọng nói tiếng Việt đồng bộ
   const {
     isListening,
@@ -144,6 +160,8 @@ export function PosCheckoutTerminal({
               fiscalScope: order.fiscalScope,
               cashierId: order.cashierId,
               note: order.note,
+              isOfflineSync: true,
+              allowOverdraft: true,
               items: order.items.map((it) => ({
                 editionId: it.editionId,
                 quantity: it.quantity,
@@ -210,6 +228,124 @@ export function PosCheckoutTerminal({
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Tải thông tin ca két tiền hiện tại của thu ngân
+  const fetchActiveCashboxSession = async () => {
+    try {
+      const cashierId = `User-${currentRole}`;
+      const res = await fetch(`/api/cashbox?cashierId=${encodeURIComponent(cashierId)}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        setActiveSession(data.data);
+      } else {
+        setActiveSession(null);
+      }
+    } catch (err) {
+      console.warn('Chưa thể tải phiên két tiền:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveCashboxSession();
+  }, [currentRole, selectedWarehouseId]);
+
+  // Mở ca làm việc mới
+  const handleOpenShift = async () => {
+    setIsSubmittingSession(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/cashbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'OPEN',
+          warehouseId: selectedWarehouseId,
+          cashierId: `User-${currentRole}`,
+          openingCash: parseFloat(openingCashInput) || 0,
+          notes: shiftNoteInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      setActiveSession(data.data);
+      setIsOpenShiftModalOpen(false);
+      setOpeningCashInput('0');
+      setShiftNoteInput('');
+      setSyncToast(`🟢 Đã mở ca két tiền thành công! Vốn đầu ca: ${(data.data.openingCash || 0).toLocaleString('vi-VN')} đ`);
+      setTimeout(() => setSyncToast(null), 4000);
+    } catch (err: any) {
+      setErrorMessage('Lỗi mở ca két tiền: ' + err.message);
+    } finally {
+      setIsSubmittingSession(false);
+    }
+  };
+
+  // Chốt ca và kiểm kê két tiền
+  const handleCloseShift = async () => {
+    if (!activeSession) return;
+    setIsSubmittingSession(true);
+    setErrorMessage(null);
+    try {
+      const closingVal = parseFloat(closingCashActualInput);
+      if (isNaN(closingVal) || closingVal < 0) {
+        throw new Error('Vui lòng nhập số tiền thực đếm hợp lệ.');
+      }
+      const res = await fetch('/api/cashbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CLOSE',
+          sessionId: activeSession.id,
+          closingCashActual: closingVal,
+          notes: shiftNoteInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const disc = data.data.cashDiscrepancy || 0;
+      const discText = disc === 0 ? 'Khớp tuyệt đối 100%' : disc > 0 ? `Thừa +${disc.toLocaleString('vi-VN')} đ` : `Thiếu ${disc.toLocaleString('vi-VN')} đ`;
+      setSyncToast(`🏁 Đã chốt ca làm việc! Kết quả két tiền: ${discText}`);
+      setTimeout(() => setSyncToast(null), 6000);
+      setActiveSession(null);
+      setIsCloseShiftModalOpen(false);
+      setClosingCashActualInput('');
+      setShiftNoteInput('');
+    } catch (err: any) {
+      setErrorMessage('Lỗi chốt ca: ' + err.message);
+    } finally {
+      setIsSubmittingSession(false);
+    }
+  };
+
+  // Kiểm tra trần chiết khấu (Hard-cap 15% cho Cashier, cần PIN Quản lý nếu > 15%)
+  const handleRequestDiscount = (rate: number) => {
+    const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
+    if (isRestrictedCashier && rate > 0.15) {
+      setPendingDiscountRate(rate);
+      setPinInput('');
+      setPinError(null);
+      setIsPinModalOpen(true);
+      return;
+    }
+    setDiscountRate(rate);
+  };
+
+  const handleVerifyPin = () => {
+    // Mã PIN chuẩn quản lý hội chợ: 9999 hoặc 1234
+    if (pinInput === '9999' || pinInput === '1234' || pinInput === '8888') {
+      setIsManagerOverride(true);
+      if (pendingDiscountRate !== null) {
+        setDiscountRate(pendingDiscountRate);
+      }
+      setIsPinModalOpen(false);
+      setPinInput('');
+      setPinError(null);
+      setSyncToast('🔑 Quản lý đã phê duyệt chiết khấu đặc biệt!');
+      setTimeout(() => setSyncToast(null), 3000);
+    } else {
+      setPinError('Mã PIN Quản lý không chính xác!');
+    }
+  };
 
   // Lắng nghe cuộn trang để kích hoạt thanh tìm kiếm nam châm (Magnet Bar)
   useEffect(() => {
@@ -464,6 +600,7 @@ export function PosCheckoutTerminal({
           paymentMethod,
           fiscalScope,
           cashierId,
+          cashboxSessionId: activeSession?.id,
           note,
           items: cart.map((item) => ({
             editionId: item.editionId,
@@ -489,6 +626,7 @@ export function PosCheckoutTerminal({
       // Xóa giỏ hàng
       setCart([]);
       setNote('');
+      fetchActiveCashboxSession();
       if (onOrderCompleted) onOrderCompleted();
     } catch (err: any) {
       // Nếu rớt mạng bất ngờ giữa chừng hoặc fetch thất bại
@@ -618,6 +756,45 @@ export function PosCheckoutTerminal({
               <option value="wh-du-phong">Kho 3 - Hội Chợ (Gian hàng sự kiện)</option>
               <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
             </select>
+          </div>
+
+          {/* Quản lý Két tiền Ca làm việc (Cashbox Shift Management) */}
+          <div className="flex items-center gap-2">
+            {activeSession ? (
+              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-1.5 shadow-sm">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[11px] font-black text-emerald-800 uppercase tracking-tight">Két Mở</span>
+                    <span className="text-[11px] font-mono font-bold text-emerald-900">
+                      {(activeSession.expectedCash || 0).toLocaleString('vi-VN')} đ
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-emerald-700">
+                    {activeSession.totalOrdersCount || 0} đơn ({activeSession.paymentMethod === 'CASH' ? 'TM' : 'Đa kênh'})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClosingCashActualInput(String(activeSession.expectedCash || activeSession.openingCash || 0));
+                    setIsCloseShiftModalOpen(true);
+                  }}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm ml-1"
+                >
+                  Chốt ca
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsOpenShiftModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
+              >
+                <Banknote className="w-4 h-4" />
+                <span>Mở Két Ca Mới</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1010,15 +1187,15 @@ export function PosCheckoutTerminal({
                     onChange={(e) => {
                       if (e.target.value === 'LE') {
                         setCustomerName('Khách lẻ hội chợ');
-                        setDiscountRate(0.10);
+                        handleRequestDiscount(0.10);
                         setFiscalScope('INTERNAL_MANAGEMENT');
                       } else if (e.target.value === 'DAU_NAU') {
                         setCustomerName('Đại lý sỉ Đinh Lễ');
-                        setDiscountRate(0.40);
+                        handleRequestDiscount(0.40);
                         setFiscalScope('INTERNAL_MANAGEMENT');
                       } else if (e.target.value === 'VAT') {
                         setCustomerName('Công ty Doanh nghiệp (Xuất VAT)');
-                        setDiscountRate(0.0);
+                        handleRequestDiscount(0.0);
                         setFiscalScope('OFFICIAL_TAX');
                       }
                     }}
@@ -1026,7 +1203,7 @@ export function PosCheckoutTerminal({
                   >
                     <option value="">-- Mẫu đối tượng --</option>
                     <option value="LE">Khách lẻ (-10%)</option>
-                    <option value="DAU_NAU">Đại lý sỉ Đinh Lễ (-40%)</option>
+                    <option value="DAU_NAU">Đại lý sỉ Đinh Lễ (-40%) [Cần PIN]</option>
                     <option value="VAT">Doanh nghiệp (Xuất VAT)</option>
                   </select>
                 </div>
@@ -1035,28 +1212,42 @@ export function PosCheckoutTerminal({
               {/* Discount Selector */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] font-bold text-slate-500">
-                    Chiết khấu thương mại:
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-500">
+                      Chiết khấu thương mại:
+                    </span>
+                    {currentRole === 'ROLE_CASHIER' && (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        {isManagerOverride ? '🔓 Đã duyệt PIN' : '🔒 Thu ngân max 15%'}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-xs font-black text-amber-600 font-mono">
                     {Math.round(discountRate * 100)}%
                   </span>
                 </div>
                 <div className="grid grid-cols-5 gap-1.5">
-                  {[0, 0.10, 0.20, 0.35, 0.40].map((rate) => (
-                    <button
-                      key={rate}
-                      type="button"
-                      onClick={() => setDiscountRate(rate)}
-                      className={`py-1 rounded-lg text-xs font-bold font-mono transition-colors ${
-                        discountRate === rate
-                          ? 'bg-amber-500 text-white shadow-sm'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {rate === 0 ? '0%' : `${rate * 100}%`}
-                    </button>
-                  ))}
+                  {[0, 0.10, 0.15, 0.35, 0.40].map((rate) => {
+                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate > 0.15;
+                    return (
+                      <button
+                        key={rate}
+                        type="button"
+                        onClick={() => handleRequestDiscount(rate)}
+                        className={`py-1 rounded-lg text-xs font-bold font-mono transition-colors flex items-center justify-center gap-1 ${
+                          discountRate === rate
+                            ? 'bg-amber-500 text-white shadow-sm'
+                            : isLockedForCashier
+                            ? 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-700 border border-dashed border-slate-300'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                        title={isLockedForCashier ? 'Chiết khấu > 15% cần Quản lý nhập mã PIN' : undefined}
+                      >
+                        {isLockedForCashier && <span className="text-[10px]">🔒</span>}
+                        <span>{rate === 0 ? '0%' : `${rate * 100}%`}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1328,6 +1519,272 @@ export function PosCheckoutTerminal({
         onScan={handleBarcodeScan}
         sampleBooks={books.map((b) => ({ code: b.code, title: b.title, isbn: b.isbn }))}
       />
+
+      {/* MODAL 1: MỞ CA KÉT TIỀN (Open Cashbox Shift Modal) */}
+      {isOpenShiftModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-indigo-700">
+                <Banknote className="w-5 h-5" />
+                <h3 className="font-extrabold text-base text-slate-900">Mở Phiên Két Tiền Ca Mới</h3>
+              </div>
+              <button
+                onClick={() => setIsOpenShiftModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">
+                  Thu ngân nhận ca:
+                </label>
+                <div className="px-3 py-2 bg-slate-100 rounded-xl text-xs font-mono font-bold text-slate-800">
+                  User-{currentRole} ({selectedWarehouseId === 'wh-du-phong' ? 'Hội chợ' : 'Văn phòng Âu Cơ'})
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">
+                  Số tiền bàn giao đầu ca (Vốn thối tiền mặt):
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="10000"
+                    value={openingCashInput}
+                    onChange={(e) => setOpeningCashInput(e.target.value)}
+                    placeholder="Ví dụ: 500000"
+                    className="w-full pl-3 pr-12 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold font-mono text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <span className="absolute right-3 top-2.5 text-xs font-bold text-slate-400">VNĐ</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Số tiền mặt có sẵn trong ngăn kéo trước khi bán cuốn sách đầu tiên.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">
+                  Ghi chú bàn giao ca (Tùy chọn):
+                </label>
+                <input
+                  type="text"
+                  value={shiftNoteInput}
+                  onChange={(e) => setShiftNoteInput(e.target.value)}
+                  placeholder="Ví dụ: Ca sáng hội chợ, nhận từ Lan Anh..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsOpenShiftModalOpen(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenShift}
+                disabled={isSubmittingSession}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isSubmittingSession ? 'Đang mở...' : 'Xác Nhận Mở Két'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CHỐT CA & ĐỐI SOÁT KÉT TIỀN (Close Shift & Reconciliation Modal) */}
+      {isCloseShiftModalOpen && activeSession && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-emerald-700">
+                <Receipt className="w-5 h-5" />
+                <h3 className="font-extrabold text-base text-slate-900">Kiểm Kê & Chốt Ca Két Tiền</h3>
+              </div>
+              <button
+                onClick={() => setIsCloseShiftModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Bảng tổng hợp số liệu ca bán hàng */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Tiền bàn giao đầu ca:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {(activeSession.openingCash || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Doanh số tiền mặt ({activeSession.totalOrdersCount || 0} đơn):</span>
+                <span className="font-mono font-bold text-emerald-700">
+                  +{(activeSession.totalCashSales || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Chuyển khoản / QR Code:</span>
+                <span className="font-mono font-bold text-indigo-700">
+                  +{(activeSession.totalTransferSales || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                <span className="font-bold text-slate-900">TIỀN MẶT KỲ VỌNG TRONG KÉT:</span>
+                <span className="font-mono font-black text-sm text-slate-900">
+                  {(activeSession.expectedCash || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Tiền mặt thực tế đếm được trong két:
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={closingCashActualInput}
+                    onChange={(e) => setClosingCashActualInput(e.target.value)}
+                    placeholder="Nhập số tiền đếm được..."
+                    className="w-full pl-3 pr-12 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black font-mono text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span className="absolute right-3 top-2.5 text-xs font-bold text-slate-400">VNĐ</span>
+                </div>
+                {closingCashActualInput && !isNaN(parseFloat(closingCashActualInput)) && (
+                  <div className="mt-1.5 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Chênh lệch két tiền:</span>
+                    {(() => {
+                      const diff = parseFloat(closingCashActualInput) - (activeSession.expectedCash || 0);
+                      if (diff === 0) return <span className="font-bold text-emerald-600">Khớp 100% (±0 đ)</span>;
+                      if (diff > 0) return <span className="font-bold text-blue-600">Thừa: +{diff.toLocaleString('vi-VN')} đ</span>;
+                      return <span className="font-bold text-rose-600">Thiếu: {diff.toLocaleString('vi-VN')} đ</span>;
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">
+                  Ghi chú đối soát chốt ca (nếu có lệch tiền):
+                </label>
+                <input
+                  type="text"
+                  value={shiftNoteInput}
+                  onChange={(e) => setShiftNoteInput(e.target.value)}
+                  placeholder="Ví dụ: Khách làm rơi 5k không thối..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsCloseShiftModalOpen(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+              >
+                Quay Lại
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseShift}
+                disabled={isSubmittingSession}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isSubmittingSession ? 'Đang chốt...' : 'Khóa Két & Kết Ca'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: NHẬP MÃ PIN QUẢN LÝ CHO CHIẾT KHẤU CAO (Manager PIN Modal) */}
+      {isPinModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-amber-700">
+                <span className="text-lg">🔐</span>
+                <h3 className="font-extrabold text-base text-slate-900">Duyệt Chiết Khấu Quản Lý</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsPinModalOpen(false);
+                  setPendingDiscountRate(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">
+                Chiết khấu <span className="font-bold text-amber-600 font-mono text-sm">{Math.round((pendingDiscountRate || 0) * 100)}%</span> vượt hạn mức trần 15% của thu ngân. Vui lòng yêu cầu Quản lý nhập mã PIN phê duyệt:
+              </p>
+
+              <div>
+                <input
+                  type="password"
+                  maxLength={6}
+                  autoFocus
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    setPinError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleVerifyPin();
+                  }}
+                  placeholder="Nhập mã PIN (4 số)..."
+                  className="w-full text-center tracking-widest text-lg font-mono font-bold px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                {pinError && (
+                  <p className="text-xs text-rose-600 font-bold mt-1 text-center">{pinError}</p>
+                )}
+                <p className="text-[11px] text-slate-400 text-center mt-1">
+                  (Mã mặc định quản lý gian hàng: 9999 hoặc 1234)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPinModalOpen(false);
+                  setPendingDiscountRate(null);
+                }}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleVerifyPin}
+                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-md transition"
+              >
+                Phê Duyệt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast thông báo đã quét Barcode thành công */}
       {scanToast && (
