@@ -12,9 +12,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
+import { migrateFresh } from './migrate-fresh';
 import {
   warehouses,
   partners,
@@ -84,19 +84,21 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
 
-  // 2. Dựng schema vào DB test qua `drizzle-kit push` (schema trực tiếp,
-  // không replay lịch sử migration).
-  const push = spawnSync('npx', ['drizzle-kit', 'push', '--config', 'drizzle.test.config.ts'], {
-    cwd: process.cwd(),
-    env: { ...process.env, TEST_DATABASE_FILE: dbFile },
-    stdio: 'pipe',
-    shell: true,
+  // 2. Dựng schema từ đúng chuỗi journal 0000 -> 0008 qua migrate-fresh
+  // (runner chuẩn bỏ qua chunk comment-only, nội dung SQL giữ nguyên).
+  // Đồng thời dogfood đường migrate journal trên mọi lần chạy test.
+  await migrateFresh({
+    targetUrl: `file:${resolved}`,
+    expectTables: [
+      'works', 'editions', 'warehouses', 'partners', 'customers',
+      'seasonal_bundles', 'bundle_items', 'customer_subscriptions',
+      'customer_owned_books', 'inventory_ledger', 'stock_balances',
+      'orders', 'order_items', 'audit_logs', 'cashbox_sessions',
+      'counter_allocations', 'rma_tickets', 'transfer_shipments',
+      'transfer_shipment_items', 'consignment_statements',
+      'consignment_statement_lines',
+    ],
   });
-  if (push.status !== 0) {
-    throw new Error(
-      `drizzle-kit push (test DB) thất bại:\n${push.stdout?.toString()}\n${push.stderr?.toString()}`
-    );
-  }
 
   const client = createClient({ url: `file:${resolved}` });
   const testDb = drizzle(client, {

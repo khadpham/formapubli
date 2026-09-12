@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
 import { extractUserRole, enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
+import { isValidManagerPin } from '@/lib/manager-pin';
 
 export const dynamic = 'force-dynamic';
 
 // ---------------------------------------------------------------------------
 // Server-side Discount Hard-cap (chống thu ngân tự ý chiết khấu sâu).
 // Trần thu ngân: 15%. Vượt trần bắt buộc có mã PIN quản lý phê duyệt.
-// Lưu ý: PIN hardcode tạm thời để vá lỗ hổng khẩn cấp.
-// Backlog: chuyển vào biến môi trường / bảng User Settings kèm hash bcrypt.
+// PIN xác thực bằng hash (manager-pin.ts + env MANAGER_PIN_HASHES).
 // ---------------------------------------------------------------------------
 const MAX_CASHIER_DISCOUNT_RATE = 0.15;
-const VALID_MANAGER_PINS = ['9999', '1234', '8888'];
 
 export async function GET(req: NextRequest) {
   try {
@@ -149,7 +148,7 @@ export async function POST(req: NextRequest) {
 
     if (exceedsHardCap && !isPrivilegedRole) {
       const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-      if (!VALID_MANAGER_PINS.includes(providedPin)) {
+      if (!isValidManagerPin(providedPin)) {
         recordAuditLog({
           action: 'MANAGER_DISCOUNT_DENIED',
           actorRole: userRole,

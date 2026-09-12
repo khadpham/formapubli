@@ -52,7 +52,7 @@ async function run() {
   const testEditionId = seeded[0].id;
   guardEditionId = testEditionId;
   let passed = 0;
-  const total = 8;
+  const total = 10;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -112,6 +112,21 @@ async function run() {
   // 8. Manager 40% không PIN -> cho qua (miễn trừ theo vai trò).
   r = await postOrder(baseBody({ discountRate: 0.4 }), 'ROLE_MANAGER', 'test-manager-guard');
   ok('Manager 40% không PIN được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+
+  // 9-10. Env MANAGER_PIN_HASHES: PIN mới theo env được duyệt, PIN legacy bị vô hiệu.
+  const { hashPinForEnv } = await import('../src/lib/manager-pin');
+  const prevEnv = process.env.MANAGER_PIN_HASHES;
+  process.env.MANAGER_PIN_HASHES = hashPinForEnv('4321');
+  try {
+    r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '4321' }), 'ROLE_CASHIER');
+    ok('PIN theo env (4321) được duyệt', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+
+    r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '9999' }), 'ROLE_CASHIER');
+    ok('PIN legacy (9999) bị vô hiệu khi đã set env', r.status === 403, `status=${r.status}`);
+  } finally {
+    if (prevEnv === undefined) delete process.env.MANAGER_PIN_HASHES;
+    else process.env.MANAGER_PIN_HASHES = prevEnv;
+  }
 
   console.log(`\n🎉 HOÀN TẤT: ${passed}/${total} BÀI TEST DISCOUNT GUARD ${passed === total ? 'ĐẠT 100%' : 'CÓ LỖI'}!`);
   if (passed !== total) process.exit(1);
