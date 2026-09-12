@@ -284,6 +284,39 @@ export const counterAllocations = sqliteTable('counter_allocations', {
   sessionIdx: index('idx_counter_alloc_session').on(table.cashboxSessionId),
 }));
 
+// 18. Transfer Shipments (Phiếu luân chuyển kho 2 bước qua trạm IN_TRANSIT)
+export const transferShipments = sqliteTable('transfer_shipments', {
+  id: text('id').primaryKey(), // e.g. TRF-20260913-AB12CD
+  fromWarehouseId: text('from_warehouse_id').notNull().references(() => warehouses.id),
+  toWarehouseId: text('to_warehouse_id').notNull().references(() => warehouses.id),
+  dispatcherId: text('dispatcher_id').notNull(), // Người bấm xuất kho gửi
+  receiverId: text('receiver_id'), // Người xác nhận thực nhận
+  status: text('status').notNull().default('IN_TRANSIT'), // IN_TRANSIT, RECEIVED_FULL, RECEIVED_DISCREPANCY, CANCELLED
+  vehicleInfo: text('vehicle_info'), // Xe vận chuyển, người giao
+  notes: text('notes'),
+  dispatchedAt: text('dispatched_at').default(sql`CURRENT_TIMESTAMP`),
+  receivedAt: text('received_at'),
+}, (table) => ({
+  statusIdx: index('idx_transfer_ship_status').on(table.status),
+  fromIdx: index('idx_transfer_ship_from').on(table.fromWarehouseId),
+  toIdx: index('idx_transfer_ship_to').on(table.toWarehouseId),
+  dispatchedAtIdx: index('idx_transfer_ship_dispatched_at').on(table.dispatchedAt),
+}));
+
+// 19. Transfer Shipment Items (Chi tiết từng ấn bản trong phiếu luân chuyển)
+export const transferShipmentItems = sqliteTable('transfer_shipment_items', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => transferShipments.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  dispatchedQty: integer('dispatched_qty').notNull(), // Số lượng xuất đi (> 0)
+  receivedQty: integer('received_qty'), // Số lượng lành nhận đủ tại kho đích
+  damagedQty: integer('damaged_qty'), // Số lượng rách/ướt -> QUARANTINE
+  lostQty: integer('lost_qty'), // Số lượng thất lạc trên đường
+  notes: text('notes'),
+}, (table) => ({
+  shipmentIdx: index('idx_transfer_ship_item_shipment').on(table.shipmentId),
+  editionIdx: index('idx_transfer_ship_item_edition').on(table.editionId),
+}));
 // 17. RMA & Defective Quarantine Tickets (Cách Ly Sách Lỗi & Đổi Trả)
 export const rmaTickets = sqliteTable('rma_tickets', {
   id: text('id').primaryKey(), // e.g. RMA-202609-0001

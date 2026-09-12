@@ -108,6 +108,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Âu Cơ (Test)', address: 'Test', isActive: true },
     { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quỳnh Mai (Test)', address: 'Test', isActive: true },
     { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Dự phòng (Test)', address: 'Test', isActive: true },
+    { id: 'wh-in-transit', code: 'KHO_IN_TRANSIT', name: 'Kho ảo Trung chuyển (Test)', address: 'Test', isActive: true },
   ]);
 
   // 4. Seed đối tác (giữ nguyên ID prod).
