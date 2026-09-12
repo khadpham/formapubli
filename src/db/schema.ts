@@ -306,6 +306,27 @@ export const consignmentStatementLines = sqliteTable('consignment_statement_line
   editionIdx: index('idx_consign_line_edition').on(table.editionId),
 }));
 
+// 22. Consignment Payments (Phiếu thu công nợ ký gửi, bất biến + VOID)
+export const consignmentPayments = sqliteTable('consignment_payments', {
+  id: text('id').primaryKey(), // e.g. PT-20260913-AB12
+  partnerId: text('partner_id').notNull().references(() => partners.id),
+  statementId: text('statement_id').notNull().references(() => consignmentStatements.id),
+  amount: real('amount').notNull(), // Số tiền thu (> 0)
+  paymentMethod: text('payment_method').notNull(), // CASH, BANK_TRANSFER
+  reference: text('reference').notNull(), // Mã bill/sao kê đối chiếu (bắt buộc)
+  paidAt: text('paid_at').notNull(), // Ngày tiền về (YYYY-MM-DD)
+  receivedBy: text('received_by').notNull(), // Người thu tiền
+  cashboxSessionId: text('cashbox_session_id'), // Két ca (optional, thu ở hội chợ)
+  status: text('status').notNull().default('ACTIVE'), // ACTIVE, VOIDED
+  voidReason: text('void_reason'), // Lý do hủy (bắt buộc khi VOID)
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  partnerIdx: index('idx_consign_pay_partner').on(table.partnerId),
+  statementIdx: index('idx_consign_pay_stmt').on(table.statementId),
+  statusIdx: index('idx_consign_pay_status').on(table.status),
+}));
+
 // 16. Counter Allocations ("Chia Mâm" Sách Bàn Quầy Hội Chợ)
 export const counterAllocations = sqliteTable('counter_allocations', {
   id: text('id').primaryKey(),
