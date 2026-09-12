@@ -289,8 +289,36 @@
     - Chặn cứng vai trò `ROLE_TAX` với HTTP 403 Forbidden; tự động ghi vết audit logs cho mọi lượt dispatch, receive, cancel.
   - **Kiểm Thử Toàn Diện:**
     - Test suite `scripts/test-in-transit.ts` đạt **17/17 PASS**.
-    - Nâng tổng số test suites lên **10 suites cách ly / 106 test cases đạt chuẩn 100%**.
     - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ ở mức **132 kB**.
+
+#### 🔹 [Mã: ENG-20260913-17] Triển Khai Phân Hệ Sổ Ký Gửi Đinh Lễ & Biên Bản Công Nợ Phải Thu (Consignment Ledger & AR Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/consignment-ledger`)
+- **Nội dung:**
+  - **Mô Hình Kho Đại Lý Đích Danh & Quyền Sở Hữu:**
+    - Mỗi đối tác ký gửi sở hữu một kho ảo riêng `wh-consign-<code>` (ví dụ `wh-consign-ns-mao-dinh-le`).
+    - Bút toán ghi nhận rõ quyền sở hữu `ownerId: 'part-formapubli'` $\rightarrow$ Về mặt pháp lý và kiểm toán, hàng ký gửi vẫn thuộc sở hữu của NXB/Nhà sách.
+  - **Migration `0007_consignment_ledger.sql`:**
+    - Khởi tạo 2 bảng `consignment_statements` và `consignment_statement_items` quản lý kỳ đối soát (mã `STMT-YYYYMM-XXXX`), trạng thái `DRAFT` $\rightarrow$ `CONFIRMED`, `opening_ledger_rowid`, doanh thu bìa, chiết khấu kỳ, công nợ phải thu ròng (AR).
+    - Script `scripts/apply-migration-0007.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Tái Sử Dụng Hoàn Toàn Động Cơ Luân Chuyển T1 (IN_TRANSIT):**
+    - Xuất gửi hàng đi: Gọi `TransferService.dispatch` $\rightarrow$ Nhận hàng tại quầy đối tác: Gọi `TransferService.receive` theo biên bản ký tay, kế thừa trọn vẹn bảo toàn hao hụt đường đi.
+  - **Khóa Kỳ Đối Soát Bất Biến & Chốt Công Nợ Phải Thu (AR):**
+    - Phương trình đối soát dòng hàng tại quầy ký gửi:
+      $$\text{Tồn đầu} + \text{Gửi thêm} = \text{Báo bán} + \text{Thu hồi} + \text{Hỏng/Mất} + \text{Tồn cuối}$$
+    - Tính toán công nợ phải thu:
+      $$\text{AR} = \sum (\text{Báo bán} \times \text{Giá bìa} \times (1 - \text{DiscountRate}))$$
+    - Hỗ trợ chọn cờ Sổ Kép (`fiscalScope`: mặc định `INTERNAL_MANAGEMENT`, chỉ Manager/Owner được mở `OFFICIAL_TAX`).
+    - Khi chốt `CONFIRMED`: Tự động hạch toán xuất kho bán `CONSIGNMENT_SOLD` và xuất kho mất `CONSIGNMENT_LOSS` khỏi kho đại lý; từ chối chốt nếu số liệu có thặng dư bất thường.
+  - **Vá Lỗi Nhạy Cảm Đồng Giây (Precision Race Condition Fix):**
+    - Phát hiện lỗi `CURRENT_TIMESTAMP` của SQLite chỉ tính tới giây; khắc phục dứt điểm bằng mốc con trỏ thứ tự `opening_ledger_rowid`.
+  - **API `/api/consignments` & Audit Trail:**
+    - Cung cấp các endpoints: gửi hàng, xác nhận nhận, báo bán lẻ tẻ, thu hồi hàng, tạo kỳ, sửa kỳ nháp, và chốt kỳ đối soát.
+    - Phân quyền chặt chẽ, ghi nhận audit logs đầy đủ.
+  - **Kiểm Thử Toàn Diện:**
+    - Test suite `scripts/test-consignment.ts` đạt **15/15 PASS**.
+    - Nâng tổng số test suites lên **11 suites cách ly / 121 test cases đạt chuẩn 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ ở mức **132 kB**.
+
 
 
 
