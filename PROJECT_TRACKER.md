@@ -340,7 +340,24 @@
   - **Kiểm Thử Toàn Diện & Tối Ưu:**
     - Test suite `scripts/test-bundle-engine.ts` đạt **10/10 PASS**.
     - Nâng tổng số test suites lên **12 suites cách ly / 131 test cases đạt chuẩn 100%**.
-    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+#### 🔹 [Mã: ENG-20260913-19] Xóa Nợ Kỹ Thuật: Đồng Bộ Drizzle Journal & Mã Hóa PIN Quản Lý (Tech-Debt Cleanup)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/tech-debt-journal-and-pin`) | **Commit:** `03a22f5`
+- **Nội dung:**
+  - **Bảo Mật Zero-Dependency: Mã Hóa PIN Quản Lý (`src/lib/manager-pin.ts`):**
+    - Tái sử dụng hàm băm thuần TypeScript `sha256(pin + salt)` từ `export-hash.ts`, không phát sinh thêm thư viện ngoài.
+    - Chuyển danh sách PIN quản lý sang biến môi trường `MANAGER_PIN_HASHES` (phân tách bởi dấu phẩy).
+    - Cơ chế fallback linh hoạt: Tự động cảnh báo và dùng PIN mặc định trên môi trường dev/test khi chưa thiết lập env.
+    - Giữ nguyên giao thức POS phía client: gửi plain text qua HTTPS, server băm và so khớp, không làm xáo trộn giao diện bán hàng.
+    - Cung cấp file `.env.example` và câu lệnh CLI sinh hash tiện lợi.
+  - **Đồng Bộ Drizzle Journal & Khởi Tạo CSDL Sạch (`scripts/migrate-fresh.ts`):**
+    - Chẩn đoán chính xác nguyên nhân lỗi SQLite `ADD COLUMN ... REFERENCES` trên migration `0003_slim_caretaker.sql`: các khối chú thích `/* ... */` gây lỗi ảo trong LibSQL engine; giữ nguyên vẹn 100% nội dung SQL đã deploy production.
+    - Khôi phục tính toàn vẹn của Drizzle ORM: bổ sung đầy đủ các entries `0005` đến `0008` vào `_journal.json` cùng snapshot chuẩn `0008_snapshot.json` (kiểm tra `drizzle-kit generate` báo "No schema changes").
+    - Xây dựng công cụ chạy migration an toàn `migrate-fresh.ts` tự động kiểm tra bảng, loại trừ comment, tuyệt đối chặn nhầm DB production. Chuyển `setup-test-db.ts` sang dùng cơ chế này.
+  - **Kiểm Thử Toàn Diện:**
+    - Bổ sung kiểm thử mã hóa PIN và biến môi trường trong `scripts/test-discount-guard.ts` (10/10 PASS).
+    - Replay thành công chuỗi 9 migration files (`0000` $\rightarrow$ `0008`), khởi tạo đầy đủ 21 bảng.
+    - Toàn bộ **12 suites / 133 tests PASS 100%**, `formapubli.db` prod nguyên vẹn, Next.js build giữ vững First Load JS **132 kB**.
+
 
 
 
