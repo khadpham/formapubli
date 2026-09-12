@@ -392,10 +392,30 @@
     - Kế toán thuế `ROLE_TAX` chỉ được xem các phiếu thu gắn với kỳ có cờ `OFFICIAL_TAX`, hoàn toàn cách ly dòng tiền nội bộ.
   - **Tính Toàn Vẹn Của Drizzle Migration Journal:**
     - Đăng ký entry migration thứ 9 (`idx: 9`, tag `0009_consignment_settlements`) vào `_journal.json` cùng snapshot chuẩn `0009_snapshot.json`. Chuỗi replay 10 files migration (`0000` $\rightarrow$ `0009`) chạy trơn tru từ đầu đến cuối.
+#### 🔹 [Mã: ENG-20260913-22] Nghi Thức Mở Sổ Tờ Giấy Trắng & Công Cụ Nạp Kiểm Đếm Thực Tế (Clean Slate Ceremony Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/clean-slate-ceremony`) | **Commit:** `8b466e4`
+- **Nội dung:**
+  - **Quy Trình Kiểm Đếm Vật Lý 4 Giai Đoạn:**
+    - Giai đoạn 1: Đóng băng dữ liệu Sheets cũ (tính mã băm SHA-256 niêm phong pháp lý, sao lưu CSDL).
+    - Giai đoạn 2: Kiểm đếm thực địa 2 lượt độc lập theo kệ (D3 Pick List), phân loại lành NEW và hỏng QUARANTINE, ký biên bản giấy tay `BB-KK-YYYYMMDD` (Lan Anh + Giám đốc).
+    - Giai đoạn 3: Nạp số liệu mở sổ qua công cụ CLI `scripts/clean-slate-import.ts`.
+    - Giai đoạn 4: Khóa sổ vĩnh viễn và Go-live chính thức.
+  - **Động Cơ Nạp Kiểm Đếm An Toàn Tuyệt Đối (`scripts/clean-slate-import.ts`):**
+    - Đọc file CSV kiểm đếm chuẩn (`sku,warehouse_id,condition_new,condition_quarantine,notes`).
+    - Validate nghiêm ngặt: định dạng header, kiểm tra SKU tồn tại trong danh mục 81 ấn bản, kiểm tra mã kho hợp lệ, chặn số lượng âm, chặn trùng cặp SKU+kho.
+    - **Cơ chế Chống Nạp Trùng Lặp (Double-Entry Guard):** Kiểm tra CSDL, nếu đã tồn tại bút toán `OPENING_BALANCE` trước đó sẽ lập tức từ chối thực thi (`REFUSED`), bảo vệ tính duy nhất của ngày mở sổ.
+    - Cấm tuyệt đối trỏ nhầm database kiểm thử `formapubli_test.db`.
+  - **Chế Độ Đối Chiếu Không Rủi Ro (Dry-Run Mode):**
+    - Bắt buộc truyền cờ `--dry-run` hoặc `--confirm`.
+    - Ở chế độ `--dry-run`: in bảng đối chiếu chi tiết giữa Tồn máy cũ vs Đếm thực tế vs Chênh lệch từng SKU mà không ghi bất kỳ byte nào vào CSDL.
+    - Chỉ thực thi ghi nhận khi Giám đốc truyền cờ `--confirm`.
+  - **Bảo Toàn Thẻ Kho & Chứng Từ Pháp Lý:**
+    - Khắc trực tiếp mã biên bản `BB-KK-YYYYMMDD`, giờ G kiểm kê, danh sách người ký và ghi chú đếm vào trường `documentRef` và `note` của từng bút toán Thẻ kho bất biến.
   - **Kiểm Thử Toàn Diện:**
-    - Test suite `scripts/test-settlement.ts` đạt **10/10 PASS**.
-    - Nâng tổng số test suites lên **14 suites cách ly / 151 test cases đạt chuẩn 100%**.
+    - Test suite `scripts/test-clean-slate.ts` đạt **11/11 PASS**.
+    - Nâng tổng số test suites lên **15 suites cách ly / 162 test cases đạt chuẩn 100%**.
     - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
 
 
 
@@ -495,7 +515,8 @@
 - [x] **Mã Hóa PIN Quản Lý Zero-Dependency (`src/lib/manager-pin.ts`):** Băm `sha256(PIN + salt)` thuần TypeScript qua `export-hash.ts`, nạp danh sách hash từ biến môi trường `MANAGER_PIN_HASHES`, tương thích ngược 100% với giao diện POS client.
 - [x] **Cách Ly DB Kiểm Thử & Chống Ô Nhiễm Prod (`assertIsolatedTestDb`):** Tự động phát hiện và chặn đứng mọi script kiểm thử chạm vào `formapubli.db`, bảo toàn dữ liệu thật 100%.
 - [x] **Đồng Bộ Drizzle Migration Journal (`scripts/migrate-fresh.ts`):** Khôi phục tính nhất quán chuỗi migration từ `0000` đến `0008` (21 bảng), xử lý triệt để lỗi parse comment của LibSQL, chuẩn bị sẵn sàng cho lệnh `wrangler d1 migrations apply`.
-- [x] **Hệ Thống Kiểm Thử Tự Động 13 Suites / 141 Test Cases:** Đạt tỷ lệ bao phủ và vượt qua 100% tất cả các kịch bản kiểm thử luân chuyển, kế toán sổ kép, chiết khấu, ký gửi, combo đóng hộp và dự báo tái bản.
+- [x] **Công Cụ Mở Sổ Tờ Giấy Trắng (`scripts/clean-slate-import.ts`):** Nhập kiểm đếm thực tế CSV, kiểm tra tính duy nhất chống nạp 2 lần (`Double-Entry Guard`), chế độ `--dry-run` không ghi CSDL, khắc mã biên bản `BB-KK-YYYYMMDD` và giờ G vào chứng từ Thẻ kho.
+- [x] **Hệ Thống Kiểm Thử Tự Động 15 Suites / 162 Test Cases:** Đạt tỷ lệ bao phủ và vượt qua 100% tất cả các kịch bản kiểm thử luân chuyển, kế toán sổ kép, chiết khấu, ký gửi, thu tiền settlement, combo đóng hộp, dự báo tái bản và lễ mở sổ Clean Slate.
 
 ---
 
