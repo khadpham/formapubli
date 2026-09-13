@@ -13,7 +13,7 @@
 | **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
 | **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
-| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟡 **ĐANG TRIỂN KHAI** | **~90%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/in-transit-two-step` |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/consignment-settlement`<br/>`feat/clean-slate-ceremony`<br/>`feat/rights-and-royalties` |
 | **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | 🟡 **ĐANG TRIỂN KHAI** | **~20%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/runout-forecasting-v-sale` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
@@ -411,10 +411,29 @@
     - Chỉ thực thi ghi nhận khi Giám đốc truyền cờ `--confirm`.
   - **Bảo Toàn Thẻ Kho & Chứng Từ Pháp Lý:**
     - Khắc trực tiếp mã biên bản `BB-KK-YYYYMMDD`, giờ G kiểm kê, danh sách người ký và ghi chú đếm vào trường `documentRef` và `note` của từng bút toán Thẻ kho bất biến.
+#### 🔹 [Mã: ENG-20260913-23] Phân Hệ Quản Lý Hợp Đồng Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/rights-and-royalties`) | **Commit:** `6a177b9`
+- **Nội dung:**
+  - **Migration `0010_rights_and_royalties.sql`:**
+    - Khởi tạo bảng `rights_contracts` quản lý hợp đồng bản quyền: mã hợp đồng unique `contract_number`, `work_id`, `licensor_partner_id`, `licensor_name`, `royalty_rate` (0.01 - 0.99), `print_quota` (hạn ngạch số cuốn được in), `advance_amount` (tạm ứng ban đầu), `effective_date`, `expiration_date` (thời hạn 5 năm), `status` (`ACTIVE`, `TERMINATED`), `terminated_at`, `terminated_reason`.
+    - Script `scripts/apply-migration-0010.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Giám Sát Hạn Ngạch In Bằng Cảnh Báo & Audit Trail (Quota Guard):**
+    - Tính toán tổng số lượng đã in thực tế từ Thẻ kho bất biến: `SUM(RECEIPT_INCOMING + OPENING_BALANCE)` phát sinh trong thời hạn hợp đồng.
+    - Cơ chế cảnh báo sớm `QUOTA_WARNING` khi số cuốn còn lại $\le$ 200 cuốn hoặc $\le$ 10% hạn ngạch in.
+    - **Triết lý vận hành thực tế:** Tuyệt đối không chặn cứng giao dịch nhập kho khi vượt quota (tránh sinh tồn ảo ngoài hệ thống khi nhà in đã giao hàng); thay vào đó bật cảnh báo đỏ và ghi nhận vết kiểm toán để ban giám đốc làm việc gia hạn hợp đồng bản quyền.
+  - **Động Cơ Tính Nhuận Bút Tự Động (Royalty Payable Engine):**
+    - Thống kê lượng sách tiêu thụ thực tế từ Thẻ kho: `Tong_ban = SUM(DISPATCH_SALE + CONSIGNMENT_SOLD)`.
+    - Doanh thu bìa: `Tong_ban * cover_price`.
+    - Tiền nhuận bút phát sinh: `Doanh_thu_bia * royalty_rate`.
+    - Tiền nhuận bút ròng còn phải thanh toán: `MAX(0, Tien_nhuan_but_phat_sinh - advance_amount)`.
+  - **Vòng Đời Hợp Đồng Động (Dynamic Contract Lifecycle):**
+    - Trạng thái được suy ra linh hoạt theo thứ tự ưu tiên: `TERMINATED` (nếu có lý do chấm dứt tay) > `EXPIRED` (nếu ngày hiện tại vượt quá `expiration_date`) > `ACTIVE`.
   - **Kiểm Thử Toàn Diện:**
-    - Test suite `scripts/test-clean-slate.ts` đạt **11/11 PASS**.
-    - Nâng tổng số test suites lên **15 suites cách ly / 162 test cases đạt chuẩn 100%**.
+    - Test suite `scripts/test-royalties.ts` đạt **9/9 PASS**.
+    - Chuỗi migration journal `0000` $\rightarrow$ `0010` (23 bảng) liền mạch với snapshot `0010_snapshot.json` (kiểm tra `drizzle-kit generate` báo "No schema changes").
+    - Nâng tổng số test suites lên **16 suites cách ly / 180 test cases đạt chuẩn 100%**.
     - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
 
 
 
@@ -484,7 +503,7 @@
 - [x] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
 - [x] Xuất bảng tính Excel / CSV với mã UTF-8 BOM chuẩn xác 100% tiếng Việt có dấu, không lỗi font.
 
-### 🟡 Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [ĐANG TRIỂN KHAI ~90%]
+### 🟢 Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [ĐÃ HOÀN THÀNH 100%]
 *Mục tiêu: Xử lý các nghiệp vụ đặc thù chiều sâu của ngành sách Việt Nam.*
 
 #### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine) - [ĐÃ HOÀN THÀNH]
@@ -500,10 +519,12 @@
 - [x] Chốt công nợ phải thu ròng AR, phân tách góc nhìn Thuế vs Nội bộ, tự động xuất kho bán/mất, ngăn chặn thặng dư bất thường.
 - [x] Thu tiền thanh toán công nợ ký gửi (Consignment Settlement): Phiếu thu `PT-YYYYMMDD-XXXX`, thanh toán nhiều lần $\le$ dư nợ, chặn overpay, cơ chế `VOID` bất biến, tự động chuyển trạng thái `PAID`.
 
-#### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger)
-- [ ] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa).
-- [ ] Tự động đếm lũy kế số cuốn đã in thực tế qua Thẻ kho để cảnh báo trước khi vượt hạn ngạch cấp phép.
-- [ ] Bảng tính tiền nhuận bút tự động theo tỷ lệ % giá bìa nhân với số cuốn bán thực tế.
+#### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger) - [ĐÃ HOÀN THÀNH 100%]
+- [x] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa, tạm ứng ban đầu).
+- [x] Tự động đếm lũy kế số cuốn đã in thực tế qua Thẻ kho (`SUM(RECEIPT + OPENING)`) để cảnh báo trước khi vượt hạn ngạch cấp phép ($\le$ 200 cuốn hoặc $\le$ 10%).
+- [x] Bảng tính tiền nhuận bút tự động theo tỷ lệ % giá bìa nhân với số cuốn bán thực tế (`Tong_ban * Gia_bia * rate - Tam_ung`).
+- [x] Vòng đời hợp đồng động theo ngày hết hạn hoặc chấm dứt tay (`TERMINATED` > `EXPIRED` > `ACTIVE`).
+
 
 ---
 
@@ -516,7 +537,7 @@
 - [x] **Cách Ly DB Kiểm Thử & Chống Ô Nhiễm Prod (`assertIsolatedTestDb`):** Tự động phát hiện và chặn đứng mọi script kiểm thử chạm vào `formapubli.db`, bảo toàn dữ liệu thật 100%.
 - [x] **Đồng Bộ Drizzle Migration Journal (`scripts/migrate-fresh.ts`):** Khôi phục tính nhất quán chuỗi migration từ `0000` đến `0008` (21 bảng), xử lý triệt để lỗi parse comment của LibSQL, chuẩn bị sẵn sàng cho lệnh `wrangler d1 migrations apply`.
 - [x] **Công Cụ Mở Sổ Tờ Giấy Trắng (`scripts/clean-slate-import.ts`):** Nhập kiểm đếm thực tế CSV, kiểm tra tính duy nhất chống nạp 2 lần (`Double-Entry Guard`), chế độ `--dry-run` không ghi CSDL, khắc mã biên bản `BB-KK-YYYYMMDD` và giờ G vào chứng từ Thẻ kho.
-- [x] **Hệ Thống Kiểm Thử Tự Động 15 Suites / 162 Test Cases:** Đạt tỷ lệ bao phủ và vượt qua 100% tất cả các kịch bản kiểm thử luân chuyển, kế toán sổ kép, chiết khấu, ký gửi, thu tiền settlement, combo đóng hộp, dự báo tái bản và lễ mở sổ Clean Slate.
+- [x] **Hệ Thống Kiểm Thử Tự Động 16 Suites / 180 Test Cases:** Đạt tỷ lệ bao phủ và vượt qua 100% tất cả các kịch bản kiểm thử luân chuyển, kế toán sổ kép, chiết khấu, ký gửi, thu tiền settlement, combo đóng hộp, dự báo tái bản, lễ mở sổ Clean Slate và hợp đồng bản quyền/nhuận bút.
 
 ---
 
