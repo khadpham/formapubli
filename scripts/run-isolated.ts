@@ -29,6 +29,7 @@ const ALL_SUITES = [
   'scripts/test-vietnamese-search.ts',
   'scripts/test-barcode-engine.ts',
   'scripts/test-forecast.ts',
+  'scripts/test-royalties.ts',
 ];
 
 function suiteShortName(p: string): string {

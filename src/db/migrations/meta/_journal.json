@@ -70,6 +70,13 @@
       "when": 1789246330486,
       "tag": "0009_consignment_settlements",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789315817959,
+      "tag": "0010_rights_and_royalties",
+      "breakpoints": true
     }
   ],
   "version": "7"

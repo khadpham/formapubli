@@ -97,6 +97,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       'counter_allocations', 'rma_tickets', 'transfer_shipments',
       'transfer_shipment_items', 'consignment_statements',
       'consignment_statement_lines', 'consignment_payments',
+      'rights_contracts',
     ],
   });
 

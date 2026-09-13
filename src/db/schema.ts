@@ -327,6 +327,30 @@ export const consignmentPayments = sqliteTable('consignment_payments', {
   statusIdx: index('idx_consign_pay_status').on(table.status),
 }));
 
+// 23. Rights Contracts (Hợp đồng bản quyền + hạn ngạch in + tạm ứng nhuận bút)
+export const rightsContracts = sqliteTable('rights_contracts', {
+  id: text('id').primaryKey(), // e.g. RC-HD-BQ-2026-001
+  contractNumber: text('contract_number').notNull().unique(), // HD-BQ-2026-001
+  workId: text('work_id').notNull().references(() => works.id), // Tác phẩm gắn liền
+  licensorId: text('licensor_id').references(() => partners.id), // Tác giả/dịch giả/đối tác cấp quyền
+  licensorName: text('licensor_name'), // Tên hiển thị khi chưa có partner
+  royaltyRate: real('royalty_rate').notNull(), // 0.08 - 0.12 giá bìa
+  printQuota: integer('print_quota').notNull(), // Số cuốn được phép in tối đa
+  advanceAmount: real('advance_amount').notNull().default(0), // Tạm ứng trừ dần
+  effectiveDate: text('effective_date').notNull(), // YYYY-MM-DD
+  expirationDate: text('expiration_date').notNull(), // YYYY-MM-DD (thường +5 năm)
+  terminated: integer('terminated', { mode: 'boolean' }).default(false), // Chấm dứt trước hạn
+  terminateReason: text('terminate_reason'),
+  notes: text('notes'),
+  createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  contractNumberIdx: uniqueIndex('idx_rights_contract_number').on(table.contractNumber),
+  workIdx: index('idx_rights_work').on(table.workId),
+  licensorIdx: index('idx_rights_licensor').on(table.licensorId),
+  expirationIdx: index('idx_rights_expiration').on(table.expirationDate),
+}));
+
 // 16. Counter Allocations ("Chia Mâm" Sách Bàn Quầy Hội Chợ)
 export const counterAllocations = sqliteTable('counter_allocations', {
   id: text('id').primaryKey(),
