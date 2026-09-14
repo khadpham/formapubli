@@ -21,6 +21,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
 import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
+import { TransitPanel } from './inventory/TransitPanel';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
@@ -69,12 +70,14 @@ interface StockOverviewMatrixProps {
   initialBooks: MatrixBookItem[];
   warehouses: WarehouseItem[];
   initialLedger: LedgerEntry[];
+  currentRole?: string;
 }
 
 export function StockOverviewMatrix({
   initialBooks,
   warehouses,
   initialLedger,
+  currentRole = 'ROLE_OWNER',
 }: StockOverviewMatrixProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -83,7 +86,9 @@ export function StockOverviewMatrix({
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER'>('MATRIX');
+  const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT'>('MATRIX');
+  // Ticket 3 MVP: tab kho kiểu Sheets — chỉ lọc hiển thị read-only, không đụng ledger.
+  const [warehouseTab, setWarehouseTab] = useState<'ALL' | 'wh-au-co' | 'wh-quynh-mai' | 'wh-du-phong'>('ALL');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
 
@@ -205,6 +210,25 @@ export function StockOverviewMatrix({
     setModalAction(action);
     setSelectedBookForAction(book || initialBooks[0] || null);
     setModalOpen(true);
+  };
+
+  // Tổng tồn từng kho cho tab bar (tính từ matrix đã load, không query thêm).
+  const warehouseTotals = useMemo(() => {
+    return initialBooks.reduce(
+      (acc, b) => ({
+        auCo: acc.auCo + (b.stockAuCo || 0),
+        quynhMai: acc.quynhMai + (b.stockQuynhMai || 0),
+        duPhong: acc.duPhong + (b.stockDuPhong || 0),
+      }),
+      { auCo: 0, quynhMai: 0, duPhong: 0 }
+    );
+  }, [initialBooks]);
+
+  const getWarehouseStock = (b: MatrixBookItem, tab: typeof warehouseTab) => {
+    if (tab === 'wh-au-co') return b.stockAuCo;
+    if (tab === 'wh-quynh-mai') return b.stockQuynhMai;
+    if (tab === 'wh-du-phong') return b.stockDuPhong;
+    return b.totalStock;
   };
 
   const handleRefresh = () => {
@@ -400,6 +424,19 @@ export function StockOverviewMatrix({
               <History className="w-3.5 h-3.5" />
               Sổ Cái Bất Biến ({initialLedger.length})
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('TRANSIT')}
+              title="Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ"
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                activeTab === 'TRANSIT'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              Đi Đường
+            </button>
           </div>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
@@ -497,9 +534,38 @@ export function StockOverviewMatrix({
         </div>
       )}
 
-      {/* Main View: Matrix vs Ledger */}
-      {activeTab === 'MATRIX' ? (
+      {/* Main View: Matrix vs Ledger vs Transit */}
+      {activeTab === 'TRANSIT' ? (
+        <TransitPanel currentRole={(currentRole as any) || 'ROLE_OWNER'} />
+      ) : activeTab === 'MATRIX' ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Ticket 3 MVP: Thanh tab kho kiểu Sheets — read-only, Transit/RMA để sprint sau */}
+          <div className="flex items-center gap-1.5 px-3 pt-3 pb-2 overflow-x-auto border-b border-slate-100 bg-slate-50/60">
+            {(
+              [
+                { id: 'ALL', label: 'Tất cả 3 kho', total: warehouseTotals.auCo + warehouseTotals.quynhMai + warehouseTotals.duPhong },
+                { id: 'wh-au-co', label: 'Kho 1: Âu Cơ', total: warehouseTotals.auCo },
+                { id: 'wh-quynh-mai', label: 'Kho 2: Quỳnh Mai', total: warehouseTotals.quynhMai },
+                { id: 'wh-du-phong', label: 'Kho 3: Hội Chợ', total: warehouseTotals.duPhong },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setWarehouseTab(t.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border transition-colors ${
+                  warehouseTab === t.id
+                    ? 'bg-white text-indigo-700 border-indigo-300 shadow-sm'
+                    : 'bg-transparent text-slate-500 border-transparent hover:text-slate-800 hover:bg-white'
+                }`}
+              >
+                {t.label} ({t.total.toLocaleString('vi-VN')})
+              </button>
+            ))}
+            <span className="ml-auto text-[10px] text-slate-400 whitespace-nowrap hidden sm:inline">
+              RMA tạo bằng nút Cách Ly RMA
+            </span>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-600">
               <thead className="bg-slate-50 uppercase text-slate-500 font-semibold border-b border-slate-200 tracking-wider">
@@ -508,18 +574,27 @@ export function StockOverviewMatrix({
                   <th className="px-3 py-3">Tên sách & Tác phẩm</th>
                   <th className="px-3 py-3 w-24">Tên tắt</th>
                   <th className="px-3 py-3 w-28">4 số ISBN</th>
-                  <th className="px-3 py-3 text-right bg-indigo-50/50 font-bold text-indigo-900 w-28">
-                    Kho Âu Cơ
-                    <span className="block font-normal text-[10px] text-indigo-500">Sách lẻ</span>
-                  </th>
-                  <th className="px-3 py-3 text-right bg-emerald-50/50 font-bold text-emerald-900 w-32">
-                    Kho Quỳnh Mai
-                    <span className="block font-normal text-[10px] text-emerald-500">Kiện lưu sỉ</span>
-                  </th>
-                  <th className="px-3 py-3 text-right bg-amber-50/50 font-bold text-amber-900 w-28">
-                    Kho Dự phòng
-                    <span className="block font-normal text-[10px] text-amber-500">Hội chợ</span>
-                  </th>
+                  {warehouseTab === 'ALL' ? (
+                    <>
+                      <th className="px-3 py-3 text-right bg-indigo-50/50 font-bold text-indigo-900 w-28">
+                        Kho Âu Cơ
+                        <span className="block font-normal text-[10px] text-indigo-500">Sách lẻ</span>
+                      </th>
+                      <th className="px-3 py-3 text-right bg-emerald-50/50 font-bold text-emerald-900 w-32">
+                        Kho Quỳnh Mai
+                        <span className="block font-normal text-[10px] text-emerald-500">Kiện lưu sỉ</span>
+                      </th>
+                      <th className="px-3 py-3 text-right bg-amber-50/50 font-bold text-amber-900 w-28">
+                        Kho Dự phòng
+                        <span className="block font-normal text-[10px] text-amber-500">Hội chợ</span>
+                      </th>
+                    </>
+                  ) : (
+                    <th className="px-3 py-3 text-right bg-indigo-50/50 font-bold text-indigo-900 w-32">
+                      {warehouseTab === 'wh-au-co' ? 'Kho Âu Cơ' : warehouseTab === 'wh-quynh-mai' ? 'Kho Quỳnh Mai' : 'Kho Hội Chợ'}
+                      <span className="block font-normal text-[10px] text-indigo-500">Tồn tại kho này</span>
+                    </th>
+                  )}
                   <th className="px-3 py-3 text-right font-black text-slate-900 w-28">
                     Tổng tồn
                   </th>
@@ -544,15 +619,23 @@ export function StockOverviewMatrix({
                         {b.isbnLast4}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
-                      {b.stockAuCo.toLocaleString('vi-VN')}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono font-bold bg-emerald-50/20 text-emerald-800">
-                      {b.stockQuynhMai.toLocaleString('vi-VN')}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono font-bold bg-amber-50/20 text-amber-800">
-                      {b.stockDuPhong.toLocaleString('vi-VN')}
-                    </td>
+                    {warehouseTab === 'ALL' ? (
+                      <>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
+                          {b.stockAuCo.toLocaleString('vi-VN')}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-emerald-50/20 text-emerald-800">
+                          {b.stockQuynhMai.toLocaleString('vi-VN')}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-amber-50/20 text-amber-800">
+                          {b.stockDuPhong.toLocaleString('vi-VN')}
+                        </td>
+                      </>
+                    ) : (
+                      <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
+                        {getWarehouseStock(b, warehouseTab).toLocaleString('vi-VN')}
+                      </td>
+                    )}
                     <td className="px-3 py-2.5 text-right font-mono font-black text-slate-900">
                       {b.totalStock > 0 ? (
                         <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">

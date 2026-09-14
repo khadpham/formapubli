@@ -9,6 +9,7 @@ import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
+import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 import { Menu, Shield } from 'lucide-react';
 
@@ -41,10 +42,10 @@ export function MasterAppShell({
     }
   }, [currentRole, currentTab, roleConfig]);
 
-  // Phím tắt bàn phím toàn cục chuyển Tab siêu tốc: Alt + 1..7 (hoặc Alt + Shift + 1..7)
+  // Phím tắt bàn phím toàn cục chuyển Tab siêu tốc: Alt + 1..8 (hoặc Alt + Shift + 1..8)
   React.useEffect(() => {
     const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
-      // Bắt tổ hợp Alt + [1-7] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
+      // Bắt tổ hợp Alt + [1-8] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
         const keyMap: Record<string, string> = {
           '1': 'dashboard',
@@ -53,7 +54,8 @@ export function MasterAppShell({
           '4': 'sales',
           '5': 'partners',
           '6': 'customers',
-          '7': 'settings',
+          '7': 'studio',
+          '8': 'settings',
         };
 
         const targetTab = keyMap[e.key];
@@ -110,7 +112,8 @@ export function MasterAppShell({
                 {currentTab === 'sales' && 'Doanh Số & Sổ Kép (Alt+4)'}
                 {currentTab === 'partners' && 'Đối Tác & Đại Lý (Alt+5)'}
                 {currentTab === 'customers' && 'Độc Giả CRM (Alt+6)'}
-                {currentTab === 'settings' && 'Cài Đặt & Phân Quyền (Alt+7)'}
+                {currentTab === 'studio' && 'Phân Tích & Dự Báo (Alt+7)'}
+                {currentTab === 'settings' && 'Cài Đặt & Phân Quyền (Alt+8)'}
               </span>
             </div>
           </div>
@@ -169,6 +172,7 @@ export function MasterAppShell({
                 initialBooks={matrixBooks}
                 warehouses={warehouseList}
                 initialLedger={ledgerList}
+                currentRole={currentRole}
               />
             </div>
           )}
@@ -178,7 +182,7 @@ export function MasterAppShell({
           )}
 
           {currentTab === 'partners' && (
-            <PartnersListView partners={partnerList} />
+            <PartnersListView partners={partnerList} currentRole={currentRole} />
           )}
 
           {currentTab === 'customers' && <CustomersListView />}
@@ -188,6 +192,10 @@ export function MasterAppShell({
               currentRole={currentRole}
               onRoleChange={setCurrentRole}
             />
+          )}
+
+          {currentTab === 'studio' && (
+            <AnalyticsStudio currentRole={currentRole} />
           )}
         </main>
       </div>

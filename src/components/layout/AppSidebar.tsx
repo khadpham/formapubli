@@ -13,7 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Sparkles,
+  FlaskConical,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -44,64 +44,57 @@ export function AppSidebar({
     {
       id: 'dashboard',
       label: 'Tổng Quan Toàn Cảnh',
-      shortLabel: 'Tổng quan',
       icon: LayoutDashboard,
-      badge: 'Master',
       shortcut: 'Alt+1',
       color: 'text-indigo-600',
     },
     {
       id: 'pos',
       label: 'Quầy Bán Hàng POS',
-      shortLabel: 'Bán hàng',
       icon: ShoppingCart,
-      badge: 'Speed',
       shortcut: 'Alt+2',
       color: 'text-emerald-600',
     },
     {
       id: 'inventory',
       label: 'Kho Hàng & Thẻ Kho',
-      shortLabel: 'Kho hàng',
       icon: Boxes,
-      badge: '3 Kho',
       shortcut: 'Alt+3',
       color: 'text-amber-600',
     },
     {
       id: 'sales',
       label: 'Doanh Số & Sổ Kép',
-      shortLabel: 'Doanh số',
       icon: Receipt,
-      badge: 'Dual',
       shortcut: 'Alt+4',
       color: 'text-sky-600',
     },
     {
       id: 'partners',
       label: 'Đối Tác & Đại Lý',
-      shortLabel: 'Đối tác',
       icon: Users,
-      badge: 'B2B',
       shortcut: 'Alt+5',
       color: 'text-purple-600',
     },
     {
       id: 'customers',
       label: 'Độc Giả & Gói Mùa',
-      shortLabel: 'Độc giả',
       icon: BookOpenCheck,
-      badge: 'CRM',
       shortcut: 'Alt+6',
       color: 'text-rose-600',
     },
     {
+      id: 'studio',
+      label: 'Phân Tích & Dự Báo',
+      icon: FlaskConical,
+      shortcut: 'Alt+7',
+      color: 'text-violet-600',
+    },
+    {
       id: 'settings',
       label: 'Phân Quyền & Cài Đặt',
-      shortLabel: 'Cài đặt',
       icon: Settings,
-      badge: 'RBAC',
-      shortcut: 'Alt+7',
+      shortcut: 'Alt+8',
       color: 'text-slate-600',
     },
   ];
@@ -215,26 +208,15 @@ export function AppSidebar({
                 {!isCollapsed && (
                   <div className="flex items-center justify-between flex-1 truncate gap-2">
                     <span className="truncate">{item.label}</span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium hidden sm:inline ${
-                          isActive
-                            ? 'bg-white/20 text-white'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700'
-                        }`}
-                      >
-                        {item.shortcut}
-                      </span>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
-                          isActive
-                            ? 'bg-white/20 text-white'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    </div>
+                    <span
+                      className={`text-[9px] px-2 py-0.5 rounded font-mono font-medium hidden sm:inline ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700/60'
+                      }`}
+                    >
+                      {item.shortcut}
+                    </span>
                   </div>
                 )}
               </button>

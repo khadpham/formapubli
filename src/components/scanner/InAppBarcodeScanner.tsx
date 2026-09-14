@@ -41,6 +41,10 @@ export function InAppBarcodeScanner({
   const [detectorSupported, setDetectorSupported] = useState<boolean>(true);
 
   const lastScannedTimeRef = useRef<number>(0);
+  const didPostPermissionRescanRef = useRef<boolean>(false);
+
+  const [availableCameras, setAvailableCameras] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   // 1. Web Audio API Beep Synthesizer (Chuẩn âm thanh quầy thu ngân siêu thị)
   const playBeepSound = () => {
@@ -69,8 +73,70 @@ export function InAppBarcodeScanner({
     }
   };
 
+  // 1b. Lấy danh sách Camera và lọc thông minh Camera chính (loại trừ Macro / Ultra-wide)
+  const enumerateAndSelectBestCamera = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return null;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+      
+      const formatted = videoInputs.map((d, index) => ({
+        deviceId: d.deviceId,
+        label: d.label || `Camera ${index + 1}`,
+      }));
+      setAvailableCameras(formatted);
+
+      if (selectedCameraId && videoInputs.some((d) => d.deviceId === selectedCameraId)) {
+        return selectedCameraId;
+      }
+
+      // Bộ lọc thông minh:
+      // Tìm các camera sau (back/environment/rear)
+      const backCams = videoInputs.filter((d) => {
+        const l = d.label.toLowerCase();
+        return l.includes('back') || l.includes('rear') || l.includes('environment') || l.includes('sau');
+      });
+
+      const candidateList = backCams.length > 0 ? backCams : videoInputs;
+
+      // ƯU TIÊN 1: Ống kính chính (Main, Standard, 1x, 0)
+      // LOẠI TRỪ TUYỆT ĐỐI: Macro, Ultra, Wide, Tele, 0.5x, Depth
+      const mainCam = candidateList.find((d) => {
+        const l = d.label.toLowerCase();
+        const isNotMacro = !l.includes('macro') && !l.includes('close') && !l.includes('ultra') && !l.includes('tele') && !l.includes('depth');
+        const isMain = l.includes('main') || l.includes('primary') || l.includes('camera2 0') || l.includes('0, facing back') || l.includes('standard');
+        return isNotMacro && isMain;
+      });
+
+      if (mainCam) {
+        setSelectedCameraId(mainCam.deviceId);
+        return mainCam.deviceId;
+      }
+
+      // ƯU TIÊN 2: Bất kỳ camera sau nào không có chữ 'macro'
+      const nonMacroBack = candidateList.find((d) => {
+        const l = d.label.toLowerCase();
+        return !l.includes('macro') && !l.includes('close-up');
+      });
+
+      if (nonMacroBack) {
+        setSelectedCameraId(nonMacroBack.deviceId);
+        return nonMacroBack.deviceId;
+      }
+
+      // Fallback: Lấy camera đầu tiên trong danh sách
+      if (candidateList.length > 0) {
+        setSelectedCameraId(candidateList[0].deviceId);
+        return candidateList[0].deviceId;
+      }
+    } catch (e) {
+      console.warn('Không thể liệt kê danh sách camera:', e);
+    }
+    return null;
+  };
+
   // 2. Khởi động Camera Stream
-  const startCamera = async () => {
+  const startCamera = async (targetDeviceId?: string) => {
     setErrorMessage(null);
     stopCamera();
 
@@ -79,12 +145,27 @@ export function InAppBarcodeScanner({
         throw new Error('Trình duyệt của bạn không hỗ trợ truy cập Camera trực tiếp.');
       }
 
+      // Tìm thiết bị phù hợp nhất nếu chưa có
+      const activeDeviceId = targetDeviceId || (await enumerateAndSelectBestCamera());
+
+      const videoConstraints: MediaTrackConstraints = {
+        width: { ideal: 1920, min: 1280 },
+        height: { ideal: 1080, min: 720 },
+      };
+
+      if (activeDeviceId) {
+        videoConstraints.deviceId = { exact: activeDeviceId };
+      } else {
+        videoConstraints.facingMode = { ideal: facingMode };
+      }
+
+      // Bật autofocus liên tục nếu trình duyệt hỗ trợ.
+      // Lưu ý: không ép zoom 1.0 ở lần đầu vì một số Android ném OverconstrainedError.
+      // Chỉ thử focusMode, nếu lỗi sẽ fallback về constraints tối thiểu bên dưới.
+      (videoConstraints as any).advanced = [{ focusMode: 'continuous' }];
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
+        video: videoConstraints,
         audio: false,
       });
 
@@ -96,6 +177,35 @@ export function InAppBarcodeScanner({
 
       setHasPermission(true);
 
+      // Vá race label rỗng: lần enumerate trước khi cấp quyền thường trả về
+      // label "" nên bộ lọc main/macro vô nghĩa. Enumerate lại 1 lần duy nhất
+      // sau khi có quyền, nếu tìm được cam chính khác cam đang dùng thì đổi.
+      try {
+        const needsRescan =
+          !didPostPermissionRescanRef.current &&
+          (availableCameras.length === 0 ||
+            availableCameras.every((c) => !c.label || c.label.startsWith('Camera ')));
+        if (needsRescan) {
+          didPostPermissionRescanRef.current = true;
+          const bestAfterPermission = await enumerateAndSelectBestCamera();
+          const currentTrackId = stream.getVideoTracks()[0]?.getSettings?.() as any;
+          // Nếu best khác hẳn device đang stream và không phải do user chọn tay, restart 1 lần.
+          if (
+            bestAfterPermission &&
+            activeDeviceId &&
+            bestAfterPermission !== activeDeviceId &&
+            !targetDeviceId
+          ) {
+            stopCamera();
+            await startCamera(bestAfterPermission);
+            return;
+          }
+          void currentTrackId;
+        }
+      } catch {
+        // Bỏ qua, giữ stream hiện tại — không chặn quét.
+      }
+
       // Kiểm tra hỗ trợ Flash / Torch
       const track = stream.getVideoTracks()[0];
       const capabilities = track.getCapabilities?.() as any;
@@ -106,6 +216,36 @@ export function InAppBarcodeScanner({
       }
     } catch (err: any) {
       console.warn('Lỗi mở Camera:', err);
+      // Fallback an toàn 2 tầng:
+      // 1) Nếu lỗi do deviceId exact / advanced (Overconstrained) -> thử lại minimal.
+      // 2) Nếu đã có targetDeviceId mà vẫn lỗi -> thử facingMode environment.
+      const isConstraintError =
+        err?.name === 'OverconstrainedError' || err?.name === 'ConstraintNotSatisfiedError';
+      if (isConstraintError || targetDeviceId) {
+        console.info('Thử lại với camera mặc định không ràng buộc deviceId/advanced...');
+        try {
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false,
+          });
+          streamRef.current = fallbackStream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = fallbackStream;
+            await videoRef.current.play();
+          }
+          setHasPermission(true);
+          // Vẫn enumerate lại để lấp dropdown chọn ống kính cho lần sau.
+          try {
+            await enumerateAndSelectBestCamera();
+          } catch {
+            // bỏ qua
+          }
+          return;
+        } catch (fallbackErr) {
+          // Bỏ qua, báo lỗi bên dưới
+        }
+      }
+
       setHasPermission(false);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setErrorMessage('Bạn đã từ chối quyền Camera. Vui lòng cho phép quyền trong cài đặt trình duyệt.');
@@ -169,6 +309,7 @@ export function InAppBarcodeScanner({
   // 6. Quét Barcode liên tục qua BarcodeDetector API native
   useEffect(() => {
     if (!isOpen) {
+      didPostPermissionRescanRef.current = false;
       stopCamera();
       return;
     }
@@ -313,7 +454,7 @@ export function InAppBarcodeScanner({
         </div>
 
         {/* Controls Bar */}
-        <div className="p-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-center gap-3">
+        <div className="p-3 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-center gap-2.5">
           {hasTorch && (
             <button
               onClick={toggleTorch}
@@ -329,14 +470,36 @@ export function InAppBarcodeScanner({
           )}
 
           <button
-            onClick={() =>
-              setFacingMode(facingMode === 'environment' ? 'user' : 'environment')
-            }
+            onClick={() => {
+              const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+              setFacingMode(nextMode);
+              setSelectedCameraId('');
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors"
           >
             <RotateCw className="w-4 h-4" />
             {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}
           </button>
+
+          {/* Camera Lens Selector khi điện thoại có nhiều camera */}
+          {availableCameras.length > 1 && (
+            <select
+              value={selectedCameraId}
+              onChange={(e) => {
+                const newId = e.target.value;
+                setSelectedCameraId(newId);
+                startCamera(newId);
+              }}
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[160px] truncate"
+              title="Chọn ống kính Camera"
+            >
+              {availableCameras.map((cam, idx) => (
+                <option key={cam.deviceId || idx} value={cam.deviceId}>
+                  📷 {cam.label || `Ống kính ${idx + 1}`}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Simulated Barcode Strip for Instant Testing */}

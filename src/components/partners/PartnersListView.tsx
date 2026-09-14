@@ -2,6 +2,8 @@
 
 import React from 'react';
 import { Users, Building2, Percent, Phone, Mail } from 'lucide-react';
+import { ConsignmentPanel } from './ConsignmentPanel';
+import { UserRole } from '@/lib/roles';
 
 interface PartnerItem {
   id: string;
@@ -14,9 +16,10 @@ interface PartnerItem {
 
 interface PartnersListViewProps {
   partners: PartnerItem[];
+  currentRole?: UserRole;
 }
 
-export function PartnersListView({ partners }: PartnersListViewProps) {
+export function PartnersListView({ partners, currentRole = 'ROLE_OWNER' }: PartnersListViewProps) {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -61,6 +64,8 @@ export function PartnersListView({ partners }: PartnersListViewProps) {
           </div>
         ))}
       </div>
+
+      <ConsignmentPanel currentRole={currentRole} />
     </div>
   );
 }
