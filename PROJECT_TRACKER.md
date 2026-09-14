@@ -12,9 +12,9 @@
 | :---: | :--- | :---: | :---: | :--- |
 | **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
-| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
-| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/consignment-settlement`<br/>`feat/clean-slate-ceremony`<br/>`feat/rights-and-royalties` |
-| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | 🟡 **ĐANG TRIỂN KHAI** | **~20%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/runout-forecasting-v-sale` |
+| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng chống Macro, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả, Clean Slate Import) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/consignment-settlement`<br/>`feat/clean-slate-ceremony`<br/>`feat/rights-and-royalties` |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn, Deep Analytics Studio & Trợ Lý Bán Hàng 0 Đồng**<br/>(Deep Analytics Studio Alt+7, Báo cáo Power BI 3 Chart, Dự báo tái bản $V_{\text{sale}}$, Quản lý In-Transit/Ký gửi, Danh bạ CRM Độc giả GĐ1, Smart Voice POS, Executive AI Copilot) | 🟡 **ĐANG TRIỂN KHAI** | **~40%** | `feat/pwa-mobile-and-offline-pos` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
 ---
@@ -433,6 +433,36 @@
     - Chuỗi migration journal `0000` $\rightarrow$ `0010` (23 bảng) liền mạch với snapshot `0010_snapshot.json` (kiểm tra `drizzle-kit generate` báo "No schema changes").
     - Nâng tổng số test suites lên **16 suites cách ly / 180 test cases đạt chuẩn 100%**.
     - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
+#### 🔹 [Mã: ENG-20260914-24] Big Review Thực Địa, Khắc Phục Lỗi Camera Macro, Workspace Phân Tích Chuyên Sâu (Studio Alt+7) & Quy Chuẩn Ghim Settings Đáy Cùng
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` | **Commit:** `0ed7597`
+- **Nội dung:**
+  - **Khắc Phục Triệt Để Lỗi Ống Kính Macro Trên Scanner PWA:**
+    - Phát hiện hiện tượng các smartphone đa ống kính tự nhảy vào camera Macro khiến không lấy nét được mã vạch ISBN.
+    - Bổ sung thuật toán duyệt thiết bị (`enumerateAndSelectBestCamera`): Ưu tiên ống kính chính (`main`, `primary`, `0`, `wide 1x`), loại trừ các camera có nhãn `macro`, `close-up`, `ultra`, `tele`.
+    - Bật autofocus liên tục `focusMode: 'continuous'`, khóa zoom cố định 1.0x.
+    - Xử lý race-condition nhãn rỗng (`label: ""`) khi chưa cấp quyền qua ref `didPostPermissionRescanRef`.
+    - Bổ sung menu dropdown đổi camera trực tiếp trên giao diện ngắm quét.
+  - **Tối Giản Hóa Sidebar & Quy Chuẩn Pinned Bottom Settings:**
+    - Xóa bỏ toàn bộ các badge text thừa (`Master`, `Speed`, `3 Kho`, `Dual`, `B2B`, `CRM`, `RBAC`) giúp sidebar tinh gọn, thanh lịch.
+    - Thiết lập quy chuẩn kiến trúc vĩnh viễn: **Tab Cài Đặt (Settings) luôn luôn nằm ở vị trí đáy cùng của Sidebar** (`Alt + 8`).
+  - **Tích Hợp Workspace Phân Tích Chuyên Sâu & Dự Báo (Analytics Studio - `Alt + 7`):**
+    - Tách biệt rạch ròi giữa Executive Dashboard (lướt nhanh 10 giây) và Analytics Studio (nghiên cứu sâu).
+    - Tích hợp Bảng dữ liệu lớn theo dõi dự báo tái bản $V_{\text{sale}}$, DoI, EOQ kèm xuất file CSV có UTF-8 BOM.
+    - Nhúng Panel quản lý Hợp đồng bản quyền & Combo đóng hộp (`BundleRoyaltyPanels.tsx`).
+  - **Nâng Cấp Executive Dashboard Với 3 Biểu Đồ Power BI Siêu Nhẹ (Pure SVG):**
+    - Biểu đồ Cột Trend Doanh thu 7 ngày gần nhất (hover xem số liệu chi tiết).
+    - Biểu đồ Donut tỷ trọng Sổ Thuế VAT (xanh lá) vs Sổ Thực Nội Bộ (tím).
+    - Biểu đồ Top 5 đơn hàng giá trị cao nhất.
+  - **Các Panel Quản Trị Thực Địa Mới:**
+    - `TransitPanel.tsx`: Điều phối nhận hàng 2 bước In-Transit, kiểm soát thất thoát/hư hỏng đường đi, lọc xe kẹt > 12h.
+    - `ConsignmentPanel.tsx`: Quản lý biên bản đối soát và thu tiền công nợ ký gửi Đinh Lễ.
+    - `CustomersDirectory.tsx` & API `/api/customers`: Danh bạ độc giả giai đoạn 1 đọc từ CSDL.
+    - Chế độ tab lọc kho kiểu Google Sheets (`ALL`, `wh-au-co`, `wh-quynh-mai`, `wh-du-phong`) trên `StockOverviewMatrix.tsx`.
+  - **Kiểm Thử & Đóng Gói:**
+    - Toàn bộ 16 suites cách ly đạt **180/180 PASS 100%**.
+    - Next.js Production Build thành công **0 lỗi biên dịch, First Load JS 141 kB**.
+    - Đã push thành công lên GitHub remote `origin/feat/pwa-mobile-and-offline-pos`.
 
 
 

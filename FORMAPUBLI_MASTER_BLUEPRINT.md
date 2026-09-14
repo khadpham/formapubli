@@ -40,6 +40,8 @@
 31. ["Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)](#31-súng-quét-mã-vạch-0-đồng-bằng-camera-pwa-in-app-barcode-scanner-engine)
 32. [Ba Chuẩn Mực Vận Hành Thực Địa Mới (The 3 Grounded Operational Standards)](#32-ba-chuẩn-mực-vận-hành-thực-địa-mới-the-3-grounded-operational-standards)
 33. [Quy Chuẩn Kỹ Thuật Đúc Kết Từ Thực Địa (Hardened Engineering Specifications)](#33-quy-chuẩn-kỹ-thuật-đúc-kết-từ-thực-địa-hardened-engineering-specifications)
+34. [Quy Chuẩn Điều Hướng Pinned Bottom Settings & Workspace Phân Tích Chuyên Sâu](#34-quy-chuẩn-điều-hướng-pinned-bottom-settings--workspace-phân-tích-chuyên-sâu)
+35. [Chuẩn Hóa Xử Lý Phần Cứng Camera Đa Ống Kính (Anti-Macro Camera Architecture)](#35-chuẩn-hóa-xử-lý-phần-cứng-camera-đa-ống-kính-anti-macro-camera-architecture)
 
 ---
 
@@ -1262,6 +1264,38 @@ Tận dụng nền tảng PWA trên thiết bị di động, formapubli OS tích
   1. Bất kỳ suite kiểm thử nào cần tạo mới ấn bản sách tạm thời để test nghiệp vụ riêng (như `test-forecast.ts`) bắt buộc phải đặt mã SKU với tiền tố `FC-` (ví dụ `FC-FAST-SELLER`, `FC-SLOW-SELLER`).
   2. Các suite này phải được sắp xếp chạy ở **cuối runner** (`scripts/run-isolated.ts`), sau khi các bài test kiểm toán danh mục chuẩn 81 ấn bản đã hoàn tất và đạt 100% kết quả xanh.
 
+---
 
+## 34. Quy Chuẩn Điều Hướng Pinned Bottom Settings & Workspace Phân Tích Chuyên Sâu
+> *Đúc kết từ buổi Big Review thực địa ngày 14/09/2026 với Ban Giám đốc và Quản lý.*
 
+### 34.1. Nguyên Tắc Phân Tách Không Gian (Workspaces Separation)
+- **Executive Dashboard (`Alt + 1`):** Thiết kế cho trải nghiệm **lướt nhanh trong 10-15 giây** (Glanceable Experience). Tập trung vào 4 chỉ số KPI cốt lõi, diễn biến doanh số 7 ngày, tỷ trọng Sổ Thuế vs Sổ Thực và Top 5 đơn hàng. Tuyệt đối không nhồi nhét bảng dữ liệu lớn vào Dashboard.
+- **Deep Analytics Studio (`Alt + 7`):** Không gian làm việc chuyên sâu dành cho Ban Giám đốc và Trưởng quầy khi có nhu cầu nghiên cứu chi tiết:
+  - Bảng dữ liệu lớn theo dõi toàn diện 81 ấn bản.
+  - Dự báo điểm cạn kho ($V_{\text{sale}}$, DoI, EOQ).
+  - Tra cứu hạn ngạch in hợp đồng bản quyền và định mức linh kiện combo đóng hộp.
+  - Xuất bảng tính CSV chuẩn UTF-8 BOM.
 
+### 34.2. Quy Chuẩn Bất Biến: Pinned Bottom Settings (`Alt + 8`)
+- **Quy định kiến trúc:** Dù trong tương lai formapubli OS có mở rộng thêm bất kỳ phân hệ hay tab nào mới, **Tab Cài Đặt (Settings & Phân Quyền) luôn luôn nằm ở vị trí đáy cùng của Sidebar điều hướng**.
+- Các phân hệ vận hành nghiệp vụ mới (như Studio, CRM, Tích hợp sàn) được chèn vào thân giữa, đẩy Settings giữ vững vị trí chân trang, đảm bảo tính trực giác và ổn định thị giác cho người dùng lâu năm.
+
+---
+
+## 35. Chuẩn Hóa Xử Lý Phần Cứng Camera Đa Ống Kính (Anti-Macro Camera Architecture)
+
+### 35.1. Vấn Đề Thực Địa Của Smartphone Hiện Đại
+- Các smartphone đời mới (iPhone Pro, Samsung Galaxy, Xiaomi...) trang bị từ 3 đến 4 camera sau.
+- Rất nhiều trình duyệt (đặc biệt là Google Chrome trên Android) khi gọi `getUserMedia({ facingMode: 'environment' })` tự động kết nối vào **ống kính Macro (siêu gần)** thay vì ống kính chính. Hậu quả là khung quét bị mờ tịt ở cự ly cầm sách thông thường (15-30cm), chỉ rõ khi dí sát 2cm, làm tê liệt thao tác quét mã vạch ISBN tại quầy hội chợ.
+
+### 35.2. Giải Pháp Kỹ Thuật 3 Lớp Chống Macro
+1. **Lọc Ưu Tiên Ống Kính Chính (Main Lens Priority Filter):**
+   - Duyệt danh sách thiết bị video qua `enumerateDevices()`.
+   - Ưu tiên các camera sau có nhãn chứa `"main"`, `"primary"`, `"0"`, `"standard"`, `"wide 1x"`.
+   - Loại trừ triệt để các camera có nhãn chứa `"macro"`, `"close-up"`, `"ultra"`, `"tele"`, `"depth"`.
+2. **Khắc Phục Race Condition Nhãn Rỗng (Post-Permission Rescan):**
+   - Trước khi người dùng bấm "Cho phép" quyền camera, trình duyệt chỉ trả về `label: ""` (chuỗi rỗng).
+   - Cơ chế `didPostPermissionRescanRef` thực hiện quét lại danh sách thiết bị đúng 1 lần duy nhất ngay sau khi đã có quyền, tự động chuyển luồng sang ống kính chính tốt nhất nếu ống kính ban đầu bị nhầm.
+3. **Menu Chuyển Đổi Ống Kính Chủ Động (Manual Lens Switcher):**
+   - Tích hợp dropdown nhỏ ngay trên thanh điều khiển ngắm quét nếu phát hiện máy có nhiều camera sau, trao toàn quyền cho nhân viên đổi camera chỉ với 1 chạm.
