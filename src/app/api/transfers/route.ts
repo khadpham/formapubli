@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
 
     if (id) {
       const shipment = await TransferService.getShipment(id);
@@ -79,44 +80,48 @@ export async function POST(req: NextRequest) {
         notes,
         items: items.map((it: any) => ({
           editionId: it.editionId,
-          quantityDispatched: parseInt(it.quantityDispatched, 10),
+          quantity: parseInt(it.quantity ?? it.quantityDispatched ?? it.dispatchedQty ?? 0, 10),
+          notes: it.notes,
         })),
-        actorRole: userRole,
       });
       recordAuditLog({
         action: 'TRANSFER_DISPATCH',
         actorRole: userRole,
         actorId: dispatcherId || actorHeader,
         resource: '/api/transfers',
-        details: `Xuất kho luân chuyển ${result.shipmentCode} (${fromWarehouseId} → ${toWarehouseId}, ${items.length} đầu sách).`,
+        details: `Xuất kho luân chuyển ${result.shipmentId} (${fromWarehouseId} → ${toWarehouseId}, ${items.length} đầu sách).`,
       });
       return NextResponse.json({ success: true, data: result });
     }
 
     if (action === 'receive') {
-      const { shipmentId, receiverId, receivedItems, discrepancyReason } = body;
-      if (!shipmentId || !receivedItems || !Array.isArray(receivedItems)) {
+      const { shipmentId, receiverId, items, receivedItems, notes } = body;
+      const rawItems = items || receivedItems;
+      if (!shipmentId || !rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
         return NextResponse.json(
-          { success: false, error: 'Thiếu mã phiếu (shipmentId) hoặc danh sách hàng nhận (receivedItems).' },
+          { success: false, error: 'Thiếu mã phiếu (shipmentId) hoặc danh sách hàng nhận (items).' },
           { status: 400 }
         );
       }
       const result = await TransferService.receive({
         shipmentId,
         receiverId: receiverId || actorHeader,
-        receivedItems: receivedItems.map((it: any) => ({
+        notes,
+        items: rawItems.map((it: any) => ({
           editionId: it.editionId,
-          quantityReceived: parseInt(it.quantityReceived, 10),
+          receivedQty: parseInt(it.receivedQty ?? it.quantityReceived ?? 0, 10),
+          damagedQty: parseInt(it.damagedQty ?? 0, 10),
+          lostQty: parseInt(it.lostQty ?? 0, 10),
+          notes: it.notes,
         })),
-        discrepancyReason,
-        actorRole: userRole,
       });
+      const discrepancyCount = result.totalDamaged + result.totalLost;
       recordAuditLog({
         action: 'TRANSFER_RECEIVE',
         actorRole: userRole,
         actorId: receiverId || actorHeader,
         resource: '/api/transfers',
-        details: `Nhập kho luân chuyển ${shipmentId} (trạng thái ${result.status}${result.discrepancyCount ? `, lệch ${result.discrepancyCount} món` : ''}).`,
+        details: `Nhập kho luân chuyển ${shipmentId} (trạng thái ${result.status}${discrepancyCount ? `, lệch ${discrepancyCount} món` : ''}).`,
       });
       return NextResponse.json({ success: true, data: result });
     }

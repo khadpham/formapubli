@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     const partnerId = searchParams.get('partnerId') || undefined;
     const requestedScope = searchParams.get('fiscalScope') || 'ALL';
-    const safeScope = enforceFiscalScope(userRole, requestedScope);
+    const safeScope = enforceFiscalScope(userRole as any, requestedScope);
     const status = searchParams.get('status') || undefined;
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : 50;
 

@@ -433,7 +433,10 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
     }
   } catch (err: any) {
     if (err instanceof AuthError) throw err;
-    // Bỏ qua lỗi kết nối CSDL nếu chạy trong unit test không có bảng staffAccounts
+    if (isAuthStrict()) {
+      throw new AuthError(401, `Xác thực tài khoản thất bại do lỗi kết nối CSDL: ${err?.message || 'Database unavailable'}`);
+    }
+    // Môi trường thường: Bỏ qua lỗi kết nối CSDL nếu chạy trong unit test không có bảng staffAccounts
   }
 }
 

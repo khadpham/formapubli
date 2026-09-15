@@ -228,23 +228,28 @@ async function main() {
 
   console.log(`✅ Successfully seeded ${insertedWorks} works and ${insertedEditions} editions.`);
 
-  console.log('👥 Seeding standardized staff accounts (Đợt 0)...');
-  for (const staff of DEFAULT_STAFF_ACCOUNTS) {
-    const passcodeHash = hashStaffPasscode(staff.passcode, staff.salt);
-    const staffRecord = {
-      staffId: staff.staffId,
-      fullName: staff.fullName,
-      role: staff.role,
-      passcodeHash,
-      salt: staff.salt,
-      isActive: true,
-    };
-    await db.insert(staffAccounts).values(staffRecord).onConflictDoUpdate({
-      target: staffAccounts.staffId,
-      set: staffRecord,
-    });
+  const shouldSeedStaff = process.env.SEED_DEFAULT_STAFF === 'true' || process.env.NODE_ENV === 'development';
+  if (shouldSeedStaff) {
+    console.log('👥 Seeding default staff accounts (DEV / EXPLICIT FLAG ONLY)...');
+    for (const staff of DEFAULT_STAFF_ACCOUNTS) {
+      const passcodeHash = hashStaffPasscode(staff.passcode, staff.salt);
+      const staffRecord = {
+        staffId: staff.staffId,
+        fullName: staff.fullName,
+        role: staff.role,
+        passcodeHash,
+        salt: staff.salt,
+        isActive: true,
+      };
+      await db.insert(staffAccounts).values(staffRecord).onConflictDoUpdate({
+        target: staffAccounts.staffId,
+        set: staffRecord,
+      });
+    }
+    console.log(`✅ Successfully seeded ${DEFAULT_STAFF_ACCOUNTS.length} default staff accounts.`);
+  } else {
+    console.log('🔒 Production seed: Bỏ qua default staff accounts (dùng tài khoản thực tế được cấp qua quy trình quản trị bảo mật).');
   }
-  console.log(`✅ Successfully seeded ${DEFAULT_STAFF_ACCOUNTS.length} staff accounts.`);
 
   console.log('🎉 Formapubli Seed Process Complete!');
 

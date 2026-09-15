@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
 
     if (id) {
       const [quota, statement] = await Promise.all([
