@@ -159,23 +159,25 @@ export function StockOverviewMatrix({
       }
 
       // Tổ hợp Alt + Shift + T -> Mở Phiếu Chuyển Kho (Transfer)
-      if (e.altKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+      // Dùng e.code để bắt đúng phím vật lý kể cả khi bộ gõ TV đổi e.key.
+      // Không reopen khi modal đã mở để tránh reset state đang nhập.
+      if (e.altKey && e.shiftKey && (e.key === 'T' || e.key === 't' || e.code === 'KeyT')) {
         e.preventDefault();
-        openAction('TRANSFER');
+        if (!modalOpen) openAction('TRANSFER');
         return;
       }
 
       // Tổ hợp Alt + Shift + R -> Mở Phiếu Nhập Kho (Receipt)
-      if (e.altKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+      if (e.altKey && e.shiftKey && (e.key === 'R' || e.key === 'r' || e.code === 'KeyR')) {
         e.preventDefault();
-        openAction('RECEIPT');
+        if (!modalOpen) openAction('RECEIPT');
         return;
       }
 
       // Tổ hợp Alt + Shift + X -> Mở Phiếu Xuất Kho (Dispatch)
-      if (e.altKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) {
+      if (e.altKey && e.shiftKey && (e.key === 'X' || e.key === 'x' || e.code === 'KeyX')) {
         e.preventDefault();
-        openAction('DISPATCH');
+        if (!modalOpen) openAction('DISPATCH');
         return;
       }
     };
@@ -188,27 +190,37 @@ export function StockOverviewMatrix({
     const q = searchTerm.trim().toLowerCase();
     if (!q) return initialBooks;
 
+    // Null-safe: bất kỳ bản ghi thiếu isbn/code nào cũng không được làm crash
+    // render (crash render = ô input trông như "gõ không ra chữ").
     return initialBooks.filter((b) => {
-      // 1. Khớp 4 số cuối hoặc toàn bộ ISBN
-      if (b.isbnLast4.includes(q) || b.isbn.includes(q)) return true;
-      // 2. Khớp mã SKU (H01, H02...)
-      if (b.code.toLowerCase().includes(q)) return true;
-      // 3. Khớp mã viết tắt (bt, nbl, dddhc...)
-      if (b.shortCode && b.shortCode.toLowerCase() === q) return true;
-      // 4. Khớp tiếng Việt không dấu trên Tên sách
-      if (matchesVietnameseSearch(b.title, q)) return true;
-      // 5. Khớp tiếng Việt không dấu trên Tác giả
-      if (matchesVietnameseSearch(b.author, q)) return true;
-      // 6. Khớp tiếng Việt không dấu trên Dịch giả
-      if (matchesVietnameseSearch(b.translator, q)) return true;
+      try {
+        // 1. Khớp 4 số cuối hoặc toàn bộ ISBN
+        const isbn = String(b?.isbnLast4 ?? b?.isbn ?? '');
+        const fullIsbn = String(b?.isbn ?? '');
+        if (isbn.toLowerCase().includes(q) || fullIsbn.toLowerCase().includes(q)) return true;
+        // 2. Khớp mã SKU (H01, H02...)
+        if (String(b?.code ?? '').toLowerCase().includes(q)) return true;
+        // 3. Khớp mã viết tắt (bt, nbl, dddhc...)
+        if (b?.shortCode && String(b.shortCode).toLowerCase() === q) return true;
+        // 4. Khớp tiếng Việt không dấu trên Tên sách
+        if (matchesVietnameseSearch(b?.title, q)) return true;
+        // 5. Khớp tiếng Việt không dấu trên Tác giả
+        if (matchesVietnameseSearch(b?.author, q)) return true;
+        // 6. Khớp tiếng Việt không dấu trên Dịch giả
+        if (matchesVietnameseSearch(b?.translator, q)) return true;
+      } catch {
+        return false;
+      }
 
       return false;
     });
   }, [searchTerm, initialBooks]);
 
   const openAction = (action: 'RECEIPT' | 'DISPATCH' | 'TRANSFER', book: MatrixBookItem | null = null) => {
+    const fallbackBook = book || initialBooks[0] || null;
+    if (!fallbackBook) return;
     setModalAction(action);
-    setSelectedBookForAction(book || initialBooks[0] || null);
+    setSelectedBookForAction(fallbackBook);
     setModalOpen(true);
   };
 
@@ -268,15 +280,18 @@ export function StockOverviewMatrix({
           <input
             ref={magnetInputRef}
             type="text"
+            autoComplete="off"
+            spellCheck={false}
             placeholder={
               isListening
                 ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
                 : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
             }
-            value={searchTerm}
+            value={searchTerm ?? ''}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
+            style={{ color: '#1e293b' }}
             className={`flex-1 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
               isListening
                 ? 'text-rose-950 font-semibold placeholder:text-rose-600'
@@ -330,25 +345,29 @@ export function StockOverviewMatrix({
       )}
 
       {/* 2. THANH CÔNG CỤ BAN ĐẦU (IN-FLOW TOOLBAR) */}
+      {/* Ô search luôn full-width hàng riêng để text không bao giờ bị bóp hẹp/che mất. */}
       <div
         ref={searchContainerRef}
-        className="bg-white p-4 md:p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4"
+        className="bg-white p-4 md:p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col items-stretch gap-4"
       >
         {/* Search Input with Voice & Shortcut Badge */}
-        <div className="relative flex-1 flex items-center">
+        <div className="relative w-full flex items-center min-w-0">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
           <input
             ref={searchInputRef}
             type="text"
+            autoComplete="off"
+            spellCheck={false}
             placeholder={
               isListening
                 ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
                 : 'Tìm theo tên không dấu (truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro...'
             }
-            value={searchTerm}
+            value={searchTerm ?? ''}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
+            style={{ color: '#0f172a' }}
             className={`w-full pl-11 pr-28 py-2.5 text-sm font-medium border rounded-xl outline-none transition-all min-h-[44px] ${
               isListening
                 ? 'border-rose-500 ring-2 ring-rose-300 bg-rose-50/20 text-slate-900'

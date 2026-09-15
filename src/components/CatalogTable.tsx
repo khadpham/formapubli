@@ -17,7 +17,12 @@ interface BookItem {
   coverPrice: number;
   publisher: string | null;
   status: string;
+  // BV-04: optional khi caller có số tồn (matrixBooks). Không bắt buộc để tương thích ngược.
+  totalStock?: number;
 }
+
+type StockFilter = 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK';
+type SortMode = 'DEFAULT' | 'STOCK_DESC' | 'STOCK_ASC' | 'AZ' | 'ZA' | 'TOP';
 
 interface CatalogTableProps {
   initialBooks: BookItem[];
@@ -27,6 +32,11 @@ interface CatalogTableProps {
 
 export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: CatalogTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  // BV-05: debounce 200ms — input gõ mượt, filter chạy trên bản debounced
+  const [debouncedTerm, setDebouncedTerm] = useState('');
+  // BV-04: filter tồn kho + sort
+  const [stockFilter, setStockFilter] = useState<StockFilter>('ALL');
+  const [sortMode, setSortMode] = useState<SortMode>('DEFAULT');
   const [isScrolledPast, setIsScrolledPast] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
 
@@ -46,6 +56,12 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
   } = useVoiceSearch((text) => {
     setSearchTerm(text);
   });
+
+  // BV-05: debounce search 200ms để instant search không giật
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedTerm(searchTerm), 200);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
   // Lắng nghe cuộn trang
   useEffect(() => {
@@ -107,28 +123,57 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
   }, [searchTerm, isScrolledPast, toggleListening]);
 
   const filteredBooks = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
+    const query = debouncedTerm.trim().toLowerCase();
     if (!query) return initialBooks;
 
+    // Null-safe: tránh crash render làm input trông như "gõ không ra chữ".
     return initialBooks.filter((book) => {
-      // 1. Khớp ISBN hoặc 4 số cuối
-      if (book.isbn.includes(query) || book.isbnLast4.includes(query)) return true;
-      // 2. Khớp mã SKU
-      if (book.code.toLowerCase().includes(query)) return true;
-      // 3. Khớp mã viết tắt
-      if (book.shortCode && book.shortCode.toLowerCase() === query) return true;
-      // 4. Khớp tiếng Việt không dấu trên Tên sách
-      if (matchesVietnameseSearch(book.title, query)) return true;
-      // 5. Khớp tiếng Việt không dấu trên Tác giả
-      if (matchesVietnameseSearch(book.author, query)) return true;
-      // 6. Khớp tiếng Việt không dấu trên Dịch giả
-      if (matchesVietnameseSearch(book.translator, query)) return true;
-      // 7. Khớp tiếng Việt không dấu trên Thể loại / NXB
-      if (matchesVietnameseSearch(book.category, query) || matchesVietnameseSearch(book.publisher, query)) return true;
+      try {
+        // 1. Khớp ISBN hoặc 4 số cuối
+        if (
+          String(book?.isbn ?? '').toLowerCase().includes(query) ||
+          String(book?.isbnLast4 ?? '').toLowerCase().includes(query)
+        )
+          return true;
+        // 2. Khớp mã SKU
+        if (String(book?.code ?? '').toLowerCase().includes(query)) return true;
+        // 3. Khớp mã viết tắt (BV-05: includes thay vì === để gõ "tg" ra hàng loạt)
+        if (book?.shortCode && String(book.shortCode).toLowerCase().includes(query)) return true;
+        // 4. Khớp tiếng Việt không dấu trên Tên sách (+ acronym tg->tghls bên trong)
+        if (matchesVietnameseSearch(book?.title, query)) return true;
+        // 5. Khớp tiếng Việt không dấu trên Tác giả
+        if (matchesVietnameseSearch(book?.author, query)) return true;
+        // 6. Khớp tiếng Việt không dấu trên Dịch giả
+        if (matchesVietnameseSearch(book?.translator, query)) return true;
+        // 7. Khớp tiếng Việt không dấu trên Thể loại / NXB
+        if (matchesVietnameseSearch(book?.category, query) || matchesVietnameseSearch(book?.publisher, query))
+          return true;
+      } catch {
+        return false;
+      }
 
       return false;
     });
-  }, [searchTerm, initialBooks]);
+  }, [debouncedTerm, initialBooks]);
+
+  // BV-04: áp filter tồn kho + sort trên kết quả search
+  const displayedBooks = useMemo(() => {
+    const isOut = (b: BookItem) =>
+      b.status === 'SOLD_OUT' || (typeof b.totalStock === 'number' && b.totalStock <= 0);
+    let rows = filteredBooks.filter((b) => {
+      if (stockFilter === 'IN_STOCK') return !isOut(b);
+      if (stockFilter === 'OUT_OF_STOCK') return isOut(b);
+      return true;
+    });
+    const byTitle = (a: BookItem, b: BookItem) =>
+      String(a.title ?? '').localeCompare(String(b.title ?? ''), 'vi');
+    const stockOf = (b: BookItem) => (typeof b.totalStock === 'number' ? b.totalStock : b.status === 'SOLD_OUT' ? 0 : 1);
+    if (sortMode === 'AZ') rows = [...rows].sort(byTitle);
+    else if (sortMode === 'ZA') rows = [...rows].sort((a, b) => byTitle(b, a));
+    else if (sortMode === 'STOCK_DESC' || sortMode === 'TOP') rows = [...rows].sort((a, b) => stockOf(b) - stockOf(a));
+    else if (sortMode === 'STOCK_ASC') rows = [...rows].sort((a, b) => stockOf(a) - stockOf(b));
+    return rows;
+  }, [filteredBooks, stockFilter, sortMode]);
 
   const showMagnetBar = isScrolledPast && (searchTerm.trim().length > 0 || isInputFocused || isListening);
 
@@ -307,7 +352,8 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-3">
             <span>
-              Tìm thấy: <strong className="text-slate-800 font-semibold">{filteredBooks.length}</strong> / {initialBooks.length} đầu sách
+              Tìm thấy: <strong className="text-slate-800 font-semibold">{displayedBooks.length}</strong> / {initialBooks.length} đầu sách
+              {searchTerm !== debouncedTerm && <span className="ml-1 text-slate-400">(đang lọc…)</span>}
             </span>
             <span className="text-slate-300">|</span>
             <span className="flex items-center gap-1">
@@ -319,6 +365,43 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
             <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">Gõ tên tắt</span>
             <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">Enter để chọn</span>
           </div>
+        </div>
+        {/* BV-04: Filter tồn kho + Sort */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {(
+            [
+              { v: 'ALL', label: 'Tất cả' },
+              { v: 'IN_STOCK', label: 'Còn hàng' },
+              { v: 'OUT_OF_STOCK', label: 'Hết hàng' },
+            ] as Array<{ v: StockFilter; label: string }>
+          ).map((f) => (
+            <button
+              key={f.v}
+              type="button"
+              onClick={() => setStockFilter(f.v)}
+              className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
+                stockFilter === f.v
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+          <span className="text-slate-300 text-xs">|</span>
+          <select
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as SortMode)}
+            className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            title="Sắp xếp danh mục"
+          >
+            <option value="DEFAULT">Mặc định</option>
+            <option value="STOCK_DESC">Tồn nhiều → ít</option>
+            <option value="STOCK_ASC">Tồn ít → nhiều</option>
+            <option value="AZ">A → Z</option>
+            <option value="ZA">Z → A</option>
+            <option value="TOP">Bán chạy (tồn cao)</option>
+          </select>
         </div>
       </div>
 
@@ -338,15 +421,15 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredBooks.length === 0 ? (
+              {displayedBooks.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
                     <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    Không tìm thấy sách phù hợp với từ khóa &ldquo;{searchTerm}&rdquo;
+                    Không tìm thấy sách phù hợp với từ khóa &ldquo;{debouncedTerm}&rdquo;
                   </td>
                 </tr>
               ) : (
-                filteredBooks.map((b) => (
+                displayedBooks.map((b) => (
                   <tr key={b.code} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-indigo-600">{b.code}</td>
                     <td className="px-4 py-3">

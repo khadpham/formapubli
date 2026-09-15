@@ -117,6 +117,9 @@ export function PosCheckoutTerminal({
   const [pinError, setPinError] = useState<string | null>(null);
   const [isManagerOverride, setIsManagerOverride] = useState(false);
   const [approvedPin, setApprovedPin] = useState<string | null>(null);
+  // BV-03: chế độ Tặng sách 100% (doanh thu 0đ, vẫn trừ kho)
+  const [isGift, setIsGift] = useState(false);
+  const [giftReason, setGiftReason] = useState('Tặng sách / Quà tặng sự kiện');
 
 
   // Micro giọng nói tiếng Việt đồng bộ
@@ -164,10 +167,13 @@ export function PosCheckoutTerminal({
               note: order.note,
               isOfflineSync: true,
               allowOverdraft: true,
+              isGift: (order as any).isGift || order.discountRate === 1,
+              giftReason: (order as any).giftReason || order.note,
               items: order.items.map((it) => ({
                 editionId: it.editionId,
                 quantity: it.quantity,
                 unitCoverPrice: it.unitCoverPrice,
+                unitDiscountRate: (order as any).isGift || order.discountRate === 1 ? 1 : undefined,
               })),
             }),
           });
@@ -321,6 +327,8 @@ export function PosCheckoutTerminal({
 
   // Kiểm tra trần chiết khấu (Hard-cap 15% cho Cashier, cần PIN Quản lý nếu > 15%)
   const handleRequestDiscount = (rate: number) => {
+    // BV-03: rời chế độ tặng khi chọn CK thường
+    if (rate !== 1) setIsGift(false);
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
     if (isRestrictedCashier && rate > 0.15) {
       setPendingDiscountRate(rate);
@@ -330,6 +338,26 @@ export function PosCheckoutTerminal({
       return;
     }
     setDiscountRate(rate);
+    if (rate === 1) {
+      setIsGift(true);
+      setFiscalScope('INTERNAL_MANAGEMENT');
+    }
+  };
+
+  // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng PIN quản lý)
+  const handleToggleGift = () => {
+    if (isGift) {
+      setIsGift(false);
+      setDiscountRate(0);
+      return;
+    }
+    handleRequestDiscount(1);
+    // Trường hợp được duyệt ngay (Owner/Manager hoặc đã có override): bật cờ tặng
+    const canDirect = currentRole !== 'ROLE_CASHIER' || isManagerOverride;
+    if (canDirect) {
+      setIsGift(true);
+      setFiscalScope('INTERNAL_MANAGEMENT');
+    }
   };
 
   const handleVerifyPin = () => {
@@ -340,6 +368,11 @@ export function PosCheckoutTerminal({
       if (pendingDiscountRate !== null) {
 
         setDiscountRate(pendingDiscountRate);
+        // BV-03: PIN duyệt CK 100% đồng nghĩa bật chế độ tặng
+        if (pendingDiscountRate === 1) {
+          setIsGift(true);
+          setFiscalScope('INTERNAL_MANAGEMENT');
+        }
       }
       setIsPinModalOpen(false);
       setPinInput('');
@@ -502,6 +535,11 @@ export function PosCheckoutTerminal({
       setErrorMessage('Giỏ hàng trống! Vui lòng chọn ít nhất 1 cuốn sách.');
       return;
     }
+    // BV-03: đơn tặng bắt buộc có lý do
+    if (isGift && !giftReason.trim() && !note.trim()) {
+      setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -518,6 +556,7 @@ export function PosCheckoutTerminal({
     const fallbackToOffline = async (reason?: string) => {
       try {
         const offlineOrderCode = `OFF-${dateStr}-${shortSuffix}`;
+        const giftNote = isGift ? `[QUÀ TẶNG: ${giftReason.trim() || note.trim() || 'Tặng sách'}]${note ? ` ${note}` : ''}` : note;
         const offlineOrder: OfflineOrder = {
           id: orderUuid,
           orderCode: offlineOrderCode,
@@ -525,11 +564,13 @@ export function PosCheckoutTerminal({
           warehouseId: selectedWarehouseId,
           customerName,
           channel,
-          discountRate,
+          discountRate: isGift ? 1 : discountRate,
           paymentMethod,
-          fiscalScope,
+          fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
           cashierId,
-          note,
+          note: giftNote,
+          isGift,
+          giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
           items: cart.map((c) => ({
             editionId: c.editionId,
             code: c.code,
@@ -538,8 +579,8 @@ export function PosCheckoutTerminal({
             unitCoverPrice: c.coverPrice,
           })),
           subtotal,
-          discountAmount,
-          finalAmount,
+          discountAmount: isGift ? subtotal : discountAmount,
+          finalAmount: isGift ? 0 : finalAmount,
           totalQuantity: totalCopies,
           createdAt: orderTimestamp,
           syncStatus: 'PENDING',
@@ -554,20 +595,25 @@ export function PosCheckoutTerminal({
           orderCode: offlineOrderCode,
           warehouseId: selectedWarehouseId,
           customerName,
-          fiscalScope,
+          fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
           subtotal,
-          discountAmount,
-          finalAmount,
+          discountAmount: isGift ? subtotal : discountAmount,
+          finalAmount: isGift ? 0 : finalAmount,
           totalQuantity: totalCopies,
           items: [...cart],
-          discountRate,
+          discountRate: isGift ? 1 : discountRate,
           paymentMethod,
           date: new Date().toLocaleString('vi-VN'),
           isOffline: true,
+          isGift,
         });
 
         setCart([]);
         setNote('');
+        if (isGift) {
+          setIsGift(false);
+          setDiscountRate(0);
+        }
         setSyncToast(
           reason
             ? `⚠️ ${reason} Đơn đã lưu ngoại tuyến an toàn vào máy (IndexedDB).`
@@ -600,16 +646,19 @@ export function PosCheckoutTerminal({
           warehouseId: selectedWarehouseId,
           channel,
           customerName,
-          discountRate,
+          discountRate: isGift ? 1 : discountRate,
           paymentMethod,
-          fiscalScope,
+          fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
           cashierId,
           cashboxSessionId: activeSession?.id,
           managerPin: approvedPin || undefined,
           note,
+          isGift,
+          giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
           items: cart.map((item) => ({
             editionId: item.editionId,
             quantity: item.quantity,
+            unitDiscountRate: isGift ? 1 : undefined,
           })),
         }),
       });
@@ -622,15 +671,20 @@ export function PosCheckoutTerminal({
       setCompletedOrder({
         ...resData.data,
         items: [...cart],
-        discountRate,
+        discountRate: isGift ? 1 : discountRate,
         paymentMethod,
         date: new Date().toLocaleString('vi-VN'),
         isOffline: false,
+        isGift,
       });
 
       // Xóa giỏ hàng
       setCart([]);
       setNote('');
+      if (isGift) {
+        setIsGift(false);
+        setDiscountRate(0);
+      }
       setApprovedPin(null);
       setIsManagerOverride(false);
       fetchActiveCashboxSession();
@@ -1257,6 +1311,36 @@ export function PosCheckoutTerminal({
                     );
                   })}
                 </div>
+                {/* BV-03: nút Tặng sách 100% */}
+                <button
+                  type="button"
+                  onClick={handleToggleGift}
+                  className={`w-full py-2 rounded-xl text-xs font-extrabold border transition active:scale-[0.99] ${
+                    isGift
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                      : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                  }`}
+                  title="Tặng sách: chiết khấu 100%, doanh thu 0đ, vẫn trừ kho (cần PIN quản lý với thu ngân)"
+                >
+                  {isGift ? '🎁 ĐANG TẶNG 100% — bấm để tắt' : '🎁 Tặng sách 100% (quà tặng sự kiện)'}
+                </button>
+                {isGift && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-rose-700 block">
+                      Lý do tặng (bắt buộc):
+                    </label>
+                    <input
+                      type="text"
+                      value={giftReason}
+                      onChange={(e) => setGiftReason(e.target.value)}
+                      placeholder="Ví dụ: Quà tặng sự kiện hội chợ, tri ân độc giả..."
+                      className="w-full px-3 py-2 bg-rose-50/50 border border-rose-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                    <p className="text-[11px] text-rose-600 font-medium">
+                      Doanh thu = 0đ • Kho vẫn trừ đủ • Chỉ ghi Sổ Nội bộ (không VAT).
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Fiscal Scope (Sổ Kép) & Payment Method */}
@@ -1266,9 +1350,11 @@ export function PosCheckoutTerminal({
                     Phân loại Sổ:
                   </label>
                   <select
-                    value={fiscalScope}
+                    value={isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope}
                     onChange={(e) => setFiscalScope(e.target.value as any)}
-                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    disabled={isGift}
+                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none disabled:opacity-60"
+                    title={isGift ? 'Đơn tặng chỉ ghi Sổ Nội bộ' : undefined}
                   >
                     <option value="INTERNAL_MANAGEMENT">Sổ Quản trị Nội bộ</option>
                     <option value="OFFICIAL_TAX">Xuất Hóa đơn VAT</option>
@@ -1305,9 +1391,9 @@ export function PosCheckoutTerminal({
                 <span className="font-mono">-{discountAmount.toLocaleString('vi-VN')} đ</span>
               </div>
               <div className="flex justify-between items-baseline pt-1 border-t border-slate-100">
-                <span className="text-sm font-black text-slate-900">THỰC THU:</span>
+                <span className="text-sm font-black text-slate-900">THỰC THU{isGift ? ' (TẶNG 100%)' : ''}:</span>
                 <span className="text-2xl font-black text-emerald-700 font-mono">
-                  {finalAmount.toLocaleString('vi-VN')} đ
+                  {(isGift ? 0 : finalAmount).toLocaleString('vi-VN')} đ
                 </span>
               </div>
             </div>
@@ -1315,14 +1401,14 @@ export function PosCheckoutTerminal({
             <button
               onClick={handleCheckout}
               disabled={isSubmitting || cart.length === 0}
-              className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 min-h-[50px]"
+              className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
                 <span>Đang khấu trừ kho & tạo đơn...</span>
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>THANH TOÁN & KHẤU TRỪ KHO (Ctrl+Enter)</span>
+                  <span>{isGift ? 'XÁC NHẬN TẶNG & TRỪ KHO (Ctrl+Enter)' : 'THANH TOÁN & KHẤU TRỪ KHO (Ctrl+Enter)'}</span>
                 </>
               )}
             </button>
@@ -1337,7 +1423,7 @@ export function PosCheckoutTerminal({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-base">
                 <CheckCircle2 className="w-6 h-6" />
-                <span>{completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến (Offline)!' : 'Bán Hàng Thành Công!'}</span>
+                <span>{completedOrder.isGift ? 'Đã Tặng Sách Thành Công! 🎁' : completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến (Offline)!' : 'Bán Hàng Thành Công!'}</span>
               </div>
               <button
                 onClick={() => setCompletedOrder(null)}

@@ -27,6 +27,8 @@ export interface OfflineOrder {
   vatInvoiceCode?: string;
   cashierId: string;
   note?: string;
+  isGift?: boolean; // BV-03: đơn tặng offline (sync lên server với discount 1.0)
+  giftReason?: string;
   items: OfflineOrderItem[];
   subtotal: number;
   discountAmount: number;

@@ -30,6 +30,10 @@ const ALL_SUITES = [
   'scripts/test-barcode-engine.ts',
   'scripts/test-forecast.ts',
   'scripts/test-royalties.ts',
+  'scripts/test-returns.ts',
+  'scripts/test-online-orders.ts',
+  'scripts/test-smart-parser.ts',
+  'scripts/test-shipments.ts',
 ];
 
 function suiteShortName(p: string): string {

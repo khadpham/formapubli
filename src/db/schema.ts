@@ -202,11 +202,20 @@ export const orders = sqliteTable('orders', {
   idempotencyKey: text('idempotency_key').notNull().unique(),
   note: text('note'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  // Bước 2 — SPX & COD (toàn bộ nullable, additive-only, slot 0012)
+  carrier: text('carrier'), // SPX | null (chưa đẩy vận chuyển)
+  trackingCode: text('tracking_code'), // Mã vận đơn SPX
+  shippingStatus: text('shipping_status').notNull().default('NONE'), // NONE | CREATED | PICKED_UP | IN_TRANSIT | DELIVERED | RETURNED | FAILED
+  shippingFee: real('shipping_fee').default(0.0), // Phí ship SPX
+  codAmount: real('cod_amount').default(0.0), // Tiền COD SPX thu hộ (= finalAmount nếu COD)
+  codStatus: text('cod_status').notNull().default('NONE'), // NONE | PENDING (SPX giữ) | RECEIVED (đã về NH)
 }, (table) => ({
   fiscalScopeIdx: index('idx_orders_fiscal_scope').on(table.fiscalScope),
   warehouseIdx: index('idx_orders_warehouse').on(table.warehouseId),
   cashboxSessionIdx: index('idx_orders_cashbox_session').on(table.cashboxSessionId),
   createdAtIdx: index('idx_orders_created_at').on(table.createdAt),
+  trackingCodeIdx: index('idx_orders_tracking_code').on(table.trackingCode),
+  shippingStatusIdx: index('idx_orders_shipping_status').on(table.shippingStatus),
 }));
 
 // 13. Order Line Items (Chi tiết từng cuốn sách trong đơn)
@@ -424,6 +433,43 @@ export const rmaTickets = sqliteTable('rma_tickets', {
   editionIdx: index('idx_rma_edition').on(table.editionId),
   orderIdx: index('idx_rma_order').on(table.orderId),
   statusIdx: index('idx_rma_status').on(table.status),
+}));
+
+// 21. Sales Return Orders (Phiếu Đổi/Trả sách — BV-06)
+// Order gốc bất biến: mọi hoàn/trả là phiếu độc lập + bút toán RETURN_INBOUND trên inventory_ledger.
+export const returnOrders = sqliteTable('return_orders', {
+  id: text('id').primaryKey(), // RET-YYYYMMDD-XXXX (UUIDv7)
+  orderId: text('order_id').notNull().references(() => orders.id),
+  returnCode: text('return_code').notNull().unique(), // Mã phiếu hiển thị
+  returnType: text('return_type').notNull(), // REFUND | EXCHANGE | DAMAGED_REPLACE
+  reason: text('reason').notNull(), // PRINTING_DEFECT | WRONG_ITEM | CUSTOMER_CHANGE_MIND | DAMAGED_SHIPPING
+  status: text('status').notNull().default('REQUESTED'), // REQUESTED | APPROVED | COMPLETED | REJECTED | VOIDED
+  refundAmount: real('refund_amount').notNull().default(0), // Tiền hoàn cho khách
+  targetWarehouseId: text('target_warehouse_id').notNull().references(() => warehouses.id),
+  inventoryDisposition: text('inventory_disposition').notNull(), // RESTOCK | DEFECTIVE_HOLD
+  cashboxSessionId: text('cashbox_session_id'), // Phiên két chi hoàn tiền mặt (nếu CASH)
+  createdBy: text('created_by').notNull(), // cashierId người lập phiếu
+  approvedBy: text('approved_by'), // Manager/Owner duyệt
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  decidedAt: text('decided_at'),
+}, (table) => ({
+  orderIdx: index('idx_returns_order').on(table.orderId),
+  statusIdx: index('idx_returns_status').on(table.status),
+  codeIdx: uniqueIndex('idx_returns_code').on(table.returnCode),
+}));
+
+// 22. Sales Return Line Items (Chi tiết từng ấn bản trong phiếu trả)
+export const returnOrderItems = sqliteTable('return_order_items', {
+  id: text('id').primaryKey(),
+  returnId: text('return_id').notNull().references(() => returnOrders.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull(), // Số lượng trả (> 0)
+  unitRefund: real('unit_refund').notNull().default(0), // Tiền hoàn / cuốn
+}, (table) => ({
+  returnIdx: index('idx_return_items_return').on(table.returnId),
+  editionIdx: index('idx_return_items_edition').on(table.editionId),
 }));
 
 

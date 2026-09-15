@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const userRole = extractUserRole(req);
     const requestedScope = searchParams.get('fiscalScope') || 'ALL';
+    // Bước 1: mặc định chỉ liệt kê đơn COMPLETED (giữ nguyên hành vi cũ);
+    // màn hình "chờ xác nhận" truyền ?status=PENDING_CONFIRMATION hoặc ALL.
+    const requestedStatus = searchParams.get('status') || 'COMPLETED';
+    const requestedChannel = searchParams.get('channel') || undefined;
     // Server-side Scope Guard: Ép lọc theo vai trò người dùng
     const safeFiscalScope = enforceFiscalScope(userRole, requestedScope);
     const warehouseId = searchParams.get('warehouseId') || undefined;
@@ -59,6 +63,8 @@ export async function GET(req: NextRequest) {
         startDate,
         endDate,
         cashierId: cashierFilter,
+        status: requestedStatus as any,
+        channel: requestedChannel,
       }),
       OrderService.getSalesSummary({
         fiscalScope: safeFiscalScope,
@@ -66,6 +72,7 @@ export async function GET(req: NextRequest) {
         startDate,
         endDate,
         cashierId: cashierFilter,
+        channel: requestedChannel,
       }),
     ]);
 
@@ -87,6 +94,27 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const userRole = extractUserRole(req);
+    const actorHeader = req.headers.get('x-formapubli-actor') || body.cashierId || userRole;
+
+    // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce trong service)
+    if (body.action === 'CONFIRM' || body.action === 'CANCEL') {
+      if (userRole === 'ROLE_TAX') {
+        return NextResponse.json({ success: false, error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
+      }
+      const result = body.action === 'CONFIRM'
+        ? await OrderService.confirmOrder(body.orderId, userRole, actorHeader)
+        : await OrderService.cancelOrder(body.orderId, userRole, body.reason);
+      recordAuditLog({
+        action: body.action === 'CONFIRM' ? 'ORDER_CONFIRMED' : 'ORDER_CANCELLED',
+        actorRole: userRole,
+        actorId: actorHeader,
+        resource: '/api/orders',
+        details: `${body.action === 'CONFIRM' ? 'Duyệt' : 'Hủy'} đơn online ${body.orderId}${body.reason ? ` (lý do: ${body.reason})` : ''}.`,
+      });
+      return NextResponse.json({ success: true, data: result });
+    }
+
     const {
       id,
       orderCode,
@@ -112,6 +140,9 @@ export async function POST(req: NextRequest) {
       allowOverdraft,
       managerPin,
       managerApprovalCode,
+      isGift,
+      giftReason,
+      confirmImmediately,
     } = body;
 
     if (!warehouseId || ((!items || !Array.isArray(items) || items.length === 0) && (!bundles || !Array.isArray(bundles) || bundles.length === 0))) {
@@ -121,9 +152,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const userRole = extractUserRole(req);
-    const safeFiscalScope = userRole === 'ROLE_TAX' ? 'OFFICIAL_TAX' : (fiscalScope || 'INTERNAL_MANAGEMENT');
-
+    // userRole đã trích xuất ở đầu hàm (dùng chung cho CONFIRM/CANCEL).
     // SERVER-ENFORCE DISCOUNT HARD-CAP:
     // Chặn cả chiết khấu tổng đơn LẪN chiết khấu từng dòng (line item),
     // vì OrderService cho phép unitDiscountRate kế thừa discountRate tổng.
@@ -133,6 +162,31 @@ export async function POST(req: NextRequest) {
       discountRate !== undefined && discountRate !== null && `${discountRate}` !== ''
         ? parseFloat(discountRate)
         : 0;
+    // BV-03: quà tặng 100% chỉ ghi Sổ Nội bộ (doanh thu 0đ, vẫn trừ kho)
+    const giftFlag = Boolean(isGift) || parsedOrderDiscount === 1;
+    let safeFiscalScope = userRole === 'ROLE_TAX' ? 'OFFICIAL_TAX' : (fiscalScope || 'INTERNAL_MANAGEMENT');
+    if (giftFlag) {
+      const reason = `${giftReason ?? note ?? ''}`.trim();
+      if (!reason) {
+        return NextResponse.json(
+          { success: false, error: 'Đơn Tặng sách bắt buộc ghi lý do (giftReason/note).' },
+          { status: 400 }
+        );
+      }
+      if (parsedOrderDiscount > 1) {
+        return NextResponse.json(
+          { success: false, error: 'Chiết khấu không được vượt quá 100%.' },
+          { status: 400 }
+        );
+      }
+      if (Array.isArray(bundles) && bundles.length > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Đơn Tặng sách chưa hỗ trợ combo đóng hộp.' },
+          { status: 400 }
+        );
+      }
+      safeFiscalScope = 'INTERNAL_MANAGEMENT';
+    }
     const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
       const v = it?.unitDiscountRate;
       const parsed =
@@ -179,18 +233,24 @@ export async function POST(req: NextRequest) {
       partnerId,
       customerId,
       customerName,
-      discountRate: discountRate !== undefined ? parseFloat(discountRate) : 0,
+      discountRate: giftFlag ? 1 : (discountRate !== undefined ? parseFloat(discountRate) : 0),
       paymentMethod: paymentMethod || 'CASH',
       fiscalScope: safeFiscalScope,
       vatRate: vatRate !== undefined ? parseFloat(vatRate) : 0,
-      vatInvoiceRequired: Boolean(vatInvoiceRequired),
-      vatInvoiceCode,
+      vatInvoiceRequired: giftFlag ? false : Boolean(vatInvoiceRequired),
+      vatInvoiceCode: giftFlag ? undefined : vatInvoiceCode,
       cashierId: cashierId || 'Thu ngân quầy',
       cashboxSessionId,
       note,
+      // Bước 1: web/social truyền confirmImmediately:false → đơn PENDING giữ chỗ ATP
+      confirmImmediately: confirmImmediately !== undefined ? Boolean(confirmImmediately) : true,
       isOfflineSync: isLegitOfflineSync,
       allowOverdraft: safeAllowOverdraft,
-      items: safeItems,
+      isGift: giftFlag,
+      giftReason: giftFlag ? `${giftReason ?? note ?? ''}`.trim() : undefined,
+      items: giftFlag
+        ? safeItems.map((it: any) => ({ ...it, unitDiscountRate: 1 }))
+        : safeItems,
       bundles: Array.isArray(bundles)
         ? bundles.map((b: any) => ({ bundleId: b.bundleId, quantity: parseInt(b.quantity ?? 0, 10) }))
         : undefined,
@@ -212,6 +272,18 @@ export async function POST(req: NextRequest) {
         actorId: cashierId || userRole,
         resource: '/api/orders',
         details: `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${result.orderCode} (cashier: ${cashierId || userRole}, phê duyệt bởi: ${userRole}).`,
+      });
+    }
+
+    // BV-03: vết kiểm toán riêng cho đơn quà tặng (doanh thu 0đ, vẫn trừ kho).
+    // Tái dùng MANAGER_DISCOUNT_APPROVED để không phình enum audit (giữ nguyên rbac-guard).
+    if (giftFlag) {
+      recordAuditLog({
+        action: 'MANAGER_DISCOUNT_APPROVED',
+        actorRole: userRole,
+        actorId: cashierId || userRole,
+        resource: '/api/orders',
+        details: `Duyệt đơn Tặng 100% (GIFT) ${result.orderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
       });
     }
 

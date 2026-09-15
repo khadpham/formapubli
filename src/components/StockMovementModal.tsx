@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ArrowRightLeft, PlusCircle, MinusCircle, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface BookItem {
@@ -58,6 +58,52 @@ export function StockMovementModal({
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Đồng bộ state khi modal được mở bằng phím tắt (Alt+Shift+T/R/X)
+  // hoặc khi sách được chọn từ dòng trong bảng thay đổi.
+  // Phải đặt trước early-return để giữ thứ tự hooks ổn định.
+  useEffect(() => {
+    if (!isOpen) return;
+    setActionType(defaultAction);
+    const nextBookId =
+      selectedBook?.id || books[0]?.id || '';
+    setSelectedEditionId((prev) => {
+      // Giữ lựa chọn hiện tại nếu vẫn hợp lệ, tránh reset khi đang gõ.
+      if (prev && books.some((b) => b.id === prev)) {
+        // Nhưng nếu caller chỉ định selectedBook khác prev thì ưu tiên caller.
+        if (selectedBook && selectedBook.id !== prev) return selectedBook.id;
+        // Nếu defaultAction đổi qua phím tắt mà prev vẫn hợp lệ thì giữ nguyên sách.
+        return prev;
+      }
+      return nextBookId;
+    });
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, defaultAction, selectedBook?.id]);
+
+  // Lắng nghe phím tắt trong modal: Ctrl+Enter để submit, Escape để đóng.
+  // Đặt trước early-return để tránh lỗi "Rendered fewer hooks than expected"
+  // khi isOpen chuyển false -> true (nguyên nhân crash Alt+Shift+T).
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleModalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const form = document.getElementById('stock-movement-form') as HTMLFormElement;
+        if (form) {
+          form.requestSubmit();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleModalKeyDown);
+    return () => window.removeEventListener('keydown', handleModalKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -118,27 +164,6 @@ export function StockMovementModal({
       setLoading(false);
     }
   };
-
-  // Lắng nghe phím tắt trong modal: Ctrl+Enter để submit, Escape để đóng
-  React.useEffect(() => {
-    if (!isOpen) return;
-
-    const handleModalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.ctrlKey && e.key === 'Enter') {
-        e.preventDefault();
-        const form = document.getElementById('stock-movement-form') as HTMLFormElement;
-        if (form) {
-          form.requestSubmit();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleModalKeyDown);
-    return () => window.removeEventListener('keydown', handleModalKeyDown);
-  }, [isOpen, onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
