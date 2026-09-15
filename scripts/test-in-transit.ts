@@ -79,6 +79,7 @@ async function runTransitTests() {
     items: [{ editionId: bookB.id, quantity: 10 }],
   });
   const destBBefore = await InventoryService.getBalance(bookB.id, AUCO, 'NEW');
+  const quarBBefore = await InventoryService.getBalance(bookB.id, AUCO, 'QUARANTINE');
   const recv2 = await TransferService.receive({
     shipmentId: disp2.shipmentId,
     receiverId: 'thu-kho-au-co',
@@ -89,7 +90,7 @@ async function runTransitTests() {
   const transitBAfter = await InventoryService.getBalance(bookB.id, TRANSIT_WAREHOUSE_ID, 'NEW');
   ok(recv2.status === 'RECEIVED_DISCREPANCY', 'Nhận lệch đóng phiếu RECEIVED_DISCREPANCY');
   ok(destBAfter === destBBefore + 7, 'Kho đích cộng đúng 7 cuốn lành');
-  ok(quarBAfter === 2, '2 cuốn ướt/rách vào QUARANTINE chờ RMA');
+  ok(quarBAfter === quarBBefore + 2, '2 cuốn ướt/rách vào QUARANTINE chờ RMA');
   ok(transitBAfter === 0, 'Transit về 0 (7 về đích + 2 cách ly + 1 mất đã hạch toán)');
   const lossRows = await db
     .select()
