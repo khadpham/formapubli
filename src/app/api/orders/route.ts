@@ -97,10 +97,13 @@ export async function POST(req: NextRequest) {
     const userRole = extractUserRole(req);
     const actorHeader = req.headers.get('x-formapubli-actor') || body.cashierId || userRole;
 
-    // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce trong service)
+    // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce kép route + service)
     if (body.action === 'CONFIRM' || body.action === 'CANCEL') {
       if (userRole === 'ROLE_TAX') {
         return NextResponse.json({ success: false, error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
+      }
+      if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
+        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được duyệt/hủy đơn PENDING.' }, { status: 403 });
       }
       const result = body.action === 'CONFIRM'
         ? await OrderService.confirmOrder(body.orderId, userRole, actorHeader)
@@ -113,6 +116,19 @@ export async function POST(req: NextRequest) {
         details: `${body.action === 'CONFIRM' ? 'Duyệt' : 'Hủy'} đơn online ${body.orderId}${body.reason ? ` (lý do: ${body.reason})` : ''}.`,
       });
       return NextResponse.json({ success: true, data: result });
+    }
+
+    // 1.2: dọn đơn PENDING quá TTL 48h (Manager/Owner) — nút trên màn Pending
+    if (body.action === 'CLEANUP') {
+      if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
+        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được dọn đơn hết hạn.' }, { status: 403 });
+      }
+      const cleaned = await OrderService.cleanupExpiredPending();
+      recordAuditLog({
+        action: 'ORDER_CANCELLED', actorRole: userRole, actorId: actorHeader,
+        resource: '/api/orders', details: `Dọn ${cleaned} đơn PENDING quá hạn giữ chỗ.`,
+      });
+      return NextResponse.json({ success: true, data: { cleaned } });
     }
 
     const {

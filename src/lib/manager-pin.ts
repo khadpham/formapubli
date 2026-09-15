@@ -27,6 +27,10 @@ function getWhitelistHashes(): { hashes: string[]; usingFallback: boolean } {
     .map((s) => s.trim().toLowerCase())
     .filter((s) => s.length > 0);
   if (raw.length > 0) return { hashes: raw, usingFallback: false };
+  // 2.4: fail-closed trên production — không bao giờ dùng PIN mặc định ở prod
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('MANAGER_PIN_HASHES chưa cấu hình trên production — từ chối xác thực PIN.');
+  }
   return { hashes: LEGACY_DEFAULT_PINS.map((p) => hashPin(p)), usingFallback: true };
 }
 

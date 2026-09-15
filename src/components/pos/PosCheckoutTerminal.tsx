@@ -27,8 +27,12 @@ import {
   WifiOff,
   RefreshCw,
   CloudUpload,
+  ClipboardPaste,
+  RotateCcw,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
+import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
+import { ReturnsModal } from '@/components/pos/ReturnsModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -63,6 +67,8 @@ interface CartItem {
   coverPrice: number;
   quantity: number;
   stockAvailable: number;
+  // 1.0: tồn khả dụng ATP tại thời điểm thêm (null = chưa tra / offline)
+  atpAvailable?: number | null;
 }
 
 interface PosCheckoutTerminalProps {
@@ -89,6 +95,10 @@ export function PosCheckoutTerminal({
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  // 1.1: modal dán chat FB/Zalo
+  const [isParserOpen, setIsParserOpen] = useState(false);
+  // 1.3: modal đổi/trả BV-06
+  const [isReturnsOpen, setIsReturnsOpen] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
   const [ambiguousMatches, setAmbiguousMatches] = useState<BookItem[] | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -424,7 +434,7 @@ export function PosCheckoutTerminal({
 
     if (matchedBooks.length === 1) {
       const matchedBook = matchedBooks[0];
-      addToCart(matchedBook);
+      handleAddToCart(matchedBook);
       setScanToast({
         title: matchedBook.title,
         code: matchedBook.code,
@@ -453,7 +463,7 @@ export function PosCheckoutTerminal({
   }, [books, searchQuery]);
 
   // Thêm sách vào giỏ
-  const addToCart = (book: BookItem) => {
+  const addToCart = (book: BookItem, atpOverride?: number | null) => {
     setErrorMessage(null);
     const availableStock =
       selectedWarehouseId === 'wh-au-co'
@@ -467,16 +477,30 @@ export function PosCheckoutTerminal({
       return;
     }
 
+    // 1.0: trần giỏ = min(tồn vật lý, ATP) khi đã tra ATP
+    const atp = atpOverride === undefined || atpOverride === null ? null : Math.max(0, Math.floor(atpOverride));
+    const effectiveLimit = atp === null ? availableStock : Math.min(availableStock, atp);
+    if (effectiveLimit <= 0) {
+      setErrorMessage(`Sách [${book.code}] ${book.title} đã bị giữ hết cho đơn online — tồn khả dụng tại quầy: 0 cuốn!`);
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find((item) => item.editionId === book.id);
       if (existing) {
-        if (existing.quantity >= availableStock) {
-          setErrorMessage(`Số lượng trong giỏ (${existing.quantity}) đã đạt mức tồn kho tối đa (${availableStock})!`);
+        const curAtp = atp !== null ? atp : existing.atpAvailable ?? null;
+        const limit = curAtp === null ? availableStock : Math.min(availableStock, curAtp);
+        if (existing.quantity >= limit) {
+          setErrorMessage(
+            curAtp !== null && curAtp < availableStock
+              ? `Sách giữ chỗ online! Giỏ (${existing.quantity}) đã đạt tồn khả dụng (${limit}, vật lý ${availableStock})!`
+              : `Số lượng trong giỏ (${existing.quantity}) đã đạt mức tồn kho tối đa (${limit})!`
+          );
           return prev;
         }
         return prev.map((item) =>
           item.editionId === book.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? { ...item, quantity: item.quantity + 1, atpAvailable: curAtp }
             : item
         );
       }
@@ -489,9 +513,56 @@ export function PosCheckoutTerminal({
           coverPrice: book.coverPrice,
           quantity: 1,
           stockAvailable: availableStock,
+          atpAvailable: atp,
         },
       ];
     });
+  };
+
+  // 1.0: bọc tra ATP trước khi thêm — cảnh báo hổ phách khi có giữ chỗ, rớt mạng thì bán theo tồn vật lý
+  const handleAddToCart = async (book: BookItem, times = 1) => {
+    let atp: number | null = null;
+    try {
+      const res = await fetch(`/api/atp?editionId=${encodeURIComponent(book.id)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
+      const json = await res.json();
+      if (json.success) {
+        atp = Math.max(0, Math.floor(json.data.atp));
+        if (json.data.held > 0) {
+          setSyncToast(`⚠️ [${book.code}] có ${json.data.held} cuốn đang giữ chỗ online — khả dụng tại quầy: ${atp} cuốn.`);
+          setTimeout(() => setSyncToast(null), 4000);
+        }
+      }
+    } catch {
+      // Offline/không tra được ATP: giữ hành vi cũ (tồn vật lý), server là guard cuối
+    }
+    const n = Math.max(1, Math.min(999, Math.floor(times) || 1));
+    for (let i = 0; i < n; i++) addToCart(book, atp);
+  };
+
+  // 1.1: nạp đơn parser vào giỏ POS (tên/SĐT/địa chỉ → form, sách → giỏ qua guard ATP)
+  const handleParserOrder = async (payload: {
+    customerName: string;
+    phone?: string;
+    address?: string;
+    items: Array<{ editionId: string; quantity: number }>;
+    note: string;
+  }) => {
+    setCustomerName(payload.customerName);
+    setNote((prev) => {
+      const bits = [
+        prev.trim(),
+        payload.phone ? `SĐT: ${payload.phone}` : '',
+        payload.address ? `ĐC: ${payload.address}` : '',
+        payload.note,
+      ].filter((s) => s && s.trim());
+      return bits.join(' | ');
+    });
+    for (const it of payload.items) {
+      const book = books.find((b) => b.id === it.editionId);
+      if (book) await handleAddToCart(book, it.quantity);
+    }
+    setIsParserOpen(false);
+    searchInputRef.current?.focus();
   };
 
   const updateQuantity = (editionId: string, delta: number) => {
@@ -501,8 +572,16 @@ export function PosCheckoutTerminal({
         .map((item) => {
           if (item.editionId === editionId) {
             const newQty = item.quantity + delta;
-            if (newQty > item.stockAvailable) {
-              setErrorMessage(`Tồn kho chỉ còn ${item.stockAvailable} cuốn!`);
+            // 1.0: trần tăng số lượng = min(vật lý, ATP đã tra)
+            const limit = item.atpAvailable === undefined || item.atpAvailable === null
+              ? item.stockAvailable
+              : Math.min(item.stockAvailable, item.atpAvailable);
+            if (newQty > limit) {
+              setErrorMessage(
+                item.atpAvailable !== undefined && item.atpAvailable !== null && item.atpAvailable < item.stockAvailable
+                  ? `Giữ chỗ online! Tồn khả dụng chỉ còn ${limit} cuốn (vật lý ${item.stockAvailable})!`
+                  : `Tồn kho chỉ còn ${limit} cuốn!`
+              );
               return item;
             }
             return newQty > 0 ? { ...item, quantity: newQty } : null;
@@ -539,6 +618,23 @@ export function PosCheckoutTerminal({
     if (isGift && !giftReason.trim() && !note.trim()) {
       setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
       return;
+    }
+
+    // 1.0: chốt chặn ATP lần cuối (giữ chỗ có thể tăng sau khi thêm giỏ).
+    // Quản lý đã duyệt PIN được vượt (chịu trách nhiệm đối soát), server vẫn guard tồn vật lý.
+    try {
+      for (const item of cart) {
+        const res = await fetch(`/api/atp?editionId=${encodeURIComponent(item.editionId)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
+        const json = await res.json();
+        if (json.success && item.quantity > json.data.atp && !isManagerOverride) {
+          setErrorMessage(
+            `Sách [${item.code}] vượt tồn khả dụng (${item.quantity} > ${json.data.atp}, có ${json.data.held} cuốn giữ chỗ online). Cần Quản lý duyệt PIN để vượt.`
+          );
+          return;
+        }
+      }
+    } catch {
+      // Không tra được ATP (mất mạng) → cho qua, server + offline-queue là guard cuối
     }
 
     setIsSubmitting(true);
@@ -743,6 +839,13 @@ export function PosCheckoutTerminal({
         return;
       }
 
+      // 1.1: Tổ hợp Alt + Shift + P -> Mở modal Dán Chat Khách
+      if (e.altKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+        e.preventDefault();
+        setIsParserOpen((prev) => !prev);
+        return;
+      }
+
       // 5. Tổ hợp Ctrl + Enter (hoặc Cmd + Enter) -> Thanh toán & Khấu trừ kho
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -753,7 +856,7 @@ export function PosCheckoutTerminal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen]);
+  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen, isParserOpen]);
 
   // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT hoặc ĐANG BẬT MICRO GIỌNG NÓI)
   const showMagnetBar = isScrolledPast && (searchQuery.trim().length > 0 || isInputFocused || isListening);
@@ -1017,6 +1120,15 @@ export function PosCheckoutTerminal({
               >
                 <Camera className="w-4 h-4" />
               </button>
+              {/* Nút Dán Chat Khách (Smart Parser FB/Zalo) */}
+              <button
+                type="button"
+                onClick={() => setIsParserOpen(true)}
+                className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
+                title="Dán chat khách, bóc đơn tự động (Alt + Shift + P)"
+              >
+                <ClipboardPaste className="w-4 h-4" />
+              </button>
               {/* Nút Micro Giọng Nói Tiếng Việt */}
               <button
                 type="button"
@@ -1098,7 +1210,7 @@ export function PosCheckoutTerminal({
               return (
                 <div
                   key={b.id}
-                  onClick={() => !isOutOfStock && addToCart(b)}
+                  onClick={() => !isOutOfStock && handleAddToCart(b)}
                   className={`p-3.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none ${
                     isOutOfStock
                       ? 'opacity-50 border-slate-200 cursor-not-allowed bg-slate-50/60'
@@ -1197,6 +1309,13 @@ export function PosCheckoutTerminal({
                       </div>
                       <span className="text-[11px] font-mono text-slate-500">
                         {item.coverPrice.toLocaleString('vi-VN')} đ / cuốn
+                      </span>
+                      {/* 1.0: Tồn vật lý | Khả dụng ATP */}
+                      <span className="block text-[10px] font-mono text-slate-400">
+                        Tồn: {item.stockAvailable}
+                        {item.atpAvailable !== undefined && item.atpAvailable !== null && item.atpAvailable < item.stockAvailable && (
+                          <span className="text-amber-600 font-bold"> | Khả dụng: {item.atpAvailable} (giữ chỗ {item.stockAvailable - item.atpAvailable})</span>
+                        )}
                       </span>
                     </div>
 
@@ -1412,9 +1531,31 @@ export function PosCheckoutTerminal({
                 </>
               )}
             </button>
+
+            {/* 1.3: mở modal Đổi/Trả BV-06 */}
+            <button
+              type="button"
+              onClick={() => setIsReturnsOpen(true)}
+              className="w-full py-2.5 px-4 bg-white hover:bg-indigo-50 active:scale-[0.99] text-indigo-700 font-extrabold rounded-2xl text-xs border-2 border-dashed border-indigo-300 transition-all flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>ĐỔI / TRẢ HÀNG (BV-06)</span>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* 1.3: Modal Đổi/Trả */}
+      {isReturnsOpen && (
+        <ReturnsModal
+          books={books.map((b) => ({ id: b.id, code: b.code, title: b.title }))}
+          currentRole={currentRole}
+          warehouseId={selectedWarehouseId}
+          cashierId={`User-${currentRole}`}
+          onClose={() => setIsReturnsOpen(false)}
+          onCompleted={() => { if (onOrderCompleted) onOrderCompleted(); }}
+        />
+      )}
 
       {/* Order Success Receipt Modal */}
       {completedOrder && (
@@ -1565,7 +1706,7 @@ export function PosCheckoutTerminal({
                     key={book.id}
                     type="button"
                     onClick={() => {
-                      addToCart(book);
+                      handleAddToCart(book);
                       setScanToast({
                         title: book.title,
                         code: book.code,
@@ -1613,6 +1754,25 @@ export function PosCheckoutTerminal({
         onScan={handleBarcodeScan}
         sampleBooks={books.map((b) => ({ code: b.code, title: b.title, isbn: b.isbn }))}
       />
+
+      {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
+      {isParserOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-lg w-full max-h-[92vh] overflow-y-auto">
+            <SmartOrderParser
+              books={books.map((b) => ({ id: b.id, code: b.code, title: b.title, author: b.author }))}
+              onCreateOrder={handleParserOrder}
+            />
+            <button
+              type="button"
+              onClick={() => setIsParserOpen(false)}
+              className="mt-2 w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+            >
+              Đóng (Alt + Shift + P)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MODAL 1: MỞ CA KÉT TIỀN (Open Cashbox Shift Modal) */}
       {isOpenShiftModalOpen && (

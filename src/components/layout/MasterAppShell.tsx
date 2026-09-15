@@ -6,6 +6,7 @@ import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard';
 import { PosCheckoutTerminal } from '@/components/pos/PosCheckoutTerminal';
 import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
+import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
@@ -179,6 +180,10 @@ export function MasterAppShell({
 
           {currentTab === 'sales' && (
             <SalesLedgerView currentRole={currentRole} />
+          )}
+
+          {currentTab === 'sales' && (
+            <PendingOrdersView currentRole={currentRole} />
           )}
 
           {currentTab === 'partners' && (
