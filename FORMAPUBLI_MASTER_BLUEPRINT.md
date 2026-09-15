@@ -42,6 +42,7 @@
 33. [Quy Chuẩn Kỹ Thuật Đúc Kết Từ Thực Địa (Hardened Engineering Specifications)](#33-quy-chuẩn-kỹ-thuật-đúc-kết-từ-thực-địa-hardened-engineering-specifications)
 34. [Quy Chuẩn Điều Hướng Pinned Bottom Settings & Workspace Phân Tích Chuyên Sâu](#34-quy-chuẩn-điều-hướng-pinned-bottom-settings--workspace-phân-tích-chuyên-sâu)
 35. [Chuẩn Hóa Xử Lý Phần Cứng Camera Đa Ống Kính (Anti-Macro Camera Architecture)](#35-chuẩn-hóa-xử-lý-phần-cứng-camera-đa-ống-kính-anti-macro-camera-architecture)
+36. [Quy Chuẩn Red-Team & Negative Testing (Bắt Buộc)](#36-quy-chuẩn-red-team--negative-testing-bắt-buộc)
 
 ---
 
@@ -1299,3 +1300,13 @@ Tận dụng nền tảng PWA trên thiết bị di động, formapubli OS tích
    - Cơ chế `didPostPermissionRescanRef` thực hiện quét lại danh sách thiết bị đúng 1 lần duy nhất ngay sau khi đã có quyền, tự động chuyển luồng sang ống kính chính tốt nhất nếu ống kính ban đầu bị nhầm.
 3. **Menu Chuyển Đổi Ống Kính Chủ Động (Manual Lens Switcher):**
    - Tích hợp dropdown nhỏ ngay trên thanh điều khiển ngắm quét nếu phát hiện máy có nhiều camera sau, trao toàn quyền cho nhân viên đổi camera chỉ với 1 chạm.
+
+---
+
+## 36. Quy Chuẩn Red-Team & Negative Testing (Bắt Buộc)
+
+Đúc kết từ đợt probes adversarial 09/2026 (23 suites xanh nhưng vẫn lọt 9 lỗ hổng P0/P1 + 1 bug bundle):
+toàn văn luật thi hành tại **`docs/ADVERSARIAL_TESTING_POLICY.md`** — 5 quy tắc bắt buộc
+(negative test tiền/kho/quyền; validate tầng sâu nhất; test tương tác chéo;
+test phân quyền endpoint đọc; gate red-team trước merge) kèm checklist DoD copy vào mỗi PR.
+Mọi PR đụng tiền/kho/quyền/đối soát mà thiếu checklist sẽ bị từ chối merge.

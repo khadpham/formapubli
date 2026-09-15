@@ -474,6 +474,25 @@
 
 
 
+### 📅 Ngày 15/09/2026
+
+#### 🔹 [Mã: ENG-20260915-25] Đợt Vá Bảo Mật security-patch-01 & Quy Chuẩn Red-Team Bắt Buộc
+- **Nội dung:**
+  - Bộ probes adversarial (`review.tmp/`, ignored) khui 9 lỗ hổng P0/P1 + 1 bug bundle
+    dù 23 suites đang xanh 100%: giá lậu client, số lẻ kho, CK 200%, trả gấp đôi,
+    trả trên đơn PENDING, TAX đọc shipment nội bộ, RMA ghi dở, gift phình forecast,
+    két ca ngó lơ refund, bundle req>1 tính lố tổng.
+  - Song song 2 lane zero-conflict: Lane A (`order.service`, `forecast.service`,
+    `api/orders`) — Lane B (`return.service`, `rma.service`, `api/shipments`).
+  - Gate nghiệm thu: chạy lại probes, toàn bộ đòn tấn công bị chặn (bằng chứng JSON
+    `review.tmp/probes-baseline-20260915.json` → `probes-accept-20260915.json`).
+  - Suite hồi quy mới `scripts/test-order-guards.ts` (7/7), runner lên 24 suites.
+- **Thể chế hóa (chống tái phạm):**
+  - Tài liệu luật mới `docs/ADVERSARIAL_TESTING_POLICY.md`: 5 quy tắc bắt buộc
+    (negative test; validate tầng sâu nhất; test tương tác chéo; test phân quyền
+    endpoint đọc; gate red-team) + checklist DoD copy vào PR + sổ lỗi đã trả học phí.
+  - Master Blueprint Chương 36 trỏ về policy. PR thiếu checklist DoD bị từ chối merge.
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]

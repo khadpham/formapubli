@@ -29,5 +29,10 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+# Backup/sidecar hậu tố kép (vd: formapubli.db.bak-20260914-stocktest) + file -wal/-shm/-journal của SQLite
+*.db.*
+*.db-*
+*.sqlite.*
+*.sqlite-*
 
 certificates
