@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BundleService } from '@/services/bundle.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,10 +26,7 @@ export async function GET(req: NextRequest) {
     const list = await BundleService.listBundles(true);
     return NextResponse.json({ success: true, data: list });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn combo' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
 
@@ -36,18 +35,21 @@ export async function GET(req: NextRequest) {
 // Chỉ Quản lý/Chủ được định nghĩa combo.
 export async function POST(req: NextRequest) {
   try {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
+    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
+      throw new AuthError(403, 'Chỉ Quản lý/Chủ được định nghĩa combo mới.');
+    }
+
     const body = await req.json();
     const { action } = body;
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
+    const userRole = identity.role as any;
+    const actorHeader = identity.actorId;
 
     if (action === 'create') {
-      if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-        return NextResponse.json(
-          { success: false, error: 'Chỉ Quản lý/Chủ được định nghĩa combo mới.' },
-          { status: 403 }
-        );
-      }
       const { code, seasonName, releaseDate, comboPrice, totalCoverPrice, items } = body;
       if (!code || !seasonName || !releaseDate || comboPrice === undefined || !Array.isArray(items) || items.length === 0) {
         return NextResponse.json(
@@ -84,9 +86,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý combo' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

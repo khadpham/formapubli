@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SettlementService } from '@/services/settlement.service';
 import { ConsignmentService } from '@/services/consignment.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,26 +11,25 @@ export const dynamic = 'force-dynamic';
 // GET /api/settlements?partnerId=... — lịch sử thu theo đại lý
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_TAX'],
+      { role: extractUserRole(req), actorId: 'settlements-reader' }
+    );
+    const userRole = identity.role;
 
     if (userRole === 'ROLE_WAREHOUSE') {
-      return NextResponse.json(
-        { success: false, error: 'Thủ kho không có quyền truy cập công nợ thu tiền.' },
-        { status: 403 }
-      );
+      throw new AuthError(403, 'Thủ kho không có quyền truy cập công nợ thu tiền.');
     }
 
+    const { searchParams } = new URL(req.url);
     const statementId = searchParams.get('statementId');
     if (statementId) {
       const balance = await SettlementService.getBalance(statementId);
       if (userRole === 'ROLE_TAX') {
         const stmt = await ConsignmentService.getStatement(statementId);
         if (stmt.fiscalScope !== 'OFFICIAL_TAX') {
-          return NextResponse.json(
-            { success: false, error: 'Kỳ đối soát nội bộ, kế toán thuế không được xem.' },
-            { status: 403 }
-          );
+          throw new AuthError(403, 'Kỳ đối soát nội bộ, kế toán thuế không được xem.');
         }
       }
       const payments = await SettlementService.listPayments({ statementId, includeVoided: true });
@@ -52,32 +53,33 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ success: true, data: list });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn thu tiền công nợ' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
 
 // POST /api/settlements { action: 'record' | 'void', ... }
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { action } = body;
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
+    const userRole = identity.role;
+    const actorHeader = identity.actorId;
 
     // Thu ngân quầy được thu CASH (tiền vào két), kế toán/thủ kho không.
     if (userRole === 'ROLE_TAX' || userRole === 'ROLE_WAREHOUSE') {
-      return NextResponse.json(
-        { success: false, error: 'Vai trò này không được thu tiền công nợ.' },
-        { status: 403 }
-      );
+      throw new AuthError(403, 'Vai trò này không được thu tiền công nợ.');
     }
+
+    const body = await req.json();
+    const { action } = body;
 
     if (action === 'record') {
       const { statementId, amount, paymentMethod, reference, paidAt, receivedBy, cashboxSessionId, notes } = body;
-      if (!statementId || amount === undefined || !paymentMethod || !receivedBy) {
+      const effReceivedBy = receivedBy || actorHeader;
+      if (!statementId || amount === undefined || !paymentMethod || !effReceivedBy) {
         return NextResponse.json(
           { success: false, error: 'Thiếu kỳ đối soát, số tiền, hình thức hoặc người thu.' },
           { status: 400 }
@@ -89,14 +91,14 @@ export async function POST(req: NextRequest) {
         paymentMethod,
         reference: reference || '',
         paidAt,
-        receivedBy,
+        receivedBy: effReceivedBy,
         cashboxSessionId,
         notes,
       });
       recordAuditLog({
         action: 'SETTLEMENT_RECORD',
         actorRole: userRole,
-        actorId: receivedBy,
+        actorId: effReceivedBy,
         resource: '/api/settlements',
         details: `Thu ${amount.toLocaleString('vi-VN')} đ (${paymentMethod}) kỳ ${statementId}, còn nợ ${result.remaining.toLocaleString('vi-VN')} đ.`,
       });
@@ -109,10 +111,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Thiếu mã phiếu thu (paymentId).' }, { status: 400 });
       }
       if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-        return NextResponse.json(
-          { success: false, error: 'Chỉ Quản lý/Chủ được VOID phiếu thu.' },
-          { status: 403 }
-        );
+        throw new AuthError(403, 'Chỉ Quản lý/Chủ được VOID phiếu thu.');
       }
       const result = await SettlementService.voidPayment(paymentId, actorId || actorHeader, reason || '');
       recordAuditLog({
@@ -130,9 +129,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý thu tiền công nợ' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

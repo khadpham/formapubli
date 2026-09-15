@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TransferService, DEFAULT_STALE_HOURS } from '@/services/transfer.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,16 +11,17 @@ export const dynamic = 'force-dynamic';
 // GET /api/transfers?id=TRF-... — chi tiết 1 phiếu
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
-    if (userRole === 'ROLE_TAX') {
-      return NextResponse.json(
-        { success: false, error: 'Kế toán thuế không có quyền quản trị luân chuyển kho.' },
-        { status: 403 }
-      );
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
+      { role: extractUserRole(req), actorId: 'transfers-reader' }
+    );
+    if (identity.role === 'ROLE_TAX') {
+      throw new AuthError(403, 'Kế toán thuế không có quyền quản trị luân chuyển kho.');
     }
 
-    const id = searchParams.get('id');
+    const { searchParams } = new URL(req.url);
+
     if (id) {
       const shipment = await TransferService.getShipment(id);
       return NextResponse.json({ success: true, data: shipment });
@@ -38,27 +41,27 @@ export async function GET(req: NextRequest) {
     const list = await TransferService.listShipments(status, limit);
     return NextResponse.json({ success: true, data: list });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn phiếu luân chuyển' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
 
 // POST /api/transfers { action: 'dispatch' | 'receive' | 'cancel', ... }
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { action } = body;
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
+    const userRole = identity.role;
+    const actorHeader = identity.actorId;
 
     if (userRole === 'ROLE_TAX') {
-      return NextResponse.json(
-        { success: false, error: 'Kế toán thuế không có quyền luân chuyển kho.' },
-        { status: 403 }
-      );
+      throw new AuthError(403, 'Kế toán thuế không có quyền luân chuyển kho.');
     }
+
+    const body = await req.json();
+    const { action } = body;
 
     if (action === 'dispatch') {
       const { fromWarehouseId, toWarehouseId, dispatcherId, vehicleInfo, notes, items } = body;
@@ -76,46 +79,44 @@ export async function POST(req: NextRequest) {
         notes,
         items: items.map((it: any) => ({
           editionId: it.editionId,
-          quantity: parseInt(it.quantity ?? it.dispatchedQty ?? 0, 10),
-          notes: it.notes,
+          quantityDispatched: parseInt(it.quantityDispatched, 10),
         })),
+        actorRole: userRole,
       });
       recordAuditLog({
         action: 'TRANSFER_DISPATCH',
         actorRole: userRole,
         actorId: dispatcherId || actorHeader,
         resource: '/api/transfers',
-        details: `Xuất phiếu ${result.shipmentId}: ${fromWarehouseId} -> ${toWarehouseId} (${result.totalQuantity} cuốn).`,
+        details: `Xuất kho luân chuyển ${result.shipmentCode} (${fromWarehouseId} → ${toWarehouseId}, ${items.length} đầu sách).`,
       });
       return NextResponse.json({ success: true, data: result });
     }
 
     if (action === 'receive') {
-      const { shipmentId, receiverId, items, notes } = body;
-      if (!shipmentId || !items || !Array.isArray(items) || items.length === 0) {
+      const { shipmentId, receiverId, receivedItems, discrepancyReason } = body;
+      if (!shipmentId || !receivedItems || !Array.isArray(receivedItems)) {
         return NextResponse.json(
-          { success: false, error: 'Thiếu mã phiếu (shipmentId) hoặc biên bản nhận (items).' },
+          { success: false, error: 'Thiếu mã phiếu (shipmentId) hoặc danh sách hàng nhận (receivedItems).' },
           { status: 400 }
         );
       }
       const result = await TransferService.receive({
         shipmentId,
         receiverId: receiverId || actorHeader,
-        notes,
-        items: items.map((it: any) => ({
+        receivedItems: receivedItems.map((it: any) => ({
           editionId: it.editionId,
-          receivedQty: parseInt(it.receivedQty ?? 0, 10),
-          damagedQty: parseInt(it.damagedQty ?? 0, 10),
-          lostQty: parseInt(it.lostQty ?? 0, 10),
-          notes: it.notes,
+          quantityReceived: parseInt(it.quantityReceived, 10),
         })),
+        discrepancyReason,
+        actorRole: userRole,
       });
       recordAuditLog({
         action: 'TRANSFER_RECEIVE',
         actorRole: userRole,
         actorId: receiverId || actorHeader,
         resource: '/api/transfers',
-        details: `Nhận phiếu ${shipmentId}: đủ ${result.totalReceived}, hỏng ${result.totalDamaged}, mất ${result.totalLost} (${result.status}).`,
+        details: `Nhập kho luân chuyển ${shipmentId} (trạng thái ${result.status}${result.discrepancyCount ? `, lệch ${result.discrepancyCount} món` : ''}).`,
       });
       return NextResponse.json({ success: true, data: result });
     }
@@ -144,9 +145,6 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý phiếu luân chuyển' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }

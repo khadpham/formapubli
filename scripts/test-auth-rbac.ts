@@ -46,9 +46,18 @@ function sessionCookie(setCookie: string | null): string {
 }
 
 async function loginAs(role: string, actor: string, passcode: string) {
-  const r: any = await post(postLogin, { role, actorId: actor, passcode });
+  const roleToStaff: Record<string, string> = {
+    ROLE_OWNER: 'ADMIN-01',
+    ROLE_MANAGER: 'QL-01',
+    ROLE_CASHIER: 'NV-01',
+    ROLE_WAREHOUSE: 'KHO-01',
+    ROLE_TAX: 'THUE-01',
+  };
+  const staffId = roleToStaff[role] || actor;
+  const r: any = await post(postLogin, { role, actorId: actor, staffId, passcode });
   return { status: r.status, body: r.body, cookie: sessionCookie(r.headers.get('set-cookie')) };
 }
+
 
 async function run() {
   console.log('🔐 BƯỚC 3 COOKIE-FIRST (DB cách ly, AUTH_STRICT=true)');

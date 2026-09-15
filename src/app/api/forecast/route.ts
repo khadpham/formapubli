@@ -10,22 +10,25 @@ import {
   type RunoutLevel,
 } from '@/services/forecast.service';
 import { extractUserRole } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
 // GET /api/forecast?windowDays=30&warehouseId=&level=RED_ALERT&limit=200
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
+      { role: extractUserRole(req), actorId: 'forecast-reader' }
+    );
 
-    if (userRole === 'ROLE_CASHIER' || userRole === 'ROLE_TAX') {
-      return NextResponse.json(
-        { success: false, error: 'Vai trò này không có quyền xem dự báo tái bản.' },
-        { status: 403 }
-      );
+    if (identity.role === 'ROLE_CASHIER' || identity.role === 'ROLE_TAX') {
+      throw new AuthError(403, 'Vai trò này không có quyền xem dự báo tái bản.');
     }
 
+    const { searchParams } = new URL(req.url);
     const windowDays = searchParams.get('windowDays')
       ? parseInt(searchParams.get('windowDays')!, 10)
       : DEFAULT_WINDOW_DAYS;
@@ -62,9 +65,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi dự báo tái bản' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ShipmentService } from '@/services/shipment.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,11 +17,15 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'],
+      { role: extractUserRole(req), actorId: 'shipments-reader' }
+    );
     const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
 
     // FIX-06: Kế toán thuế chỉ được thấy đơn OFFICIAL_TAX, tuyệt đối không lộ đơn nội bộ
-    const safeFiscalScope = userRole === 'ROLE_TAX' 
+    const safeFiscalScope = identity.role === 'ROLE_TAX' 
       ? 'OFFICIAL_TAX' 
       : (searchParams.get('fiscalScope') || undefined);
 
@@ -31,15 +37,20 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json({ success: true, shipments: list });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi truy vấn vận chuyển' }, { status: 500 });
+    return handleApiError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
     const body = await req.json();
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
+    const userRole = identity.role as any;
+    const actorHeader = identity.actorId;
 
     if (body.action === 'PUSH') {
       const result = await ShipmentService.push(
@@ -63,6 +74,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'SETTLE_COD') {
+      if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
+        throw new AuthError(403, 'Chỉ Manager/Owner mới có quyền tất toán COD.');
+      }
       const result = await ShipmentService.settleCod(body.orderId, userRole, body.bankReference);
       recordAuditLog({
         action: 'MUTATE_ORDER', actorRole: userRole, actorId: actorHeader,
@@ -76,7 +90,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    const status = /Chỉ Manager\/Owner|Kế toán thuế/.test(error.message || '') ? 403 : 400;
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi vận chuyển' }, { status });
+    return handleApiError(error);
   }
 }
+

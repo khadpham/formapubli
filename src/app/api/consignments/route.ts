@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConsignmentService } from '@/services/consignment.service';
 import { extractUserRole, enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,16 +11,19 @@ export const dynamic = 'force-dynamic';
 // GET /api/consignments?partnerStock=<partnerId> — tồn hiện tại tại quầy
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_TAX'],
+      { role: extractUserRole(req), actorId: 'consignments-reader' }
+    );
+    const userRole = identity.role;
+    const actorHeader = identity.actorId;
 
     if (userRole === 'ROLE_WAREHOUSE') {
-      return NextResponse.json(
-        { success: false, error: 'Thủ kho không có quyền truy cập sổ ký gửi & công nợ.' },
-        { status: 403 }
-      );
+      throw new AuthError(403, 'Thủ kho không có quyền truy cập sổ ký gửi & công nợ.');
     }
+
+    const { searchParams } = new URL(req.url);
 
     const id = searchParams.get('id');
     if (id) {
@@ -60,10 +65,7 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ success: true, data: filtered });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn sổ ký gửi' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
 
@@ -71,17 +73,20 @@ export async function GET(req: NextRequest) {
 //   record-sale | record-return | confirm, ... }
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { action } = body;
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
+    const userRole = identity.role;
+    const actorHeader = identity.actorId;
 
     if (userRole === 'ROLE_TAX' || userRole === 'ROLE_WAREHOUSE') {
-      return NextResponse.json(
-        { success: false, error: 'Vai trò này không được thao tác sổ ký gửi.' },
-        { status: 403 }
-      );
+      throw new AuthError(403, 'Vai trò này không được thao tác sổ ký gửi.');
     }
+
+    const body = await req.json();
+    const { action } = body;
 
     if (action === 'send') {
       const { partnerId, fromWarehouseId, dispatcherId, vehicleInfo, notes, items } = body;
@@ -240,9 +245,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý sổ ký gửi' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RoyaltyService } from '@/services/royalty.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,17 +10,17 @@ export const dynamic = 'force-dynamic';
 // GET /api/royalties?id=<contractId> — chi tiết + quota + bảng nhuận bút
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
-
-    if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-      return NextResponse.json(
-        { success: false, error: 'Chỉ Quản lý/Chủ được xem sổ bản quyền & nhuận bút.' },
-        { status: 403 }
-      );
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER'],
+      { role: extractUserRole(req), actorId: 'royalties-reader' }
+    );
+    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
+      throw new AuthError(403, 'Chỉ Quản lý/Chủ được xem sổ bản quyền & nhuận bút.');
     }
 
-    const id = searchParams.get('id');
+    const { searchParams } = new URL(req.url);
+
     if (id) {
       const [quota, statement] = await Promise.all([
         RoyaltyService.quotaStatus(id),
@@ -38,27 +40,26 @@ export async function GET(req: NextRequest) {
     const list = await RoyaltyService.listContracts(lifecycle || undefined, limit);
     return NextResponse.json({ success: true, data: list });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn sổ bản quyền' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
 
 // POST /api/royalties { action: 'create' | 'terminate', ... }
 export async function POST(req: NextRequest) {
   try {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
+    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
+      throw new AuthError(403, 'Chỉ Quản lý/Chủ được quản trị hợp đồng bản quyền.');
+    }
+
     const body = await req.json();
     const { action } = body;
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
-
-    if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-      return NextResponse.json(
-        { success: false, error: 'Chỉ Quản lý/Chủ được quản trị hợp đồng bản quyền.' },
-        { status: 403 }
-      );
-    }
+    const userRole = identity.role as any;
+    const actorHeader = identity.actorId;
 
     if (action === 'create') {
       const {
@@ -115,9 +116,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý hợp đồng bản quyền' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

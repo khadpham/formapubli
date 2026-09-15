@@ -3,6 +3,8 @@ import { RmaService } from '@/services/rma.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
 import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 
+import { handleApiError } from '@/lib/api-response';
+
 // P2-06 — Hardened RMA: ép hàng lỗi vào QUARANTINE/DEFECTIVE (không rửa thành NEW),
 // gate vai trò, validate lý do/hành động/số nguyên.
 const QUARANTINE_ONLY = ['QUARANTINE', 'DEFECTIVE'];
@@ -15,6 +17,11 @@ function deny(role: string, allowed: string[]) {
 
 export async function GET(request: NextRequest) {
   try {
+    await resolveRequestIdentity(
+      request,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
+      { role: extractUserRole(request), actorId: 'rma-reader' }
+    );
     const { searchParams } = new URL(request.url);
     const warehouseId = searchParams.get('warehouseId') || undefined;
     const status = searchParams.get('status') || undefined;
@@ -28,10 +35,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: tickets });
   } catch (error: any) {
-    console.error('Lỗi khi truy vấn danh sách RMA:', error);
-    return NextResponse.json({ error: error.message || 'Lỗi máy chủ' }, { status: 500 });
+    return handleApiError(error);
   }
 }
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -147,7 +154,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: ticket });
   } catch (error: any) {
-    console.error('Lỗi khi xử lý phiếu RMA:', error);
-    return NextResponse.json({ error: error.message || 'Lỗi máy chủ' }, { status: 500 });
+    return handleApiError(error);
   }
 }
+

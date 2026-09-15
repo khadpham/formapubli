@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SponsorshipService } from '@/services/sponsorship.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +18,13 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
-    const userRole = extractUserRole(req);
-    if (userRole === 'ROLE_TAX') {
-      return NextResponse.json({ success: false, error: 'Quỹ tài trợ thuộc Sổ Nội bộ.' }, { status: 403 });
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER'],
+      { role: extractUserRole(req), actorId: 'sponsorships-reader' }
+    );
+    if (identity.role === 'ROLE_TAX') {
+      throw new AuthError(403, 'Quỹ tài trợ thuộc Sổ Nội bộ.');
     }
     const { searchParams } = new URL(req.url);
     const fundId = searchParams.get('fundId');
@@ -29,17 +35,23 @@ export async function GET(req: NextRequest) {
     const funds = await SponsorshipService.list();
     return NextResponse.json({ success: true, funds });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi truy vấn quỹ' }, { status: 400 });
+    return handleApiError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || body.createdBy || body.drawnBy || userRole;
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || body.createdBy || body.drawnBy || extractUserRole(req) }
+    );
+    const userRole = identity.role as any;
+    const actorHeader = identity.actorId;
+
     if (userRole === 'ROLE_TAX') {
-      return NextResponse.json({ success: false, error: 'Quỹ tài trợ thuộc Sổ Nội bộ.' }, { status: 403 });
+      throw new AuthError(403, 'Quỹ tài trợ thuộc Sổ Nội bộ.');
     }
 
     if (body.action === 'CREATE_FUND') {
@@ -94,7 +106,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    const status = /Manager\/Owner|Kế toán thuế/.test(error.message || '') ? 403 : 400;
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi quỹ tài trợ' }, { status });
+    return handleApiError(error);
   }
 }
+

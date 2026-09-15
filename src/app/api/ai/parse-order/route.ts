@@ -3,9 +3,17 @@ import { AIOrderParserService } from '@/services/ai-order-parser.service';
 import { db } from '@/db';
 import { editions, works } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { extractUserRole } from '@/lib/rbac-guard';
+import { resolveRequestIdentity } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export async function POST(req: NextRequest) {
   try {
+    await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
     const body = await req.json();
     const { text, source, forceFallback } = body;
 
@@ -46,10 +54,7 @@ export async function POST(req: NextRequest) {
       data: result,
     });
   } catch (error: any) {
-    console.error('Error in /api/ai/parse-order:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý bóc tách đơn hàng.' },
-      { status: 500 }
-    );
+    return handleApiError(error);
   }
 }
+

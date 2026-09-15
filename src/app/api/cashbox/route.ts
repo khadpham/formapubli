@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashboxService } from '@/services/order.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
+      { role: extractUserRole(req), actorId: 'cashbox-reader' }
+    );
+    if (!['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'].includes(identity.role)) {
+      throw new AuthError(403, 'Chỉ Chủ/Quản lý hoặc Thu ngân mới được truy cập két tiền.');
+    }
+
     const { searchParams } = new URL(req.url);
     const cashierId = searchParams.get('cashierId');
-    const userRole = extractUserRole(req);
 
     if (cashierId) {
       // Lấy phiên két tiền hiện đang mở của thu ngân
@@ -29,21 +39,28 @@ export async function GET(req: NextRequest) {
       data: sessions,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn két tiền' },
-      { status: 500 }
-    );
+    return handleApiError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
+      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+    );
+    if (!['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'].includes(identity.role)) {
+      throw new AuthError(403, 'Chỉ Chủ/Quản lý hoặc Thu ngân mới được thao tác két tiền.');
+    }
+
     const body = await req.json();
     const { action, warehouseId, cashierId, openingCash, sessionId, closingCashActual, notes } = body;
-    const userRole = extractUserRole(req);
+    const userRole = identity.role as any;
+    const effCashierId = cashierId || identity.actorId;
 
     if (action === 'OPEN') {
-      if (!warehouseId || !cashierId) {
+      if (!warehouseId || !effCashierId) {
         return NextResponse.json(
           { success: false, error: 'Thiếu kho (warehouseId) hoặc thu ngân (cashierId).' },
           { status: 400 }
@@ -52,7 +69,7 @@ export async function POST(req: NextRequest) {
 
       const result = await CashboxService.openSession({
         warehouseId,
-        cashierId,
+        cashierId: effCashierId,
         openingCash: openingCash ? parseFloat(openingCash) : 0,
         notes,
       });
@@ -60,9 +77,9 @@ export async function POST(req: NextRequest) {
       recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
-        actorId: cashierId,
+        actorId: effCashierId,
         resource: '/api/cashbox',
-        details: `Mở két tiền ca làm việc: Thu ngân ${cashierId}, tiền đầu ca: ${openingCash || 0} đ`,
+        details: `Mở két tiền ca làm việc: Thu ngân ${effCashierId}, tiền đầu ca: ${openingCash || 0} đ`,
       });
 
       return NextResponse.json({
@@ -105,9 +122,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi xử lý phiên két tiền' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

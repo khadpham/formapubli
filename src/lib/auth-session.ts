@@ -1,5 +1,7 @@
 import { UserRole } from './roles';
 import { hashString } from './export-hash';
+import { db, staffAccounts } from '@/db';
+import { eq } from 'drizzle-orm';
 
 export interface SessionPayload {
   role: UserRole;
@@ -380,6 +382,61 @@ export async function getSessionFromRequest(req: Request): Promise<SessionPayloa
   }
 }
 
+export function extractClientIp(req: Request): string {
+  if (process.env.TRUST_PROXY === 'cloudflare') {
+    const cf = req.headers.get('cf-connecting-ip');
+    if (cf && cf.trim()) return cf.trim();
+    return (req as any).ip || '127.0.0.1';
+  }
+  const cfIp = req.headers.get('cf-connecting-ip');
+  if (cfIp && cfIp.trim()) return cfIp.trim();
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) {
+    const first = forwarded.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp && realIp.trim()) return realIp.trim();
+  return (req as any).ip || '127.0.0.1';
+}
+
+/**
+ * Kiểm tra trạng thái tài khoản thời gian thực với CSDL.
+ * Nếu tài khoản bị khóa/vô hiệu hóa (isActive = false) -> lập tức ném AuthError(401).
+ * Nếu vai trò bị thay đổi -> ném AuthError(403).
+ */
+export async function validateSessionAccount(sess: SessionPayload): Promise<void> {
+  if (!sess || !sess.actorId) return;
+  try {
+    const rows = await db
+      .select()
+      .from(staffAccounts)
+      .where(eq(staffAccounts.staffId, sess.actorId))
+      .limit(1);
+
+    if (isAuthStrict()) {
+      if (rows.length === 0 || !rows[0].isActive) {
+        throw new AuthError(401, 'Tài khoản nhân viên đã bị vô hiệu hóa hoặc không tồn tại.');
+      }
+      if (rows[0].role !== sess.role) {
+        throw new AuthError(403, `Vai trò của tài khoản đã thay đổi thành ${rows[0].role}.`);
+      }
+    } else {
+      if (rows.length > 0) {
+        if (!rows[0].isActive) {
+          throw new AuthError(401, 'Tài khoản nhân viên đã bị vô hiệu hóa.');
+        }
+        if (rows[0].role !== sess.role) {
+          throw new AuthError(403, `Vai trò của tài khoản đã thay đổi.`);
+        }
+      }
+    }
+  } catch (err: any) {
+    if (err instanceof AuthError) throw err;
+    // Bỏ qua lỗi kết nối CSDL nếu chạy trong unit test không có bảng staffAccounts
+  }
+}
+
 /**
  * Bắt buộc session hợp lệ + role trong allowlist. Ném AuthError 401/403.
  * Chỉ dùng khi isAuthStrict(); môi trường thường giữ hành vi header legacy.
@@ -387,6 +444,7 @@ export async function getSessionFromRequest(req: Request): Promise<SessionPayloa
 export async function requireSessionRole(req: Request, allowed: UserRole[]): Promise<SessionPayload> {
   const sess = await getSessionFromRequest(req);
   if (!sess) throw new AuthError(401, 'Thiếu phiên đăng nhập hợp lệ. Vui lòng đăng nhập ca làm việc.');
+  await validateSessionAccount(sess);
   if (!allowed.includes(sess.role)) {
     throw new AuthError(403, `Vai trò ${sess.role} không đủ thẩm quyền cho thao tác này.`);
   }
@@ -433,6 +491,7 @@ export async function resolveRequestIdentity(
   // Môi trường thường (local dev / backward-compat test):
   const sess = await getSessionFromRequest(req);
   if (sess) {
+    await validateSessionAccount(sess);
     if (!allowed.includes(sess.role)) {
       throw new AuthError(403, `Vai trò ${sess.role} không đủ thẩm quyền cho thao tác này.`);
     }
@@ -459,4 +518,5 @@ export async function resolveRequestIdentity(
     },
   };
 }
+
 

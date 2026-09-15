@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AnalyticsService } from '@/services/analytics.service';
 import { extractUserRole } from '@/lib/rbac-guard';
+import { resolveRequestIdentity } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +15,12 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
-    const userRole = extractUserRole(req);
-    if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
+    const identity = await resolveRequestIdentity(
+      req,
+      ['ROLE_OWNER', 'ROLE_MANAGER'],
+      { role: extractUserRole(req), actorId: 'analytics' }
+    );
+    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
       return NextResponse.json({ success: false, error: 'Báo cáo quản trị tổng chỉ dành cho Chủ/Quản lý.' }, { status: 403 });
     }
     const { searchParams } = new URL(req.url);
@@ -41,6 +47,7 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi phân tích' }, { status: 500 });
+    return handleApiError(error);
   }
 }
+

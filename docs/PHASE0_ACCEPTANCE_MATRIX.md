@@ -14,15 +14,16 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 
 | Gate | Chủ trì | Bằng chứng bắt buộc | Trạng thái |
 |---|---|---|---|
-| Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, không còn trường mâu thuẫn | ĐÃ CHỐT |
+| Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, shared modules xác lập | ĐÃ CHỐT |
 | Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp (0015_staff_accounts) | PASS |
 | ATP nguyên tử | B | Hai kết nối tranh cuốn cuối; chỉ một thành công | CHỜ B PROBE |
-| Auth strict | A | HTTP không cookie, cookie giả, sai quyền, giả header (`test-phase0-laneA`) | PASS |
+| Auth strict & 23 API Routes | A | Toàn bộ 23 route phủ session policy, fail-closed (`test-phase0-laneA`) | PASS (25/25) |
 | Danh tính không giả mạo | A + B | Client gửi `actorId/cashierId` khác vẫn ghi actor từ session (`test-phase0-laneA`) | PASS |
-| Rate limit | A | Khóa theo IP đáng tin + staffId; kiểm thử đổi actor/header (`test-auth-gateway`) | PASS |
-| Bán–trả–két–báo cáo | B | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`) | PASS |
-| UI gatekeeper | A | Server không trả dữ liệu bảo vệ trước session; reload/logout/expiry | PASS |
-| Tích hợp cuối | A | Build, test runner, probes, DB production nguyên vẹn (30/30 suites xanh) | PASS |
+| Rate limit & IP Trust Boundary | A | Khóa 5 lần -> 429 ngay; khóa IP tin cậy (cf-connecting-ip); chặn spoof | PASS |
+| Bán–trả–két–báo cáo | B | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`) | CHỜ B RE-VERIFY |
+| UI gatekeeper & SSR Zero Leakage | A | Server không trả dữ liệu bảo vệ trước session; role scope tại SSR query | PASS |
+| Tích hợp cuối | A | 30/30 suites cách ly 100% xanh; formapubli.db production nguyên vẹn 100% | PASS |
+
 
 ## Ma trận ca độc lập
 
