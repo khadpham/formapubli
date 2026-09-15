@@ -96,11 +96,14 @@ async function main() {
   let failed = 0;
   for (const suite of suites) {
     console.log(`\n▶ Chạy suite cách ly: ${suite}`);
-    const res = spawnSync('npx', ['tsx', suite], {
+    const isWin = process.platform === 'win32';
+    const command = isWin ? 'cmd.exe' : 'npx';
+    const cmdArgs = isWin ? ['/c', 'npx', 'tsx', suite] : ['tsx', suite];
+    const res = spawnSync(command, cmdArgs, {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: `file:${TEST_DB_FILE}` },
       stdio: 'inherit',
-      shell: true,
+      shell: false,
     });
     if (res.status !== 0) {
       console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Dừng chuỗi.`);
