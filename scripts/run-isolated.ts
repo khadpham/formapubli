@@ -34,6 +34,9 @@ const ALL_SUITES = [
   'scripts/test-online-orders.ts',
   'scripts/test-smart-parser.ts',
   'scripts/test-shipments.ts',
+  'scripts/test-customer-tags.ts',
+  'scripts/test-sponsorships.ts',
+  'scripts/test-analytics.ts',
 ];
 
 function suiteShortName(p: string): string {

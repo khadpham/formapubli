@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex, check } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, check, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // 1. Works / Master Titles (Tầng 1: Tác phẩm)
@@ -470,6 +470,55 @@ export const returnOrderItems = sqliteTable('return_order_items', {
 }, (table) => ({
   returnIdx: index('idx_return_items_return').on(table.returnId),
   editionIdx: index('idx_return_items_edition').on(table.editionId),
+}));
+
+// 23. Customer Tags (Bước 3 — junction phân tệp CRM, PK composite customer_id + tag)
+export const customerTags = sqliteTable('customer_tags', {
+  customerId: text('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  tag: text('tag').notNull(), // TAG_SUBSCRIPTION | TAG_NEWSLETTER | SOURCE_CAMPAIGN | SOURCE_EVENT | PARTNER_REFERRED
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.customerId, table.tag] }),
+  tagIdx: index('idx_customer_tags_tag').on(table.tag),
+}));
+
+// 24. Sponsorship Funds (Bước 4 — Quỹ tài trợ: tiền cọc INTERNAL, không VAT lúc nhận)
+export const sponsorshipFunds = sqliteTable('sponsorship_funds', {
+  id: text('id').primaryKey(), // fund-<uuid7>
+  fundCode: text('fund_code').notNull().unique(), // SPF-YYYYMM-XXXX
+  sponsorName: text('sponsor_name').notNull(),
+  partnerId: text('partner_id').references(() => partners.id), // đối tác NCC/tài trợ nếu có hồ sơ
+  amountReceived: real('amount_received').notNull(), // cục tiền đã rót (> 0)
+  quotaType: text('quota_type').notNull(), // CAPPED (trừ dần theo giá bìa) | OPEN (lấy tùy ý, chỉ đếm)
+  quotaLimit: real('quota_limit').notNull().default(0), // hạn mức giá trị (CAPPED). OPEN = 0
+  balanceRemaining: real('balance_remaining').notNull().default(0), // giá trị còn lại (CAPPED)
+  totalDrawnQty: integer('total_drawn_qty').notNull().default(0),
+  totalDrawnValue: real('total_drawn_value').notNull().default(0), // trị giá bìa đã rút
+  status: text('status').notNull().default('ACTIVE'), // ACTIVE | EXHAUSTED | CLOSED
+  createdBy: text('created_by').notNull(),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  closedAt: text('closed_at'),
+}, (table) => ({
+  codeIdx: uniqueIndex('idx_spf_code').on(table.fundCode),
+  statusIdx: index('idx_spf_status').on(table.status),
+}));
+
+// 25. Sponsorship Drawdowns (chi tiết từng đợt rút sách khỏi quỹ)
+export const sponsorshipDrawdowns = sqliteTable('sponsorship_drawdowns', {
+  id: text('id').primaryKey(), // spd-<uuid7>
+  fundId: text('fund_id').notNull().references(() => sponsorshipFunds.id, { onDelete: 'cascade' }),
+  orderId: text('order_id').notNull().unique().references(() => orders.id), // đơn SPONSORSHIP đi kèm (1-1)
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  quantity: integer('quantity').notNull(), // > 0
+  unitCoverPrice: real('unit_cover_price').notNull(),
+  drawnValue: real('drawn_value').notNull(), // qty * cover
+  drawnBy: text('drawn_by').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  fundIdx: index('idx_spd_fund').on(table.fundId),
+  editionIdx: index('idx_spd_edition').on(table.editionId),
 }));
 
 

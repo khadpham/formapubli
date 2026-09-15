@@ -615,8 +615,11 @@ export class OrderService {
   static async getSalesSummary(filters: OrderFilterParams = {}) {
     // Bước 1: báo cáo doanh thu mặc định loại đơn PENDING/CANCELLED (chưa thu tiền thật)
     const list = await this.getOrders({ ...filters, status: filters.status || 'COMPLETED' });
+    // Bước 4: đơn SPONSORSHIP (final 0đ, rút từ quỹ) không phải doanh số bán —
+    // loại khỏi tổng hợp trừ khi caller lọc channel tường minh.
+    const sales = filters.channel ? list : list.filter((o) => o.channel !== 'SPONSORSHIP');
 
-    let totalOrders = list.length;
+    let totalOrders = sales.length;
     let totalSubtotal = 0;
     let totalDiscount = 0;
     let totalRevenue = 0;
@@ -627,7 +630,7 @@ export class OrderService {
     let internalOrders = 0;
     let internalRevenue = 0;
 
-    for (const ord of list) {
+    for (const ord of sales) {
       totalSubtotal += ord.subtotal;
       totalDiscount += ord.discountAmount || 0;
       totalRevenue += ord.finalAmount;

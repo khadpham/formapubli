@@ -91,6 +91,20 @@
       "when": 1789465819820,
       "tag": "0012_spx_cod_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1789466675837,
+      "tag": "0013_customer_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1789466946445,
+      "tag": "0014_sponsorship_funds",
+      "breakpoints": true
     }
   ],
   "version": "7"
