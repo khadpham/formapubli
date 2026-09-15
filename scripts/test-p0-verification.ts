@@ -159,44 +159,37 @@ async function runP0Tests() {
     throw new Error(`TEST 5 THẤT BẠI: Không phát hiện được các ấn bản trùng ISBN!`);
   }
 
-  // TEST 6: Kiểm thử Pattern Offline Overdraft (ADJUSTMENT + SALE, không vi phạm CHECK >= 0)
-  console.log('\n--- TEST 6: Kiểm thử Pattern Offline Overdraft (FAIR_VARIANCE Bù Kiểm Đếm) ---');
+  // TEST 6 (Phase 0): Overdraft đã bị LOẠI BỎ khỏi đường bán — đơn vượt tồn luôn từ chối,
+  // kể cả cờ allowOverdraft/isOfflineSync (bị lờ). Variance phải đi chứng từ riêng.
+  console.log('\n--- TEST 6: Overdraft fail-closed (không còn bypass ATP) ---');
   const bookForOverdraft = allEditions[1];
   const whHoiCho = 'wh-du-phong';
   const stockBeforeOverdraft = await InventoryService.getBalance(bookForOverdraft.id, whHoiCho, 'NEW');
 
-  // Giả lập 1 đơn sync ngoại tuyến bán vượt số tồn 3 cuốn
-  const overdraftOrder = await OrderService.createOrder({
-    warehouseId: whHoiCho,
-    channel: 'FAIR_EVENT',
-    customerName: 'Khách Hội Chợ Mua Sách Offline',
-    isOfflineSync: true,
-    allowOverdraft: true,
-    items: [
-      { editionId: bookForOverdraft.id, quantity: stockBeforeOverdraft + 3 },
-    ],
-  });
+  // Giả lập 1 đơn sync ngoại tuyến bán vượt số tồn 3 cuốn → phải bị từ chối
+  let overdraftRejected = false;
+  try {
+    await OrderService.createOrder({
+      warehouseId: whHoiCho,
+      channel: 'FAIR_EVENT',
+      customerName: 'Khách Hội Chợ Mua Sách Offline',
+      isOfflineSync: true,
+      allowOverdraft: true,
+      items: [
+        { editionId: bookForOverdraft.id, quantity: stockBeforeOverdraft + 3 },
+      ],
+    });
+  } catch (e: any) {
+    overdraftRejected = /HẾT HÀNG KHẢ DỤNG/.test(e.message) && (e.code === 'INSUFFICIENT_ATP' || e instanceof Error);
+  }
 
   const stockAfterOverdraft = await InventoryService.getBalance(bookForOverdraft.id, whHoiCho, 'NEW');
-  const varianceLedger = await db
-    .select()
-    .from(inventoryLedger)
-    .where(and(eq(inventoryLedger.correlationId, overdraftOrder.orderId), eq(inventoryLedger.eventType, 'ADJUSTMENT')));
 
-  if (
-    stockAfterOverdraft === 0 &&
-    varianceLedger.length > 0 &&
-    varianceLedger[0].quantityDelta === 3 &&
-    varianceLedger[0].note?.includes('FAIR_VARIANCE')
-  ) {
-    console.log(`✅ TEST 6 ĐẠT: Pattern 2 bước đã hoạt động xuất sắc:`);
-    console.log(`   - Tự động sinh ADJUSTMENT +3 cuốn (lý do: FAIR_VARIANCE)`);
-    console.log(`   - Sau đó trừ SALE -${stockBeforeOverdraft + 3} cuốn`);
-    console.log(`   - Tồn kho về 0 (KHÔNG ÂM), bảo toàn 100% CHECK constraint!`);
-    console.log(`   - Mã đơn: ${overdraftOrder.orderCode}`);
+  if (overdraftRejected && stockAfterOverdraft === stockBeforeOverdraft) {
+    console.log(`✅ TEST 6 ĐẠT: Đơn vượt tồn bị từ chối, tồn kho nguyên vẹn ${stockAfterOverdraft} cuốn, không sinh bút toán bù.`);
     passedTests++;
   } else {
-    throw new Error(`TEST 6 THẤT BẠI: Pattern bù lệch tồn kho hội chợ không khớp kỳ vọng!`);
+    throw new Error(`TEST 6 THẤT BẠI: Overdraft vẫn lọt qua đường bán!`);
   }
 
   // TEST 7: Kiểm thử Idempotency Replay (Race condition không sinh 500)

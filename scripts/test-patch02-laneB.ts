@@ -147,27 +147,30 @@ async function run() {
   const settled = await ShipmentService.settleCod(o12.orderId, 'ROLE_MANAGER', 'NH-X');
   ok('P2-12 settle bắt DELIVERED', earlyBlocked && (settled as any).codStatus === 'RECEIVED');
 
-  // ---- P2-14: trần overdraft ----
+  // ---- Phase 0: overdraft đã bị LOẠI BỎ — mọi cờ allowOverdraft đều bị lờ, đơn vượt tồn luôn từ chối ----
   const eds: string[] = [];
-  for (let k = 0; k < 4; k++) eds.push((await fixture(10)).id);
-  let perBlocked = false;
+  for (let k = 0; k < 2; k++) eds.push((await fixture(10)).id);
+  let odRejected = false;
   try {
     await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', allowOverdraft: true, idempotencyKey: uniq('i'), items: [{ editionId: eds[0], quantity: 35 }] });
   } catch (e: any) {
-    perBlocked = /20 cuốn\/đầu sách/.test(e.message);
+    odRejected = /HẾT HÀNG KHẢ DỤNG/.test(e.message);
   }
-  let totBlocked = false;
-  try {
-    await OrderService.createOrder({
-      warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', allowOverdraft: true, idempotencyKey: uniq('i'),
-      items: eds.map((id) => ({ editionId: id, quantity: 25 })),
-    });
-  } catch (e: any) {
-    totBlocked = /50 cuốn\/đơn/.test(e.message);
-  }
-  const odOk: any = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', allowOverdraft: true, idempotencyKey: uniq('i'), items: [{ editionId: eds[1], quantity: 15 }] });
+  // Đơn trong tồn + cờ overdraft vẫn qua bình thường (cờ bị lờ, không còn ý nghĩa)
+  const odOk: any = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', allowOverdraft: true, idempotencyKey: uniq('i'), items: [{ editionId: eds[1], quantity: 5 }] });
   const odRow = (await db.select().from(orders).where(eq(orders.id, odOk.orderId)).limit(1))[0];
-  ok('P2-14 trần 20/edition + 50/đơn, trong trần qua', perBlocked && totBlocked && /CẢNH BÁO/.test(odRow.note || ''), `note=${(odRow.note || '').slice(0, 40)}`);
+  ok('Phase0 overdraft fail-closed (vượt tồn từ chối, trong tồn qua)', odRejected && !/CẢNH BÁO/.test(odRow.note || ''), `note=${(odRow.note || '').slice(0, 40)}`);
+  // ---- Idempotency cùng key khác nội dung → 409 ----
+  const dupKey = uniq('idem-dup');
+  await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: dupKey, items: [{ editionId: eds[1], quantity: 1 }] });
+  let conflict409 = false;
+  try {
+    await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: dupKey, items: [{ editionId: eds[1], quantity: 2 }] });
+  } catch (e: any) {
+    conflict409 = /nội dung khác/.test(e.message) && (e.code === 'IDEMPOTENCY_CONFLICT');
+  }
+  const dupSame: any = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: dupKey, items: [{ editionId: eds[1], quantity: 1 }] });
+  ok('Idempotency khác nội dung 409, cùng nội dung trả cũ', conflict409 && (dupSame as any).isDuplicate === true);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} PATCH02 LANE-B: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);

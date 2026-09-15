@@ -35,10 +35,6 @@ export const PENDING_TTL_HOURS = 48;
 export const BACKDATE_LIMIT_DAYS = 7;
 export const FUTURE_SKEW_MINUTES = 5;
 
-// P2-14: trần bán lệch kiểm kê hội chợ (dung sai thực tế, chặn số hoang đường)
-export const MAX_OVERDRAFT_PER_ORDER = 50;
-export const MAX_OVERDRAFT_PER_EDITION = 20;
-
 export interface CreateOrderParams {
   id?: string;
   orderCode?: string;
@@ -63,8 +59,11 @@ export interface CreateOrderParams {
   confirmImmediately?: boolean;
   // P2-10: true khi đã có PIN quản lý / quyền override cho đơn gõ bù > 7 ngày
   backdateApproved?: boolean;
-  isOfflineSync?: boolean; // Cờ báo hiệu đơn sync từ hàng đợi ngoại tuyến hội chợ
-  allowOverdraft?: boolean; // Cho phép áp dụng pattern bù tồn kho chênh lệch hội chợ
+  // ĐÃ LOẠI BỎ (chỉ đạo Phase 0): isOfflineSync / allowOverdraft KHÔNG còn hiệu lực.
+  // Mọi đơn đều validate ATP nghiêm. Giữ 2 field để tương thích API/POS cũ (Lane A dọn route sau).
+  // Điều chỉnh tồn / thanh lý / variance hội chợ phải đi chứng từ riêng, cấm đường bán hàng bypass.
+  isOfflineSync?: boolean;
+  allowOverdraft?: boolean;
   isGift?: boolean; // BV-03: đơn tặng 100% (doanh thu 0đ, vẫn trừ kho)
   giftReason?: string; // BV-03: lý do tặng (bắt buộc khi isGift)
   items?: OrderItemInput[];
@@ -212,6 +211,7 @@ export class OrderService {
     }
 
     // 0. Bảo vệ Idempotency (Tránh ghi trùng lặp khi Sync đơn Offline hoặc Retry)
+    // Cùng key + cùng nội dung → trả kết quả cũ. Cùng key + KHÁC nội dung → 409.
     if (params.idempotencyKey) {
       const existing = await db
         .select()
@@ -219,6 +219,11 @@ export class OrderService {
         .where(eq(orders.idempotencyKey, params.idempotencyKey))
         .limit(1);
       if (existing.length > 0) {
+        await this.assertSameOrderContent(existing[0].id, {
+          warehouseId,
+          discountRate,
+          items: looseItems,
+        });
         return {
           orderId: existing[0].id,
           orderCode: existing[0].orderCode,
@@ -262,65 +267,23 @@ export class OrderService {
 
     const isPending = confirmImmediately === false;
 
-    // Bước 1: đơn PENDING giữ chỗ ATP (không đụng ledger vật lý).
-    // Đơn online chưa duyệt không được dùng overdraft (không có bút toán để bù).
-    if (isPending) {
-      if (params.isOfflineSync || params.allowOverdraft) {
-        throw AppError.invalid('Đơn PENDING online không hỗ trợ bán lệch tồn (overdraft).');
-      }
-      const need = new Map<string, number>();
-      for (const item of [...looseItems, ...bundleLines]) {
-        if (item.quantity <= 0) {
-          throw AppError.invalid(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
-        }
-        need.set(item.editionId, (need.get(item.editionId) || 0) + item.quantity);
-      }
-      for (const [editionId, qty] of Array.from(need.entries())) {
-        const atp = await this.getATP(editionId, warehouseId);
-        if (atp < qty) {
-          throw AppError.atp(
-            `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
-          );
-        }
-      }
-    }
-
-    // 1. Kiểm tra tồn kho trước cho toàn bộ sản phẩm (lẻ + linh kiện combo)
-    const isOfflineOrOverdraftAllowed = Boolean(params.isOfflineSync || params.allowOverdraft);
-    const overdraftItems: Array<{ editionId: string; deficit: number }> = [];
+    // 1. Kiểm tra ATP gộp theo edition (lẻ + linh kiện combo, gồm cả dòng trùng).
+    // ATP <= tồn vật lý nên check này bao luôn tồn vật lý. Không overdraft, không ngoại lệ.
+    // Đơn PENDING cũng đi qua đây (giữ chỗ chỉ thành công khi vừa ATP hiện tại).
     const stockCheckItems = [...looseItems, ...bundleLines];
-
+    const needTotal = new Map<string, number>();
     for (const item of stockCheckItems) {
       if (item.quantity <= 0) {
         throw AppError.invalid(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
       }
-
-      const currentBalance = await InventoryService.getBalance(item.editionId, warehouseId, 'NEW');
-      if (currentBalance < item.quantity) {
-        if (!isOfflineOrOverdraftAllowed) {
-          throw AppError.atp(
-            `KHÔNG ĐỦ TỒN KHO: Ấn bản ${item.editionId} tại kho chỉ còn ${currentBalance} cuốn, không đủ để bán ${item.quantity} cuốn!`
-          );
-        } else {
-          // Bán lẻ hội chợ / Sync ngoại tuyến: Ghi nhận lượng thiếu hụt để bù kiểm đếm
-          overdraftItems.push({
-            editionId: item.editionId,
-            deficit: item.quantity - currentBalance,
-          });
-        }
-      }
+      needTotal.set(item.editionId, (needTotal.get(item.editionId) || 0) + item.quantity);
     }
-
-    // P2-14: trần bán lệch hội chợ — tối đa 50 cuốn/đơn, 20 cuốn/edition (chống số hoang đường)
-    if (overdraftItems.length > 0) {
-      const totalDeficit = overdraftItems.reduce((s, o) => s + o.deficit, 0);
-      if (totalDeficit > MAX_OVERDRAFT_PER_ORDER) {
-        throw AppError.atp(`Bán lệch kiểm kê vượt trần ${MAX_OVERDRAFT_PER_ORDER} cuốn/đơn (xin ${totalDeficit}). Cần kiểm đếm lại kho.`);
-      }
-      for (const o of overdraftItems) {
-        if (o.deficit > MAX_OVERDRAFT_PER_EDITION) {
-          throw AppError.atp(`Ấn bản ${o.editionId} lệch ${o.deficit} cuốn, vượt trần ${MAX_OVERDRAFT_PER_EDITION} cuốn/đầu sách.`);
-        }
+    for (const [editionId, qty] of Array.from(needTotal.entries())) {
+      const atp = await this.getATP(editionId, warehouseId);
+      if (atp < qty) {
+        throw AppError.atp(
+          `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
+        );
       }
     }
 
@@ -395,35 +358,14 @@ export class OrderService {
     const orderId = params.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const idempotencyKey = params.idempotencyKey || `idem-order-${orderId}`;
     const createdAt = params.createdAt || new Date().toISOString();
-    const hasOverdraft = overdraftItems.length > 0;
     // BV-03: gắn nhãn quà tặng vào note để truy vết (doanh thu vẫn = 0, kho vẫn trừ)
     const giftTag = isGift ? `[QUÀ TẶNG: ${giftReason || (note || '').trim() || 'Tặng sách / Quà tặng sự kiện'}]` : '';
-    const mergedNote = [giftTag, note, hasOverdraft
-      ? `[CẢNH BÁO: Bán lệch kiểm kê hội chợ +${overdraftItems.reduce((s, o) => s + o.deficit, 0)} cuốn]`
-      : ''].filter((s) => s && `${s}`.trim()).join(' | ') || undefined;
+    const mergedNote = [giftTag, note].filter((s) => s && `${s}`.trim()).join(' | ') || undefined;
 
     // 5. Ghi nhận Đơn hàng & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
     try {
       await withDbRetry(async () => {
         await db.transaction(async (tx) => {
-          // B1: Nếu có sản phẩm bán lệch tồn kho hội chợ, tự động sinh bút toán bù kiểm đếm
-          // Pattern: ADJUSTMENT (+K cuốn) trước -> CHECK (physical_quantity >= 0) luôn thỏa mãn!
-          for (const over of overdraftItems) {
-            await InventoryService.recordMovement({
-              editionId: over.editionId,
-              warehouseId,
-              eventType: 'ADJUSTMENT',
-              quantityDelta: over.deficit,
-              condition: 'NEW',
-              documentRef: orderCode,
-              correlationId: orderId,
-              note: `Bù lệch kiểm kê hội chợ (FAIR_VARIANCE) cho đơn ${orderCode}`,
-              actorId: effCashierId || 'Hội chợ',
-              idempotencyKey: `idem-variance-${orderId}-${over.editionId}`,
-              tx,
-            });
-          }
-
           // B2: Lưu đơn hàng
           await tx.insert(orders).values({
             id: orderId,
@@ -443,7 +385,7 @@ export class OrderService {
             vatInvoiceRequired,
             vatInvoiceCode,
             status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
-            syncStatus: hasOverdraft ? 'SYNCED_WITH_OVERDRAFT_WARNING' : 'SYNCED',
+            syncStatus: 'SYNCED',
             cashierId: effCashierId,
             cashboxSessionId: params.cashboxSessionId,
             idempotencyKey,
@@ -511,6 +453,11 @@ export class OrderService {
           .limit(1);
 
         if (existing.length > 0) {
+          await this.assertSameOrderContent(existing[0].id, {
+            warehouseId,
+            discountRate,
+            items: looseItems,
+          });
           return {
             orderId: existing[0].id,
             orderCode: existing[0].orderCode,
@@ -542,6 +489,34 @@ export class OrderService {
       itemsCount: preparedItems.length,
       totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
     };
+  }
+
+  /**
+   * So nội dung vật chất (kho + chiết khấu + dòng hàng) của đơn đã tồn tại với
+   * request gửi lại cùng idempotencyKey. Khác nội dung → IDEMPOTENCY_CONFLICT.
+   */
+  static async assertSameOrderContent(
+    orderId: string,
+    want: { warehouseId: string; discountRate: number; items: OrderItemInput[] }
+  ): Promise<void> {
+    const ord = (await db.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
+    if (!ord) return;
+    const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+    const norm = (rows: Array<{ editionId: string; quantity: number }>) =>
+      rows
+        .map((r) => `${r.editionId}:${r.quantity}`)
+        .sort()
+        .join('|');
+    const same =
+      ord.warehouseId === want.warehouseId &&
+      Number(ord.discountRate || 0) === Number(want.discountRate || 0) &&
+      norm(lines.filter((l) => !l.bundleId).map((l) => ({ editionId: l.editionId, quantity: l.quantity }))) ===
+        norm((want.items || []).map((i) => ({ editionId: i.editionId, quantity: i.quantity })));
+    if (!same) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có nội dung khác — từ chối ghi đè. Hãy dùng key mới cho đơn mới.`
+      );
+    }
   }
 
   /**
@@ -589,11 +564,22 @@ export class OrderService {
       throw AppError.conflict(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
     }
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-    // Kiểm tra tồn vật lý trước (không overdraft cho đơn online)
+    // Contract §3.3.3: Physical >= Qty VÀ ATP + Qty_chính-đơn-này >= Qty
+    // (không tính trùng phần giữ chỗ của chính đơn đang duyệt).
+    const ownNeed = new Map<string, number>();
     for (const ln of lines) {
-      const bal = await InventoryService.getBalance(ln.editionId, ord.warehouseId, 'NEW');
-      if (bal < ln.quantity) {
-        throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${ln.editionId} còn ${bal}, cần ${ln.quantity}.`);
+      ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
+    }
+    for (const [editionId, qty] of Array.from(ownNeed.entries())) {
+      const bal = await InventoryService.getBalance(editionId, ord.warehouseId, 'NEW');
+      if (bal < qty) {
+        throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${editionId} còn ${bal}, cần ${qty}.`);
+      }
+      const atp = await this.getATP(editionId, ord.warehouseId);
+      if (atp + qty < qty) {
+        throw AppError.atp(
+          `Hết hàng khả dụng để duyệt (ATP ${atp} đã bị đơn khác giữ): ${editionId} cần ${qty}.`
+        );
       }
     }
     await withDbRetry(async () => {
