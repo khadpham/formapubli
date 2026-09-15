@@ -104,10 +104,11 @@ async function run() {
   const after = (await ForecastService.salesByEdition()).get(edC) || 0;
   ok('5. FIX-08 gift loại khỏi forecast', after === base + 2, `${base}→${after}`);
 
-  // 6. FIX-09: két trừ tiền hoàn
-  const sess = await CashboxService.openSession({ warehouseId: 'wh-au-co', cashierId: `guard-${Date.now()}`, openingCash: 0 });
+  // 6. FIX-09: két trừ tiền hoàn (P2-08: két và đơn phải cùng thu ngân)
+  const guardCashier = `guard-${Date.now()}`;
+  const sess = await CashboxService.openSession({ warehouseId: 'wh-au-co', cashierId: guardCashier, openingCash: 0 });
   const sale = await OrderService.createOrder({
-    warehouseId: 'wh-au-co', customerName: 't', paymentMethod: 'CASH', cashierId: 't',
+    warehouseId: 'wh-au-co', customerName: 't', paymentMethod: 'CASH', cashierId: guardCashier,
     cashboxSessionId: sess.session.id, idempotencyKey: uniq('idem-g'),
     items: [{ editionId: edA, quantity: 1 }],
   });

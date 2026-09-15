@@ -128,6 +128,8 @@ export function StockMovementModal({
             documentRef,
             actorId,
             note,
+            // P2-04: key chống double-click nhân đôi chuyến kho
+            idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           }),
         });
         const data = await res.json();
@@ -147,6 +149,8 @@ export function StockMovementModal({
             documentRef,
             actorId,
             note,
+            // P2-02: key chống double-click ghi trùng kho (server từ chối key lặp)
+            idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           }),
         });
         const data = await res.json();

@@ -22,8 +22,20 @@ const VALID_CHANNELS: OrderChannel[] = [
 ];
 const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE', 'COD'];
 
+// P2-07: chỉ bán từ 3 kho vật lý bán hàng. Cấm kho ảo trung chuyển (wh-in-transit)
+// và kho ký gửi đối tác (wh-consign-*) — hàng ở đó không thuộc quyền xuất bán trực tiếp.
+export const SELLABLE_WAREHOUSE_IDS = ['wh-au-co', 'wh-quynh-mai', 'wh-du-phong'];
+
 // Bước 1: TTL giữ chỗ ATP cho đơn PENDING (giờ). Quá hạn coi như nhả chỗ.
 export const PENDING_TTL_HOURS = 48;
+
+// P2-10: đơn gõ bù tối đa 7 ngày tuổi; tương lai quá 5 phút dung sai đồng hồ là từ chối.
+export const BACKDATE_LIMIT_DAYS = 7;
+export const FUTURE_SKEW_MINUTES = 5;
+
+// P2-14: trần bán lệch kiểm kê hội chợ (dung sai thực tế, chặn số hoang đường)
+export const MAX_OVERDRAFT_PER_ORDER = 50;
+export const MAX_OVERDRAFT_PER_EDITION = 20;
 
 export interface CreateOrderParams {
   id?: string;
@@ -47,6 +59,8 @@ export interface CreateOrderParams {
   // Bước 1: confirmImmediately=false → đơn PENDING (giữ chỗ ATP, chưa trừ kho).
   // POS/hội chợ giữ mặc định true (COMPLETED như cũ). Web/social truyền false.
   confirmImmediately?: boolean;
+  // P2-10: true khi đã có PIN quản lý / quyền override cho đơn gõ bù > 7 ngày
+  backdateApproved?: boolean;
   isOfflineSync?: boolean; // Cờ báo hiệu đơn sync từ hàng đợi ngoại tuyến hội chợ
   allowOverdraft?: boolean; // Cho phép áp dụng pattern bù tồn kho chênh lệch hội chợ
   isGift?: boolean; // BV-03: đơn tặng 100% (doanh thu 0đ, vẫn trừ kho)
@@ -97,6 +111,35 @@ export class OrderService {
     }
     if (!VALID_PAYMENTS.includes(paymentMethod)) {
       throw new Error(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
+    }
+    // P2-07: chặn bán từ kho ảo/ký gửi ngay từ cổng vào
+    if (!SELLABLE_WAREHOUSE_IDS.includes(warehouseId)) {
+      throw new Error(`Kho ${warehouseId} không được phép bán trực tiếp (chỉ: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
+    }
+    // P2-08/09: két ca gắn vào đơn phải OPEN + đúng kho + đúng thu ngân (chống bán ké két)
+    if (params.cashboxSessionId) {
+      const sessRows = await db.select().from(cashboxSessions).where(eq(cashboxSessions.id, params.cashboxSessionId)).limit(1);
+      if (sessRows.length === 0) throw new Error('Phiên két ca không tồn tại.');
+      const sess = sessRows[0];
+      if (sess.status !== 'OPEN') throw new Error(`Phiên két ca đã ${sess.status}, không ghi đơn vào két đóng.`);
+      if (sess.warehouseId !== warehouseId) {
+        throw new Error(`Két ca thuộc kho ${sess.warehouseId}, không khớp kho xuất ${warehouseId}.`);
+      }
+      if (sess.cashierId !== cashierId) {
+        throw new Error(`Két ca của thu ngân ${sess.cashierId}, không khớp người bán ${cashierId}.`);
+      }
+    }
+    // P2-10: kẹp ngày lập đơn — chặn tương lai, gõ bù > 7 ngày cần duyệt quản lý
+    if (params.createdAt) {
+      const ts = new Date(params.createdAt).getTime();
+      if (Number.isNaN(ts)) throw new Error('createdAt không phải ngày hợp lệ.');
+      if (ts > Date.now() + FUTURE_SKEW_MINUTES * 60000) {
+        throw new Error('Không được lập đơn ngày tương lai.');
+      }
+      const ageDays = (Date.now() - ts) / 86400000;
+      if (ageDays > BACKDATE_LIMIT_DAYS && !params.backdateApproved) {
+        throw new Error(`Đơn gõ bù quá ${BACKDATE_LIMIT_DAYS} ngày cần mã PIN Quản lý.`);
+      }
     }
 
     const looseItems = items || [];
@@ -257,6 +300,19 @@ export class OrderService {
             editionId: item.editionId,
             deficit: item.quantity - currentBalance,
           });
+        }
+      }
+    }
+
+    // P2-14: trần bán lệch hội chợ — tối đa 50 cuốn/đơn, 20 cuốn/edition (chống số hoang đường)
+    if (overdraftItems.length > 0) {
+      const totalDeficit = overdraftItems.reduce((s, o) => s + o.deficit, 0);
+      if (totalDeficit > MAX_OVERDRAFT_PER_ORDER) {
+        throw new Error(`Bán lệch kiểm kê vượt trần ${MAX_OVERDRAFT_PER_ORDER} cuốn/đơn (xin ${totalDeficit}). Cần kiểm đếm lại kho.`);
+      }
+      for (const o of overdraftItems) {
+        if (o.deficit > MAX_OVERDRAFT_PER_EDITION) {
+          throw new Error(`Ấn bản ${o.editionId} lệch ${o.deficit} cuốn, vượt trần ${MAX_OVERDRAFT_PER_EDITION} cuốn/đầu sách.`);
         }
       }
     }

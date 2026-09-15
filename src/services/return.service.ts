@@ -1,5 +1,6 @@
 import { db, orders, orderItems, returnOrders, returnOrderItems, inventoryLedger, rmaTickets, cashboxSessions } from '../db';
 import { InventoryService } from './inventory.service';
+import { SELLABLE_WAREHOUSE_IDS } from './order.service';
 import { eq, and, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 
@@ -97,6 +98,9 @@ export class ReturnService {
     if (!VALID_REASONS.includes(reason)) throw new Error('reason không hợp lệ.');
     if (inventoryDisposition !== 'RESTOCK' && inventoryDisposition !== 'DEFECTIVE_HOLD') {
       throw new Error('inventoryDisposition phải là RESTOCK hoặc DEFECTIVE_HOLD.');
+    }
+    if (!SELLABLE_WAREHOUSE_IDS.includes(targetWarehouseId)) {
+      throw new Error(`Kho nhận hàng trả ${targetWarehouseId} không hợp lệ (chỉ nhận tại: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
     }
     if (!items || items.length === 0) throw new Error('Phiếu trả phải có ít nhất 1 dòng sách.');
     for (const it of items) {

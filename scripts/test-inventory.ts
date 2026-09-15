@@ -59,8 +59,8 @@ async function runInventoryTests() {
     note: 'Tiếp tế sách rời cho văn phòng Âu Cơ soạn đơn trực tuyến',
   });
   console.log(`✅ Chuyển kho thành công:`);
-  console.log(`   - Quỳnh Mai (kho xuất): ${transferResult.fromWarehouse.previousQuantity} ➔ ${transferResult.fromWarehouse.newQuantity} cuốn`);
-  console.log(`   - Âu Cơ (kho nhập):     ${transferResult.toWarehouse.previousQuantity} ➔ ${transferResult.toWarehouse.newQuantity} cuốn`);
+  console.log(`   - Quỳnh Mai (kho xuất): ${transferResult.fromWarehouse!.previousQuantity} ➔ ${transferResult.fromWarehouse!.newQuantity} cuốn`);
+  console.log(`   - Âu Cơ (kho nhập):     ${transferResult.toWarehouse!.previousQuantity} ➔ ${transferResult.toWarehouse!.newQuantity} cuốn`);
 
   // 4. Test 3: Xuất bán lẻ 50 cuốn từ Kho 1 (Âu Cơ) cho khách hàng
   console.log('\n--- TEST 3: Xuất bán lẻ 50 cuốn từ Kho 1 (Âu Cơ) ---');

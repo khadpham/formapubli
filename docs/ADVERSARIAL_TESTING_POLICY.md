@@ -85,3 +85,13 @@ Thư mục `review.tmp/` (đang ignore) là nơi chứa probes + baseline + outp
 | FIX-08 | Gift phình forecast/EOQ | Loại gift/sponsorship khỏi velocity | `test-order-guards` #5 |
 | FIX-09 | Két ca ngó lơ refund | Trừ refund COMPLETED cùng ca | `test-order-guards` #6 |
 | FIX-10 | Bundle req>1 tính lố tổng | Tổng dòng thay vì đơn giá | `test-order-guards` #7 |
+| P2-01/02/03 | Bút toán kho ẩn danh, replay, số lẻ chuỗi | `api/inventory/movement`: gate role + allowlist event/dấu + integer + key bắt buộc | `test-patch02-laneA` #1–4 |
+| P2-04 | Replay chuyển kho nhân đôi | `transfer()` nhận key client, trùng key trả kết quả cũ | `test-patch02-laneB` P2-04 |
+| P2-06 | RMA rửa hàng lỗi thành NEW | Ép target ∈ {QUARANTINE, DEFECTIVE} + gate resolve | `test-patch02-laneA` #5–7 |
+| P2-07 | Bán từ kho transit/ký gửi | Allowlist 3 kho vật lý ở `createOrder` | `test-patch02-laneB` P2-07 |
+| P2-08/09 | Bán ké két người khác / két đóng | Két phải OPEN + đúng kho + đúng thu ngân | `test-patch02-laneB` P2-08/09 |
+| P2-10 | Đơn ngày tương lai / gõ bù vô hạn | Chặn tương lai (+5p); >7 ngày cần PIN | `test-patch02-laneB` P2-10 |
+| P2-11 | CK-dòng 100% lách forecast | Loại `finalAmount ≤ 0` khỏi velocity | `test-patch02-laneA` #8 |
+| P2-12 | Tất toán COD khi chưa giao | Bắt `DELIVERED` | `test-patch02-laneB` P2-12 |
+| P2-13 | Cashier đọc analytics tổng | Chỉ OWNER/MANAGER | `test-patch02-laneA` #9 |
+| P2-14 | Overdraft 1 tỷ cuốn | Trần 50/đơn + 20/edition | `test-patch02-laneB` P2-14 |

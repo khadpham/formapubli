@@ -101,7 +101,7 @@ async function run() {
   const db6 = await ShipmentService.getByOrder(o1.orderId);
   ok('6. Tất toán COD về ngân hàng', s6.codStatus === 'RECEIVED' && db6.codStatus === 'RECEIVED');
 
-  // 7. Cashier không được settle
+  // 7. Cashier không được settle + settle sớm (chưa giao) bị chặn (P2-12)
   const o7 = await makeCompleted(edA, 'COD');
   await ShipmentService.push(o7.orderId, 'SPX', 'SPX333TEST', 0, 'ROLE_MANAGER');
   let cashierBlocked = false;
@@ -110,8 +110,17 @@ async function run() {
   } catch (e: any) {
     cashierBlocked = /Manager\/Owner/.test(e.message);
   }
+  let earlyBlocked = false;
+  try {
+    await ShipmentService.settleCod(o7.orderId, 'ROLE_MANAGER', 'NH-X');
+  } catch (e: any) {
+    earlyBlocked = /giao thành công/.test(e.message);
+  }
+  await ShipmentService.updateStatus(o7.orderId, 'PICKED_UP', 'ROLE_MANAGER');
+  await ShipmentService.updateStatus(o7.orderId, 'IN_TRANSIT', 'ROLE_MANAGER');
+  await ShipmentService.updateStatus(o7.orderId, 'DELIVERED', 'ROLE_MANAGER');
   await ShipmentService.settleCod(o7.orderId, 'ROLE_MANAGER', 'NH-X');
-  ok('7. Cashier bị chặn tất toán', cashierBlocked);
+  ok('7. Cashier + settle sớm bị chặn', cashierBlocked && earlyBlocked);
 
   // 8. TAX bị chặn mọi mutate
   let taxBlocked = 0;

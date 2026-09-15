@@ -30,6 +30,8 @@ export interface TransferParams {
   documentRef: string;
   actorId: string;
   note?: string;
+  // P2-04: khóa chống replay — gửi lại cùng key trả về kết quả cũ, không nhân đôi chuyến
+  idempotencyKey?: string;
 }
 
 export class InventoryService {
@@ -206,15 +208,30 @@ export class InventoryService {
       note = '',
     } = params;
 
-    if (quantity <= 0) {
-      throw new Error('Số lượng chuyển kho phải lớn hơn 0.');
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error('Số lượng chuyển kho phải là số nguyên > 0.');
     }
 
     if (fromWarehouseId === toWarehouseId) {
       throw new Error('Kho xuất và kho nhập phải khác nhau.');
     }
 
-    const transferBatchId = `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    // P2-04: replay cùng key → trả kết quả cũ, không sinh chuyến mới
+    const transferBatchId = params.idempotencyKey?.trim() || `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    if (params.idempotencyKey?.trim()) {
+      const prior = await db
+        .select({ id: inventoryLedger.id })
+        .from(inventoryLedger)
+        .where(eq(inventoryLedger.idempotencyKey, `${transferBatchId}-out`))
+        .limit(1);
+      if (prior.length > 0) {
+        return {
+          transferBatchId, editionId, fromWarehouseId, toWarehouseId, quantity,
+          outLedgerId: null as string | null, inLedgerId: null as string | null,
+          fromWarehouse: null, toWarehouse: null, isDuplicate: true as const,
+        };
+      }
+    }
 
     return await db.transaction(async (tx) => {
       // 1. Xuất kho nguồn (TRANSFER_OUT)
@@ -257,6 +274,7 @@ export class InventoryService {
         inLedgerId: inResult.ledgerId,
         fromWarehouse: outResult,
         toWarehouse: inResult,
+        isDuplicate: false as const,
       };
     });
   }

@@ -229,6 +229,22 @@ export async function POST(req: NextRequest) {
     const isLegitOfflineSync = Boolean(isOfflineSync);
     const safeAllowOverdraft = isPrivilegedRole ? Boolean(allowOverdraft) : (isLegitOfflineSync && Boolean(allowOverdraft));
 
+    // P2-10: đơn gõ bù > 7 ngày — thu ngân phải có PIN quản lý (privileged được miễn)
+    let backdateApproved = isPrivilegedRole;
+    if (createdAt) {
+      const ts = new Date(createdAt).getTime();
+      if (!Number.isNaN(ts) && Date.now() - ts > 7 * 86400000 && !isPrivilegedRole) {
+        const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
+        if (!isValidManagerPin(providedPin)) {
+          return NextResponse.json(
+            { success: false, error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
+            { status: 403 }
+          );
+        }
+        backdateApproved = true;
+      }
+    }
+
     const result = await OrderService.createOrder({
       id,
       orderCode,
@@ -250,6 +266,8 @@ export async function POST(req: NextRequest) {
       note,
       // Bước 1: web/social truyền confirmImmediately:false → đơn PENDING giữ chỗ ATP
       confirmImmediately: confirmImmediately !== undefined ? Boolean(confirmImmediately) : true,
+      // P2-10: cờ duyệt gõ bù > 7 ngày (đã check PIN ở trên)
+      backdateApproved,
       isOfflineSync: isLegitOfflineSync,
       allowOverdraft: safeAllowOverdraft,
       isGift: giftFlag,

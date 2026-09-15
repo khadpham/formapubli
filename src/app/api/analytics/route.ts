@@ -8,13 +8,14 @@ export const dynamic = 'force-dynamic';
  * Bước 5 — OLAP read-only (0 migration).
  * GET /api/analytics?view=channels|trending|consignment|cashflow
  *   &startDate=&endDate=&top=20&warehouseId=
- * TAX 403 (dùng /api/orders?fiscalScope=OFFICIAL_TAX cho số VAT).
+ * P2-13: chỉ OWNER/MANAGER (thu ngân/kho/thuế dùng màn hình scope riêng —
+ * đúng quy tắc "thu ngân không thấy doanh thu tổng" từ Phase 2).
  */
 export async function GET(req: NextRequest) {
   try {
     const userRole = extractUserRole(req);
-    if (userRole === 'ROLE_TAX') {
-      return NextResponse.json({ success: false, error: 'Báo cáo quản trị nội bộ, kế toán thuế dùng Sổ Thuế.' }, { status: 403 });
+    if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
+      return NextResponse.json({ success: false, error: 'Báo cáo quản trị tổng chỉ dành cho Chủ/Quản lý.' }, { status: 403 });
     }
     const { searchParams } = new URL(req.url);
     const view = searchParams.get('view') || 'channels';

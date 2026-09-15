@@ -76,6 +76,10 @@ export class ShipmentService {
     if (!bankReference || !bankReference.trim()) throw new Error('Đối soát COD bắt buộc có mã tham chiếu ngân hàng.');
     const ord = await this.getByOrder(orderId);
     if (ord.codStatus !== 'PENDING') throw new Error(`COD đang ở trạng thái ${ord.codStatus}, không thể tất toán.`);
+    // P2-12: chỉ tất toán khi hàng đã giao thành công (chống thu tiền đơn chưa giao)
+    if (ord.shippingStatus !== 'DELIVERED') {
+      throw new Error(`Chỉ tất toán COD khi đã giao thành công (hiện: ${ord.shippingStatus || 'NONE'}).`);
+    }
     await db.update(orders).set({ codStatus: 'RECEIVED' }).where(eq(orders.id, orderId));
     return { orderId, codStatus: 'RECEIVED', codAmount: ord.codAmount, bankReference: bankReference.trim() };
   }

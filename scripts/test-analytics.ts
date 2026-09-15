@@ -71,6 +71,10 @@ async function run() {
   // 4. Cashflow: COD pending = final đơn web
   const cf = await AnalyticsService.cashflow({});
   ok('4. COD phải thu lên ma trận', cf.codPending >= (web as any).finalAmount && (web as any).finalAmount > 0, `pending=${cf.codPending}`);
+  // P2-12: giao xong mới được tất toán
+  await ShipmentService.updateStatus(web.orderId, 'PICKED_UP', 'ROLE_MANAGER');
+  await ShipmentService.updateStatus(web.orderId, 'IN_TRANSIT', 'ROLE_MANAGER');
+  await ShipmentService.updateStatus(web.orderId, 'DELIVERED', 'ROLE_MANAGER');
   await ShipmentService.settleCod(web.orderId, 'ROLE_MANAGER', 'NH-OLAP');
   const cf2 = await AnalyticsService.cashflow({});
   ok('4b. Tất toán COD chuyển sang đã về', cf2.codReceived >= (web as any).finalAmount);

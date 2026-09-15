@@ -38,7 +38,8 @@ const ALL_SUITES = [
   'scripts/test-sponsorships.ts',
   'scripts/test-analytics.ts',
   'scripts/test-order-guards.ts',
-  'scripts/test-lane-b-guards.ts',
+  'scripts/test-patch02-laneA.ts',
+  'scripts/test-patch02-laneB.ts',
 ];
 
 function suiteShortName(p: string): string {

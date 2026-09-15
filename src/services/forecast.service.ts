@@ -69,14 +69,22 @@ export class ForecastService {
         qty: sql<number>`COALESCE(SUM(-${inventoryLedger.quantityDelta}), 0)`,
       })
       .from(inventoryLedger)
-      // FIX-08: loại đơn tặng 0đ / tài trợ khỏi vận tốc bán (kẻo EOQ đặt dư).
+      // FIX-08 + P2-11: loại đơn tặng/tài trợ/0đ khỏi vận tốc bán (kẻo EOQ đặt dư).
       // Giữ lại bút toán không gắn đơn (ký gửi: correlationId là statementId).
+      // P2-11: chặn lách bằng CK 100% cấp dòng (discount tổng = 0 nhưng final = 0).
       .leftJoin(orders, eq(inventoryLedger.correlationId, orders.id))
       .where(
         and(
           inArray(inventoryLedger.eventType, ['DISPATCH_SALE', 'CONSIGNMENT_SOLD']),
           sql`${inventoryLedger.recordedAt} >= ${cutoff}`,
-          or(isNull(orders.id), and(sql`${orders.discountRate} < 1`, sql`${orders.channel} != 'SPONSORSHIP'`))
+          or(
+            isNull(orders.id),
+            and(
+              sql`${orders.discountRate} < 1`,
+              sql`${orders.channel} != 'SPONSORSHIP'`,
+              sql`${orders.finalAmount} > 0`
+            )
+          )
         )
       )
       .groupBy(inventoryLedger.editionId);
