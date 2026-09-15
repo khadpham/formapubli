@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 
 // P2-01/02/03 — Hardened: route bút toán kho trực tiếp.
 // - Chặn TAX/CASHIER khai báo tường minh (header vắng mặt = luồng UI nội bộ, mặc định OWNER).
@@ -11,8 +12,25 @@ const ALLOWED_CONDITIONS = ['NEW', 'MINOR_DAMAGE', 'DEFECTIVE', 'QUARANTINE'];
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor');
+    let userRole: string = extractUserRole(req);
+    let actorHeader: string | null = req.headers.get('x-formapubli-actor');
+    // BƯỚC 3: strict → bắt session OWNER/MANAGER/WAREHOUSE (401 thiếu, 403 sai vai)
+    if (isAuthStrict()) {
+      try {
+        const id = await resolveRequestIdentity(
+          req,
+          ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
+          { role: userRole, actorId: actorHeader || userRole }
+        );
+        userRole = id.role as any;
+        actorHeader = id.actorId;
+      } catch (e: any) {
+        if (e instanceof AuthError) {
+          return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+        }
+        throw e;
+      }
+    }
     if (userRole === 'ROLE_TAX' || userRole === 'ROLE_CASHIER') {
       return NextResponse.json(
         { error: 'Bút toán kho trực tiếp chỉ dành cho Thủ kho/Quản lý.' },

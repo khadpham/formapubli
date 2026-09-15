@@ -41,6 +41,8 @@ const ALL_SUITES = [
   'scripts/test-patch02-laneA.ts',
   'scripts/test-patch02-laneB.ts',
   'scripts/test-pending-view.ts',
+  'scripts/test-auth-gateway.ts',
+  'scripts/test-auth-rbac.ts',
 ];
 
 function suiteShortName(p: string): string {

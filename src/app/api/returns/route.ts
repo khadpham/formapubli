@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReturnService } from '@/services/return.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 import { isValidManagerPin } from '@/lib/manager-pin';
 
 export const dynamic = 'force-dynamic';
@@ -49,8 +50,30 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action } = body;
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || body.createdBy || userRole;
+    let userRole: string = extractUserRole(req);
+    let actorHeader: string = req.headers.get('x-formapubli-actor') || body.createdBy || userRole;
+
+    // BƯỚC 3: strict → session theo action (REQUEST: mọi vai trò trừ TAX;
+    // APPROVE/COMPLETE/REJECT/VOID: OWNER/MANAGER). Thường → giữ header legacy.
+    if (isAuthStrict()) {
+      const needPriv = action !== 'REQUEST';
+      try {
+        const id = await resolveRequestIdentity(
+          req,
+          needPriv
+            ? ['ROLE_OWNER', 'ROLE_MANAGER']
+            : ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'],
+          { role: userRole, actorId: actorHeader || userRole }
+        );
+        userRole = id.role;
+        actorHeader = id.actorId;
+      } catch (e: any) {
+        if (e instanceof AuthError) {
+          return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+        }
+        throw e;
+      }
+    }
 
     if (userRole === 'ROLE_TAX') {
       return NextResponse.json({ success: false, error: 'Kế toán thuế không được thao tác phiếu đổi/trả.' }, { status: 403 });

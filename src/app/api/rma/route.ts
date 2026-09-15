@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RmaService } from '@/services/rma.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 
 // P2-06 — Hardened RMA: ép hàng lỗi vào QUARANTINE/DEFECTIVE (không rửa thành NEW),
 // gate vai trò, validate lý do/hành động/số nguyên.
@@ -39,6 +40,18 @@ export async function POST(request: NextRequest) {
     const actorHeader = request.headers.get('x-formapubli-actor') || body.inspectedBy || body.actorId || userRole;
 
     if (body.action === 'resolve') {
+      // BƯỚC 3: strict → session OWNER/MANAGER
+      if (isAuthStrict()) {
+        try {
+          const id = await resolveRequestIdentity(request, ['ROLE_OWNER', 'ROLE_MANAGER'], { role: '', actorId: '' });
+          body.actorId = id.actorId;
+        } catch (e: any) {
+          if (e instanceof AuthError) {
+            return NextResponse.json({ error: e.message }, { status: e.status });
+          }
+          throw e;
+        }
+      }
       // Xử lý phiếu đụng tồn kho (hủy/sửa/trả NCC) — chỉ Manager/Owner
       if (deny(userRole, ['ROLE_OWNER', 'ROLE_MANAGER'])) {
         return NextResponse.json({ error: 'Chỉ Manager/Owner được xử lý phiếu RMA.' }, { status: 403 });
@@ -69,6 +82,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Mặc định là tạo ticket mới — chặn TAX/CASHIER khai báo tường minh
+    // BƯỚC 3: strict → session OWNER/MANAGER/WAREHOUSE
+    if (isAuthStrict()) {
+      try {
+        const id = await resolveRequestIdentity(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'], { role: '', actorId: '' });
+        body.inspectedBy = body.inspectedBy || id.actorId;
+      } catch (e: any) {
+        if (e instanceof AuthError) {
+          return NextResponse.json({ error: e.message }, { status: e.status });
+        }
+        throw e;
+      }
+    }
     if (userRole === 'ROLE_TAX' || userRole === 'ROLE_CASHIER') {
       return NextResponse.json({ error: 'Lập phiếu RMA chỉ dành cho Thủ kho/Quản lý.' }, { status: 403 });
     }
