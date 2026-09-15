@@ -22,7 +22,13 @@ import {
   editions,
   inventoryLedger,
   stockBalances,
+  staffAccounts,
 } from '../src/db/schema';
+import {
+  DEFAULT_STAFF_ACCOUNTS,
+  hashStaffPasscode,
+} from '../src/lib/auth-session';
+
 
 export const TEST_DB_FILE =
   process.env.TEST_DATABASE_FILE || 'formapubli_test.db';
@@ -98,8 +104,10 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       'transfer_shipment_items', 'consignment_statements',
       'consignment_statement_lines', 'consignment_payments',
       'rights_contracts', 'return_orders', 'return_order_items',
+      'staff_accounts',
     ],
   });
+
 
   const client = createClient({ url: `file:${resolved}` });
   const testDb = drizzle(client, {
@@ -208,11 +216,25 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     });
   }
 
+  // 7. Seed tài khoản nhân viên chuẩn hóa (staff_accounts - Đợt 0)
+  for (const staff of DEFAULT_STAFF_ACCOUNTS) {
+    const passcodeHash = hashStaffPasscode(staff.passcode, staff.salt);
+    await testDb.insert(staffAccounts).values({
+      staffId: staff.staffId,
+      fullName: staff.fullName,
+      role: staff.role,
+      passcodeHash,
+      salt: staff.salt,
+      isActive: true,
+    });
+  }
+
   client.close();
 
   console.log(
-    `✅ Test DB sẵn sàng: ${resolved} (3 kho, 5 đối tác, ${editionCount} ấn bản, mở đầu ${OPENING_QTY_PER_EDITION}/ấn bản tại Âu Cơ).`
+    `✅ Test DB sẵn sàng: ${resolved} (3 kho, 5 đối tác, ${editionCount} ấn bản, ${DEFAULT_STAFF_ACCOUNTS.length} tài khoản nhân viên, mở đầu ${OPENING_QTY_PER_EDITION}/ấn bản tại Âu Cơ).`
   );
+
   return { dbFile: resolved, editionCount };
 }
 

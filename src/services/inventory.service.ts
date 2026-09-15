@@ -1,5 +1,7 @@
 import { db, inventoryLedger, stockBalances, editions, warehouses, works } from '../db';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { ActorContext } from './actor-context';
+import { AppError } from './app-error';
 
 export interface RecordMovementParams {
   editionId: string;
@@ -19,6 +21,7 @@ export interface RecordMovementParams {
   reversalOf?: string;
   effectiveAt?: string;
   tx?: any; // Cho phép truyền transaction context bên ngoài
+  actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
 }
 
 export interface TransferParams {
@@ -32,6 +35,7 @@ export interface TransferParams {
   note?: string;
   // P2-04: khóa chống replay — gửi lại cùng key trả về kết quả cũ, không nhân đôi chuyến
   idempotencyKey?: string;
+  actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
 }
 
 export class InventoryService {
@@ -82,9 +86,10 @@ export class InventoryService {
       effectiveAt,
       tx: externalTx,
     } = params;
+    const effActorId = params.actorContext?.staffId || actorId;
 
     if (quantityDelta === 0) {
-      throw new Error('Độ biến động tồn kho (quantityDelta) phải khác 0.');
+      throw AppError.invalid('Độ biến động tồn kho (quantityDelta) phải khác 0.');
     }
 
     const executeWork = async (tx: any) => {
@@ -103,7 +108,7 @@ export class InventoryService {
         condition,
         documentRef,
         note,
-        actorId,
+        actorId: effActorId,
         correlationId,
         reversalOf,
         idempotencyKey,
@@ -152,7 +157,7 @@ export class InventoryService {
           .limit(1);
 
         const currentQty = currentBalance.length > 0 ? currentBalance[0].physicalQuantity : 0;
-        throw new Error(
+        throw AppError.atp(
           `LỖI XUẤT ÂM KHO: Tồn kho hiện tại là ${currentQty}, không đủ để xuất ${Math.abs(quantityDelta)} cuốn!`
         );
       }
@@ -209,14 +214,15 @@ export class InventoryService {
     } = params;
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
-      throw new Error('Số lượng chuyển kho phải là số nguyên > 0.');
+      throw AppError.invalid('Số lượng chuyển kho phải là số nguyên > 0.');
     }
 
     if (fromWarehouseId === toWarehouseId) {
-      throw new Error('Kho xuất và kho nhập phải khác nhau.');
+      throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
     }
 
     // P2-04: replay cùng key → trả kết quả cũ, không sinh chuyến mới
+    const effTransferActor = params.actorContext?.staffId || actorId;
     const transferBatchId = params.idempotencyKey?.trim() || `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     if (params.idempotencyKey?.trim()) {
       const prior = await db

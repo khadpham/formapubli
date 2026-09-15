@@ -519,6 +519,16 @@ export const sponsorshipDrawdowns = sqliteTable('sponsorship_drawdowns', {
 }, (table) => ({
   fundIdx: index('idx_spd_fund').on(table.fundId),
   editionIdx: index('idx_spd_edition').on(table.editionId),
+}));// 26. Staff Accounts (Tài khoản nhân viên chuẩn hóa - Đợt 0)
+export const staffAccounts = sqliteTable('staff_accounts', {
+  staffId: text('staff_id').primaryKey(), // Mã nhân viên: NV-01, NV-02, KHO-01, QL-01, ADMIN-01, THUE-01
+  fullName: text('full_name').notNull(),
+  role: text('role').notNull(), // UserRole: ROLE_OWNER | ROLE_MANAGER | ROLE_CASHIER | ROLE_WAREHOUSE | ROLE_TAX
+  passcodeHash: text('passcode_hash').notNull(),
+  salt: text('salt').notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  roleIdx: index('idx_staff_role').on(table.role),
+  activeIdx: index('idx_staff_active').on(table.isActive),
 }));
-
-

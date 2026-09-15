@@ -3,6 +3,8 @@ import { InventoryService } from './inventory.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
+import { AppError } from './app-error';
+import { ActorContext } from './actor-context';
 
 export interface OrderItemInput {
   editionId: string;
@@ -67,6 +69,8 @@ export interface CreateOrderParams {
   giftReason?: string; // BV-03: lý do tặng (bắt buộc khi isGift)
   items?: OrderItemInput[];
   bundles?: Array<{ bundleId: string; quantity: number }>; // Combo/boxset (giá do management định, không cộng CK đơn)
+  // M1 (contract §1): danh tính Lane A truyền tách khỏi payload client — thắng mọi cashierId client gửi
+  actorContext?: ActorContext;
 }
 
 export interface OrderFilterParams {
@@ -105,40 +109,43 @@ export class OrderService {
       confirmImmediately = true,
     } = params;
 
+    // M1 (contract §1): actorContext thắng cashierId client gửi (chống mạo danh người bán)
+    const effCashierId = params.actorContext?.staffId || cashierId;
+
     // Bước 1: validate channel + payment (text tự do ở DB, chặn ở service)
     if (!VALID_CHANNELS.includes(channel)) {
-      throw new Error(`Kênh bán không hợp lệ: ${channel}.`);
+      throw AppError.invalid(`Kênh bán không hợp lệ: ${channel}.`);
     }
     if (!VALID_PAYMENTS.includes(paymentMethod)) {
-      throw new Error(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
+      throw AppError.invalid(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
     }
     // P2-07: chặn bán từ kho ảo/ký gửi ngay từ cổng vào
     if (!SELLABLE_WAREHOUSE_IDS.includes(warehouseId)) {
-      throw new Error(`Kho ${warehouseId} không được phép bán trực tiếp (chỉ: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
+      throw AppError.invalid(`Kho ${warehouseId} không được phép bán trực tiếp (chỉ: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
     }
     // P2-08/09: két ca gắn vào đơn phải OPEN + đúng kho + đúng thu ngân (chống bán ké két)
     if (params.cashboxSessionId) {
       const sessRows = await db.select().from(cashboxSessions).where(eq(cashboxSessions.id, params.cashboxSessionId)).limit(1);
-      if (sessRows.length === 0) throw new Error('Phiên két ca không tồn tại.');
+      if (sessRows.length === 0) throw AppError.invalid('Phiên két ca không tồn tại.');
       const sess = sessRows[0];
-      if (sess.status !== 'OPEN') throw new Error(`Phiên két ca đã ${sess.status}, không ghi đơn vào két đóng.`);
+      if (sess.status !== 'OPEN') throw AppError.invalid(`Phiên két ca đã ${sess.status}, không ghi đơn vào két đóng.`);
       if (sess.warehouseId !== warehouseId) {
-        throw new Error(`Két ca thuộc kho ${sess.warehouseId}, không khớp kho xuất ${warehouseId}.`);
+        throw AppError.invalid(`Két ca thuộc kho ${sess.warehouseId}, không khớp kho xuất ${warehouseId}.`);
       }
-      if (sess.cashierId !== cashierId) {
-        throw new Error(`Két ca của thu ngân ${sess.cashierId}, không khớp người bán ${cashierId}.`);
+      if (sess.cashierId !== effCashierId) {
+        throw AppError.invalid(`Két ca của thu ngân ${sess.cashierId}, không khớp người bán ${effCashierId}.`);
       }
     }
     // P2-10: kẹp ngày lập đơn — chặn tương lai, gõ bù > 7 ngày cần duyệt quản lý
     if (params.createdAt) {
       const ts = new Date(params.createdAt).getTime();
-      if (Number.isNaN(ts)) throw new Error('createdAt không phải ngày hợp lệ.');
+      if (Number.isNaN(ts)) throw AppError.invalid('createdAt không phải ngày hợp lệ.');
       if (ts > Date.now() + FUTURE_SKEW_MINUTES * 60000) {
-        throw new Error('Không được lập đơn ngày tương lai.');
+        throw AppError.invalid('Không được lập đơn ngày tương lai.');
       }
       const ageDays = (Date.now() - ts) / 86400000;
       if (ageDays > BACKDATE_LIMIT_DAYS && !params.backdateApproved) {
-        throw new Error(`Đơn gõ bù quá ${BACKDATE_LIMIT_DAYS} ngày cần mã PIN Quản lý.`);
+        throw AppError.forbidden(`Đơn gõ bù quá ${BACKDATE_LIMIT_DAYS} ngày cần mã PIN Quản lý.`);
       }
     }
 
@@ -147,51 +154,51 @@ export class OrderService {
     // FIX-02: số lượng phải nguyên (chặn tồn kho phân số 1.5 cuốn)
     for (const it of looseItems) {
       if (!Number.isInteger(it.quantity) || it.quantity <= 0) {
-        throw new Error(`Số lượng bán cho ấn bản ${it.editionId} phải là số nguyên > 0.`);
+        throw AppError.invalid(`Số lượng bán cho ấn bản ${it.editionId} phải là số nguyên > 0.`);
       }
     }
     for (const b of bundleOrders) {
       if (!Number.isInteger(b.quantity) || b.quantity <= 0) {
-        throw new Error(`Số lượng combo ${b.bundleId} phải là số nguyên > 0.`);
+        throw AppError.invalid(`Số lượng combo ${b.bundleId} phải là số nguyên > 0.`);
       }
     }
     // FIX-03: trần chiết khấu tầng service (API route có thể bị bypass khi gọi trực tiếp).
     // Ngoại lệ duy nhất: discount == 1 kèm cờ isGift (đơn tặng, validate riêng bên dưới).
     if (!Number.isFinite(discountRate) || discountRate < 0 || discountRate > 1) {
-      throw new Error('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
+      throw AppError.invalid('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
     }
     for (const it of looseItems) {
       const r = it.unitDiscountRate ?? discountRate;
       if (!Number.isFinite(r) || r < 0 || r > 1) {
-        throw new Error(`Chiết khấu dòng ${it.editionId} phải nằm trong khoảng 0 - 100%.`);
+        throw AppError.invalid(`Chiết khấu dòng ${it.editionId} phải nằm trong khoảng 0 - 100%.`);
       }
     }
     // BV-03: chuan hoa co tang — discount 1.0 bat buoc di kem isGift tuong minh
     const rawGift = Boolean((params as any).isGift);
     if (discountRate === 1 && !rawGift) {
-      throw new Error('Chiết khấu 100% chỉ áp dụng cho đơn Tặng sách (thiếu cờ isGift).');
+      throw AppError.invalid('Chiết khấu 100% chỉ áp dụng cho đơn Tặng sách (thiếu cờ isGift).');
     }
     const isGift = rawGift;
     const giftReason = `${(params as any).giftReason ?? ''}`.trim();
     if (discountRate > 1 || discountRate < 0) {
-      throw new Error('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
+      throw AppError.invalid('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
     }
     if (isGift) {
       if (discountRate !== 1) {
-        throw new Error('Đơn Tặng sách phải có chiết khấu đúng 100% (discountRate = 1).');
+        throw AppError.invalid('Đơn Tặng sách phải có chiết khấu đúng 100% (discountRate = 1).');
       }
       if (!giftReason && !(note || '').trim()) {
-        throw new Error('Đơn Tặng sách bắt buộc ghi lý do (giftReason/note).');
+        throw AppError.invalid('Đơn Tặng sách bắt buộc ghi lý do (giftReason/note).');
       }
       if (fiscalScope === 'OFFICIAL_TAX') {
-        throw new Error('Quà tặng chỉ ghi Sổ Quản trị Nội bộ, không xuất Hóa đơn VAT.');
+        throw AppError.invalid('Quà tặng chỉ ghi Sổ Quản trị Nội bộ, không xuất Hóa đơn VAT.');
       }
       if (bundleOrders.length > 0) {
-        throw new Error('Đơn Tặng sách chưa hỗ trợ combo đóng hộp (chỉ tặng sách lẻ).');
+        throw AppError.invalid('Đơn Tặng sách chưa hỗ trợ combo đóng hộp (chỉ tặng sách lẻ).');
       }
       for (const it of looseItems) {
         if (it.unitDiscountRate !== undefined && it.unitDiscountRate !== 1) {
-          throw new Error('Đơn Tặng sách: mọi dòng phải có chiết khấu 100%.');
+          throw AppError.invalid('Đơn Tặng sách: mọi dòng phải có chiết khấu 100%.');
         }
       }
     }
@@ -201,7 +208,7 @@ export class OrderService {
       bundleOrders.reduce((sum, b) => sum + b.quantity, 0);
 
     if ((!items || items.length === 0) && (!params.bundles || params.bundles.length === 0)) {
-      throw new Error('Đơn hàng phải có ít nhất 1 đầu sách hoặc 1 combo.');
+      throw AppError.invalid('Đơn hàng phải có ít nhất 1 đầu sách hoặc 1 combo.');
     }
 
     // 0. Bảo vệ Idempotency (Tránh ghi trùng lặp khi Sync đơn Offline hoặc Retry)
@@ -242,7 +249,7 @@ export class OrderService {
     }> = [];
     for (const b of bundleOrders) {
       if (b.quantity <= 0) {
-        throw new Error(`Số lượng combo ${b.bundleId} phải lớn hơn 0.`);
+        throw AppError.invalid(`Số lượng combo ${b.bundleId} phải lớn hơn 0.`);
       }
       await BundleService.validateAvailability(b.bundleId, warehouseId, b.quantity);
       const priced = await BundleService.priceLines(b.bundleId, b.quantity);
@@ -259,19 +266,19 @@ export class OrderService {
     // Đơn online chưa duyệt không được dùng overdraft (không có bút toán để bù).
     if (isPending) {
       if (params.isOfflineSync || params.allowOverdraft) {
-        throw new Error('Đơn PENDING online không hỗ trợ bán lệch tồn (overdraft).');
+        throw AppError.invalid('Đơn PENDING online không hỗ trợ bán lệch tồn (overdraft).');
       }
       const need = new Map<string, number>();
       for (const item of [...looseItems, ...bundleLines]) {
         if (item.quantity <= 0) {
-          throw new Error(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
+          throw AppError.invalid(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
         }
         need.set(item.editionId, (need.get(item.editionId) || 0) + item.quantity);
       }
       for (const [editionId, qty] of Array.from(need.entries())) {
         const atp = await this.getATP(editionId, warehouseId);
         if (atp < qty) {
-          throw new Error(
+          throw AppError.atp(
             `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
           );
         }
@@ -285,13 +292,13 @@ export class OrderService {
 
     for (const item of stockCheckItems) {
       if (item.quantity <= 0) {
-        throw new Error(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
+        throw AppError.invalid(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
       }
 
       const currentBalance = await InventoryService.getBalance(item.editionId, warehouseId, 'NEW');
       if (currentBalance < item.quantity) {
         if (!isOfflineOrOverdraftAllowed) {
-          throw new Error(
+          throw AppError.atp(
             `KHÔNG ĐỦ TỒN KHO: Ấn bản ${item.editionId} tại kho chỉ còn ${currentBalance} cuốn, không đủ để bán ${item.quantity} cuốn!`
           );
         } else {
@@ -308,11 +315,11 @@ export class OrderService {
     if (overdraftItems.length > 0) {
       const totalDeficit = overdraftItems.reduce((s, o) => s + o.deficit, 0);
       if (totalDeficit > MAX_OVERDRAFT_PER_ORDER) {
-        throw new Error(`Bán lệch kiểm kê vượt trần ${MAX_OVERDRAFT_PER_ORDER} cuốn/đơn (xin ${totalDeficit}). Cần kiểm đếm lại kho.`);
+        throw AppError.atp(`Bán lệch kiểm kê vượt trần ${MAX_OVERDRAFT_PER_ORDER} cuốn/đơn (xin ${totalDeficit}). Cần kiểm đếm lại kho.`);
       }
       for (const o of overdraftItems) {
         if (o.deficit > MAX_OVERDRAFT_PER_EDITION) {
-          throw new Error(`Ấn bản ${o.editionId} lệch ${o.deficit} cuốn, vượt trần ${MAX_OVERDRAFT_PER_EDITION} cuốn/đầu sách.`);
+          throw AppError.atp(`Ấn bản ${o.editionId} lệch ${o.deficit} cuốn, vượt trần ${MAX_OVERDRAFT_PER_EDITION} cuốn/đầu sách.`);
         }
       }
     }
@@ -339,7 +346,7 @@ export class OrderService {
       ...looseItems.map((item) => {
         const edition = editionMap.get(item.editionId);
         // FIX-01: giá bìa LUÔN lấy từ DB, tuyệt đối không tin unitCoverPrice client gửi.
-        if (!edition) throw new Error(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
+        if (!edition) throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
         const coverPrice = edition.coverPrice || 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
         const unitSellingPrice = Math.round(coverPrice * (1 - itemDiscountRate));
@@ -411,7 +418,7 @@ export class OrderService {
               documentRef: orderCode,
               correlationId: orderId,
               note: `Bù lệch kiểm kê hội chợ (FAIR_VARIANCE) cho đơn ${orderCode}`,
-              actorId: cashierId || 'Hội chợ',
+              actorId: effCashierId || 'Hội chợ',
               idempotencyKey: `idem-variance-${orderId}-${over.editionId}`,
               tx,
             });
@@ -437,7 +444,7 @@ export class OrderService {
             vatInvoiceCode,
             status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
             syncStatus: hasOverdraft ? 'SYNCED_WITH_OVERDRAFT_WARNING' : 'SYNCED',
-            cashierId,
+            cashierId: effCashierId,
             cashboxSessionId: params.cashboxSessionId,
             idempotencyKey,
             note: mergedNote,
@@ -484,7 +491,7 @@ export class OrderService {
                 : isGift
                 ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
                 : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
-              actorId: cashierId,
+              actorId: effCashierId,
               correlationId: orderId,
               idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
               tx,
@@ -568,24 +575,25 @@ export class OrderService {
   }
 
   /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử). Chỉ Manager/Owner. */
-  static async confirmOrder(orderId: string, actorRole: string, actorId = 'staff-admin') {
+  static async confirmOrder(orderId: string, actorRole: string, actorId = 'staff-admin', actorContext?: ActorContext) {
+    if (actorContext) { actorRole = actorContext.role; actorId = actorContext.staffId; }
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw new Error('Chỉ Manager/Owner được duyệt đơn PENDING.');
+      throw AppError.forbidden('Chỉ Manager/Owner được duyệt đơn PENDING.');
     }
     const rows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (rows.length === 0) throw new Error('Không tìm thấy đơn hàng.');
+    if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
     const ord = rows[0];
-    if (ord.status !== 'PENDING_CONFIRMATION') throw new Error(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
+    if (ord.status !== 'PENDING_CONFIRMATION') throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
     if (this.isPendingExpired(ord.createdAt)) {
       await db.update(orders).set({ status: 'CANCELLED', note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]` }).where(eq(orders.id, orderId));
-      throw new Error(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
+      throw AppError.conflict(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
     }
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
     // Kiểm tra tồn vật lý trước (không overdraft cho đơn online)
     for (const ln of lines) {
       const bal = await InventoryService.getBalance(ln.editionId, ord.warehouseId, 'NEW');
       if (bal < ln.quantity) {
-        throw new Error(`KHÔNG ĐỦ TỒN để duyệt: ${ln.editionId} còn ${bal}, cần ${ln.quantity}.`);
+        throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${ln.editionId} còn ${bal}, cần ${ln.quantity}.`);
       }
     }
     await withDbRetry(async () => {
@@ -614,14 +622,15 @@ export class OrderService {
   }
 
   /** Hủy đơn PENDING → CANCELLED (tự nhả giữ chỗ ATP). Chỉ Manager/Owner. */
-  static async cancelOrder(orderId: string, actorRole: string, reason?: string) {
+  static async cancelOrder(orderId: string, actorRole: string, reason?: string, actorContext?: ActorContext) {
+    if (actorContext) { actorRole = actorContext.role; }
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw new Error('Chỉ Manager/Owner được hủy đơn PENDING.');
+      throw AppError.forbidden('Chỉ Manager/Owner được hủy đơn PENDING.');
     }
     const rows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (rows.length === 0) throw new Error('Không tìm thấy đơn hàng.');
+    if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
     const ord = rows[0];
-    if (ord.status !== 'PENDING_CONFIRMATION') throw new Error(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
+    if (ord.status !== 'PENDING_CONFIRMATION') throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
     await db.update(orders).set({
       status: 'CANCELLED',
       note: reason ? `${ord.note ? ord.note + ' | ' : ''}[HỦY: ${reason}]` : ord.note,
@@ -887,12 +896,12 @@ export class CashboxService {
       .limit(1);
 
     if (existing.length === 0) {
-      throw new Error(`Không tìm thấy phiên két tiền: ${sessionId}`);
+      throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
     }
 
     const session = existing[0];
     if (session.status === 'CLOSED') {
-      throw new Error(`Phiên két tiền ${sessionId} đã được đóng trước đó.`);
+      throw AppError.invalid(`Phiên két tiền ${sessionId} đã được đóng trước đó.`);
     }
 
     const stats = await this.calculateSessionStats(sessionId);

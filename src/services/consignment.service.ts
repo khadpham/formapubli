@@ -7,6 +7,7 @@ import {
   inventoryLedger,
   stockBalances,
 } from '../db';
+import { AppError } from './app-error';
 import { InventoryService } from './inventory.service';
 import { TransferService } from './transfer.service';
 import { withDbRetry } from '../lib/db-retry';
@@ -71,7 +72,7 @@ export class ConsignmentService {
     const partner = (
       await txOrDb.select().from(partners).where(eq(partners.id, partnerId)).limit(1)
     )[0];
-    if (!partner) throw new Error(`Không tìm thấy đối tác ${partnerId}.`);
+    if (!partner) throw AppError.invalid(`Không tìm thấy đối tác ${partnerId}.`);
     const warehouseId = `wh-consign-${sanitizeCode(partner.code)}`;
     const { warehouses } = await import('../db');
     await txOrDb
@@ -143,9 +144,9 @@ export class ConsignmentService {
     } = params;
 
     const partner = (await db.select().from(partners).where(eq(partners.id, partnerId)).limit(1))[0];
-    if (!partner) throw new Error(`Không tìm thấy đối tác ${partnerId}.`);
+    if (!partner) throw AppError.invalid(`Không tìm thấy đối tác ${partnerId}.`);
     if (discountOverride !== undefined && (discountOverride < 0 || discountOverride > 1)) {
-      throw new Error('Chiết khấu kỳ phải trong khoảng 0 - 1.');
+      throw AppError.invalid('Chiết khấu kỳ phải trong khoảng 0 - 1.');
     }
 
     const partnerWh = await this.ensurePartnerWarehouse(partnerId, db);
@@ -203,7 +204,7 @@ export class ConsignmentService {
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
     if (stmt.discountOverride !== null && stmt.discountOverride !== undefined) {
       return stmt.discountOverride;
     }
@@ -259,13 +260,13 @@ export class ConsignmentService {
     actorId: string;
   }) {
     const { statementId, editionId, quantity, actorId } = params;
-    if (quantity <= 0) throw new Error('Số lượng bán phải lớn hơn 0.');
+    if (quantity <= 0) throw AppError.invalid('Số lượng bán phải lớn hơn 0.');
 
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
-    if (stmt.status !== 'DRAFT') throw new Error(`Kỳ ${statementId} đã khóa (${stmt.status}), không ghi bán thêm.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (stmt.status !== 'DRAFT') throw AppError.conflict(`Kỳ ${statementId} đã khóa (${stmt.status}), không ghi bán thêm.`);
 
     const partnerWh = await this.ensurePartnerWarehouse(stmt.partnerId, db);
     const discount = await this.effectiveDiscount(statementId);
@@ -313,14 +314,14 @@ export class ConsignmentService {
   }) {
     const { statementId, toWarehouseId, editionId, newQty = 0, damagedQty = 0, actorId, notes } = params;
     if (newQty < 0 || damagedQty < 0 || newQty + damagedQty === 0) {
-      throw new Error('Số lượng thu hồi phải lớn hơn 0.');
+      throw AppError.invalid('Số lượng thu hồi phải lớn hơn 0.');
     }
 
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
-    if (stmt.status !== 'DRAFT') throw new Error(`Kỳ ${statementId} đã khóa (${stmt.status}), không thu hồi thêm.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (stmt.status !== 'DRAFT') throw AppError.conflict(`Kỳ ${statementId} đã khóa (${stmt.status}), không thu hồi thêm.`);
 
     const partnerWh = await this.ensurePartnerWarehouse(stmt.partnerId, db);
     const total = newQty + damagedQty;
@@ -398,8 +399,8 @@ export class ConsignmentService {
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
-    if (stmt.status !== 'DRAFT') throw new Error(`Kỳ ${statementId} đã ở trạng thái ${stmt.status}.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (stmt.status !== 'DRAFT') throw AppError.conflict(`Kỳ ${statementId} đã ở trạng thái ${stmt.status}.`);
 
     const partnerWh = await this.ensurePartnerWarehouse(stmt.partnerId, db);
 
@@ -449,7 +450,7 @@ export class ConsignmentService {
             closing;
 
           if (lost < 0) {
-            throw new Error(
+            throw AppError.conflict(
               `Ấn bản ${line.editionId} thặng dư ${-lost} cuốn so với sổ — dừng chốt để điều tra, không tự bù.`
             );
           }
@@ -516,7 +517,7 @@ export class ConsignmentService {
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
     const lines = await db
       .select()
       .from(consignmentStatementLines)

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, works, editions, warehouses, partners } from '../src/db';
+import { db, works, editions, warehouses, partners, staffAccounts } from '../src/db';
+import { DEFAULT_STAFF_ACCOUNTS, hashStaffPasscode } from '../src/lib/auth-session';
+
 
 function removeAccents(str: string): string {
   return str
@@ -225,7 +227,27 @@ async function main() {
   }
 
   console.log(`✅ Successfully seeded ${insertedWorks} works and ${insertedEditions} editions.`);
+
+  console.log('👥 Seeding standardized staff accounts (Đợt 0)...');
+  for (const staff of DEFAULT_STAFF_ACCOUNTS) {
+    const passcodeHash = hashStaffPasscode(staff.passcode, staff.salt);
+    const staffRecord = {
+      staffId: staff.staffId,
+      fullName: staff.fullName,
+      role: staff.role,
+      passcodeHash,
+      salt: staff.salt,
+      isActive: true,
+    };
+    await db.insert(staffAccounts).values(staffRecord).onConflictDoUpdate({
+      target: staffAccounts.staffId,
+      set: staffRecord,
+    });
+  }
+  console.log(`✅ Successfully seeded ${DEFAULT_STAFF_ACCOUNTS.length} staff accounts.`);
+
   console.log('🎉 Formapubli Seed Process Complete!');
+
 }
 
 main().catch((err) => {

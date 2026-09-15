@@ -2,6 +2,7 @@ import { db, transferShipments, transferShipmentItems, warehouses } from '../db'
 import { InventoryService } from './inventory.service';
 import { withDbRetry } from '../lib/db-retry';
 import { eq, and, desc, lt } from 'drizzle-orm';
+import { AppError } from './app-error';
 
 /**
  * ĐỘNG CƠ LUÂN CHUYỂN KHO 2 BƯỚC QUA TRẠM TRUNG CHUYỂN IN_TRANSIT.
@@ -90,17 +91,17 @@ export class TransferService {
     const { fromWarehouseId, toWarehouseId, dispatcherId, vehicleInfo, notes, items } = params;
 
     if (!items || items.length === 0) {
-      throw new Error('Phiếu luân chuyển phải có ít nhất 1 ấn bản.');
+      throw AppError.invalid('Phiếu luân chuyển phải có ít nhất 1 ấn bản.');
     }
     if (fromWarehouseId === toWarehouseId) {
-      throw new Error('Kho gửi và kho nhận phải khác nhau.');
+      throw AppError.invalid('Kho gửi và kho nhận phải khác nhau.');
     }
     if (fromWarehouseId === TRANSIT_WAREHOUSE_ID || toWarehouseId === TRANSIT_WAREHOUSE_ID) {
-      throw new Error('Không dùng dispatch trực tiếp với kho transit (nhận hàng qua receive).');
+      throw AppError.invalid('Không dùng dispatch trực tiếp với kho transit (nhận hàng qua receive).');
     }
     for (const it of items) {
       if (!it.editionId || it.quantity <= 0) {
-        throw new Error(`Số lượng gửi của ấn bản ${it.editionId} phải lớn hơn 0.`);
+        throw AppError.invalid(`Số lượng gửi của ấn bản ${it.editionId} phải lớn hơn 0.`);
       }
     }
 
@@ -181,9 +182,9 @@ export class TransferService {
     const ship = (
       await db.select().from(transferShipments).where(eq(transferShipments.id, shipmentId)).limit(1)
     )[0];
-    if (!ship) throw new Error(`Không tìm thấy phiếu luân chuyển ${shipmentId}.`);
+    if (!ship) throw AppError.invalid(`Không tìm thấy phiếu luân chuyển ${shipmentId}.`);
     if (ship.status !== 'IN_TRANSIT') {
-      throw new Error(`Phiếu ${shipmentId} đã xử lý (trạng thái ${ship.status}), không nhận lại.`);
+      throw AppError.conflict(`Phiếu ${shipmentId} đã xử lý (trạng thái ${ship.status}), không nhận lại.`);
     }
 
     const dispatched = await db
@@ -192,22 +193,22 @@ export class TransferService {
       .where(eq(transferShipmentItems.shipmentId, shipmentId));
 
     if (items.length !== dispatched.length) {
-      throw new Error(
+      throw AppError.invalid(
         `Phiếu có ${dispatched.length} dòng hàng, biên bản nhận phải đủ ${dispatched.length} dòng.`
       );
     }
 
     const plan = dispatched.map((d) => {
       const r = items.find((i) => i.editionId === d.editionId);
-      if (!r) throw new Error(`Thiếu biên bản nhận cho ấn bản ${d.editionId}.`);
+      if (!r) throw AppError.invalid(`Thiếu biên bản nhận cho ấn bản ${d.editionId}.`);
       const received = r.receivedQty ?? 0;
       const damaged = r.damagedQty ?? 0;
       const lost = r.lostQty ?? 0;
       if (received < 0 || damaged < 0 || lost < 0) {
-        throw new Error(`Số lượng nhận của ấn bản ${d.editionId} không được âm.`);
+        throw AppError.invalid(`Số lượng nhận của ấn bản ${d.editionId} không được âm.`);
       }
       if (received + damaged + lost !== d.dispatchedQty) {
-        throw new Error(
+        throw AppError.invalid(
           `Ấn bản ${d.editionId}: nhận (${received}) + hỏng (${damaged}) + mất (${lost}) phải bằng số gửi (${d.dispatchedQty}).`
         );
       }
@@ -327,9 +328,9 @@ export class TransferService {
     const ship = (
       await db.select().from(transferShipments).where(eq(transferShipments.id, shipmentId)).limit(1)
     )[0];
-    if (!ship) throw new Error(`Không tìm thấy phiếu luân chuyển ${shipmentId}.`);
+    if (!ship) throw AppError.invalid(`Không tìm thấy phiếu luân chuyển ${shipmentId}.`);
     if (ship.status !== 'IN_TRANSIT') {
-      throw new Error(`Phiếu ${shipmentId} đã ở trạng thái ${ship.status}, không thể hủy.`);
+      throw AppError.conflict(`Phiếu ${shipmentId} đã ở trạng thái ${ship.status}, không thể hủy.`);
     }
 
     const lines = await db
@@ -381,7 +382,7 @@ export class TransferService {
     const ship = (
       await db.select().from(transferShipments).where(eq(transferShipments.id, shipmentId)).limit(1)
     )[0];
-    if (!ship) throw new Error(`Không tìm thấy phiếu luân chuyển ${shipmentId}.`);
+    if (!ship) throw AppError.invalid(`Không tìm thấy phiếu luân chuyển ${shipmentId}.`);
     const lines = await db
       .select()
       .from(transferShipmentItems)

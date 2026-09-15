@@ -159,13 +159,71 @@ function hashPasscode(passcode: string): string {
   return hashString(`${passcode}${AUTH_PASSCODE_SALT}`);
 }
 
+/** Băm mật khẩu nhân viên với salt riêng của từng tài khoản — Pure-TS, Edge-safe */
+export function hashStaffPasscode(passcode: string, salt: string): string {
+  return hashString(`${passcode}:${salt}`);
+}
+
 /** So sánh hằng thời gian (timing-safe) cho hash passcode — Edge-safe, thuần TS. */
-function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+
+export interface StaffSeedData {
+  staffId: string;
+  fullName: string;
+  role: UserRole;
+  passcode: string;
+  salt: string;
+}
+
+export const DEFAULT_STAFF_ACCOUNTS: StaffSeedData[] = [
+  {
+    staffId: 'ADMIN-01',
+    fullName: 'Chủ Quản Lý',
+    role: 'ROLE_OWNER',
+    passcode: 'owner9999',
+    salt: 'salt_admin_01',
+  },
+  {
+    staffId: 'QL-01',
+    fullName: 'Quản Lý Vận Hành',
+    role: 'ROLE_MANAGER',
+    passcode: 'manager8888',
+    salt: 'salt_ql_01',
+  },
+  {
+    staffId: 'NV-01',
+    fullName: 'Thu Ngân 01',
+    role: 'ROLE_CASHIER',
+    passcode: '1234',
+    salt: 'salt_nv_01',
+  },
+  {
+    staffId: 'NV-02',
+    fullName: 'Thu Ngân 02',
+    role: 'ROLE_CASHIER',
+    passcode: '1234',
+    salt: 'salt_nv_02',
+  },
+  {
+    staffId: 'KHO-01',
+    fullName: 'Thủ Kho 01',
+    role: 'ROLE_WAREHOUSE',
+    passcode: '5678',
+    salt: 'salt_kho_01',
+  },
+  {
+    staffId: 'THUE-01',
+    fullName: 'Kế Toán Thuế',
+    role: 'ROLE_TAX',
+    passcode: '7890',
+    salt: 'salt_thue_01',
+  },
+];
 
 /**
  * Danh sách Passcode mặc định trên local dev/test.
@@ -178,6 +236,7 @@ const DEFAULT_DEV_PASSCODES: Record<UserRole, string> = {
   ROLE_WAREHOUSE: '5678',      // Thủ kho
   ROLE_TAX: '7890',            // Kế toán thuế
 };
+
 
 export function verifyRolePasscode(role: UserRole, passcode: string): boolean {
   if (!role || !passcode) return false;
