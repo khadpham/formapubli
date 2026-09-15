@@ -14,15 +14,15 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 
 | Gate | Chủ trì | Bằng chứng bắt buộc | Trạng thái |
 |---|---|---|---|
-| Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, không còn trường mâu thuẫn | BLOCKED |
-| Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp | CHỜ |
-| ATP nguyên tử | B | Hai kết nối tranh cuốn cuối; chỉ một thành công | CHỜ |
-| Auth strict | A | HTTP không cookie, cookie giả, sai quyền, giả header | CHỜ |
-| Danh tính không giả mạo | A + B | Client gửi `actorId/cashierId` khác vẫn ghi actor từ session | CHỜ |
-| Rate limit | A | Khóa theo IP đáng tin + staffId; kiểm thử đổi actor/header | CHỜ |
-| Bán–trả–két–báo cáo | B | Bộ số liệu mẫu trong contract khớp từng bước | CHỜ |
-| UI gatekeeper | A | Server không trả dữ liệu bảo vệ trước session; reload/logout/expiry | CHỜ |
-| Tích hợp cuối | A | Build, test runner, probes, DB production nguyên vẹn | CHỜ |
+| Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, không còn trường mâu thuẫn | ĐÃ CHỐT |
+| Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp (0015_staff_accounts) | PASS |
+| ATP nguyên tử | B | Hai kết nối tranh cuốn cuối; chỉ một thành công | CHỜ B PROBE |
+| Auth strict | A | HTTP không cookie, cookie giả, sai quyền, giả header (`test-phase0-laneA`) | PASS |
+| Danh tính không giả mạo | A + B | Client gửi `actorId/cashierId` khác vẫn ghi actor từ session (`test-phase0-laneA`) | PASS |
+| Rate limit | A | Khóa theo IP đáng tin + staffId; kiểm thử đổi actor/header (`test-auth-gateway`) | PASS |
+| Bán–trả–két–báo cáo | B | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`) | PASS |
+| UI gatekeeper | A | Server không trả dữ liệu bảo vệ trước session; reload/logout/expiry | PASS |
+| Tích hợp cuối | A | Build, test runner, probes, DB production nguyên vẹn (30/30 suites xanh) | PASS |
 
 ## Ma trận ca độc lập
 
