@@ -12,7 +12,8 @@ import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { UserRole, USER_ROLES } from '@/lib/roles';
-import { Menu, Shield } from 'lucide-react';
+import { Menu, Shield, LogOut } from 'lucide-react';
+import { LoginModal } from '@/components/auth/LoginModal';
 
 interface MasterAppShellProps {
   matrixBooks: any[];
@@ -20,6 +21,8 @@ interface MasterAppShellProps {
   partnerList: any[];
   ledgerList: any[];
   dbStatus: string;
+  initialSession?: { role: UserRole; actorId: string; fullName?: string; expiresAt: number } | null;
+  requiresAuth?: boolean;
 }
 
 export function MasterAppShell({
@@ -28,13 +31,34 @@ export function MasterAppShell({
   partnerList,
   ledgerList,
   dbStatus,
+  initialSession = null,
+  requiresAuth = false,
 }: MasterAppShellProps) {
+  const [session, setSession] = useState(initialSession);
+  const [showLoginModal, setShowLoginModal] = useState(requiresAuth || !initialSession);
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
-  const [currentRole, setCurrentRole] = useState<UserRole>('ROLE_OWNER');
+  const [currentRole, setCurrentRole] = useState<UserRole>(initialSession?.role || 'ROLE_OWNER');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Cập nhật currentRole khi session thay đổi
+  React.useEffect(() => {
+    if (session?.role) {
+      setCurrentRole(session.role);
+    }
+  }, [session]);
+
   const roleConfig = USER_ROLES[currentRole];
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      setSession(null);
+      setShowLoginModal(true);
+      window.location.reload();
+    }
+  };
 
   // Nếu vai trò hiện tại không được phép truy cập tab này, tự chuyển về tab đầu tiên được phép
   React.useEffect(() => {
@@ -42,6 +66,7 @@ export function MasterAppShell({
       setCurrentTab(roleConfig.allowedNavItems[0]);
     }
   }, [currentRole, currentTab, roleConfig]);
+
 
   // Phím tắt bàn phím toàn cục chuyển Tab siêu tốc: Alt + 1..8 (hoặc Alt + Shift + 1..8)
   React.useEffect(() => {
@@ -135,8 +160,21 @@ export function MasterAppShell({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>Edge: {dbStatus}</span>
             </div>
+
+            {/* Logout Button */}
+            {session && (
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-slate-200 transition-colors"
+                title="Đăng xuất ca làm việc"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Đăng xuất</span>
+              </button>
+            )}
           </div>
         </header>
+
 
         {/* Dynamic View Body */}
         <main className="p-4 md:p-8 max-w-7xl w-full mx-auto flex-1">
@@ -204,6 +242,25 @@ export function MasterAppShell({
           )}
         </main>
       </div>
+
+      {/* Login Modal ca làm việc */}
+      {showLoginModal && (
+        <LoginModal
+          isClosable={!requiresAuth && !!session}
+          onLoginSuccess={(newSession) => {
+            setSession(newSession);
+            setCurrentRole(newSession.role);
+            setShowLoginModal(false);
+            window.location.reload();
+          }}
+          onCancel={() => {
+            if (!requiresAuth && !!session) {
+              setShowLoginModal(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
+

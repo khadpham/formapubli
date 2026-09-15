@@ -4,9 +4,12 @@ import { hashString } from './export-hash';
 export interface SessionPayload {
   role: UserRole;
   actorId: string;
+  fullName?: string;
+  sessionId?: string;
   issuedAt: number;
   expiresAt: number;
 }
+
 
 export const SESSION_COOKIE_NAME = 'formapubli_session';
 export const SESSION_MAX_AGE_SECONDS = 12 * 3600; // 12 giờ cho một ca làm việc
@@ -142,9 +145,71 @@ export function recordFailedAttempt(key: string): { locked: boolean; remainingAt
   return { locked: false, remainingAttempts: MAX_FAILED_ATTEMPTS - record.failedCount };
 }
 
+export const MAX_FAILED_ATTEMPTS_STAFF = 5;
+export const MAX_FAILED_ATTEMPTS_IP = 10;
+
+export function checkDualRateLimit(
+  ip: string,
+  staffId: string
+): { allowed: boolean; reason?: 'STAFF_LOCKED' | 'IP_LOCKED'; waitMinutes?: number } {
+  if (staffId && staffId.trim()) {
+    const staffCheck = checkRateLimit(`staff:${staffId.trim().toLowerCase()}`);
+    if (!staffCheck.allowed) {
+      return { allowed: false, reason: 'STAFF_LOCKED', waitMinutes: staffCheck.waitMinutes };
+    }
+  }
+  if (ip && ip.trim()) {
+    const ipCheck = checkRateLimit(`ip:${ip.trim()}`);
+    if (!ipCheck.allowed) {
+      return { allowed: false, reason: 'IP_LOCKED', waitMinutes: ipCheck.waitMinutes };
+    }
+  }
+  return { allowed: true };
+}
+
+export function recordDualFailedAttempt(
+  ip: string,
+  staffId: string
+): { staffLocked: boolean; ipLocked: boolean; remainingStaffAttempts: number } {
+  let staffLocked = false;
+  let remainingStaffAttempts = MAX_FAILED_ATTEMPTS_STAFF;
+
+  if (staffId && staffId.trim()) {
+    const staffRes = recordFailedAttempt(`staff:${staffId.trim().toLowerCase()}`);
+    staffLocked = staffRes.locked;
+    remainingStaffAttempts = staffRes.remainingAttempts;
+  }
+
+  let ipLocked = false;
+  if (ip && ip.trim()) {
+    // Ngưỡng IP: 10 lần
+    const key = `ip:${ip.trim()}`;
+    const now = Date.now();
+    const record = loginAttempts.get(key) || { failedCount: 0, lockedUntil: 0 };
+    record.failedCount += 1;
+    if (record.failedCount >= MAX_FAILED_ATTEMPTS_IP) {
+      record.lockedUntil = now + LOCKOUT_DURATION_MS;
+      loginAttempts.set(key, record);
+      ipLocked = true;
+    } else {
+      loginAttempts.set(key, record);
+    }
+  }
+
+  return { staffLocked, ipLocked, remainingStaffAttempts };
+}
+
+export function resetDualRateLimit(ip: string, staffId: string): void {
+  if (staffId && staffId.trim()) {
+    loginAttempts.delete(`staff:${staffId.trim().toLowerCase()}`);
+  }
+}
+
+/** Backward-compat alias cho test và route cũ */
 export function resetRateLimit(key: string): void {
   loginAttempts.delete(key);
 }
+
 
 // ---------------------------------------------------------------------------
 // ROLE PASSCODES STORE & VALIDATION
@@ -328,18 +393,70 @@ export async function requireSessionRole(req: Request, allowed: UserRole[]): Pro
   return sess;
 }
 
+import type { ActorContext } from '@/services/actor-context';
+
+export interface RequestIdentity {
+  role: string;
+  actorId: string;
+  fullName?: string;
+  sessionId?: string;
+  actorContext: ActorContext;
+}
+
 /**
  * Phân giải danh tính thống nhất cho route:
- * strict → session cookie (ném AuthError); thường → legacy header/default.
+ * - strict → Bắt buộc session cookie hợp lệ (ném AuthError 401/403).
+ * - thường → Nếu có cookie thì ưu tiên cookie; nếu không thì dùng legacy header.
+ * Luôn cung cấp actorContext chuẩn mực chống mạo danh.
  */
 export async function resolveRequestIdentity(
   req: Request,
   allowed: UserRole[],
   legacy: { role: string; actorId: string }
-): Promise<{ role: string; actorId: string }> {
+): Promise<RequestIdentity> {
   if (isAuthStrict()) {
     const sess = await requireSessionRole(req, allowed);
-    return { role: sess.role, actorId: sess.actorId };
+    return {
+      role: sess.role,
+      actorId: sess.actorId,
+      fullName: sess.fullName,
+      sessionId: sess.sessionId,
+      actorContext: {
+        staffId: sess.actorId,
+        role: sess.role,
+        fullName: sess.fullName,
+        sessionId: sess.sessionId,
+      },
+    };
   }
-  return legacy;
+
+  // Môi trường thường (local dev / backward-compat test):
+  const sess = await getSessionFromRequest(req);
+  if (sess) {
+    if (!allowed.includes(sess.role)) {
+      throw new AuthError(403, `Vai trò ${sess.role} không đủ thẩm quyền cho thao tác này.`);
+    }
+    return {
+      role: sess.role,
+      actorId: sess.actorId,
+      fullName: sess.fullName,
+      sessionId: sess.sessionId,
+      actorContext: {
+        staffId: sess.actorId,
+        role: sess.role,
+        fullName: sess.fullName,
+        sessionId: sess.sessionId,
+      },
+    };
+  }
+
+  return {
+    role: legacy.role,
+    actorId: legacy.actorId,
+    actorContext: {
+      staffId: legacy.actorId,
+      role: legacy.role as UserRole,
+    },
+  };
 }
+

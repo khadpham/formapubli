@@ -221,6 +221,15 @@ export class InventoryService {
       throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
     }
 
+    // Contract §3.3.4: chuyển kho không được xâm phạm hàng giữ chỗ (check ATP nguồn)
+    const { OrderService } = await import('./order.service');
+    const atpOut = await OrderService.getATP(editionId, fromWarehouseId);
+    if (atpOut < quantity) {
+      throw AppError.atp(
+        `Không đủ tồn khả dụng để chuyển: ${editionId} tại ${fromWarehouseId} còn khả dụng ${atpOut}, cần ${quantity} (phần còn lại đang giữ cho đơn online).`
+      );
+    }
+
     // P2-04: replay cùng key → trả kết quả cũ, không sinh chuyến mới
     const effTransferActor = params.actorContext?.staffId || actorId;
     const transferBatchId = params.idempotencyKey?.trim() || `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;

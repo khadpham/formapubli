@@ -275,8 +275,10 @@ export class ReturnService {
       if (!ex.editionId || ex.quantity <= 0 || !Number.isInteger(ex.quantity)) {
         throw AppError.invalid(`Cuốn thay thế ${ex.editionId} phải có số lượng nguyên > 0.`);
       }
-      const avail = await InventoryService.getBalance(ex.editionId, header.targetWarehouseId, 'NEW');
-      if (avail < ex.quantity) throw AppError.atp(`Không đủ tồn cuốn thay thế ${ex.editionId} (còn ${avail}, cần ${ex.quantity}). Rollback toàn bộ.`);
+      // Contract §3.3.4: cuốn thay thế cũng phải tôn trọng ATP giữ chỗ
+      const { OrderService } = await import('./order.service');
+      const atpEx = await OrderService.getATP(ex.editionId, header.targetWarehouseId);
+      if (atpEx < ex.quantity) throw AppError.atp(`Không đủ tồn khả dụng cuốn thay thế ${ex.editionId} (còn ${atpEx}, cần ${ex.quantity}). Rollback toàn bộ.`);
     }
 
     await withDbRetry(async () => {

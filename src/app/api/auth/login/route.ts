@@ -2,99 +2,190 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   signSession,
   verifyRolePasscode,
-  checkRateLimit,
-  recordFailedAttempt,
-  resetRateLimit,
+  hashStaffPasscode,
+  safeEqual,
+  checkDualRateLimit,
+  recordDualFailedAttempt,
+  resetDualRateLimit,
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
+  isAuthStrict,
 } from '@/lib/auth-session';
 import { UserRole } from '@/lib/roles';
 import { recordAuditLog } from '@/lib/rbac-guard';
+import { db, staffAccounts } from '@/db';
+import { eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
+function extractClientIp(req: NextRequest): string {
+  const cfIp = req.headers.get('cf-connecting-ip');
+  if (cfIp && cfIp.trim()) return cfIp.trim();
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) {
+    const first = forwarded.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp && realIp.trim()) return realIp.trim();
+  return '127.0.0.1';
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1';
+    const ip = extractClientIp(req);
     const body = await req.json();
-    const { role, actorId, passcode } = body;
+    const staffIdInput = `${body.staffId || body.actorId || ''}`.trim();
+    const passcode = `${body.passcode || ''}`.trim();
+    const roleInput = body.role as UserRole | undefined;
 
-    if (!role || !actorId || !passcode) {
+    if (!staffIdInput || !passcode) {
       return NextResponse.json(
-        { success: false, error: 'Bắt buộc nhập đủ: Vai trò, Mã/Tên nhân viên (actorId) và Passcode.' },
+        { success: false, code: 'INVALID_INPUT', error: 'Bắt buộc nhập Mã nhân viên (staffId) và Passcode.' },
         { status: 400 }
       );
     }
 
-    const cleanActor = `${actorId}`.trim();
-    const rateLimitKey = `${ip}:${cleanActor}`;
-
-    // Chặn role lạ ngay từ cổng (kẻo ký session cho role không tồn tại)
-    const VALID_ROLES = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
-    if (!VALID_ROLES.includes(role)) {
-      return NextResponse.json({ success: false, error: 'Vai trò không hợp lệ.' }, { status: 400 });
-    }
-
-    // 1. Kiểm tra Rate Limiting (chống brute-force: 5 lần sai -> khóa 15 phút)
-    const limitCheck = checkRateLimit(rateLimitKey);
+    // 1. Kiểm tra Rate Limiting đa tầng (IP: 10 lần, Account: 5 lần -> khóa 15 phút)
+    const limitCheck = checkDualRateLimit(ip, staffIdInput);
     if (!limitCheck.allowed) {
       recordAuditLog({
         action: 'LOGIN_FAILED' as any,
-        actorRole: role,
-        actorId: cleanActor,
+        actorRole: roleInput || 'UNKNOWN',
+        actorId: staffIdInput,
         resource: '/api/auth/login',
-        details: `CẢNH BÁO BRUTE-FORCE: Bị khóa đăng nhập trong ${limitCheck.waitMinutes} phút do sai liên tiếp.`,
+        details: `CẢNH BÁO BRUTE-FORCE: Bị khóa đăng nhập (${limitCheck.reason}) trong ${limitCheck.waitMinutes} phút.`,
         ipAddress: ip,
       });
 
       return NextResponse.json(
         {
           success: false,
-          error: `Tài khoản tạm thời bị khóa do nhập sai quá 5 lần. Vui lòng thử lại sau ${limitCheck.waitMinutes} phút.`,
+          code: 'RATE_LIMITED',
+          error: limitCheck.reason === 'IP_LOCKED'
+            ? `Địa chỉ IP tạm thời bị khóa trong ${limitCheck.waitMinutes} phút do quá nhiều lần thử thất bại.`
+            : `Tài khoản ${staffIdInput} tạm thời bị khóa trong ${limitCheck.waitMinutes} phút do nhập sai quá 5 lần.`,
           locked: true,
+          waitMinutes: limitCheck.waitMinutes,
         },
         { status: 429 }
       );
     }
 
-    // 2. Xác thực Passcode vai trò
-    const isValid = verifyRolePasscode(role as UserRole, passcode);
-    if (!isValid) {
-      const attemptRes = recordFailedAttempt(rateLimitKey);
+    let role: UserRole;
+    let actorId: string;
+    let fullName: string | undefined;
 
-      recordAuditLog({
-        action: (attemptRes.locked ? 'BRUTE_FORCE_DETECTED' : 'LOGIN_FAILED') as any,
-        actorRole: role,
-        actorId: cleanActor,
-        resource: '/api/auth/login',
-        details: attemptRes.locked
-          ? `KHÓA 15 phút sau 5 lần sai liên tiếp (brute-force).`
-          : `Đăng nhập thất bại (sai passcode). Còn lại ${attemptRes.remainingAttempts} lần thử.`,
-        ipAddress: ip,
-      });
+    // 2. Tra cứu tài khoản nhân viên trong bảng staff_accounts (Single Source of Truth)
+    let staffRow: typeof staffAccounts.$inferSelect | undefined;
+    try {
+      const rows = await db.select().from(staffAccounts).where(eq(staffAccounts.staffId, staffIdInput)).limit(1);
+      if (rows.length > 0) {
+        staffRow = rows[0];
+      }
+    } catch (dbErr) {
+      console.error('[auth/login] Lỗi truy vấn bảng staff_accounts:', dbErr);
+    }
 
-      return NextResponse.json(
-        {
-          success: false,
-          error: attemptRes.locked
-            ? 'Nhập sai 5 lần! Hệ thống đã khóa phiên đăng nhập 15 phút để bảo vệ.'
-            : `Mã Passcode không chính xác. Còn lại ${attemptRes.remainingAttempts} lần thử.`,
-          remainingAttempts: attemptRes.remainingAttempts,
-          locked: attemptRes.locked,
-        },
-        { status: 401 }
-      );
+    if (staffRow) {
+      // 2.1. Kiểm tra tài khoản có đang hoạt động không
+      if (!staffRow.isActive) {
+        recordDualFailedAttempt(ip, staffIdInput);
+        recordAuditLog({
+          action: 'LOGIN_FAILED' as any,
+          actorRole: staffRow.role,
+          actorId: staffRow.staffId,
+          resource: '/api/auth/login',
+          details: 'Đăng nhập bị từ chối: Tài khoản nhân viên đã bị vô hiệu hóa (isActive = false).',
+          ipAddress: ip,
+        });
+
+        return NextResponse.json(
+          { success: false, code: 'FORBIDDEN', error: 'Tài khoản nhân viên này đã bị vô hiệu hóa.' },
+          { status: 403 }
+        );
+      }
+
+      // 2.2. Kiểm tra Passcode băm với Salt riêng của tài khoản (Timing-Safe)
+      const computedHash = hashStaffPasscode(passcode, staffRow.salt);
+      const isMatch = safeEqual(computedHash, staffRow.passcodeHash.toLowerCase());
+
+      if (!isMatch) {
+        const attemptRes = recordDualFailedAttempt(ip, staffIdInput);
+        recordAuditLog({
+          action: (attemptRes.staffLocked || attemptRes.ipLocked ? 'BRUTE_FORCE_DETECTED' : 'LOGIN_FAILED') as any,
+          actorRole: staffRow.role,
+          actorId: staffRow.staffId,
+          resource: '/api/auth/login',
+          details: attemptRes.staffLocked || attemptRes.ipLocked
+            ? 'KHÓA 15 phút sau nhiều lần sai liên tiếp (brute-force).'
+            : `Sai passcode. Còn lại ${attemptRes.remainingStaffAttempts} lần thử.`,
+          ipAddress: ip,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'AUTH_REQUIRED',
+            error: attemptRes.staffLocked || attemptRes.ipLocked
+              ? 'Nhập sai 5 lần! Hệ thống đã khóa tài khoản 15 phút để bảo vệ.'
+              : `Mã Passcode không chính xác. Còn lại ${attemptRes.remainingStaffAttempts} lần thử.`,
+            remainingAttempts: attemptRes.remainingStaffAttempts,
+            locked: attemptRes.staffLocked || attemptRes.ipLocked,
+          },
+          { status: 401 }
+        );
+      }
+
+      // Khóa danh tính chuẩn hóa từ CSDL
+      role = staffRow.role as UserRole;
+      actorId = staffRow.staffId;
+      fullName = staffRow.fullName;
+    } else {
+      // Fallback khi đăng nhập bằng role-level passcode hoặc tài khoản ảo trong test suite
+      const VALID_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
+      if (roleInput && VALID_ROLES.includes(roleInput) && verifyRolePasscode(roleInput, passcode)) {
+        role = roleInput;
+        actorId = staffIdInput || roleInput;
+        fullName = staffIdInput || roleInput;
+      } else {
+        const attemptRes = recordDualFailedAttempt(ip, staffIdInput);
+        recordAuditLog({
+          action: (attemptRes.staffLocked || attemptRes.ipLocked ? 'BRUTE_FORCE_DETECTED' : 'LOGIN_FAILED') as any,
+          actorRole: roleInput || 'UNKNOWN',
+          actorId: staffIdInput,
+          resource: '/api/auth/login',
+          details: `Đăng nhập thất bại: Tài khoản không tồn tại hoặc sai mật khẩu.`,
+          ipAddress: ip,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'AUTH_REQUIRED',
+            error: attemptRes.staffLocked || attemptRes.ipLocked
+              ? 'Nhập sai quá số lần cho phép! Hệ thống đã khóa phiên đăng nhập 15 phút.'
+              : 'Mã nhân viên hoặc Passcode không chính xác.',
+            remainingAttempts: attemptRes.remainingStaffAttempts,
+            locked: attemptRes.staffLocked || attemptRes.ipLocked,
+          },
+          { status: 401 }
+        );
+      }
     }
 
     // 3. Đăng nhập thành công -> Reset rate limit & Sinh Signed Session Cookie
-    resetRateLimit(rateLimitKey);
+    resetDualRateLimit(ip, staffIdInput);
 
     const now = Date.now();
     const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
+    const sessionId = `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     const token = await signSession({
-      role: role as UserRole,
-      actorId: cleanActor,
+      role,
+      actorId,
+      fullName,
+      sessionId,
       issuedAt: now,
       expiresAt,
     });
@@ -102,9 +193,9 @@ export async function POST(req: NextRequest) {
     recordAuditLog({
       action: 'LOGIN_SUCCESS' as any,
       actorRole: role,
-      actorId: cleanActor,
+      actorId,
       resource: '/api/auth/login',
-      details: `Đăng nhập thành công ca làm việc (vai trò: ${role}). Session cấp phát 12h.`,
+      details: `Đăng nhập thành công ca làm việc (${actorId} - ${role} - ${fullName || ''}). Session cấp phát 12h.`,
       ipAddress: ip,
     });
 
@@ -112,8 +203,11 @@ export async function POST(req: NextRequest) {
     const res = NextResponse.json({
       success: true,
       data: {
+        staffId: actorId,
+        actorId,
         role,
-        actorId: cleanActor,
+        fullName,
+        sessionId,
         expiresAt,
       },
     });
@@ -131,8 +225,9 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, error: err.message || 'Lỗi xử lý đăng nhập' },
+      { success: false, code: 'INTERNAL_ERROR', error: err.message || 'Lỗi xử lý đăng nhập' },
       { status: 500 }
     );
   }
 }
+

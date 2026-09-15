@@ -105,6 +105,21 @@ export class TransferService {
       }
     }
 
+    // Contract §3.3.4: dispatch (luân chuyển + ký gửi) không xâm phạm hàng giữ chỗ
+    const { OrderService } = await import('./order.service');
+    const needDispatch = new Map<string, number>();
+    for (const it of items) {
+      needDispatch.set(it.editionId, (needDispatch.get(it.editionId) || 0) + it.quantity);
+    }
+    for (const [editionId, qty] of Array.from(needDispatch.entries())) {
+      const atp = await OrderService.getATP(editionId, fromWarehouseId);
+      if (atp < qty) {
+        throw AppError.atp(
+          `Không đủ tồn khả dụng để gửi: ${editionId} tại ${fromWarehouseId} còn khả dụng ${atp}, cần ${qty} (phần còn lại giữ cho đơn online).`
+        );
+      }
+    }
+
     const code = shipmentCode();
 
     return await withDbRetry(async () =>

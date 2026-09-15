@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { resolveRequestIdentity } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
+import { UserRole } from '@/lib/roles';
 
 // P2-01/02/03 — Hardened: route bút toán kho trực tiếp.
 // - Chặn TAX/CASHIER khai báo tường minh (header vắng mặt = luồng UI nội bộ, mặc định OWNER).
@@ -11,33 +13,24 @@ const ALLOWED_CONDITIONS = ['NEW', 'MINOR_DAMAGE', 'DEFECTIVE', 'QUARANTINE'];
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    let userRole: string = extractUserRole(req);
-    let actorHeader: string | null = req.headers.get('x-formapubli-actor');
-    // BƯỚC 3: strict → bắt session OWNER/MANAGER/WAREHOUSE (401 thiếu, 403 sai vai)
-    if (isAuthStrict()) {
-      try {
-        const id = await resolveRequestIdentity(
-          req,
-          ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-          { role: userRole, actorId: actorHeader || userRole }
-        );
-        userRole = id.role as any;
-        actorHeader = id.actorId;
-      } catch (e: any) {
-        if (e instanceof AuthError) {
-          return NextResponse.json({ success: false, error: e.message }, { status: e.status });
-        }
-        throw e;
-      }
-    }
+    const ALLOWED_MOVEMENT_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'];
+    const identity = await resolveRequestIdentity(req, ALLOWED_MOVEMENT_ROLES, {
+      role: extractUserRole(req),
+      actorId: req.headers.get('x-formapubli-actor') || 'Thủ kho formapubli',
+    });
+    const userRole = identity.role as UserRole;
+    const actorHeader = identity.actorId;
+    const actorContext = identity.actorContext;
+
     if (userRole === 'ROLE_TAX' || userRole === 'ROLE_CASHIER') {
       return NextResponse.json(
-        { error: 'Bút toán kho trực tiếp chỉ dành cho Thủ kho/Quản lý.' },
+        { success: false, code: 'FORBIDDEN', error: 'Bút toán kho trực tiếp chỉ dành cho Thủ kho/Quản lý.' },
         { status: 403 }
       );
     }
-    const { editionId, warehouseId, eventType, quantityDelta, documentRef, note, actorId, condition, idempotencyKey } = body;
+    const body = await req.json();
+    const { editionId, warehouseId, eventType, quantityDelta, documentRef, note, condition, idempotencyKey } = body;
+
 
     if (!editionId || !warehouseId || !eventType || quantityDelta === undefined || quantityDelta === null || !documentRef) {
       return NextResponse.json(
@@ -83,14 +76,15 @@ export async function POST(req: NextRequest) {
       condition: safeCondition,
       documentRef,
       note,
-      actorId: actorHeader || actorId || 'Thủ kho formapubli',
+      actorId: actorHeader,
+      actorContext,
       idempotencyKey: `${idempotencyKey}`.trim(),
     });
 
     recordAuditLog({
       action: 'ADJUST_STOCK',
       actorRole: userRole,
-      actorId: actorHeader || actorId || userRole,
+      actorId: actorHeader,
       resource: '/api/inventory/movement',
       details: `Bút toán ${eventType} ${delta} cuốn ${editionId} tại ${warehouseId} (${documentRef}).`,
     });
@@ -98,7 +92,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     const msg = error.message || 'Lỗi xử lý bút toán kho';
-    const status = /UNIQUE|duplicate|idempotency/i.test(msg) ? 409 : 400;
-    return NextResponse.json({ error: msg }, { status });
+    if (/UNIQUE|duplicate|idempotency/i.test(msg)) {
+      return NextResponse.json({ success: false, code: 'IDEMPOTENCY_CONFLICT', error: msg }, { status: 409 });
+    }
+    return handleApiError(error);
   }
 }
+

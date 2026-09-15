@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReturnService } from '@/services/return.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { resolveRequestIdentity } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 import { isValidManagerPin } from '@/lib/manager-pin';
+import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,11 +32,17 @@ function isPrivileged(role: string) {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
+    const ALLOWED_VIEW_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'];
+    const identity = await resolveRequestIdentity(req, ALLOWED_VIEW_ROLES, {
+      role: extractUserRole(req),
+      actorId: req.headers.get('x-formapubli-actor') || 'staff-admin',
+    });
+    const userRole = identity.role;
+    const actorHeader = identity.actorId;
+
     if (userRole === 'ROLE_WAREHOUSE') {
       return NextResponse.json({ success: true, returns: [], message: 'Thủ kho không có quyền xem phiếu hoàn tiền.' });
     }
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
     const list = await ReturnService.list({
       orderId: searchParams.get('orderId') || undefined,
       status: searchParams.get('status') || undefined,
@@ -42,7 +50,7 @@ export async function GET(req: NextRequest) {
     const scoped = userRole === 'ROLE_CASHIER' ? list.filter((r) => r.createdBy === actorHeader) : list;
     return NextResponse.json({ success: true, role: userRole, returns: scoped });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi truy vấn phiếu trả' }, { status: 500 });
+    return handleApiError(error);
   }
 }
 
@@ -50,30 +58,19 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action } = body;
-    let userRole: string = extractUserRole(req);
-    let actorHeader: string = req.headers.get('x-formapubli-actor') || body.createdBy || userRole;
+    const needPriv = action !== 'REQUEST';
+    const allowedRoles: UserRole[] = needPriv
+      ? ['ROLE_OWNER', 'ROLE_MANAGER']
+      : ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'];
 
-    // BƯỚC 3: strict → session theo action (REQUEST: mọi vai trò trừ TAX;
-    // APPROVE/COMPLETE/REJECT/VOID: OWNER/MANAGER). Thường → giữ header legacy.
-    if (isAuthStrict()) {
-      const needPriv = action !== 'REQUEST';
-      try {
-        const id = await resolveRequestIdentity(
-          req,
-          needPriv
-            ? ['ROLE_OWNER', 'ROLE_MANAGER']
-            : ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'],
-          { role: userRole, actorId: actorHeader || userRole }
-        );
-        userRole = id.role;
-        actorHeader = id.actorId;
-      } catch (e: any) {
-        if (e instanceof AuthError) {
-          return NextResponse.json({ success: false, error: e.message }, { status: e.status });
-        }
-        throw e;
-      }
-    }
+    const identity = await resolveRequestIdentity(req, allowedRoles, {
+      role: extractUserRole(req),
+      actorId: req.headers.get('x-formapubli-actor') || body.createdBy || 'staff-admin',
+    });
+    const userRole = identity.role;
+    const actorHeader = identity.actorId;
+    const actorContext = identity.actorContext;
+
 
     if (userRole === 'ROLE_TAX') {
       return NextResponse.json({ success: false, error: 'Kế toán thuế không được thao tác phiếu đổi/trả.' }, { status: 403 });
@@ -102,6 +99,7 @@ export async function POST(req: NextRequest) {
         cashboxSessionId: body.cashboxSessionId,
         createdBy: actorHeader,
         actorRole: userRole,
+        actorContext,
         idempotencyKey: body.idempotencyKey,
         note: body.note,
         bypassWindow,
@@ -122,7 +120,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'APPROVE') {
       if (!isPrivileged(userRole)) {
-        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được duyệt phiếu.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được duyệt phiếu.' }, { status: 403 });
       }
       const result = await ReturnService.approve(body.returnId, userRole, actorHeader);
       recordAuditLog({
@@ -134,7 +132,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'COMPLETE') {
       if (!isPrivileged(userRole)) {
-        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được hoàn tất phiếu.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được hoàn tất phiếu.' }, { status: 403 });
       }
       const result = await ReturnService.complete(
         body.returnId,
@@ -152,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'REJECT') {
       if (!isPrivileged(userRole)) {
-        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được từ chối phiếu.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được từ chối phiếu.' }, { status: 403 });
       }
       const result = await ReturnService.reject(body.returnId, userRole, body.rejectNote);
       recordAuditLog({
@@ -164,7 +162,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'VOID') {
       if (!isPrivileged(userRole)) {
-        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được hủy phiếu.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được hủy phiếu.' }, { status: 403 });
       }
       const result = await ReturnService.voidReturn(body.returnId, userRole, body.voidReason);
       recordAuditLog({
@@ -175,10 +173,11 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: false, error: 'action không hợp lệ (REQUEST | APPROVE | COMPLETE | REJECT | VOID).' },
+      { success: false, code: 'INVALID_INPUT', error: 'action không hợp lệ (REQUEST | APPROVE | COMPLETE | REJECT | VOID).' },
       { status: 400 }
     );
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Lỗi xử lý phiếu đổi/trả' }, { status: 400 });
+    return handleApiError(error);
   }
 }
+

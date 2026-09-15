@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
 import { extractUserRole, enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
 import { isValidManagerPin } from '@/lib/manager-pin';
+import { resolveRequestIdentity } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
+import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +18,14 @@ const MAX_CASHIER_DISCOUNT_RATE = 0.15;
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userRole = extractUserRole(req);
+    const ALLOWED_VIEW_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
+    const identity = await resolveRequestIdentity(req, ALLOWED_VIEW_ROLES, {
+      role: extractUserRole(req),
+      actorId: req.headers.get('x-formapubli-actor') || 'staff-admin',
+    });
+    const userRole = identity.role as UserRole;
+    const actorHeader = identity.actorId;
+
     const requestedScope = searchParams.get('fiscalScope') || 'ALL';
     // Bước 1: mặc định chỉ liệt kê đơn COMPLETED (giữ nguyên hành vi cũ);
     // màn hình "chờ xác nhận" truyền ?status=PENDING_CONFIRMATION hoặc ALL.
@@ -26,13 +36,13 @@ export async function GET(req: NextRequest) {
     const warehouseId = searchParams.get('warehouseId') || undefined;
     const startDate = searchParams.get('startDate') || undefined;
     const endDate = searchParams.get('endDate') || undefined;
-    const actorHeader = req.headers.get('x-formapubli-actor') || userRole;
 
     // SIẾT CHẶT THỦ KHO & THU NGÂN:
     // Thu ngân chỉ được xem các đơn do chính mình tạo (ca của mình).
     // Thủ kho không được xem dữ liệu doanh thu đơn hàng (trả về danh sách rỗng).
     let cashierFilter: string | undefined = undefined;
     if (userRole === 'ROLE_CASHIER') {
+
       cashierFilter = actorHeader;
     } else if (userRole === 'ROLE_WAREHOUSE') {
       return NextResponse.json({
@@ -84,26 +94,30 @@ export async function GET(req: NextRequest) {
       summary,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi truy vấn đơn hàng' },
-      { status: 500 }
-    );
+    return handleApiError(error);
   }
 }
+
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const userRole = extractUserRole(req);
-    const actorHeader = req.headers.get('x-formapubli-actor') || body.cashierId || userRole;
+    const ALLOWED_POST_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'];
+    const identity = await resolveRequestIdentity(req, ALLOWED_POST_ROLES, {
+      role: extractUserRole(req),
+      actorId: req.headers.get('x-formapubli-actor') || body.cashierId || 'staff-admin',
+    });
+    const userRole = identity.role as UserRole;
+    const actorHeader = identity.actorId;
+    const actorContext = identity.actorContext;
 
     // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce kép route + service)
     if (body.action === 'CONFIRM' || body.action === 'CANCEL') {
       if (userRole === 'ROLE_TAX') {
-        return NextResponse.json({ success: false, error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
       }
       if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được duyệt/hủy đơn PENDING.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được duyệt/hủy đơn PENDING.' }, { status: 403 });
       }
       const result = body.action === 'CONFIRM'
         ? await OrderService.confirmOrder(body.orderId, userRole, actorHeader)
@@ -121,7 +135,7 @@ export async function POST(req: NextRequest) {
     // 1.2: dọn đơn PENDING quá TTL 48h (Manager/Owner) — nút trên màn Pending
     if (body.action === 'CLEANUP') {
       if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-        return NextResponse.json({ success: false, error: 'Chỉ Manager/Owner được dọn đơn hết hạn.' }, { status: 403 });
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được dọn đơn hết hạn.' }, { status: 403 });
       }
       const cleaned = await OrderService.cleanupExpiredPending();
       recordAuditLog({
@@ -130,6 +144,7 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ success: true, data: { cleaned } });
     }
+
 
     const {
       id,
@@ -239,11 +254,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // BẢO VỆ PHÂN QUYỀN OVERDRAFT:
-    // Chỉ Quản lý/Chủ (ROLE_MANAGER, ROLE_OWNER) mới được phép gửi allowOverdraft = true.
-    // Nếu là thu ngân (ROLE_CASHIER) hoặc vai trò khác, chỉ cho phép allowOverdraft khi đây là đơn sync ngoại tuyến (isOfflineSync = true).
-    const isLegitOfflineSync = Boolean(isOfflineSync);
-    const safeAllowOverdraft = isPrivilegedRole ? Boolean(allowOverdraft) : (isLegitOfflineSync && Boolean(allowOverdraft));
+    // P0 Contract: Không cho phép bán âm (overdraft) trên đường bán trực tiếp thông thường.
+    // Chỉ cho phép khi là đơn sync ngoại tuyến hội chợ (isOfflineSync && channel === 'FAIR_EVENT')
+    // hoặc có phê duyệt của quản trị viên (ROLE_OWNER / ROLE_MANAGER).
+    const isFairOfflineSync = Boolean(isOfflineSync && channel === 'FAIR_EVENT');
+    const safeAllowOverdraft = Boolean((isFairOfflineSync || isPrivilegedRole) && allowOverdraft);
 
     // P2-10: đơn gõ bù > 7 ngày — thu ngân phải có PIN quản lý (privileged được miễn)
     let backdateApproved = isPrivilegedRole;
@@ -253,7 +268,7 @@ export async function POST(req: NextRequest) {
         const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
         if (!isValidManagerPin(providedPin)) {
           return NextResponse.json(
-            { success: false, error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
+            { success: false, code: 'FORBIDDEN', error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
             { status: 403 }
           );
         }
@@ -277,15 +292,17 @@ export async function POST(req: NextRequest) {
       vatRate: vatRate !== undefined ? parseFloat(vatRate) : 0,
       vatInvoiceRequired: giftFlag ? false : Boolean(vatInvoiceRequired),
       vatInvoiceCode: giftFlag ? undefined : vatInvoiceCode,
-      cashierId: cashierId || 'Thu ngân quầy',
+      cashierId: actorHeader,
+      actorContext,
       cashboxSessionId,
       note,
       // Bước 1: web/social truyền confirmImmediately:false → đơn PENDING giữ chỗ ATP
       confirmImmediately: confirmImmediately !== undefined ? Boolean(confirmImmediately) : true,
       // P2-10: cờ duyệt gõ bù > 7 ngày (đã check PIN ở trên)
       backdateApproved,
-      isOfflineSync: isLegitOfflineSync,
+      isOfflineSync: Boolean(isOfflineSync),
       allowOverdraft: safeAllowOverdraft,
+
       isGift: giftFlag,
       giftReason: giftFlag ? `${giftReason ?? note ?? ''}`.trim() : undefined,
       items: giftFlag
@@ -299,7 +316,7 @@ export async function POST(req: NextRequest) {
     recordAuditLog({
       action: 'MUTATE_ORDER',
       actorRole: userRole,
-      actorId: cashierId || userRole,
+      actorId: actorHeader,
       resource: '/api/orders',
       details: `Tạo đơn hàng ${result.orderCode} (${safeFiscalScope}) - Thực thu: ${result.finalAmount}`,
     });
@@ -309,9 +326,9 @@ export async function POST(req: NextRequest) {
       recordAuditLog({
         action: 'MANAGER_DISCOUNT_APPROVED',
         actorRole: userRole,
-        actorId: cashierId || userRole,
+        actorId: actorHeader,
         resource: '/api/orders',
-        details: `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${result.orderCode} (cashier: ${cashierId || userRole}, phê duyệt bởi: ${userRole}).`,
+        details: `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${result.orderCode} (cashier: ${actorHeader}, phê duyệt bởi: ${userRole}).`,
       });
     }
 
@@ -321,7 +338,7 @@ export async function POST(req: NextRequest) {
       recordAuditLog({
         action: 'MANAGER_DISCOUNT_APPROVED',
         actorRole: userRole,
-        actorId: cashierId || userRole,
+        actorId: actorHeader,
         resource: '/api/orders',
         details: `Duyệt đơn Tặng 100% (GIFT) ${result.orderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
       });
@@ -332,9 +349,9 @@ export async function POST(req: NextRequest) {
       data: result,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Lỗi tạo đơn hàng bán sách' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+
+
+
