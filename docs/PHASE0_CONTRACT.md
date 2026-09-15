@@ -99,7 +99,8 @@ Giả sử tựa sách H01 có giá bìa 100.000 đ:
 
 | Bên phụ trách | Phạm vi file được phép sửa |
 | :--- | :--- |
-| **LANE A (Antigravity)** | • `src/app/api/**` (Toàn bộ API routes & guards)<br/>• `src/app/page.tsx` & `src/components/**` (UI & Server Component render)<br/>• `src/lib/auth-session.ts`, `rbac-guard.ts`, `roles.ts`, `manager-pin.ts`<br/>• `src/db/schema.ts`, migrations, `package.json`, `.env.example`<br/>• `scripts/setup-test-db.ts`, `run-isolated.ts` |
-| **LANE B (Nhóm chuyên gia)** | • `src/services/**` (OrderService, InventoryService, AnalyticsService...)<br/>• `src/db/index.ts`, helper transaction & retry logic<br/>• Test suites nghiệp vụ trong `scripts/test-*.ts` (ngoại trừ test auth) |
+| **LANE A (Antigravity - Integrator)** | • `src/app/api/**` (Toàn bộ API routes & guards)<br/>• `src/app/page.tsx` & `src/components/**` (UI & Server Component render)<br/>• `src/lib/auth-session.ts`, `rbac-guard.ts`, `roles.ts`, `manager-pin.ts`, `api-response.ts`<br/>• `src/services/actor-context.ts`, `src/services/app-error.ts` *(Shared Contract Modules do Lane A làm chủ quản và chuẩn hóa)*<br/>• `src/db/schema.ts`, migrations, `package.json`, `.env.example`<br/>• `scripts/setup-test-db.ts`, `run-isolated.ts`, `test-phase0-laneA.ts` |
+| **LANE B (Nhóm chuyên gia nghiệp vụ)** | • `src/services/**` (ngoại trừ `actor-context.ts` và `app-error.ts`)<br/>• `src/db/index.ts`, helper transaction & retry logic<br/>• Test suites nghiệp vụ trong `scripts/test-*.ts` (ngoại trừ test auth) |
 
 Lane A đóng vai trò Integrator: Khởi tạo migration, kiểu dữ liệu chung và kiểm thử tích hợp cuối cùng.
+Lane B chỉ sử dụng `actor-context.ts` và `app-error.ts`, không tự ý đổi chữ ký hoặc mã lỗi.
