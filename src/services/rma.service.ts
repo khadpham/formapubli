@@ -65,68 +65,91 @@ export class RmaService {
     const ticketId = `RMA-${new Date().toISOString().substring(0, 10).replace(/-/g, '')}-${randomUUID().substring(0, 6).toUpperCase()}`;
 
 
-    // 1. Tạo phiếu RMA
-    const [ticket] = await db
-      .insert(rmaTickets)
-      .values({
-        id: ticketId,
-        warehouseId,
-        orderId,
-        editionId,
-        quantity,
-        defectReason,
-        quarantineCondition: targetCondition,
-        resolutionAction: 'HOLD_IN_QUARANTINE',
-        inspectedBy,
-        status: 'QUARANTINED',
-        notes,
-      })
-      .returning();
+    // FIX-07: Bọc toàn bộ kiểm tra tồn + tạo phiếu RMA + 2 bút toán Thẻ Kho trong 1 transaction ACID
+    // Tuyệt đối không để lại ticket mồ côi nếu kho không đủ sách cách ly.
+    return await db.transaction(async (tx) => {
+      // 1. Kiểm tra tồn kho trước nếu nguồn là NEW
+      if (sourceCondition === 'NEW') {
+        const balanceRows = await tx
+          .select()
+          .from(editions)
+          .where(eq(editions.id, editionId))
+          .limit(1);
+        if (balanceRows.length === 0) throw new Error('Ấn bản không tồn tại.');
 
-    // 2. Chuyển tồn kho sang QUARANTINE/DEFECTIVE
-    // Nếu chuyển từ NEW, trừ NEW và cộng QUARANTINE
-    if (sourceCondition === 'NEW') {
-      // Bút toán 1: Trừ kho NEW
-      await InventoryService.recordMovement({
-        editionId,
-        warehouseId,
-        eventType: 'ADJUSTMENT',
-        quantityDelta: -quantity,
-        condition: 'NEW',
-        documentRef: ticketId,
-        correlationId: ticketId,
-        actorId: inspectedBy,
-        note: `[RMA Cách Ly] Trừ tồn NEW do lỗi: ${defectReason}. ${notes || ''}`,
-      });
+        const currentNewBalance = await InventoryService.getBalance(editionId, warehouseId, 'NEW');
+        if (currentNewBalance < quantity) {
+          throw new Error(
+            `Kho không đủ tồn NEW để chuyển sang cách ly (Yêu cầu: ${quantity}, Hiện có: ${currentNewBalance}).`
+          );
+        }
+      }
 
-      // Bút toán 2: Tăng kho QUARANTINE
-      await InventoryService.recordMovement({
-        editionId,
-        warehouseId,
-        eventType: 'ADJUSTMENT',
-        quantityDelta: quantity,
-        condition: targetCondition,
-        documentRef: ticketId,
-        correlationId: ticketId,
-        actorId: inspectedBy,
-        note: `[RMA Cách Ly] Tiếp nhận sách lỗi vào kho ${targetCondition}. ${notes || ''}`,
-      });
-    } else {
-      // Nhận trực tiếp vào QUARANTINE (ví dụ thu hồi từ khách mà đơn cũ đã xóa hoặc hàng ký gửi bổ sung)
-      await InventoryService.recordMovement({
-        editionId,
-        warehouseId,
-        eventType: 'RECEIPT',
-        quantityDelta: quantity,
-        condition: targetCondition,
-        documentRef: ticketId,
-        correlationId: ticketId,
-        actorId: inspectedBy,
-        note: `[RMA Đổi Trả] Nhập kho cách ly ${targetCondition} từ nguồn ngoài. ${notes || ''}`,
-      });
-    }
+      // 2. Tạo phiếu RMA
+      const [ticket] = await tx
+        .insert(rmaTickets)
+        .values({
+          id: ticketId,
+          warehouseId,
+          orderId,
+          editionId,
+          quantity,
+          defectReason,
+          quarantineCondition: targetCondition,
+          resolutionAction: 'HOLD_IN_QUARANTINE',
+          inspectedBy,
+          status: 'QUARANTINED',
+          notes,
+        })
+        .returning();
 
-    return ticket;
+      // 3. Chuyển tồn kho sang QUARANTINE/DEFECTIVE
+      if (sourceCondition === 'NEW') {
+        // Bút toán 1: Trừ kho NEW
+        await InventoryService.recordMovement({
+          editionId,
+          warehouseId,
+          eventType: 'ADJUSTMENT',
+          quantityDelta: -quantity,
+          condition: 'NEW',
+          documentRef: ticketId,
+          correlationId: ticketId,
+          actorId: inspectedBy,
+          note: `[RMA Cách Ly] Trừ tồn NEW do lỗi: ${defectReason}. ${notes || ''}`,
+          tx,
+        });
+
+        // Bút toán 2: Tăng kho QUARANTINE
+        await InventoryService.recordMovement({
+          editionId,
+          warehouseId,
+          eventType: 'ADJUSTMENT',
+          quantityDelta: quantity,
+          condition: targetCondition,
+          documentRef: ticketId,
+          correlationId: ticketId,
+          actorId: inspectedBy,
+          note: `[RMA Cách Ly] Tiếp nhận sách lỗi vào kho ${targetCondition}. ${notes || ''}`,
+          tx,
+        });
+      } else {
+        // Nhận trực tiếp vào QUARANTINE từ nguồn ngoài
+        await InventoryService.recordMovement({
+          editionId,
+          warehouseId,
+          eventType: 'RECEIPT',
+          quantityDelta: quantity,
+          condition: targetCondition,
+          documentRef: ticketId,
+          correlationId: ticketId,
+          actorId: inspectedBy,
+          note: `[RMA Đổi Trả] Nhập kho cách ly ${targetCondition} từ nguồn ngoài. ${notes || ''}`,
+          tx,
+        });
+      }
+
+      return ticket;
+    });
   }
 
   /**

@@ -121,6 +121,8 @@ export class BundleService {
   /**
    * Phân bổ comboPrice theo tỉ trọng giá bìa, dồn lẻ vào dòng cuối.
    * Tổng các dòng khớp 100% comboPrice × số bộ (chuẩn COGS/kê khai).
+   * FIX-10: tính theo TỔNG DÒNG (cover×số lượng/bộ), không theo đơn giá —
+   * bản cũ dồn dư sai khi linh kiện có quantityInBundle > 1 (300k thành 400k).
    */
   static async priceLines(bundleId: string, qty: number): Promise<PricedBundleLine[]> {
     const { bundle, items } = await this.getBundle(bundleId);
@@ -128,21 +130,23 @@ export class BundleService {
     if (sumCover <= 0) throw new Error(`Combo ${bundle.code} có tổng giá bìa linh kiện bằng 0.`);
 
     const perBox = bundle.comboPrice;
-    let allocated = 0;
+    let allocatedBox = 0;
     return items.map((it, idx) => {
       const req = it.quantityInBundle ?? 1;
       const cover = it.coverPrice ?? 0;
-      let unit = Math.round((perBox * cover) / sumCover);
+      let lineTotal = Math.round((perBox * cover * req) / sumCover);
       if (idx === items.length - 1) {
-        unit = perBox - allocated; // Dồn phần dư làm tròn vào dòng cuối
+        lineTotal = perBox - allocatedBox; // Dồn phần dư làm tròn vào TỔNG dòng cuối
       }
-      allocated += unit;
+      allocatedBox += lineTotal;
+      const unit = req > 0 ? Math.round(lineTotal / req) : lineTotal;
+      // Giữ tổng dòng chuẩn tuyệt đối (unit hiển thị có thể lệch ±1 do làm tròn)
       return {
         editionId: it.editionId,
         quantity: req * qty,
         unitCoverPrice: cover,
         unitSellingPrice: unit,
-        totalAmount: unit * req * qty,
+        totalAmount: lineTotal * qty,
         bundleId,
         bundleQty: qty,
       };

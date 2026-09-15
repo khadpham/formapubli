@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders } from '../db';
 import { InventoryService } from './inventory.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
@@ -101,6 +101,28 @@ export class OrderService {
 
     const looseItems = items || [];
     const bundleOrders = params.bundles || [];
+    // FIX-02: số lượng phải nguyên (chặn tồn kho phân số 1.5 cuốn)
+    for (const it of looseItems) {
+      if (!Number.isInteger(it.quantity) || it.quantity <= 0) {
+        throw new Error(`Số lượng bán cho ấn bản ${it.editionId} phải là số nguyên > 0.`);
+      }
+    }
+    for (const b of bundleOrders) {
+      if (!Number.isInteger(b.quantity) || b.quantity <= 0) {
+        throw new Error(`Số lượng combo ${b.bundleId} phải là số nguyên > 0.`);
+      }
+    }
+    // FIX-03: trần chiết khấu tầng service (API route có thể bị bypass khi gọi trực tiếp).
+    // Ngoại lệ duy nhất: discount == 1 kèm cờ isGift (đơn tặng, validate riêng bên dưới).
+    if (!Number.isFinite(discountRate) || discountRate < 0 || discountRate > 1) {
+      throw new Error('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
+    }
+    for (const it of looseItems) {
+      const r = it.unitDiscountRate ?? discountRate;
+      if (!Number.isFinite(r) || r < 0 || r > 1) {
+        throw new Error(`Chiết khấu dòng ${it.editionId} phải nằm trong khoảng 0 - 100%.`);
+      }
+    }
     // BV-03: chuan hoa co tang — discount 1.0 bat buoc di kem isGift tuong minh
     const rawGift = Boolean((params as any).isGift);
     if (discountRate === 1 && !rawGift) {
@@ -260,7 +282,9 @@ export class OrderService {
     const preparedItems = [
       ...looseItems.map((item) => {
         const edition = editionMap.get(item.editionId);
-        const coverPrice = item.unitCoverPrice ?? (edition?.coverPrice || 0);
+        // FIX-01: giá bìa LUÔN lấy từ DB, tuyệt đối không tin unitCoverPrice client gửi.
+        if (!edition) throw new Error(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
+        const coverPrice = edition.coverPrice || 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
         const unitSellingPrice = Math.round(coverPrice * (1 - itemDiscountRate));
         const lineTotal = item.quantity * unitSellingPrice;
@@ -776,10 +800,21 @@ export class CashboxService {
       }
     }
 
+    // FIX-09: trừ tiền hoàn (phiếu COMPLETED cùng ca) khỏi két — chốt ca khỏi lệch.
+    // Chỉ tính hoàn tiền mặt: hoàn chuyển khoản đối soát ngân hàng riêng (SETTLE_COD pattern).
+    const refunds = await db
+      .select({ refundAmount: returnOrders.refundAmount })
+      .from(returnOrders)
+      .where(and(eq(returnOrders.cashboxSessionId, sessionId), eq(returnOrders.status, 'COMPLETED')));
+    let totalRefunds = 0;
+    for (const r of refunds) totalRefunds += r.refundAmount || 0;
+    totalCashSales -= totalRefunds;
+
     return {
       totalCashSales,
       totalTransferSales,
       totalOrdersCount,
+      totalRefunds,
     };
   }
 

@@ -158,6 +158,12 @@ export async function POST(req: NextRequest) {
     // vì OrderService cho phép unitDiscountRate kế thừa discountRate tổng.
     // Dòng combo (bundles) do management định giá sẵn nên miễn trần này.
     const safeItems = Array.isArray(items) ? items : [];
+    // FIX-01: strip unitCoverPrice client gửi — service tự tra giá bìa từ DB.
+    const pricedItems = (safeItems as any[]).map((it) => ({
+      editionId: it?.editionId,
+      quantity: it?.quantity,
+      unitDiscountRate: it?.unitDiscountRate,
+    }));
     const parsedOrderDiscount =
       discountRate !== undefined && discountRate !== null && `${discountRate}` !== ''
         ? parseFloat(discountRate)
@@ -249,8 +255,8 @@ export async function POST(req: NextRequest) {
       isGift: giftFlag,
       giftReason: giftFlag ? `${giftReason ?? note ?? ''}`.trim() : undefined,
       items: giftFlag
-        ? safeItems.map((it: any) => ({ ...it, unitDiscountRate: 1 }))
-        : safeItems,
+        ? pricedItems.map((it: any) => ({ ...it, unitDiscountRate: 1 }))
+        : pricedItems,
       bundles: Array.isArray(bundles)
         ? bundles.map((b: any) => ({ bundleId: b.bundleId, quantity: parseInt(b.quantity ?? 0, 10) }))
         : undefined,

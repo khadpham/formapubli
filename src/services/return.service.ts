@@ -119,6 +119,11 @@ export class ReturnService {
     if (ordRows.length === 0) throw new Error('Đơn gốc không tồn tại.');
     const origin = ordRows[0];
 
+    // FIX-05: Chặn trả hàng trên đơn chưa hoàn tất (PENDING_CONFIRMATION / CANCELLED)
+    if (origin.status !== 'COMPLETED') {
+      throw new Error(`Không thể lập phiếu trả cho đơn hàng có trạng thái '${origin.status}'. Đơn hàng phải ở trạng thái 'COMPLETED'.`);
+    }
+
     // Đơn gốc OFFICIAL_TAX: chỉ Manager/Owner được lập phiếu
     if (origin.fiscalScope === 'OFFICIAL_TAX' && actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw new Error('Phiếu trả cho đơn VAT chỉ Manager/Owner được lập.');
@@ -134,13 +139,19 @@ export class ReturnService {
     const soldMap = await this.getSoldMap(orderId);
     const returnedMap = await this.getReturnedMap(orderId);
 
-    // Guard chống hoàn kho vô hạn: lũy kế trả + mới <= đã bán (từng edition)
+    // FIX-04: Cộng dồn số lượng theo edition ngay trong request để chống lách luật gửi 2 dòng cùng 1 edition
+    const requestItemsMap = new Map<string, number>();
     for (const it of items) {
-      const sold = soldMap.get(it.editionId)?.qty || 0;
-      if (sold <= 0) throw new Error(`Ấn bản ${it.editionId} không có trong đơn gốc.`);
-      const returned = returnedMap.get(it.editionId) || 0;
-      if (returned + it.quantity > sold) {
-        throw new Error(`Vượt số lượng đã bán: ${it.editionId} đã bán ${sold}, đã trả ${returned}, xin thêm ${it.quantity}.`);
+      requestItemsMap.set(it.editionId, (requestItemsMap.get(it.editionId) || 0) + it.quantity);
+    }
+
+    // Guard chống hoàn kho vô hạn: lũy kế trả + tổng xin mới trong request <= đã bán (từng edition)
+    for (const [editionId, reqQty] of Array.from(requestItemsMap.entries())) {
+      const sold = soldMap.get(editionId)?.qty || 0;
+      if (sold <= 0) throw new Error(`Ấn bản ${editionId} không có trong đơn gốc.`);
+      const returned = returnedMap.get(editionId) || 0;
+      if (returned + reqQty > sold) {
+        throw new Error(`Vượt số lượng đã bán: ${editionId} đã bán ${sold}, đã trả ${returned}, xin thêm ${reqQty}.`);
       }
     }
 

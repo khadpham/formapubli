@@ -80,11 +80,12 @@ export class ShipmentService {
     return { orderId, codStatus: 'RECEIVED', codAmount: ord.codAmount, bankReference: bankReference.trim() };
   }
 
-  static async list(filters: { shippingStatus?: string; codStatus?: string; carrier?: string } = {}) {
+  static async list(filters: { shippingStatus?: string; codStatus?: string; carrier?: string; fiscalScope?: string } = {}) {
     const conds = [];
     if (filters.shippingStatus) conds.push(eq(orders.shippingStatus, filters.shippingStatus));
     if (filters.codStatus) conds.push(eq(orders.codStatus, filters.codStatus));
     if (filters.carrier) conds.push(eq(orders.carrier, filters.carrier));
+    if (filters.fiscalScope) conds.push(eq(orders.fiscalScope, filters.fiscalScope));
     if (conds.length === 0) return await db.select().from(orders).limit(200);
     return await db.select().from(orders).where(and(...conds)).limit(200);
   }

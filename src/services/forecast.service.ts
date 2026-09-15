@@ -1,6 +1,6 @@
-import { db, editions, inventoryLedger, stockBalances, warehouses } from '../db';
+import { db, editions, inventoryLedger, orders, stockBalances, warehouses } from '../db';
 import { InventoryService } from './inventory.service';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, or, sql, inArray, isNull } from 'drizzle-orm';
 
 /**
  * ĐỘNG CƠ DỰ BÁO TÁI BẢN (REPRINT RUNOUT FORECASTING) — stateless, không migration.
@@ -69,10 +69,14 @@ export class ForecastService {
         qty: sql<number>`COALESCE(SUM(-${inventoryLedger.quantityDelta}), 0)`,
       })
       .from(inventoryLedger)
+      // FIX-08: loại đơn tặng 0đ / tài trợ khỏi vận tốc bán (kẻo EOQ đặt dư).
+      // Giữ lại bút toán không gắn đơn (ký gửi: correlationId là statementId).
+      .leftJoin(orders, eq(inventoryLedger.correlationId, orders.id))
       .where(
         and(
           inArray(inventoryLedger.eventType, ['DISPATCH_SALE', 'CONSIGNMENT_SOLD']),
-          sql`${inventoryLedger.recordedAt} >= ${cutoff}`
+          sql`${inventoryLedger.recordedAt} >= ${cutoff}`,
+          or(isNull(orders.id), and(sql`${orders.discountRate} < 1`, sql`${orders.channel} != 'SPONSORSHIP'`))
         )
       )
       .groupBy(inventoryLedger.editionId);

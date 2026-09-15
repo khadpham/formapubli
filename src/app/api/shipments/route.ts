@@ -16,11 +16,18 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    extractUserRole(req);
+    const userRole = extractUserRole(req);
+
+    // FIX-06: Kế toán thuế chỉ được thấy đơn OFFICIAL_TAX, tuyệt đối không lộ đơn nội bộ
+    const safeFiscalScope = userRole === 'ROLE_TAX' 
+      ? 'OFFICIAL_TAX' 
+      : (searchParams.get('fiscalScope') || undefined);
+
     const list = await ShipmentService.list({
       shippingStatus: searchParams.get('shippingStatus') || undefined,
       codStatus: searchParams.get('codStatus') || undefined,
       carrier: searchParams.get('carrier') || undefined,
+      fiscalScope: safeFiscalScope,
     });
     return NextResponse.json({ success: true, shipments: list });
   } catch (error: any) {
