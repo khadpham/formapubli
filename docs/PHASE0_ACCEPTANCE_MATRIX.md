@@ -11,7 +11,7 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 - **Idempotency Order:** **PASS** (So khớp fingerprint 11 trường vật chất; replay trả đơn cũ; xung đột trả mã lỗi `IDEMPOTENCY_CONFLICT`).
 - **Giới hạn Runtime của PRAGMA busy_timeout:** Ghi nhận thực nghiệm độc lập cho thấy `PRAGMA busy_timeout` qua `@libsql/client 0.10.0` trên Windows không hoạt động đáng tin cậy độc lập. Độ ổn định đạt được nhờ vào **connection transaction riêng**, **bounded retry** và **Full Jitter backoff**.
 - **Chuyển kho / Đổi trả / Két tiền tổng thể:** **CHỜ CP3** (Chưa nghiệm thu tích hợp luồng transfer, return, exchange).
-- **Tích hợp Phase 0 tổng thể:** **CHƯA PASS** (Đang ở giai đoạn hoàn tất CP2, chuẩn bị chuyển sang CP3).
+- **Tích hợp Phase 0 tổng thể:** **CHƯA PASS** (Lý do: CP2 đã đóng, đang chuẩn bị CP3).
 
 ## Gate trước khi tích hợp
 
@@ -54,7 +54,7 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 14. Hai request pending đồng thời tranh cuốn cuối → đúng 1 thành công.
 15. Pending duyệt → không trừ/đếm giữ chỗ hai lần.
 16. Pending hết hạn/hủy → nhả đúng lượng, không nhả hai lần.
-17. Transfer out, exchange, consignment dispatch tranh cùng hàng giữ → không xâm phạm ATP.
+17. Transfer out, exchange, consignment dispatch tranh cùng hàng giữ → không xâm phạm ATP. *(CHỜ CP3)*
 18. Cùng idempotency key/cùng payload → một hiệu ứng; cùng key/khác payload → `409`.
 19. Rollback giữa chừng → không có ticket/đơn/bút toán mồ côi.
 
@@ -76,9 +76,13 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 
 ## Blocker đang mở
 
-1. Quyết định cuối về `allowOverdraft`: phải xóa khỏi đường bán thông thường hoặc sửa contract và đặc tả ngoại lệ thành nghiệp vụ điều chỉnh riêng có chứng từ.
-2. Chủ sở hữu `actor-context.ts` và `app-error.ts` phải được chốt để tránh hai lane cùng sửa.
-3. Xác nhận cơ chế khóa transaction thực tế của libSQL/SQLite bằng hai kết nối hoặc hai process; không chấp nhận chỉ kiểm thử hai lời gọi tuần tự.
+*(Hiện không còn blocker đang mở cho Checkpoint 2. Các blocker mới cho Checkpoint 3 sẽ được xác định trong CP3 Design v2.1)*
+
+## Blocker CP2 đã giải quyết
+
+1. **Quyết định về `allowOverdraft`:** Đã loại bỏ hoàn toàn khỏi đường bán hàng thông thường và API `createOrder`. Bán hàng fail-closed tuyệt đối theo ATP.
+2. **Chủ sở hữu `actor-context.ts` và `app-error.ts`:** Đã chốt và bàn giao toàn bộ cho Lane A tiếp quản, tích hợp nhất quán trên codebase.
+3. **Cơ chế khóa transaction thực tế:** Đã xác nhận cơ chế SQLite write transaction với kết nối transaction riêng, bounded retry và full jitter; đã kiểm thử độc lập đa tiến trình qua Probe A–E (10 processes) trên database cách ly.
 
 ## Punch-list trước Production (Lane A & B)
 
@@ -96,13 +100,7 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 - **Hiện trạng:** Đã áp dụng thống nhất middleware/helper phân giải session policy trên 23 route, xác minh tĩnh qua TypeScript & build, và kiểm thử động 25 gates độc lập trên các endpoint trọng yếu (`login`, `me`, `movement`, `orders`, `analytics`, `shipments`, `cashbox`).
 - **Phạm vi công bố:** Bằng chứng hiện tại KHÔNG đại diện cho việc kiểm thử động runtime đầy đủ 100% mọi method/action của toàn bộ 23 route. Cần tiếp tục bổ sung dynamic route integration suite ở các đợt kiểm thử mở rộng kế tiếp.
 
-### 3. Tiêu chuẩn nghiệm thu Concurrency & Scope của Mutex (Lane B)
-- **Giới hạn kiến trúc:** Việc sử dụng in-memory mutex trong tiến trình Node.js chỉ có tác dụng bảo vệ concurrency trong **1 single process**.
-- **Tiêu chuẩn nghiệm thu:**
-  | Phạm vi triển khai | Cơ chế Mutex Node process | Trạng thái nghiệm thu |
-  |---|---|---|
-  | Demo / Vận hành cục bộ 1 Node instance | Mutex in-process | Chấp nhận có điều kiện |
-  | Đa kết nối DB / Đa tiến trình Node (2 processes) | Mutex in-process | **KHÔNG ĐỦ** (phải dùng lock ở tầng DB / SQLite transaction) |
-  | Production Autoscaling / Serverless / Edge Workers | Mutex in-process | **KHÔNG ĐẠT** |
-- **Yêu cầu khi bàn giao:** Lane B phải công bố rõ ràng probe concurrency chạy trong 1 process, qua 2 DB connections hay 2 processes riêng biệt. Tuyệt đối không tuyên bố "chống bán lẹm trong mọi tình huống" nếu cơ chế bảo vệ chỉ nằm trong 1 process.
+### 3. Giới hạn Concurrency & Môi trường triển khai thực tế (CP2)
+- **Cơ chế hiện tại:** Đã xóa bỏ hoàn toàn in-memory mutex khỏi tầng concurrency. CP2 dùng SQLite write transaction, transaction connection riêng, bounded retry và full jitter. Đã kiểm tra đa process trên local file (Probes A - E đạt 100%).
+- **Giới hạn thực tế:** Chưa tuyên bố tương thích serverless hoặc database chia sẻ qua network (NFS/SMB hay multi-region distributed SQLite).
 
