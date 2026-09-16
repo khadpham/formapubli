@@ -11,11 +11,15 @@ import { db, inventoryLedger, rmaTickets } from '../src/db';
 import { editions } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { OrderService } from '../src/services/order.service';
+import { toActorContext } from '../src/services/actor-context';
 import { ReturnService } from '../src/services/return.service';
 import { InventoryService } from '../src/services/inventory.service';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-returns');
+
+// CP3-R1 repair (mục 7): bổ sung actorContext theo contract mới; assertion giữ nguyên.
+const RCTX = (name: string, role: 'ROLE_CASHIER' | 'ROLE_MANAGER') => toActorContext(name, role);
 
 let seq = 0;
 const uniq = (p: string) => `${p}-${Date.now()}-${seq++}-${Math.random().toString(36).substring(2, 6)}`;
@@ -62,6 +66,7 @@ async function run() {
     refundAmount: 10000,
     createdBy: 'test-return-bot',
     actorRole: 'ROLE_CASHIER',
+    actorContext: RCTX('test-return-bot', 'ROLE_CASHIER'),
     idempotencyKey: uniq('idem-ret'),
     items: [{ editionId: edA, quantity: 1 }],
   });
@@ -78,6 +83,7 @@ async function run() {
       inventoryDisposition: 'RESTOCK',
       createdBy: 'test-return-bot',
       actorRole: 'ROLE_CASHIER',
+      actorContext: RCTX('test-return-bot', 'ROLE_CASHIER'),
       idempotencyKey: uniq('idem-ret'),
       items: [{ editionId: edA, quantity: 2 }],
     });
@@ -88,7 +94,7 @@ async function run() {
 
   // 3. APPROVE + COMPLETE → tồn NEW tăng đúng, ledger có RETURN_INBOUND
   const balBefore = await InventoryService.getBalance(edA, 'wh-au-co', 'NEW');
-  await ReturnService.approve(req1.returnId, 'ROLE_MANAGER', 'manager-1');
+  await ReturnService.approve(req1.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
   await ReturnService.complete(req1.returnId, 'ROLE_MANAGER');
   const balAfter = await InventoryService.getBalance(edA, 'wh-au-co', 'NEW');
   const inbound = await db.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, req1.returnId));
@@ -110,10 +116,11 @@ async function run() {
     inventoryDisposition: 'DEFECTIVE_HOLD',
     createdBy: 'test-return-bot',
     actorRole: 'ROLE_CASHIER',
+    actorContext: RCTX('test-return-bot', 'ROLE_CASHIER'),
     idempotencyKey: uniq('idem-ret'),
     items: [{ editionId: edB, quantity: 1 }],
   });
-  await ReturnService.approve(req2.returnId, 'ROLE_MANAGER', 'manager-1');
+  await ReturnService.approve(req2.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
   await ReturnService.complete(req2.returnId, 'ROLE_MANAGER');
   const newAfter = await InventoryService.getBalance(edB, 'wh-au-co', 'NEW');
   const quarAfter = await InventoryService.getBalance(edB, 'wh-au-co', 'QUARANTINE');
@@ -125,7 +132,8 @@ async function run() {
   );
 
   // 5. Idempotency: gửi trùng key → phiếu cũ, không sinh phiếu thứ 2
-  const sale5 = await makeSale(edC, 2);
+  // (BANK_TRANSFER để trung lập két — server tự tính refund > 0 cho REFUND).
+  const sale5 = await makeSale(edC, 2, { paymentMethod: 'BANK_TRANSFER' });
   const dupKey = uniq('idem-ret');
   const dupBody = {
     orderId: sale5.orderId,
@@ -135,6 +143,7 @@ async function run() {
     inventoryDisposition: 'RESTOCK' as const,
     createdBy: 'test-return-bot',
     actorRole: 'ROLE_CASHIER',
+    actorContext: RCTX('test-return-bot', 'ROLE_CASHIER'),
     idempotencyKey: dupKey,
     items: [{ editionId: edC, quantity: 1 }],
   };
@@ -153,8 +162,9 @@ async function run() {
       targetWarehouseId: 'wh-au-co',
       inventoryDisposition: 'RESTOCK',
       refundAmount: 5000,
-      createdBy: 'test-return-bot',
-      actorRole: 'ROLE_MANAGER',
+    createdBy: 'test-return-bot',
+    actorRole: 'ROLE_MANAGER',
+    actorContext: RCTX('test-return-bot', 'ROLE_MANAGER'),
       idempotencyKey: uniq('idem-ret'),
       items: [{ editionId: edC, quantity: 1 }],
     });
@@ -168,8 +178,9 @@ async function run() {
       reason: 'PRINTING_DEFECT',
       targetWarehouseId: 'wh-au-co',
       inventoryDisposition: 'DEFECTIVE_HOLD',
-      createdBy: 'test-return-bot',
-      actorRole: 'ROLE_MANAGER',
+    createdBy: 'test-return-bot',
+    actorRole: 'ROLE_MANAGER',
+    actorContext: RCTX('test-return-bot', 'ROLE_MANAGER'),
       idempotencyKey: uniq('idem-ret'),
       items: [{ editionId: edC, quantity: 1 }],
     });
@@ -189,10 +200,11 @@ async function run() {
     inventoryDisposition: 'RESTOCK',
     createdBy: 'test-return-bot',
     actorRole: 'ROLE_CASHIER',
+    actorContext: RCTX('test-return-bot', 'ROLE_CASHIER'),
     idempotencyKey: uniq('idem-ret'),
     items: [{ editionId: edA, quantity: 1 }],
   });
-  await ReturnService.approve(req7.returnId, 'ROLE_MANAGER', 'manager-1');
+  await ReturnService.approve(req7.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
   const ledBefore = (await db.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, req7.returnId))).length;
   let rolledBack = false;
   try {
@@ -205,7 +217,8 @@ async function run() {
   ok('7. EXCHANGE thiếu hàng rollback nguyên tử', rolledBack && ledAfter === ledBefore && st7.header.status === 'APPROVED');
 
   // 8. VOID phiếu COMPLETED → bút toán đảo, tồn về mức trước complete
-  const sale8 = await makeSale(edC, 1);
+  // (BANK_TRANSFER để trung lập két — server tự tính refund > 0 cho REFUND).
+  const sale8 = await makeSale(edC, 1, { paymentMethod: 'BANK_TRANSFER' });
   const preVoid = await InventoryService.getBalance(edC, 'wh-au-co', 'NEW');
   const req8 = await ReturnService.createRequest({
     orderId: sale8.orderId,
@@ -215,10 +228,11 @@ async function run() {
     inventoryDisposition: 'RESTOCK',
     createdBy: 'test-return-bot',
     actorRole: 'ROLE_CASHIER',
+    actorContext: RCTX('test-return-bot', 'ROLE_CASHIER'),
     idempotencyKey: uniq('idem-ret'),
     items: [{ editionId: edC, quantity: 1 }],
   });
-  await ReturnService.approve(req8.returnId, 'ROLE_MANAGER', 'manager-1');
+  await ReturnService.approve(req8.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
   await ReturnService.complete(req8.returnId, 'ROLE_MANAGER');
   await ReturnService.voidReturn(req8.returnId, 'ROLE_MANAGER', 'Test huy phieu');
   const postVoid = await InventoryService.getBalance(edC, 'wh-au-co', 'NEW');

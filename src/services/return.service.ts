@@ -105,13 +105,16 @@ export class ReturnService {
   static async createRequest(params: CreateReturnParams) {
     const {
       orderId, returnType, reason, targetWarehouseId, inventoryDisposition,
-      refundAmount = 0, cashboxSessionId, createdBy = 'staff-admin',
-      actorRole = 'ROLE_OWNER', idempotencyKey, note, bypassWindow = false,
+      cashboxSessionId, note, bypassWindow = false,
       items,
     } = params;
-    // Danh tính: actorContext thắng mọi trường client tự khai (mục 6).
-    const effRole = params.actorContext?.role ?? actorRole;
-    const effCreatedBy = params.actorContext?.staffId || createdBy;
+    // CP3-R1 repair (mục 1-2): actorContext BẮT BUỘC — không fallback
+    // createdBy/actorRole, không suy role.
+    if (!params.actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác lập phiếu đổi/trả.');
+    }
+    const effRole = params.actorContext.role;
+    const effCreatedBy = params.actorContext.staffId.trim();
 
     if (!VALID_TYPES.includes(returnType)) throw AppError.invalid('returnType không hợp lệ (REFUND | EXCHANGE | DAMAGED_REPLACE).');
     if (!VALID_REASONS.includes(reason)) throw AppError.invalid('reason không hợp lệ.');
@@ -131,8 +134,8 @@ export class ReturnService {
     if (effRole !== 'ROLE_OWNER' && effRole !== 'ROLE_MANAGER' && effRole !== 'ROLE_CASHIER') {
       throw AppError.forbidden(`Vai trò ${effRole} không được lập phiếu đổi/trả.`);
     }
-    // Key bắt buộc — không tự sinh (mục 4).
-    const key = idempotencyKey?.trim() || '';
+    // Key bắt buộc — không tự sinh (mục 1-2).
+    const key = params.idempotencyKey?.trim() || '';
     if (!key) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác lập phiếu đổi/trả.');
     }
@@ -185,9 +188,19 @@ export class ReturnService {
           return { orderItemId: line.id, editionId: line.editionId, quantity: it.quantity, unitPrice: line.unitSellingPrice };
         });
 
+        // CP3-R1 repair (mục 3): GỘP các dòng trùng orderItemId TRƯỚC KHI
+        // fingerprint, quota và insert — [1+1] và [2] cùng fingerprint.
+        const consolidated = new Map<string, { orderItemId: string; editionId: string; quantity: number; unitPrice: number }>();
+        for (const r of resolved) {
+          const prev = consolidated.get(r.orderItemId);
+          if (prev) prev.quantity += r.quantity;
+          else consolidated.set(r.orderItemId, { ...r });
+        }
+        const lines = Array.from(consolidated.values());
+
         // Fingerprint chuẩn: orderId + loại + lý do + kho + disposition + két
-        // + danh sách chuẩn hóa [orderItemId, quantity].
-        const fpLines = resolved
+        // + danh sách chuẩn hóa [orderItemId, quantity] (đã gộp).
+        const fpLines = lines
           .map((r) => ({ orderItemId: r.orderItemId, quantity: r.quantity }))
           .sort((a, b) => a.orderItemId.localeCompare(b.orderItemId));
         const fingerprint = canonicalHash({
@@ -242,7 +255,7 @@ export class ReturnService {
           held.set(r.orderItemId, (held.get(r.orderItemId) || 0) + r.quantity);
         }
         const reqSum = new Map<string, number>();
-        for (const r of resolved) {
+        for (const r of lines) {
           reqSum.set(r.orderItemId, (reqSum.get(r.orderItemId) || 0) + r.quantity);
         }
         for (const [lineId, reqQty] of Array.from(reqSum.entries())) {
@@ -256,18 +269,18 @@ export class ReturnService {
           }
         }
 
-        // Đơn quà tặng (final 0đ): refund bắt buộc 0, chỉ DAMAGED_REPLACE.
-        const isGiftOrder = (origin.finalAmount || 0) === 0;
-        if (isGiftOrder) {
-          if (refundAmount !== 0) throw AppError.invalid('Đơn quà tặng không được hoàn tiền mặt (refundAmount phải = 0).');
-          if (returnType !== 'DAMAGED_REPLACE') throw AppError.invalid('Đơn quà tặng chỉ hỗ trợ đổi 1-1 khi lỗi NSX (DAMAGED_REPLACE).');
-        }
+        // CP3-R1 repair (mục 4): Server TỰ TÍNH refundAmount từ snapshot giá
+        // thực bán — bỏ qua mọi giá trị client gửi (kể cả refundAmount param).
+        // REFUND: đủ giá trị dòng; EXCHANGE/DAMAGED_REPLACE: 0đ (đổi hàng, không tiền).
+        let computedRefund = 0;
+        for (const r of lines) computedRefund += r.unitPrice * r.quantity;
+        const refundAmount = returnType === 'REFUND' ? computedRefund : 0;
 
-        // Trần hoàn tiền theo snapshot giá server (không tin client).
-        let maxRefund = 0;
-        for (const r of resolved) maxRefund += r.unitPrice * r.quantity;
-        if (refundAmount < 0 || refundAmount > maxRefund) {
-          throw AppError.invalid(`Tiền hoàn ${refundAmount} vượt giá trị thực bán ${maxRefund} của các dòng trả.`);
+        // Đơn quà tặng (final 0đ): chỉ DAMAGED_REPLACE (không tiền).
+        // Kiểm tra TRƯỚC cashbox để gift+REFUND bị chặn đúng mã quà tặng.
+        const isGiftOrder = (origin.finalAmount || 0) === 0;
+        if (isGiftOrder && returnType !== 'DAMAGED_REPLACE') {
+          throw AppError.invalid('Đơn quà tặng chỉ hỗ trợ đổi 1-1 khi lỗi NSX (DAMAGED_REPLACE).');
         }
 
         // Hoàn tiền mặt bắt buộc gắn két ca đang OPEN (validate, chưa chi tiền).
@@ -325,7 +338,7 @@ export class ReturnService {
             isDuplicate: true, itemsCount: racedItems.length,
           };
         }
-        for (const r of resolved) {
+        for (const r of lines) {
           await tx.insert(returnOrderItems).values({
             id: `ri-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
             returnId,
@@ -336,7 +349,7 @@ export class ReturnService {
           });
         }
 
-        return { returnId, returnCode, status: 'REQUESTED', isDuplicate: false, itemsCount: resolved.length };
+        return { returnId, returnCode, status: 'REQUESTED', isDuplicate: false, itemsCount: lines.length };
       }, { behavior: 'immediate' } as any)
     );
   }
@@ -347,12 +360,19 @@ export class ReturnService {
    * Không ledger, không RMA, không tác động tài chính.
    */
   static async approve(returnId: string, actorRole: string, approvedBy: string, actorContext?: ActorContext, idempotencyKey?: string) {
-    if (actorContext) { actorRole = actorContext.role; approvedBy = actorContext.staffId; }
+    // CP3-R1 repair (mục 1-2): actorContext + key bắt buộc, không fallback.
+    if (!actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác duyệt phiếu đổi/trả.');
+    }
+    actorRole = actorContext.role;
+    approvedBy = actorContext.staffId.trim();
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden('Chỉ Manager/Owner được duyệt phiếu đổi/trả.');
     }
-    // Key: client cung cấp, nếu thiếu suy ra ổn định theo (action, phiếu, actor).
-    const key = idempotencyKey?.trim() || `approve-${returnId}-${approvedBy}`;
+    const key = idempotencyKey?.trim() || '';
+    if (!key) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác duyệt phiếu đổi/trả.');
+    }
     const fingerprint = canonicalHash({ action: 'APPROVE', actorId: approvedBy, returnId });
 
     return await withDbRetry(() =>
@@ -418,12 +438,19 @@ export class ReturnService {
    * conditional update + đúng một return_actions REJECT. Reject giải phóng quota.
    */
   static async reject(returnId: string, actorRole: string, rejectNote?: string, actorContext?: ActorContext, idempotencyKey?: string) {
-    if (actorContext) { actorRole = actorContext.role; }
+    // CP3-R1 repair (mục 1-2): actorContext + key bắt buộc, không fallback.
+    if (!actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác từ chối phiếu đổi/trả.');
+    }
+    actorRole = actorContext.role;
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden('Chỉ Manager/Owner được từ chối phiếu đổi/trả.');
     }
-    const effActor = actorContext?.staffId || actorRole;
-    const key = idempotencyKey?.trim() || `reject-${returnId}-${effActor}`;
+    const effActor = actorContext.staffId.trim();
+    const key = idempotencyKey?.trim() || '';
+    if (!key) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác từ chối phiếu đổi/trả.');
+    }
     const fingerprint = canonicalHash({ action: 'REJECT', actorId: effActor, returnId });
 
     return await withDbRetry(() =>

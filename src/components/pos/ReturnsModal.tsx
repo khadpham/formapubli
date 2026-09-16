@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw, Search, CheckCircle2, AlertTriangle, X, Plus, Trash2 } from 'lucide-react';
 
 interface BookRef {
@@ -50,6 +50,13 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
   const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [createdReturn, setCreatedReturn] = useState<{ returnId: string; returnCode: string } | null>(null);
+  // CP3-R1 repair (mục 6): key ổn định cho một lần submit/retry (REQUEST)
+  // và key riêng ổn định cho APPROVE. COMPLETE giữ nguyên.
+  const reqKeyRef = useRef<string | null>(null);
+  const apprKeyRef = useRef<string | null>(null);
+  const newKey = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   const isPriv = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
@@ -140,6 +147,7 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
     }
     setBusy(true);
     try {
+      if (!reqKeyRef.current) reqKeyRef.current = newKey();
       const res = await fetch('/api/returns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,6 +162,7 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
           refundAmount: parseFloat(refundAmount) || 0,
           cashboxSessionId: cashboxSessionId.trim() || undefined,
           note: `POS đổi/trả tại ${warehouseId}`,
+          idempotencyKey: reqKeyRef.current,
         }),
       });
       const json = await res.json();
@@ -172,17 +181,25 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
     setBusy(true);
     setError(null);
     try {
+      if (!apprKeyRef.current) apprKeyRef.current = newKey();
       for (const action of ['APPROVE', 'COMPLETE'] as const) {
         const res = await fetch('/api/returns', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, returnId: createdReturn.returnId }),
+          body: JSON.stringify({
+            action,
+            returnId: createdReturn.returnId,
+            // Key riêng ổn định cho APPROVE; COMPLETE giữ nguyên hành vi.
+            ...(action === 'APPROVE' ? { idempotencyKey: apprKeyRef.current } : {}),
+          }),
         });
         const json = await res.json();
         if (!json.success) throw new Error(json.error || `Lỗi ${action} (cần Manager/Owner).`);
       }
       setSuccess(`Hoàn tất phiếu ${createdReturn.returnCode} — kho đã hoàn, két đã trừ (nếu có).`);
       setCreatedReturn(null);
+      reqKeyRef.current = null;
+      apprKeyRef.current = null;
       if (onCompleted) onCompleted();
     } catch (e: any) {
       setError(e.message || 'Lỗi duyệt/hoàn tất');

@@ -40,17 +40,24 @@ process.on('message', async (msg: any) => {
   if (msg?.type === 'START') {
     try {
       let result: any = null;
+      // CP3-R1 repair (mục 8): noActorContext cho phép test thiếu context.
+      const ctxOf = (p: any, role: 'ROLE_OWNER' | 'ROLE_MANAGER' | 'ROLE_CASHIER') =>
+        p.noActorContext ? undefined : actorOf(p, role);
       if (config.action === 'request') {
         const p = config.payload;
-        result = await ReturnService.createRequest({ ...p, actorContext: actorOf(p, 'ROLE_CASHIER') });
+        result = await ReturnService.createRequest({ ...p, actorContext: ctxOf(p, 'ROLE_CASHIER') });
       } else if (config.action === 'approve') {
         const p = config.payload;
-        const ctx = actorOf(p);
-        result = await ReturnService.approve(p.returnId, ctx.role, ctx.staffId, ctx, p.idempotencyKey);
+        const ctx = ctxOf(p, 'ROLE_MANAGER');
+        result = await ReturnService.approve(
+          p.returnId, ctx?.role || p.actorRole, ctx?.staffId || p.actorStaffId, ctx, p.idempotencyKey
+        );
       } else if (config.action === 'reject') {
         const p = config.payload;
-        const ctx = actorOf(p);
-        result = await ReturnService.reject(p.returnId, ctx.role, p.rejectNote, ctx, p.idempotencyKey);
+        const ctx = ctxOf(p, 'ROLE_MANAGER');
+        result = await ReturnService.reject(
+          p.returnId, ctx?.role || p.actorRole, p.rejectNote, ctx, p.idempotencyKey
+        );
       } else if (config.action === 'createOrder') {
         result = await OrderService.createOrder(config.payload);
       } else {

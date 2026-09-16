@@ -66,7 +66,8 @@ export async function POST(req: NextRequest) {
 
     const identity = await resolveRequestIdentity(req, allowedRoles, {
       role: extractUserRole(req),
-      actorId: req.headers.get('x-formapubli-actor') || body.createdBy || 'staff-admin',
+      // CP3-R1 repair (mục 5): bỏ body.createdBy khỏi identity fallback.
+      actorId: req.headers.get('x-formapubli-actor') || 'staff-admin',
     });
     const userRole = identity.role;
     const actorHeader = identity.actorId;

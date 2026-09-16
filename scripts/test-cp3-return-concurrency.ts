@@ -299,6 +299,8 @@ async function probeValidation() {
   const orderId = (sale.data as any).orderId;
   const lineId = await orderLineId(url, orderId);
   const good = reqPayload(orderId, lineId, 1, `${k}-good`);
+  const goodRes = await runSolo(url, 'request', good);
+  ok('R-VAL base request thanh cong', goodRes.success, goodRes.error);
 
   // Đơn chưa COMPLETED (pending) bị chặn.
   const pend = await runSolo(url, 'createOrder', salePayload(editionId, 1, `${k}-pend`, false));
@@ -341,9 +343,25 @@ async function probeValidation() {
     });
     ok('R-VAL TAX approve bi chan', !taxAppr.success && taxAppr.code === 'FORBIDDEN', `${taxAppr.code}`);
   }
+  // Orphan check: mọi return đều có items.
+  const { client: c2, db: d2 } = localDb(url);
+  const rets: any[] = await d2.select().from(returnOrders);
+  const ritems: any[] = await d2.select().from(returnOrderItems);
+  c2.close();
+  ok('R-VAL khong return mo coi (thieu items)',
+    rets.every((r) => ritems.some((i) => i.returnId === r.id)), `returns=${rets.length} items=${ritems.length}`);
+
+  // CP3-R1 repair (mục 8): approve/reject thiếu key bị chặn.
+  // Dùng đơn mới (đủ quota) để không phụ thuộc quota đơn R-VAL chính.
+  const saleB = await runSolo(url, 'createOrder', salePayload(editionId, 5, `${k}-saleB`));
+  ok('R-VAL setup don B cho key-check', saleB.success, saleB.error);
+  if (!saleB.success) return;
+  const orderB = (saleB.data as any).orderId;
+  const lineB = await orderLineId(url, orderB);
+  const goodB = reqPayload(orderB, lineB, 1, `${k}-goodB`);
   // Actor client tự khai bị bỏ qua (createdBy ghi từ session/context).
   const hacked = await runSolo(url, 'request', {
-    ...good, idempotencyKey: `${k}-hack`, cashierId: 'hacker-never', createdBy: 'hacker-never',
+    ...goodB, idempotencyKey: `${k}-hack`, cashierId: 'hacker-never', createdBy: 'hacker-never',
     actorStaffId: 'cp3r-legit', actorRole: 'ROLE_CASHIER',
   });
   ok('R-VAL request hop le van qua', hacked.success, hacked.error);
@@ -354,13 +372,61 @@ async function probeValidation() {
     ok('R-VAL actor ghi tu context, khong phai body',
       h.createdBy === 'cp3r-legit', `createdBy=${h.createdBy}`);
   }
-  // Orphan check: mọi return đều có items.
-  const { client: c2, db: d2 } = localDb(url);
-  const rets: any[] = await d2.select().from(returnOrders);
-  const ritems: any[] = await d2.select().from(returnOrderItems);
-  c2.close();
-  ok('R-VAL khong return mo coi (thieu items)',
-    rets.every((r) => ritems.some((i) => i.returnId === r.id)), `returns=${rets.length} items=${ritems.length}`);
+  const reqK = await runSolo(url, 'request', goodB);
+  ok('R-VAL setup phieu cho key-check', reqK.success, reqK.error);
+  if (reqK.success) {
+    const ridK = (reqK.data as any).returnId;
+    const apNoKey = await runSolo(url, 'approve', {
+      returnId: ridK, actorStaffId: 'cp3r-manager', actorRole: 'ROLE_MANAGER',
+    });
+    ok('R-VAL approve thieu key bi chan', !apNoKey.success, `${apNoKey.code}`);
+    const rjNoKey = await runSolo(url, 'reject', {
+      returnId: ridK, actorStaffId: 'cp3r-manager', actorRole: 'ROLE_MANAGER', rejectNote: 'x',
+    });
+    ok('R-VAL reject thieu key bi chan', !rjNoKey.success, `${rjNoKey.code}`);
+    // Service thiếu actorContext bị chặn (request + approve) — dùng đơn B còn quota
+    // để chắc chắn từ chối vì actorContext, không phải vì quota.
+    const noCtxReq = await runSolo(url, 'request', {
+      ...goodB, idempotencyKey: `${k}-noctx`, noActorContext: true,
+      actorStaffId: 'cp3r-legit', actorRole: 'ROLE_CASHIER',
+    });
+    ok('R-VAL request thieu actorContext bi chan',
+      !noCtxReq.success && /actorContext/.test(noCtxReq.error || ''), `${noCtxReq.code}: ${noCtxReq.error}`);
+    const noCtxAppr = await runSolo(url, 'approve', {
+      returnId: ridK, actorStaffId: 'cp3r-manager', actorRole: 'ROLE_MANAGER',
+      idempotencyKey: `${k}-noctx-appr`, noActorContext: true,
+    });
+    ok('R-VAL approve thieu actorContext bi chan', !noCtxAppr.success, `${noCtxAppr.code}`);
+  }
+  // CP3-R1 repair (mục 4+8): client khai refund sai nhưng DB lưu đúng giá thực bán.
+  const wrongRefund = await runSolo(url, 'request', {
+    ...goodB, idempotencyKey: `${k}-wrongrefund`, refundAmount: 1,
+  });
+  ok('R-VAL refund sai van lap phieu', wrongRefund.success, wrongRefund.error);
+  if (wrongRefund.success) {
+    const { client: c3, db: d3 } = localDb(url);
+    const h3: any = (await d3.select().from(returnOrders).where(eq(returnOrders.id, (wrongRefund.data as any).returnId)))[0];
+    c3.close();
+    // Cover 100000 x qty 1 = 100000 (không phải 1đ client khai).
+    ok('R-VAL DB luu dung gia thuc ban', h3.refundAmount === 100000, `refundAmount=${h3.refundAmount}`);
+  }
+  // CP3-R1 repair (mục 3+8): [1+1] và [2] cùng orderItemId, cùng key
+  // -> cùng fingerprint -> replay (cùng return ID).
+  const splitKey = `${k}-split`;
+  const splitBase = reqPayload(orderB, lineB, 1, splitKey);
+  const splitA = await runSolo(url, 'request', {
+    ...splitBase,
+    items: [{ orderItemId: lineB, quantity: 1 }, { orderItemId: lineB, quantity: 1 }],
+  });
+  const splitB = await runSolo(url, 'request', {
+    ...splitBase,
+    items: [{ orderItemId: lineB, quantity: 2 }],
+  });
+  ok('R-VAL [1+1] thanh cong', splitA.success, splitA.error);
+  ok('R-VAL [2] replay cung return ID (cung fingerprint sau gop)',
+    splitB.success && (splitB.data as any).returnId === (splitA.data as any)?.returnId &&
+    (splitB.data as any).isDuplicate === true,
+    `a=${(splitA.data as any)?.returnId} b=${(splitB.data as any)?.returnId} dup=${(splitB.data as any)?.isDuplicate}`);
 }
 
 async function main() {
