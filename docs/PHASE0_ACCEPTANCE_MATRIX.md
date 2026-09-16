@@ -5,10 +5,13 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 
 ## Trạng thái hiện tại
 
-- **Chưa nghiệm thu:** working tree đang có thay đổi chưa commit từ hai lane.
-- **Blocker đã phát hiện:** `docs/PHASE0_CONTRACT.md` yêu cầu loại bỏ hoàn toàn `allowOverdraft`, nhưng `src/services/order.service.ts` và `src/app/api/orders/route.ts` vẫn còn trường và nhánh xử lý này.
-- **Không được kết luận ATP kín** cho tới khi blocker trên được giải quyết hoặc contract được sửa công khai và có phê duyệt nghiệp vụ mới.
-- `src/services/actor-context.ts` và `src/services/app-error.ts` đang nằm trong `src/services/**` nhưng được Lane A sử dụng. Cần xác nhận chủ sở hữu cuối cùng hoặc chuyển chúng thành module dùng chung trước khi merge.
+- **Đợt 0 — Checkpoint 2 (CP2):** **PASS** (Accepted commit: `be1aaea`, kiểm toán độc lập Lane B: PASS).
+- **ATP nguyên tử & Chống bán vượt:** **PASS** (Đã loại bỏ hoàn toàn override/allowOverdraft; kiểm thử đa tiến trình Probes A - E đạt 100%).
+- **Concurrency đa process:** **PASS** (10 tiến trình độc lập tranh mua 1 cuốn duy nhất đạt phân xử nguyên tử).
+- **Idempotency Order:** **PASS** (So khớp fingerprint 11 trường vật chất; replay trả đơn cũ; xung đột trả mã lỗi `IDEMPOTENCY_CONFLICT`).
+- **Giới hạn Runtime của PRAGMA busy_timeout:** Ghi nhận thực nghiệm độc lập cho thấy `PRAGMA busy_timeout` qua `@libsql/client 0.10.0` trên Windows không hoạt động đáng tin cậy độc lập. Độ ổn định đạt được nhờ vào **connection transaction riêng**, **bounded retry** và **Full Jitter backoff**.
+- **Chuyển kho / Đổi trả / Két tiền tổng thể:** **CHỜ CP3** (Chưa nghiệm thu tích hợp luồng transfer, return, exchange).
+- **Tích hợp Phase 0 tổng thể:** **CHƯA PASS** (Đang ở giai đoạn hoàn tất CP2, chuẩn bị chuyển sang CP3).
 
 ## Gate trước khi tích hợp
 
@@ -16,13 +19,13 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 |---|---|---|---|
 | Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, shared modules xác lập | ĐÃ CHỐT |
 | Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp (0015_staff_accounts) | PASS |
-| ATP nguyên tử | B | Hai kết nối tranh cuốn cuối; chỉ một thành công | CHỜ B PROBE |
+| ATP nguyên tử | B $\rightarrow$ A tiếp quản | Hai kết nối / 10 process tranh cuốn cuối; chỉ một thành công | PASS (`test-cp2-concurrency-probes`) |
 | Auth strict & Session Policy | A | Chuẩn hóa session policy trên 23 API route, fail-closed (`test-phase0-laneA`) | PASS (25 Gates) |
 | Danh tính không giả mạo | A + B | Client gửi `actorId/cashierId` khác vẫn ghi actor từ session (`test-phase0-laneA`) | PASS |
 | Rate limit & IP Trust Boundary | A | Khóa 5 lần -> 429 ngay; khóa IP tin cậy (cf-connecting-ip); chặn spoof | PASS |
-| Bán–trả–két–báo cáo | B | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`) | CHỜ B RE-VERIFY |
+| Bán–trả–két–báo cáo | B $\rightarrow$ A tiếp quản | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`) | CHỜ CP3 (Bán PASS, Trả/Đổi CHỜ) |
 | UI gatekeeper & SSR Zero Leakage | A | Server không trả dữ liệu bảo vệ trước session; role scope tại SSR query | PASS |
-| Tích hợp cuối | A + B | Chờ Lane B tích hợp xong, chạy toàn bộ suites trên commit hợp nhất | CHỜ B |
+| Tích hợp cuối Phase 0 | A + B | Chờ hoàn tất toàn bộ Checkpoint 3 (Transfer / Return / Exchange) | CHỜ CP3 |
 
 
 ## Ma trận ca độc lập
