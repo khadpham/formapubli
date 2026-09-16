@@ -2,7 +2,7 @@
  * Lane B patch-02 — Hồi quy P2-04/07/08/09/10/12/14 (DB cách ly).
  * Chạy: npx tsx scripts/run-isolated.ts --only=test-patch02-laneB
  */
-import { db, works, editions, warehouses, orders } from '../src/db';
+import { db, works, editions, warehouses, orders, orderItems, inventoryLedger } from '../src/db';
 import { eq } from 'drizzle-orm';
 import { InventoryService } from '../src/services/inventory.service';
 import { OrderService, CashboxService } from '../src/services/order.service';
@@ -160,17 +160,58 @@ async function run() {
   const odOk: any = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', allowOverdraft: true, idempotencyKey: uniq('i'), items: [{ editionId: eds[1], quantity: 5 }] });
   const odRow = (await db.select().from(orders).where(eq(orders.id, odOk.orderId)).limit(1))[0];
   ok('Phase0 overdraft fail-closed (vượt tồn từ chối, trong tồn qua)', odRejected && !/CẢNH BÁO/.test(odRow.note || ''), `note=${(odRow.note || '').slice(0, 40)}`);
-  // ---- Idempotency cùng key khác nội dung → 409 ----
-  const dupKey = uniq('idem-dup');
-  await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: dupKey, items: [{ editionId: eds[1], quantity: 1 }] });
-  let conflict409 = false;
+  // ---- Idempotency contract assertions (không phụ thuộc câu chữ message) ----
+  const dupKey = uniq('idem-contract');
+  const payloadQty1 = {
+    warehouseId: 'wh-au-co',
+    customerName: 'Khách Test Idem',
+    paymentMethod: 'CASH' as const,
+    cashierId: 'cashier-idem',
+    idempotencyKey: dupKey,
+    items: [{ editionId: eds[1], quantity: 1 }],
+  };
+  const payloadQty2 = {
+    ...payloadQty1,
+    items: [{ editionId: eds[1], quantity: 2 }],
+  };
+
+  const first = await OrderService.createOrder(payloadQty1);
+
+  let conflictCode: string | undefined;
   try {
-    await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: dupKey, items: [{ editionId: eds[1], quantity: 2 }] });
-  } catch (e: any) {
-    conflict409 = /nội dung khác/.test(e.message) && (e.code === 'IDEMPOTENCY_CONFLICT');
+    await OrderService.createOrder(payloadQty2);
+  } catch (error: any) {
+    conflictCode = error?.code;
   }
-  const dupSame: any = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: dupKey, items: [{ editionId: eds[1], quantity: 1 }] });
-  ok('Idempotency khác nội dung 409, cùng nội dung trả cũ', conflict409 && (dupSame as any).isDuplicate === true);
+
+  const replay: any = await OrderService.createOrder(payloadQty1);
+
+  // 1. Cùng key, khác quantity trả IDEMPOTENCY_CONFLICT
+  ok('Idempotency: khác quantity trả code IDEMPOTENCY_CONFLICT', conflictCode === 'IDEMPOTENCY_CONFLICT');
+
+  // 2. Cùng key, cùng payload trả isDuplicate === true
+  ok('Idempotency: cùng payload trả isDuplicate === true', replay.isDuplicate === true);
+
+  // 3. Replay trả đúng orderId ban đầu
+  ok('Idempotency: replay trả đúng orderId ban đầu', replay.orderId === first.orderId);
+
+  // 4. Database chỉ có đúng một order với key đó
+  const ordersInDb = await db.select().from(orders).where(eq(orders.idempotencyKey, dupKey));
+  ok('Idempotency: database chỉ có đúng 1 order với key đó', ordersInDb.length === 1);
+
+  // 5. Dòng order item vẫn có quantity 1, không bị biến thành 2
+  const itemsInDb = await db.select().from(orderItems).where(eq(orderItems.orderId, first.orderId));
+  ok(
+    'Idempotency: dòng order item giữ nguyên quantity 1 (không biến thành 2)',
+    itemsInDb.length === 1 && itemsInDb[0].quantity === 1
+  );
+
+  // 6. Không sinh thêm ledger
+  const ledgersInDb = await db
+    .select()
+    .from(inventoryLedger)
+    .where(eq(inventoryLedger.correlationId, first.orderId));
+  ok('Idempotency: không sinh thêm ledger từ replay hoặc request lỗi', ledgersInDb.length === 1);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} PATCH02 LANE-B: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
