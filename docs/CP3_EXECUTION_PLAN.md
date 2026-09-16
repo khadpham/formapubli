@@ -290,12 +290,19 @@ After CP3-A is accepted:
 4. Lane A does not weaken Lane B assertions. Contract disagreement stops both lanes until resolved.
 
 ### CP3-C — Integration and acceptance
-
 1. Lane A integrates the Lane B test-only commit after production implementation is ready.
 2. Lane A adds the new suites to `scripts/run-isolated.ts`.
 3. Run fresh migration, upgrade migration, CP3 probes, CP2 regressions, full isolated suites, TypeScript, and production build.
 4. Lane B checks the integrated commit independently on new databases.
 5. Any surfaced `SQLITE_BUSY`, timeout, orphan row, partial ledger, production DB mutation, or flaky round keeps CP3 open.
+
+### Acceptance record
+
+| Checkpoint | Status | Evidence |
+|---|---|---|
+| CP3-A (schema + contract) | PASS | Fresh migration 0000→0016, upgrade 0015→0016, uniqueness checks, TypeScript, unchanged production DB |
+| CP3-B Transfer (shipments, direct transfer, idempotency, fail-closed) | PASS | `test-cp3-transfer-concurrency` + `test-cp3-migrations` green on integrated head, full 32 isolated suites green, TypeScript + production build green, production DB untouched |
+| CP3-B Return / Exchange / Reconciliation | OPEN | Not started — no code or tests accepted before audit completes |
 
 ## 12. Acceptance probes
 

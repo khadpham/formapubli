@@ -44,7 +44,8 @@ const ALL_SUITES = [
   'scripts/test-auth-gateway.ts',
   'scripts/test-auth-rbac.ts',
   'scripts/test-phase0-laneA.ts',
-  'scripts/test-cp2-concurrency-probes.ts',
+  'scripts/test-cp3-transfer-concurrency.ts',
+  'scripts/test-cp3-migrations.ts',
 ];
 
 function suiteShortName(p: string): string {
