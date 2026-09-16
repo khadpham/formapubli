@@ -41,14 +41,15 @@ export interface TransferParams {
 export class InventoryService {
   /**
    * Lấy số dư tồn kho hiện tại của một ấn bản tại một kho cụ thể.
+   * Hỗ trợ nhận context transaction `tx` hiện hành để đọc an toàn trong snapshot transaction.
    */
   static async getBalance(
     editionId: string,
     warehouseId: string,
-    condition: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE' = 'NEW'
+    condition: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE' = 'NEW',
+    txOrDb: any = db
   ): Promise<number> {
-
-    const existing = await db
+    const existing = await txOrDb
       .select()
       .from(stockBalances)
       .where(

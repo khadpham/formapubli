@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger } from '../db';
 import { InventoryService } from './inventory.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
@@ -263,13 +263,9 @@ export class OrderService {
       }
     }
 
-    const allItems: OrderItemInput[] = [...looseItems];
-
     const isPending = confirmImmediately === false;
 
-    // 1. Kiểm tra ATP gộp theo edition (lẻ + linh kiện combo, gồm cả dòng trùng).
-    // ATP <= tồn vật lý nên check này bao luôn tồn vật lý. Không overdraft, không ngoại lệ.
-    // Đơn PENDING cũng đi qua đây (giữ chỗ chỉ thành công khi vừa ATP hiện tại).
+    // 1. Chuẩn bị danh sách kiểm tra nhu cầu theo edition (lẻ + linh kiện combo)
     const stockCheckItems = [...looseItems, ...bundleLines];
     const needTotal = new Map<string, number>();
     for (const item of stockCheckItems) {
@@ -278,16 +274,8 @@ export class OrderService {
       }
       needTotal.set(item.editionId, (needTotal.get(item.editionId) || 0) + item.quantity);
     }
-    for (const [editionId, qty] of Array.from(needTotal.entries())) {
-      const atp = await this.getATP(editionId, warehouseId);
-      if (atp < qty) {
-        throw AppError.atp(
-          `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
-        );
-      }
-    }
 
-    // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có
+    // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data)
     const editionIds = stockCheckItems.map((i) => i.editionId);
     const dbEditions = await db
       .select({
@@ -301,7 +289,7 @@ export class OrderService {
 
     const editionMap = new Map(dbEditions.map((e) => [e.id, e]));
 
-    // 3. Tính toán dòng tiền và chi tiết đơn hàng
+    // 3. Tính toán dòng tiền và chi tiết đơn hàng ngoài transaction
     let calculatedSubtotal = 0;
     let calculatedFinalAmount = 0;
 
@@ -351,144 +339,168 @@ export class OrderService {
 
     const calculatedDiscountAmount = calculatedSubtotal - calculatedFinalAmount;
 
-    // 4. Sinh mã đơn hàng và Idempotency Key
+    // 4. Sinh mã đơn hàng và Idempotency Key cố định (giữ nguyên khi retry)
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const orderCode = params.orderCode || `ORD-${dateStr}-${randomSuffix}`;
     const orderId = params.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const idempotencyKey = params.idempotencyKey || `idem-order-${orderId}`;
     const createdAt = params.createdAt || new Date().toISOString();
-    // BV-03: gắn nhãn quà tặng vào note để truy vết (doanh thu vẫn = 0, kho vẫn trừ)
     const giftTag = isGift ? `[QUÀ TẶNG: ${giftReason || (note || '').trim() || 'Tặng sách / Quà tặng sự kiện'}]` : '';
     const mergedNote = [giftTag, note].filter((s) => s && `${s}`.trim()).join(' | ') || undefined;
 
     // 5. Ghi nhận Đơn hàng & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
-    try {
-      await withDbRetry(async () => {
-        await db.transaction(async (tx) => {
-          // B2: Lưu đơn hàng
-          await tx.insert(orders).values({
-            id: orderId,
-            orderCode,
-            warehouseId,
-            channel,
-            partnerId,
-            customerId,
-            customerName,
-            subtotal: calculatedSubtotal,
-            discountRate,
-            discountAmount: calculatedDiscountAmount,
-            finalAmount: calculatedFinalAmount,
-            paymentMethod,
-            fiscalScope,
-            vatRate,
-            vatInvoiceRequired,
-            vatInvoiceCode,
-            status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
-            syncStatus: 'SYNCED',
-            cashierId: effCashierId,
-            cashboxSessionId: params.cashboxSessionId,
-            idempotencyKey,
-            note: mergedNote,
-            createdAt,
-          });
+    // Toàn bộ kiểm tra idempotency, phiên két, tính ATP và ghi chép nằm trong write transaction.
+    return await withDbRetry(async () => {
+      return await db.transaction(async (tx) => {
+        // B0. Kiểm tra Idempotency bên trong Transaction
+        if (params.idempotencyKey) {
+          const existing = await tx
+            .select()
+            .from(orders)
+            .where(eq(orders.idempotencyKey, params.idempotencyKey))
+            .limit(1);
 
-          // B3: Ghi nhận các dòng sản phẩm của đơn hàng
-          // (dòng combo mang bundleId/bundleQty để POS gom hiển thị theo bộ)
-          let lineIdx = 0;
-          for (const item of preparedItems) {
-            // Chỉ gửi bundleId/bundleQty khi có giá trị thật.
-            // Tránh SQLITE_ERROR trên DB cũ chưa migrate 0008 (no column bundle_id).
-            const lineValues: Record<string, unknown> = {
-              id: item.id,
-              orderId,
-              editionId: item.editionId,
-              quantity: item.quantity,
-              unitCoverPrice: item.unitCoverPrice,
-              unitDiscountRate: item.unitDiscountRate,
-              unitSellingPrice: item.unitSellingPrice,
-              totalAmount: item.totalAmount,
-            };
-            if (item.bundleId != null) lineValues.bundleId = item.bundleId;
-            if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;
-            await tx.insert(orderItems).values(lineValues as any);
-
-            // Bước 1: đơn PENDING chỉ giữ chỗ ATP — KHÔNG sinh bút toán kho.
-            if (isPending) {
-              lineIdx++;
-              continue;
-            }
-
-            // B4: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
-            // Mỗi linh kiện 1 bút toán, chung correlationId = mã đơn (nguyên tử all-or-nothing).
-            await InventoryService.recordMovement({
-              editionId: item.editionId,
+          if (existing.length > 0) {
+            await this.assertSameOrderContent(existing[0].id, {
               warehouseId,
-              eventType: 'DISPATCH_SALE',
-              quantityDelta: -item.quantity,
-              condition: 'NEW',
-              documentRef: orderCode,
-              note: item.bundleId
-                ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
-                : isGift
-                ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
-                : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
-              actorId: effCashierId,
-              correlationId: orderId,
-              idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
-              tx,
-            });
-            lineIdx++;
+              discountRate,
+              items: looseItems,
+            }, tx);
+
+            return {
+              orderId: existing[0].id,
+              orderCode: existing[0].orderCode,
+              warehouseId: existing[0].warehouseId,
+              customerName: existing[0].customerName,
+              subtotal: existing[0].subtotal,
+              discountAmount: existing[0].discountAmount,
+              finalAmount: existing[0].finalAmount,
+              fiscalScope: existing[0].fiscalScope,
+              itemsCount: existing.length > 0 ? existing.length : preparedItems.length,
+              totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
+              status: existing[0].status,
+              isDuplicate: true,
+            };
           }
-        });
-      });
-    } catch (err: any) {
-      // Bắt lỗi Race Condition nếu 2 luồng cùng mang 1 idempotencyKey ghi cùng lúc
-      const errMsg = (err?.message || '').toLowerCase();
-      if (errMsg.includes('unique') || errMsg.includes('sqlite_constraint')) {
-        const existing = await db
-          .select()
-          .from(orders)
-          .where(eq(orders.idempotencyKey, idempotencyKey))
-          .limit(1);
-
-        if (existing.length > 0) {
-          await this.assertSameOrderContent(existing[0].id, {
-            warehouseId,
-            discountRate,
-            items: looseItems,
-          });
-          return {
-            orderId: existing[0].id,
-            orderCode: existing[0].orderCode,
-            warehouseId: existing[0].warehouseId,
-            customerName: existing[0].customerName,
-            subtotal: existing[0].subtotal,
-            discountAmount: existing[0].discountAmount,
-            finalAmount: existing[0].finalAmount,
-            fiscalScope: existing[0].fiscalScope,
-            itemsCount: preparedItems.length,
-            totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
-            isDuplicate: true,
-          };
         }
-      }
-      throw err;
-    }
 
-    return {
-      orderId,
-      orderCode,
-      warehouseId,
-      customerName,
-      subtotal: calculatedSubtotal,
-      discountAmount: calculatedDiscountAmount,
-      finalAmount: calculatedFinalAmount,
-      fiscalScope,
-      status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
-      itemsCount: preparedItems.length,
-      totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
-    };
+        // B1. Xác thực phiên két bên trong Transaction
+        if (params.cashboxSessionId) {
+          const sessRows = await tx
+            .select()
+            .from(cashboxSessions)
+            .where(eq(cashboxSessions.id, params.cashboxSessionId))
+            .limit(1);
+
+          if (sessRows.length === 0) throw AppError.invalid('Phiên két ca không tồn tại.');
+          const sess = sessRows[0];
+          if (sess.status !== 'OPEN') throw AppError.invalid(`Phiên két ca đã ${sess.status}, không ghi đơn vào két đóng.`);
+          if (sess.warehouseId !== warehouseId) {
+            throw AppError.invalid(`Két ca thuộc kho ${sess.warehouseId}, không khớp kho xuất ${warehouseId}.`);
+          }
+          if (sess.cashierId !== effCashierId) {
+            throw AppError.invalid(`Két ca của thu ngân ${sess.cashierId}, không khớp người bán ${effCashierId}.`);
+          }
+        }
+
+        // B2. Tính toán & Kiểm tra ATP nguyên tử bên trong Transaction
+        for (const [editionId, qty] of Array.from(needTotal.entries())) {
+          const atp = await this.getATP(editionId, warehouseId, tx);
+          if (atp < qty) {
+            throw AppError.atp(
+              `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
+            );
+          }
+        }
+
+        // B3: Tạo bản ghi Master đơn hàng bên trong Transaction
+        await tx.insert(orders).values({
+          id: orderId,
+          orderCode,
+          warehouseId,
+          channel,
+          partnerId,
+          customerId: params.customerId,
+          customerName,
+          subtotal: calculatedSubtotal,
+          discountRate,
+          discountAmount: calculatedDiscountAmount,
+          finalAmount: calculatedFinalAmount,
+          paymentMethod,
+          fiscalScope,
+          vatRate,
+          vatInvoiceRequired,
+          vatInvoiceCode,
+          status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
+          syncStatus: 'SYNCED',
+          cashierId: effCashierId,
+          cashboxSessionId: params.cashboxSessionId,
+          idempotencyKey,
+          note: mergedNote,
+          createdAt,
+        });
+
+        // B4: Ghi nhận các dòng sản phẩm của đơn hàng
+        let lineIdx = 0;
+        for (const item of preparedItems) {
+          const lineValues: Record<string, unknown> = {
+            id: item.id,
+            orderId,
+            editionId: item.editionId,
+            quantity: item.quantity,
+            unitCoverPrice: item.unitCoverPrice,
+            unitDiscountRate: item.unitDiscountRate,
+            unitSellingPrice: item.unitSellingPrice,
+            totalAmount: item.totalAmount,
+          };
+          if (item.bundleId != null) lineValues.bundleId = item.bundleId;
+          if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;
+          await tx.insert(orderItems).values(lineValues as any);
+
+          // Đơn PENDING chỉ giữ chỗ ATP — KHÔNG sinh bút toán kho
+          if (isPending) {
+            lineIdx++;
+            continue;
+          }
+
+          // B5: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
+          await InventoryService.recordMovement({
+            editionId: item.editionId,
+            warehouseId,
+            eventType: 'DISPATCH_SALE',
+            quantityDelta: -item.quantity,
+            condition: 'NEW',
+            documentRef: orderCode,
+            note: item.bundleId
+              ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
+              : isGift
+              ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
+              : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
+            actorId: effCashierId,
+            correlationId: orderId,
+            idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
+            tx,
+          });
+          lineIdx++;
+        }
+
+        return {
+          orderId,
+          orderCode,
+          warehouseId,
+          customerName,
+          subtotal: calculatedSubtotal,
+          discountAmount: calculatedDiscountAmount,
+          finalAmount: calculatedFinalAmount,
+          fiscalScope,
+          status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
+          itemsCount: preparedItems.length,
+          totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
+          isDuplicate: false,
+        };
+      });
+    });
   }
 
   /**
@@ -497,20 +509,22 @@ export class OrderService {
    */
   static async assertSameOrderContent(
     orderId: string,
-    want: { warehouseId: string; discountRate: number; items: OrderItemInput[] }
+    want: { warehouseId: string; discountRate: number; items: OrderItemInput[] },
+    txOrDb: any = db
   ): Promise<void> {
-    const ord = (await db.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
+    const ord = (await txOrDb.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
     if (!ord) return;
-    const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-    const norm = (rows: Array<{ editionId: string; quantity: number }>) =>
-      rows
-        .map((r) => `${r.editionId}:${r.quantity}`)
-        .sort()
+    const lines = await txOrDb.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+    const norm = (arr: Array<{ editionId: string; quantity: number }>) =>
+      arr
+        .slice()
+        .sort((a, b) => a.editionId.localeCompare(b.editionId))
+        .map((x) => `${x.editionId}:${x.quantity}`)
         .join('|');
     const same =
       ord.warehouseId === want.warehouseId &&
       Number(ord.discountRate || 0) === Number(want.discountRate || 0) &&
-      norm(lines.filter((l) => !l.bundleId).map((l) => ({ editionId: l.editionId, quantity: l.quantity }))) ===
+      norm((lines as any[]).filter((l: any) => !l.bundleId).map((l: any) => ({ editionId: l.editionId, quantity: l.quantity }))) ===
         norm((want.items || []).map((i) => ({ editionId: i.editionId, quantity: i.quantity })));
     if (!same) {
       throw AppError.idempotency(
@@ -522,11 +536,12 @@ export class OrderService {
   /**
    * Bước 1 — Tồn khả dụng ATP: tồn vật lý NEW trừ phần đơn PENDING còn hạn giữ chỗ.
    * Đơn PENDING không có bút toán ledger nên phải tính động từ order_items.
+   * Hỗ trợ nhận `txOrDb` để thực thi đồng nhất trong cùng write transaction.
    */
-  static async getATP(editionId: string, warehouseId: string): Promise<number> {
-    const physical = await InventoryService.getBalance(editionId, warehouseId, 'NEW');
+  static async getATP(editionId: string, warehouseId: string, txOrDb: any = db): Promise<number> {
+    const physical = await InventoryService.getBalance(editionId, warehouseId, 'NEW', txOrDb);
     const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
-    const held = await db
+    const held = await txOrDb
       .select({ qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
@@ -549,41 +564,85 @@ export class OrderService {
     return Date.now() - t > PENDING_TTL_HOURS * 3600000;
   }
 
-  /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử). Chỉ Manager/Owner. */
+  /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần). Chỉ Manager/Owner. */
   static async confirmOrder(orderId: string, actorRole: string, actorId = 'staff-admin', actorContext?: ActorContext) {
-    if (actorContext) { actorRole = actorContext.role; actorId = actorContext.staffId; }
+    if (actorContext) {
+      actorRole = actorContext.role;
+      actorId = actorContext.staffId;
+    }
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden('Chỉ Manager/Owner được duyệt đơn PENDING.');
     }
-    const rows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
-    const ord = rows[0];
-    if (ord.status !== 'PENDING_CONFIRMATION') throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
-    if (this.isPendingExpired(ord.createdAt)) {
-      await db.update(orders).set({ status: 'CANCELLED', note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]` }).where(eq(orders.id, orderId));
-      throw AppError.conflict(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
-    }
-    const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-    // Contract §3.3.3: Physical >= Qty VÀ ATP + Qty_chính-đơn-này >= Qty
-    // (không tính trùng phần giữ chỗ của chính đơn đang duyệt).
-    const ownNeed = new Map<string, number>();
-    for (const ln of lines) {
-      ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
-    }
-    for (const [editionId, qty] of Array.from(ownNeed.entries())) {
-      const bal = await InventoryService.getBalance(editionId, ord.warehouseId, 'NEW');
-      if (bal < qty) {
-        throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${editionId} còn ${bal}, cần ${qty}.`);
-      }
-      const atp = await this.getATP(editionId, ord.warehouseId);
-      if (atp + qty < qty) {
-        throw AppError.atp(
-          `Hết hàng khả dụng để duyệt (ATP ${atp} đã bị đơn khác giữ): ${editionId} cần ${qty}.`
-        );
-      }
-    }
-    await withDbRetry(async () => {
-      await db.transaction(async (tx) => {
+
+    return await withDbRetry(async () => {
+      let expiredError: Error | null = null;
+
+      const result = await db.transaction(async (tx) => {
+        // 1. Đọc lại order trong transaction
+        const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+        const ord = rows[0];
+
+        // 2. Nếu đã completed: kiểm tra xem có phải idempotent retry hợp lệ không
+        if (ord.status === 'COMPLETED') {
+          const ledgerPrefix = `idem-confirm-${orderId}-%`;
+          const confirmLedger = await tx
+            .select({ id: inventoryLedger.id })
+            .from(inventoryLedger)
+            .where(
+              and(
+                eq(inventoryLedger.correlationId, orderId),
+                sql`${inventoryLedger.idempotencyKey} LIKE ${ledgerPrefix}`
+              )
+            )
+            .limit(1);
+
+          if (confirmLedger.length > 0) {
+            return { orderId, orderCode: ord.orderCode, status: 'COMPLETED', isIdempotent: true };
+          }
+          throw AppError.conflict(`Đơn ${ord.orderCode} đã ở trạng thái COMPLETED nhưng không có bút toán duyệt hợp lệ.`);
+        }
+
+        // 3. Nếu trạng thái không phải pending: conflict
+        if (ord.status !== 'PENDING_CONFIRMATION') {
+          throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
+        }
+
+        // 4. Nếu hết TTL: commit cập nhật CANCELLED, sau đó ném lỗi ngoài tx
+        if (this.isPendingExpired(ord.createdAt)) {
+          await tx
+            .update(orders)
+            .set({
+              status: 'CANCELLED',
+              note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]`,
+            })
+            .where(eq(orders.id, orderId));
+          expiredError = AppError.conflict(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
+          return null;
+        }
+
+        // 5. Đọc order items trong transaction
+        const lines = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+
+        // 6. Gộp nhu cầu theo edition & kiểm tra tồn trong transaction
+        const ownNeed = new Map<string, number>();
+        for (const ln of lines) {
+          ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
+        }
+        for (const [editionId, qty] of Array.from(ownNeed.entries())) {
+          const bal = await InventoryService.getBalance(editionId, ord.warehouseId, 'NEW', tx);
+          if (bal < qty) {
+            throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${editionId} còn ${bal}, cần ${qty}.`);
+          }
+          const atp = await this.getATP(editionId, ord.warehouseId, tx);
+          if (atp + qty < qty) {
+            throw AppError.atp(
+              `Hết hàng khả dụng để duyệt (ATP ${atp} đã bị đơn khác giữ): ${editionId} cần ${qty}.`
+            );
+          }
+        }
+
+        // 7. Ghi sổ kho (DISPATCH_SALE) với idempotency key gắn correlationId
         let idx = 0;
         for (const ln of lines) {
           await InventoryService.recordMovement({
@@ -601,27 +660,63 @@ export class OrderService {
           });
           idx++;
         }
-        await tx.update(orders).set({ status: 'COMPLETED' }).where(eq(orders.id, orderId));
+
+        // 8. Chuyển trạng thái có điều kiện: PENDING_CONFIRMATION → COMPLETED
+        const updateRes: any = await tx.run(sql`
+          UPDATE orders
+          SET status = 'COMPLETED'
+          WHERE id = ${orderId} AND status = 'PENDING_CONFIRMATION'
+        `);
+
+        if (updateRes.rowsAffected !== 1) {
+          throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi bởi tiến trình khác.');
+        }
+
+        return { orderId, orderCode: ord.orderCode, status: 'COMPLETED' };
       });
+
+      if (expiredError) {
+        throw expiredError;
+      }
+      return result!;
     });
-    return { orderId, orderCode: ord.orderCode, status: 'COMPLETED' };
   }
 
-  /** Hủy đơn PENDING → CANCELLED (tự nhả giữ chỗ ATP). Chỉ Manager/Owner. */
+  /** Hủy đơn PENDING → CANCELLED (có điều kiện, chống race với confirm). Chỉ Manager/Owner. */
   static async cancelOrder(orderId: string, actorRole: string, reason?: string, actorContext?: ActorContext) {
     if (actorContext) { actorRole = actorContext.role; }
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden('Chỉ Manager/Owner được hủy đơn PENDING.');
     }
-    const rows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
-    const ord = rows[0];
-    if (ord.status !== 'PENDING_CONFIRMATION') throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
-    await db.update(orders).set({
-      status: 'CANCELLED',
-      note: reason ? `${ord.note ? ord.note + ' | ' : ''}[HỦY: ${reason}]` : ord.note,
-    }).where(eq(orders.id, orderId));
-    return { orderId, status: 'CANCELLED' };
+
+    return await withDbRetry(async () => {
+      return await db.transaction(async (tx) => {
+        const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+        const ord = rows[0];
+
+        if (ord.status === 'CANCELLED') {
+          return { orderId, status: 'CANCELLED', isIdempotent: true };
+        }
+        if (ord.status !== 'PENDING_CONFIRMATION') {
+          throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
+        }
+
+        const noteUpdate = reason ? `${ord.note ? ord.note + ' | ' : ''}[HỦY: ${reason}]` : ord.note;
+        const updateRes: any = await tx.run(sql`
+          UPDATE orders
+          SET status = 'CANCELLED',
+              note = ${noteUpdate}
+          WHERE id = ${orderId} AND status = 'PENDING_CONFIRMATION'
+        `);
+
+        if (updateRes.rowsAffected !== 1) {
+          throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi trong khi đang hủy.');
+        }
+
+        return { orderId, status: 'CANCELLED' };
+      });
+    });
   }
 
   /** Job dọn đơn PENDING quá TTL → CANCELLED. Trả về số đơn đã dọn. */
