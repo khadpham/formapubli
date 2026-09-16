@@ -46,6 +46,7 @@ const ALL_SUITES = [
   'scripts/test-phase0-laneA.ts',
   'scripts/test-cp3-transfer-concurrency.ts',
   'scripts/test-cp3-migrations.ts',
+  'scripts/test-cp3-return-concurrency.ts',
 ];
 
 function suiteShortName(p: string): string {
