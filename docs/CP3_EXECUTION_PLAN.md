@@ -110,6 +110,14 @@ Migration `0016_cp3_transfer_return_hardening` and Drizzle schema must include:
 
 Legacy rows may have null values in newly added compatibility columns. Every new CP3 mutation requires a non-empty client idempotency key.
 
+### Migration metadata policy
+
+- Migrations 0015 and 0016 are manual SQL migrations registered in meta/_journal.json; the repository snapshot chain currently ends at 0014_snapshot.json.
+- Independent audit confirmed that running drizzle-kit generate from the current snapshot baseline regenerates the 0015 and 0016 schema changes. Such generated output is duplicate and must not be committed.
+- CP3 continues to use reviewed manual SQL plus a journal entry and fresh/upgrade migration tests.
+- Do not run or commit output from drizzle-kit generate until a separate metadata-baseline repair is approved.
+- Snapshot normalization is tracked as migration-tooling debt and must be resolved before automated generation is re-enabled.
+
 ## 8. Transaction order
 
 ### Dispatch
@@ -334,4 +342,5 @@ Every checkpoint report must contain:
 7. Production database before/after evidence.
 8. Known limitations.
 9. Decisions required from the other lane.
+
 
