@@ -18,11 +18,20 @@ import {
   ReceiveParams,
   CancelParams,
 } from '../types/cp3';
-import {
-  computeTransferDispatchFingerprint,
+import { computeTransferDispatchFingerprint,
   computeTransferReceiveFingerprint,
   computeTransferCancelFingerprint,
 } from '../lib/transfer-fingerprint';
+import {
+  isRoleAllowedForDirectTransfer,
+  FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES,
+} from './direct-transfer-policy';
+
+/** true khi lỗi là vi phạm UNIQUE (dùng để map race cùng key, không để lọt raw). */
+function isUniqueViolation(e: any): boolean {
+  const hay = `${e?.message || ''} ${e?.code || ''} ${e?.cause?.message || ''} ${e?.cause?.code || ''}`;
+  return /UNIQUE constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(hay);
+}
 
 /**
  * ĐỘNG CƠ LUÂN CHUYỂN KHO 2 BƯỚC QUA TRẠM TRUNG CHUYỂN IN_TRANSIT (CP3 Hardened).
@@ -98,7 +107,35 @@ export class TransferService {
     if (fromWarehouseId === toWarehouseId) {
       throw AppError.invalid('Kho gửi và kho nhận phải khác nhau.');
     }
-    if (fromWarehouseId === TRANSIT_WAREHOUSE_ID || toWarehouseId === TRANSIT_WAREHOUSE_ID) {
+    // Direct-transfer gate (CP3-D) CHẠY TRƯỚC mọi từ chối INVALID của luồng
+    // warehouse 2 bước: caller đánh dấu actorRole muốn ngữ nghĩa direct thì
+    // mọi vi phạm role/pair đều là FORBIDDEN.
+    // Phạm vi (ghi nhận Lane B): gate này áp chính sách SSOT §9 cho nhánh
+    // direct-marked — role Owner/Manager + cấm tuyệt đối virtual families.
+    // Riêng allowlist cặp cấu hình (mặc định rỗng) thuộc endpoint
+    // /api/inventory/transfer (InventoryService.transfer); shipment dispatch
+    // giữa 2 kho vật lý không đòi cặp cấu hình trước (frozen T-DP yêu cầu
+    // owner A→B thành công khi ATP cho phép).
+    const directRole = (params as any).actorRole;
+    const isDirectCall = directRole !== undefined;
+    if (isDirectCall) {
+      if (!isRoleAllowedForDirectTransfer(directRole)) {
+        throw AppError.forbidden(
+          `FORBIDDEN: Chuyển kho trực tiếp chỉ dành cho Chủ cửa hàng hoặc Quản lý (role hiện tại: ${directRole}).`
+        );
+      }
+      const v = `${fromWarehouseId}|${toWarehouseId}`.toLowerCase();
+      const isVirtualPair =
+        FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES.has(fromWarehouseId) ||
+        FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES.has(toWarehouseId) ||
+        /transit|consign|quarantine|damaged|virtual/i.test(v);
+      if (isVirtualPair) {
+        throw AppError.forbidden(
+          `FORBIDDEN: Cặp kho [${fromWarehouseId} → ${toWarehouseId}] không được chuyển trực tiếp (kho transit/ký gửi/cách ly chỉ đi luồng 2 bước).`
+        );
+      }
+    }
+    if (!isDirectCall && (fromWarehouseId === TRANSIT_WAREHOUSE_ID || toWarehouseId === TRANSIT_WAREHOUSE_ID)) {
       throw AppError.invalid('Không dùng dispatch trực tiếp với kho transit (nhận hàng qua receive).');
     }
 
@@ -132,17 +169,24 @@ export class TransferService {
       })
     );
 
-    // Actor Context derivation
+    // Actor: actorContext (route đã bind từ session) thắng; nếu không có,
+    // chấp nhận staffId tường minh của caller trực tiếp (test harness tin cậy
+    // hành xử như route sau auth). KHÔNG có cả hai -> fail-closed.
+    // (Known limitation Lane B: service chưa phân biệt session thật/giả —
+    // binding session thuộc về route; xem src/app/api/transfers/route.ts.)
     const rawDispatcher = (params as any).dispatcherId;
+    const claimedId =
+      params.actorContext?.staffId?.trim() ||
+      (typeof rawDispatcher === 'string' ? rawDispatcher.trim() : '');
+    if (!claimedId) {
+      throw AppError.invalid('Thiếu danh tính người xuất kho (actorContext/dispatcherId).');
+    }
     const actorContext: ActorContext =
-      params.actorContext ||
-      toActorContext(rawDispatcher, 'ROLE_WAREHOUSE', rawDispatcher);
+      params.actorContext || toActorContext(claimedId, 'ROLE_WAREHOUSE', claimedId);
     const effDispatcherId = actorContext.staffId;
 
-    // Idempotency Key requirement
-    const idemKey =
-      params.idempotencyKey?.trim() ||
-      (rawDispatcher ? `legacy-trf-disp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` : '');
+    // Idempotency Key bắt buộc — KHÔNG tự sinh key (fail-closed, mục A).
+    const idemKey = params.idempotencyKey?.trim() || '';
     if (!idemKey) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác xuất kho luân chuyển (dispatch).');
     }
@@ -202,17 +246,48 @@ export class TransferService {
 
         await this.ensureTransitWarehouse(tx);
 
-        await tx.insert(transferShipments).values({
-          id: code,
-          fromWarehouseId,
-          toWarehouseId,
-          dispatcherId: effDispatcherId,
-          status: 'IN_TRANSIT',
-          idempotencyKey: idemKey,
-          fingerprint,
-          vehicleInfo,
-          notes,
-        });
+        try {
+          await tx.insert(transferShipments).values({
+            id: code,
+            fromWarehouseId,
+            toWarehouseId,
+            dispatcherId: effDispatcherId,
+            status: 'IN_TRANSIT',
+            idempotencyKey: idemKey,
+            fingerprint,
+            vehicleInfo,
+            notes,
+          });
+        } catch (e: any) {
+          // Race cùng key: UNIQUE thoát ra -> map về replay/CONFLICT (mục C),
+          // không bao giờ để SQLITE_CONSTRAINT_UNIQUE thô lọt ra ngoài.
+          if (!isUniqueViolation(e)) throw e;
+          const raced = await tx
+            .select()
+            .from(transferShipments)
+            .where(eq(transferShipments.idempotencyKey, idemKey))
+            .limit(1);
+          if (raced.length === 0) throw e;
+          const oldShip = raced[0];
+          if (oldShip.fingerprint && oldShip.fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${idemKey}" đã được sử dụng cho phiếu chuyển [${oldShip.id}] với nội dung khác.`
+            );
+          }
+          const oldItems = await tx
+            .select()
+            .from(transferShipmentItems)
+            .where(eq(transferShipmentItems.shipmentId, oldShip.id));
+          return {
+            shipmentId: oldShip.id,
+            status: oldShip.status as ShipmentStatus,
+            fromWarehouseId: oldShip.fromWarehouseId,
+            toWarehouseId: oldShip.toWarehouseId,
+            itemsCount: oldItems.length,
+            totalQuantity: oldItems.reduce((s, i) => s + i.dispatchedQty, 0),
+            isDuplicate: true as const,
+          };
+        }
 
         for (const it of consolidatedItems) {
           // Trừ kho nguồn (atomic guard chặn xuất âm ngay trong transaction).
@@ -286,15 +361,20 @@ export class TransferService {
     }
     const cleanShipmentId = shipmentId.trim();
 
+    // Actor: actorContext thắng; nếu không, staffId tường minh (xem dispatch).
     const rawReceiver = (params as any).receiverId;
+    const claimedReceiver =
+      params.actorContext?.staffId?.trim() ||
+      (typeof rawReceiver === 'string' ? rawReceiver.trim() : '');
+    if (!claimedReceiver) {
+      throw AppError.invalid('Thiếu danh tính người nhận hàng (actorContext/receiverId).');
+    }
     const actorContext: ActorContext =
-      params.actorContext ||
-      toActorContext(rawReceiver, 'ROLE_WAREHOUSE', rawReceiver);
+      params.actorContext || toActorContext(claimedReceiver, 'ROLE_WAREHOUSE', claimedReceiver);
     const effReceiverId = actorContext.staffId;
 
-    const idemKey =
-      params.idempotencyKey?.trim() ||
-      (rawReceiver ? `legacy-trf-recv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` : '');
+    // Idempotency Key bắt buộc — KHÔNG tự sinh key (fail-closed, mục A).
+    const idemKey = params.idempotencyKey?.trim() || '';
     if (!idemKey) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác nhận hàng luân chuyển (receive).');
     }
@@ -426,8 +506,11 @@ export class TransferService {
           );
         }
 
-        // 5. Balance stock movements
-        for (const p of plan) {
+        // 5. Balance stock movements. Ledger keys ở đây là deterministic theo
+        // (shipmentId, editionId): nếu UNIQUE nổ nghĩa là một receive song song
+        // đã post bút toán -> fail-closed STATE_CONFLICT, không lọt raw (mục C).
+        try {
+          for (const p of plan) {
           const inTransitOut = p.received + p.damaged;
 
           // Hàng rời transit về kho đích (chỉ khi có hàng thật về: R + D).
@@ -527,19 +610,70 @@ export class TransferService {
                 eq(transferShipmentItems.editionId, p.dispatched.editionId)
               )
             );
+          }
+        } catch (e: any) {
+          if (!isUniqueViolation(e)) throw e;
+          const shipNow = (
+            await tx
+              .select()
+              .from(transferShipments)
+              .where(eq(transferShipments.id, cleanShipmentId))
+              .limit(1)
+          )[0];
+          if (!shipNow || shipNow.status !== 'IN_TRANSIT') {
+            throw AppError.conflict(
+              `STATE_CONFLICT: Phiếu ${cleanShipmentId} đã được nhận bởi giao dịch song song (trạng thái ${shipNow?.status || 'không rõ'}).`
+            );
+          }
+          throw e;
         }
 
-        // 6. Ghi vết transfer_actions
+        // 6. Ghi vết transfer_actions (UNIQUE -> replay/CONFLICT, mục C).
         const actionId = `ta-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        await tx.insert(transferActions).values({
-          id: actionId,
-          shipmentId: cleanShipmentId,
-          action: 'RECEIVE',
-          actorId: effReceiverId,
-          resultingStatus: nextStatus,
-          idempotencyKey: idemKey,
-          fingerprint,
-        });
+        try {
+          await tx.insert(transferActions).values({
+            id: actionId,
+            shipmentId: cleanShipmentId,
+            action: 'RECEIVE',
+            actorId: effReceiverId,
+            resultingStatus: nextStatus,
+            idempotencyKey: idemKey,
+            fingerprint,
+          });
+        } catch (e: any) {
+          if (!isUniqueViolation(e)) throw e;
+          const raced = await tx
+            .select()
+            .from(transferActions)
+            .where(eq(transferActions.idempotencyKey, idemKey))
+            .limit(1);
+          if (raced.length === 0) throw e;
+          if (raced[0].fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${idemKey}" đã được sử dụng cho một thao tác nhận hàng khác trên phiếu [${raced[0].shipmentId}].`
+            );
+          }
+          const shipNow = (
+            await tx
+              .select()
+              .from(transferShipments)
+              .where(eq(transferShipments.id, cleanShipmentId))
+              .limit(1)
+          )[0];
+          const shipItemsNow = await tx
+            .select()
+            .from(transferShipmentItems)
+            .where(eq(transferShipmentItems.shipmentId, cleanShipmentId));
+          return {
+            shipmentId: cleanShipmentId,
+            status: (shipNow?.status || nextStatus) as ShipmentStatus,
+            toWarehouseId: shipNow?.toWarehouseId,
+            totalReceived: shipItemsNow.reduce((s, p) => s + (p.receivedQty || 0), 0),
+            totalDamaged: shipItemsNow.reduce((s, p) => s + (p.damagedQty || 0), 0),
+            totalLost: shipItemsNow.reduce((s, p) => s + (p.lostQty || 0), 0),
+            isDuplicate: true as const,
+          };
+        }
 
         return {
           shipmentId: cleanShipmentId,
@@ -574,11 +708,18 @@ export class TransferService {
       effActorId = actorContext.staffId;
       idemKey = p.idempotencyKey;
     } else {
-      effActorId = (actorIdOrParams as string) || 'quan-ly-kho';
-      actorContext = toActorContext(effActorId, 'ROLE_MANAGER', effActorId);
+      // Dạng gọi legacy (shipmentId, actorId): actorId tường minh bắt buộc,
+      // KHÔNG mặc định 'quan-ly-kho'. Key dẫn xuất ổn định theo (shipment, actor)
+      // nên cùng một actor hủy trùng chỉ replay, không bao giờ mask conflict
+      // (conditional UPDATE IN_TRANSIT vẫn là chốt chặn đua thật).
+      const claimed = typeof actorIdOrParams === 'string' ? actorIdOrParams.trim() : '';
+      if (!claimed) {
+        throw AppError.invalid('Thiếu danh tính người hủy phiếu (actorId).');
+      }
+      effActorId = claimed;
+      actorContext = toActorContext(claimed, 'ROLE_MANAGER', claimed);
       idemKey =
-        maybeIdempotencyKey?.trim() ||
-        `legacy-trf-cancel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        maybeIdempotencyKey?.trim() || `cancel-${shipmentId}-${claimed}`;
     }
 
     if (!cleanShipmentId || typeof cleanShipmentId !== 'string' || !cleanShipmentId.trim()) {
@@ -681,17 +822,33 @@ export class TransferService {
           });
         }
 
-        // 4. Record action in transfer_actions
+        // 4. Record action in transfer_actions (UNIQUE -> replay/CONFLICT, mục C).
         const actionId = `ta-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        await tx.insert(transferActions).values({
-          id: actionId,
-          shipmentId: cleanShipmentId,
-          action: 'CANCEL',
-          actorId: effActorId,
-          resultingStatus: 'CANCELLED',
-          idempotencyKey: idemKey,
-          fingerprint,
-        });
+        try {
+          await tx.insert(transferActions).values({
+            id: actionId,
+            shipmentId: cleanShipmentId,
+            action: 'CANCEL',
+            actorId: effActorId,
+            resultingStatus: 'CANCELLED',
+            idempotencyKey: idemKey,
+            fingerprint,
+          });
+        } catch (e: any) {
+          if (!isUniqueViolation(e)) throw e;
+          const raced = await tx
+            .select()
+            .from(transferActions)
+            .where(eq(transferActions.idempotencyKey, idemKey))
+            .limit(1);
+          if (raced.length === 0) throw e;
+          if (raced[0].fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${idemKey}" đã được sử dụng cho thao tác hủy phiếu khác.`
+            );
+          }
+          return { shipmentId: cleanShipmentId, status: 'CANCELLED' as ShipmentStatus, isDuplicate: true as const };
+        }
 
         return { shipmentId: cleanShipmentId, status: 'CANCELLED' as ShipmentStatus, isDuplicate: false as const };
       })

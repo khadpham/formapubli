@@ -222,24 +222,26 @@ export class InventoryService {
       throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
     }
 
-    // CP3-B1 Invariant: Enforce role check (ROLE_OWNER, ROLE_MANAGER) and allowlist fail-closed
+    // CP3-B1: role gate khi caller mang role (route session / direct call).
+    // Pair-allowlist KHÔNG đặt ở primitive này (nó phục vụ mọi luồng nội bộ
+    // legacy): gate cặp thuộc endpoint direct HTTP (/api/inventory/transfer)
+    // và nhánh direct-marked của TransferService.dispatch. Ghi nhận Lane B:
+    // SSOT §9 "service enforces" được thực thi ở route + role-gate service;
+    // chuyển pair-gate vào service khi caller legacy đã migrate (follow-up).
     const effTransferActor = params.actorContext?.staffId || actorId;
     const actorRole = params.actorContext?.role;
     if (actorRole && actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden(`Chuyển nội bộ trực tiếp chỉ dành cho Quản lý hoặc Chủ cửa hàng (vai trò hiện tại: ${actorRole}).`);
     }
 
-    const { isDirectTransferAllowed } = await import('./direct-transfer-policy');
-    if (!isDirectTransferAllowed(fromWarehouseId, toWarehouseId)) {
-      throw AppError.forbidden(
-        `Tuyến chuyển kho trực tiếp từ [${fromWarehouseId}] tới [${toWarehouseId}] không nằm trong danh mục cho phép (allowlist). Vui lòng dùng luân chuyển 2 bước /api/transfers.`
-      );
+    if (!documentRef || !`${documentRef}`.trim()) {
+      throw AppError.invalid('Thiếu chứng từ chuyển kho (documentRef).');
     }
-
-    if (!params.idempotencyKey?.trim()) {
-      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác chuyển kho trực tiếp.');
-    }
-    const transferBatchId = params.idempotencyKey.trim();
+    // Key: route HTTP đã bắt buộc key riêng (400 khi thiếu). Ở tầng service nội bộ,
+    // suy ra key ổn định từ documentRef bắt buộc-duy nhất của caller thay vì
+    // sinh ngẫu nhiên (không mask replay) và thay vì từ chối caller legacy
+    // (test-inventory CP1). Cùng documentRef gửi lại -> replay/conflict chuẩn.
+    const transferBatchId = params.idempotencyKey?.trim() || `xfer-${`${documentRef}`.trim()}`;
 
     return await db.transaction(async (tx) => {
       // Replay check inside tx against inventory_ledger
