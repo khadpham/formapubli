@@ -72,6 +72,23 @@ export interface CreateOrderParams {
   actorContext?: ActorContext;
 }
 
+export interface OrderFingerprint {
+  warehouseId: string;
+  channel: string;
+  paymentMethod: string;
+  fiscalScope: string;
+  discountRate: number;
+  cashboxSessionId?: string | null;
+  effCashierId?: string | null;
+  customerId?: string | null;
+  partnerId?: string | null;
+  customerName?: string | null;
+  isGift?: boolean;
+  giftReason?: string | null;
+  items?: OrderItemInput[];
+  bundles?: Array<{ bundleId: string; quantity: number }>;
+}
+
 export interface OrderFilterParams {
   startDate?: string;
   endDate?: string;
@@ -210,37 +227,7 @@ export class OrderService {
       throw AppError.invalid('Đơn hàng phải có ít nhất 1 đầu sách hoặc 1 combo.');
     }
 
-    // 0. Bảo vệ Idempotency (Tránh ghi trùng lặp khi Sync đơn Offline hoặc Retry)
-    // Cùng key + cùng nội dung → trả kết quả cũ. Cùng key + KHÁC nội dung → 409.
-    if (params.idempotencyKey) {
-      const existing = await db
-        .select()
-        .from(orders)
-        .where(eq(orders.idempotencyKey, params.idempotencyKey))
-        .limit(1);
-      if (existing.length > 0) {
-        await this.assertSameOrderContent(existing[0].id, {
-          warehouseId,
-          discountRate,
-          items: looseItems,
-        });
-        return {
-          orderId: existing[0].id,
-          orderCode: existing[0].orderCode,
-          warehouseId: existing[0].warehouseId,
-          customerName: existing[0].customerName,
-          subtotal: existing[0].subtotal,
-          discountAmount: existing[0].discountAmount,
-          finalAmount: existing[0].finalAmount,
-          fiscalScope: existing[0].fiscalScope,
-          itemsCount: approxItemsCount,
-          totalQuantity: approxTotalQty,
-          isDuplicate: true,
-        };
-      }
-    }
-
-    // 0b. Mở rộng combo thành dòng linh kiện (bottleneck validate + tỉ trọng giá).
+    // Mở rộng combo thành dòng linh kiện (bottleneck validate + tỉ trọng giá).
     // Combo do management định giá sẵn nên KHÔNG cộng chiết khấu đơn (unitDiscountRate = 0).
     const bundleLines: Array<{
       editionId: string;
@@ -353,36 +340,54 @@ export class OrderService {
     // Toàn bộ kiểm tra idempotency, phiên két, tính ATP và ghi chép nằm trong write transaction.
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
-        // B0. Kiểm tra Idempotency bên trong Transaction
-        if (params.idempotencyKey) {
-          const existing = await tx
-            .select()
-            .from(orders)
-            .where(eq(orders.idempotencyKey, params.idempotencyKey))
-            .limit(1);
+        // B0. Kiểm tra Idempotency bên trong Transaction với idempotencyKey đã chuẩn hóa
+        const existing = await tx
+          .select()
+          .from(orders)
+          .where(eq(orders.idempotencyKey, idempotencyKey))
+          .limit(1);
 
-          if (existing.length > 0) {
-            await this.assertSameOrderContent(existing[0].id, {
+        if (existing.length > 0) {
+          await this.assertSameOrderContent(
+            existing[0].id,
+            {
               warehouseId,
+              channel,
+              paymentMethod,
+              fiscalScope,
               discountRate,
+              cashboxSessionId: params.cashboxSessionId,
+              effCashierId,
+              customerId: params.customerId,
+              partnerId,
+              customerName,
+              isGift,
+              giftReason: params.giftReason,
               items: looseItems,
-            }, tx);
+              bundles: bundleOrders,
+            },
+            tx
+          );
 
-            return {
-              orderId: existing[0].id,
-              orderCode: existing[0].orderCode,
-              warehouseId: existing[0].warehouseId,
-              customerName: existing[0].customerName,
-              subtotal: existing[0].subtotal,
-              discountAmount: existing[0].discountAmount,
-              finalAmount: existing[0].finalAmount,
-              fiscalScope: existing[0].fiscalScope,
-              itemsCount: existing.length > 0 ? existing.length : preparedItems.length,
-              totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
-              status: existing[0].status,
-              isDuplicate: true,
-            };
-          }
+          const existingLines = await tx
+            .select()
+            .from(orderItems)
+            .where(eq(orderItems.orderId, existing[0].id));
+
+          return {
+            orderId: existing[0].id,
+            orderCode: existing[0].orderCode,
+            warehouseId: existing[0].warehouseId,
+            customerName: existing[0].customerName,
+            subtotal: existing[0].subtotal,
+            discountAmount: existing[0].discountAmount,
+            finalAmount: existing[0].finalAmount,
+            fiscalScope: existing[0].fiscalScope,
+            itemsCount: existingLines.length,
+            totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+            status: existing[0].status,
+            isDuplicate: true,
+          };
         }
 
         // B1. Xác thực phiên két bên trong Transaction
@@ -504,31 +509,161 @@ export class OrderService {
   }
 
   /**
-   * So nội dung vật chất (kho + chiết khấu + dòng hàng) của đơn đã tồn tại với
-   * request gửi lại cùng idempotencyKey. Khác nội dung → IDEMPOTENCY_CONFLICT.
+   * So nội dung vật chất toàn diện (kho, kênh, thanh toán, thuế, chiết khấu, két,
+   * thu ngân, khách hàng/đối tác, quà tặng, dòng lẻ & combo) của đơn đã tồn tại với
+   * request gửi lại cùng idempotencyKey. Khác bất kỳ trường nào → IDEMPOTENCY_CONFLICT.
    */
   static async assertSameOrderContent(
     orderId: string,
-    want: { warehouseId: string; discountRate: number; items: OrderItemInput[] },
+    want: OrderFingerprint,
     txOrDb: any = db
   ): Promise<void> {
     const ord = (await txOrDb.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
     if (!ord) return;
-    const lines = await txOrDb.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-    const norm = (arr: Array<{ editionId: string; quantity: number }>) =>
-      arr
-        .slice()
-        .sort((a, b) => a.editionId.localeCompare(b.editionId))
-        .map((x) => `${x.editionId}:${x.quantity}`)
-        .join('|');
-    const same =
-      ord.warehouseId === want.warehouseId &&
-      Number(ord.discountRate || 0) === Number(want.discountRate || 0) &&
-      norm((lines as any[]).filter((l: any) => !l.bundleId).map((l: any) => ({ editionId: l.editionId, quantity: l.quantity }))) ===
-        norm((want.items || []).map((i) => ({ editionId: i.editionId, quantity: i.quantity })));
-    if (!same) {
+
+    if (ord.warehouseId !== want.warehouseId) {
       throw AppError.idempotency(
-        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có nội dung khác — từ chối ghi đè. Hãy dùng key mới cho đơn mới.`
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có kho xuất khác (${ord.warehouseId} vs ${want.warehouseId}).`
+      );
+    }
+
+    if (ord.channel !== want.channel) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có kênh bán khác (${ord.channel} vs ${want.channel}).`
+      );
+    }
+
+    if (ord.paymentMethod !== want.paymentMethod) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có phương thức thanh toán khác (${ord.paymentMethod} vs ${want.paymentMethod}).`
+      );
+    }
+
+    if (ord.fiscalScope !== want.fiscalScope) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có phạm vi tài chính khác (${ord.fiscalScope} vs ${want.fiscalScope}).`
+      );
+    }
+
+    if (Math.abs(Number(ord.discountRate || 0) - Number(want.discountRate || 0)) > 0.0001) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có tỷ lệ chiết khấu khác (${ord.discountRate} vs ${want.discountRate}).`
+      );
+    }
+
+    const dbCashbox = ord.cashboxSessionId || null;
+    const wantCashbox = want.cashboxSessionId || null;
+    if (dbCashbox !== wantCashbox) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có phiên két khác (${dbCashbox} vs ${wantCashbox}).`
+      );
+    }
+
+    const dbCashier = ord.cashierId || null;
+    const wantCashier = want.effCashierId || null;
+    if (wantCashier && dbCashier !== wantCashier) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có thu ngân/actor khác (${dbCashier} vs ${wantCashier}).`
+      );
+    }
+
+    const dbCustId = ord.customerId || null;
+    const wantCustId = want.customerId || null;
+    if (dbCustId !== wantCustId) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có mã độc giả khác (${dbCustId} vs ${wantCustId}).`
+      );
+    }
+
+    const dbPartnerId = ord.partnerId || null;
+    const wantPartnerId = want.partnerId || null;
+    if (dbPartnerId !== wantPartnerId) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có đối tác khác (${dbPartnerId} vs ${wantPartnerId}).`
+      );
+    }
+
+    const dbCustName = (ord.customerName || '').trim() || 'Khách lẻ vãng lai';
+    const wantCustName = (want.customerName || '').trim() || 'Khách lẻ vãng lai';
+    if (dbCustName !== wantCustName) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có tên khách hàng khác (${dbCustName} vs ${wantCustName}).`
+      );
+    }
+
+    const dbIsGift = Boolean(ord.note && ord.note.includes('[QUÀ TẶNG:'));
+    const wantIsGift = Boolean(want.isGift);
+    if (dbIsGift !== wantIsGift) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có trạng thái quà tặng khác (${dbIsGift} vs ${wantIsGift}).`
+      );
+    }
+    if (wantIsGift && want.giftReason) {
+      const reason = want.giftReason.trim();
+      if (!ord.note || !ord.note.includes(reason)) {
+        throw AppError.idempotency(
+          `Idempotency-Key đã gắn với đơn ${ord.orderCode} có lý do quà tặng khác.`
+        );
+      }
+    }
+
+    const lines = await txOrDb.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+
+    // Chuẩn hóa và gộp dòng lẻ (group by editionId + unitDiscountRate, sum quantity, sort)
+    const wantLooseMap = new Map<string, number>();
+    for (const it of want.items || []) {
+      const rate = Number(it.unitDiscountRate ?? want.discountRate ?? 0).toFixed(4);
+      const key = `${it.editionId}__${rate}`;
+      wantLooseMap.set(key, (wantLooseMap.get(key) || 0) + it.quantity);
+    }
+    const normWantLoose = Array.from(wantLooseMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, q]) => `${k}:${q}`)
+      .join('|');
+
+    const dbLooseLines = (lines as any[]).filter((l: any) => !l.bundleId);
+    const dbLooseMap = new Map<string, number>();
+    for (const it of dbLooseLines) {
+      const rate = Number(it.unitDiscountRate ?? ord.discountRate ?? 0).toFixed(4);
+      const key = `${it.editionId}__${rate}`;
+      dbLooseMap.set(key, (dbLooseMap.get(key) || 0) + it.quantity);
+    }
+    const normDbLoose = Array.from(dbLooseMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, q]) => `${k}:${q}`)
+      .join('|');
+
+    if (normWantLoose !== normDbLoose) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có chi tiết sản phẩm lẻ khác nhau.`
+      );
+    }
+
+    // Chuẩn hóa và gộp combo (group by bundleId, sum quantity, sort)
+    const wantBundleMap = new Map<string, number>();
+    for (const b of want.bundles || []) {
+      wantBundleMap.set(b.bundleId, (wantBundleMap.get(b.bundleId) || 0) + b.quantity);
+    }
+    const normWantBundles = Array.from(wantBundleMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bId, qty]) => `${bId}:${qty}`)
+      .join('|');
+
+    const dbBundleLines = (lines as any[]).filter((l: any) => l.bundleId);
+    const dbBundleMap = new Map<string, number>();
+    for (const it of dbBundleLines) {
+      if (!dbBundleMap.has(it.bundleId)) {
+        dbBundleMap.set(it.bundleId, Number(it.bundleQty || 0));
+      }
+    }
+    const normDbBundles = Array.from(dbBundleMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bId, qty]) => `${bId}:${qty}`)
+      .join('|');
+
+    if (normWantBundles !== normDbBundles) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có chi tiết combo khác nhau.`
       );
     }
   }

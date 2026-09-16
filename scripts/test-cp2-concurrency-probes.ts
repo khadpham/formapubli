@@ -26,7 +26,8 @@ import { assertIsolatedTestDb } from './test-guard';
 import { db, orders, orderItems, inventoryLedger, stockBalances, editions } from '../src/db';
 import { eq, sql, inArray, and } from 'drizzle-orm';
 import { InventoryService } from '../src/services/inventory.service';
-import { OrderService } from '../src/services/order.service';
+import { OrderService, CashboxService } from '../src/services/order.service';
+import { BundleService } from '../src/services/bundle.service';
 
 assertIsolatedTestDb('test-cp2-concurrency-probes');
 
@@ -206,22 +207,51 @@ async function main() {
         .where(eq(inventoryLedger.correlationId, winningOrderId))
     : [];
 
+  const all9AtpFailures = failuresA.length === 9 && failuresA.every((f) => f.code === 'INSUFFICIENT_ATP');
+  const noBusyOrTimeoutA = !failuresA.some(
+    (f) =>
+      f.code === 'SQLITE_BUSY' ||
+      (f.error || '').includes('database is locked') ||
+      f.error === 'TIMEOUT_EXCEEDED (Worker hung)'
+  );
+
+  const ordersInDbA = winningOrderId
+    ? await db.select().from(orders).where(eq(orders.id, winningOrderId))
+    : [];
+  const orderItemsInDbA = winningOrderId
+    ? await db.select().from(orderItems).where(eq(orderItems.orderId, winningOrderId))
+    : [];
+  const validOrderRecordA =
+    ordersInDbA.length === 1 && orderItemsInDbA.length === 1 && orderItemsInDbA[0].quantity === 1;
+
   console.log(`- Kết quả: ${successesA.length} tiến trình thành công, ${failuresA.length} bị từ chối.`);
   console.log(`- Tồn kho sau cuộc đua: ${balAfterA} cuốn`);
   console.log(`- Số bút toán bán hàng DISPATCH_SALE mới phát sinh: ${newLedgersA}`);
 
-  if (successesA.length !== 1 || failuresA.length !== 9 || balAfterA !== 0 || newLedgersA !== 1 || winnerLedger.length !== 1) {
+  if (
+    successesA.length !== 1 ||
+    failuresA.length !== 9 ||
+    !all9AtpFailures ||
+    !noBusyOrTimeoutA ||
+    balAfterA !== 0 ||
+    newLedgersA !== 1 ||
+    winnerLedger.length !== 1 ||
+    !validOrderRecordA
+  ) {
     console.error('❌ PROBE A THẤT BẠI: Không bảo đảm đúng 1 người mua được cuốn duy nhất!', {
       successes: successesA.length,
       failures: failuresA.length,
+      all9AtpFailures,
+      noBusyOrTimeoutA,
       balAfter: balAfterA,
       newLedgers: newLedgersA,
       winnerLedgerCount: winnerLedger.length,
-      failureErrors: failuresA.map((f) => f.error),
+      validOrderRecordA,
+      failureErrors: failuresA.map((f) => ({ error: f.error, code: f.code })),
     });
     process.exit(1);
   }
-  console.log('✅ PROBE A ĐẠT: Đúng 1 tiến trình mua thành công, 9 tiến trình nhận INSUFFICIENT_ATP, tồn kho = 0, 1 ledger!\n');
+  console.log('✅ PROBE A ĐẠT: Đúng 1 tiến trình mua thành công, 9 tiến trình nhận INSUFFICIENT_ATP, tồn kho = 0, đúng 1 order + 1 item set, 1 ledger!\n');
 
   // ---------------------------------------------------------------------------
   // PROBE B: 2 TIẾN TRÌNH ĐỘC LẬP CÙNG DUYỆT 1 ĐƠN PENDING
@@ -254,6 +284,8 @@ async function main() {
     items: [{ editionId: edProbeB, quantity: 2 }],
   });
 
+  const balBeforeB = await InventoryService.getBalance(edProbeB, testWarehouse, 'NEW');
+
   const configsB = [
     { action: 'confirmOrder' as const, payload: { orderId: pendingOrderB.orderId, role: 'ROLE_MANAGER', staffId: 'mgr-1' } },
     { action: 'confirmOrder' as const, payload: { orderId: pendingOrderB.orderId, role: 'ROLE_MANAGER', staffId: 'mgr-2' } },
@@ -261,19 +293,44 @@ async function main() {
 
   const resultsB = await runConcurrentWorkers(configsB);
   const successB = resultsB.filter((r) => r.success);
+  const balAfterB = await InventoryService.getBalance(edProbeB, testWarehouse, 'NEW');
+
+  const finalOrderRowsB = await db.select().from(orders).where(eq(orders.id, pendingOrderB.orderId));
+  const finalStatusB = finalOrderRowsB[0]?.status;
+
   const ledgersB = await db
     .select()
     .from(inventoryLedger)
     .where(eq(inventoryLedger.correlationId, pendingOrderB.orderId));
 
-  console.log(`- Kết quả duyệt B: ${successB.length} phản hồi thành công (gồm cả idempotent nếu có)`);
+  console.log(`- Kết quả duyệt B: ${successB.length} phản hồi thành công`);
+  console.log(`- Trạng thái đơn cuối B: ${finalStatusB}`);
+  console.log(`- Biến động tồn kho B: ${balBeforeB} -> ${balAfterB} (giảm ${balBeforeB - balAfterB})`);
   console.log(`- Bút toán ghi sổ liên quan đến đơn B: ${ledgersB.length}`);
 
-  if (ledgersB.length !== 1 || ledgersB[0].quantityDelta !== -2) {
-    console.error('❌ PROBE B THẤT BẠI: Ledger bị ghi trùng hoặc không ghi đúng!', ledgersB);
+  // Hai phản hồi phải là: 1 commit và 1 idempotent replay, hoặc 1 commit và 1 conflict hợp lệ
+  const isOneCommitOneReplay = successB.length === 2 && resultsB.some((r) => r.data?.isIdempotent);
+  const isOneCommitOneConflict =
+    successB.length === 1 &&
+    resultsB.some((r) => !r.success && (r.code === 'STATE_CONFLICT' || (r.error || '').includes('COMPLETED')));
+  const validResponsesB = isOneCommitOneReplay || isOneCommitOneConflict;
+
+  if (
+    finalStatusB !== 'COMPLETED' ||
+    balBeforeB - balAfterB !== 2 ||
+    ledgersB.length !== 1 ||
+    ledgersB[0].quantityDelta !== -2 ||
+    !validResponsesB
+  ) {
+    console.error('❌ PROBE B THẤT BẠI: Nghiệm thu duyệt đơn pending thất bại!', {
+      finalStatus: finalStatusB,
+      balDelta: balBeforeB - balAfterB,
+      ledgersB,
+      resultsB,
+    });
     process.exit(1);
   }
-  console.log('✅ PROBE B ĐẠT: Đúng 1 bộ ledger xuất kho được ghi, không nhân đôi tồn kho!\n');
+  console.log('✅ PROBE B ĐẠT: Đơn COMPLETED, balance giảm đúng 2, đúng 1 bộ ledger -2, phản hồi commit + replay/conflict hợp lệ!\n');
 
   // ---------------------------------------------------------------------------
   // PROBE C: ĐƠN PENDING VS ĐƠN BÁN NGAY CÙNG TRANH 1 CUỐN
@@ -326,14 +383,48 @@ async function main() {
   const successC = resultsC.filter((r) => r.success);
   const failC = resultsC.filter((r) => !r.success);
 
+  const balAfterC = await InventoryService.getBalance(edProbeC, testWarehouse, 'NEW');
   const finalAtpC = await OrderService.getATP(edProbeC, testWarehouse);
-  console.log(`- Kết quả C: ${successC.length} thành công, ${failC.length} thất bại. ATP còn lại: ${finalAtpC}`);
+  const winningResultC = successC[0];
+  const winningOrderIdC = winningResultC?.data?.orderId;
+  const winningStatusC = winningResultC?.data?.status;
 
-  if (successC.length !== 1 || failC.length !== 1 || finalAtpC !== 0) {
-    console.error('❌ PROBE C THẤT BẠI: Bán lẹm hàng hoặc cả 2 cùng thành công!', { resultsC, finalAtpC });
+  const failureResultC = failC[0];
+  const failureIsAtp = failureResultC?.code === 'INSUFFICIENT_ATP';
+
+  const ledgersC = winningOrderIdC
+    ? await db.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, winningOrderIdC))
+    : [];
+  const ordersCreatedC = winningOrderIdC
+    ? await db.select().from(orders).where(eq(orders.id, winningOrderIdC))
+    : [];
+
+  let branchConsistent = false;
+  if (winningStatusC === 'COMPLETED') {
+    // Nhánh Bán ngay thắng: physical = 0, ATP = 0, 1 ledger DISPATCH_SALE -1, 1 order COMPLETED
+    branchConsistent =
+      balAfterC === 0 && finalAtpC === 0 && ledgersC.length === 1 && ledgersC[0].quantityDelta === -1 && ordersCreatedC.length === 1;
+  } else if (winningStatusC === 'PENDING_CONFIRMATION') {
+    // Nhánh Giữ chỗ thắng: physical = 1, ATP = 0 (bị giữ chỗ 1), 0 ledger, 1 order PENDING
+    branchConsistent =
+      balAfterC === 1 && finalAtpC === 0 && ledgersC.length === 0 && ordersCreatedC.length === 1;
+  }
+
+  console.log(`- Kết quả C: ${successC.length} thành công, ${failC.length} thất bại. Nhánh thắng: ${winningStatusC}`);
+  console.log(`- Physical tồn: ${balAfterC}, ATP còn lại: ${finalAtpC}, Bút toán ledger: ${ledgersC.length}`);
+
+  if (successC.length !== 1 || failC.length !== 1 || !failureIsAtp || !branchConsistent) {
+    console.error('❌ PROBE C THẤT BẠI: Bán lẹm hàng hoặc không khớp nhánh thắng!', {
+      resultsC,
+      finalAtpC,
+      balAfterC,
+      winningStatusC,
+      failureIsAtp,
+      branchConsistent,
+    });
     process.exit(1);
   }
-  console.log('✅ PROBE C ĐẠT: Đúng 1 đơn giành được cuốn duy nhất, đơn còn lại bị chặn ATP!\n');
+  console.log('✅ PROBE C ĐẠT: Đúng 1 đơn thành công, 1 đơn bị chặn INSUFFICIENT_ATP, physical/ATP/order/ledger chuẩn xác 100% theo nhánh thắng!\n');
 
   // ---------------------------------------------------------------------------
   // PROBE D: ĐUA GIỮA CONFIRM ORDER VÀ CANCEL ORDER
@@ -364,6 +455,8 @@ async function main() {
     items: [{ editionId: edProbeD, quantity: 2 }],
   });
 
+  const balBeforeRaceD = await InventoryService.getBalance(edProbeD, testWarehouse, 'NEW');
+
   const configsD = [
     { action: 'confirmOrder' as const, payload: { orderId: orderD.orderId, role: 'ROLE_MANAGER', staffId: 'mgr-1' } },
     { action: 'cancelOrder' as const, payload: { orderId: orderD.orderId, role: 'ROLE_MANAGER', reason: 'Đua hủy', staffId: 'mgr-2' } },
@@ -373,26 +466,56 @@ async function main() {
   const rowsD = await db.select().from(orders).where(eq(orders.id, orderD.orderId));
   const finalStatusD = rowsD[0]?.status;
   const ledgersD = await db.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, orderD.orderId));
+  const balAfterRaceD = await InventoryService.getBalance(edProbeD, testWarehouse, 'NEW');
+
+  // Không worker nào được timeout hoặc kết thúc bằng lỗi database
+  const hasTimeoutOrDbErrorD = resultsD.some(
+    (r) =>
+      r.error === 'TIMEOUT_EXCEEDED (Worker hung)' ||
+      r.code === 'SQLITE_BUSY' ||
+      (r.error || '').includes('database is locked')
+  );
 
   console.log(`- Kết quả đua D: Trạng thái cuối cùng = ${finalStatusD}, Bút toán ledger = ${ledgersD.length}`);
+  console.log(`- Tồn kho: trước đua = ${balBeforeRaceD}, sau đua = ${balAfterRaceD}`);
+
+  let balanceConsistentD = false;
   if (finalStatusD === 'COMPLETED') {
-    if (ledgersD.length !== 1 || ledgersD[0].quantityDelta !== -2) {
-      throw new Error('Đơn COMPLETED nhưng bút toán ledger không đúng!');
-    }
+    balanceConsistentD = balBeforeRaceD - balAfterRaceD === 2 && ledgersD.length === 1 && ledgersD[0].quantityDelta === -2;
   } else if (finalStatusD === 'CANCELLED') {
-    if (ledgersD.length !== 0) {
-      throw new Error('Đơn CANCELLED nhưng lại có bút toán xuất kho!');
-    }
-  } else {
-    throw new Error(`Trạng thái không hợp lệ sau cuộc đua: ${finalStatusD}`);
+    balanceConsistentD = balBeforeRaceD === balAfterRaceD && ledgersD.length === 0;
   }
-  console.log(`✅ PROBE D ĐẠT: Quyết định phân định rạch ròi trạng thái (${finalStatusD}) và toàn vẹn sổ kho!\n`);
+
+  if (hasTimeoutOrDbErrorD || !balanceConsistentD || (finalStatusD !== 'COMPLETED' && finalStatusD !== 'CANCELLED')) {
+    console.error('❌ PROBE D THẤT BẠI: Trạng thái/tồn kho không khớp hoặc có lỗi DB/timeout!', {
+      finalStatus: finalStatusD,
+      hasTimeoutOrDbErrorD,
+      balanceConsistentD,
+      resultsD,
+    });
+    process.exit(1);
+  }
+  console.log(`✅ PROBE D ĐẠT: Phân định rạch ròi trạng thái (${finalStatusD}), không timeout/db error, balance khớp 100%!\n`);
 
   // ---------------------------------------------------------------------------
   // PROBE E: TRANH CHẤP IDEMPOTENCY KEY ĐỒNG THỜI
   // ---------------------------------------------------------------------------
   console.log('--- PROBE E: TRANH CHẤP IDEMPOTENCY KEY ĐỒNG THỜI (SAME KEY) ---');
   
+  const currBalE = await InventoryService.getBalance(edProbeE, testWarehouse, 'NEW');
+  if (currBalE < 20) {
+    await InventoryService.recordMovement({
+      editionId: edProbeE,
+      warehouseId: testWarehouse,
+      eventType: 'ADJUSTMENT',
+      quantityDelta: 20 - currBalE,
+      condition: 'NEW',
+      documentRef: 'INIT-PROBE-E',
+      actorId: 'probe-runner',
+      idempotencyKey: `probe-e-init-${Date.now()}`,
+    });
+  }
+
   // E1. Cùng Key + Cùng Payload -> Cả 2 đều nhận thành công cùng 1 orderCode
   const sameKeyE1 = `idem-probe-e1-${Date.now()}`;
   const payloadE1 = {
@@ -418,7 +541,7 @@ async function main() {
     process.exit(1);
   }
 
-  // E2. Cùng Key + Khác Payload -> Đúng 1 tiến trình thắng, 1 tiến trình 409
+  // E2. Cùng Key + Khác Payload -> Đúng 1 tiến trình thắng, 1 tiến trình nhận code IDEMPOTENCY_CONFLICT
   const sameKeyE2 = `idem-probe-e2-${Date.now()}`;
   const configsE2 = [
     {
@@ -454,12 +577,121 @@ async function main() {
   const failE2 = resultsE2.filter((r) => !r.success);
 
   console.log(`- Kết quả E2 (Khác payload): ${succE2.length} thành công, ${failE2.length} thất bại.`);
-  const conflictDetected = failE2.some((f) => /Idempotency-Key đã gắn/.test(f.error || ''));
-  if (succE2.length !== 1 || failE2.length !== 1 || !conflictDetected) {
-    console.error('❌ PROBE E2 THẤT BẠI: Không phát hiện xung đột idempotency khi khác payload!', resultsE2);
+  const conflictDetectedE2 = failE2.length === 1 && failE2[0].code === 'IDEMPOTENCY_CONFLICT';
+  if (succE2.length !== 1 || failE2.length !== 1 || !conflictDetectedE2) {
+    console.error('❌ PROBE E2 THẤT BẠI: Không phát hiện xung đột idempotency code IDEMPOTENCY_CONFLICT!', resultsE2);
     process.exit(1);
   }
-  console.log('✅ PROBE E ĐẠT: Xử lý idempotent tuyệt đối (cùng payload trả đơn cũ, khác payload chặn 409)!\n');
+  console.log('✅ PROBE E2 ĐẠT: Đúng 1 thành công, 1 nhận code IDEMPOTENCY_CONFLICT!\n');
+
+  // E3. KIỂM THỬ TOÀN DIỆN: CÙNG KEY NHƯNG THAY ĐỔI LẦN LƯỢT TỪNG TRƯỜNG VẬT CHẤT
+  console.log('--- PROBE E3: CÙNG KEY NHƯNG THAY ĐỔI LẦN LƯỢT TỪNG TRƯỜNG VẬT CHẤT ---');
+
+  // Chuẩn bị combo thật và két ca thật tại testWarehouse
+  const testBundle = await BundleService.createBundle({
+    code: `BUNDLE-IDEM-${Date.now().toString().slice(-4)}`,
+    seasonName: 'Mùa Test Idem',
+    releaseDate: '2026-09-16',
+    comboPrice: 150000,
+    items: [{ editionId: edProbeE, quantityInBundle: 1 }],
+  });
+
+  const testCashbox = await CashboxService.openSession({
+    warehouseId: testWarehouse,
+    cashierId: 'cashier-e',
+    openingCash: 50000,
+  });
+
+  const baseKey = `idem-field-test-${Date.now()}`;
+  const basePayload = {
+    warehouseId: testWarehouse,
+    channel: 'FAIR_EVENT' as const,
+    customerName: 'Khách Gốc Idem',
+    paymentMethod: 'CASH' as const,
+    fiscalScope: 'INTERNAL_MANAGEMENT' as const,
+    cashierId: 'cashier-e',
+    cashboxSessionId: testCashbox.session.id,
+    confirmImmediately: true,
+    idempotencyKey: baseKey,
+    discountRate: 0.0,
+    items: [{ editionId: edProbeE, quantity: 1, unitDiscountRate: 0.0 }],
+  };
+
+  // 1. Tạo đơn cơ sở
+  const baseOrder = await OrderService.createOrder(basePayload);
+  console.log(`- Đã tạo đơn cơ sở: ${baseOrder.orderCode}`);
+
+  // 2. Cùng key + cùng fingerprint -> trả lại đúng đơn cũ (isDuplicate: true)
+  const replayRes = await OrderService.createOrder(basePayload);
+  if (!replayRes.isDuplicate || replayRes.orderId !== baseOrder.orderId) {
+    throw new Error('Cùng key cùng payload không trả lại đơn cũ hợp lệ!');
+  }
+  console.log('  ✓ Cùng key + cùng fingerprint: Trả lại đúng đơn cũ (isDuplicate: true)');
+
+  async function assertConflictField(desc: string, modifiedPayload: any) {
+    try {
+      await OrderService.createOrder(modifiedPayload);
+      throw new Error(`[FAIL] ${desc} phải bị từ chối với IDEMPOTENCY_CONFLICT nhưng đã thành công!`);
+    } catch (err: any) {
+      if (err.code === 'IDEMPOTENCY_CONFLICT' || err.message?.includes('Idempotency-Key đã gắn')) {
+        console.log(`  ✓ ${desc}: Chặn đứng với IDEMPOTENCY_CONFLICT`);
+      } else {
+        throw new Error(`[FAIL] ${desc} trả mã lỗi không đúng: code=${err.code}, msg=${err.message}`);
+      }
+    }
+  }
+
+  // Thay đổi lần lượt các trường vật chất theo yêu cầu:
+  // 1. Payment method
+  await assertConflictField('Khác paymentMethod (BANK_TRANSFER)', {
+    ...basePayload,
+    paymentMethod: 'BANK_TRANSFER',
+  });
+
+  // 2. Fiscal scope
+  await assertConflictField('Khác fiscalScope (OFFICIAL_TAX)', {
+    ...basePayload,
+    fiscalScope: 'OFFICIAL_TAX' as const,
+  });
+
+  // 3. Channel
+  await assertConflictField('Khác channel (RETAIL_OFFICE)', {
+    ...basePayload,
+    channel: 'RETAIL_OFFICE',
+  });
+
+  // 4. Unit discount
+  await assertConflictField('Khác unitDiscount (0.1)', {
+    ...basePayload,
+    items: [{ editionId: edProbeE, quantity: 1, unitDiscountRate: 0.1 }],
+  });
+
+  // 5a. Thêm Bundle ID
+  await assertConflictField('Khác bundleId (thêm combo)', {
+    ...basePayload,
+    bundles: [{ bundleId: testBundle.bundleId, quantity: 1 }],
+  });
+
+  // 5b. Đổi Bundle quantity trên đơn có combo
+  const bundleOrderKey = `idem-bundle-qty-${Date.now()}`;
+  const baseBundlePayload = {
+    ...basePayload,
+    idempotencyKey: bundleOrderKey,
+    bundles: [{ bundleId: testBundle.bundleId, quantity: 1 }],
+  };
+  await OrderService.createOrder(baseBundlePayload);
+  await assertConflictField('Khác bundle quantity (2 bộ thay vì 1)', {
+    ...baseBundlePayload,
+    bundles: [{ bundleId: testBundle.bundleId, quantity: 2 }],
+  });
+
+  // 6. Cashbox session (bỏ session)
+  await assertConflictField('Khác cashboxSessionId (bỏ cashboxSessionId)', {
+    ...basePayload,
+    cashboxSessionId: undefined,
+  });
+
+  console.log('✅ PROBE E3 ĐẠT: Tất cả các trường vật chất đều bị chặn đứng với IDEMPOTENCY_CONFLICT!\n');
 
   console.log('=========================================================================');
   console.log('🎉 TOÀN BỘ 5/5 CONCURRENCY PROBES (A, B, C, D, E) ĐÃ VƯỢT QUA 100%!');
