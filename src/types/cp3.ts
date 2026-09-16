@@ -21,7 +21,6 @@ export interface DispatchItemInput {
 export interface DispatchParams {
   fromWarehouseId: string;
   toWarehouseId: string;
-  dispatcherId?: string;
   vehicleInfo?: string;
   notes?: string;
   idempotencyKey: string;
@@ -39,7 +38,6 @@ export interface ReceiveItemInput {
 
 export interface ReceiveParams {
   shipmentId: string;
-  receiverId?: string;
   notes?: string;
   idempotencyKey: string;
   actorContext: ActorContext;
@@ -48,7 +46,6 @@ export interface ReceiveParams {
 
 export interface CancelParams {
   shipmentId: string;
-  actorId?: string;
   notes?: string;
   idempotencyKey: string;
   actorContext: ActorContext;
@@ -86,16 +83,13 @@ export type ReturnStatus =
 export type ReturnActionType = 'APPROVE' | 'REJECT' | 'COMPLETE' | 'VOID';
 
 export interface ReturnItemInput {
-  editionId: string;
+  orderItemId: string;
   quantity: number;
-  orderItemId?: string; // Tùy chọn cho dữ liệu cũ, bắt buộc cho request CP3 mới
-  unitRefund?: number;
 }
 
 export interface ExchangeReplacementItemInput {
   editionId: string;
   quantity: number;
-  unitPrice?: number; // Integer VND snapshot
 }
 
 export interface CreateReturnParams {
@@ -108,8 +102,6 @@ export interface CreateReturnParams {
   inventoryDisposition: ReturnDisposition;
   refundAmount?: number;
   cashboxSessionId?: string;
-  createdBy?: string;
-  actorRole?: string;
   idempotencyKey: string;
   note?: string;
   bypassWindow?: boolean;
