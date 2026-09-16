@@ -264,6 +264,7 @@ async function run() {
   console.log(`=========================================================\n`);
 
   if (passed !== total) process.exit(1);
+  process.exit(0);
 }
 
 run().catch((err) => {
