@@ -1,10 +1,16 @@
 import { db, editions, transferShipments, inventoryLedger } from '../src/db';
 import { InventoryService } from '../src/services/inventory.service';
 import { TransferService, TRANSIT_WAREHOUSE_ID } from '../src/services/transfer.service';
+import { toActorContext } from '../src/services/actor-context';
 import { eq, sql } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-in-transit');
+
+// CP3-B1.1 (mục 5): caller legacy bổ sung actorContext (ROLE_MANAGER thủ kho)
+// + idempotencyKey hợp lệ; không đổi assertion nào.
+const TCTX = (id: string) => toActorContext(id, 'ROLE_MANAGER');
+const TKEY = (tag: string) => `transit-${tag}-${Date.now()}`;
 
 async function runTransitTests() {
   console.log('🚚 ========================================================');
@@ -48,7 +54,8 @@ async function runTransitTests() {
   const disp = await TransferService.dispatch({
     fromWarehouseId: QM,
     toWarehouseId: AUCO,
-    dispatcherId: 'thu-kho-qm',
+    actorContext: TCTX('thu-kho-qm'),
+    idempotencyKey: TKEY('t1'),
     vehicleInfo: 'Xe tải test biển 30H-0001',
     items: [{ editionId: bookA.id, quantity: 20 }],
   });
@@ -62,7 +69,8 @@ async function runTransitTests() {
   const destBefore = await InventoryService.getBalance(bookA.id, AUCO, 'NEW');
   const recv = await TransferService.receive({
     shipmentId: disp.shipmentId,
-    receiverId: 'thu-kho-au-co',
+    actorContext: TCTX('thu-kho-au-co'),
+    idempotencyKey: TKEY('t1-recv'),
     items: [{ editionId: bookA.id, receivedQty: 20, damagedQty: 0, lostQty: 0 }],
   });
   const destAfter = await InventoryService.getBalance(bookA.id, AUCO, 'NEW');
@@ -75,14 +83,16 @@ async function runTransitTests() {
   const disp2 = await TransferService.dispatch({
     fromWarehouseId: QM,
     toWarehouseId: AUCO,
-    dispatcherId: 'thu-kho-qm',
+    actorContext: TCTX('thu-kho-qm'),
+    idempotencyKey: TKEY('t2'),
     items: [{ editionId: bookB.id, quantity: 10 }],
   });
   const destBBefore = await InventoryService.getBalance(bookB.id, AUCO, 'NEW');
   const quarBBefore = await InventoryService.getBalance(bookB.id, AUCO, 'QUARANTINE');
   const recv2 = await TransferService.receive({
     shipmentId: disp2.shipmentId,
-    receiverId: 'thu-kho-au-co',
+    actorContext: TCTX('thu-kho-au-co'),
+    idempotencyKey: TKEY('t2-recv'),
     items: [{ editionId: bookB.id, receivedQty: 7, damagedQty: 2, lostQty: 1 }],
   });
   const destBAfter = await InventoryService.getBalance(bookB.id, AUCO, 'NEW');
@@ -106,7 +116,8 @@ async function runTransitTests() {
     await TransferService.dispatch({
       fromWarehouseId: QM,
       toWarehouseId: AUCO,
-      dispatcherId: 'thu-kho-qm',
+      actorContext: TCTX('thu-kho-qm'),
+      idempotencyKey: TKEY('t4-over'),
       items: [{ editionId: bookB.id, quantity: 99999 }],
     });
   } catch {
@@ -120,7 +131,8 @@ async function runTransitTests() {
   try {
     await TransferService.receive({
       shipmentId: disp2.shipmentId,
-      receiverId: 'thu-kho-au-co',
+      actorContext: TCTX('thu-kho-au-co'),
+      idempotencyKey: TKEY('t5-double'),
       items: [{ editionId: bookB.id, receivedQty: 10 }],
     });
   } catch {
@@ -132,10 +144,15 @@ async function runTransitTests() {
   const disp3 = await TransferService.dispatch({
     fromWarehouseId: QM,
     toWarehouseId: AUCO,
-    dispatcherId: 'thu-kho-qm',
+    actorContext: TCTX('thu-kho-qm'),
+    idempotencyKey: TKEY('t5-disp'),
     items: [{ editionId: bookB.id, quantity: 5 }],
   });
-  const cancelled = await TransferService.cancel(disp3.shipmentId, 'quan-ly-kho');
+  const cancelled = await TransferService.cancel({
+    shipmentId: disp3.shipmentId,
+    actorContext: TCTX('quan-ly-kho'),
+    idempotencyKey: TKEY('t5-cancel'),
+  });
   const srcCAfter = await InventoryService.getBalance(bookB.id, QM, 'NEW');
   const transitCAfter = await InventoryService.getBalance(bookB.id, TRANSIT_WAREHOUSE_ID, 'NEW');
   ok(cancelled.status === 'CANCELLED', 'Hủy phiếu khi còn IN_TRANSIT');
@@ -146,7 +163,8 @@ async function runTransitTests() {
   const disp4 = await TransferService.dispatch({
     fromWarehouseId: QM,
     toWarehouseId: AUCO,
-    dispatcherId: 'thu-kho-qm',
+    actorContext: TCTX('thu-kho-qm'),
+    idempotencyKey: TKEY('t6-disp'),
     items: [{ editionId: bookA.id, quantity: 3 }],
   });
   await db.run(
@@ -157,7 +175,11 @@ async function runTransitTests() {
     stale.some((s) => s.id === disp4.shipmentId),
     'Phiếu kẹt 13h lọt vào danh sách cảnh báo timeout 12h'
   );
-  await TransferService.cancel(disp4.shipmentId, 'quan-ly-kho');
+  await TransferService.cancel({
+    shipmentId: disp4.shipmentId,
+    actorContext: TCTX('quan-ly-kho'),
+    idempotencyKey: TKEY('t6-cancel'),
+  });
 
   console.log('\n========================================================');
   console.log(`🎉 HOÀN TẤT: ${passed}/${total} BÀI TEST IN-TRANSIT 2 BƯỚC ĐẠT 100%!`);

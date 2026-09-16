@@ -99,17 +99,25 @@ export class ConsignmentService {
   static async sendToConsignment(params: {
     partnerId: string;
     fromWarehouseId: string;
-    dispatcherId: string;
+    actorContext: import('./actor-context').ActorContext;
+    idempotencyKey: string;
     vehicleInfo?: string;
     notes?: string;
     items: ConsignmentSendItem[];
   }) {
+    if (!params.actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác gửi ký gửi.');
+    }
+    if (!params.idempotencyKey?.trim()) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác gửi ký gửi.');
+    }
     await this.ensureOwnerPartner(db);
     const partnerWh = await this.ensurePartnerWarehouse(params.partnerId, db);
     return await TransferService.dispatch({
       fromWarehouseId: params.fromWarehouseId,
       toWarehouseId: partnerWh,
-      dispatcherId: params.dispatcherId,
+      actorContext: params.actorContext,
+      idempotencyKey: params.idempotencyKey.trim(),
       vehicleInfo: params.vehicleInfo,
       notes: params.notes ?? `Gửi ký gửi đại lý ${params.partnerId}`,
       items: params.items.map((i) => ({ editionId: i.editionId, quantity: i.quantity, notes: i.notes })),
@@ -117,11 +125,22 @@ export class ConsignmentService {
   }
 
   /** Xác nhận đại lý đã nhận đủ (theo biên bản ký tay) — receive toàn bộ. */
-  static async confirmConsignmentReceipt(shipmentId: string, receiverId: string) {
-    const detail = await TransferService.getShipment(shipmentId);
+  static async confirmConsignmentReceipt(params: {
+    shipmentId: string;
+    actorContext: import('./actor-context').ActorContext;
+    idempotencyKey: string;
+  }) {
+    if (!params.actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác xác nhận nhận ký gửi.');
+    }
+    if (!params.idempotencyKey?.trim()) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác xác nhận nhận ký gửi.');
+    }
+    const detail = await TransferService.getShipment(params.shipmentId);
     return await TransferService.receive({
-      shipmentId,
-      receiverId,
+      shipmentId: params.shipmentId,
+      actorContext: params.actorContext,
+      idempotencyKey: params.idempotencyKey.trim(),
       items: detail.items.map((l) => ({
         editionId: l.editionId,
         receivedQty: l.dispatchedQty,
@@ -260,7 +279,9 @@ export class ConsignmentService {
     actorId: string;
   }) {
     const { statementId, editionId, quantity, actorId } = params;
-    if (quantity <= 0) throw AppError.invalid('Số lượng bán phải lớn hơn 0.');
+    // CP3-B1.2 (mục 5): số lượng phải là số nguyên > 0 — "1.5" bị từ chối,
+    // không cắt phần thập phân.
+    if (!Number.isInteger(quantity) || quantity <= 0) throw AppError.invalid('Số lượng bán phải là số nguyên lớn hơn 0.');
 
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
@@ -313,6 +334,10 @@ export class ConsignmentService {
     notes?: string;
   }) {
     const { statementId, toWarehouseId, editionId, newQty = 0, damagedQty = 0, actorId, notes } = params;
+    // CP3-B1.2 (mục 5): số lượng phải là số nguyên không âm — "1.5" bị từ chối.
+    if (!Number.isInteger(newQty) || !Number.isInteger(damagedQty)) {
+      throw AppError.invalid('Số lượng thu hồi phải là số nguyên không âm.');
+    }
     if (newQty < 0 || damagedQty < 0 || newQty + damagedQty === 0) {
       throw AppError.invalid('Số lượng thu hồi phải lớn hơn 0.');
     }

@@ -388,6 +388,8 @@ export const transferShipments = sqliteTable('transfer_shipments', {
   dispatcherId: text('dispatcher_id').notNull(), // Người bấm xuất kho gửi
   receiverId: text('receiver_id'), // Người xác nhận thực nhận
   status: text('status').notNull().default('IN_TRANSIT'), // IN_TRANSIT, RECEIVED_FULL, RECEIVED_DISCREPANCY, CANCELLED
+  idempotencyKey: text('idempotency_key'),
+  fingerprint: text('fingerprint'),
   vehicleInfo: text('vehicle_info'), // Xe vận chuyển, người giao
   notes: text('notes'),
   dispatchedAt: text('dispatched_at').default(sql`CURRENT_TIMESTAMP`),
@@ -397,6 +399,7 @@ export const transferShipments = sqliteTable('transfer_shipments', {
   fromIdx: index('idx_transfer_ship_from').on(table.fromWarehouseId),
   toIdx: index('idx_transfer_ship_to').on(table.toWarehouseId),
   dispatchedAtIdx: index('idx_transfer_ship_dispatched_at').on(table.dispatchedAt),
+  idempotencyIdx: uniqueIndex('idx_transfer_ship_idempotency').on(table.idempotencyKey),
 }));
 
 // 19. Transfer Shipment Items (Chi tiết từng ấn bản trong phiếu luân chuyển)
@@ -418,6 +421,7 @@ export const rmaTickets = sqliteTable('rma_tickets', {
   id: text('id').primaryKey(), // e.g. RMA-202609-0001
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   orderId: text('order_id').references(() => orders.id),
+  transferShipmentId: text('transfer_shipment_id').references(() => transferShipments.id),
   editionId: text('edition_id').notNull().references(() => editions.id),
   quantity: integer('quantity').notNull(),
   defectReason: text('defect_reason').notNull(), // PRINT_DEFECT, BINDING_DEFECT, TRANSIT_DAMAGE, CUSTOMER_RETURN, WATER_DAMAGE, OTHER
@@ -433,6 +437,7 @@ export const rmaTickets = sqliteTable('rma_tickets', {
   editionIdx: index('idx_rma_edition').on(table.editionId),
   orderIdx: index('idx_rma_order').on(table.orderId),
   statusIdx: index('idx_rma_status').on(table.status),
+  transferShipmentIdx: index('idx_rma_transfer_shipment').on(table.transferShipmentId),
 }));
 
 // 21. Sales Return Orders (Phiếu Đổi/Trả sách — BV-06)
@@ -451,6 +456,7 @@ export const returnOrders = sqliteTable('return_orders', {
   createdBy: text('created_by').notNull(), // cashierId người lập phiếu
   approvedBy: text('approved_by'), // Manager/Owner duyệt
   idempotencyKey: text('idempotency_key').notNull().unique(),
+  fingerprint: text('fingerprint'),
   note: text('note'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   decidedAt: text('decided_at'),
@@ -465,11 +471,13 @@ export const returnOrderItems = sqliteTable('return_order_items', {
   id: text('id').primaryKey(),
   returnId: text('return_id').notNull().references(() => returnOrders.id, { onDelete: 'cascade' }),
   editionId: text('edition_id').notNull().references(() => editions.id),
+  orderItemId: text('order_item_id').references(() => orderItems.id),
   quantity: integer('quantity').notNull(), // Số lượng trả (> 0)
   unitRefund: real('unit_refund').notNull().default(0), // Tiền hoàn / cuốn
 }, (table) => ({
   returnIdx: index('idx_return_items_return').on(table.returnId),
   editionIdx: index('idx_return_items_edition').on(table.editionId),
+  orderItemIdx: index('idx_return_items_order_item').on(table.orderItemId),
 }));
 
 // 23. Customer Tags (Bước 3 — junction phân tệp CRM, PK composite customer_id + tag)
@@ -531,4 +539,48 @@ export const staffAccounts = sqliteTable('staff_accounts', {
 }, (table) => ({
   roleIdx: index('idx_staff_role').on(table.role),
   activeIdx: index('idx_staff_active').on(table.isActive),
+}));
+
+// 27. Transfer Actions (Lịch sử hành động receive / cancel của phiếu luân chuyển — CP3)
+export const transferActions = sqliteTable('transfer_actions', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => transferShipments.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(), // RECEIVE | CANCEL
+  actorId: text('actor_id').notNull(),
+  resultingStatus: text('resulting_status').notNull(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  fingerprint: text('fingerprint').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  shipmentIdx: index('idx_transfer_actions_shipment').on(table.shipmentId),
+  idempotencyIdx: uniqueIndex('idx_transfer_actions_idempotency').on(table.idempotencyKey),
+}));
+
+// 28. Return Actions (Lịch sử hành động approve / reject / complete / void của phiếu trả — CP3)
+export const returnActions = sqliteTable('return_actions', {
+  id: text('id').primaryKey(),
+  returnId: text('return_id').notNull().references(() => returnOrders.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(), // APPROVE | REJECT | COMPLETE | VOID
+  actorId: text('actor_id').notNull(),
+  resultingStatus: text('resulting_status').notNull(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  fingerprint: text('fingerprint').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  returnIdx: index('idx_return_actions_return').on(table.returnId),
+  idempotencyIdx: uniqueIndex('idx_return_actions_idempotency').on(table.idempotencyKey),
+}));
+
+// 29. Exchange Replacement Items (Chi tiết ấn bản xuất thay thế khi đổi hàng — CP3)
+export const exchangeReplacementItems = sqliteTable('exchange_replacement_items', {
+  id: text('id').primaryKey(),
+  returnId: text('return_id').notNull().references(() => returnOrders.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull(),
+  unitPrice: integer('unit_price').notNull(), // integer VND snapshot
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  returnIdx: index('idx_exchange_rep_return').on(table.returnId),
+  editionIdx: index('idx_exchange_rep_edition').on(table.editionId),
+  uniqueReturnEdition: uniqueIndex('idx_exchange_rep_unique').on(table.returnId, table.editionId),
 }));

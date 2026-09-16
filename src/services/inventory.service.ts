@@ -2,6 +2,8 @@ import { db, inventoryLedger, stockBalances, editions, warehouses, works } from 
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
+import { withDbRetry } from '../lib/db-retry';
+import { isDirectTransferAllowed } from './direct-transfer-policy';
 
 export interface RecordMovementParams {
   editionId: string;
@@ -31,11 +33,10 @@ export interface TransferParams {
   quantity: number;
   condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
   documentRef: string;
-  actorId: string;
   note?: string;
-  // P2-04: khóa chống replay — gửi lại cùng key trả về kết quả cũ, không nhân đôi chuyến
-  idempotencyKey?: string;
-  actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
+  // CP3-B1.1: khóa chống replay — bắt buộc từ caller (route đã 400 khi thiếu).
+  idempotencyKey: string;
+  actorContext: ActorContext; // Bắt buộc: chỉ OWNER/MANAGER; ledger actor lấy duy nhất từ đây (mục 4).
 }
 
 export class InventoryService {
@@ -210,7 +211,6 @@ export class InventoryService {
       quantity,
       condition = 'NEW',
       documentRef,
-      actorId,
       note = '',
     } = params;
 
@@ -222,63 +222,175 @@ export class InventoryService {
       throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
     }
 
-    // Contract §3.3.4: chuyển kho không được xâm phạm hàng giữ chỗ (check ATP nguồn)
-    const { OrderService } = await import('./order.service');
-    const atpOut = await OrderService.getATP(editionId, fromWarehouseId);
-    if (atpOut < quantity) {
-      throw AppError.atp(
-        `Không đủ tồn khả dụng để chuyển: ${editionId} tại ${fromWarehouseId} còn khả dụng ${atpOut}, cần ${quantity} (phần còn lại đang giữ cho đơn online).`
+    // CP3-B1.1 (mục 1): actorContext BẮT BUỘC và chỉ OWNER/MANAGER.
+    // Không suy role, không mặc định. Pair-allowlist + cấm virtual enforced
+    // ngay tại service qua isDirectTransferAllowed (mục 1).
+    const role = params.actorContext?.role;
+    if (!params.actorContext || !params.actorContext.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác chuyển kho trực tiếp.');
+    }
+    if (role !== 'ROLE_OWNER' && role !== 'ROLE_MANAGER') {
+      throw AppError.forbidden(
+        `Chuyển nội bộ trực tiếp chỉ dành cho Quản lý hoặc Chủ cửa hàng (vai trò hiện tại: ${role || 'không xác định'}).`
+      );
+    }
+    const effTransferActor = params.actorContext.staffId.trim();
+
+    // CP3-B1.1 (mục 1): idempotencyKey BẮT BUỘC từ caller — không suy từ
+    // documentRef, không tự sinh.
+    const transferBatchId = params.idempotencyKey?.trim() || '';
+    if (!transferBatchId) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác chuyển kho trực tiếp.');
+    }
+
+    // CP3-B1.1 (mục 1): allowlist + cấm virtual NGAY TẠI SERVICE.
+    if (!isDirectTransferAllowed(fromWarehouseId, toWarehouseId)) {
+      throw AppError.forbidden(
+        `Tuyến chuyển kho trực tiếp từ [${fromWarehouseId}] tới [${toWarehouseId}] không nằm trong danh mục cho phép (allowlist). Vui lòng dùng luân chuyển 2 bước /api/transfers.`
       );
     }
 
-    // P2-04: replay cùng key → trả kết quả cũ, không sinh chuyến mới
-    const effTransferActor = params.actorContext?.staffId || actorId;
-    const transferBatchId = params.idempotencyKey?.trim() || `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    if (params.idempotencyKey?.trim()) {
-      const prior = await db
-        .select({ id: inventoryLedger.id })
-        .from(inventoryLedger)
-        .where(eq(inventoryLedger.idempotencyKey, `${transferBatchId}-out`))
-        .limit(1);
-      if (prior.length > 0) {
-        return {
-          transferBatchId, editionId, fromWarehouseId, toWarehouseId, quantity,
-          outLedgerId: null as string | null, inLedgerId: null as string | null,
-          fromWarehouse: null, toWarehouse: null, isDuplicate: true as const,
-        };
-      }
+    const cleanCondition = condition;
+    if (!documentRef || !`${documentRef}`.trim()) {
+      throw AppError.invalid('Thiếu chứng từ chuyển kho (documentRef).');
     }
+    const cleanDocRef = `${documentRef}`.trim();
 
-    return await db.transaction(async (tx) => {
-      // 1. Xuất kho nguồn (TRANSFER_OUT)
-      const outResult = await this.recordMovement({
-        editionId,
-        warehouseId: fromWarehouseId,
-        eventType: 'TRANSFER_OUT',
-        quantityDelta: -quantity,
-        condition,
-        documentRef,
-        actorId: effTransferActor,
-        correlationId: transferBatchId,
-        note: `Chuyển kho tới kho đích [${toWarehouseId}]. ${note}`.trim(),
-        idempotencyKey: `${transferBatchId}-out`,
-        tx,
-      });
+    // Fingerprint đầy đủ: edition + nguồn + đích + qty + condition + documentRef
+    // (hàm matchesFingerprint/readLegs bên dưới).
 
-      // 2. Nhập kho đích (TRANSFER_IN)
-      const inResult = await this.recordMovement({
-        editionId,
-        warehouseId: toWarehouseId,
-        eventType: 'TRANSFER_IN',
-        quantityDelta: quantity,
-        condition,
-        documentRef,
-        actorId: effTransferActor,
-        correlationId: transferBatchId,
-        note: `Tiếp nhận chuyển kho từ kho nguồn [${fromWarehouseId}]. ${note}`.trim(),
-        idempotencyKey: `${transferBatchId}-in`,
-        tx,
-      });
+    const matchesFingerprint = (outLeg: any, inLeg: any | null) =>
+      !!inLeg &&
+      outLeg.editionId === editionId &&
+      outLeg.warehouseId === fromWarehouseId &&
+      outLeg.quantityDelta === -quantity &&
+      outLeg.condition === cleanCondition &&
+      outLeg.documentRef === cleanDocRef &&
+      inLeg.editionId === editionId &&
+      inLeg.warehouseId === toWarehouseId &&
+      inLeg.quantityDelta === quantity &&
+      inLeg.condition === cleanCondition &&
+      inLeg.documentRef === cleanDocRef;
+
+    const readLegs = async (tx: any) => {
+      const outLeg = (
+        await tx
+          .select()
+          .from(inventoryLedger)
+          .where(eq(inventoryLedger.idempotencyKey, `${transferBatchId}-out`))
+          .limit(1)
+      )[0];
+      const inLeg = (
+        await tx
+          .select()
+          .from(inventoryLedger)
+          .where(eq(inventoryLedger.idempotencyKey, `${transferBatchId}-in`))
+          .limit(1)
+      )[0];
+      return { outLeg, inLeg };
+    };
+
+    return await withDbRetry(() =>
+      db.transaction(async (tx) => {
+        // Replay check: đối chiếu fingerprint đầy đủ + BẮT BUỘC đủ cả 2 chân.
+        // Thiếu chân IN (partial) -> FAIL, không trả replay thành công.
+        const { outLeg, inLeg } = await readLegs(tx);
+        if (outLeg) {
+          if (!matchesFingerprint(outLeg, inLeg)) {
+            if (!inLeg) {
+              throw AppError.conflict(
+                `STATE_CONFLICT: Chuyến chuyển kho [${transferBatchId}] dở dang (thiếu chân IN) — từ chối replay, cần đối soát thủ công.`
+              );
+            }
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${transferBatchId}" đã được sử dụng cho một giao dịch chuyển kho khác.`
+            );
+          }
+          return {
+            transferBatchId,
+            editionId,
+            fromWarehouseId,
+            toWarehouseId,
+            quantity,
+            outLedgerId: outLeg.id,
+            inLedgerId: (inLeg as any).id,
+            fromWarehouse: null,
+            toWarehouse: null,
+            isDuplicate: true as const,
+          };
+        }
+
+      // Contract §3.3.4: ATP check inside write transaction
+      const { OrderService } = await import('./order.service');
+      const atpOut = await OrderService.getATP(editionId, fromWarehouseId, tx);
+      if (atpOut < quantity) {
+        throw AppError.atp(
+          `Không đủ tồn khả dụng để chuyển: ${editionId} tại ${fromWarehouseId} còn khả dụng ${atpOut}, cần ${quantity} (phần còn lại đang giữ cho đơn online).`
+        );
+      }
+
+      // 1+2. Cặp OUT/IN nguyên tử. Race cùng key: Gordon qua replay-check
+      // có thể đụng UNIQUE trên ledger key -> map về replay/CONFLICT (mục C),
+      // không để SQLITE_CONSTRAINT_UNIQUE thô thoát ra.
+      let outResult: any;
+      let inResult: any;
+      try {
+        // 1. Xuất kho nguồn (TRANSFER_OUT)
+        outResult = await this.recordMovement({
+          editionId,
+          warehouseId: fromWarehouseId,
+          eventType: 'TRANSFER_OUT',
+          quantityDelta: -quantity,
+          condition,
+          documentRef,
+          actorId: effTransferActor,
+          correlationId: transferBatchId,
+          note: `Chuyển kho tới kho đích [${toWarehouseId}]. ${note}`.trim(),
+          idempotencyKey: `${transferBatchId}-out`,
+          tx,
+        });
+
+        // 2. Nhập kho đích (TRANSFER_IN)
+        inResult = await this.recordMovement({
+          editionId,
+          warehouseId: toWarehouseId,
+          eventType: 'TRANSFER_IN',
+          quantityDelta: quantity,
+          condition,
+          documentRef,
+          actorId: effTransferActor,
+          correlationId: transferBatchId,
+          note: `Tiếp nhận chuyển kho từ kho nguồn [${fromWarehouseId}]. ${note}`.trim(),
+          idempotencyKey: `${transferBatchId}-in`,
+          tx,
+        });
+      } catch (e: any) {
+        const hay = `${e?.message || ''} ${e?.code || ''}`;
+        if (!/UNIQUE constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(hay)) throw e;
+        const legs = await readLegs(tx);
+        if (legs.outLeg && matchesFingerprint(legs.outLeg, legs.inLeg)) {
+          return {
+            transferBatchId,
+            editionId,
+            fromWarehouseId,
+            toWarehouseId,
+            quantity,
+            outLedgerId: legs.outLeg.id,
+            inLedgerId: (legs.inLeg as any).id,
+            fromWarehouse: null,
+            toWarehouse: null,
+            isDuplicate: true as const,
+          };
+        }
+        if (legs.outLeg && !legs.inLeg) {
+          throw AppError.conflict(
+            `STATE_CONFLICT: Chuyến chuyển kho [${transferBatchId}] dở dang (thiếu chân IN) — từ chối, cần đối soát thủ công.`
+          );
+        }
+        throw AppError.idempotency(
+          `IDEMPOTENCY_CONFLICT: Key "${transferBatchId}" đã được sử dụng cho một giao dịch chuyển kho khác.`
+        );
+      }
 
       return {
         transferBatchId,
@@ -292,7 +404,8 @@ export class InventoryService {
         toWarehouse: inResult,
         isDuplicate: false as const,
       };
-    });
+      })
+    );
   }
 
   /**

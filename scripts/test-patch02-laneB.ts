@@ -8,6 +8,7 @@ import { InventoryService } from '../src/services/inventory.service';
 import { OrderService, CashboxService } from '../src/services/order.service';
 import { ShipmentService } from '../src/services/shipment.service';
 import { POST as postTransfer } from '../src/app/api/inventory/transfer/route';
+import { setDirectTransferAllowlist, resetDirectTransferAllowlist } from '../src/services/direct-transfer-policy';
 import { POST as postOrder } from '../src/app/api/orders/route';
 import { assertIsolatedTestDb } from './test-guard';
 
@@ -48,6 +49,9 @@ async function run() {
   // ---- P2-04: transfer idempotency ----
   const f4 = await fixture(10);
   await db.insert(warehouses).values({ id: 'wh-p2b-dest', code: 'wh-p2b-dest', name: 'P2B dest' }).catch(() => {});
+  // CP3-B1.2: cấu hình tường minh cặp test cho endpoint direct (strict);
+  // dọn ngay sau khối P2-04. Không đổi assertion.
+  setDirectTransferAllowlist([[f4.wh, 'wh-p2b-dest']]);
   const key4 = uniq('idem-trf');
   const tBody = { editionId: f4.id, fromWarehouseId: f4.wh, toWarehouseId: 'wh-p2b-dest', quantity: 2, documentRef: 'P2B', idempotencyKey: key4 };
   const t1: any = await post(postTransfer, tBody, 'ROLE_OWNER');
@@ -59,6 +63,7 @@ async function run() {
   ok('P2-04 số lẻ bị chặn', t3.status === 400);
   const t4: any = await post(postTransfer, { ...tBody, idempotencyKey: uniq('i') }, 'ROLE_TAX');
   ok('P2-04 TAX bị chặn chuyển kho', t4.status === 403);
+  resetDirectTransferAllowlist();
 
   // ---- P2-07: allowlist kho bán ----
   const f7 = await fixture(10);
