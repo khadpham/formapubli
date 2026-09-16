@@ -13,6 +13,7 @@ import { BundleService } from '../src/services/bundle.service';
 import { ForecastService } from '../src/services/forecast.service';
 import { InventoryService } from '../src/services/inventory.service';
 import { POST as postOrder } from '../src/app/api/orders/route';
+import { toActorContext } from '../src/services/actor-context';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-order-guards');
@@ -115,11 +116,12 @@ async function run() {
   const ret = await ReturnService.createRequest({
     orderId: sale.orderId, returnType: 'REFUND', reason: 'WRONG_ITEM', targetWarehouseId: 'wh-au-co',
     inventoryDisposition: 'RESTOCK', refundAmount: sale.finalAmount, cashboxSessionId: sess.session.id,
-    createdBy: 't', actorRole: 'ROLE_CASHIER', idempotencyKey: uniq('idem-g'),
+    createdBy: guardCashier, actorRole: 'ROLE_MANAGER', idempotencyKey: uniq('idem-g'),
+    actorContext: toActorContext(guardCashier, 'ROLE_MANAGER'),
     items: [{ editionId: edA, quantity: 1 }],
   });
-  await ReturnService.approve(ret.returnId, 'ROLE_MANAGER', 'm');
-  await ReturnService.complete(ret.returnId, 'ROLE_MANAGER');
+  await ReturnService.approve(ret.returnId, 'ROLE_MANAGER', guardCashier, toActorContext(guardCashier, 'ROLE_MANAGER'), uniq('idem-g-appr'));
+  await ReturnService.complete(ret.returnId, 'ROLE_MANAGER', undefined, toActorContext(guardCashier, 'ROLE_MANAGER'), uniq('idem-g-comp'));
   const stats: any = await CashboxService.calculateSessionStats(sess.session.id);
   ok('6. FIX-09 két net = bán − hoàn', stats.totalCashSales === 0 && stats.totalRefunds === sale.finalAmount, `net=${stats.totalCashSales}`);
 
