@@ -409,7 +409,7 @@ async function probeRAtomic() {
   ok('R-ATOMIC khong RMA', rmas.length === 0, `rma=${rmas.length}`);
   ok('R-ATOMIC khong action COMPLETE (chi APPROVE setup)',
     acts.filter((a) => a.action === 'COMPLETE').length === 0, `complete-actions=${acts.filter((a) => a.action === 'COMPLETE').length}`);
-  ok('R-ATOMIC ton nguyen 50', total === 50, `stock=${total}`);
+  ok('R-ATOMIC ton nguyen 47 (khong doi so voi truoc complete)', total === 47, `stock=${total}`);
 }
 
 async function main() {
