@@ -33,11 +33,10 @@ export interface TransferParams {
   quantity: number;
   condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
   documentRef: string;
-  actorId: string;
   note?: string;
   // CP3-B1.1: khóa chống replay — bắt buộc từ caller (route đã 400 khi thiếu).
   idempotencyKey: string;
-  actorContext: ActorContext; // Bắt buộc: chỉ OWNER/MANAGER (mục 1).
+  actorContext: ActorContext; // Bắt buộc: chỉ OWNER/MANAGER; ledger actor lấy duy nhất từ đây (mục 4).
 }
 
 export class InventoryService {
@@ -212,7 +211,6 @@ export class InventoryService {
       quantity,
       condition = 'NEW',
       documentRef,
-      actorId,
       note = '',
     } = params;
 

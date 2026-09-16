@@ -6,6 +6,16 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * CP3-B1.2 (mục 5): chuyển đổi số lượng KHÔNG cắt phần thập phân.
+ * "1.5" phải tới service nguyên vẹn để bị từ chối (không parseInt).
+ */
+function toQty(v: unknown): number {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string' && v.trim() !== '') return Number(v.trim());
+  return 0;
+}
+
 // GET /api/transfers?status=IN_TRANSIT&limit=50
 // GET /api/transfers?staleHours=12 — phiếu kẹt quá ngưỡng
 // GET /api/transfers?id=TRF-... — chi tiết 1 phiếu
@@ -94,7 +104,7 @@ export async function POST(req: NextRequest) {
         actorContext,
         items: items.map((it: any) => ({
           editionId: it.editionId,
-          quantity: parseInt(it.quantity ?? it.quantityDispatched ?? it.dispatchedQty ?? 0, 10),
+          quantity: toQty(it.quantity ?? it.quantityDispatched ?? it.dispatchedQty ?? 0),
           notes: it.notes,
         })),
       });
@@ -126,9 +136,9 @@ export async function POST(req: NextRequest) {
         actorContext,
         items: rawItems.map((it: any) => ({
           editionId: it.editionId,
-          receivedQty: parseInt(it.receivedQty ?? it.quantityReceived ?? 0, 10),
-          damagedQty: parseInt(it.damagedQty ?? 0, 10),
-          lostQty: parseInt(it.lostQty ?? 0, 10),
+          receivedQty: toQty(it.receivedQty ?? it.quantityReceived ?? 0),
+          damagedQty: toQty(it.damagedQty ?? 0),
+          lostQty: toQty(it.lostQty ?? 0),
           notes: it.notes,
         })),
       });

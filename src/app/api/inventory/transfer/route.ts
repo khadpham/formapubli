@@ -61,7 +61,6 @@ export async function POST(req: NextRequest) {
       quantity: qty,
       documentRef,
       note,
-      actorId: actorHeader,
       actorContext,
       idempotencyKey: `${idempotencyKey}`.trim(),
     });

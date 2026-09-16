@@ -104,12 +104,10 @@ export class TransferService {
     // Direct-transfer gate (CP3-D) CHẠY TRƯỚC mọi từ chối INVALID của luồng
     // warehouse 2 bước: caller đánh dấu actorRole muốn ngữ nghĩa direct thì
     // mọi vi phạm role/pair đều là FORBIDDEN.
-    // Phạm vi (ghi nhận Lane B): gate này áp chính sách SSOT §9 cho nhánh
-    // direct-marked — role Owner/Manager + cấm tuyệt đối virtual families.
-    // Riêng allowlist cặp cấu hình (mặc định rỗng) thuộc endpoint
-    // /api/inventory/transfer (InventoryService.transfer); shipment dispatch
-    // giữa 2 kho vật lý không đòi cặp cấu hình trước (frozen T-DP yêu cầu
-    // owner A→B thành công khi ATP cho phép).
+    // Phạm vi (CP3-B1.2): gate này áp SSOT §9 cho nhánh direct-marked —
+    // role Owner/Manager + cấm tuyệt đối virtual families (FORBIDDEN).
+    // Allowlist cặp cấu hình được thực thi tại InventoryService.transfer
+    // (mọi direct transfer 1 bước đều qua đó).
     const directRole = (params as any).actorRole;
     const isDirectCall = directRole !== undefined;
     if (isDirectCall) {

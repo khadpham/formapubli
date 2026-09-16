@@ -279,7 +279,9 @@ export class ConsignmentService {
     actorId: string;
   }) {
     const { statementId, editionId, quantity, actorId } = params;
-    if (quantity <= 0) throw AppError.invalid('Số lượng bán phải lớn hơn 0.');
+    // CP3-B1.2 (mục 5): số lượng phải là số nguyên > 0 — "1.5" bị từ chối,
+    // không cắt phần thập phân.
+    if (!Number.isInteger(quantity) || quantity <= 0) throw AppError.invalid('Số lượng bán phải là số nguyên lớn hơn 0.');
 
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
@@ -332,6 +334,10 @@ export class ConsignmentService {
     notes?: string;
   }) {
     const { statementId, toWarehouseId, editionId, newQty = 0, damagedQty = 0, actorId, notes } = params;
+    // CP3-B1.2 (mục 5): số lượng phải là số nguyên không âm — "1.5" bị từ chối.
+    if (!Number.isInteger(newQty) || !Number.isInteger(damagedQty)) {
+      throw AppError.invalid('Số lượng thu hồi phải là số nguyên không âm.');
+    }
     if (newQty < 0 || damagedQty < 0 || newQty + damagedQty === 0) {
       throw AppError.invalid('Số lượng thu hồi phải lớn hơn 0.');
     }

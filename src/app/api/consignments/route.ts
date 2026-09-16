@@ -6,6 +6,16 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * CP3-B1.2 (mục 5): chuyển đổi số lượng KHÔNG cắt phần thập phân.
+ * "1.5" phải tới service nguyên vẹn để bị từ chối (không parseInt).
+ */
+function toQty(v: unknown): number {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string' && v.trim() !== '') return Number(v.trim());
+  return 0;
+}
+
 // GET /api/consignments?id=CS-... — chi tiết kỳ (kèm lines)
 // GET /api/consignments?partnerId=...&status=DRAFT — danh sách kỳ
 // GET /api/consignments?partnerStock=<partnerId> — tồn hiện tại tại quầy
@@ -114,7 +124,7 @@ export async function POST(req: NextRequest) {
         notes,
         items: items.map((it: any) => ({
           editionId: it.editionId,
-          quantity: parseInt(it.quantity ?? 0, 10),
+          quantity: toQty(it.quantity ?? 0),
           notes: it.notes,
         })),
       });
@@ -201,7 +211,7 @@ export async function POST(req: NextRequest) {
       const result = await ConsignmentService.recordSale({
         statementId,
         editionId,
-        quantity: parseInt(quantity, 10),
+        quantity: toQty(quantity),
         actorId: actorId || actorHeader,
       });
       recordAuditLog({
@@ -226,8 +236,8 @@ export async function POST(req: NextRequest) {
         statementId,
         toWarehouseId,
         editionId,
-        newQty: parseInt(newQty ?? 0, 10),
-        damagedQty: parseInt(damagedQty ?? 0, 10),
+        newQty: toQty(newQty ?? 0),
+        damagedQty: toQty(damagedQty ?? 0),
         actorId: actorId || actorHeader,
         notes,
       });

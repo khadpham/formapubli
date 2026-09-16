@@ -367,6 +367,28 @@ async function probeTIK() {
   ok('T-IK chi 1 shipment vat ly', ships.length === 1, `ships=${ships.length}`);
 }
 
+// --------------------------------- strict: no allowlist configured ---
+// CP3-B1.2 (mục 2): KHÔNG đặt DIRECT_TRANSFER_ALLOWLIST — OWNER chuyển trực
+// tiếp giữa 2 kho vật lý vẫn FORBIDDEN; DB không có ledger/tồn thay đổi.
+async function probeTStrict() {
+  console.log('--- T-STRICT: no allowlist -> OWNER physical transfer FORBIDDEN ---');
+  const { url, editionId } = await freshProbeDb('TSTRICT', 10);
+  const before = await phys(url, editionId, 'wh-au-co');
+  const r = await runSolo(url, 'directTransfer', {
+    editionId,
+    fromWarehouseId: 'wh-au-co', toWarehouseId: 'wh-quynh-mai',
+    quantity: 1, condition: 'NEW', documentRef: `DOC-STRICT-${Date.now()}`,
+    actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: `cp3-strict-${Date.now()}`,
+  });
+  ok('T-STRICT OWNER khong allowlist bi FORBIDDEN', !r.success && r.code === 'FORBIDDEN', `${r.code}: ${r.error}`);
+  ok('T-STRICT ton khong doi', (await phys(url, editionId, 'wh-au-co')) === before, `before=${before}`);
+  const { client, db } = localDb(url);
+  const led: any[] = await db.select().from(inventoryLedger);
+  client.close();
+  const movements = led.filter((l) => l.eventType === 'TRANSFER_OUT' || l.eventType === 'TRANSFER_IN');
+  ok('T-STRICT khong sinh ledger transfer', movements.length === 0, `transferLedgers=${movements.length}`);
+}
+
 // --------------------------------- same key, different destination ---
 // CP3-B1.1 (mục 2): cùng key nhưng đổi toWarehouseId -> IDEMPOTENCY_CONFLICT.
 async function probeTDest() {
@@ -515,6 +537,7 @@ async function main() {
   await probeTRR();
   await probeTRC();
   await probeTDP();
+  await probeTStrict();
   await probeTDest();
   await probeTIK();
   await probeDispatchReplay();

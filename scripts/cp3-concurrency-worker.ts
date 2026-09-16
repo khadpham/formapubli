@@ -72,7 +72,6 @@ process.on('message', async (msg: any) => {
           quantity: p.quantity,
           condition: p.condition || 'NEW',
           documentRef: p.documentRef,
-          actorId: p.dispatcherId || p.actorStaffId || 'cp3-worker',
           note: p.note || '',
           idempotencyKey: p.idempotencyKey,
           actorContext: actorOf(p, 'ROLE_OWNER'),

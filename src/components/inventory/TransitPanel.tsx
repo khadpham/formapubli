@@ -68,11 +68,14 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
     if (!detail) return;
     setActing(true);
     try {
+      // CP3-B1.2 (mục 5): không parseInt cắt thập phân — gửi Number nguyên vẹn,
+      // route/service từ chối "1.5" và hiển thị lỗi.
+      const num = (v: string) => (v.trim() === '' ? 0 : Number(v.trim()));
       const items = (detail.items || []).map((it: any) => ({
         editionId: it.editionId,
-        receivedQty: parseInt(receiveLines[it.editionId]?.r || '0', 10),
-        damagedQty: parseInt(receiveLines[it.editionId]?.d || '0', 10),
-        lostQty: parseInt(receiveLines[it.editionId]?.l || '0', 10),
+        receivedQty: num(receiveLines[it.editionId]?.r || '0'),
+        damagedQty: num(receiveLines[it.editionId]?.d || '0'),
+        lostQty: num(receiveLines[it.editionId]?.l || '0'),
       }));
       const res = await fetch('/api/transfers', {
         method: 'POST',

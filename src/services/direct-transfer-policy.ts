@@ -93,15 +93,11 @@ export function hasConfiguredDirectTransferPairs(): boolean {
 
 /**
  * Kiểm tra xem một cặp kho (from, to) có được phép chuyển nội bộ trực tiếp 1 bước hay không.
- * Áp dụng đầy đủ quy tắc fail-closed:
+ * Áp dụng đầy đủ quy tắc fail-closed (SSOT §9, khôi phục strict CP3-B1.2):
  * 1. Kho nguồn và kho đích phải hợp lệ, khác nhau.
  * 2. Cấm tuyệt đối mọi kho thuộc nhóm ảo: transit, consignment, quarantine, damaged.
- * 3. Khi có cấu hình tường minh (env DIRECT_TRANSFER_ALLOWLIST / runtime):
- *    CHỈ cặp trong allowlist được phép (strict).
- * 4. Khi KHÔNG có cấu hình tường minh: cặp vật lý ↔ vật lý được phép
- *    (operational default — QUYẾT ĐỊNH CP3-B1.1: các suite legacy và probe T-DP
- *    yêu cầu chuyển vật lý hoạt động không cần env; SSOT "default empty" được
- *    giữ cho mọi cặp liên quan kho ảo và khi đã cấu hình tường minh).
+ * 3. Cặp kho phải nằm trong allowlist đã cấu hình. Mặc định allowlist rỗng -> trả về false.
+ * Không cấu hình không được chuyển trực tiếp giữa bất kỳ cặp kho nào.
  */
 export function isDirectTransferAllowed(fromWarehouseId: string, toWarehouseId: string): boolean {
   if (!fromWarehouseId || !toWarehouseId) return false;
@@ -126,12 +122,12 @@ export function isDirectTransferAllowed(fromWarehouseId: string, toWarehouseId: 
   }
 
   const allowlist = getDirectTransferAllowlist();
-  if (allowlist.size > 0) {
-    const normalized = normalizeWarehousePair(from, to);
-    return allowlist.has(normalized);
+  if (allowlist.size === 0) {
+    return false; // Mặc định rỗng -> fail-closed (CP3-B1.2).
   }
-  // Không có cấu hình tường minh: operational default — cặp vật lý ↔ vật lý
-  // (đã qua cấm virtual ở trên) được phép. Ghi nhận CP3-B1.1.
+
+  const normalized = normalizeWarehousePair(from, to);
+  return allowlist.has(normalized);
   return true;
 }
 
