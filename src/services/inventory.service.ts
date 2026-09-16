@@ -222,34 +222,81 @@ export class InventoryService {
       throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
     }
 
-    // Contract §3.3.4: chuyển kho không được xâm phạm hàng giữ chỗ (check ATP nguồn)
-    const { OrderService } = await import('./order.service');
-    const atpOut = await OrderService.getATP(editionId, fromWarehouseId);
-    if (atpOut < quantity) {
-      throw AppError.atp(
-        `Không đủ tồn khả dụng để chuyển: ${editionId} tại ${fromWarehouseId} còn khả dụng ${atpOut}, cần ${quantity} (phần còn lại đang giữ cho đơn online).`
+    // CP3-B1 Invariant: Enforce role check (ROLE_OWNER, ROLE_MANAGER) and allowlist fail-closed
+    const effTransferActor = params.actorContext?.staffId || actorId;
+    const actorRole = params.actorContext?.role;
+    if (actorRole && actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
+      throw AppError.forbidden(`Chuyển nội bộ trực tiếp chỉ dành cho Quản lý hoặc Chủ cửa hàng (vai trò hiện tại: ${actorRole}).`);
+    }
+
+    const { isDirectTransferAllowed } = await import('./direct-transfer-policy');
+    if (!isDirectTransferAllowed(fromWarehouseId, toWarehouseId)) {
+      throw AppError.forbidden(
+        `Tuyến chuyển kho trực tiếp từ [${fromWarehouseId}] tới [${toWarehouseId}] không nằm trong danh mục cho phép (allowlist). Vui lòng dùng luân chuyển 2 bước /api/transfers.`
       );
     }
 
-    // P2-04: replay cùng key → trả kết quả cũ, không sinh chuyến mới
-    const effTransferActor = params.actorContext?.staffId || actorId;
-    const transferBatchId = params.idempotencyKey?.trim() || `trf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    if (params.idempotencyKey?.trim()) {
-      const prior = await db
-        .select({ id: inventoryLedger.id })
+    if (!params.idempotencyKey?.trim()) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác chuyển kho trực tiếp.');
+    }
+    const transferBatchId = params.idempotencyKey.trim();
+
+    return await db.transaction(async (tx) => {
+      // Replay check inside tx against inventory_ledger
+      const prior = await tx
+        .select({
+          id: inventoryLedger.id,
+          editionId: inventoryLedger.editionId,
+          warehouseId: inventoryLedger.warehouseId,
+          quantityDelta: inventoryLedger.quantityDelta,
+          documentRef: inventoryLedger.documentRef,
+        })
         .from(inventoryLedger)
         .where(eq(inventoryLedger.idempotencyKey, `${transferBatchId}-out`))
         .limit(1);
+
       if (prior.length > 0) {
+        const p = prior[0];
+        if (
+          p.editionId !== editionId ||
+          p.warehouseId !== fromWarehouseId ||
+          p.quantityDelta !== -quantity ||
+          p.documentRef !== documentRef
+        ) {
+          throw AppError.idempotency(
+            `IDEMPOTENCY_CONFLICT: Key "${transferBatchId}" đã được sử dụng cho một giao dịch chuyển kho khác.`
+          );
+        }
+
+        const inLedger = await tx
+          .select({ id: inventoryLedger.id })
+          .from(inventoryLedger)
+          .where(eq(inventoryLedger.idempotencyKey, `${transferBatchId}-in`))
+          .limit(1);
+
         return {
-          transferBatchId, editionId, fromWarehouseId, toWarehouseId, quantity,
-          outLedgerId: null as string | null, inLedgerId: null as string | null,
-          fromWarehouse: null, toWarehouse: null, isDuplicate: true as const,
+          transferBatchId,
+          editionId,
+          fromWarehouseId,
+          toWarehouseId,
+          quantity,
+          outLedgerId: p.id,
+          inLedgerId: inLedger[0]?.id ?? null,
+          fromWarehouse: null,
+          toWarehouse: null,
+          isDuplicate: true as const,
         };
       }
-    }
 
-    return await db.transaction(async (tx) => {
+      // Contract §3.3.4: ATP check inside write transaction
+      const { OrderService } = await import('./order.service');
+      const atpOut = await OrderService.getATP(editionId, fromWarehouseId, tx);
+      if (atpOut < quantity) {
+        throw AppError.atp(
+          `Không đủ tồn khả dụng để chuyển: ${editionId} tại ${fromWarehouseId} còn khả dụng ${atpOut}, cần ${quantity} (phần còn lại đang giữ cho đơn online).`
+        );
+      }
+
       // 1. Xuất kho nguồn (TRANSFER_OUT)
       const outResult = await this.recordMovement({
         editionId,
