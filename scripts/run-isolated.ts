@@ -105,9 +105,12 @@ async function main() {
     const isWin = process.platform === 'win32';
     const command = isWin ? 'cmd.exe' : 'npx';
     const cmdArgs = isWin ? ['/c', 'npx', 'tsx', suite] : ['tsx', suite];
+    const suiteDb = suite.includes('test-cp3-reconciliation')
+      ? 'file:formapubli_test_cp3_REC4.db'
+      : `file:${TEST_DB_FILE}`;
     const res = spawnSync(command, cmdArgs, {
       cwd: process.cwd(),
-      env: { ...process.env, DATABASE_URL: `file:${TEST_DB_FILE}` },
+      env: { ...process.env, DATABASE_URL: suiteDb },
       stdio: 'inherit',
       shell: false,
     });
