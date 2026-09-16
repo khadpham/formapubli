@@ -13,7 +13,7 @@ import { toActorContext } from '../src/services/actor-context';
 assertIsolatedTestDb('cp3-return-complete-worker');
 
 interface WorkerConfig {
-  action: 'request' | 'approve' | 'complete' | 'createOrder' | 'openCashbox' | 'closeCashbox';
+  action: 'request' | 'approve' | 'complete' | 'void' | 'createOrder' | 'openCashbox' | 'closeCashbox';
   payload: any;
 }
 
@@ -46,7 +46,16 @@ process.on('message', async (msg: any) => {
         const p = config.payload;
         const ctx = p.noActorContext ? undefined : actorOf(p);
         result = await ReturnService.complete(
-          p.returnId, ctx?.role || p.actorRole, undefined, ctx, p.idempotencyKey
+          p.returnId, ctx?.role || p.actorRole, p.exchangeItems, ctx, p.idempotencyKey
+        );
+      } else if (config.action === 'void') {
+        // CP3-R3: voidReturn hiện (R2) chưa nhận key — worker truyền những gì
+        // service hỗ trợ (returnId, role/reason, context); key giữ trong payload
+        // để Lane A nối khi mở idempotency VOID.
+        const p = config.payload;
+        const ctx = p.noActorContext ? undefined : actorOf(p);
+        result = await ReturnService.voidReturn(
+          p.returnId, ctx?.role || p.actorRole, p.voidReason || 'LaneB adversarial void', ctx
         );
       } else if (config.action === 'createOrder') {
         result = await OrderService.createOrder(config.payload);
