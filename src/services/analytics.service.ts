@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns } from '../db';
+import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like } from 'drizzle-orm';
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
@@ -156,7 +156,17 @@ export class AnalyticsService {
       .where(spfConds.length > 0 ? and(...spfConds) : undefined);
     const sponsorshipDrawnValue = Number(spfRows[0]?.value || 0);
     const sponsorshipDrawnQty = Number(spfRows[0]?.qty || 0);
+    const refundConds = [eq(returnOrders.status, 'COMPLETED')];
+    if (range.startDate) refundConds.push(gte(returnOrders.createdAt, range.startDate));
+    if (range.endDate) refundConds.push(lte(returnOrders.createdAt, range.endDate));
+    const refundRows = await db
+      .select({ total: sql<number>`COALESCE(SUM(${returnOrders.refundAmount}), 0)` })
+      .from(returnOrders)
+      .where(and(...refundConds));
+    const completedRefunds = Number(refundRows[0]?.total || 0);
+
     const salesRevenue = channels.filter((c) => c.channel !== 'SPONSORSHIP').reduce((s, c) => s + c.revenue, 0);
-    return { channels, salesRevenue, codPending, codReceived, sponsorshipDrawnValue, sponsorshipDrawnQty };
+    const netRevenue = salesRevenue - completedRefunds;
+    return { channels, salesRevenue, netRevenue, codPending, codReceived, sponsorshipDrawnValue, sponsorshipDrawnQty };
   }
 }

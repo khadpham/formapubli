@@ -49,13 +49,11 @@ process.on('message', async (msg: any) => {
           p.returnId, ctx?.role || p.actorRole, p.exchangeItems, ctx, p.idempotencyKey
         );
       } else if (config.action === 'void') {
-        // CP3-R3: voidReturn hiện (R2) chưa nhận key — worker truyền những gì
-        // service hỗ trợ (returnId, role/reason, context); key giữ trong payload
-        // để Lane A nối khi mở idempotency VOID.
         const p = config.payload;
         const ctx = p.noActorContext ? undefined : actorOf(p);
+        const key = p.idempotencyKey || `idem-void-${p.returnId}-${ctx?.staffId || p.actorStaffId || 'mgr'}`;
         result = await ReturnService.voidReturn(
-          p.returnId, ctx?.role || p.actorRole, p.voidReason || 'LaneB adversarial void', ctx
+          p.returnId, ctx?.role || p.actorRole, p.voidReason || 'LaneB adversarial void', ctx, key
         );
       } else if (config.action === 'createOrder') {
         result = await OrderService.createOrder(config.payload);
