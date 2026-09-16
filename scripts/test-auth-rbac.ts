@@ -120,7 +120,7 @@ async function run() {
 
   // 7. Returns: cashier session REQUEST qua, APPROVE chặn
   const sale = await OrderService.createOrder({
-    warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', idempotencyKey: uniq('i'),
+    warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', paymentMethod: 'BANK_TRANSFER', idempotencyKey: uniq('i'),
     items: [{ editionId: eid, quantity: 1 }],
   });
   const cash2 = await loginAs('ROLE_CASHIER', `step3-cash2-${Date.now()}`, '1234');
