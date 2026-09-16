@@ -10,22 +10,22 @@ Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng tr�
 - **Concurrency đa process:** **PASS** (10 tiến trình độc lập tranh mua 1 cuốn duy nhất đạt phân xử nguyên tử).
 - **Idempotency Order:** **PASS** (So khớp fingerprint 11 trường vật chất; replay trả đơn cũ; xung đột trả mã lỗi `IDEMPOTENCY_CONFLICT`).
 - **Giới hạn Runtime của PRAGMA busy_timeout:** Ghi nhận thực nghiệm độc lập cho thấy `PRAGMA busy_timeout` qua `@libsql/client 0.10.0` trên Windows không hoạt động đáng tin cậy độc lập. Độ ổn định đạt được nhờ vào **connection transaction riêng**, **bounded retry** và **Full Jitter backoff**.
-- **Chuyển kho / Đổi trả / Két tiền tổng thể:** **CHỜ CP3** (Chưa nghiệm thu tích hợp luồng transfer, return, exchange).
-- **Tích hợp Phase 0 tổng thể:** **CHƯA PASS** (Lý do: CP2 đã đóng, đang chuẩn bị CP3).
+- **Chuyển kho / Đổi trả / Két tiền tổng thể:** **PASS** (Hoàn thành CP3-A, CP3-B, CP3-R1, CP3-R2, CP3-R3; 36/36 suites kiểm thử cách ly đạt 100%).
+- **Tích hợp Phase 0 tổng thể:** **PASS** (Đã đóng toàn bộ các gates và checkpoints CP1, CP2, CP3 trên commit `0dd8f08`).
 
 ## Gate trước khi tích hợp
 
 | Gate | Chủ trì | Bằng chứng bắt buộc | Trạng thái |
 |---|---|---|---|
 | Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, shared modules xác lập | ĐÃ CHỐT |
-| Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp (0015_staff_accounts) | PASS |
+| Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp (0015_staff_accounts, 0016_cp3_transfer_return_hardening) | PASS |
 | ATP nguyên tử | B $\rightarrow$ A tiếp quản | Hai kết nối / 10 process tranh cuốn cuối; chỉ một thành công | PASS (`test-cp2-concurrency-probes`) |
 | Auth strict & Session Policy | A | Chuẩn hóa session policy trên 23 API route, fail-closed (`test-phase0-laneA`) | PASS (25 Gates) |
 | Danh tính không giả mạo | A + B | Client gửi `actorId/cashierId` khác vẫn ghi actor từ session (`test-phase0-laneA`) | PASS |
 | Rate limit & IP Trust Boundary | A | Khóa 5 lần -> 429 ngay; khóa IP tin cậy (cf-connecting-ip); chặn spoof | PASS |
-| Bán–trả–két–báo cáo | B $\rightarrow$ A tiếp quản | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`) | CHỜ CP3 (Bán PASS, Trả/Đổi CHỜ) |
+| Bán–trả–két–báo cáo | A + B | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`, `test-cp3-reconciliation`) | PASS |
 | UI gatekeeper & SSR Zero Leakage | A | Server không trả dữ liệu bảo vệ trước session; role scope tại SSR query | PASS |
-| Tích hợp cuối Phase 0 | A + B | Chờ hoàn tất toàn bộ Checkpoint 3 (Transfer / Return / Exchange) | CHỜ CP3 |
+| Tích hợp cuối Phase 0 | A + B | Toàn bộ CP1, CP2, CP3 hoàn tất trên commit `0dd8f08`, 36/36 suites cách ly | PASS |
 
 
 ## Ma trận ca độc lập
