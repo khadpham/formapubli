@@ -254,6 +254,16 @@ async function probeExRace() {
   console.log('--- R-EX-RACE: sale dua complete EXCHANGE cuon cuoi (edB doc lap) ---');
   const { url, edA, edB } = await freshProbeDb('EXRACE', 50);
   const k = `cp3x-race-${Date.now()}`;
+  // Lane A phát hiện đúng: edB (99.000) lệch giá edA (100.000) nên complete
+  // luôn rớt INVALID_INPUT trước khi tới ATP. Đồng giá edB = 100.000 để RACE
+  // cô lập đúng biến ATP (R-EX-VAL giữ edB 99.000 để test lệch giá).
+  await (async () => {
+    const { client, db } = localDb(url);
+    const { editions: edTbl } = await import('../src/db/schema');
+    const { eq: eqOp } = await import('drizzle-orm');
+    await db.update(edTbl).set({ coverPrice: 100000 }).where(eqOp(edTbl.id, edB));
+    client.close();
+  })();
   // Xả edB về đúng 1 cuốn (50 - 49).
   const drain = await runSolo(url, 'createOrder', salePayload(edB, 49, `${k}-drain`));
   ok('R-EX-RACE setup ton edB = 1', drain.success, drain.error);

@@ -294,13 +294,13 @@ async function main() {
     `voided=${voidedCount} completedRefunds=${completedRefunds}`);
   ok('R-REC net DB = 280.000', dbNet === 280000, `net=${dbNet}`);
 
-  // 4. Analytics khớp net từng đồng (expected-red nếu báo cáo mới chỉ thấy gross
-  // 380.000 trong khi net thực 280.000).
+  // 4. Analytics minh bạch 2 trường (contract Lane A thống nhất):
+  // salesRevenue = gross (380.000), netRevenue = net sau hoàn (280.000).
   const cf: any = await AnalyticsService.cashflow();
   ok('R-REC analytics salesRevenue thay gross 380.000', cf.salesRevenue === 380000, `salesRevenue=${cf.salesRevenue}`);
-  ok('R-REC analytics khop net 280.000 (refund-aware)',
-    cf.salesRevenue === dbNet,
-    `salesRevenue=${cf.salesRevenue} net=${dbNet}`);
+  ok('R-REC analytics netRevenue khop net 280.000 (refund-aware)',
+    cf.netRevenue === dbNet,
+    `netRevenue=${cf.netRevenue} net=${dbNet}`);
 
   console.log('=========================================================================');
   if (failures.length > 0) {
