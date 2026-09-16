@@ -10,6 +10,7 @@ export type ErrorCode =
   | 'INSUFFICIENT_ATP'
   | 'STATE_CONFLICT'
   | 'IDEMPOTENCY_CONFLICT'
+  | 'OVER_RETURN_LIMIT'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR';
 
@@ -42,5 +43,9 @@ export class AppError extends Error {
 
   static idempotency(message: string, details?: unknown): AppError {
     return new AppError('IDEMPOTENCY_CONFLICT', message, details);
+  }
+
+  static overReturnLimit(message = 'Số lượng trả vượt quá giới hạn đơn hàng gốc', details?: unknown): AppError {
+    return new AppError('OVER_RETURN_LIMIT', message, details);
   }
 }

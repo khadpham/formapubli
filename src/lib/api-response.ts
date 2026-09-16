@@ -11,6 +11,7 @@ export function handleApiError(err: unknown): NextResponse {
       INSUFFICIENT_ATP: 409,
       STATE_CONFLICT: 409,
       IDEMPOTENCY_CONFLICT: 409,
+      OVER_RETURN_LIMIT: 409,
       RATE_LIMITED: 429,
       INTERNAL_ERROR: 500,
     };
