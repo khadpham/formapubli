@@ -128,7 +128,6 @@ export function isDirectTransferAllowed(fromWarehouseId: string, toWarehouseId: 
 
   const normalized = normalizeWarehousePair(from, to);
   return allowlist.has(normalized);
-  return true;
 }
 
 /**
