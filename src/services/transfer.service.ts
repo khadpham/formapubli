@@ -92,14 +92,8 @@ export class TransferService {
   /**
    * BƯỚC 1 — Xuất kho gửi: trừ kho nguồn, cộng kho transit, mở phiếu IN_TRANSIT.
    */
-  static async dispatch(
-    params: DispatchParams | (Omit<DispatchParams, 'idempotencyKey' | 'actorContext'> & {
-      dispatcherId?: string;
-      idempotencyKey?: string;
-      actorContext?: ActorContext;
-    })
-  ) {
-    const { fromWarehouseId, toWarehouseId, vehicleInfo, notes, items } = params;
+  static async dispatch(params: DispatchParams) {
+    const { fromWarehouseId, toWarehouseId, vehicleInfo, notes, items, actorContext, idempotencyKey } = params;
 
     if (!items || items.length === 0) {
       throw AppError.invalid('Phiếu luân chuyển phải có ít nhất 1 ấn bản.');
@@ -169,24 +163,15 @@ export class TransferService {
       })
     );
 
-    // Actor: actorContext (route đã bind từ session) thắng; nếu không có,
-    // chấp nhận staffId tường minh của caller trực tiếp (test harness tin cậy
-    // hành xử như route sau auth). KHÔNG có cả hai -> fail-closed.
-    // (Known limitation Lane B: service chưa phân biệt session thật/giả —
-    // binding session thuộc về route; xem src/app/api/transfers/route.ts.)
-    const rawDispatcher = (params as any).dispatcherId;
-    const claimedId =
-      params.actorContext?.staffId?.trim() ||
-      (typeof rawDispatcher === 'string' ? rawDispatcher.trim() : '');
-    if (!claimedId) {
-      throw AppError.invalid('Thiếu danh tính người xuất kho (actorContext/dispatcherId).');
+    // Actor CP3 chuẩn: actorContext bắt buộc (route bind từ session).
+    // Không nhận dispatcherId thay session, không suy role.
+    if (!actorContext || !actorContext.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác xuất kho luân chuyển (dispatch).');
     }
-    const actorContext: ActorContext =
-      params.actorContext || toActorContext(claimedId, 'ROLE_WAREHOUSE', claimedId);
-    const effDispatcherId = actorContext.staffId;
+    const effDispatcherId = actorContext.staffId.trim();
 
     // Idempotency Key bắt buộc — KHÔNG tự sinh key (fail-closed, mục A).
-    const idemKey = params.idempotencyKey?.trim() || '';
+    const idemKey = idempotencyKey?.trim() || '';
     if (!idemKey) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác xuất kho luân chuyển (dispatch).');
     }
@@ -347,34 +332,22 @@ export class TransferService {
   /**
    * BƯỚC 2 — Thực nhận tại kho đích: kiểm đếm R lành + D hỏng + L mất = X.
    */
-  static async receive(
-    params: ReceiveParams | (Omit<ReceiveParams, 'idempotencyKey' | 'actorContext'> & {
-      receiverId?: string;
-      idempotencyKey?: string;
-      actorContext?: ActorContext;
-    })
-  ) {
-    const { shipmentId, items, notes } = params;
+  static async receive(params: ReceiveParams) {
+    const { shipmentId, items, notes, actorContext, idempotencyKey } = params;
 
     if (!shipmentId || typeof shipmentId !== 'string' || !shipmentId.trim()) {
       throw AppError.invalid('Thiếu mã phiếu luân chuyển (shipmentId).');
     }
     const cleanShipmentId = shipmentId.trim();
 
-    // Actor: actorContext thắng; nếu không, staffId tường minh (xem dispatch).
-    const rawReceiver = (params as any).receiverId;
-    const claimedReceiver =
-      params.actorContext?.staffId?.trim() ||
-      (typeof rawReceiver === 'string' ? rawReceiver.trim() : '');
-    if (!claimedReceiver) {
-      throw AppError.invalid('Thiếu danh tính người nhận hàng (actorContext/receiverId).');
+    // Actor CP3 chuẩn: actorContext bắt buộc. Không nhận receiverId thay session.
+    if (!actorContext || !actorContext.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác nhận hàng luân chuyển (receive).');
     }
-    const actorContext: ActorContext =
-      params.actorContext || toActorContext(claimedReceiver, 'ROLE_WAREHOUSE', claimedReceiver);
-    const effReceiverId = actorContext.staffId;
+    const effReceiverId = actorContext.staffId.trim();
 
     // Idempotency Key bắt buộc — KHÔNG tự sinh key (fail-closed, mục A).
-    const idemKey = params.idempotencyKey?.trim() || '';
+    const idemKey = idempotencyKey?.trim() || '';
     if (!idemKey) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác nhận hàng luân chuyển (receive).');
     }
@@ -691,37 +664,15 @@ export class TransferService {
   /**
    * Hủy phiếu chưa nhận: rút hàng từ transit trả về kho gửi.
    */
-  static async cancel(
-    shipmentId: string,
-    actorIdOrParams?: string | CancelParams,
-    maybeIdempotencyKey?: string
-  ) {
+  static async cancel(params: CancelParams) {
+    const { shipmentId, notes, actorContext, idempotencyKey } = params;
     let cleanShipmentId = shipmentId;
-    let actorContext: ActorContext;
-    let effActorId: string;
-    let idemKey: string;
-
-    if (typeof actorIdOrParams === 'object' && actorIdOrParams !== null) {
-      const p = actorIdOrParams as CancelParams;
-      cleanShipmentId = p.shipmentId || shipmentId;
-      actorContext = p.actorContext;
-      effActorId = actorContext.staffId;
-      idemKey = p.idempotencyKey;
-    } else {
-      // Dạng gọi legacy (shipmentId, actorId): actorId tường minh bắt buộc,
-      // KHÔNG mặc định 'quan-ly-kho'. Key dẫn xuất ổn định theo (shipment, actor)
-      // nên cùng một actor hủy trùng chỉ replay, không bao giờ mask conflict
-      // (conditional UPDATE IN_TRANSIT vẫn là chốt chặn đua thật).
-      const claimed = typeof actorIdOrParams === 'string' ? actorIdOrParams.trim() : '';
-      if (!claimed) {
-        throw AppError.invalid('Thiếu danh tính người hủy phiếu (actorId).');
-      }
-      effActorId = claimed;
-      actorContext = toActorContext(claimed, 'ROLE_MANAGER', claimed);
-      idemKey =
-        maybeIdempotencyKey?.trim() || `cancel-${shipmentId}-${claimed}`;
+    // Actor + key CP3 chuẩn, bắt buộc. Không overload legacy (mục 3).
+    if (!actorContext || !actorContext.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác hủy phiếu luân chuyển (cancel).');
     }
-
+    const effActorId = actorContext.staffId.trim();
+    const idemKey = idempotencyKey?.trim() || '';
     if (!cleanShipmentId || typeof cleanShipmentId !== 'string' || !cleanShipmentId.trim()) {
       throw AppError.invalid('Thiếu mã phiếu luân chuyển (shipmentId).');
     }

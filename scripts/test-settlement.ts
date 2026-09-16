@@ -1,11 +1,15 @@
 import { db, editions } from '../src/db';
 import { InventoryService } from '../src/services/inventory.service';
 import { ConsignmentService } from '../src/services/consignment.service';
+import { toActorContext } from '../src/services/actor-context';
 import { SettlementService } from '../src/services/settlement.service';
 import { POST as SettlementsPOST } from '../src/app/api/settlements/route';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-settlement');
+
+// CP3-B1.1 (mục 5): bổ sung actorContext + key; không đổi assertion.
+const SCTX = (id: string) => toActorContext(id, 'ROLE_MANAGER');
 
 async function runSettlementTests() {
   console.log('💵 ========================================================');
@@ -37,10 +41,14 @@ async function runSettlementTests() {
     idempotencyKey: `settle-prep-${Date.now()}`,
   });
   const sent = await ConsignmentService.sendToConsignment({
-    partnerId: PARTNER, fromWarehouseId: QM, dispatcherId: 'thu-kho-qm',
+    partnerId: PARTNER, fromWarehouseId: QM,
+    actorContext: SCTX('thu-kho-qm'), idempotencyKey: `settle-send-${Date.now()}`,
     items: [{ editionId: book.id, quantity: 10 }],
   });
-  await ConsignmentService.confirmConsignmentReceipt(sent.shipmentId, 'tai-xe-test');
+  await ConsignmentService.confirmConsignmentReceipt({
+    shipmentId: sent.shipmentId,
+    actorContext: SCTX('tai-xe-test'), idempotencyKey: `settle-recv-${Date.now()}`,
+  });
   const stmt = await ConsignmentService.createStatement({
     partnerId: PARTNER, periodStart: '2026-09-01', periodEnd: '2026-09-30', createdBy: 'ke-toan-test',
   });

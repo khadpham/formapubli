@@ -1,9 +1,13 @@
 import { InventoryService } from '../src/services/inventory.service';
+import { toActorContext } from '../src/services/actor-context';
 import { db, editions, warehouses, inventoryLedger } from '../src/db';
 import { eq } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-inventory');
+
+// CP3-B1.1 (mục 5): bổ sung actorContext + key; không đổi assertion.
+const ICTX = (id: string) => toActorContext(id, 'ROLE_MANAGER');
 
 async function runInventoryTests() {
   console.log('🧪 ===============================================');
@@ -56,6 +60,8 @@ async function runInventoryTests() {
     quantity: 200,
     documentRef: transferDoc,
     actorId: 'Thủ kho Quỳnh Mai',
+    actorContext: ICTX('Thu kho Quynh Mai'),
+    idempotencyKey: `transfer-${transferDoc}`,
     note: 'Tiếp tế sách rời cho văn phòng Âu Cơ soạn đơn trực tuyến',
   });
   console.log(`✅ Chuyển kho thành công:`);

@@ -1,11 +1,15 @@
 import { db, editions } from '../src/db';
 import { InventoryService } from '../src/services/inventory.service';
 import { ConsignmentService } from '../src/services/consignment.service';
+import { toActorContext } from '../src/services/actor-context';
 import { GET as ConsignGET } from '../src/app/api/consignments/route';
 import { eq } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-consignment');
+
+// CP3-B1.1 (mục 5): bổ sung actorContext + key; không đổi assertion.
+const CCTX = (id: string) => toActorContext(id, 'ROLE_MANAGER');
 
 async function runConsignmentTests() {
   console.log('🤝 ========================================================');
@@ -42,12 +46,17 @@ async function runConsignmentTests() {
   const sent = await ConsignmentService.sendToConsignment({
     partnerId: PARTNER,
     fromWarehouseId: QM,
-    dispatcherId: 'thu-kho-qm',
+    actorContext: CCTX('thu-kho-qm'),
+    idempotencyKey: `consign-send-${Date.now()}`,
     vehicleInfo: 'Xe ôm test Đinh Lễ',
     items: [{ editionId: book.id, quantity: 20 }],
   });
   ok(!!sent.shipmentId, 'Gửi ký gửi mở phiếu T1 shipment', `Phiếu: ${sent.shipmentId}`);
-  const recv = await ConsignmentService.confirmConsignmentReceipt(sent.shipmentId, 'tai-xe-test');
+  const recv = await ConsignmentService.confirmConsignmentReceipt({
+    shipmentId: sent.shipmentId,
+    actorContext: CCTX('tai-xe-test'),
+    idempotencyKey: `consign-recv-${Date.now()}`,
+  });
   ok(recv.status === 'RECEIVED_FULL', 'Xác nhận quầy nhận đủ 20 cuốn');
   const stock = await ConsignmentService.getPartnerStock(PARTNER);
   const atCounter = stock.items.find((i) => i.editionId === book.id && i.condition === 'NEW')?.quantity ?? 0;

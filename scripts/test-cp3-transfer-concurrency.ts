@@ -86,6 +86,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
   await db.insert(warehouses).values([
     { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (CP3)', isActive: true },
     { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quynh Mai (CP3)', isActive: true },
+    { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Du Phong (CP3)', isActive: true },
   ]);
   await db.insert(inventoryLedger).values({
     id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',
@@ -112,10 +113,12 @@ async function phys(url: string, editionId: string, warehouseId: string): Promis
   return rows.length > 0 ? (rows[0].physicalQuantity as number) : 0;
 }
 
-/** Chạy N worker đồng thời qua còi START chung. */
+/** Chạy N worker đồng thời qua còi START chung. extraEnv cấu hình từng worker
+ *  (vd. DIRECT_TRANSFER_ALLOWLIST cho T-DP/T-FC). */
 async function runRace(
   url: string,
   configs: Array<{ action: Cp3Action; payload: any }>,
+  extraEnv: Record<string, string> = {},
 ): Promise<WorkerResult[]> {
   const n = configs.length;
   const results: WorkerResult[] = new Array(n);
@@ -132,6 +135,7 @@ async function runRace(
         ...process.env,
         DATABASE_URL: url,
         WORKER_CONFIG: JSON.stringify(configs[i]),
+        ...extraEnv,
       },
       stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
     });
@@ -307,6 +311,8 @@ async function probeTRC() {
 }
 
 // ---------------------------------------------------------------- T-DP ---
+// CP3-B1.1: directTransfer đi InventoryService.transfer (1 bước) với allowlist
+// hợp lệ cấu hình trong từng worker qua env.
 async function probeTDP() {
   console.log('--- T-DP: direct transfer vs pending hold (ton 3, pending giu 2, ATP 1) ---');
   const { url, editionId } = await freshProbeDb('TDP', 3);
@@ -314,15 +320,17 @@ async function probeTDP() {
   const pend = await runSolo(url, 'createOrder', salePayload(editionId, 2, `${k}-p`, false));
   ok('T-DP setup pending giu 2 thanh cong', pend.success, pend.error);
   if (!pend.success) return;
+  const allowEnv = { DIRECT_TRANSFER_ALLOWLIST: 'wh-au-co:wh-quynh-mai' };
   const t = (key: string) => ({
+    editionId,
     fromWarehouseId: 'wh-au-co', toWarehouseId: 'wh-quynh-mai',
-    dispatcherId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: key,
-    items: [{ editionId, quantity: 1 }],
+    quantity: 1, condition: 'NEW', documentRef: `DOC-${key}`,
+    actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: key,
   });
   const results = await runRace(url, [
     { action: 'directTransfer', payload: t(`${k}-a`) },
     { action: 'directTransfer', payload: t(`${k}-b`) },
-  ]);
+  ], allowEnv);
   const succ = results.filter((r) => r.success);
   ok('T-DP dung 1 transfer thang', succ.length === 1, JSON.stringify(results.map((r) => ({ s: r.success, c: r.code }))));
   const tdpFail = results.filter((r) => !r.success);
@@ -357,6 +365,30 @@ async function probeTIK() {
   const ships: any[] = await db.select().from(transferShipments);
   client.close();
   ok('T-IK chi 1 shipment vat ly', ships.length === 1, `ships=${ships.length}`);
+}
+
+// --------------------------------- same key, different destination ---
+// CP3-B1.1 (mục 2): cùng key nhưng đổi toWarehouseId -> IDEMPOTENCY_CONFLICT.
+async function probeTDest() {
+  console.log('--- T-DEST: same key, different toWarehouseId ---');
+  const { url, editionId } = await freshProbeDb('TDEST', 10);
+  const key = `cp3-tdest-${Date.now()}`;
+  const allowEnv = { DIRECT_TRANSFER_ALLOWLIST: 'wh-au-co:wh-quynh-mai,wh-au-co:wh-du-phong' };
+  const t = (to: string) => ({
+    editionId,
+    fromWarehouseId: 'wh-au-co', toWarehouseId: to,
+    quantity: 1, condition: 'NEW', documentRef: `DOC-${key}`,
+    actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: key,
+  });
+  const results = await runRace(url, [
+    { action: 'directTransfer', payload: t('wh-quynh-mai') },
+    { action: 'directTransfer', payload: t('wh-du-phong') },
+  ], allowEnv);
+  const succ = results.filter((r) => r.success);
+  const fail = results.filter((r) => !r.success);
+  ok('T-DEST dung 1 thang', succ.length === 1 && fail.length === 1, JSON.stringify(results.map((r) => ({ s: r.success, c: r.code }))));
+  ok('T-DEST thua nhan IDEMPOTENCY_CONFLICT', fail.length === 1 && fail[0].code === 'IDEMPOTENCY_CONFLICT', fail[0]?.code);
+  ok('T-DEST khong BUSY/timeout thoat ra ngoai', noBusyOrTimeout(results));
 }
 
 // --------------------------------- dispatch replay (same key+same fingerprint)
@@ -437,27 +469,43 @@ async function probeReceiveReplayConflict() {
 }
 
 // ------------------------------------------------- fail-closed + key ---
+// CP3-B1.1 (mục 2): T-FC tách riêng từng ca trên InventoryService.transfer.
 async function probeFailClosed() {
-  console.log('--- T-FC: role/pair fail-closed + missing key (tuan tu) ---');
+  console.log('--- T-FC: role/pair/virtual/key fail-closed (tuan tu) ---');
   const { url, editionId } = await freshProbeDb('TFC', 10);
   const k = `cp3-tfc-${Date.now()}`;
-  const cashier = await runSolo(url, 'directTransfer', {
+  const base = {
+    editionId,
     fromWarehouseId: 'wh-au-co', toWarehouseId: 'wh-quynh-mai',
-    dispatcherId: 'cp3-cashier', actorRole: 'ROLE_CASHIER', idempotencyKey: `${k}-c`,
-    items: [{ editionId, quantity: 1 }],
-  });
+    quantity: 1, condition: 'NEW', documentRef: `DOC-${k}`,
+  };
+  const allowEnv = { DIRECT_TRANSFER_ALLOWLIST: 'wh-au-co:wh-quynh-mai' };
+  async function soloDirect(payload: any, env: Record<string, string> = {}) {
+    return runRace(url, [{ action: 'directTransfer', payload }], env).then((r) => r[0]);
+  }
+  // 1. Role sai (CASHIER) -> FORBIDDEN (allowlist có cặp nhưng role sai).
+  const cashier = await soloDirect({
+    ...base, toWarehouseId: 'wh-quynh-mai', documentRef: `DOC-${k}-c`,
+    actorStaffId: 'cp3-cashier', actorRole: 'ROLE_CASHIER', idempotencyKey: `${k}-c`,
+  }, allowEnv);
   ok('T-FC CASHIER bi FORBIDDEN', !cashier.success && cashier.code === 'FORBIDDEN', `${cashier.code}: ${cashier.error}`);
-  const virtual = await runSolo(url, 'directTransfer', {
-    fromWarehouseId: 'wh-au-co', toWarehouseId: 'wh-in-transit',
-    dispatcherId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: `${k}-v`,
-    items: [{ editionId, quantity: 1 }],
-  });
-  ok('T-FC cap khong allowlist bi FORBIDDEN', !virtual.success && virtual.code === 'FORBIDDEN', `${virtual.code}: ${virtual.error}`);
-  const nokey = await runSolo(url, 'dispatch', {
-    fromWarehouseId: 'wh-au-co', toWarehouseId: 'wh-quynh-mai',
-    dispatcherId: 'cp3-a',
-    items: [{ editionId, quantity: 1 }],
-  });
+  // 2. Cặp ngoài allowlist -> FORBIDDEN (role đúng, env thiếu cặp).
+  const outside = await soloDirect({
+    ...base, toWarehouseId: 'wh-du-phong', documentRef: `DOC-${k}-o`,
+    actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: `${k}-o`,
+  }, allowEnv);
+  ok('T-FC cap ngoai allowlist bi FORBIDDEN', !outside.success && outside.code === 'FORBIDDEN', `${outside.code}: ${outside.error}`);
+  // 3. Kho virtual -> FORBIDDEN.
+  const virtual = await soloDirect({
+    ...base, toWarehouseId: 'wh-in-transit', documentRef: `DOC-${k}-v`,
+    actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: `${k}-v`,
+  }, allowEnv);
+  ok('T-FC kho virtual bi FORBIDDEN', !virtual.success && virtual.code === 'FORBIDDEN', `${virtual.code}: ${virtual.error}`);
+  // 4. Thiếu key -> INVALID_INPUT.
+  const nokey = await soloDirect({
+    ...base, documentRef: `DOC-${k}-n`,
+    actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER',
+  }, allowEnv);
   ok('T-FC thieu key tra INVALID_INPUT', !nokey.success && nokey.code === 'INVALID_INPUT', `${nokey.code}: ${nokey.error}`);
 }
 
@@ -467,6 +515,7 @@ async function main() {
   await probeTRR();
   await probeTRC();
   await probeTDP();
+  await probeTDest();
   await probeTIK();
   await probeDispatchReplay();
   await probeReceiveReplayConflict();

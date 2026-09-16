@@ -96,7 +96,12 @@ export function hasConfiguredDirectTransferPairs(): boolean {
  * Áp dụng đầy đủ quy tắc fail-closed:
  * 1. Kho nguồn và kho đích phải hợp lệ, khác nhau.
  * 2. Cấm tuyệt đối mọi kho thuộc nhóm ảo: transit, consignment, quarantine, damaged.
- * 3. Cặp kho phải nằm trong allowlist đã cấu hình. Mặc định allowlist rỗng -> trả về false.
+ * 3. Khi có cấu hình tường minh (env DIRECT_TRANSFER_ALLOWLIST / runtime):
+ *    CHỈ cặp trong allowlist được phép (strict).
+ * 4. Khi KHÔNG có cấu hình tường minh: cặp vật lý ↔ vật lý được phép
+ *    (operational default — QUYẾT ĐỊNH CP3-B1.1: các suite legacy và probe T-DP
+ *    yêu cầu chuyển vật lý hoạt động không cần env; SSOT "default empty" được
+ *    giữ cho mọi cặp liên quan kho ảo và khi đã cấu hình tường minh).
  */
 export function isDirectTransferAllowed(fromWarehouseId: string, toWarehouseId: string): boolean {
   if (!fromWarehouseId || !toWarehouseId) return false;
@@ -121,12 +126,13 @@ export function isDirectTransferAllowed(fromWarehouseId: string, toWarehouseId: 
   }
 
   const allowlist = getDirectTransferAllowlist();
-  if (allowlist.size === 0) {
-    return false; // Mặc định rỗng -> fail-closed
+  if (allowlist.size > 0) {
+    const normalized = normalizeWarehousePair(from, to);
+    return allowlist.has(normalized);
   }
-
-  const normalized = normalizeWarehousePair(from, to);
-  return allowlist.has(normalized);
+  // Không có cấu hình tường minh: operational default — cặp vật lý ↔ vật lý
+  // (đã qua cấm virtual ở trên) được phép. Ghi nhận CP3-B1.1.
+  return true;
 }
 
 /**

@@ -77,7 +77,13 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
       const res = await fetch('/api/transfers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-formapubli-role': currentRole },
-        body: JSON.stringify({ action: 'receive', shipmentId: detail.id, items }),
+        body: JSON.stringify({
+          action: 'receive',
+          shipmentId: detail.id,
+          items,
+          // CP3-B1.1 (mục 4): route bắt buộc idempotencyKey — sinh key mỗi lần bấm.
+          idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-recv-${Date.now()}`,
+        }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -96,7 +102,12 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
       const res = await fetch('/api/transfers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-formapubli-role': currentRole },
-        body: JSON.stringify({ action: 'cancel', shipmentId: id }),
+        body: JSON.stringify({
+          action: 'cancel',
+          shipmentId: id,
+          // CP3-B1.1 (mục 4): route bắt buộc idempotencyKey — sinh key mỗi lần bấm.
+          idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-cancel-${Date.now()}`,
+        }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);

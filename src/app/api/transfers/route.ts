@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      const result = await TransferService.cancel(shipmentId, {
+      const result = await TransferService.cancel({
         shipmentId,
         notes,
         idempotencyKey: cleanIdemKey,

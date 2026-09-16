@@ -87,19 +87,29 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { action } = body;
+    const actorContext = identity.actorContext;
+    const bodyKey = body.idempotencyKey;
+    const cleanBodyKey = typeof bodyKey === 'string' ? bodyKey.trim() : '';
 
     if (action === 'send') {
-      const { partnerId, fromWarehouseId, dispatcherId, vehicleInfo, notes, items } = body;
+      const { partnerId, fromWarehouseId, vehicleInfo, notes, items } = body;
       if (!partnerId || !fromWarehouseId || !items || !Array.isArray(items) || items.length === 0) {
         return NextResponse.json(
           { success: false, error: 'Thiếu đối tác, kho gửi hoặc danh sách hàng (items).' },
           { status: 400 }
         );
       }
+      if (!cleanBodyKey) {
+        return NextResponse.json(
+          { success: false, code: 'INVALID_INPUT', error: 'Bắt buộc cung cấp idempotencyKey cho thao tác gửi ký gửi.' },
+          { status: 400 }
+        );
+      }
       const result = await ConsignmentService.sendToConsignment({
         partnerId,
         fromWarehouseId,
-        dispatcherId: dispatcherId || actorHeader,
+        actorContext,
+        idempotencyKey: cleanBodyKey,
         vehicleInfo,
         notes,
         items: items.map((it: any) => ({
@@ -111,7 +121,7 @@ export async function POST(req: NextRequest) {
       recordAuditLog({
         action: 'TRANSFER_DISPATCH',
         actorRole: userRole,
-        actorId: dispatcherId || actorHeader,
+        actorId: actorHeader,
         resource: '/api/consignments',
         details: `Gửi ký gửi ${result.shipmentId} tới ${partnerId} (${result.totalQuantity} cuốn).`,
       });
@@ -119,18 +129,25 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'confirm-receipt') {
-      const { shipmentId, receiverId } = body;
+      const { shipmentId } = body;
       if (!shipmentId) {
         return NextResponse.json({ success: false, error: 'Thiếu mã phiếu (shipmentId).' }, { status: 400 });
       }
-      const result = await ConsignmentService.confirmConsignmentReceipt(
+      if (!cleanBodyKey) {
+        return NextResponse.json(
+          { success: false, code: 'INVALID_INPUT', error: 'Bắt buộc cung cấp idempotencyKey cho thao tác xác nhận nhận ký gửi.' },
+          { status: 400 }
+        );
+      }
+      const result = await ConsignmentService.confirmConsignmentReceipt({
         shipmentId,
-        receiverId || actorHeader
-      );
+        actorContext,
+        idempotencyKey: cleanBodyKey,
+      });
       recordAuditLog({
         action: 'TRANSFER_RECEIVE',
         actorRole: userRole,
-        actorId: receiverId || actorHeader,
+        actorId: actorHeader,
         resource: '/api/consignments',
         details: `Đại lý nhận hàng ký gửi phiếu ${shipmentId} (${result.status}).`,
       });
