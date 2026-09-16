@@ -522,39 +522,149 @@ export class ReturnService {
   }
 
   /**
-   * Hoàn tất phiếu (APPROVED -> COMPLETED): ghi RETURN_INBOUND nguyên tử.
-   * EXCHANGE kèm exchangeItems sẽ trừ kho cuốn thay thế trong cùng transaction.
+   * Hoàn tất phiếu REFUND (APPROVED -> COMPLETED). CP3-R2:
+   * - actorContext + idempotencyKey bắt buộc.
+   * - EXCHANGE / DAMAGED_REPLACE fail-closed giữ cho R3.
+   * - Toàn bộ trong một write tx: replay/fingerprint, đọc APPROVED,
+   *   kiểm tra lại quota, két OPEN (CASH), conditional update,
+   *   RETURN_INBOUND (NEW/QUARANTINE + RMA cùng tx), return_actions.
+   * - Refund dùng đúng refundAmount server đã chốt khi lập phiếu.
+   * - Không bút toán tiền riêng (báo cáo két đọc return_orders COMPLETED).
    */
-  static async complete(returnId: string, actorRole: string, exchangeItems?: ReturnItemInput[], actorContext?: ActorContext) {
-    if (actorContext) { actorRole = actorContext.role; }
-    const effActor = actorContext?.staffId ?? actorRole;
+  static async complete(
+    returnId: string, actorRole: string, exchangeItems?: ReturnItemInput[],
+    actorContext?: ActorContext, idempotencyKey?: string,
+  ) {
+    if (!actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác hoàn tất phiếu đổi/trả.');
+    }
+    actorRole = actorContext.role;
+    const effActor = actorContext.staffId.trim();
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden('Chỉ Manager/Owner được hoàn tất phiếu đổi/trả.');
     }
-    const { header, items } = await this.getById(returnId);
-    if (header.status !== 'APPROVED') throw AppError.conflict(`Phiếu đang ở trạng thái ${header.status}, cần DUYỆT trước khi hoàn tất.`);
+    const key = idempotencyKey?.trim() || '';
+    if (!key) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác hoàn tất phiếu đổi/trả.');
+    }
+    const fingerprint = canonicalHash({ action: 'COMPLETE', actorId: effActor, returnId });
 
-    const condition = header.inventoryDisposition === 'RESTOCK' ? 'NEW' : 'QUARANTINE';
-    const exLines = exchangeItems || [];
-    if (header.returnType === 'EXCHANGE' && exLines.length === 0) {
-      throw AppError.invalid('Phiếu EXCHANGE bắt buộc kèm cuốn thay thế (exchangeItems).');
-    }
-    if (header.returnType !== 'EXCHANGE' && exLines.length > 0) {
-      throw AppError.invalid('Chỉ phiếu EXCHANGE mới có cuốn thay thế.');
-    }
-    for (const ex of exLines) {
-      if (!ex.editionId || ex.quantity <= 0 || !Number.isInteger(ex.quantity)) {
-        throw AppError.invalid(`Cuốn thay thế ${ex.editionId} phải có số lượng nguyên > 0.`);
-      }
-      const exEditionId: string = ex.editionId;
-      // Contract §3.3.4: cuốn thay thế cũng phải tôn trọng ATP giữ chỗ
-      const { OrderService } = await import('./order.service');
-      const atpEx = await OrderService.getATP(exEditionId, header.targetWarehouseId);
-      if (atpEx < ex.quantity) throw AppError.atp(`Không đủ tồn khả dụng cuốn thay thế ${exEditionId} (còn ${atpEx}, cần ${ex.quantity}). Rollback toàn bộ.`);
-    }
+    return await withDbRetry(() =>
+      db.transaction(async (tx) => {
+        // 1. Replay check.
+        const prior: any[] = await tx
+          .select()
+          .from(returnActions)
+          .where(eq(returnActions.idempotencyKey, key))
+          .limit(1);
+        if (prior.length > 0) {
+          if (prior[0].fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${key}" đã được sử dụng cho một thao tác hoàn tất khác.`
+            );
+          }
+          return { returnId, status: prior[0].resultingStatus, isDuplicate: true as const };
+        }
 
-    await withDbRetry(async () => {
-      await db.transaction(async (tx) => {
+        // 2. Đọc phiếu: phải APPROVED.
+        const header: any = (
+          await tx.select().from(returnOrders).where(eq(returnOrders.id, returnId)).limit(1)
+        )[0];
+        if (!header) throw AppError.invalid(`Không tìm thấy phiếu đổi/trả ${returnId}.`);
+        if (header.status !== 'APPROVED') {
+          throw AppError.conflict(
+            `STATE_CONFLICT: Phiếu ${returnId} đang ở trạng thái ${header.status}, cần APPROVED để hoàn tất.`
+          );
+        }
+
+        // 3. R2 fail-closed: chỉ REFUND được complete.
+        if (header.returnType !== 'REFUND') {
+          throw AppError.forbidden(
+            `FORBIDDEN: Phiếu loại ${header.returnType} chưa được hoàn tất trong R2 (giữ cho R3).`
+          );
+        }
+        if (exchangeItems && exchangeItems.length > 0) {
+          throw AppError.invalid('R2 không nhận cuốn thay thế (exchangeItems thuộc R3).');
+        }
+
+        const items: any[] = await tx
+          .select()
+          .from(returnOrderItems)
+          .where(eq(returnOrderItems.returnId, returnId));
+
+        // 4. Kiểm tra lại quota (trừ chính phiếu này).
+        const orderLines: any[] = await tx
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, header.orderId));
+        const soldByLine = new Map(orderLines.map((l: any) => [l.id, l.quantity]));
+        const heldRows: any[] = await tx
+          .select({ orderItemId: returnOrderItems.orderItemId, quantity: returnOrderItems.quantity, status: returnOrders.status, returnId: returnOrders.id })
+          .from(returnOrderItems)
+          .innerJoin(returnOrders, eq(returnOrderItems.returnId, returnOrders.id))
+          .where(eq(returnOrders.orderId, header.orderId));
+        const heldOther = new Map<string, number>();
+        for (const r of heldRows) {
+          if (r.status === 'REJECTED' || r.status === 'VOIDED') continue;
+          if (r.returnId === returnId) continue;
+          if (!r.orderItemId) continue;
+          heldOther.set(r.orderItemId, (heldOther.get(r.orderItemId) || 0) + r.quantity);
+        }
+        for (const it of items) {
+          const sold = soldByLine.get(it.orderItemId) ?? 0;
+          const others = heldOther.get(it.orderItemId) || 0;
+          if (it.quantity + others > sold) {
+            throw AppError.overReturnLimit(
+              `Vượt số lượng đã bán khi hoàn tất: dòng ${it.orderItemId} đã bán ${sold}, phiếu khác giữ ${others}, phiếu này ${it.quantity}.`
+            );
+          }
+        }
+
+        // 5. Két: đơn CASH + refund > 0 -> session phải OPEN, đúng kho, đúng chủ.
+        const refundAmount = header.refundAmount || 0;
+        if (refundAmount > 0) {
+          const origin: any = (
+            await tx.select().from(orders).where(eq(orders.id, header.orderId)).limit(1)
+          )[0];
+          if (origin && origin.paymentMethod === 'CASH') {
+            if (!header.cashboxSessionId) {
+              throw AppError.invalid('Hoàn tiền mặt bắt buộc gắn phiên két ca (cashboxSessionId).');
+            }
+            const sess: any = (
+              await tx.select().from(cashboxSessions).where(eq(cashboxSessions.id, header.cashboxSessionId)).limit(1)
+            )[0];
+            if (!sess || sess.status !== 'OPEN') {
+              throw AppError.conflict(
+                `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không OPEN — rollback toàn bộ phiếu hoàn.`
+              );
+            }
+            if (sess.warehouseId !== header.targetWarehouseId) {
+              throw AppError.conflict(
+                `STATE_CONFLICT: Két ${sess.id} thuộc kho ${sess.warehouseId}, không khớp kho trả ${header.targetWarehouseId} — rollback toàn bộ.`
+              );
+            }
+            if (sess.cashierId !== effActor) {
+              throw AppError.forbidden(
+                `FORBIDDEN: Két ${sess.id} thuộc thu ngân ${sess.cashierId}, người hoàn tất ${effActor} không phải chủ sở hữu — rollback toàn bộ.`
+              );
+            }
+          }
+        }
+
+        // 6. Conditional update APPROVED -> COMPLETED.
+        const upd: any = await tx.run(sql`
+          UPDATE return_orders
+          SET status = 'COMPLETED', decided_at = CURRENT_TIMESTAMP
+          WHERE id = ${returnId} AND status = 'APPROVED'
+        `);
+        if (upd.rowsAffected !== 1) {
+          throw AppError.conflict(
+            `STATE_CONFLICT: Phiếu ${returnId} đã rời APPROVED bởi giao dịch song song.`
+          );
+        }
+
+        // 7. RETURN_INBOUND + RMA cùng tx. RESTOCK -> NEW; DEFECTIVE_HOLD -> QUARANTINE.
+        const condition = header.inventoryDisposition === 'RESTOCK' ? 'NEW' : 'QUARANTINE';
         let lineIdx = 0;
         for (const it of items) {
           await InventoryService.recordMovement({
@@ -572,7 +682,14 @@ export class ReturnService {
           });
           lineIdx++;
         }
-        // Hàng lỗi: link sang luồng RMA kiểm định có sẵn
+        // Fault hook R-ATOMIC (test-only): ép lỗi SAU inbound để kiểm chứng rollback.
+        // Chỉ kích hoạt khi BOTH env được set; mặc định production không ảnh hưởng.
+        if (
+          process.env.CP3_R2_FAULT === 'after-inbound' &&
+          process.env.CP3_R2_FAULT_RETURN === returnId
+        ) {
+          throw AppError.conflict('CP3_R2_FAULT: lỗi ép kiểm chứng atomicity (after-inbound).');
+        }
         if (header.inventoryDisposition === 'DEFECTIVE_HOLD') {
           for (const it of items) {
             await tx.insert(rmaTickets).values({
@@ -590,30 +707,38 @@ export class ReturnService {
             });
           }
         }
-        // Cuốn thay thế: trừ kho trong cùng transaction (nguyên tử với hoàn kho)
-        let exIdx = 0;
-        for (const ex of exLines) {
-          if (!ex.editionId) throw AppError.invalid('Cuốn thay thế thiếu editionId.');
-          await InventoryService.recordMovement({
-            editionId: ex.editionId,
-            warehouseId: header.targetWarehouseId,
-            eventType: 'DISPATCH_SALE',
-            quantityDelta: -ex.quantity,
-            condition: 'NEW',
-            documentRef: header.returnCode,
-            note: `Xuất cuốn thay thế phiếu đổi ${header.returnCode}`,
-            actorId: effActor,
-            correlationId: returnId,
-            idempotencyKey: `idem-exchange-${returnId}-${exIdx}-${ex.editionId}`,
-            tx,
-          });
-          exIdx++;
-        }
-        await tx.update(returnOrders).set({ status: 'COMPLETED', decidedAt: new Date().toISOString() }).where(eq(returnOrders.id, returnId));
-      });
-    });
 
-    return { returnId, status: 'COMPLETED' };
+        // 8. Ghi return_actions (UNIQUE -> replay/CONFLICT).
+        try {
+          await tx.insert(returnActions).values({
+            id: `ra-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            returnId,
+            action: 'COMPLETE',
+            actorId: effActor,
+            resultingStatus: 'COMPLETED',
+            idempotencyKey: key,
+            fingerprint,
+          });
+        } catch (e: any) {
+          const hay = `${e?.message || ''} ${e?.code || ''}`;
+          if (!/UNIQUE constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(hay)) throw e;
+          const raced: any[] = await tx
+            .select()
+            .from(returnActions)
+            .where(eq(returnActions.idempotencyKey, key))
+            .limit(1);
+          if (raced.length === 0) throw e;
+          if (raced[0].fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${key}" đã được sử dụng cho một thao tác hoàn tất khác.`
+            );
+          }
+          return { returnId, status: raced[0].resultingStatus, isDuplicate: true as const };
+        }
+
+        return { returnId, status: 'COMPLETED', refundAmount, isDuplicate: false as const };
+      })
+    );
   }
 
   /**

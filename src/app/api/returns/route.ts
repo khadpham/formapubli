@@ -148,8 +148,10 @@ export async function POST(req: NextRequest) {
         body.returnId,
         userRole,
         Array.isArray(body.exchangeItems) ? body.exchangeItems.map((it: any) => ({
-          editionId: it.editionId, quantity: parseInt(it.quantity ?? 0, 10),
+          editionId: it.editionId, quantity: toQty(it.quantity ?? 0),
         })) : undefined,
+        actorContext,
+        body.idempotencyKey,
       );
       recordAuditLog({
         action: 'RETURN_COMPLETED', actorRole: userRole, actorId: actorHeader,
