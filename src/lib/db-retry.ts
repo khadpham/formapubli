@@ -16,9 +16,9 @@ export async function withDbRetry<T>(
   options: RetryOptions = {}
 ): Promise<T> {
   const {
-    maxRetries = 20,
+    maxRetries = 30,
     initialDelayMs = 25,
-    maxDelayMs = 250,
+    maxDelayMs = 300,
     maxTotalTimeMs = 15000,
   } = options;
 
@@ -45,10 +45,10 @@ export async function withDbRetry<T>(
         throw error;
       }
 
-      // Exponential backoff with jitter: delay = min(maxDelay, initialDelay * 2^(attempt-1)) + random jitter
-      const exponentialDelay = initialDelayMs * Math.pow(2, attempt - 1);
-      const jitter = Math.floor(Math.random() * 40);
-      const sleepTime = Math.min(maxDelayMs, exponentialDelay + jitter);
+      // Full jitter backoff: sleep = minDelay + random_between(0, min(maxDelay, initialDelay * 2^(attempt-1)))
+      // Tránh các worker retry cùng nhịp sau khi kết thúc contention, đảm bảo luôn nhường CPU (sleep >= 10ms)
+      const maxExponential = Math.min(maxDelayMs, initialDelayMs * Math.pow(2, attempt - 1));
+      const sleepTime = 10 + Math.floor(Math.random() * maxExponential);
 
       console.warn(
         `[DB Retry] SQLITE_BUSY/locked (Lần thử ${attempt}/${maxRetries}, đã qua ${totalElapsed}ms), đợi ${sleepTime}ms...`

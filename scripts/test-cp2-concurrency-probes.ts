@@ -167,7 +167,8 @@ async function main() {
       )
     );
 
-  const configsA = Array.from({ length: 10 }).map((_, idx) => ({
+  const keysA = Array.from({ length: 10 }).map((_, idx) => `idem-probe-a-${idx}-${Date.now()}`);
+  const configsA = keysA.map((key, idx) => ({
     action: 'createOrder' as const,
     payload: {
       warehouseId: testWarehouse,
@@ -177,7 +178,7 @@ async function main() {
       fiscalScope: 'INTERNAL_MANAGEMENT',
       cashierId: `cashier-a-${idx}`,
       confirmImmediately: true,
-      idempotencyKey: `idem-probe-a-${idx}-${Date.now()}`,
+      idempotencyKey: key,
       items: [{ editionId: edProbeA, quantity: 1 }],
     },
   }));
@@ -215,16 +216,26 @@ async function main() {
       f.error === 'TIMEOUT_EXCEEDED (Worker hung)'
   );
 
-  const ordersInDbA = winningOrderId
-    ? await db.select().from(orders).where(eq(orders.id, winningOrderId))
+  // Truy vấn toàn bộ 10 key của Probe A trong bảng orders
+  const ordersFromKeysA = await db
+    .select()
+    .from(orders)
+    .where(inArray(orders.idempotencyKey, keysA));
+
+  // Kiểm tra orderItems gắn với bất kỳ đơn nào thuộc keysA
+  const orderIdsA = ordersFromKeysA.map((o) => o.id);
+  const orderItemsFromA = orderIdsA.length > 0
+    ? await db.select().from(orderItems).where(inArray(orderItems.orderId, orderIdsA))
     : [];
-  const orderItemsInDbA = winningOrderId
-    ? await db.select().from(orderItems).where(eq(orderItems.orderId, winningOrderId))
-    : [];
+
   const validOrderRecordA =
-    ordersInDbA.length === 1 && orderItemsInDbA.length === 1 && orderItemsInDbA[0].quantity === 1;
+    ordersFromKeysA.length === 1 &&
+    orderItemsFromA.length === 1 &&
+    orderItemsFromA[0].quantity === 1 &&
+    ordersFromKeysA[0].id === winningOrderId;
 
   console.log(`- Kết quả: ${successesA.length} tiến trình thành công, ${failuresA.length} bị từ chối.`);
+  console.log(`- Số đơn ghi vào DB ứng với 10 key của Probe A: ${ordersFromKeysA.length}`);
   console.log(`- Tồn kho sau cuộc đua: ${balAfterA} cuốn`);
   console.log(`- Số bút toán bán hàng DISPATCH_SALE mới phát sinh: ${newLedgersA}`);
 
@@ -246,12 +257,13 @@ async function main() {
       balAfter: balAfterA,
       newLedgers: newLedgersA,
       winnerLedgerCount: winnerLedger.length,
+      ordersFromKeysACount: ordersFromKeysA.length,
       validOrderRecordA,
       failureErrors: failuresA.map((f) => ({ error: f.error, code: f.code })),
     });
     process.exit(1);
   }
-  console.log('✅ PROBE A ĐẠT: Đúng 1 tiến trình mua thành công, 9 tiến trình nhận INSUFFICIENT_ATP, tồn kho = 0, đúng 1 order + 1 item set, 1 ledger!\n');
+  console.log('✅ PROBE A ĐẠT: Đúng 1 tiến trình mua thành công, 9 tiến trình nhận INSUFFICIENT_ATP, tồn kho = 0, đúng 1 order + 1 item set, 0 dữ liệu mồ côi từ 9 workers thua cuộc, 1 ledger!\n');
 
   // ---------------------------------------------------------------------------
   // PROBE B: 2 TIẾN TRÌNH ĐỘC LẬP CÙNG DUYỆT 1 ĐƠN PENDING
@@ -690,6 +702,135 @@ async function main() {
     ...basePayload,
     cashboxSessionId: undefined,
   });
+
+  // 7. Sửa giftReason
+  const giftKey = `idem-gift-test-${Date.now()}`;
+  const baseGiftPayload = {
+    warehouseId: testWarehouse,
+    channel: 'FAIR_EVENT' as const,
+    customerName: 'Khách Nhận Quà',
+    paymentMethod: 'CASH' as const,
+    fiscalScope: 'INTERNAL_MANAGEMENT' as const,
+    cashierId: 'cashier-e',
+    confirmImmediately: true,
+    idempotencyKey: giftKey,
+    discountRate: 1.0,
+    isGift: true,
+    giftReason: 'Tặng độc giả thân thiết',
+    items: [{ editionId: edProbeE, quantity: 1, unitDiscountRate: 1.0 }],
+  };
+  await OrderService.createOrder(baseGiftPayload);
+  // Replay đổi giftReason -> Phải chặn với IDEMPOTENCY_CONFLICT
+  await assertConflictField('Khác giftReason (đổi lý do quà tặng)', {
+    ...baseGiftPayload,
+    giftReason: 'Tặng đối tác ngoại giao',
+  });
+
+  // 8. Replay đơn combo khi linh kiện đã hết hàng trong kho
+  console.log('--- TEST EDGE CASE: REPLAY COMBO KHI HẾT HÀNG LINH KIỆN ---');
+  // Cài đặt tồn linh kiện edProbeE = đúng 1 cuốn
+  const balBeforeCombo = await InventoryService.getBalance(edProbeE, testWarehouse, 'NEW');
+  if (balBeforeCombo !== 1) {
+    await InventoryService.recordMovement({
+      editionId: edProbeE,
+      warehouseId: testWarehouse,
+      eventType: 'ADJUSTMENT',
+      quantityDelta: 1 - balBeforeCombo,
+      condition: 'NEW',
+      documentRef: 'INIT-COMBO-DEPLETE',
+      actorId: 'probe-runner',
+      idempotencyKey: `probe-combo-init-${Date.now()}`,
+    });
+  }
+
+  const comboKey = `idem-combo-deplete-${Date.now()}`;
+  const comboPayload = {
+    warehouseId: testWarehouse,
+    channel: 'FAIR_EVENT' as const,
+    customerName: 'Khách Mua Combo Duy Nhất',
+    paymentMethod: 'CASH' as const,
+    fiscalScope: 'INTERNAL_MANAGEMENT' as const,
+    cashierId: 'cashier-e',
+    confirmImmediately: true,
+    idempotencyKey: comboKey,
+    discountRate: 0.0,
+    bundles: [{ bundleId: testBundle.bundleId, quantity: 1 }],
+  };
+
+  const firstComboOrder = await OrderService.createOrder(comboPayload);
+  const balAfterFirstCombo = await InventoryService.getBalance(edProbeE, testWarehouse, 'NEW');
+  if (balAfterFirstCombo !== 0) {
+    throw new Error(`Tồn kho sau khi bán combo phải bằng 0 nhưng là ${balAfterFirstCombo}`);
+  }
+
+  // Thử mua thêm 1 đơn mới khác key -> Phải ném lỗi (thiếu linh kiện / ATP)
+  try {
+    await OrderService.createOrder({
+      ...comboPayload,
+      idempotencyKey: `other-combo-key-${Date.now()}`,
+    });
+    throw new Error('Đơn mới khi hết tồn kho phải fail nhưng đã thành công!');
+  } catch (err: any) {
+    if (
+      err.code !== 'INSUFFICIENT_ATP' &&
+      !err.message?.includes('HẾT HÀNG KHẢ DỤNG') &&
+      !err.message?.includes('Hộp sách không khả dụng')
+    ) {
+      throw new Error(`Bán quá tồn combo phải ném ATP/hộp sách không khả dụng error nhưng nhận: ${err.message}`);
+    }
+    console.log('  ✓ Đơn combo mới khi hết hàng: Chặn đứng do hết tồn linh kiện');
+  }
+
+  // Replay cùng key và cùng payload cũ khi tồn đã = 0 -> Phải trả lại đơn cũ mà không báo lỗi ATP
+  const replayComboOrder = await OrderService.createOrder(comboPayload);
+  if (!replayComboOrder.isDuplicate || replayComboOrder.orderId !== firstComboOrder.orderId) {
+    throw new Error('Replay đơn combo khi tồn = 0 không trả về đúng đơn cũ!');
+  }
+  console.log('  ✓ Replay đơn combo khi tồn = 0: Trả về đơn cũ thành công (isDuplicate: true)');
+
+  // 9. Payload chứa bundle trùng lặp (ví dụ [{bundleId, 1}, {bundleId, 2}])
+  console.log('--- TEST EDGE CASE: PAYLOAD CHỨA BUNDLE TRÙNG LẶP ---');
+  // Cung cấp thêm 5 cuốn vào kho để test
+  await InventoryService.recordMovement({
+    editionId: edProbeE,
+    warehouseId: testWarehouse,
+    eventType: 'ADJUSTMENT',
+    quantityDelta: 5,
+    condition: 'NEW',
+    documentRef: 'INIT-DUP-BUNDLE',
+    actorId: 'probe-runner',
+    idempotencyKey: `probe-dup-bundle-init-${Date.now()}`,
+  });
+
+  const dupBundleKey = `idem-dup-bundle-${Date.now()}`;
+  const dupBundlePayload = {
+    warehouseId: testWarehouse,
+    channel: 'FAIR_EVENT' as const,
+    customerName: 'Khách Mua Combo Trùng Dòng',
+    paymentMethod: 'CASH' as const,
+    fiscalScope: 'INTERNAL_MANAGEMENT' as const,
+    cashierId: 'cashier-e',
+    confirmImmediately: true,
+    idempotencyKey: dupBundleKey,
+    discountRate: 0.0,
+    bundles: [
+      { bundleId: testBundle.bundleId, quantity: 1 },
+      { bundleId: testBundle.bundleId, quantity: 2 },
+    ],
+  };
+
+  const dupBundleOrder = await OrderService.createOrder(dupBundlePayload);
+  // Tổng quantity combo là 3 bộ -> orderItems phải có tổng quantity = 3
+  if (dupBundleOrder.totalQuantity !== 3) {
+    throw new Error(`Đơn combo gộp trùng dòng phải có 3 cuốn nhưng có ${dupBundleOrder.totalQuantity}`);
+  }
+
+  // Replay payload trùng dòng -> Trả về đơn cũ
+  const replayDupBundle = await OrderService.createOrder(dupBundlePayload);
+  if (!replayDupBundle.isDuplicate || replayDupBundle.orderId !== dupBundleOrder.orderId) {
+    throw new Error('Replay combo trùng dòng không trả về đúng đơn cũ!');
+  }
+  console.log('  ✓ Gộp bundle trùng lặp và replay idempotent thành công');
 
   console.log('✅ PROBE E3 ĐẠT: Tất cả các trường vật chất đều bị chặn đứng với IDEMPOTENCY_CONFLICT!\n');
 

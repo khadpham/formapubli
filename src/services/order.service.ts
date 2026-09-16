@@ -141,7 +141,9 @@ export class OrderService {
     }
     // P2-08/09: két ca gắn vào đơn phải OPEN + đúng kho + đúng thu ngân (chống bán ké két)
     if (params.cashboxSessionId) {
-      const sessRows = await db.select().from(cashboxSessions).where(eq(cashboxSessions.id, params.cashboxSessionId)).limit(1);
+      const sessRows = await withDbRetry(async () => {
+        return await db.select().from(cashboxSessions).where(eq(cashboxSessions.id, params.cashboxSessionId!)).limit(1);
+      });
       if (sessRows.length === 0) throw AppError.invalid('Phiên két ca không tồn tại.');
       const sess = sessRows[0];
       if (sess.status !== 'OPEN') throw AppError.invalid(`Phiên két ca đã ${sess.status}, không ghi đơn vào két đóng.`);
@@ -166,16 +168,24 @@ export class OrderService {
     }
 
     const looseItems = items || [];
-    const bundleOrders = params.bundles || [];
+    // Gộp bundleOrders theo bundleId trước khi validate availability, pricing và tạo fingerprint
+    const rawBundleOrders = params.bundles || [];
+    const mergedBundleMap = new Map<string, number>();
+    for (const b of rawBundleOrders) {
+      if (!Number.isInteger(b.quantity) || b.quantity <= 0) {
+        throw AppError.invalid(`Số lượng combo ${b.bundleId} phải là số nguyên > 0.`);
+      }
+      mergedBundleMap.set(b.bundleId, (mergedBundleMap.get(b.bundleId) || 0) + b.quantity);
+    }
+    const bundleOrders = Array.from(mergedBundleMap.entries()).map(([bundleId, quantity]) => ({
+      bundleId,
+      quantity,
+    }));
+
     // FIX-02: số lượng phải nguyên (chặn tồn kho phân số 1.5 cuốn)
     for (const it of looseItems) {
       if (!Number.isInteger(it.quantity) || it.quantity <= 0) {
         throw AppError.invalid(`Số lượng bán cho ấn bản ${it.editionId} phải là số nguyên > 0.`);
-      }
-    }
-    for (const b of bundleOrders) {
-      if (!Number.isInteger(b.quantity) || b.quantity <= 0) {
-        throw AppError.invalid(`Số lượng combo ${b.bundleId} phải là số nguyên > 0.`);
       }
     }
     // FIX-03: trần chiết khấu tầng service (API route có thể bị bypass khi gọi trực tiếp).
@@ -227,6 +237,62 @@ export class OrderService {
       throw AppError.invalid('Đơn hàng phải có ít nhất 1 đầu sách hoặc 1 combo.');
     }
 
+    // Với đơn combo (bundles > 0): nếu caller truyền idempotencyKey và đơn đã tồn tại trong DB:
+    // Kiểm tra fingerprint ngay; nếu khớp, trả về đơn cũ mà không fail do validateAvailability khi tồn linh kiện đã cạn.
+    // Đối với đơn hàng thông thường (không combo), kiểm tra idempotency diễn ra hoàn toàn bên trong write transaction.
+    if (params.idempotencyKey && bundleOrders.length > 0) {
+      const existingPre = await withDbRetry(async () => {
+        return await db
+          .select()
+          .from(orders)
+          .where(eq(orders.idempotencyKey, params.idempotencyKey!))
+          .limit(1);
+      });
+
+      if (existingPre.length > 0) {
+        await this.assertSameOrderContent(
+          existingPre[0].id,
+          {
+            warehouseId,
+            channel,
+            paymentMethod,
+            fiscalScope,
+            discountRate,
+            cashboxSessionId: params.cashboxSessionId,
+            effCashierId,
+            customerId: params.customerId,
+            partnerId,
+            customerName,
+            isGift,
+            giftReason: params.giftReason,
+            items: looseItems,
+            bundles: bundleOrders,
+          },
+          db
+        );
+
+        const existingLines = await db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existingPre[0].id));
+
+        return {
+          orderId: existingPre[0].id,
+          orderCode: existingPre[0].orderCode,
+          warehouseId: existingPre[0].warehouseId,
+          customerName: existingPre[0].customerName,
+          subtotal: existingPre[0].subtotal,
+          discountAmount: existingPre[0].discountAmount,
+          finalAmount: existingPre[0].finalAmount,
+          fiscalScope: existingPre[0].fiscalScope,
+          itemsCount: existingLines.length,
+          totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          status: existingPre[0].status,
+          isDuplicate: true,
+        };
+      }
+    }
+
     // Mở rộng combo thành dòng linh kiện (bottleneck validate + tỉ trọng giá).
     // Combo do management định giá sẵn nên KHÔNG cộng chiết khấu đơn (unitDiscountRate = 0).
     const bundleLines: Array<{
@@ -264,15 +330,17 @@ export class OrderService {
 
     // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data)
     const editionIds = stockCheckItems.map((i) => i.editionId);
-    const dbEditions = await db
-      .select({
-        id: editions.id,
-        code: editions.code,
-        title: editions.title,
-        coverPrice: editions.coverPrice,
-      })
-      .from(editions)
-      .where(inArray(editions.id, editionIds));
+    const dbEditions = await withDbRetry(async () => {
+      return await db
+        .select({
+          id: editions.id,
+          code: editions.code,
+          title: editions.title,
+          coverPrice: editions.coverPrice,
+        })
+        .from(editions)
+        .where(inArray(editions.id, editionIds));
+    });
 
     const editionMap = new Map(dbEditions.map((e) => [e.id, e]));
 
@@ -598,11 +666,15 @@ export class OrderService {
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có trạng thái quà tặng khác (${dbIsGift} vs ${wantIsGift}).`
       );
     }
-    if (wantIsGift && want.giftReason) {
-      const reason = want.giftReason.trim();
-      if (!ord.note || !ord.note.includes(reason)) {
+    if (wantIsGift) {
+      // Chuẩn hóa lý do từ payload mới: giftReason hoặc default
+      const wantReason = (want.giftReason || '').trim() || 'Tặng sách / Quà tặng sự kiện';
+      // Trích xuất lý do đã lưu trong note: [QUÀ TẶNG: ...]
+      const match = ord.note ? ord.note.match(/\[QUÀ TẶNG:\s*(.*?)\]/) : null;
+      const dbReason = match ? match[1].trim() : '';
+      if (dbReason !== wantReason) {
         throw AppError.idempotency(
-          `Idempotency-Key đã gắn với đơn ${ord.orderCode} có lý do quà tặng khác.`
+          `Idempotency-Key đã gắn với đơn ${ord.orderCode} có lý do quà tặng khác ("${dbReason}" vs "${wantReason}").`
         );
       }
     }
