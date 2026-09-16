@@ -247,28 +247,31 @@ async function probeExVal() {
 }
 
 // ------------------------------------------------------------ R-EX-RACE ---
+// Lane A phân tích đúng: cuốn thay thế phải là ấn bản ĐỘC LẬP (edB tồn 1),
+// không thể là chính cuốn vừa hoàn kho (inbound +1 rồi mới xuất -1 thì cả
+// hai bên đều hợp lệ về mặt vật lý). Đua sale 1×edB vs complete thay thế edB.
 async function probeExRace() {
-  console.log('--- R-EX-RACE: sale dua complete EXCHANGE cuon cuoi ---');
-  const { url, edA } = await freshProbeDb('EXRACE', 50);
+  console.log('--- R-EX-RACE: sale dua complete EXCHANGE cuon cuoi (edB doc lap) ---');
+  const { url, edA, edB } = await freshProbeDb('EXRACE', 50);
   const k = `cp3x-race-${Date.now()}`;
-  // Xả edA về đúng 2 cuốn: bán 48. approvedExchange bán thêm 1 (tồn 1).
-  // Đua: sale 1 vs complete thay thế 1 trên tồn 1 -> đúng 1 thắng.
-  const drain = await runSolo(url, 'createOrder', salePayload(edA, 48, `${k}-drain`));
-  ok('R-EX-RACE setup ton edA = 2', drain.success, drain.error);
+  // Xả edB về đúng 1 cuốn (50 - 49).
+  const drain = await runSolo(url, 'createOrder', salePayload(edB, 49, `${k}-drain`));
+  ok('R-EX-RACE setup ton edB = 1', drain.success, drain.error);
   if (!drain.success) return;
+  // Phiếu EXCHANGE trả edA (tồn edA còn nhiều, không tranh).
   const fx = await approvedExchange(url, edA, `${k}-fx`);
   ok('R-EX-RACE setup phieu EXCHANGE', fx.ok, !fx.ok ? (fx as any).error : undefined);
   if (!fx.ok) return;
   const results = await runRace(url, [
     {
       action: 'createOrder',
-      payload: salePayload(edA, 1, `${k}-sale`),
+      payload: salePayload(edB, 1, `${k}-sale`),
     },
     {
       action: 'complete',
       payload: {
         returnId: (fx as any).returnId, actorStaffId: 'cp3x-mgr', actorRole: 'ROLE_MANAGER',
-        idempotencyKey: `${k}-done`, exchangeItems: [{ editionId: edA, quantity: 1 }],
+        idempotencyKey: `${k}-done`, exchangeItems: [{ editionId: edB, quantity: 1 }],
       },
     },
   ]);
@@ -298,7 +301,8 @@ async function probeExIdem() {
     { action: 'complete', payload: { ...base } },
   ]);
   const rsucc = rr.filter((r) => r.success);
-  ok('R-EX-IDEM replay tra isDuplicate', rsucc.length === 2 && rsucc.every((r) => r.data?.isDuplicate === true),
+  ok('R-EX-IDEM replay: 1 commit + 1 duplicate',
+    rsucc.length === 2 && rsucc.some((r) => r.data?.isDuplicate === false) && rsucc.some((r) => r.data?.isDuplicate === true),
     JSON.stringify(rr.map((r) => ({ s: r.success, c: r.code, d: r.data?.isDuplicate }))));
   const swapped = await runSolo(url, 'complete', {
     returnId: rid, actorStaffId: 'cp3x-mgr', actorRole: 'ROLE_MANAGER', idempotencyKey: key,
