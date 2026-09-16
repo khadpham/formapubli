@@ -303,8 +303,8 @@ After CP3-A is accepted:
 | CP3-A (schema + contract) | PASS | Fresh migration 0000→0016, upgrade 0015→0016, uniqueness checks, TypeScript, unchanged production DB |
 | CP3-B Transfer (shipments, direct transfer, idempotency, fail-closed) | PASS | `test-cp3-transfer-concurrency` + `test-cp3-migrations` green on integrated head, full 32 isolated suites green, TypeScript + production build green, production DB untouched |
 | CP3-R1 Request / Approve / Reject (orderItemId quota, fingerprint idempotency, conditional transitions) | PASS | `test-cp3-return-concurrency` (R-QQ/R-AR/R-I1 + validation) green on integrated head, legacy returns green, TypeScript + production build green, production DB untouched |
-| CP3-R2 Complete / Refund / RMA | OPEN | Not started — no code or tests accepted before audit completes |
-| CP3-R3 Exchange / Void / Reconciliation | OPEN | Not started — no code or tests accepted before audit completes |
+| CP3-R2 Complete / Refund / RMA | PASS | `test-cp3-return-complete` (R-CC/R-DQ/R-CASH/R-I2/R-ATOMIC) 27/27 green, atomic inbound/RMA/action, cashbox revalidation & ownership guard, fail-closed others |
+| CP3-R3 Exchange / Void / Reconciliation | PASS | `test-cp3-return-exchange-void` 24/24 green + `test-cp3-reconciliation` 14/14 green, full 36 isolated suites green, TypeScript green, production DB untouched |
 
 ## 12. Acceptance probes
 
