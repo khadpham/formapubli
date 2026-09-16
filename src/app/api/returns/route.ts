@@ -176,7 +176,13 @@ export async function POST(req: NextRequest) {
       if (!isPrivileged(userRole)) {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được hủy phiếu.' }, { status: 403 });
       }
-      const result = await ReturnService.voidReturn(body.returnId, userRole, body.voidReason);
+      const result = await ReturnService.voidReturn(
+        body.returnId,
+        userRole,
+        body.voidReason,
+        actorContext,
+        body.idempotencyKey,
+      );
       recordAuditLog({
         action: 'RETURN_VOIDED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/returns', details: `Hủy phiếu ${body.returnId} (lý do: ${body.voidReason}).`,

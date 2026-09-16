@@ -121,19 +121,13 @@ async function run() {
     items: [{ editionId: edB, quantity: 1 }],
   });
   await ReturnService.approve(req2.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
-  // CP3-R2: DAMAGED_REPLACE complete fail-closed giữ cho R3 (không vào QUARANTINE/RMA ở R2).
-  let dqBlocked = false;
-  try {
-    await ReturnService.complete(req2.returnId, 'ROLE_MANAGER', undefined, RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-done'));
-  } catch (e: any) {
-    dqBlocked = e.code === 'FORBIDDEN';
-  }
+  await ReturnService.complete(req2.returnId, 'ROLE_MANAGER', undefined, RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-done'));
   const newAfter = await InventoryService.getBalance(edB, 'wh-au-co', 'NEW');
   const quarAfter = await InventoryService.getBalance(edB, 'wh-au-co', 'QUARANTINE');
   const rma = await db.select().from(rmaTickets).where(eq(rmaTickets.orderId, sale2.orderId));
   ok(
-    '4. DAMAGED_REPLACE complete fail-closed ở R2 (giữ cho R3)',
-    dqBlocked && newAfter === newBefore && quarAfter === quarBefore && rma.length === 0,
+    '4. Hàng lỗi vào QUARANTINE + RMA, xuất 1 cuốn NEW thay thế',
+    newAfter === newBefore - 1 && quarAfter - quarBefore === 1 && rma.length > 0,
     `NEW ${newBefore}→${newAfter}, Q ${quarBefore}→${quarAfter}`
   );
 
@@ -212,16 +206,15 @@ async function run() {
   });
   await ReturnService.approve(req7.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
   const ledBefore = (await db.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, req7.returnId))).length;
-  // CP3-R2: EXCHANGE complete fail-closed giữ cho R3 (không trừ kho thay thế ở R2).
-  let exBlocked = false;
+  let rolledBack = false;
   try {
     await ReturnService.complete(req7.returnId, 'ROLE_MANAGER', [{ editionId: edB, quantity: 99999 }], RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-done'));
   } catch (e: any) {
-    exBlocked = e.code === 'FORBIDDEN';
+    rolledBack = e.code === 'INSUFFICIENT_ATP' || e.code === 'INVALID_INPUT' || /Không đủ tồn|Giá trị sách/i.test(e.message);
   }
   const ledAfter = (await db.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, req7.returnId))).length;
   const st7 = await ReturnService.getById(req7.returnId);
-  ok('7. EXCHANGE complete fail-closed ở R2 (giữ cho R3)', exBlocked && ledAfter === ledBefore && st7.header.status === 'APPROVED');
+  ok('7. EXCHANGE thiếu hàng rollback nguyên tử', rolledBack && ledAfter === ledBefore && st7.header.status === 'APPROVED');
 
   // 8. VOID phiếu COMPLETED → bút toán đảo, tồn về mức trước complete
   // (BANK_TRANSFER để trung lập két — server tự tính refund > 0 cho REFUND).
@@ -241,7 +234,7 @@ async function run() {
   });
   await ReturnService.approve(req8.returnId, 'ROLE_MANAGER', 'manager-1', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-appr'));
   await ReturnService.complete(req8.returnId, 'ROLE_MANAGER', undefined, RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-done'));
-  await ReturnService.voidReturn(req8.returnId, 'ROLE_MANAGER', 'Test huy phieu');
+  await ReturnService.voidReturn(req8.returnId, 'ROLE_MANAGER', 'Test huy phieu', RCTX('manager-1', 'ROLE_MANAGER'), uniq('idem-void'));
   const postVoid = await InventoryService.getBalance(edC, 'wh-au-co', 'NEW');
   const st8 = await ReturnService.getById(req8.returnId);
   ok('8. VOID sinh bút toán đảo, tồn về đúng', st8.header.status === 'VOIDED' && postVoid === preVoid, `tồn ${preVoid}→${postVoid}`);

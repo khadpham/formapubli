@@ -1,6 +1,6 @@
-import { db, orders, orderItems, returnOrders, returnOrderItems, returnActions, inventoryLedger, rmaTickets, cashboxSessions } from '../db';
+import { db, orders, orderItems, editions, exchangeReplacementItems, returnOrders, returnOrderItems, returnActions, inventoryLedger, rmaTickets, cashboxSessions } from '../db';
 import { InventoryService } from './inventory.service';
-import { SELLABLE_WAREHOUSE_IDS } from './order.service';
+import { OrderService, SELLABLE_WAREHOUSE_IDS } from './order.service';
 import { eq, and, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { canonicalHash } from '../lib/transfer-fingerprint';
@@ -531,6 +531,17 @@ export class ReturnService {
    * - Refund dùng đúng refundAmount server đã chốt khi lập phiếu.
    * - Không bút toán tiền riêng (báo cáo két đọc return_orders COMPLETED).
    */
+  /**
+   * Hoàn tất phiếu đổi/trả (APPROVED -> COMPLETED). CP3-R3:
+   * - actorContext + idempotencyKey bắt buộc.
+   * - Hỗ trợ REFUND, EXCHANGE, DAMAGED_REPLACE.
+   * - REFUND: Két OPEN (nếu CASH + refund > 0), RETURN_INBOUND (NEW/QUARANTINE + RMA).
+   * - EXCHANGE: Kiểm tra đối ứng ngang giá VNĐ chính xác, kiểm tra ATP sách thay thế,
+   *   nhập sách trả + xuất sách đổi (DISPATCH_SALE) + ghi exchange_replacement_items.
+   * - DAMAGED_REPLACE: Đổi bảo hành 0đ, nhập lỗi QUARANTINE + RMA, xuất sách mới từ NEW.
+   * - Toàn bộ trong một write tx: replay/fingerprint, đọc APPROVED,
+   *   kiểm tra lại quota, conditional update, inventory movements, return_actions.
+   */
   static async complete(
     returnId: string, actorRole: string, exchangeItems?: ReturnItemInput[],
     actorContext?: ActorContext, idempotencyKey?: string,
@@ -547,7 +558,23 @@ export class ReturnService {
     if (!key) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác hoàn tất phiếu đổi/trả.');
     }
-    const fingerprint = canonicalHash({ action: 'COMPLETE', actorId: effActor, returnId });
+
+    const normalizedEx = Array.isArray(exchangeItems) && exchangeItems.length > 0
+      ? exchangeItems
+          .map((it) => ({
+            editionId: it.editionId?.trim() || '',
+            quantity: Number(it.quantity) || 0,
+          }))
+          .filter((it) => it.quantity > 0)
+          .sort((a, b) => a.editionId.localeCompare(b.editionId))
+      : undefined;
+
+    const fingerprint = canonicalHash({
+      action: 'COMPLETE',
+      actorId: effActor,
+      returnId,
+      ...(normalizedEx && normalizedEx.length > 0 ? { exchangeItems: normalizedEx } : {}),
+    });
 
     return await withDbRetry(() =>
       db.transaction(async (tx) => {
@@ -577,22 +604,12 @@ export class ReturnService {
           );
         }
 
-        // 3. R2 fail-closed: chỉ REFUND được complete.
-        if (header.returnType !== 'REFUND') {
-          throw AppError.forbidden(
-            `FORBIDDEN: Phiếu loại ${header.returnType} chưa được hoàn tất trong R2 (giữ cho R3).`
-          );
-        }
-        if (exchangeItems && exchangeItems.length > 0) {
-          throw AppError.invalid('R2 không nhận cuốn thay thế (exchangeItems thuộc R3).');
-        }
-
         const items: any[] = await tx
           .select()
           .from(returnOrderItems)
           .where(eq(returnOrderItems.returnId, returnId));
 
-        // 4. Kiểm tra lại quota (trừ chính phiếu này).
+        // 3. Kiểm tra lại quota (trừ chính phiếu này).
         const orderLines: any[] = await tx
           .select()
           .from(orderItems)
@@ -620,38 +637,120 @@ export class ReturnService {
           }
         }
 
-        // 5. Két: đơn CASH + refund > 0 -> session phải OPEN, đúng kho, đúng chủ.
-        const refundAmount = header.refundAmount || 0;
-        if (refundAmount > 0) {
-          const origin: any = (
-            await tx.select().from(orders).where(eq(orders.id, header.orderId)).limit(1)
-          )[0];
-          if (origin && origin.paymentMethod === 'CASH') {
-            if (!header.cashboxSessionId) {
-              throw AppError.invalid('Hoàn tiền mặt bắt buộc gắn phiên két ca (cashboxSessionId).');
-            }
-            const sess: any = (
-              await tx.select().from(cashboxSessions).where(eq(cashboxSessions.id, header.cashboxSessionId)).limit(1)
+        // 4. Xử lý theo từng loại phiếu:
+        const replacementDetails: Array<{ editionId: string; quantity: number; coverPrice: number }> = [];
+
+        if (header.returnType === 'REFUND') {
+          if (exchangeItems && exchangeItems.length > 0) {
+            throw AppError.invalid('Phiếu hoàn tiền REFUND không nhận cuốn thay thế.');
+          }
+          // Két: đơn CASH + refund > 0 -> session phải OPEN, đúng kho, đúng chủ.
+          const refundAmount = header.refundAmount || 0;
+          if (refundAmount > 0) {
+            const origin: any = (
+              await tx.select().from(orders).where(eq(orders.id, header.orderId)).limit(1)
             )[0];
-            if (!sess || sess.status !== 'OPEN') {
-              throw AppError.conflict(
-                `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không OPEN — rollback toàn bộ phiếu hoàn.`
+            if (origin && origin.paymentMethod === 'CASH') {
+              if (!header.cashboxSessionId) {
+                throw AppError.invalid('Hoàn tiền mặt bắt buộc gắn phiên két ca (cashboxSessionId).');
+              }
+              const sess: any = (
+                await tx.select().from(cashboxSessions).where(eq(cashboxSessions.id, header.cashboxSessionId)).limit(1)
+              )[0];
+              if (!sess || sess.status !== 'OPEN') {
+                throw AppError.conflict(
+                  `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không OPEN — rollback toàn bộ phiếu hoàn.`
+                );
+              }
+              if (sess.warehouseId !== header.targetWarehouseId) {
+                throw AppError.conflict(
+                  `STATE_CONFLICT: Két ${sess.id} thuộc kho ${sess.warehouseId}, không khớp kho trả ${header.targetWarehouseId} — rollback toàn bộ.`
+                );
+              }
+              if (sess.cashierId !== effActor) {
+                throw AppError.forbidden(
+                  `FORBIDDEN: Két ${sess.id} thuộc thu ngân ${sess.cashierId}, người hoàn tất ${effActor} không phải chủ sở hữu — rollback toàn bộ.`
+                );
+              }
+            }
+          }
+        } else if (header.returnType === 'EXCHANGE') {
+          const exLines = Array.isArray(exchangeItems) ? exchangeItems : [];
+          if (exLines.length === 0) {
+            throw AppError.invalid('Phiếu đổi hàng EXCHANGE bắt buộc có danh sách ấn bản thay thế (exchangeItems).');
+          }
+          const exchangeMap = new Map<string, number>();
+          for (const ex of exLines) {
+            if (!ex.editionId?.trim()) throw AppError.invalid('Cuốn thay thế thiếu editionId.');
+            const q = Number(ex.quantity);
+            if (!Number.isInteger(q) || q <= 0) {
+              throw AppError.invalid(`Số lượng cuốn thay thế không hợp lệ: ${ex.quantity}`);
+            }
+            const edId = ex.editionId.trim();
+            exchangeMap.set(edId, (exchangeMap.get(edId) || 0) + q);
+          }
+
+          const oldRefundableValue = items.reduce(
+            (sum, it) => sum + Math.round(Number(it.quantity) * Number(it.unitRefund || 0)),
+            0
+          );
+
+          let replacementValue = 0;
+          for (const [editionId, quantity] of Array.from(exchangeMap.entries())) {
+            const edRow: any = (
+              await tx.select().from(editions).where(eq(editions.id, editionId)).limit(1)
+            )[0];
+            if (!edRow) throw AppError.invalid(`Ấn bản thay thế ${editionId} không tồn tại.`);
+            const coverPrice = Math.round(Number(edRow.coverPrice || 0));
+            replacementValue += quantity * coverPrice;
+            replacementDetails.push({ editionId, quantity, coverPrice });
+          }
+
+          if (oldRefundableValue !== replacementValue) {
+            throw AppError.invalid(
+              `Giá trị sách đổi (${replacementValue.toLocaleString('vi-VN')} đ) không bằng giá trị sách trả (${oldRefundableValue.toLocaleString('vi-VN')} đ). Chênh lệch: ${(replacementValue - oldRefundableValue).toLocaleString('vi-VN')} đ.`
+            );
+          }
+
+          for (const rep of replacementDetails) {
+            const atp = await OrderService.getATP(rep.editionId, header.targetWarehouseId, tx);
+            if (atp < rep.quantity) {
+              throw AppError.atp(
+                `Không đủ tồn khả dụng (ATP) để xuất sách thay thế: ấn bản ${rep.editionId} tại kho ${header.targetWarehouseId} chỉ còn ${atp} cuốn, cần ${rep.quantity} cuốn.`
               );
             }
-            if (sess.warehouseId !== header.targetWarehouseId) {
-              throw AppError.conflict(
-                `STATE_CONFLICT: Két ${sess.id} thuộc kho ${sess.warehouseId}, không khớp kho trả ${header.targetWarehouseId} — rollback toàn bộ.`
-              );
+          }
+        } else if (header.returnType === 'DAMAGED_REPLACE') {
+          // Đổi bảo hành lỗi in 0đ
+          if (Array.isArray(exchangeItems) && exchangeItems.length > 0) {
+            const exchangeMap = new Map<string, number>();
+            for (const ex of exchangeItems) {
+              if (!ex.editionId?.trim()) throw AppError.invalid('Cuốn thay thế thiếu editionId.');
+              const q = Number(ex.quantity);
+              if (!Number.isInteger(q) || q <= 0) throw AppError.invalid(`Số lượng cuốn thay thế không hợp lệ: ${ex.quantity}`);
+              const edId = ex.editionId.trim();
+              exchangeMap.set(edId, (exchangeMap.get(edId) || 0) + q);
             }
-            if (sess.cashierId !== effActor) {
-              throw AppError.forbidden(
-                `FORBIDDEN: Két ${sess.id} thuộc thu ngân ${sess.cashierId}, người hoàn tất ${effActor} không phải chủ sở hữu — rollback toàn bộ.`
+            for (const [editionId, quantity] of Array.from(exchangeMap.entries())) {
+              replacementDetails.push({ editionId, quantity, coverPrice: 0 });
+            }
+          } else {
+            for (const it of items) {
+              replacementDetails.push({ editionId: it.editionId, quantity: it.quantity, coverPrice: 0 });
+            }
+          }
+
+          for (const rep of replacementDetails) {
+            const atp = await OrderService.getATP(rep.editionId, header.targetWarehouseId, tx);
+            if (atp < rep.quantity) {
+              throw AppError.atp(
+                `Không đủ tồn khả dụng (ATP) để xuất sách đổi bảo hành: ấn bản ${rep.editionId} tại kho ${header.targetWarehouseId} chỉ còn ${atp} cuốn, cần ${rep.quantity} cuốn.`
               );
             }
           }
         }
 
-        // 6. Conditional update APPROVED -> COMPLETED.
+        // 5. Conditional update APPROVED -> COMPLETED.
         const upd: any = await tx.run(sql`
           UPDATE return_orders
           SET status = 'COMPLETED', decided_at = CURRENT_TIMESTAMP
@@ -663,7 +762,7 @@ export class ReturnService {
           );
         }
 
-        // 7. RETURN_INBOUND + RMA cùng tx. RESTOCK -> NEW; DEFECTIVE_HOLD -> QUARANTINE.
+        // 6. RETURN_INBOUND: Hoàn kho sách trả lại (RESTOCK -> NEW; DEFECTIVE_HOLD -> QUARANTINE + RMA).
         const condition = header.inventoryDisposition === 'RESTOCK' ? 'NEW' : 'QUARANTINE';
         let lineIdx = 0;
         for (const it of items) {
@@ -682,14 +781,15 @@ export class ReturnService {
           });
           lineIdx++;
         }
+
         // Fault hook R-ATOMIC (test-only): ép lỗi SAU inbound để kiểm chứng rollback.
-        // Chỉ kích hoạt khi BOTH env được set; mặc định production không ảnh hưởng.
         if (
           process.env.CP3_R2_FAULT === 'after-inbound' &&
           process.env.CP3_R2_FAULT_RETURN === returnId
         ) {
           throw AppError.conflict('CP3_R2_FAULT: lỗi ép kiểm chứng atomicity (after-inbound).');
         }
+
         if (header.inventoryDisposition === 'DEFECTIVE_HOLD') {
           for (const it of items) {
             await tx.insert(rmaTickets).values({
@@ -706,6 +806,32 @@ export class ReturnService {
               notes: `Từ phiếu trả ${header.returnCode}`,
             });
           }
+        }
+
+        // 7. Xuất sách thay thế cho EXCHANGE và DAMAGED_REPLACE.
+        let exIdx = 0;
+        for (const rep of replacementDetails) {
+          await InventoryService.recordMovement({
+            editionId: rep.editionId,
+            warehouseId: header.targetWarehouseId,
+            eventType: 'DISPATCH_SALE',
+            quantityDelta: -rep.quantity,
+            condition: 'NEW',
+            documentRef: header.returnCode,
+            note: `Xuất cuốn thay thế phiếu đổi ${header.returnCode}`,
+            actorId: effActor,
+            correlationId: returnId,
+            idempotencyKey: `idem-exchange-${returnId}-${exIdx}-${rep.editionId}`,
+            tx,
+          });
+          await tx.insert(exchangeReplacementItems).values({
+            id: `exi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${exIdx}`,
+            returnId,
+            editionId: rep.editionId,
+            quantity: rep.quantity,
+            unitPrice: rep.coverPrice,
+          });
+          exIdx++;
         }
 
         // 8. Ghi return_actions (UNIQUE -> replay/CONFLICT).
@@ -736,7 +862,7 @@ export class ReturnService {
           return { returnId, status: raced[0].resultingStatus, isDuplicate: true as const };
         }
 
-        return { returnId, status: 'COMPLETED', refundAmount, isDuplicate: false as const };
+        return { returnId, status: 'COMPLETED', refundAmount: header.refundAmount || 0, isDuplicate: false as const };
       })
     );
   }
@@ -744,33 +870,124 @@ export class ReturnService {
   /**
    * Hủy phiếu đã hoàn tất (COMPLETED -> VOIDED): sinh bút toán đảo, không xóa.
    * Nếu hàng đã bán tiếp (không đủ tồn để đảo), guard âm kho sẽ từ chối an toàn.
+   * Ràng buộc két: nếu phiếu có hoàn tiền mặt (refundAmount > 0), phiên két ca gốc
+   * bắt buộc phải còn OPEN (chặn hủy tài chính khi két đã đóng).
    */
-  static async voidReturn(returnId: string, actorRole: string, voidReason: string, actorContext?: ActorContext) {
-    if (actorContext) { actorRole = actorContext.role; }
-    const effActor = actorContext?.staffId ?? actorRole;
+  static async voidReturn(
+    returnId: string,
+    actorRole: string,
+    voidReason: string,
+    actorContext?: ActorContext,
+    idempotencyKey?: string,
+  ) {
+    if (!actorContext?.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác hủy phiếu đổi/trả.');
+    }
+    actorRole = actorContext.role;
+    const effActor = actorContext.staffId.trim();
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
       throw AppError.forbidden('Chỉ Manager/Owner được hủy phiếu đổi/trả.');
     }
-    if (!voidReason || !voidReason.trim()) throw AppError.invalid('Hủy phiếu bắt buộc ghi lý do.');
-    const { header } = await this.getById(returnId);
-    if (header.status !== 'COMPLETED') throw AppError.conflict(`Chỉ hủy được phiếu COMPLETED (hiện: ${header.status}).`);
+    const reason = voidReason?.trim() || '';
+    if (!reason) {
+      throw AppError.invalid('Hủy phiếu bắt buộc ghi lý do.');
+    }
+    const key = idempotencyKey?.trim() || '';
+    if (!key) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác hủy phiếu đổi/trả.');
+    }
+    const fingerprint = canonicalHash({ action: 'VOID', actorId: effActor, returnId, voidReason: reason });
 
-    await withDbRetry(async () => {
-      await db.transaction(async (tx) => {
-        const inbound = await tx.select().from(inventoryLedger).where(eq(inventoryLedger.correlationId, returnId));
+    return await withDbRetry(() =>
+      db.transaction(async (tx) => {
+        // 1. Replay check
+        const prior: any[] = await tx
+          .select()
+          .from(returnActions)
+          .where(eq(returnActions.idempotencyKey, key))
+          .limit(1);
+        if (prior.length > 0) {
+          if (prior[0].fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${key}" đã được sử dụng cho một thao tác hủy khác.`
+            );
+          }
+          return { returnId, status: prior[0].resultingStatus, isDuplicate: true as const };
+        }
+
+        // 2. Read return order: must be COMPLETED
+        const header: any = (
+          await tx.select().from(returnOrders).where(eq(returnOrders.id, returnId)).limit(1)
+        )[0];
+        if (!header) throw AppError.invalid(`Không tìm thấy phiếu đổi/trả ${returnId}.`);
+        if (header.status !== 'COMPLETED') {
+          throw AppError.conflict(
+            `STATE_CONFLICT: Chỉ hủy được phiếu COMPLETED (hiện tại: ${header.status}).`
+          );
+        }
+
+        // 3. Cashbox session guard: if refundAmount > 0 and origin is CASH, cashbox must still be OPEN
+        const refundAmount = header.refundAmount || 0;
+        if (refundAmount > 0) {
+          const origin: any = (
+            await tx.select().from(orders).where(eq(orders.id, header.orderId)).limit(1)
+          )[0];
+          if (origin && origin.paymentMethod === 'CASH') {
+            if (!header.cashboxSessionId) {
+              throw AppError.conflict(
+                'STATE_CONFLICT: Phiếu hoàn tiền mặt thiếu cashboxSessionId, không thể hủy.'
+              );
+            }
+            const sess: any = (
+              await tx
+                .select()
+                .from(cashboxSessions)
+                .where(eq(cashboxSessions.id, header.cashboxSessionId))
+                .limit(1)
+            )[0];
+            if (!sess || sess.status !== 'OPEN') {
+              throw AppError.conflict(
+                `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không còn OPEN — từ chối hủy tài chính phiếu hoàn tiền mặt.`
+              );
+            }
+          }
+        }
+
+        // 4. Conditional update COMPLETED -> VOIDED
+        const upd: any = await tx.run(sql`
+          UPDATE return_orders
+          SET status = 'VOIDED', decided_at = CURRENT_TIMESTAMP,
+              note = CASE WHEN note IS NULL OR note = '' THEN ${`[VOID: ${reason}]`} ELSE note || ${` | [VOID: ${reason}]`} END
+          WHERE id = ${returnId} AND status = 'COMPLETED'
+        `);
+        if (upd.rowsAffected !== 1) {
+          throw AppError.conflict(
+            `STATE_CONFLICT: Phiếu ${returnId} đã rời COMPLETED bởi giao dịch song song.`
+          );
+        }
+
+        // 5. Invert inventory movements
+        const movements: any[] = await tx
+          .select()
+          .from(inventoryLedger)
+          .where(eq(inventoryLedger.correlationId, returnId));
         let vIdx = 0;
-        for (const row of inbound) {
-          // Bỏ qua các dòng đã bị đảo trước đó (tránh đảo 2 lần)
-          const alreadyReversed = await tx.select().from(inventoryLedger).where(eq(inventoryLedger.reversalOf, row.id));
+        for (const row of movements) {
+          const alreadyReversed: any[] = await tx
+            .select()
+            .from(inventoryLedger)
+            .where(eq(inventoryLedger.reversalOf, row.id))
+            .limit(1);
           if (alreadyReversed.length > 0) continue;
+
           await InventoryService.recordMovement({
             editionId: row.editionId,
             warehouseId: row.warehouseId,
             eventType: 'ADJUSTMENT',
             quantityDelta: -row.quantityDelta,
-            condition: (row.condition || 'NEW') as 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE',
+            condition: (row.condition || 'NEW') as any,
             documentRef: header.returnCode,
-            note: `Đảo phiếu trả ${header.returnCode} (VOID: ${voidReason.trim()})`,
+            note: `Đảo phiếu đổi/trả ${header.returnCode} (VOID: ${reason})`,
             actorId: effActor,
             correlationId: returnId,
             reversalOf: row.id,
@@ -779,14 +996,38 @@ export class ReturnService {
           });
           vIdx++;
         }
-        await tx.update(returnOrders).set({
-          status: 'VOIDED', decidedAt: new Date().toISOString(),
-          note: `${header.note ? header.note + ' | ' : ''}[VOID: ${voidReason.trim()}]`,
-        }).where(eq(returnOrders.id, returnId));
-      });
-    });
 
-    return { returnId, status: 'VOIDED' };
+        // 6. Ghi return_actions
+        try {
+          await tx.insert(returnActions).values({
+            id: `ra-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            returnId,
+            action: 'VOID',
+            actorId: effActor,
+            resultingStatus: 'VOIDED',
+            idempotencyKey: key,
+            fingerprint,
+          });
+        } catch (e: any) {
+          const hay = `${e?.message || ''} ${e?.code || ''}`;
+          if (!/UNIQUE constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(hay)) throw e;
+          const raced: any[] = await tx
+            .select()
+            .from(returnActions)
+            .where(eq(returnActions.idempotencyKey, key))
+            .limit(1);
+          if (raced.length === 0) throw e;
+          if (raced[0].fingerprint !== fingerprint) {
+            throw AppError.idempotency(
+              `IDEMPOTENCY_CONFLICT: Key "${key}" đã được sử dụng cho một thao tác hủy khác.`
+            );
+          }
+          return { returnId, status: raced[0].resultingStatus, isDuplicate: true as const };
+        }
+
+        return { returnId, status: 'VOIDED', isDuplicate: false as const };
+      })
+    );
   }
 
   static async list(filters: { orderId?: string; status?: string } = {}) {
