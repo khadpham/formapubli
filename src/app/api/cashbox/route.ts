@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashboxService } from '@/services/order.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
-      { role: extractUserRole(req), actorId: 'cashbox-reader' }
-    );
-    if (!['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'].includes(identity.role)) {
-      throw new AuthError(403, 'Chỉ Chủ/Quản lý hoặc Thu ngân mới được truy cập két tiền.');
-    }
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
 
     const { searchParams } = new URL(req.url);
     const cashierId = searchParams.get('cashierId');
@@ -45,19 +38,12 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
-    );
-    if (!['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'].includes(identity.role)) {
-      throw new AuthError(403, 'Chỉ Chủ/Quản lý hoặc Thu ngân mới được thao tác két tiền.');
-    }
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
 
     const body = await req.json();
     const { action, warehouseId, cashierId, openingCash, sessionId, closingCashActual, notes } = body;
-    const userRole = identity.role as any;
-    const effCashierId = cashierId || identity.actorId;
+    const userRole = session.role;
+    const effCashierId = cashierId || session.actorId;
 
     if (action === 'OPEN') {
       if (!warehouseId || !effCashierId) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SponsorshipService } from '@/services/sponsorship.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -14,18 +14,11 @@ export const dynamic = 'force-dynamic';
  * - CLOSE_FUND: { fundId }
  * GET /api/sponsorships → danh sách quỹ.
  * GET /api/sponsorships?fundId= → báo cáo đối soát 1 quỹ.
- * TAX bị chặn toàn bộ (quỹ thuộc Sổ Nội bộ).
+ * P1b: Default-Deny, chỉ ROLE_OWNER & ROLE_MANAGER (TAX/CASHIER/WAREHOUSE bị chặn 403).
  */
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER'],
-      { role: extractUserRole(req), actorId: 'sponsorships-reader' }
-    );
-    if (identity.role === 'ROLE_TAX') {
-      throw new AuthError(403, 'Quỹ tài trợ thuộc Sổ Nội bộ.');
-    }
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
     const { searchParams } = new URL(req.url);
     const fundId = searchParams.get('fundId');
     if (fundId) {
@@ -41,18 +34,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
     const body = await req.json();
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || body.createdBy || body.drawnBy || extractUserRole(req) }
-    );
-    const userRole = identity.role as any;
-    const actorHeader = identity.actorId;
-
-    if (userRole === 'ROLE_TAX') {
-      throw new AuthError(403, 'Quỹ tài trợ thuộc Sổ Nội bộ.');
-    }
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     if (body.action === 'CREATE_FUND') {
       const result = await SponsorshipService.createFund({

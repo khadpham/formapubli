@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RoyaltyService } from '@/services/royalty.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -10,14 +10,7 @@ export const dynamic = 'force-dynamic';
 // GET /api/royalties?id=<contractId> — chi tiết + quota + bảng nhuận bút
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER'],
-      { role: extractUserRole(req), actorId: 'royalties-reader' }
-    );
-    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
-      throw new AuthError(403, 'Chỉ Quản lý/Chủ được xem sổ bản quyền & nhuận bút.');
-    }
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -48,19 +41,12 @@ export async function GET(req: NextRequest) {
 // POST /api/royalties { action: 'create' | 'terminate', ... }
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
-    );
-    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
-      throw new AuthError(403, 'Chỉ Quản lý/Chủ được quản trị hợp đồng bản quyền.');
-    }
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
 
     const body = await req.json();
     const { action } = body;
-    const userRole = identity.role as any;
-    const actorHeader = identity.actorId;
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     if (action === 'create') {
       const {

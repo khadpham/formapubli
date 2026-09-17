@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BundleService } from '@/services/bundle.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -32,22 +32,14 @@ export async function GET(req: NextRequest) {
 
 // POST /api/bundles { action: 'create', code, seasonName, releaseDate,
 //   comboPrice, totalCoverPrice?, items: [{ editionId, quantityInBundle? }] }
-// Chỉ Quản lý/Chủ được định nghĩa combo.
+// P1b: Default-Deny, chỉ Quản lý/Chủ được định nghĩa combo mới.
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
-    );
-    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
-      throw new AuthError(403, 'Chỉ Quản lý/Chủ được định nghĩa combo mới.');
-    }
-
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
     const body = await req.json();
     const { action } = body;
-    const userRole = identity.role as any;
-    const actorHeader = identity.actorId;
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     if (action === 'create') {
       const { code, seasonName, releaseDate, comboPrice, totalCoverPrice, items } = body;

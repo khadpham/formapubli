@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AnalyticsService } from '@/services/analytics.service';
-import { extractUserRole } from '@/lib/rbac-guard';
-import { resolveRequestIdentity } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -10,19 +9,11 @@ export const dynamic = 'force-dynamic';
  * Bước 5 — OLAP read-only (0 migration).
  * GET /api/analytics?view=channels|trending|consignment|cashflow
  *   &startDate=&endDate=&top=20&warehouseId=
- * P2-13: chỉ OWNER/MANAGER (thu ngân/kho/thuế dùng màn hình scope riêng —
- * đúng quy tắc "thu ngân không thấy doanh thu tổng" từ Phase 2).
+ * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).
  */
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER'],
-      { role: extractUserRole(req), actorId: 'analytics' }
-    );
-    if (identity.role !== 'ROLE_OWNER' && identity.role !== 'ROLE_MANAGER') {
-      return NextResponse.json({ success: false, error: 'Báo cáo quản trị tổng chỉ dành cho Chủ/Quản lý.' }, { status: 403 });
-    }
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
     const { searchParams } = new URL(req.url);
     const view = searchParams.get('view') || 'channels';
     const range = {

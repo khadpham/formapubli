@@ -12,6 +12,8 @@ import { ForecastService } from '../src/services/forecast.service';
 import { POST as postMovement } from '../src/app/api/inventory/movement/route';
 import { POST as postRma } from '../src/app/api/rma/route';
 import { GET as getAnalytics } from '../src/app/api/analytics/route';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
+import { UserRole } from '../src/lib/roles';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-patch02-laneA');
@@ -118,9 +120,23 @@ async function run() {
   const after = (await ForecastService.salesByEdition()).get(f8.id) || 0;
   ok('8. P2-11 forecast bỏ qua dòng 0đ', after === base + 2, `${base}→${after}`);
 
-  // 9. Analytics chỉ OWNER/MANAGER
-  const g = (role?: string) =>
-    getAnalytics(new Request('http://localhost/api/analytics?view=channels', { headers: { ...(role ? { 'x-formapubli-role': role } : {}) } }) as any).then(async (r: any) => r.status);
+  // 9. Analytics chỉ OWNER/MANAGER (P1b default-deny: yêu cầu session cookie hợp lệ)
+  const g = async (role?: string) => {
+    let cookieHeader = '';
+    if (role) {
+      const token = await signSession({
+        role: role as UserRole,
+        actorId: `test-${role.toLowerCase()}`,
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 3600 * 1000,
+      });
+      cookieHeader = `${SESSION_COOKIE_NAME}=${token}`;
+    }
+    const res: any = await getAnalytics(new Request('http://localhost/api/analytics?view=channels', {
+      headers: cookieHeader ? { Cookie: cookieHeader } : {},
+    }) as any);
+    return res.status;
+  };
   const sCash = await g('ROLE_CASHIER');
   const sWh = await g('ROLE_WAREHOUSE');
   const sTax = await g('ROLE_TAX');
