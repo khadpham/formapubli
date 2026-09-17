@@ -33,13 +33,23 @@ export class LlmSchemaError extends Error {
 
 export type LlmEngine = 'LLM_GEMINI' | 'LLM_OPENAI';
 
-/** Model Gemini bắt buộc cấu hình qua env — không default cứng model cũ. */
+/**
+ * Model Gemini bắt buộc cấu hình qua env — không default cứng model cũ.
+ *
+ * QUYẾT ĐỊNH SPRINT 0 (Team B, tra cứu tháng 09/2026):
+ * - gemini-1.5-flash-002: retired 24/09/2025. gemini-2.0-flash: retired 01/06/2026.
+ * - gemini-2.5-flash: retirement 20/10/2026 (đã ghi nhận 404 sớm) — KHÔNG dùng.
+ * - KHUYẾN NGHỊ: GEMINI_MODEL=gemini-3.5-flash (stable, retirement ≥ 19/05/2027,
+ *   hỗ trợ temperature + structured outputs, khớp client hiện tại).
+ * - Nếu chuyển sang 3.6+: Google đã bỏ temperature/top_p/top_k — phải cập nhật
+ *   generationConfig trong file này trước (xóa temperature).
+ */
 export function resolveGeminiModel(): string {
   const model = (process.env.GEMINI_MODEL || '').trim();
   if (!model) {
     throw new LlmConfigError(
-      'Thiếu cấu hình GEMINI_MODEL. Đặt tên model Gemini (VD: GEMINI_MODEL=gemini-2.0-flash) ' +
-        'sau khi Team B chốt model ở Sprint 0 — không dùng model mặc định cũ.'
+      'Thiếu cấu hình GEMINI_MODEL. Đặt GEMINI_MODEL=gemini-3.5-flash ' +
+        '(khuyến nghị Sprint 0) — không dùng model mặc định cũ.'
     );
   }
   return model;
@@ -91,19 +101,21 @@ export async function callGeminiJsonRaw(params: {
 }): Promise<string> {
   const model = resolveGeminiModel();
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`;
-  const data = (await postJsonWithTimeout(
-    endpoint,
-    {
-      contents: [{ role: 'user', parts: [{ text: params.systemPrompt + '\n\nNỘI DUNG:\n' + params.userText }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-    },
-    {},
-    params.timeoutMs ?? LLM_DEFAULT_TIMEOUT_MS,
-    'Gemini'
-  )) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawJson) throw new Error('Empty Gemini response');
-  return rawJson;
+  return withLlmCircuit('gemini', async () => {
+    const data = (await postJsonWithTimeout(
+      endpoint,
+      {
+        contents: [{ role: 'user', parts: [{ text: params.systemPrompt + '\n\nNỘI DUNG:\n' + params.userText }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+      },
+      {},
+      params.timeoutMs ?? LLM_DEFAULT_TIMEOUT_MS,
+      'Gemini'
+    )) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawJson) throw new Error('Empty Gemini response');
+    return rawJson;
+  });
 }
 
 export async function callOpenAIJsonRaw(params: {
@@ -113,24 +125,26 @@ export async function callOpenAIJsonRaw(params: {
   model?: string;
   timeoutMs?: number;
 }): Promise<string> {
-  const data = (await postJsonWithTimeout(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: params.model ?? resolveOpenAIModel(),
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: params.systemPrompt },
-        { role: 'user', content: params.userText },
-      ],
-    },
-    { Authorization: 'Bearer ' + params.apiKey },
-    params.timeoutMs ?? LLM_DEFAULT_TIMEOUT_MS,
-    'OpenAI'
-  )) as { choices?: Array<{ message?: { content?: string } }> };
-  const rawJson = data.choices?.[0]?.message?.content;
-  if (!rawJson) throw new Error('Empty OpenAI response');
-  return rawJson;
+  return withLlmCircuit('openai', async () => {
+    const data = (await postJsonWithTimeout(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: params.model ?? resolveOpenAIModel(),
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: params.systemPrompt },
+          { role: 'user', content: params.userText },
+        ],
+      },
+      { Authorization: 'Bearer ' + params.apiKey },
+      params.timeoutMs ?? LLM_DEFAULT_TIMEOUT_MS,
+      'OpenAI'
+    )) as { choices?: Array<{ message?: { content?: string } }> };
+    const rawJson = data.choices?.[0]?.message?.content;
+    if (!rawJson) throw new Error('Empty OpenAI response');
+    return rawJson;
+  });
 }
 
 /**
@@ -149,6 +163,141 @@ export function parseLlmJson<T>(rawJson: string, schema: z.ZodType<T, any, any>,
     throw new LlmSchemaError(`${label}: JSON lệch schema`, result.error.flatten());
   }
   return result.data;
+}
+
+// ---------------------------------------------------------------------------
+// CIRCUIT BREAKER + NGÂN SÁCH GỌI (Sprint 0, Team B).
+// - Breaker: N lỗi liên tiếp -> mở mạch, fail-fast trong cooldownMs để không
+//   đốt token/quota khi nhà cung cấp sập. Hết cooldown cho 1 trial (half-open).
+// - Budget: chặn số lượt gọi/tháng (in-memory, theo process). Khi vượt, ném
+//   LlmBudgetExceededError để caller rơi về fallback nội bộ.
+// - GIỚI HẠN: in-memory reset khi restart/multi-instance. Muốn hạch toán
+//   chuẩn theo tháng cần ledger DB (Team A, migration riêng — ngoài Sprint 0).
+// - Edge-safe: chỉ dùng Date.now(), không dùng Timer thường trực.
+// ---------------------------------------------------------------------------
+
+export class LlmCircuitOpenError extends Error {
+  constructor(engine: string) {
+    super(`Mạch ${engine} đang mở (nhà cung cấp lỗi liên tiếp). Dùng fallback nội bộ.`);
+    this.name = 'LlmCircuitOpenError';
+  }
+}
+
+export class LlmBudgetExceededError extends Error {
+  constructor(limit: number) {
+    super(`Vượt ngân sách gọi LLM tháng này (${limit} lượt). Dùng fallback nội bộ.`);
+    this.name = 'LlmBudgetExceededError';
+  }
+}
+
+export type LlmEngineKey = 'gemini' | 'openai';
+
+export interface LlmBreakerConfig {
+  maxFailures: number;
+  cooldownMs: number;
+  monthlyBudget: number; // 0 = không giới hạn
+}
+
+export function llmBreakerConfig(): LlmBreakerConfig {
+  const num = (v: string | undefined, fallback: number): number => {
+    const n = parseInt(v || '', 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  return {
+    maxFailures: num(process.env.LLM_MAX_CONSECUTIVE_FAILURES, 5),
+    cooldownMs: num(process.env.LLM_CIRCUIT_COOLDOWN_MS, 60000),
+    monthlyBudget: num(process.env.LLM_MONTHLY_CALL_BUDGET, 0),
+  };
+}
+
+interface BreakerState {
+  consecutiveFailures: number;
+  openedAt: number;
+}
+
+const breakerStates: Record<LlmEngineKey, BreakerState> = {
+  gemini: { consecutiveFailures: 0, openedAt: 0 },
+  openai: { consecutiveFailures: 0, openedAt: 0 },
+};
+
+interface BudgetState {
+  monthKey: string;
+  calls: number;
+}
+
+const budgetState: BudgetState = { monthKey: '', calls: 0 };
+
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`;
+}
+
+export type CircuitStatus = 'CLOSED' | 'OPEN';
+
+export function getLlmHealth(): Record<
+  LlmEngineKey,
+  { status: CircuitStatus; consecutiveFailures: number }
+> & { budget: { monthKey: string; calls: number; limit: number } } {
+  const cfg = llmBreakerConfig();
+  const snap = (engine: LlmEngineKey) => {
+    const s = breakerStates[engine];
+    const open =
+      s.consecutiveFailures >= cfg.maxFailures && Date.now() - s.openedAt < cfg.cooldownMs;
+    return { status: (open ? 'OPEN' : 'CLOSED') as CircuitStatus, consecutiveFailures: s.consecutiveFailures };
+  };
+  return {
+    gemini: snap('gemini'),
+    openai: snap('openai'),
+    budget: { monthKey: budgetState.monthKey || currentMonthKey(), calls: budgetState.calls, limit: cfg.monthlyBudget },
+  };
+}
+
+/** Dùng cho test/eval — reset mạch và ngân sách về trạng thái sạch. */
+export function resetLlmBreaker(engine?: LlmEngineKey): void {
+  const keys: LlmEngineKey[] = engine ? [engine] : ['gemini', 'openai'];
+  for (const k of keys) breakerStates[k] = { consecutiveFailures: 0, openedAt: 0 };
+  if (!engine) budgetState.monthKey = '';
+  budgetState.calls = 0;
+}
+
+export async function withLlmCircuit<T>(engine: LlmEngineKey, fn: () => Promise<T>): Promise<T> {
+  const cfg = llmBreakerConfig();
+
+  // 1. Ngân sách tháng (đếm lượt gọi, kể cả lỗi — vì lỗi vẫn có thể tốn quota).
+  if (cfg.monthlyBudget > 0) {
+    const key = currentMonthKey();
+    if (budgetState.monthKey !== key) {
+      budgetState.monthKey = key;
+      budgetState.calls = 0;
+    }
+    if (budgetState.calls >= cfg.monthlyBudget) {
+      throw new LlmBudgetExceededError(cfg.monthlyBudget);
+    }
+    budgetState.calls += 1;
+  }
+
+  // 2. Mạch đang mở trong cooldown -> fail-fast, không gọi mạng.
+  const state = breakerStates[engine];
+  if (state.consecutiveFailures >= cfg.maxFailures) {
+    if (Date.now() - state.openedAt < cfg.cooldownMs) {
+      throw new LlmCircuitOpenError(engine);
+    }
+    // Hết cooldown: half-open — cho 1 trial bằng cách hạ failures xuống ngưỡng-1.
+    state.consecutiveFailures = cfg.maxFailures - 1;
+  }
+
+  // 3. Thực thi trial.
+  try {
+    const result = await fn();
+    state.consecutiveFailures = 0;
+    return result;
+  } catch (err) {
+    state.consecutiveFailures += 1;
+    if (state.consecutiveFailures >= cfg.maxFailures) {
+      state.openedAt = Date.now();
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------

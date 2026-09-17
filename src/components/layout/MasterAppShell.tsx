@@ -12,8 +12,9 @@ import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { UserRole, USER_ROLES } from '@/lib/roles';
-import { Menu, Shield, LogOut } from 'lucide-react';
+import { Menu, Shield, LogOut, Sparkles } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
+import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 
 interface MasterAppShellProps {
   matrixBooks: any[];
@@ -40,6 +41,10 @@ export function MasterAppShell({
   const [currentRole, setCurrentRole] = useState<UserRole>(initialSession?.role || 'ROLE_OWNER');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
+  // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
+  const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
   // Cập nhật currentRole khi session thay đổi
   React.useEffect(() => {
@@ -68,11 +73,22 @@ export function MasterAppShell({
   }, [currentRole, currentTab, roleConfig]);
 
 
-  // Phím tắt bàn phím toàn cục chuyển Tab siêu tốc: Alt + 1..8 (hoặc Alt + Shift + 1..8)
+  // Phím tắt bàn phím toàn cục:
+  // - Alt + 1..8: chuyển Tab siêu tốc
+  // - Alt + C: Bật/tắt Executive AI Copilot Drawer (chỉ cho OWNER & MANAGER)
   React.useEffect(() => {
     const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
-      // Bắt tổ hợp Alt + [1-8] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
+      // Bắt tổ hợp Alt + [phím] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        // Phím tắt Alt + C mở Copilot
+        if (e.key === 'c' || e.key === 'C') {
+          e.preventDefault();
+          if (canUseCopilot) {
+            setIsCopilotOpen((prev) => !prev);
+          }
+          return;
+        }
+
         const keyMap: Record<string, string> = {
           '1': 'dashboard',
           '2': 'pos',
@@ -96,7 +112,7 @@ export function MasterAppShell({
 
     window.addEventListener('keydown', handleGlobalNavShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalNavShortcuts);
-  }, [roleConfig]);
+  }, [roleConfig, canUseCopilot]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
@@ -110,6 +126,7 @@ export function MasterAppShell({
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        onOpenCopilot={() => setIsCopilotOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -145,6 +162,21 @@ export function MasterAppShell({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* AI Executive Copilot Trigger Button (Chỉ dành cho OWNER & MANAGER) */}
+            {canUseCopilot && (
+              <button
+                onClick={() => setIsCopilotOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
+                title="Mở Executive AI Copilot (Alt+C)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                <span className="hidden sm:inline">AI Copilot</span>
+                <span className="text-[10px] px-1 rounded bg-indigo-200/60 text-indigo-800 font-mono hidden md:inline">
+                  Alt+C
+                </span>
+              </button>
+            )}
+
             {/* Active Role Badge */}
             <div
               onClick={() => setCurrentTab('settings')}
@@ -260,6 +292,13 @@ export function MasterAppShell({
           }}
         />
       )}
+
+      {/* Executive AI Copilot Slide-over Drawer */}
+      <CopilotDrawer
+        currentRole={currentRole}
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
+      />
     </div>
   );
 }

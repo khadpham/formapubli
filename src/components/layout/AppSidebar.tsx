@@ -14,6 +14,7 @@ import {
   ChevronRight,
   X,
   FlaskConical,
+  Sparkles,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -26,6 +27,7 @@ interface AppSidebarProps {
   onToggleCollapse: () => void;
   isMobileOpen: boolean;
   onCloseMobile: () => void;
+  onOpenCopilot?: () => void;
 }
 
 export function AppSidebar({
@@ -37,8 +39,10 @@ export function AppSidebar({
   onToggleCollapse,
   isMobileOpen,
   onCloseMobile,
+  onOpenCopilot,
 }: AppSidebarProps) {
   const roleConfig = USER_ROLES[currentRole];
+  const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
   const navItems = [
     {
@@ -222,6 +226,32 @@ export function AppSidebar({
               </button>
             );
           })}
+
+          {/* AI Executive Copilot Quick Trigger (Chỉ hiển thị cho OWNER & MANAGER) */}
+          {canUseCopilot && onOpenCopilot && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <button
+                onClick={() => {
+                  onOpenCopilot();
+                  onCloseMobile();
+                }}
+                title={isCollapsed ? 'Executive Copilot (Alt+C)' : undefined}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 to-slate-900 text-indigo-200 hover:text-white hover:border-indigo-500/60 hover:from-indigo-900/80 ${
+                  isCollapsed ? 'justify-center px-0' : ''
+                }`}
+              >
+                <Sparkles className="w-5 h-5 text-indigo-400 shrink-0 animate-pulse" />
+                {!isCollapsed && (
+                  <div className="flex items-center justify-between flex-1 truncate gap-2">
+                    <span className="truncate font-semibold text-white">AI Copilot</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 hidden sm:inline">
+                      Alt+C
+                    </span>
+                  </div>
+                )}
+              </button>
+            </div>
+          )}
         </nav>
 
         {/* Footer info & Collapse button */}

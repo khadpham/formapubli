@@ -26,7 +26,7 @@ delete process.env.GOOGLE_AI_API_KEY;
 interface EvalResult {
   id: string;
   name: string;
-  category: 'AUTH_GATE' | 'RATE_LIMIT' | 'PROMPT_INJECTION' | 'DATA_ACCURACY' | 'AUDIT_TRAIL';
+  category: 'AUTH_GATE' | 'RATE_LIMIT' | 'PROMPT_INJECTION' | 'DATA_ACCURACY' | 'AUDIT_TRAIL' | 'RESILIENCE';
   passed: boolean;
   expected: string;
   actual: string;
@@ -255,6 +255,97 @@ async function run() {
     expected: 'Đủ 3 loại action Copilot trong audit_logs',
     actual: `QUERY: ${hasCopilotQuery}, TOOL: ${hasToolInvoked}, UNAUTH: ${hasUnauthorized}`,
   });
+
+  // -------------------------------------------------------------------------
+  // 8. RESILIENCE: Circuit breaker + ngân sách gọi (Sprint 0, Team B)
+  // -------------------------------------------------------------------------
+  const { withLlmCircuit, resetLlmBreaker, LlmCircuitOpenError, LlmBudgetExceededError } =
+    await import('../src/services/ai/llm-client');
+
+  const savedMaxFailures = process.env.LLM_MAX_CONSECUTIVE_FAILURES;
+  const savedCooldown = process.env.LLM_CIRCUIT_COOLDOWN_MS;
+  const savedBudget = process.env.LLM_MONTHLY_CALL_BUDGET;
+
+  // CB-01: N lỗi liên tiếp -> mạch mở, fail-fast không gọi mạng nữa.
+  process.env.LLM_MAX_CONSECUTIVE_FAILURES = '3';
+  process.env.LLM_CIRCUIT_COOLDOWN_MS = '60000';
+  process.env.LLM_MONTHLY_CALL_BUDGET = '0';
+  resetLlmBreaker('gemini');
+  let stubCalls = 0;
+  const failingStub = async (): Promise<string> => {
+    stubCalls += 1;
+    throw new Error('provider down');
+  };
+  for (let i = 0; i < 3; i++) {
+    try {
+      await withLlmCircuit('gemini', failingStub);
+    } catch {
+      /* kỳ vọng lỗi provider */
+    }
+  }
+  let circuitOpened = false;
+  try {
+    await withLlmCircuit('gemini', failingStub);
+  } catch (err) {
+    circuitOpened = err instanceof LlmCircuitOpenError;
+  }
+
+  recordTest({
+    id: 'CB-01',
+    name: 'Mạch mở sau N lỗi liên tiếp, fail-fast không gọi mạng (stub chỉ chạy đúng N lần)',
+    category: 'RESILIENCE',
+    passed: circuitOpened && stubCalls === 3,
+    expected: 'Lần 4 ném LlmCircuitOpenError, stub chạy đúng 3 lần',
+    actual: `circuitOpened=${circuitOpened}, stubCalls=${stubCalls}`,
+  });
+
+  // CB-02: trial thành công sau cooldown đóng mạch lại.
+  process.env.LLM_CIRCUIT_COOLDOWN_MS = '0';
+  let trialOk = false;
+  try {
+    const out = await withLlmCircuit('gemini', async () => 'ok');
+    trialOk = out === 'ok';
+  } catch {
+    trialOk = false;
+  }
+
+  recordTest({
+    id: 'CB-02',
+    name: 'Hết cooldown cho trial, thành công thì đóng mạch lại',
+    category: 'RESILIENCE',
+    passed: trialOk,
+    expected: 'Trial sau cooldown thành công',
+    actual: trialOk ? 'Mạch đóng lại' : 'Trial thất bại',
+  });
+
+  // CB-03: vượt ngân sách tháng -> chặn trước khi gọi mạng.
+  process.env.LLM_MONTHLY_CALL_BUDGET = '2';
+  resetLlmBreaker('openai');
+  let budgetBlocked = false;
+  try {
+    await withLlmCircuit('openai', async () => 'ok');
+    await withLlmCircuit('openai', async () => 'ok');
+    await withLlmCircuit('openai', async () => 'ok');
+  } catch (err) {
+    budgetBlocked = err instanceof LlmBudgetExceededError;
+  }
+
+  recordTest({
+    id: 'CB-03',
+    name: 'Vượt ngân sách tháng thì chặn bằng LlmBudgetExceededError',
+    category: 'RESILIENCE',
+    passed: budgetBlocked,
+    expected: 'Lượt gọi thứ 3 (budget=2) bị chặn',
+    actual: budgetBlocked ? 'Bị chặn chuẩn' : 'Không bị chặn',
+  });
+
+  if (savedMaxFailures === undefined) delete process.env.LLM_MAX_CONSECUTIVE_FAILURES;
+  else process.env.LLM_MAX_CONSECUTIVE_FAILURES = savedMaxFailures;
+  if (savedCooldown === undefined) delete process.env.LLM_CIRCUIT_COOLDOWN_MS;
+  else process.env.LLM_CIRCUIT_COOLDOWN_MS = savedCooldown;
+  if (savedBudget === undefined) delete process.env.LLM_MONTHLY_CALL_BUDGET;
+  else process.env.LLM_MONTHLY_CALL_BUDGET = savedBudget;
+  resetLlmBreaker();
 
   // -------------------------------------------------------------------------
   // TỔNG KẾT & XUẤT BÁO CÁO JSON

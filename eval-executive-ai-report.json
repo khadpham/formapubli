@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-09-17T03:06:46.563Z",
-  "totalTests": 11,
-  "passed": 11,
+  "timestamp": "2026-09-17T03:24:24.565Z",
+  "totalTests": 14,
+  "passed": 14,
   "passRatio": "100%",
   "results": [
     {
@@ -91,6 +91,30 @@
       "passed": true,
       "expected": "Đủ 3 loại action Copilot trong audit_logs",
       "actual": "QUERY: true, TOOL: true, UNAUTH: true"
+    },
+    {
+      "id": "CB-01",
+      "name": "Mạch mở sau N lỗi liên tiếp, fail-fast không gọi mạng (stub chỉ chạy đúng N lần)",
+      "category": "RESILIENCE",
+      "passed": true,
+      "expected": "Lần 4 ném LlmCircuitOpenError, stub chạy đúng 3 lần",
+      "actual": "circuitOpened=true, stubCalls=3"
+    },
+    {
+      "id": "CB-02",
+      "name": "Hết cooldown cho trial, thành công thì đóng mạch lại",
+      "category": "RESILIENCE",
+      "passed": true,
+      "expected": "Trial sau cooldown thành công",
+      "actual": "Mạch đóng lại"
+    },
+    {
+      "id": "CB-03",
+      "name": "Vượt ngân sách tháng thì chặn bằng LlmBudgetExceededError",
+      "category": "RESILIENCE",
+      "passed": true,
+      "expected": "Lượt gọi thứ 3 (budget=2) bị chặn",
+      "actual": "Bị chặn chuẩn"
     }
   ]
 }
