@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   callGeminiJsonRaw,
   callOpenAIJsonRaw,
+  callGroqChatJsonRaw,
+  resolveGroqChatModel,
   parseLlmJson,
   truncateCatalog,
   heuristicConfidence,
@@ -165,7 +167,7 @@ function crossCheckCatalog(
 export async function extractOrderEntities(
   transcript: string,
   catalog: CatalogRef[]
-): Promise<{ entities: VoiceOrderEntities; checked: ParsedItem[]; checkWarnings: string[]; engine: 'LLM_GEMINI' | 'LLM_OPENAI' | 'FALLBACK_RULE_BASED' }> {
+): Promise<{ entities: VoiceOrderEntities; checked: ParsedItem[]; checkWarnings: string[]; engine: 'LLM_GEMINI' | 'LLM_OPENAI' | 'LLM_GROQ' | 'FALLBACK_RULE_BASED' }> {
   const prompt = buildExtractionPrompt(catalog);
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -200,7 +202,23 @@ export async function extractOrderEntities(
         return { entities, checked: items, checkWarnings: [...entities.warnings, ...warnings], engine: 'LLM_OPENAI' };
       }
     } catch (err) {
-      console.warn('⚠️ Voice OpenAI lỗi, rơi về rule-based:', (err as Error)?.message || err);
+      console.warn('⚠️ Voice OpenAI lỗi, thử tầng Groq:', (err as Error)?.message || err);
+    }
+  }
+
+  // Tầng 3 (opt-in): Groq chat — chỉ chạy khi admin cấu hình GROQ_CHAT_MODEL.
+  const groqKey = (process.env.GROQ_API_KEY || '').trim();
+  const groqModel = resolveGroqChatModel();
+  if (groqKey && groqModel) {
+    try {
+      const raw = await callGroqChatJsonRaw({ systemPrompt: prompt, userText: transcript, apiKey: groqKey, model: groqModel });
+      const entities = await tryParse(raw, 'VoiceGroq');
+      if (entities) {
+        const { items, warnings } = crossCheckCatalog(entities.items, catalog);
+        return { entities, checked: items, checkWarnings: [...entities.warnings, ...warnings], engine: 'LLM_GROQ' };
+      }
+    } catch (err) {
+      console.warn('⚠️ Voice Groq lỗi, rơi về rule-based:', (err as Error)?.message || err);
     }
   }
 
@@ -232,7 +250,7 @@ export interface VoiceOrderDraft {
   address?: string;
   items: ParsedItem[];
   warnings: string[];
-  engineUsed: 'LLM_GEMINI' | 'LLM_OPENAI' | 'FALLBACK_RULE_BASED';
+  engineUsed: 'LLM_GEMINI' | 'LLM_OPENAI' | 'LLM_GROQ' | 'FALLBACK_RULE_BASED';
   confidence: ConfidenceScore;
   aiNote?: string;
 }

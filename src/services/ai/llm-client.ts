@@ -59,6 +59,55 @@ export function resolveOpenAIModel(): string {
   return (process.env.OPENAI_MODEL || '').trim() || 'gpt-4o-mini';
 }
 
+/**
+ * Model chat Groq (tầng 3 opt-in). Trả null khi chưa cấu hình -> caller BỎ QUA
+ * tầng này, KHÔNG ném lỗi (tránh phá vỡ chuỗi fallback khi admin chưa bật).
+ * Khuyến nghị: GROQ_CHAT_MODEL=openai/gpt-oss-20b (strict JSON schema, ~1000 tps).
+ */
+export function resolveGroqChatModel(): string | null {
+  const model = (process.env.GROQ_CHAT_MODEL || '').trim();
+  return model || null;
+}
+
+export function resolveGroqApiKey(): string {
+  const key = (process.env.GROQ_API_KEY || '').trim();
+  if (!key) throw new LlmConfigError('Thiếu GROQ_API_KEY cho tầng chat Groq.');
+  return key;
+}
+
+/** Chat JSON qua Groq (OpenAI-compatible endpoint, json_object mode). */
+export async function callGroqChatJsonRaw(params: {
+  systemPrompt: string;
+  userText: string;
+  apiKey?: string;
+  model?: string;
+  timeoutMs?: number;
+}): Promise<string> {
+  const apiKey = params.apiKey ?? resolveGroqApiKey();
+  const model = params.model ?? resolveGroqChatModel();
+  if (!model) throw new LlmConfigError('Tầng chat Groq chưa bật (thiếu GROQ_CHAT_MODEL).');
+  return withLlmCircuit('groq', async () => {
+    const data = (await postJsonWithTimeout(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model,
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: params.systemPrompt },
+          { role: 'user', content: params.userText },
+        ],
+      },
+      { Authorization: 'Bearer ' + apiKey },
+      params.timeoutMs ?? LLM_DEFAULT_TIMEOUT_MS,
+      'GroqChat'
+    )) as { choices?: Array<{ message?: { content?: string } }> };
+    const rawJson = data.choices?.[0]?.message?.content;
+    if (!rawJson) throw new Error('Empty Groq chat response');
+    return rawJson;
+  });
+}
+
 /** Cắt catalog summary để kiểm soát token/chi phí gửi lên LLM. */
 export function truncateCatalog(catalogSummary: string, maxChars = MAX_CATALOG_CHARS): string {
   if (catalogSummary.length <= maxChars) return catalogSummary;

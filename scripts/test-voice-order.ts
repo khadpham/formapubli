@@ -441,6 +441,70 @@ async function run() {
   void withLlmCircuit;
   void LlmBudgetExceededError;
 
+  // ---- 20-22. Tầng chat Groq thứ 3 (opt-in) ----
+  // 20. Đủ key + model + stub chat -> engine LLM_GROQ, item khớp catalog.
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  process.env.GROQ_CHAT_MODEL = 'openai/gpt-oss-20b';
+  resetLlmBreaker('groq');
+  stubFetch(async (url) => {
+    if (url.includes('api.groq.com/openai/v1/chat/completions')) {
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                items: [{ editionId: 'ed-ty', code: 'TY', title: 'Toán Y', quantity: 3 }],
+                warnings: [],
+              }),
+            },
+          },
+        ],
+      });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  });
+  const groq = await extractOrderEntities('lấy sách toán', FAKE_CATALOG);
+  ok(
+    '20. Tầng Groq hoạt động, engine LLM_GROQ',
+    groq.engine === 'LLM_GROQ' && groq.checked.some((i) => i.editionId === 'ed-ty' && i.quantity === 3),
+    `engine=${groq.engine}`
+  );
+  restoreFetch();
+
+  // 21. Groq trả rác -> rơi về rule-based, không crash.
+  stubFetch(async (url) => {
+    if (url.includes('api.groq.com/openai/v1/chat/completions')) {
+      return Response.json({ choices: [{ message: { content: 'không phải json' } }] });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  });
+  const groqGarbage = await extractOrderEntities('lấy 1 cuốn toán y', FAKE_CATALOG);
+  ok(
+    '21. Groq rác -> fallback rule-based',
+    groqGarbage.engine === 'FALLBACK_RULE_BASED' &&
+      groqGarbage.checked.some((i) => i.editionId === 'ed-ty'),
+    `engine=${groqGarbage.engine}`
+  );
+  restoreFetch();
+  resetLlmBreaker('groq');
+
+  // 22. Có key nhưng thiếu GROQ_CHAT_MODEL -> tầng Groq bị bỏ qua im lặng.
+  delete process.env.GROQ_CHAT_MODEL;
+  let groqFetchCalls = 0;
+  stubFetch(async () => {
+    groqFetchCalls++;
+    return Response.json({});
+  });
+  const skipped = await extractOrderEntities('lấy 1 cuốn toán y', FAKE_CATALOG);
+  ok(
+    '22. Thiếu GROQ_CHAT_MODEL -> bỏ qua tầng Groq, 0 fetch',
+    skipped.engine === 'FALLBACK_RULE_BASED' && groqFetchCalls === 0,
+    `engine=${skipped.engine}`
+  );
+  restoreFetch();
+  delete process.env.GROQ_API_KEY;
+  resetLlmBreaker('groq');
+
   console.log(`\n${passed === total ? '🎉' : '⚠️'} VOICE ORDER 5.1: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
 }
