@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardPaste, AlertTriangle, CheckCircle2, Minus, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardPaste, AlertTriangle, CheckCircle2, Minus, Plus, Trash2, Mic, Square } from 'lucide-react';
 import { parseSmartOrder, buildFbNote, ParsedItem } from '@/lib/smart-order-parser';
+
+/** 5.1 tối thiểu: thu giọng thu ngân tối đa 120s, gửi STT, đổ transcript vào ô chat. */
+const VOICE_MAX_SECONDS = 120;
 
 interface SmartOrderParserProps {
   books: Array<{ id: string; code: string; title: string; author?: string | null }>;
@@ -31,6 +34,14 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneMsg, setDoneMsg] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedChat(chat), 300);
@@ -60,6 +71,110 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
   );
 
   const canSubmit = items.length > 0 && items.every((it) => it.quantity > 0) && !isSubmitting;
+
+  // Dọn dẹp mic khi unmount (không để micro mở nền).
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      recorderRef.current?.stream?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const stopTracks = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const sendVoiceToStt = async (blob: Blob) => {
+    setVoiceBusy(true);
+    setVoiceMsg(null);
+    try {
+      const form = new FormData();
+      form.append('audio', blob, 'pos-voice.webm');
+      const res = await fetch('/api/ai/parse-voice-order', { method: 'POST', body: form });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        setVoiceMsg('Không có quyền dùng giọng nói (cần đăng nhập quầy). Hãy nhập tay.');
+        return;
+      }
+      if (res.status === 429) {
+        setVoiceMsg('Vượt tần suất — đợi một lát rồi thử lại, hoặc nhập tay.');
+        return;
+      }
+      if (res.status === 413) {
+        setVoiceMsg('Đoạn ghi quá dài — nói ngắn gọn dưới 2 phút rồi thử lại.');
+        return;
+      }
+      if (!res.ok || !json?.success) {
+        setVoiceMsg(json?.message || 'STT lỗi — đã giữ nguyên ô chat, hãy nhập/dán tay.');
+        return;
+      }
+      const transcript: string = json.data?.transcript || '';
+      if (transcript) {
+        setChat((prev) => (prev.trim() ? prev.trim() + '\n' + transcript : transcript));
+        const n = json.data?.items?.length ?? 0;
+        setVoiceMsg(`Đã nghe: "${transcript.slice(0, 80)}${transcript.length > 80 ? '…' : ''}" — bóc được ${n} dòng, kiểm tra lại bên dưới.`);
+      } else {
+        setVoiceMsg('Không nghe rõ — nói lại gần mic hơn hoặc nhập tay.');
+      }
+    } catch {
+      setVoiceMsg('Mất kết nối STT — đã giữ nguyên ô chat, hãy nhập/dán tay.');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (voiceBusy) return;
+    // Bấm lần 2 = dừng và gửi.
+    if (isRecording && recorderRef.current) {
+      recorderRef.current.stop();
+      return;
+    }
+    setVoiceMsg(null);
+    setError(null);
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        setVoiceMsg('Thiết bị/trình duyệt không hỗ trợ micro — hãy nhập tay.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = async () => {
+        setIsRecording(false);
+        stopTracks();
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        chunksRef.current = [];
+        if (blob.size > 0) await sendVoiceToStt(blob);
+      };
+      rec.start();
+      setIsRecording(true);
+      setRecSecs(0);
+      timerRef.current = setInterval(() => {
+        setRecSecs((s) => {
+          if (s + 1 >= VOICE_MAX_SECONDS && recorderRef.current?.state === 'recording') {
+            recorderRef.current.stop();
+          }
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      setVoiceMsg('Không mở được micro (kiểm tra quyền trình duyệt, cần HTTPS/localhost) — hãy nhập tay.');
+      stopTracks();
+    }
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -101,11 +216,35 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
         </p>
       </div>
 
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleRecording}
+          disabled={voiceBusy}
+          title={isRecording ? 'Bấm để dừng và gửi giọng nói' : 'Bấm để đọc đơn bằng giọng nói (tối đa 2 phút)'}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            isRecording
+              ? 'bg-rose-600 text-white animate-pulse'
+              : 'bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-50'
+          }`}
+        >
+          {isRecording ? <Square className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+          {isRecording ? `Đang nghe ${recSecs}s — bấm để dừng` : voiceBusy ? 'Đang nghe...' : 'Đọc đơn'}
+        </button>
+        <p className="text-[10px] text-slate-400 leading-tight">
+          Chỉ thu khi bấm nút. Giọng nói đổ thành chữ vào ô bên dưới — kiểm tra lại rồi mới tạo đơn.
+        </p>
+      </div>
+
+      {voiceMsg && (
+        <p className="text-[11px] text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">{voiceMsg}</p>
+      )}
+
       <textarea
         value={chat}
         onChange={(e) => setChat(e.target.value)}
         rows={4}
-        placeholder={'VD: Gửi cho mình 2 cuốn Bệnh Tưởng đến 123 Cầu Giấy, HN. SĐT 0912345678, ship COD giờ hành chính nhé'}
+        placeholder={'VD: Gửi cho mình 2 cuốn Bệnh Tưởng đến 123 Cầu Giấy, HN. SĐT 0912345678, ship COD giờ hành chính nhé (hoặc bấm "Đọc đơn" để nói)'}
         className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[96px]"
       />
 
