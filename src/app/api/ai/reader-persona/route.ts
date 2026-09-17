@@ -18,18 +18,23 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const customerId = searchParams.get('customerId') || undefined;
-    const matchForEdition = searchParams.get('matchForEdition') || undefined;
+    let matchForEdition = searchParams.get('matchForEdition') || undefined;
+    const matchForCode = searchParams.get('matchForCode') || undefined;
     const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50));
 
-    if (!customerId && !matchForEdition) {
+    if (matchForCode && !matchForEdition) {
+      matchForEdition = await ReaderProfileService.resolveEditionByCode(matchForCode);
+    }
+    const modeCount = [customerId, matchForEdition].filter(Boolean).length;
+    if (modeCount === 0) {
       return NextResponse.json(
-        { success: false, code: 'INVALID_INPUT', message: 'Thiếu customerId hoặc matchForEdition.' },
+        { success: false, code: 'INVALID_INPUT', message: 'Thiếu customerId, matchForEdition hoặc matchForCode.' },
         { status: 400 }
       );
     }
-    if (customerId && matchForEdition) {
+    if (modeCount > 1) {
       return NextResponse.json(
-        { success: false, code: 'INVALID_INPUT', message: 'Chỉ dùng một trong customerId hoặc matchForEdition mỗi lần gọi.' },
+        { success: false, code: 'INVALID_INPUT', message: 'Chỉ dùng một chế độ mỗi lần gọi.' },
         { status: 400 }
       );
     }

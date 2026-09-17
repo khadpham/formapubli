@@ -175,6 +175,21 @@ async function run() {
     `status=${rMatch.status} n=${matchData.length}`
   );
 
+  // ---- 12-13. matchForCode (nhập mã SKU thay ID kỹ thuật) ----
+  const knownCode = (await db.select({ code: editions.code }).from(editions).limit(1))[0]?.code || '';
+  const rCode = await callPersona(`?matchForCode=${encodeURIComponent(knownCode)}&limit=5`, 'ROLE_MANAGER');
+  ok(
+    '12. matchForCode mã thật -> 200 danh sách',
+    rCode.status === 200 && rCode.body?.success === true && Array.isArray(rCode.body?.data),
+    `status=${rCode.status}`
+  );
+  const rCodeBad = await callPersona('?matchForCode=MA-KHONG-TON-TAI-XYZ', 'ROLE_MANAGER');
+  ok(
+    '13. matchForCode mã lạ -> lỗi rõ ràng, không crash',
+    rCodeBad.status !== 200 && rCodeBad.body?.success === false,
+    `status=${rCodeBad.status}`
+  );
+
   console.log(`\n${passed === total ? '🎉' : '⚠️'} READER PERSONA 5.4: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
 }

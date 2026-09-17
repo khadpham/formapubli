@@ -3,6 +3,7 @@
 import React from 'react';
 import { BookOpenCheck } from 'lucide-react';
 import { CustomersDirectory } from './CustomersDirectory';
+import { ReaderMatchPanel } from './ReaderMatchPanel';
 
 export function CustomersListView() {
   return (
@@ -20,6 +21,8 @@ export function CustomersListView() {
       </div>
 
       <CustomersDirectory />
+
+      <ReaderMatchPanel />
 
       <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-center">
         <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-white text-amber-800 border border-amber-200">

@@ -101,10 +101,19 @@ export class ReaderProfileService {
     };
   }
 
+  /** Tra editionId từ mã SKU (cho UI nhập mã thay vì ID kỹ thuật). */
+  static async resolveEditionByCode(code: string): Promise<string> {
+    const clean = `${code || ''}`.trim();
+    if (!clean) throw new Error('Thiếu mã ấn bản.');
+    const ed = (await db.select({ id: editions.id }).from(editions).where(eq(editions.code, clean)).limit(1))[0];
+    if (!ed) throw new Error(`Không tìm thấy ấn bản mã ${clean}.`);
+    return ed.id;
+  }
+
   /**
    * Gợi ý độc giả cho ấn bản mới/chuẩn bị ra mắt.
-   * Điểm = 3×số cuốn cùng tác giả + 2×số cuốn cùng thể loại + 1×tổng cuốn đã mua.
-   * Loại người đã sở hữu ấn bản (không chào hàng thứ họ có).
+   * Điểm = (3×số cuốn cùng tác giả | 2×số cuốn cùng thể loại) + 1×số cuốn trong nhóm khớp.
+   * Không khớp tác giả/thể loại thì loại hẳn. Loại người đã sở hữu ấn bản.
    */
   static async matchReadersForEdition(editionId: string, limit = 50): Promise<ReaderMatch[]> {
     const ed = (await db.select().from(editions).where(eq(editions.id, editionId)).limit(1))[0];

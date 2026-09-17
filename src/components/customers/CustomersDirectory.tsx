@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Search, Users, RefreshCw } from 'lucide-react';
+import { ReaderProfilePanel } from './ReaderProfilePanel';
 
 export function CustomersDirectory() {
   const [rows, setRows] = useState<any[]>([]);
@@ -77,6 +78,7 @@ export function CustomersDirectory() {
                 <th className="px-3 py-2">Kênh</th>
                 <th className="px-3 py-2">Phân khúc</th>
                 <th className="px-3 py-2 text-right">Tổng chi tiêu</th>
+                <th className="px-3 py-2">Hồ sơ 360°</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -88,6 +90,7 @@ export function CustomersDirectory() {
                   <td className="px-3 py-2">{c.channel || '—'}</td>
                   <td className="px-3 py-2">{c.segment || '—'}</td>
                   <td className="px-3 py-2 text-right font-mono">{Number(c.totalSpent || 0).toLocaleString('vi-VN')} đ</td>
+                  <td className="px-3 py-2"><ReaderProfilePanel customerId={c.id} customerName={c.fullName} /></td>
                 </tr>
               ))}
             </tbody>
