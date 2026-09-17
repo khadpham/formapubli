@@ -3,7 +3,7 @@ import {
   callGeminiJsonRaw,
   callOpenAIJsonRaw,
   callGroqChatJsonRaw,
-  resolveGroqChatModel,
+  resolveGroqChatModels,
   nullableString,
   parseLlmJson,
   truncateCatalog,
@@ -181,20 +181,20 @@ export async function extractOrderEntities(
     }
   };
 
-  // Tầng 1 (khi admin bật): Groq chat — bench 8 case 24/24, strict JSON.
+  // Tầng Groq (khi admin bật, thử từng model theo thứ tự GROQ_CHAT_MODEL).
   // Tầng 2: Gemini. Tầng 3: OpenAI. Cuối: rule-based nội bộ.
   const groqKey = (process.env.GROQ_API_KEY || '').trim();
-  const groqModel = resolveGroqChatModel();
-  if (groqKey && groqModel) {
+  for (const groqModel of resolveGroqChatModels()) {
+    if (!groqKey) break;
     try {
       const raw = await callGroqChatJsonRaw({ systemPrompt: prompt, userText: transcript, apiKey: groqKey, model: groqModel });
-      const entities = await tryParse(raw, 'VoiceGroq');
+      const entities = await tryParse(raw, `VoiceGroq(${groqModel})`);
       if (entities) {
         const { items, warnings } = crossCheckCatalog(entities.items, catalog);
         return { entities, checked: items, checkWarnings: [...entities.warnings, ...warnings], engine: 'LLM_GROQ' };
       }
     } catch (err) {
-      console.warn('⚠️ Voice Groq lỗi, thử tầng Gemini:', (err as Error)?.message || err);
+      console.warn(`⚠️ Voice Groq (${groqModel}) lỗi, thử tầng tiếp theo:`, (err as Error)?.message || err);
     }
   }
 

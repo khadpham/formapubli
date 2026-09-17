@@ -649,6 +649,59 @@ async function run() {
   resetLlmBreaker('gemini');
   resetLlmBreaker('groq');
 
+  // 28. Model Groq 1 chết -> tự thử model Groq 2 trong cùng tầng.
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  process.env.GROQ_CHAT_MODEL = 'openai/gpt-oss-20b,qwen/qwen3.8-27b';
+  resetLlmBreaker('groq');
+  stubFetch(async (url, init) => {
+    if (url.includes('api.groq.com/openai/v1/chat/completions')) {
+      const body = JSON.parse((init?.body as string) || '{}') as { model?: string };
+      if (body.model === 'openai/gpt-oss-20b') return new Response('dead', { status: 500 });
+      return Response.json({
+        choices: [
+          { message: { content: JSON.stringify({ items: [{ editionId: 'ed-ty', code: 'TY', title: 'Toán Y', quantity: 1 }], warnings: [] }) } },
+        ],
+      });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  });
+  const tier2 = await extractOrderEntities('lấy sách', FAKE_CATALOG);
+  ok(
+    '28. gpt-oss chết -> qwen cùng tầng cứu, engine LLM_GROQ',
+    tier2.engine === 'LLM_GROQ' && tier2.checked.some((i) => i.editionId === 'ed-ty'),
+    `engine=${tier2.engine}`
+  );
+  restoreFetch();
+
+  // 29. Cả tầng Groq chết -> rơi về Gemini (không bỏ qua tầng giữa).
+  process.env.GEMINI_API_KEY = 'test-gemini-key';
+  process.env.GEMINI_MODEL = 'test-model-stubbed';
+  resetLlmBreaker('gemini');
+  stubFetch(async (url) => {
+    if (url.includes('api.groq.com')) return new Response('down', { status: 500 });
+    if (url.includes('generativelanguage.googleapis.com')) {
+      return Response.json({
+        candidates: [
+          { content: { parts: [{ text: JSON.stringify({ items: [{ editionId: 'ed-hx', code: 'HX', title: 'Học X', quantity: 2 }], warnings: [] }) }] } },
+        ],
+      });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  });
+  const tier3 = await extractOrderEntities('lấy sách', FAKE_CATALOG);
+  ok(
+    '29. Groq chết hết -> Gemini đỡ, engine LLM_GEMINI',
+    tier3.engine === 'LLM_GEMINI' && tier3.checked.some((i) => i.editionId === 'ed-hx'),
+    `engine=${tier3.engine}`
+  );
+  restoreFetch();
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_MODEL;
+  delete process.env.GROQ_API_KEY;
+  delete process.env.GROQ_CHAT_MODEL;
+  resetLlmBreaker('gemini');
+  resetLlmBreaker('groq');
+
   console.log(`\n${passed === total ? '🎉' : '⚠️'} VOICE ORDER 5.1: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
 }

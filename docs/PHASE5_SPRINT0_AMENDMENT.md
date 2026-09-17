@@ -39,3 +39,4 @@ Vượt budget hoặc mở mạch → rơi về fallback nội bộ, không cras
 
 *Đã ký: Chủ dự án (Ban Điều Phối) — Ngày 17/09/2026. Team A vắng mặt, Team B (tác giả) thi hành. Phụ lục này được phê chuẩn thay cho chữ ký tay theo lệnh trực tiếp của Chủ dự án.*
 *Sửa đổi v1.2 (cùng ngày, lệnh trực tiếp Chủ dự án): đổi model sang `gemini-3.5-flash-lite` theo số liệu đo thật; chốt tầng Groq `openai/gpt-oss-20b`, loại `qwen/qwen3.8-27b`.*
+*Sửa đổi v1.3 (cùng ngày, Chủ dự án phản biện: qwen 21.5 > lite 19): đưa `qwen/qwen3.8-27b` trở lại chuỗi làm tầng Groq thứ 2 sau `openai/gpt-oss-20b` (`GROQ_CHAT_MODEL` hỗ trợ danh sách cách nhau bằng dấu phẩy, thử theo thứ tự). Lý do giữ: lỗi qwen đã bị cross-check catalog + fallback tầng sau bọc; thêm tầng chỉ tăng độ vững, không thêm rủi ro khi tầng trước khỏe.*

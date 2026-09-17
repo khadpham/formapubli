@@ -62,13 +62,21 @@ export function resolveOpenAIModel(): string {
 }
 
 /**
- * Model chat Groq (tầng 3 opt-in). Trả null khi chưa cấu hình -> caller BỎ QUA
- * tầng này, KHÔNG ném lỗi (tránh phá vỡ chuỗi fallback khi admin chưa bật).
- * Khuyến nghị: GROQ_CHAT_MODEL=openai/gpt-oss-20b (strict JSON schema, ~1000 tps).
+ * Danh sách model chat Groq (opt-in, thử theo thứ tự, cách nhau bằng dấu phẩy).
+ * Rỗng -> caller BỎ QUA tầng Groq, KHÔNG ném lỗi.
+ * Khuyến nghị theo bench 8 case: "openai/gpt-oss-20b,qwen/qwen3.8-27b"
+ * (gpt-oss 24/24 strict JSON; qwen 21.5/24 nhanh ~440ms, lỗi đã bị cross-check + fallback bọc).
  */
+export function resolveGroqChatModels(): string[] {
+  return (process.env.GROQ_CHAT_MODEL || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+}
+
+/** Giữ để tương thích ngược: model Groq đầu tiên, hoặc null khi chưa cấu hình. */
 export function resolveGroqChatModel(): string | null {
-  const model = (process.env.GROQ_CHAT_MODEL || '').trim();
-  return model || null;
+  return resolveGroqChatModels()[0] || null;
 }
 
 export function resolveGroqApiKey(): string {
