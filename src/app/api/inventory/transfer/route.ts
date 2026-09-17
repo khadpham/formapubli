@@ -1,15 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
+import { isDirectTransferAllowed } from '@/services/direct-transfer-policy';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
+import { UserRole } from '@/lib/roles';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { editionId, fromWarehouseId, toWarehouseId, quantity, documentRef, note, actorId } = body;
+    // CP3-B1 Invariant: Direct internal transfer is strictly restricted to ROLE_OWNER and ROLE_MANAGER
+    const ALLOWED_TRANSFER_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
+    const session = await requireSessionRole(req, ALLOWED_TRANSFER_ROLES);
+    const userRole = session.role as UserRole;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
 
-    if (!editionId || !fromWarehouseId || !toWarehouseId || !quantity || !documentRef) {
+    const body = await req.json();
+    const { editionId, fromWarehouseId, toWarehouseId, quantity, documentRef, note } = body;
+    const idempotencyKey = req.headers.get('idempotency-key') || req.headers.get('x-idempotency-key') || body.idempotencyKey;
+
+    if (!editionId || !fromWarehouseId || !toWarehouseId || quantity === undefined || quantity === null || !documentRef) {
       return NextResponse.json(
-        { error: 'Thiếu thông tin bắt buộc (editionId, fromWarehouseId, toWarehouseId, quantity, documentRef)' },
+        { success: false, code: 'INVALID_INPUT', error: 'Thiếu thông tin bắt buộc (editionId, fromWarehouseId, toWarehouseId, quantity, documentRef)' },
         { status: 400 }
+      );
+    }
+    if (!idempotencyKey || !`${idempotencyKey}`.trim()) {
+      return NextResponse.json(
+        { success: false, code: 'INVALID_INPUT', error: 'Bắt buộc cung cấp idempotencyKey cho thao tác chuyển kho trực tiếp.' },
+        { status: 400 }
+      );
+    }
+    const qty = typeof quantity === 'number' ? quantity : Number(`${quantity}`.trim());
+    if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
+      return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: 'quantity phải là số nguyên > 0.' }, { status: 400 });
+    }
+    // CP3-D pair allowlist cho endpoint direct (SSOT §9): cặp ngoài allowlist
+    // (mặc định rỗng) hoặc kho virtual -> 403 fail-closed.
+    if (!isDirectTransferAllowed(fromWarehouseId, toWarehouseId)) {
+      return NextResponse.json(
+        { success: false, code: 'FORBIDDEN', error: `Tuyến chuyển kho trực tiếp [${fromWarehouseId} → ${toWarehouseId}] không nằm trong danh mục cho phép. Dùng luân chuyển 2 bước /api/transfers.` },
+        { status: 403 }
       );
     }
 
@@ -17,17 +53,23 @@ export async function POST(req: NextRequest) {
       editionId,
       fromWarehouseId,
       toWarehouseId,
-      quantity: parseInt(quantity, 10),
+      quantity: qty,
       documentRef,
       note,
-      actorId: actorId || 'Thủ kho formapubli',
+      actorContext,
+      idempotencyKey: `${idempotencyKey}`.trim(),
     });
+
+    if (!(result as any).isDuplicate) {
+      recordAuditLog({
+        action: 'TRANSFER_DISPATCH', actorRole: userRole, actorId: actorHeader,
+        resource: '/api/inventory/transfer', details: `Chuyển ${qty} cuốn ${editionId}: ${fromWarehouseId} → ${toWarehouseId} (${documentRef}).`,
+      });
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Lỗi xử lý chuyển kho' },
-      { status: 400 }
-    );
+    return handleApiError(error);
   }
 }
+

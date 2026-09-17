@@ -57,6 +57,48 @@ export function ExecutiveDashboard({
   // Sách sắp hết hàng (tồn kho tổng dưới 15 cuốn hoặc bằng 0)
   const lowStockBooks = matrixBooks.filter((b) => (b.totalStock || 0) < 15).slice(0, 5);
 
+  // Ticket 4: 3 chart SVG nhẹ tính từ orders/summary đã fetch — không lib, không API mới.
+  const last7Days = React.useMemo(() => {
+    const days: Array<{ key: string; label: string; total: number }> = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      days.push({ key, label: `${d.getDate()}/${d.getMonth() + 1}`, total: 0 });
+    }
+    const map = new Map(days.map((d) => [d.key, d]));
+    for (const o of orders as any[]) {
+      const k = (o.createdAt || '').slice(0, 10);
+      const bucket = map.get(k);
+      if (bucket) bucket.total += Number(o.finalAmount || 0);
+    }
+    return days;
+  }, [orders]);
+
+  const maxDayTotal = Math.max(1, ...last7Days.map((d) => d.total));
+
+  const fiscalSplit = React.useMemo(() => {
+    const tax = Number(summary?.officialTax?.revenue || 0);
+    const internal = Number(summary?.internalManagement?.revenue || 0);
+    const total = tax + internal;
+    if (total <= 0) return { tax: 0, internal: 0, taxPct: 0, internalPct: 0, total: 0 };
+    return {
+      tax,
+      internal,
+      taxPct: Math.round((tax / total) * 100),
+      internalPct: Math.round((internal / total) * 100),
+      total,
+    };
+  }, [summary]);
+
+  const topOrders = React.useMemo(() => {
+    return [...(orders as any[])]
+      .sort((a, b) => Number(b.finalAmount || 0) - Number(a.finalAmount || 0))
+      .slice(0, 5);
+  }, [orders]);
+
+  const maxTopAmount = Math.max(1, ...topOrders.map((o: any) => Number(o.finalAmount || 0)));
+
   const isOwnerOrManager = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
   return (
@@ -96,6 +138,15 @@ export function ExecutiveDashboard({
             <ShoppingCart className="w-4 h-4" />
             Mở Quầy POS
           </button>
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              onClick={() => onNavigateTab('studio')}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all"
+              title="Mở Không Gian Phân Tích Chuyên Sâu & Dự Báo (Alt+7)"
+            >
+              🔬 Mở Phân Tích Chuyên Sâu ➔
+            </button>
+          )}
         </div>
       </div>
 
@@ -119,7 +170,7 @@ export function ExecutiveDashboard({
             )}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Gồm bán lẻ hội chợ & đầu nậu Đinh Lễ
+            Gồm bán lẻ hội chợ & đại lý sỉ Đinh Lễ
           </p>
         </div>
 
@@ -249,7 +300,7 @@ export function ExecutiveDashboard({
               </p>
               <div className="mt-3 text-xs text-indigo-800 space-y-1">
                 <div className="flex justify-between">
-                  <span>Đơn đầu nậu & bán lẻ:</span>
+                  <span>Đơn đại lý & bán lẻ:</span>
                   <span className="font-bold">{summary?.internalManagement?.ordersCount || 0} đơn</span>
                 </div>
                 <div className="flex justify-between">
@@ -306,6 +357,97 @@ export function ExecutiveDashboard({
                 POS Bán
               </span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ticket 4: 3 chart SVG nhẹ kiểu Power BI — trend 7 ngày, donut sổ kép, top 5 đơn */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Trend doanh thu 7 ngày */}
+        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Doanh thu 7 ngày</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Hover từng cột xem số • Tính từ đơn đã fetch</p>
+          <div className="mt-3 flex items-end gap-1.5 h-28">
+            {last7Days.map((d) => (
+              <div key={d.key} className="flex-1 flex flex-col items-center gap-1" title={`${d.key}: ${d.total.toLocaleString('vi-VN')} đ`}>
+                <div
+                  className="w-full rounded-t-md bg-indigo-500/90 hover:bg-indigo-600 transition-colors"
+                  style={{ height: `${Math.max(4, Math.round((d.total / maxDayTotal) * 96))}px` }}
+                />
+                <span className="text-[9px] font-mono text-slate-400">{d.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Donut cơ cấu sổ Thuế vs Thực */}
+        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cơ cấu Sổ Thuế vs Sổ Thực</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Thuế VAT xanh lá • Nội bộ tím</p>
+          <div className="mt-3 flex items-center gap-4">
+            <svg width="96" height="96" viewBox="0 0 96 96" className="shrink-0">
+              <circle cx="48" cy="48" r="38" fill="none" stroke="#e2e8f0" strokeWidth="14" />
+              {fiscalSplit.total > 0 && (
+                <>
+                  <circle
+                    cx="48" cy="48" r="38" fill="none" stroke="#10b981" strokeWidth="14"
+                    strokeDasharray={`${(fiscalSplit.taxPct / 100) * 238.8} 238.8`}
+                    strokeLinecap="round" transform="rotate(-90 48 48)"
+                  />
+                  <circle
+                    cx="48" cy="48" r="38" fill="none" stroke="#8b5cf6" strokeWidth="14"
+                    strokeDasharray={`${(fiscalSplit.internalPct / 100) * 238.8} 238.8`}
+                    strokeDashoffset={`${-((fiscalSplit.taxPct / 100) * 238.8)}`}
+                    strokeLinecap="round" transform="rotate(-90 48 48)"
+                  />
+                </>
+              )}
+              <text x="48" y="52" textAnchor="middle" className="font-mono" fontSize="13" fontWeight="800" fill="#0f172a">
+                {fiscalSplit.total > 0 ? `${fiscalSplit.taxPct}%` : '—'}
+              </text>
+            </svg>
+            <div className="text-xs space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span className="text-slate-600">VAT: </span>
+                <span className="font-mono font-bold text-slate-900">{fiscalSplit.tax.toLocaleString('vi-VN')} đ</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+                <span className="text-slate-600">Nội bộ: </span>
+                {isOwnerOrManager ? (
+                  <span className="font-mono font-bold text-slate-900">{fiscalSplit.internal.toLocaleString('vi-VN')} đ</span>
+                ) : (
+                  <span className="italic text-slate-400">Ẩn theo quyền</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Top 5 đơn lớn nhất */}
+        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Top 5 đơn giá trị cao</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Thanh ngang theo thực thu</p>
+          <div className="mt-3 space-y-2">
+            {topOrders.length === 0 ? (
+              <p className="text-xs text-slate-400">Chưa có đơn — mở POS tạo đơn đầu tiên.</p>
+            ) : (
+              topOrders.map((o: any) => (
+                <div key={o.id}>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-mono font-bold text-indigo-700 truncate">{o.orderCode}</span>
+                    <span className="font-mono text-slate-600">{Number(o.finalAmount || 0).toLocaleString('vi-VN')} đ</span>
+                  </div>
+                  <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500"
+                      style={{ width: `${Math.max(4, Math.round((Number(o.finalAmount || 0) / maxTopAmount) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -380,7 +522,7 @@ export function ExecutiveDashboard({
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                          Nội bộ / Đầu nậu
+                          Sổ Quản trị Nội bộ
                         </span>
                       )}
                     </td>

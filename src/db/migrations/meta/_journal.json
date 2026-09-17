@@ -1,27 +1,125 @@
 {
-  "version": "7",
   "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
+      "tag": "0000_late_nitro",
       "version": "6",
       "when": 1789102484773,
-      "tag": "0000_late_nitro",
       "breakpoints": true
     },
     {
       "idx": 1,
+      "tag": "0001_secret_master_mold",
       "version": "6",
       "when": 1789102863952,
-      "tag": "0001_secret_master_mold",
       "breakpoints": true
     },
     {
       "idx": 2,
+      "tag": "0002_chubby_saracen",
       "version": "6",
       "when": 1789126703730,
-      "tag": "0002_chubby_saracen",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "tag": "0003_slim_caretaker",
+      "version": "6",
+      "when": 1789238824414,
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "tag": "0004_fair_post",
+      "version": "6",
+      "when": 1789240405206,
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "tag": "0005_d3_d4_quota_rma",
+      "version": "6",
+      "when": 1789243527905,
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "tag": "0006_transfer_shipments",
+      "version": "6",
+      "when": 1789247000000,
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "tag": "0007_consignment_ledger",
+      "version": "6",
+      "when": 1789247100000,
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "tag": "0008_boxset_bundles",
+      "version": "6",
+      "when": 1789247200000,
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789246330486,
+      "tag": "0009_consignment_settlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789315817959,
+      "tag": "0010_rights_and_royalties",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789449008375,
+      "tag": "0011_sales_returns",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789465819820,
+      "tag": "0012_spx_cod_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1789466675837,
+      "tag": "0013_customer_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1789466946445,
+      "tag": "0014_sponsorship_funds",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1789467500000,
+      "tag": "0015_staff_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1789468000000,
+      "tag": "0016_cp3_transfer_return_hardening",
       "breakpoints": true
     }
-  ]
+  ],
+  "version": "7"
 }

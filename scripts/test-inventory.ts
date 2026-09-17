@@ -1,6 +1,14 @@
 import { InventoryService } from '../src/services/inventory.service';
+import { toActorContext } from '../src/services/actor-context';
+import { setDirectTransferAllowlist, resetDirectTransferAllowlist } from '../src/services/direct-transfer-policy';
 import { db, editions, warehouses, inventoryLedger } from '../src/db';
 import { eq } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-inventory');
+
+// CP3-B1.1 (mục 5): bổ sung actorContext + key; không đổi assertion.
+const ICTX = (id: string) => toActorContext(id, 'ROLE_MANAGER');
 
 async function runInventoryTests() {
   console.log('🧪 ===============================================');
@@ -23,6 +31,11 @@ async function runInventoryTests() {
   console.log(`🏢 Kho 1: ${whAuCo.name} (${whAuCo.code})`);
   console.log(`🏢 Kho 2: ${whQuynhMai.name} (${whQuynhMai.code})`);
   console.log(`🏢 Kho 3: ${whDuPhong.name} (${whDuPhong.code})\n`);
+
+  // CP3-B1.2 (mục 3): cấu hình tường minh cặp Quỳnh Mai ↔ Âu Cơ cho transfer
+  // trực tiếp; dọn trong finally. Không đổi assertion nghiệp vụ.
+  setDirectTransferAllowlist([[whQuynhMai.id, whAuCo.id]]);
+  try {
 
   const baseAuCo = await InventoryService.getBalance(book.id, whAuCo.id, 'NEW');
   const baseQuynhMai = await InventoryService.getBalance(book.id, whQuynhMai.id, 'NEW');
@@ -52,12 +65,13 @@ async function runInventoryTests() {
     toWarehouseId: whAuCo.id,
     quantity: 200,
     documentRef: transferDoc,
-    actorId: 'Thủ kho Quỳnh Mai',
+    actorContext: ICTX('Thu kho Quynh Mai'),
+    idempotencyKey: `transfer-${transferDoc}`,
     note: 'Tiếp tế sách rời cho văn phòng Âu Cơ soạn đơn trực tuyến',
   });
   console.log(`✅ Chuyển kho thành công:`);
-  console.log(`   - Quỳnh Mai (kho xuất): ${transferResult.fromWarehouse.previousQuantity} ➔ ${transferResult.fromWarehouse.newQuantity} cuốn`);
-  console.log(`   - Âu Cơ (kho nhập):     ${transferResult.toWarehouse.previousQuantity} ➔ ${transferResult.toWarehouse.newQuantity} cuốn`);
+  console.log(`   - Quỳnh Mai (kho xuất): ${transferResult.fromWarehouse!.previousQuantity} ➔ ${transferResult.fromWarehouse!.newQuantity} cuốn`);
+  console.log(`   - Âu Cơ (kho nhập):     ${transferResult.toWarehouse!.previousQuantity} ➔ ${transferResult.toWarehouse!.newQuantity} cuốn`);
 
   // 4. Test 3: Xuất bán lẻ 50 cuốn từ Kho 1 (Âu Cơ) cho khách hàng
   console.log('\n--- TEST 3: Xuất bán lẻ 50 cuốn từ Kho 1 (Âu Cơ) ---');
@@ -135,6 +149,9 @@ async function runInventoryTests() {
   console.log('\n===============================================');
   console.log('🎉 TẤT CẢ 6 BÀI KIỂM THỬ ĐÃ ĐẠT KẾT QUẢ XUẤT SẮC 100%!');
   console.log('===============================================\n');
+  } finally {
+    resetDirectTransferAllowlist();
+  }
 }
 
 runInventoryTests().catch((err) => {

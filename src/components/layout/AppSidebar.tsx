@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  FlaskConical,
   Sparkles,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
@@ -26,6 +27,7 @@ interface AppSidebarProps {
   onToggleCollapse: () => void;
   isMobileOpen: boolean;
   onCloseMobile: () => void;
+  onOpenCopilot?: () => void;
 }
 
 export function AppSidebar({
@@ -37,64 +39,66 @@ export function AppSidebar({
   onToggleCollapse,
   isMobileOpen,
   onCloseMobile,
+  onOpenCopilot,
 }: AppSidebarProps) {
   const roleConfig = USER_ROLES[currentRole];
+  const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
   const navItems = [
     {
       id: 'dashboard',
       label: 'Tổng Quan Toàn Cảnh',
-      shortLabel: 'Tổng quan',
       icon: LayoutDashboard,
-      badge: 'Master',
+      shortcut: 'Alt+1',
       color: 'text-indigo-600',
     },
     {
       id: 'pos',
       label: 'Quầy Bán Hàng POS',
-      shortLabel: 'Bán hàng',
       icon: ShoppingCart,
-      badge: 'Speed',
+      shortcut: 'Alt+2',
       color: 'text-emerald-600',
     },
     {
       id: 'inventory',
       label: 'Kho Hàng & Thẻ Kho',
-      shortLabel: 'Kho hàng',
       icon: Boxes,
-      badge: '3 Kho',
+      shortcut: 'Alt+3',
       color: 'text-amber-600',
     },
     {
       id: 'sales',
       label: 'Doanh Số & Sổ Kép',
-      shortLabel: 'Doanh số',
       icon: Receipt,
-      badge: 'Dual',
+      shortcut: 'Alt+4',
       color: 'text-sky-600',
     },
     {
       id: 'partners',
-      label: 'Đối Tác & Đầu Nậu',
-      shortLabel: 'Đối tác',
+      label: 'Đối Tác & Đại Lý',
       icon: Users,
-      badge: 'B2B',
+      shortcut: 'Alt+5',
       color: 'text-purple-600',
     },
     {
       id: 'customers',
       label: 'Độc Giả & Gói Mùa',
-      shortLabel: 'Độc giả',
       icon: BookOpenCheck,
-      badge: 'CRM',
+      shortcut: 'Alt+6',
       color: 'text-rose-600',
+    },
+    {
+      id: 'studio',
+      label: 'Phân Tích & Dự Báo',
+      icon: FlaskConical,
+      shortcut: 'Alt+7',
+      color: 'text-violet-600',
     },
     {
       id: 'settings',
       label: 'Phân Quyền & Cài Đặt',
-      shortLabel: 'Cài đặt',
       icon: Settings,
-      badge: 'RBAC',
+      shortcut: 'Alt+8',
       color: 'text-slate-600',
     },
   ];
@@ -193,7 +197,7 @@ export function AppSidebar({
                   onSelectTab(item.id);
                   onCloseMobile();
                 }}
-                title={isCollapsed ? item.label : undefined}
+                title={isCollapsed ? `${item.label} (${item.shortcut})` : undefined}
                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-medium text-sm transition-all duration-200 min-h-[48px] ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25'
@@ -206,22 +210,48 @@ export function AppSidebar({
                   }`}
                 />
                 {!isCollapsed && (
-                  <div className="flex items-center justify-between flex-1 truncate">
+                  <div className="flex items-center justify-between flex-1 truncate gap-2">
                     <span className="truncate">{item.label}</span>
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold shrink-0 ${
+                      className={`text-[9px] px-2 py-0.5 rounded font-mono font-medium hidden sm:inline ${
                         isActive
                           ? 'bg-white/20 text-white'
-                          : 'bg-slate-800 text-slate-400'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700/60'
                       }`}
                     >
-                      {item.badge}
+                      {item.shortcut}
                     </span>
                   </div>
                 )}
               </button>
             );
           })}
+
+          {/* AI Executive Copilot Quick Trigger (Chỉ hiển thị cho OWNER & MANAGER) */}
+          {canUseCopilot && onOpenCopilot && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <button
+                onClick={() => {
+                  onOpenCopilot();
+                  onCloseMobile();
+                }}
+                title={isCollapsed ? 'Executive Copilot (Alt+C)' : undefined}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 to-slate-900 text-indigo-200 hover:text-white hover:border-indigo-500/60 hover:from-indigo-900/80 ${
+                  isCollapsed ? 'justify-center px-0' : ''
+                }`}
+              >
+                <Sparkles className="w-5 h-5 text-indigo-400 shrink-0 animate-pulse" />
+                {!isCollapsed && (
+                  <div className="flex items-center justify-between flex-1 truncate gap-2">
+                    <span className="truncate font-semibold text-white">AI Copilot</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 hidden sm:inline">
+                      Alt+C
+                    </span>
+                  </div>
+                )}
+              </button>
+            </div>
+          )}
         </nav>
 
         {/* Footer info & Collapse button */}

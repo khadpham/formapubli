@@ -2,6 +2,9 @@ import { db, works, editions, warehouses, stockBalances, inventoryLedger, orders
 import { InventoryService } from '../src/services/inventory.service';
 import { OrderService } from '../src/services/order.service';
 import { eq, sql } from 'drizzle-orm';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-master-audit');
 
 /**
  * MASTER COMPREHENSIVE AUDIT SUITE (PHASE 1 & PHASE 2 VERIFICATION)
@@ -34,10 +37,12 @@ async function runMasterAudit() {
   console.log('--- PHẦN 1: KIỂM TOÁN MASTER DATA & TỒN TẠI VẬT LÝ ---');
 
   const allEditions = await db.select().from(editions);
-  assert(allEditions.length === 81, 'Danh mục ấn bản sách chuẩn hóa', `Có đúng ${allEditions.length}/81 ấn bản (H01-H81)`);
+  const bookEditions = allEditions.filter((e) => !e.code.startsWith('BOX-'));
+  assert(bookEditions.length === 81, 'Danh mục ấn bản sách chuẩn hóa', `Có đúng ${bookEditions.length}/81 ấn bản sách (H01-H81, chưa kể SKU vỏ hộp BOX-)`);
 
   const allWorks = await db.select().from(works);
-  assert(allWorks.length === 80, 'Danh mục tác phẩm gốc', `Có đúng ${allWorks.length}/80 tác phẩm (H21 và H36 chung tác phẩm Baudelaire)`);
+  const bookWorks = allWorks.filter((w) => !w.code.startsWith('W-BOX-'));
+  assert(bookWorks.length === 80, 'Danh mục tác phẩm gốc', `Có đúng ${bookWorks.length}/80 tác phẩm (H21 và H36 chung tác phẩm Baudelaire, chưa kể tác phẩm vỏ hộp)`);
 
   const allWarehouses = await db.select().from(warehouses);
   const warehouseCodes = allWarehouses.map((w) => w.code);
@@ -177,7 +182,7 @@ async function runMasterAudit() {
   assert(
     retailOrder.discountAmount === Math.round(retailOrder.subtotal * 0.1),
     'Tính chiết khấu đơn hàng chuẩn xác 100%',
-    `Giá bìa: ${retailOrder.subtotal.toLocaleString()} đ | Giảm 10%: ${retailOrder.discountAmount.toLocaleString()} đ | Thực thu: ${retailOrder.finalAmount.toLocaleString()} đ`
+    `Giá bìa: ${retailOrder.subtotal.toLocaleString()} đ | Giảm 10%: ${(retailOrder.discountAmount || 0).toLocaleString()} đ | Thực thu: ${retailOrder.finalAmount.toLocaleString()} đ`
   );
 
   // -------------------------------------------------------------
@@ -203,7 +208,7 @@ async function runMasterAudit() {
   const hasInternalLeaked = taxOrders.some((o) => o.fiscalScope === 'INTERNAL_MANAGEMENT');
   assert(
     !hasInternalLeaked,
-    'Sổ Kế Toán Thuế hoàn toàn sạch bóng đơn Nội Bộ/Đầu Nậu (Zero-Leakage)',
+    'Sổ Kế Toán Thuế hoàn toàn sạch bóng đơn Nội Bộ/Đại Lý Sỉ (Zero-Leakage)',
     `Tổng số đơn thuế: ${taxOrders.length} đơn, không chứa bất kỳ đơn nội bộ nào`
   );
 

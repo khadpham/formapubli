@@ -6,11 +6,15 @@ import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard';
 import { PosCheckoutTerminal } from '@/components/pos/PosCheckoutTerminal';
 import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
+import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
+import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { UserRole, USER_ROLES } from '@/lib/roles';
-import { Menu, Shield } from 'lucide-react';
+import { Menu, Shield, LogOut, Sparkles } from 'lucide-react';
+import { LoginModal } from '@/components/auth/LoginModal';
+import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 
 interface MasterAppShellProps {
   matrixBooks: any[];
@@ -18,6 +22,8 @@ interface MasterAppShellProps {
   partnerList: any[];
   ledgerList: any[];
   dbStatus: string;
+  initialSession?: { role: UserRole; actorId: string; fullName?: string; expiresAt: number } | null;
+  requiresAuth?: boolean;
 }
 
 export function MasterAppShell({
@@ -26,13 +32,38 @@ export function MasterAppShell({
   partnerList,
   ledgerList,
   dbStatus,
+  initialSession = null,
+  requiresAuth = false,
 }: MasterAppShellProps) {
+  const [session, setSession] = useState(initialSession);
+  const [showLoginModal, setShowLoginModal] = useState(requiresAuth || !initialSession);
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
-  const [currentRole, setCurrentRole] = useState<UserRole>('ROLE_OWNER');
+  const [currentRole, setCurrentRole] = useState<UserRole>(initialSession?.role || 'ROLE_OWNER');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
+  // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
+  const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+
+  // Cập nhật currentRole khi session thay đổi
+  React.useEffect(() => {
+    if (session?.role) {
+      setCurrentRole(session.role);
+    }
+  }, [session]);
 
   const roleConfig = USER_ROLES[currentRole];
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      setSession(null);
+      setShowLoginModal(true);
+      window.location.reload();
+    }
+  };
 
   // Nếu vai trò hiện tại không được phép truy cập tab này, tự chuyển về tab đầu tiên được phép
   React.useEffect(() => {
@@ -40,6 +71,48 @@ export function MasterAppShell({
       setCurrentTab(roleConfig.allowedNavItems[0]);
     }
   }, [currentRole, currentTab, roleConfig]);
+
+
+  // Phím tắt bàn phím toàn cục:
+  // - Alt + 1..8: chuyển Tab siêu tốc
+  // - Alt + C: Bật/tắt Executive AI Copilot Drawer (chỉ cho OWNER & MANAGER)
+  React.useEffect(() => {
+    const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
+      // Bắt tổ hợp Alt + [phím] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        // Phím tắt Alt + C mở Copilot
+        if (e.key === 'c' || e.key === 'C') {
+          e.preventDefault();
+          if (canUseCopilot) {
+            setIsCopilotOpen((prev) => !prev);
+          }
+          return;
+        }
+
+        const keyMap: Record<string, string> = {
+          '1': 'dashboard',
+          '2': 'pos',
+          '3': 'inventory',
+          '4': 'sales',
+          '5': 'partners',
+          '6': 'customers',
+          '7': 'studio',
+          '8': 'settings',
+        };
+
+        const targetTab = keyMap[e.key];
+        if (targetTab) {
+          e.preventDefault();
+          if (roleConfig.allowedNavItems.includes(targetTab)) {
+            setCurrentTab(targetTab);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalNavShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalNavShortcuts);
+  }, [roleConfig, canUseCopilot]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
@@ -53,6 +126,7 @@ export function MasterAppShell({
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        onOpenCopilot={() => setIsCopilotOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -74,19 +148,35 @@ export function MasterAppShell({
               <span className="font-bold text-slate-800 text-sm hidden sm:inline">
                 Khung Vận Hành:
               </span>
-              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                {currentTab === 'dashboard' && 'Bảng Quản Trị Toàn Cảnh'}
-                {currentTab === 'pos' && 'Quầy Bán Hàng POS'}
-                {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho Bất Biến'}
-                {currentTab === 'sales' && 'Doanh Số & Sổ Kép'}
-                {currentTab === 'partners' && 'Đối Tác & Kênh Sỉ'}
-                {currentTab === 'customers' && 'Độc Giả & Gói Mùa'}
-                {currentTab === 'settings' && 'Phân Quyền & Cài Đặt'}
+              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5">
+                {currentTab === 'dashboard' && 'Bảng Quản Trị (Alt+1)'}
+                {currentTab === 'pos' && 'Quầy Bán Hàng POS (Alt+2)'}
+                {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho (Alt+3)'}
+                {currentTab === 'sales' && 'Doanh Số & Sổ Kép (Alt+4)'}
+                {currentTab === 'partners' && 'Đối Tác & Đại Lý (Alt+5)'}
+                {currentTab === 'customers' && 'Độc Giả CRM (Alt+6)'}
+                {currentTab === 'studio' && 'Phân Tích & Dự Báo (Alt+7)'}
+                {currentTab === 'settings' && 'Cài Đặt & Phân Quyền (Alt+8)'}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            {/* AI Executive Copilot Trigger Button (Chỉ dành cho OWNER & MANAGER) */}
+            {canUseCopilot && (
+              <button
+                onClick={() => setIsCopilotOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
+                title="Mở Executive AI Copilot (Alt+C)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                <span className="hidden sm:inline">AI Copilot</span>
+                <span className="text-[10px] px-1 rounded bg-indigo-200/60 text-indigo-800 font-mono hidden md:inline">
+                  Alt+C
+                </span>
+              </button>
+            )}
+
             {/* Active Role Badge */}
             <div
               onClick={() => setCurrentTab('settings')}
@@ -102,8 +192,21 @@ export function MasterAppShell({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>Edge: {dbStatus}</span>
             </div>
+
+            {/* Logout Button */}
+            {session && (
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-slate-200 transition-colors"
+                title="Đăng xuất ca làm việc"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Đăng xuất</span>
+              </button>
+            )}
           </div>
         </header>
+
 
         {/* Dynamic View Body */}
         <main className="p-4 md:p-8 max-w-7xl w-full mx-auto flex-1">
@@ -140,6 +243,7 @@ export function MasterAppShell({
                 initialBooks={matrixBooks}
                 warehouses={warehouseList}
                 initialLedger={ledgerList}
+                currentRole={currentRole}
               />
             </div>
           )}
@@ -148,8 +252,12 @@ export function MasterAppShell({
             <SalesLedgerView currentRole={currentRole} />
           )}
 
+          {currentTab === 'sales' && (
+            <PendingOrdersView currentRole={currentRole} />
+          )}
+
           {currentTab === 'partners' && (
-            <PartnersListView partners={partnerList} />
+            <PartnersListView partners={partnerList} currentRole={currentRole} />
           )}
 
           {currentTab === 'customers' && <CustomersListView />}
@@ -160,8 +268,38 @@ export function MasterAppShell({
               onRoleChange={setCurrentRole}
             />
           )}
+
+          {currentTab === 'studio' && (
+            <AnalyticsStudio currentRole={currentRole} />
+          )}
         </main>
       </div>
+
+      {/* Login Modal ca làm việc */}
+      {showLoginModal && (
+        <LoginModal
+          isClosable={!requiresAuth && !!session}
+          onLoginSuccess={(newSession) => {
+            setSession(newSession);
+            setCurrentRole(newSession.role);
+            setShowLoginModal(false);
+            window.location.reload();
+          }}
+          onCancel={() => {
+            if (!requiresAuth && !!session) {
+              setShowLoginModal(false);
+            }
+          }}
+        />
+      )}
+
+      {/* Executive AI Copilot Slide-over Drawer */}
+      <CopilotDrawer
+        currentRole={currentRole}
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
+      />
     </div>
   );
 }
+

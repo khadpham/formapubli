@@ -12,9 +12,9 @@
 | :---: | :--- | :---: | :---: | :--- |
 | **Phase 1** | **Lõi Kho Vận Bất Biến & Ma Trận 3 Kho**<br/>(Catalog 81 sách, 3 kho, Thẻ kho Append-Only, Tìm kiếm ngữ âm tiếng Việt, Micro giọng nói, Phím tắt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/seed-catalog-and-cloudflare-setup`<br/>`feat/inventory-ledger-and-operations`<br/>`feat/vietnamese-unaccented-and-voice-search` |
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
-| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟡 **KẾ HOẠCH TIẾP THEO** | **0%** (Chuẩn bị thi công) | `feat/pwa-mobile-and-offline-pos` |
-| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/boxset-bundles-and-consignment` |
-| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng**<br/>(Smart Voice POS Dispatcher qua Groq Whisper, Executive AI Copilot qua Gemini Flash, Dự báo tái bản $V_{\text{sale}}$, CRM Độc giả) | ⚪ **CHỜ TRIỂN KHAI** | **0%** | `feat/lean-ai-copilot-and-crm` |
+| **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng chống Macro, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
+| **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả, Clean Slate Import) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/consignment-settlement`<br/>`feat/clean-slate-ceremony`<br/>`feat/rights-and-royalties` |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn, Deep Analytics Studio & Trợ Lý Bán Hàng 0 Đồng**<br/>(Deep Analytics Studio Alt+7, Báo cáo Power BI 3 Chart, Dự báo tái bản $V_{\text{sale}}$, Quản lý In-Transit/Ký gửi, Danh bạ CRM Độc giả GĐ1, Smart Voice POS, Executive AI Copilot) | 🟡 **ĐANG TRIỂN KHAI** | **~40%** | `feat/pwa-mobile-and-offline-pos` |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
 ---
@@ -122,6 +122,377 @@
   - Kiểm thử tìm kiếm tiếng Việt không dấu: **10/10 bài test đạt 100%**.
   - Đóng gói Next.js Production (`npm run build`): Thành công với **0 lỗi**.
 
+#### 🔹 [Mã: ENG-20260911-10] Triển Khai Gói PWA First-Class & "Súng" Quét Mã Vạch Camera 0 Đồng
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - Đóng gói PWA Standalone: Khai báo `public/manifest.json` (tên formapubli OS, theme `#4f46e5`, icon 192px/512px, display standalone), Service Worker `public/sw.js` cache tài nguyên tĩnh, component `PwaRegister.tsx` lắng nghe sự kiện cài đặt app.
+  - Xây dựng "Súng" Quét Mã Vạch Camera 0 Đồng (`src/components/scanner/InAppBarcodeScanner.tsx`):
+    - Khung ngắm Viewfinder laser đỏ/xanh lá với góc bo tròn công nghệ cao, animation `animate-scan-beam`.
+    - Tích hợp `BarcodeDetector` API native quét chuẩn EAN-13 / ISBN-13 trong 100ms.
+    - Âm thanh "Bíp" siêu thị trong trẻo bằng Web Audio API Synthesizer (880Hz -> 1760Hz double chirp) + rung haptic `navigator.vibrate`.
+    - Công tắc bật đèn Flash (Torch) và chuyển đổi Camera trước/sau.
+    - Bảng mã vạch test mẫu 6 cuốn sách giúp kiểm thử 1-click ngay trên máy tính bàn.
+  - Tích hợp vào Quầy POS (`PosCheckoutTerminal.tsx`):
+    - Bổ sung nút Camera `[ 📷 ]` trong thanh tìm kiếm cạnh nút Micro.
+    - Phím tắt bàn phím `Alt + Shift + C` để bật/tắt camera tức thì.
+    - Tự động tra cứu ISBN-13, nạp sách vào giỏ hàng (+1 cuốn), hiển thị Toast thông báo xanh lá.
+  - Kiểm thử tự động `scripts/test-barcode-engine.ts` vượt qua **7/7 test cases (100%)**.
+  - Kiểm toán bảo toàn sổ cái `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+  - Biên dịch Next.js production build (`npm run build`): First Load JS chỉ 116 kB, **0 lỗi**.
+
+#### 🔹 [Mã: ENG-20260911-11] Động Cơ POS Ngoại Tuyến (Offline-First), Khóa UUID v7, Đồng Bộ Tự Động & Báo Cáo Doanh Số Đa Chiều
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - Xây dựng `src/lib/uuidv7.ts`: Thuật toán sinh UUID v7 chuẩn RFC 9562 với 48-bit timestamp và tính tăng đơn điệu (monotonic ordering), cho phép trích xuất mili-giây chuẩn xác.
+  - Xây dựng `src/lib/offline-db.ts`: Bộ đệm IndexedDB cục bộ (`formapubli_offline_db`) không phụ thuộc thư viện bên ngoài, zero-cost, lưu trữ an toàn đơn hàng ngoại tuyến.
+  - Tích hợp Offline-First vào `PosCheckoutTerminal.tsx`:
+    - Bán hàng bình thường khi mất mạng, tự động lưu IndexedDB với mã đơn `OFF-YYYYMMDD-XXXX`.
+    - Tự động phát hiện mạng trở lại qua sự kiện `online` và đồng bộ hàng loạt lên máy chủ.
+    - Huy hiệu mạng trực quan (`🟢 Trực tuyến` vs `🟡 Mất mạng (Chế độ Offline)`) kèm nút bấm `[ 🔄 Đồng bộ ngay ]`.
+    - Phiếu giao hàng thông minh nhận biết đơn ngoại tuyến và thông báo rõ ràng cho thu ngân.
+  - Bảo vệ Idempotency trong `OrderService.createOrder` và API `/api/orders`: Loại trừ hoàn toàn nguy cơ trùng đơn hoặc trừ thẻ kho hai lần khi sync lại.
+  - Nâng cấp `SalesLedgerView.tsx`:
+    - Bộ lọc thời gian đa chiều: Tất cả, Hôm nay, 7 ngày qua, Tháng này, Tùy chọn (Custom Range).
+    - Bộ lọc theo Kho xuất hàng: Toàn hệ thống, Kho 1 - Âu Cơ, Kho 3 - Hội Chợ, Kho 2 - Quỳnh Mai.
+    - Bộ kiểm thử tự động `scripts/test-offline-engine.ts` vượt qua **9/9 test cases (100%)**.
+  - Kiểm thử quét mã vạch `scripts/test-barcode-engine.ts`: **7/7 test cases (100%)**.
+  - Kiểm toán tổng thể `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+  - Đóng gói Next.js production build (`npm run build`): **0 lỗi biên dịch, First Load JS chỉ 120 kB**.
+
+#### 🔹 [Mã: ENG-20260913-12] Vá Toàn Diện Lỗ Hổng Kỹ Thuật Cốt Lõi (Priority P0 Technical Audit Fixes)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - **Vá ACID Transaction cho Thẻ Kho & Bán Hàng (Triệt tiêu B1):**
+    - Viết lại `InventoryService.recordMovement` và `InventoryService.transfer` bọc 100% trong `db.transaction(async (tx) => { ... })`. Gom kiểm tra tồn, insert thẻ kho và upsert balance vào một giao dịch nguyên tử, tự động rollback sạch sẽ nếu lỗi.
+    - Viết lại `OrderService.createOrder` thực thi nguyên tử trong một Transaction (All-or-Nothing): Tạo đơn hàng, lưu chi tiết đơn hàng và trừ thẻ kho từng cuốn sách đồng thời. Nếu 1 cuốn sách thiếu hàng, toàn bộ đơn tự động hủy bỏ, không sinh đơn rác.
+  - **Nâng cấp Schema `inventory_ledger` & Ràng buộc CSDL (Triệt tiêu B2):**
+    - Bổ sung 6 trường kiểm toán nền móng: `owner_id`, `lot_id`, `unit_cost_snapshot`, `correlation_id`, `reversal_of`, `effective_at`.
+    - Mở rộng enum `condition` hỗ trợ `QUARANTINE`.
+    - Thêm ràng buộc `nonNegativeCheck: check('check_stock_non_negative', sql`physical_quantity >= 0`)` trên bảng `stock_balances`.
+    - Áp dụng thành công migration `0003_slim_caretaker.sql` trên `formapubli.db`.
+  - **Xây Dựng Lá Chắn Bảo Mật Server-side Cho Sổ Kép & Audit Logs (Triệt tiêu B3 & B4):**
+    - Xây dựng `src/lib/rbac-guard.ts` với hàm `enforceFiscalScope`: Server tự động ép chặt `ROLE_TAX` chỉ được xem `OFFICIAL_TAX`, chặn đứng 100% việc sửa tham số trên URL để đọc trộm Sổ Quản trị nội bộ.
+    - Tạo bảng CSDL `audit_logs` tự động ghi vết mọi lượt truy cập dữ liệu quản trị nội bộ hoặc thao tác tạo đơn hàng.
+  - **Gia Cố Concurrency & Xử Lý Lệch Tồn Hội Chợ (Theo Góp Ý Chuyên Gia):**
+    - Tiện ích `src/lib/db-retry.ts` (`withDbRetry`): Bọc cơ chế thử lại tự động với Exponential Backoff và Random Jitter khi gặp `SQLITE_BUSY` hoặc `database is locked`.
+    - **Pattern Offline Overdraft 2 bước:** Khi đơn sync ngoại tuyến bán vượt số tồn, hệ thống tự động sinh `ADJUSTMENT (+K)` với ghi chú `FAIR_VARIANCE` rồi mới trừ `SALE (-K)` $\rightarrow$ Ràng buộc `CHECK (physical_quantity >= 0)` luôn thỏa mãn 100%, số dư không bị âm, đơn hàng gắn cờ `SYNCED_WITH_OVERDRAFT_WARNING` để đối soát cuối ca.
+    - **Khắc phục Race Condition của Idempotency Key:** Bắt lỗi `SQLITE_CONSTRAINT_UNIQUE` khi 2 luồng gửi cùng 1 key đồng thời, tự động truy vấn và trả về kết quả cũ 200 thay vì sập lỗi 500.
+  - **Kiểm Thử & Đóng Gói:**
+    - Xây dựng bộ test chuyên sâu `scripts/test-p0-verification.ts`: Vượt qua **7/7 test cases (100%)**.
+    - Bộ kiểm thử `scripts/test-inventory.ts`: **6/6 test cases (100%)**.
+    - Bộ kiểm thử `scripts/test-order-sales.ts`: **6/6 test cases (100%)**.
+    - Bộ kiểm thử `scripts/test-offline-engine.ts`: **9/9 test cases (100%)**.
+    - Bộ kiểm toán Master Audit `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+    - Đóng gói Next.js Production (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS chỉ 125 kB.
+
+#### 🔹 [Mã: ENG-20260913-13] Vá 5 Vết Nứt P0-Rework & Triển Khai Phân Hệ Két Tiền Quầy (Cashbox Session) & Trần Chiết Khấu Manager PIN
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - **Vá Vết Nứt a: Atomic UPDATE + rowsAffected Guard (Triệt tiêu Lost-Update 100%):**
+    - Refactor `InventoryService.recordMovement`: Cập nhật trực tiếp qua câu lệnh `UPDATE stock_balances SET physical_quantity = physical_quantity + ? WHERE ... AND (physical_quantity + ? >= 0)`.
+    - Kiểm tra `rowsAffected` ngay trong transaction. Nếu = 0, phát hiện ngay xung đột hoặc thiếu kho và ném lỗi rõ ràng, chấm dứt hoàn toàn nguy cơ 2 thu ngân ghi đè số dư của nhau.
+  - **Vá Vết Nứt b: Mở Cờ Overdraft & Validate Phân Quyền Phía API:**
+    - Cập nhật `/api/orders`: Tiếp nhận `isOfflineSync` và `allowOverdraft`.
+    - Ràng buộc thẩm quyền: Chỉ `ROLE_OWNER` / `ROLE_MANAGER` hoặc đơn có `isOfflineSync = true` mới được kích hoạt `allowOverdraft`. Thu ngân bình thường gửi đơn online với `allowOverdraft=true` sẽ bị server tự động ép về `false`.
+    - POS Terminal khi sync đơn từ IndexedDB tự động truyền đầy đủ `isOfflineSync: true` và `allowOverdraft: true`.
+  - **Vá Vết Nứt c: Siết Chặt Phân Quyền Thu Ngân & Thủ Kho:**
+    - Thu ngân (`ROLE_CASHIER`) khi gọi `/api/orders` bị ép lọc theo đúng `cashierId` của ca mình, tuyệt đối không xem được doanh thu gộp hoặc đơn của quầy khác.
+    - Thủ kho (`ROLE_WAREHOUSE`) gọi `/api/orders` bị chặn truy cập doanh thu, chỉ được quản lý tồn kho vật lý.
+  - **Triển Khai Phân Hệ D1: Két Tiền Ca Thu Ngân & Kiểm Kê Tiền Mặt (Cashbox Session):**
+    - Khởi tạo bảng CSDL `cashbox_sessions`: Quản lý ID thu ngân, kho, tiền bàn giao đầu ca (`opening_cash`), tiền mặt thực đếm khi chốt ca (`closing_cash_actual`), tiền mặt hệ thống tính (`expected_cash`), chênh lệch két (`cash_discrepancy`), tổng doanh thu tiền mặt vs chuyển khoản/QR, trạng thái OPEN/CLOSED.
+    - Liên kết mỗi đơn hàng với `cashbox_session_id`.
+    - Xây dựng dịch vụ `CashboxService` và API route `/api/cashbox` (`OPEN`, `CLOSE`, truy vấn ca hiện tại, liệt kê lịch sử ca).
+    - Giao diện POS tích hợp Huy hiệu Két tiền trên thanh tiêu đề, nút "Mở Két Ca Mới", Modal Mở Ca, Modal Chốt Ca & Kiểm Kê Két Tiền hiển thị chênh lệch thời gian thực (Khớp 100% / Thừa / Thiếu).
+  - **Triển Khai Phân Hệ D2: Trần Chiết Khấu Quầy (Hard-cap 15%) & Modal Mã PIN Quản Lý:**
+    - Thu ngân bị giới hạn chiết khấu tối đa 15%. Mức chiết khấu sỉ/đầu nậu (20%, 35%, 40%) tự động khóa với biểu tượng 🔒.
+    - Khi áp dụng mức chiết khấu > 15%, hệ thống kích hoạt Modal Mã PIN Quản Lý (Mã: 9999 / 1234 / 8888). Sau khi Quản lý nhập đúng PIN, hạn mức được mở khóa cho giao dịch hiện tại.
+  - **Cập Nhật Master Blueprint Chương 32:** Bổ sung Ba Chuẩn Mực Vận Hành Thực Địa (Atomic Guard, Counter Quota "Chia Mâm", Clean Slate Opening Stock).
+  - **Kiểm Thử Tự Động Toàn Diện:**
+    - Nâng cấp `scripts/test-p0-verification.ts` lên **10/10 test cases đạt chuẩn 100%** (bao gồm kiểm thử Atomic UPDATE rowsAffected, Vòng đời ca két tiền & đối soát chênh lệch, và Cô lập đơn hàng của thu ngân).
+    - `scripts/test-inventory.ts`: **6/6 test cases (100%)**.
+    - `scripts/test-master-audit.ts`: **13/13 test cases (100%)**.
+    - Đóng gói Next.js Production (`npm run build`): Thành công mỹ mãn với **0 lỗi biên dịch**, First Load JS giữ vững mức **128 kB** ($\le$ 130 kB ngân sách).
+
+#### 🔹 [Mã: ENG-20260913-14] Triển Khai Phase D3 & D4: Hạn Ngạch Chia Mâm Quầy, Soạn Sách Kệ Kho (Pick List), Cách Ly Sách Lỗi (RMA) & Đóng Dấu Băm SHA-256
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos`
+- **Nội dung:**
+  - **Kiến trúc Module Hóa Không Xung Đột (Non-Colliding Architecture):**
+    - Migration Additive-only `0005_d3_d4_quota_rma.sql`: Tạo 2 bảng mới `counter_allocations` và `rma_tickets` với chỉ mục đầy đủ, bảo toàn 100% các bảng cũ.
+  - **D3: Hạn Ngạch Bàn Quầy "Chia Mâm" (`allocation.service.ts`):**
+    - Trưởng quầy phân bổ số lượng sách cho từng bàn (`counter_allocations`).
+    - Kiểm tra hạn ngạch thời gian thực (`checkCounterQuota`): Cảnh báo thu ngân khi sách trên bàn quầy sắp hết để tiếp tế từ kho đệm hội chợ.
+    - Cập nhật số lượng đã bán (`recordCounterSales`) khi hoàn tất giao dịch.
+  - **D3: Danh Sách Soạn Sách Kệ Kho (Shelf Pick List):**
+    - Hàm `generatePickList`: Tự động tra cứu vị trí kệ (`suggestedLocation`) từ danh mục ấn bản, gom nhóm theo vị trí kệ kho và sắp xếp tối ưu thứ tự nhặt sách.
+    - Component `PickListModal.tsx`: Bảng soạn hàng trực quan có checkbox đánh dấu từng cuốn đã lấy, nút in phiếu soạn hàng (Print Pick List).
+  - **D4: Quy Trình Tiếp Nhận & Cách Ly Sách Lỗi/Đổi Trả (RMA Quarantine Workflow):**
+    - Dịch vụ `rma.service.ts`: Tiếp nhận sách lỗi in (`PRINT_DEFECT`), bung gáy (`BINDING_DEFECT`), dập góc (`TRANSIT_DAMAGE`), khách trả (`CUSTOMER_RETURN`), ẩm mốc (`WATER_DAMAGE`).
+    - Tự động trừ tồn kho `NEW` và tăng kho `QUARANTINE` / `DEFECTIVE` trong Ledger bất biến $\rightarrow$ Tuyệt đối không để lẫn sách hỏng vào tồn bán cho độc giả.
+    - Hàm `resolveTicket`: Xử lý sau kiểm định gồm tiêu hủy phế liệu (`WRITE_OFF_SCRAP`), xuất trả NXB (`RETURN_TO_SUPPLIER`), hoặc phục hồi về `NEW` (`REPAIRED_RESTOCK`).
+    - Component `RmaTicketModal.tsx` trên giao diện Ma trận Kho cho phép nhân viên tạo phiếu RMA 1 chạm.
+  - **D4: Đóng Dấu Watermark & Khóa Băm Toàn Vẹn SHA-256 Cho File Xuất Báo Cáo:**
+    - Tiện ích `src/lib/export-hash.ts`: Thuật toán pure TypeScript SHA-256 (0-dependency, chạy mượt mà trên cả Node.js, Web Browser và PWA Worker).
+    - Tính mã băm SHA-256 trên dữ liệu chuẩn hóa và thêm Watermark Footer ở cuối file CSV doanh số (`SalesLedgerView.tsx`): Ghi nhận vai trò, mã người xuất, ngày giờ UTC, và mã băm 64 ký tự.
+    - Hàm `verifyExportIntegrity`: Phát hiện ngay lập tức nếu file bảng tính bị sửa đổi dù chỉ 1 ký tự số tiền.
+  - **Kiểm Thử Toàn Diện & Đóng Gói:**
+    - Viết mới `scripts/test-d3-d4.ts`: Đạt **20/20 test cases (100%)**.
+    - Chạy lại toàn bộ: `test-p0-verification.ts` (10/10 PASS), `test-inventory.ts` (6/6 PASS), `test-master-audit.ts` (13/13 PASS) $\rightarrow$ **Tổng 49/49 test cases PASS 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi, 0 cảnh báo type**, First Load JS chỉ 132 kB.
+
+#### 🔹 [Mã: ENG-20260913-15] Hợp Nhất Phân Hệ Bảo Vệ Server-Enforce Discount/PIN & Cô Lập Toàn Bộ 9 Test Suites (Clean Slate Runner)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/server-discount-test-db` & `feat/isolate-all-test-suites`)
+- **Nội dung:**
+  - **Server-Side Discount Hard-Cap 15% & PIN Check (`src/app/api/orders/route.ts`):**
+    - Đặt hằng số `MAX_CASHIER_DISCOUNT_RATE = 0.15` (15%), danh sách PIN quản lý `['9999', '1234', '8888']`.
+    - Tính `effectiveItemDiscounts` bằng `Math.max` của cả `discountRate` tổng lẫn `unitDiscountRate` từng dòng (chặn đứng mọi thủ thuật lách chiết khấu từng cuốn).
+    - Phân quyền kép: `ROLE_OWNER` / `ROLE_MANAGER` được miễn trừ tự nhiên; `ROLE_CASHIER` gửi đơn vượt 15% mà không có PIN hoặc sai PIN sẽ bị chặn cứng với HTTP 403 Forbidden.
+    - Ghi nhận `MANAGER_DISCOUNT_APPROVED` và `MANAGER_DISCOUNT_DENIED` vào `audit_logs` — **tuyệt đối không lưu mã PIN vào log kiểm toán**.
+  - **Cô Lập Toàn Bộ CSDL Kiểm Thử (Clean Slate Test DB Runner):**
+    - `scripts/test-guard.ts`: Hàm `assertIsolatedTestDb()` tự động ném `exit 2` chặn ngay lập tức nếu bất kỳ file test nào trỏ vào `formapubli.db` production.
+    - `scripts/setup-test-db.ts`: Xóa file `formapubli_test.db` cũ $\rightarrow$ Dựng schema qua `drizzle-kit push` $\rightarrow$ Seed chuẩn xác 81 ấn bản từ CSV + 3 kho + 5 đối tác + `OPENING_BALANCE` 50 cuốn/ấn bản tại Âu Cơ ghi đồng thời cả Ledger lẫn Stock Balance (đảm bảo luật bảo toàn số dư).
+    - `scripts/run-isolated.ts` & `npm run test:isolated`: Chạy tuần tự 9 suites test hoàn toàn trong môi trường cách ly, đối chiếu mtime và file size của `formapubli.db` trước/sau để bảo vệ 100% tính trong sạch của DB thật.
+  - **Kết Quả Nghiệm Thu:**
+    - Toàn bộ **9/9 test suites** đạt **89/89 test cases PASS (100%)**:
+      - `test-discount-guard`: 8/8 PASS
+      - `test-p0-verification`: 10/10 PASS
+      - `test-inventory`: 6/6 PASS
+      - `test-order-sales`: 6/6 PASS
+      - `test-offline-engine`: 9/9 PASS
+      - `test-d3-d4`: 20/20 PASS
+      - `test-master-audit`: 13/13 PASS
+      - `test-vietnamese-search`: 10/10 PASS
+      - `test-barcode-engine`: 7/7 PASS
+    - `formapubli.db` production nguyên vẹn 100%, không bị ô nhiễm dù chỉ 1 byte.
+    - Đóng gói Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch, 0 type error**, First Load JS giữ ở mức **132 kB**.
+
+#### 🔹 [Mã: ENG-20260913-16] Triển Khai Phân Hệ Luân Chuyển 2 Bước (IN_TRANSIT Two-Step Engine via Virtual Hub)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/in-transit-two-step`)
+- **Nội dung:**
+  - **Kho Ảo Chung `wh-in-transit` (`KHO_IN_TRANSIT`):**
+    - Tránh bùng nổ tổ hợp kho ảo $N \times (N-1)$ tuyến; toàn bộ xe hàng đang lưu thông trên đường đều lưu chuyển qua trạm trung chuyển logic này.
+  - **Migration `0006_transfer_shipments.sql`:**
+    - Khởi tạo 2 bảng `transfer_shipments` và `transfer_shipment_items` quản lý mã phiếu `TRF-YYYYMMDD-XXXX`, kho gửi/nhận, người điều phối/người nhận, trạng thái luân chuyển (`IN_TRANSIT`, `RECEIVED_FULL`, `RECEIVED_DISCREPANCY`, `CANCELLED`).
+    - Script `scripts/apply-migration-0006.ts` áp dụng vào LibSQL độc lập.
+  - **Động Cơ Luân Chuyển 2 Bước Chống Mất Hàng (`TransferService`):**
+    - **Bước 1 (Dispatch):** Trừ kho gửi $\rightarrow$ Tăng `wh-in-transit`. Chặn đứng ngay nếu xuất vượt tồn kho gửi (Negative Stock Guard), không sinh phiếu rác.
+    - **Bước 2 (Receive):** Biên bản thực nhận bắt buộc bảo toàn phương trình:
+      $$\text{Lành (R)} + \text{Hỏng (D)} + \text{Mất (L)} = \text{Tổng hàng gửi (X)}$$
+      - Sách lành $(R) \rightarrow$ Cộng kho đích `NEW`.
+      - Sách rách/ướt trên đường $(D) \rightarrow$ Đưa thẳng vào condition `'QUARANTINE'` chờ RMA/sửa chữa.
+      - Sách thất lạc/rơi thùng $(L) \rightarrow$ Ghi bút toán `'TRANSFER_LOSS'` trừ sạch tồn transit về 0.
+      - Trạng thái phiếu: Tự động đánh dấu `RECEIVED_FULL` (nếu nhận đủ) hoặc `RECEIVED_DISCREPANCY` (nếu có chênh lệch/mất/hỏng).
+    - **Cơ Chế Cancel & Cảnh Báo Xe Kẹt (Stale Shipments):**
+      - Cho phép hủy phiếu khi còn đang `IN_TRANSIT` để thu hồi sách về lại kho xuất an toàn.
+      - Hàm `getStaleShipments`: Tự động lọc các chuyến xe đi đường quá 12 tiếng để đội điều phối gọi lái xe đối soát.
+  - **API `/api/transfers` & Bảo Mật:**
+    - Hỗ trợ đầy đủ hành động: `dispatch`, `receive`, `cancel`, `stale`, tra cứu chi tiết phiếu.
+    - Chặn cứng vai trò `ROLE_TAX` với HTTP 403 Forbidden; tự động ghi vết audit logs cho mọi lượt dispatch, receive, cancel.
+  - **Kiểm Thử Toàn Diện:**
+    - Test suite `scripts/test-in-transit.ts` đạt **17/17 PASS**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ ở mức **132 kB**.
+
+#### 🔹 [Mã: ENG-20260913-17] Triển Khai Phân Hệ Sổ Ký Gửi Đinh Lễ & Biên Bản Công Nợ Phải Thu (Consignment Ledger & AR Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/consignment-ledger`)
+- **Nội dung:**
+  - **Mô Hình Kho Đại Lý Đích Danh & Quyền Sở Hữu:**
+    - Mỗi đối tác ký gửi sở hữu một kho ảo riêng `wh-consign-<code>` (ví dụ `wh-consign-ns-mao-dinh-le`).
+    - Bút toán ghi nhận rõ quyền sở hữu `ownerId: 'part-formapubli'` $\rightarrow$ Về mặt pháp lý và kiểm toán, hàng ký gửi vẫn thuộc sở hữu của NXB/Nhà sách.
+  - **Migration `0007_consignment_ledger.sql`:**
+    - Khởi tạo 2 bảng `consignment_statements` và `consignment_statement_items` quản lý kỳ đối soát (mã `STMT-YYYYMM-XXXX`), trạng thái `DRAFT` $\rightarrow$ `CONFIRMED`, `opening_ledger_rowid`, doanh thu bìa, chiết khấu kỳ, công nợ phải thu ròng (AR).
+    - Script `scripts/apply-migration-0007.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Tái Sử Dụng Hoàn Toàn Động Cơ Luân Chuyển T1 (IN_TRANSIT):**
+    - Xuất gửi hàng đi: Gọi `TransferService.dispatch` $\rightarrow$ Nhận hàng tại quầy đối tác: Gọi `TransferService.receive` theo biên bản ký tay, kế thừa trọn vẹn bảo toàn hao hụt đường đi.
+  - **Khóa Kỳ Đối Soát Bất Biến & Chốt Công Nợ Phải Thu (AR):**
+    - Phương trình đối soát dòng hàng tại quầy ký gửi:
+      $$\text{Tồn đầu} + \text{Gửi thêm} = \text{Báo bán} + \text{Thu hồi} + \text{Hỏng/Mất} + \text{Tồn cuối}$$
+    - Tính toán công nợ phải thu:
+      $$\text{AR} = \sum (\text{Báo bán} \times \text{Giá bìa} \times (1 - \text{DiscountRate}))$$
+    - Hỗ trợ chọn cờ Sổ Kép (`fiscalScope`: mặc định `INTERNAL_MANAGEMENT`, chỉ Manager/Owner được mở `OFFICIAL_TAX`).
+    - Khi chốt `CONFIRMED`: Tự động hạch toán xuất kho bán `CONSIGNMENT_SOLD` và xuất kho mất `CONSIGNMENT_LOSS` khỏi kho đại lý; từ chối chốt nếu số liệu có thặng dư bất thường.
+  - **Vá Lỗi Nhạy Cảm Đồng Giây (Precision Race Condition Fix):**
+    - Phát hiện lỗi `CURRENT_TIMESTAMP` của SQLite chỉ tính tới giây; khắc phục dứt điểm bằng mốc con trỏ thứ tự `opening_ledger_rowid`.
+  - **API `/api/consignments` & Audit Trail:**
+    - Cung cấp các endpoints: gửi hàng, xác nhận nhận, báo bán lẻ tẻ, thu hồi hàng, tạo kỳ, sửa kỳ nháp, và chốt kỳ đối soát.
+    - Phân quyền chặt chẽ, ghi nhận audit logs đầy đủ.
+  - **Kiểm Thử Toàn Diện:**
+    - Test suite `scripts/test-consignment.ts` đạt **15/15 PASS**.
+    - Nâng tổng số test suites lên **11 suites cách ly / 121 test cases đạt chuẩn 100%**.
+#### 🔹 [Mã: ENG-20260913-18] Triển Khai Động Cơ Bán Sách Combo/Đóng Hộp & Chặn Điểm Nghẽn Kho (Boxset & Bundle Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/boxset-engine`) | **Commit:** `1f39bad`
+- **Nội dung:**
+  - **Vỏ Hộp Là SKU Thực Tế Trong Kho (Pseudo-SKU):**
+    - Đưa quy cách đóng gói vỏ hộp vào CSDL với mã SKU quy ước (ví dụ `BOX-MOLIERE-2026`, `BOX-TEST`).
+    - Khấu trừ tồn kho vỏ hộp như sách thật, triệt tiêu rủi ro nhận đơn vượt quá số lượng bao bì đóng gói.
+  - **Migration `0008_boxset_bundles.sql`:**
+    - Mở rộng bảng `order_items` với 2 cột nullable `bundle_id` và `bundle_qty`.
+    - Cho phép POS gom nhóm hiển thị theo từng bộ hộp trên hóa đơn/giao diện, trong khi tầng kế toán và thẻ kho vẫn phân rã trừ từng linh kiện sách lẻ chuẩn xác.
+    - Script `scripts/apply-migration-0008.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Phân Bổ Giá Bìa Theo Tỷ Trọng (Weighted Proration Pricing):**
+    - Giá bán combo được phân bổ theo tỷ trọng giá bìa của từng linh kiện thành phần:
+      `unit_price_i = ROUND(combo_price * (cover_price_i / sum_cover_price))`
+    - Phần chênh lệch làm tròn được tự động dồn vào dòng sản phẩm cuối cùng, bảo đảm tổng tiền khớp 100% `comboPrice` và không xuất hiện dòng kế toán 0 VNĐ.
+  - **Chặn Cứng Điểm Nghẽn Tồn Kho (Bottleneck Inventory Guard):**
+    - Tính toán số lượng combo khả dụng tối đa theo linh kiện có tồn kho hạn chế nhất:
+      `available_combos = MIN(FLOOR(stock_i / req_i))`
+    - Từ chối tạo đơn ngay lập tức nếu bất kỳ linh kiện nào (hoặc vỏ hộp) bị thiếu hụt, đồng thời nêu đích danh đầu sách bị cạn và số lượng thiếu.
+  - **Miễn Trừ Hợp Lệ Với Hard-Cap Chiết Khấu Quầy:**
+    - Giá combo là giá niêm yết do ban quản lý quy định trước; các dòng chi tiết combo mang `unitDiscountRate = 0`, ngăn chặn double-dipping chiết khấu và miễn trừ hợp lệ qua trần 15% của thu ngân.
+  - **Kiểm Thử Toàn Diện & Tối Ưu:**
+    - Test suite `scripts/test-bundle-engine.ts` đạt **10/10 PASS**.
+    - Nâng tổng số test suites lên **12 suites cách ly / 131 test cases đạt chuẩn 100%**.
+#### 🔹 [Mã: ENG-20260913-19] Xóa Nợ Kỹ Thuật: Đồng Bộ Drizzle Journal & Mã Hóa PIN Quản Lý (Tech-Debt Cleanup)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/tech-debt-journal-and-pin`) | **Commit:** `03a22f5`
+- **Nội dung:**
+  - **Bảo Mật Zero-Dependency: Mã Hóa PIN Quản Lý (`src/lib/manager-pin.ts`):**
+    - Tái sử dụng hàm băm thuần TypeScript `sha256(pin + salt)` từ `export-hash.ts`, không phát sinh thêm thư viện ngoài.
+    - Chuyển danh sách PIN quản lý sang biến môi trường `MANAGER_PIN_HASHES` (phân tách bởi dấu phẩy).
+    - Cơ chế fallback linh hoạt: Tự động cảnh báo và dùng PIN mặc định trên môi trường dev/test khi chưa thiết lập env.
+    - Giữ nguyên giao thức POS phía client: gửi plain text qua HTTPS, server băm và so khớp, không làm xáo trộn giao diện bán hàng.
+    - Cung cấp file `.env.example` và câu lệnh CLI sinh hash tiện lợi.
+  - **Đồng Bộ Drizzle Journal & Khởi Tạo CSDL Sạch (`scripts/migrate-fresh.ts`):**
+    - Chẩn đoán chính xác nguyên nhân lỗi SQLite `ADD COLUMN ... REFERENCES` trên migration `0003_slim_caretaker.sql`: các khối chú thích `/* ... */` gây lỗi ảo trong LibSQL engine; giữ nguyên vẹn 100% nội dung SQL đã deploy production.
+    - Khôi phục tính toàn vẹn của Drizzle ORM: bổ sung đầy đủ các entries `0005` đến `0008` vào `_journal.json` cùng snapshot chuẩn `0008_snapshot.json` (kiểm tra `drizzle-kit generate` báo "No schema changes").
+    - Xây dựng công cụ chạy migration an toàn `migrate-fresh.ts` tự động kiểm tra bảng, loại trừ comment, tuyệt đối chặn nhầm DB production. Chuyển `setup-test-db.ts` sang dùng cơ chế này.
+#### 🔹 [Mã: ENG-20260913-20] Động Cơ Dự Báo Tái Bản Theo Vận Tốc Bán Thực Tế (Reprint Runout Forecasting by V_sale)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/runout-forecasting-v-sale`) | **Commit:** `b6ca81b`
+- **Nội dung:**
+  - **Đo Lường Vận Tốc Bán Dựa Trên Sự Thật Vật Lý:**
+    - Tính toán $V_{\text{sale}}$ dựa trên các bút toán thẻ kho `DISPATCH_SALE` và `CONSIGNMENT_SOLD` (phản ánh toàn bộ lượng tiêu thụ thật trên toàn mạng lưới phát hành, kể cả quầy nhà và đại lý ký gửi).
+    - Cửa sổ quan sát linh hoạt (mặc định 30 ngày, tùy chọn $N$ ngày như 7 ngày, 60 ngày).
+  - **Công Thức Tính Số Ngày Tồn Kho (Days of Inventory - DoI):**
+    - `DoI = Tong_ton_kho_kha_dung / V_sale`
+    - Tồn khả dụng lấy từ các kho vật lý ở tình trạng `NEW`, loại trừ bảo thủ hàng đang đi đường (`wh-in-transit`) và hàng cách ly hỏng hóc để tránh rủi ro đứt hàng ngoài dự tính.
+    - Xử lý mượt mà trường hợp $V_{\text{sale}} = 0$: coi là sách chậm luân chuyển (`HEALTHY_NORMAL`, `DoI = Infinity`, `EOQ = 0`), không tạo cảnh báo giả.
+  - **Phân Cấp Cảnh Báo Sớm 3 Tầng:**
+    - `RED_ALERT` ($\text{DoI} \le 30$ ngày): Nguy cơ đứt hàng trước khi kịp tái bản, cần hành động khẩn cấp.
+    - `YELLOW_WARNING` ($30 < \text{DoI} \le 45$ ngày): Bắt đầu chuẩn bị kế hoạch tái bản và liên hệ đối tác in ấn.
+    - `HEALTHY_NORMAL` ($\text{DoI} > 45$ ngày): Mức tồn an toàn.
+  - **Tính Lượng Đặt Hàng Tối Ưu (EOQ):**
+    - `EOQ = CEIL(V_sale * (lead_time + buffer_days + co_so_an_toan_60_ngay))` = `CEIL(V_sale * 105)`.
+  - **API `/api/forecast` & RBAC Guard:**
+    - Cung cấp API tra cứu theo cờ cảnh báo, kho hàng, và số ngày cửa sổ quan sát; tự động ưu tiên các đầu sách `RED_ALERT` lên đầu.
+    - Chặn cứng vai trò `ROLE_CASHIER` và `ROLE_TAX` với HTTP 403 Forbidden.
+#### 🔹 [Mã: ENG-20260913-21] Phân Hệ Thu Tiền Công Nợ Ký Gửi & Khép Kín Vòng Đời Phiếu Thu (Consignment Settlement & AR Cash Collection)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/consignment-settlement`) | **Commit:** `d8407c9`
+- **Nội dung:**
+  - **Migration `0009_consignment_settlements.sql`:**
+    - Khởi tạo bảng `consignment_settlements` lưu vết từng đợt thu tiền: mã phiếu `PT-YYYYMMDD-XXXX`, `statement_id`, `partner_id`, phương thức (`CASH`, `BANK_TRANSFER`), mã tham chiếu giao dịch bắt buộc (`reference`), số tiền thu ròng `amount`, `cashbox_session_id` (nếu thu tại quầy hội chợ), trạng thái phiếu (`VALID`, `VOIDED`).
+    - Cập nhật định nghĩa bảng `consignment_statements` hỗ trợ trạng thái `PAID`.
+    - Script `scripts/apply-migration-0009.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Động Cơ Thu Tiền Bất Biến & Chặn Trả Thừa (`SettlementService`):**
+    - Cho phép đại lý thanh toán nhiều lần cho một kỳ đối soát.
+    - Chặn đứng trả vượt số dư nợ còn lại (Overpayment Prevention): kiểm tra tổng số tiền đã thu hợp lệ (`VALID`), từ chối ngay nếu khoản nạp mới làm tổng tiền vượt quá công nợ kỳ (AR).
+    - Tự động chuyển trạng thái kỳ đối soát từ `CONFIRMED` sang **`PAID`** khi số tiền đã thu đạt 100% công nợ phải thu.
+  - **Cơ Chế Hủy Phiếu Thu An Toàn (`VOID`):**
+    - Nghiêm cấm xóa cứng dữ liệu giao dịch tiền tệ; phiếu thu sai sót được đánh dấu trạng thái `VOIDED` kèm lý do giải trình bắt buộc (`voidReason`).
+    - Khi phiếu bị void: tự động hoàn trả lại hạn mức nợ cho kỳ đối soát, và lùi trạng thái kỳ từ `PAID` về lại `CONFIRMED`.
+  - **Phân Quyền RBAC & Audit Trail Đa Cấp:**
+    - Quyền lập phiếu thu: `ROLE_OWNER`, `ROLE_MANAGER`, `ROLE_CASHIER` (cho phép thu ngân thu tiền mặt trực tiếp tại hội chợ).
+    - Quyền hủy phiếu (`VOID`): Chỉ cấp riêng cho `ROLE_OWNER` và `ROLE_MANAGER`.
+    - Kế toán thuế `ROLE_TAX` chỉ được xem các phiếu thu gắn với kỳ có cờ `OFFICIAL_TAX`, hoàn toàn cách ly dòng tiền nội bộ.
+  - **Tính Toàn Vẹn Của Drizzle Migration Journal:**
+    - Đăng ký entry migration thứ 9 (`idx: 9`, tag `0009_consignment_settlements`) vào `_journal.json` cùng snapshot chuẩn `0009_snapshot.json`. Chuỗi replay 10 files migration (`0000` $\rightarrow$ `0009`) chạy trơn tru từ đầu đến cuối.
+#### 🔹 [Mã: ENG-20260913-22] Nghi Thức Mở Sổ Tờ Giấy Trắng & Công Cụ Nạp Kiểm Đếm Thực Tế (Clean Slate Ceremony Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/clean-slate-ceremony`) | **Commit:** `8b466e4`
+- **Nội dung:**
+  - **Quy Trình Kiểm Đếm Vật Lý 4 Giai Đoạn:**
+    - Giai đoạn 1: Đóng băng dữ liệu Sheets cũ (tính mã băm SHA-256 niêm phong pháp lý, sao lưu CSDL).
+    - Giai đoạn 2: Kiểm đếm thực địa 2 lượt độc lập theo kệ (D3 Pick List), phân loại lành NEW và hỏng QUARANTINE, ký biên bản giấy tay `BB-KK-YYYYMMDD` (Lan Anh + Giám đốc).
+    - Giai đoạn 3: Nạp số liệu mở sổ qua công cụ CLI `scripts/clean-slate-import.ts`.
+    - Giai đoạn 4: Khóa sổ vĩnh viễn và Go-live chính thức.
+  - **Động Cơ Nạp Kiểm Đếm An Toàn Tuyệt Đối (`scripts/clean-slate-import.ts`):**
+    - Đọc file CSV kiểm đếm chuẩn (`sku,warehouse_id,condition_new,condition_quarantine,notes`).
+    - Validate nghiêm ngặt: định dạng header, kiểm tra SKU tồn tại trong danh mục 81 ấn bản, kiểm tra mã kho hợp lệ, chặn số lượng âm, chặn trùng cặp SKU+kho.
+    - **Cơ chế Chống Nạp Trùng Lặp (Double-Entry Guard):** Kiểm tra CSDL, nếu đã tồn tại bút toán `OPENING_BALANCE` trước đó sẽ lập tức từ chối thực thi (`REFUSED`), bảo vệ tính duy nhất của ngày mở sổ.
+    - Cấm tuyệt đối trỏ nhầm database kiểm thử `formapubli_test.db`.
+  - **Chế Độ Đối Chiếu Không Rủi Ro (Dry-Run Mode):**
+    - Bắt buộc truyền cờ `--dry-run` hoặc `--confirm`.
+    - Ở chế độ `--dry-run`: in bảng đối chiếu chi tiết giữa Tồn máy cũ vs Đếm thực tế vs Chênh lệch từng SKU mà không ghi bất kỳ byte nào vào CSDL.
+    - Chỉ thực thi ghi nhận khi Giám đốc truyền cờ `--confirm`.
+  - **Bảo Toàn Thẻ Kho & Chứng Từ Pháp Lý:**
+    - Khắc trực tiếp mã biên bản `BB-KK-YYYYMMDD`, giờ G kiểm kê, danh sách người ký và ghi chú đếm vào trường `documentRef` và `note` của từng bút toán Thẻ kho bất biến.
+#### 🔹 [Mã: ENG-20260913-23] Phân Hệ Quản Lý Hợp Đồng Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Engine)
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/rights-and-royalties`) | **Commit:** `6a177b9`
+- **Nội dung:**
+  - **Migration `0010_rights_and_royalties.sql`:**
+    - Khởi tạo bảng `rights_contracts` quản lý hợp đồng bản quyền: mã hợp đồng unique `contract_number`, `work_id`, `licensor_partner_id`, `licensor_name`, `royalty_rate` (0.01 - 0.99), `print_quota` (hạn ngạch số cuốn được in), `advance_amount` (tạm ứng ban đầu), `effective_date`, `expiration_date` (thời hạn 5 năm), `status` (`ACTIVE`, `TERMINATED`), `terminated_at`, `terminated_reason`.
+    - Script `scripts/apply-migration-0010.ts` hỗ trợ deploy LibSQL / D1 độc lập.
+  - **Giám Sát Hạn Ngạch In Bằng Cảnh Báo & Audit Trail (Quota Guard):**
+    - Tính toán tổng số lượng đã in thực tế từ Thẻ kho bất biến: `SUM(RECEIPT_INCOMING + OPENING_BALANCE)` phát sinh trong thời hạn hợp đồng.
+    - Cơ chế cảnh báo sớm `QUOTA_WARNING` khi số cuốn còn lại $\le$ 200 cuốn hoặc $\le$ 10% hạn ngạch in.
+    - **Triết lý vận hành thực tế:** Tuyệt đối không chặn cứng giao dịch nhập kho khi vượt quota (tránh sinh tồn ảo ngoài hệ thống khi nhà in đã giao hàng); thay vào đó bật cảnh báo đỏ và ghi nhận vết kiểm toán để ban giám đốc làm việc gia hạn hợp đồng bản quyền.
+  - **Động Cơ Tính Nhuận Bút Tự Động (Royalty Payable Engine):**
+    - Thống kê lượng sách tiêu thụ thực tế từ Thẻ kho: `Tong_ban = SUM(DISPATCH_SALE + CONSIGNMENT_SOLD)`.
+    - Doanh thu bìa: `Tong_ban * cover_price`.
+    - Tiền nhuận bút phát sinh: `Doanh_thu_bia * royalty_rate`.
+    - Tiền nhuận bút ròng còn phải thanh toán: `MAX(0, Tien_nhuan_but_phat_sinh - advance_amount)`.
+  - **Vòng Đời Hợp Đồng Động (Dynamic Contract Lifecycle):**
+    - Trạng thái được suy ra linh hoạt theo thứ tự ưu tiên: `TERMINATED` (nếu có lý do chấm dứt tay) > `EXPIRED` (nếu ngày hiện tại vượt quá `expiration_date`) > `ACTIVE`.
+  - **Kiểm Thử Toàn Diện:**
+    - Test suite `scripts/test-royalties.ts` đạt **9/9 PASS**.
+    - Chuỗi migration journal `0000` $\rightarrow$ `0010` (23 bảng) liền mạch với snapshot `0010_snapshot.json` (kiểm tra `drizzle-kit generate` báo "No schema changes").
+    - Nâng tổng số test suites lên **16 suites cách ly / 180 test cases đạt chuẩn 100%**.
+    - Next.js Production Build (`npm run build`): Thành công với **0 lỗi biên dịch**, First Load JS giữ vững ở mức **132 kB**.
+
+#### 🔹 [Mã: ENG-20260914-24] Big Review Thực Địa, Khắc Phục Lỗi Camera Macro, Workspace Phân Tích Chuyên Sâu (Studio Alt+7) & Quy Chuẩn Ghim Settings Đáy Cùng
+- **Nhánh:** `feat/pwa-mobile-and-offline-pos` | **Commit:** `0ed7597`
+- **Nội dung:**
+  - **Khắc Phục Triệt Để Lỗi Ống Kính Macro Trên Scanner PWA:**
+    - Phát hiện hiện tượng các smartphone đa ống kính tự nhảy vào camera Macro khiến không lấy nét được mã vạch ISBN.
+    - Bổ sung thuật toán duyệt thiết bị (`enumerateAndSelectBestCamera`): Ưu tiên ống kính chính (`main`, `primary`, `0`, `wide 1x`), loại trừ các camera có nhãn `macro`, `close-up`, `ultra`, `tele`.
+    - Bật autofocus liên tục `focusMode: 'continuous'`, khóa zoom cố định 1.0x.
+    - Xử lý race-condition nhãn rỗng (`label: ""`) khi chưa cấp quyền qua ref `didPostPermissionRescanRef`.
+    - Bổ sung menu dropdown đổi camera trực tiếp trên giao diện ngắm quét.
+  - **Tối Giản Hóa Sidebar & Quy Chuẩn Pinned Bottom Settings:**
+    - Xóa bỏ toàn bộ các badge text thừa (`Master`, `Speed`, `3 Kho`, `Dual`, `B2B`, `CRM`, `RBAC`) giúp sidebar tinh gọn, thanh lịch.
+    - Thiết lập quy chuẩn kiến trúc vĩnh viễn: **Tab Cài Đặt (Settings) luôn luôn nằm ở vị trí đáy cùng của Sidebar** (`Alt + 8`).
+  - **Tích Hợp Workspace Phân Tích Chuyên Sâu & Dự Báo (Analytics Studio - `Alt + 7`):**
+    - Tách biệt rạch ròi giữa Executive Dashboard (lướt nhanh 10 giây) và Analytics Studio (nghiên cứu sâu).
+    - Tích hợp Bảng dữ liệu lớn theo dõi dự báo tái bản $V_{\text{sale}}$, DoI, EOQ kèm xuất file CSV có UTF-8 BOM.
+    - Nhúng Panel quản lý Hợp đồng bản quyền & Combo đóng hộp (`BundleRoyaltyPanels.tsx`).
+  - **Nâng Cấp Executive Dashboard Với 3 Biểu Đồ Power BI Siêu Nhẹ (Pure SVG):**
+    - Biểu đồ Cột Trend Doanh thu 7 ngày gần nhất (hover xem số liệu chi tiết).
+    - Biểu đồ Donut tỷ trọng Sổ Thuế VAT (xanh lá) vs Sổ Thực Nội Bộ (tím).
+    - Biểu đồ Top 5 đơn hàng giá trị cao nhất.
+  - **Các Panel Quản Trị Thực Địa Mới:**
+    - `TransitPanel.tsx`: Điều phối nhận hàng 2 bước In-Transit, kiểm soát thất thoát/hư hỏng đường đi, lọc xe kẹt > 12h.
+    - `ConsignmentPanel.tsx`: Quản lý biên bản đối soát và thu tiền công nợ ký gửi Đinh Lễ.
+    - `CustomersDirectory.tsx` & API `/api/customers`: Danh bạ độc giả giai đoạn 1 đọc từ CSDL.
+    - Chế độ tab lọc kho kiểu Google Sheets (`ALL`, `wh-au-co`, `wh-quynh-mai`, `wh-du-phong`) trên `StockOverviewMatrix.tsx`.
+  - **Kiểm Thử & Đóng Gói:**
+    - Toàn bộ 16 suites cách ly đạt **180/180 PASS 100%**.
+    - Next.js Production Build thành công **0 lỗi biên dịch, First Load JS 141 kB**.
+    - Đã push thành công lên GitHub remote `origin/feat/pwa-mobile-and-offline-pos`.
+
+
+
+
+
+
+
+
+
+
+
+### 📅 Ngày 15/09/2026
+
+#### 🔹 [Mã: ENG-20260915-25] Đợt Vá Bảo Mật security-patch-01 & Quy Chuẩn Red-Team Bắt Buộc
+- **Nội dung:**
+  - Bộ probes adversarial (`review.tmp/`, ignored) khui 9 lỗ hổng P0/P1 + 1 bug bundle
+    dù 23 suites đang xanh 100%: giá lậu client, số lẻ kho, CK 200%, trả gấp đôi,
+    trả trên đơn PENDING, TAX đọc shipment nội bộ, RMA ghi dở, gift phình forecast,
+    két ca ngó lơ refund, bundle req>1 tính lố tổng.
+  - Song song 2 lane zero-conflict: Lane A (`order.service`, `forecast.service`,
+    `api/orders`) — Lane B (`return.service`, `rma.service`, `api/shipments`).
+  - Gate nghiệm thu: chạy lại probes, toàn bộ đòn tấn công bị chặn (bằng chứng JSON
+    `review.tmp/probes-baseline-20260915.json` → `probes-accept-20260915.json`).
+  - Suite hồi quy mới `scripts/test-order-guards.ts` (7/7), runner lên 24 suites.
+- **Thể chế hóa (chống tái phạm):**
+  - Tài liệu luật mới `docs/ADVERSARIAL_TESTING_POLICY.md`: 5 quy tắc bắt buộc
+    (negative test; validate tầng sâu nhất; test tương tác chéo; test phân quyền
+    endpoint đọc; gate red-team) + checklist DoD copy vào PR + sổ lỗi đã trả học phí.
+  - Master Blueprint Chương 36 trỏ về policy. PR thiếu checklist DoD bị từ chối merge.
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]
@@ -151,56 +522,75 @@
 
 ---
 
-### 🟡 Phase 3: Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync - [KẾ HOẠCH TRƯỚC MẮT]
+### 🟢 Phase 3: Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync - [ĐÃ HOÀN THÀNH 100%]
 *Mục tiêu: Đưa ứng dụng lên điện thoại/tablet của nhân viên bán hội chợ với chi phí thiết bị 0 đồng, bán hàng trơn tru kể cả khi rớt mạng 4-8 tiếng.*
 
-#### 📌 3.1. Đóng gói PWA Cài Đặt 1-Chạm (Progressive Web App Standalone)
-- [ ] Khai báo `manifest.json` chuẩn PWA (tên formapubli OS, theme color `#4f46e5`, start_url, display: standalone).
-- [ ] Thiết kế bộ icon ứng dụng đầy đủ kích thước (192px, 512px, maskable icon cho Android/iOS).
-- [ ] Cấu hình Service Worker cache tài nguyên tĩnh để app khởi động tức thì dưới 0.5s kể cả khi không có mạng.
-- [ ] Hỗ trợ nút "Thêm vào màn hình chính" (Add to Home Screen) trên Safari iOS và Chrome Android.
+#### 📌 3.1. Đóng gói PWA Cài Đặt 1-Chạm (Progressive Web App Standalone) - [ĐÃ HOÀN THÀNH]
+- [x] Khai báo `manifest.json` chuẩn PWA (tên formapubli OS, theme color `#4f46e5`, start_url, display: standalone).
+- [x] Thiết kế bộ icon ứng dụng đầy đủ kích thước (192px, 512px, maskable icon cho Android/iOS).
+- [x] Cấu hình Service Worker cache tài nguyên tĩnh để app khởi động tức thì dưới 0.5s kể cả khi không có mạng.
+- [x] Hỗ trợ nút "Thêm vào màn hình chính" (Add to Home Screen) trên Safari iOS và Chrome Android.
 
-#### 📌 3.2. "Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner)
-- [ ] Tích hợp Barcode Detection API / Camera stream (`getUserMedia`) trên thiết bị di động.
-- [ ] Nút biểu tượng quét mã vạch `[ 📷 ]` tại Quầy POS và Màn hình Nhập kho.
-- [ ] Bật khung ngắm camera (Viewfinder) nhận diện mã vạch ISBN-13 / EAN-13 sau bìa sách trong 100ms.
-- [ ] Tự động phát âm thanh "Bíp" xác nhận (Web Audio API) và thêm sách vào giỏ hàng hoặc tăng số lượng +1.
-- [ ] Quét liên tục nhiều cuốn sách mà không cần bấm lại nút (Continuous scanning mode).
+#### 📌 3.2. "Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner) - [ĐÃ HOÀN THÀNH]
+- [x] Tích hợp Barcode Detection API / Camera stream (`getUserMedia`) trên thiết bị di động.
+- [x] Nút biểu tượng quét mã vạch `[ 📷 ]` tại Quầy POS và phím tắt `Alt + Shift + C`.
+- [x] Khung ngắm camera (Viewfinder) nhận diện mã vạch ISBN-13 / EAN-13 sau bìa sách trong 100ms.
+- [x] Tự động phát âm thanh "Bíp" xác nhận (Web Audio API) và thêm sách vào giỏ hàng hoặc tăng số lượng +1.
+- [x] Khóa 1.5s chống đúp mã và hỗ trợ quét liên tục nhiều cuốn sách (Continuous scanning mode).
+- [x] Bảng mã vạch test mẫu 6 cuốn sách kiểm thử ngay lập tức trên mọi thiết bị.
 
-#### 📌 3.3. Động Cơ Bán Hàng Ngoại Tuyến Đa Nhân Viên (Offline-First POS Engine)
-- [ ] Xây dựng bộ đệm `IndexedDB` lưu danh mục sách và giỏ hàng cục bộ trên trình duyệt thiết bị.
-- [ ] Sinh khóa duy nhất bằng UUID v7 (sắp xếp tự nhiên theo thời gian) kết hợp `idempotency_key` cho từng đơn bán offline.
-- [ ] Hàng đợi đồng bộ nền (Sync Queue): Tự động phát hiện khi có mạng trở lại (Online Event) và gửi đơn hàng lên máy chủ Cloudflare D1 theo thứ tự.
-- [ ] Cơ chế giải quyết xung đột (Conflict Resolution) và chặn trùng lặp đơn hàng tuyệt đối.
+#### 📌 3.3. Động Cơ Bán Hàng Ngoại Tuyến Đa Nhân Viên (Offline-First POS Engine) - [ĐÃ HOÀN THÀNH]
+- [x] Xây dựng bộ đệm `IndexedDB` (`formapubli_offline_db`) lưu đơn hàng cục bộ an toàn trên trình duyệt thiết bị (`src/lib/offline-db.ts`).
+- [x] Sinh khóa định danh duy nhất bằng UUID v7 chuẩn RFC 9562 (sắp xếp tự nhiên theo thời gian phát sinh đơn) kết hợp `idempotencyKey` (`src/lib/uuidv7.ts`).
+- [x] Hàng đợi đồng bộ nền (Sync Queue): Tự động phát hiện khi có mạng trở lại (`online` event) và gửi đơn hàng lên máy chủ theo đúng trình tự thời gian.
+- [x] Cơ chế giải quyết xung đột và bảo vệ Idempotency trong `OrderService.createOrder` chống ghi trùng lặp / trừ thẻ kho 2 lần khi sync lại.
+- [x] Giao diện POS hiển thị huy hiệu mạng `🟢 Trực tuyến` / `🟡 Mất mạng (Chế độ Offline)` và nút `[ 🔄 Đồng bộ ngay ]`.
 
-#### 📌 3.4. Báo Cáo Doanh Số & Sổ Sách Đa Chiều (Advanced Sales Analytics)
-- [ ] Hoàn thiện bộ lọc báo cáo theo Ngày / Tuần / Tháng / Năm trên `SalesLedgerView.tsx`.
-- [ ] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
-- [ ] Xuất biên bản kê khai doanh số ra file Excel/CSV phục vụ đối soát.
+#### 📌 3.4. Báo Cáo Doanh Số & Sổ Sách Đa Chiều (Advanced Sales Analytics) - [ĐÃ HOÀN THÀNH]
+- [x] Hoàn thiện bộ lọc báo cáo đa chiều theo Preset: Tất cả, Hôm nay, 7 ngày qua, Tháng này, Tùy chọn trên `SalesLedgerView.tsx`.
+- [x] Bộ lọc theo Kho hàng: Toàn hệ thống, Kho 1 - Âu Cơ, Kho 3 - Hội Chợ, Kho 2 - Quỳnh Mai.
+- [x] Công tắc 1-click chuyển đổi nhanh giữa Góc nhìn Thuế VAT vs Góc nhìn Thực tế Nội bộ.
+- [x] Xuất bảng tính Excel / CSV với mã UTF-8 BOM chuẩn xác 100% tiếng Việt có dấu, không lỗi font.
 
----
-
-### ⚪ Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [CHỜ TRIỂN KHAI]
+### 🟢 Phase 4: Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp - [ĐÃ HOÀN THÀNH 100%]
 *Mục tiêu: Xử lý các nghiệp vụ đặc thù chiều sâu của ngành sách Việt Nam.*
 
-#### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine)
-- [ ] Khai báo cấu trúc sản phẩm phức hợp (Composite Item): 1 mã Combo bao gồm danh sách $N$ mã ấn bản lẻ + 1 vỏ hộp.
-- [ ] Khi bán 1 Combo tại Quầy POS, hệ thống tự động sinh bút toán Thẻ kho trừ đồng thời toàn bộ các cuốn sách lẻ thành phần và vỏ hộp.
-- [ ] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component).
+#### 📌 4.1. Động Cơ Đóng Combo / Hộp Tuyển Tập (Boxset & Bundle Engine) - [ĐÃ HOÀN THÀNH]
+- [x] Khai báo cấu trúc sản phẩm phức hợp (Composite Item): 1 mã Combo bao gồm danh sách $N$ mã ấn bản lẻ + 1 vỏ hộp.
+- [x] Khi bán 1 Combo tại Quầy POS, hệ thống tự động sinh bút toán Thẻ kho trừ đồng thời toàn bộ các cuốn sách lẻ thành phần và vỏ hộp.
+- [x] Cơ chế cảnh báo tồn kho Combo dựa trên thành phần có số lượng tồn ít nhất (Bottleneck Component) và tính toán số lượng khả dụng MIN(FLOOR(stock_i / req_i)).
+- [x] Phân bổ giá bán combo theo tỷ trọng giá bìa (Weighted Proration), triệt tiêu dòng 0 VNĐ.
 
-#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger)
-- [ ] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM.
-- [ ] Phân định rõ ràng: Đại lý giữ sách (*Custodian*) nhưng quyền sở hữu (*Owner*) vẫn thuộc công ty cho đến khi bán được.
-- [ ] Màn hình lập biên bản đối soát định kỳ: So sánh số sách gửi ban đầu với số đếm thực tế để bóc tách: Sách đã bán cần đòi tiền, sách rách hỏng cần thu hồi và sách thất thoát.
+#### 📌 4.2. Phân Hệ Quản Trị Ký Gửi Phố Sách (Consignment Ledger & Settlement) - [ĐÃ HOÀN THÀNH 100%]
+- [x] Quản lý dòng sách ký gửi tại Đinh Lễ, Nguyễn Xí, Đường sách TP.HCM qua kho ảo riêng biệt `wh-consign-<code>`.
+- [x] Phân định rõ ràng: Đại lý giữ sách (*Custodian*) nhưng quyền sở hữu (*Owner*) gắn chặt `part-formapubli` cho đến khi bán được.
+- [x] Màn hình lập biên bản đối soát định kỳ `DRAFT` $\rightarrow$ `CONFIRMED`: Tự động so khớp phương trình đối soát $Tồn đầu + Gửi = Bán + Thu hồi + Hỏng/Mất + Tồn cuối$.
+- [x] Chốt công nợ phải thu ròng AR, phân tách góc nhìn Thuế vs Nội bộ, tự động xuất kho bán/mất, ngăn chặn thặng dư bất thường.
+- [x] Thu tiền thanh toán công nợ ký gửi (Consignment Settlement): Phiếu thu `PT-YYYYMMDD-XXXX`, thanh toán nhiều lần $\le$ dư nợ, chặn overpay, cơ chế `VOID` bất biến, tự động chuyển trạng thái `PAID`.
 
-#### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger)
-- [ ] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa).
-- [ ] Tự động đếm lũy kế số cuốn đã in thực tế qua Thẻ kho để cảnh báo trước khi vượt hạn ngạch cấp phép.
-- [ ] Bảng tính tiền nhuận bút tự động theo tỷ lệ % giá bìa nhân với số cuốn bán thực tế.
+#### 📌 4.3. Quản Lý Hạn Ngạch Bản Quyền & Nhuận Bút Tác Giả (Rights & Royalties Ledger) - [ĐÃ HOÀN THÀNH 100%]
+- [x] Quản lý hợp đồng bản quyền sách dịch/tác quyền (thời hạn 5 năm, hạn ngạch số cuốn được in tối đa, tạm ứng ban đầu).
+- [x] Tự động đếm lũy kế số cuốn đã in thực tế qua Thẻ kho (`SUM(RECEIPT + OPENING)`) để cảnh báo trước khi vượt hạn ngạch cấp phép ($\le$ 200 cuốn hoặc $\le$ 10%).
+- [x] Bảng tính tiền nhuận bút tự động theo tỷ lệ % giá bìa nhân với số cuốn bán thực tế (`Tong_ban * Gia_bia * rate - Tam_ung`).
+- [x] Vòng đời hợp đồng động theo ngày hết hạn hoặc chấm dứt tay (`TERMINATED` > `EXPIRED` > `ACTIVE`).
+
 
 ---
 
-### ⚪ Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [CHỜ TRIỂN KHAI]
+### 🛡️ Phụ Lục: Hạ Tầng Phòng Thủ & Chuẩn Hóa Production (Production Hardening & Reliability)
+*Mục tiêu: Đảm bảo tính toàn vẹn dữ liệu kế toán, bảo mật cấp độ doanh nghiệp và khả năng sẵn sàng triển khai Cloudflare D1 100%.*
+
+- [x] **Luân Chuyển Hàng 2 Bước Chống Mất Mát (`IN_TRANSIT` Two-Step Engine):** Trạm trung chuyển ảo `wh-in-transit`, phương trình bảo toàn $R + D + L = X$, bóc tách sách lành NEW, hỏng QUARANTINE nối RMA, và thất thoát `TRANSFER_LOSS`.
+- [x] **Bảo Mật Két Tiền & Chống Thất Thoát Chiết Khấu (`Cashbox & Discount Hard-Cap`):** Trần chiết khấu thu ngân 15%, thẩm quyền Manager PIN mở khóa, phân quyền xem doanh số theo vai trò, nhật ký kiểm toán Audit Trail.
+- [x] **Mã Hóa PIN Quản Lý Zero-Dependency (`src/lib/manager-pin.ts`):** Băm `sha256(PIN + salt)` thuần TypeScript qua `export-hash.ts`, nạp danh sách hash từ biến môi trường `MANAGER_PIN_HASHES`, tương thích ngược 100% với giao diện POS client.
+- [x] **Cách Ly DB Kiểm Thử & Chống Ô Nhiễm Prod (`assertIsolatedTestDb`):** Tự động phát hiện và chặn đứng mọi script kiểm thử chạm vào `formapubli.db`, bảo toàn dữ liệu thật 100%.
+- [x] **Đồng Bộ Drizzle Migration Journal (`scripts/migrate-fresh.ts`):** Khôi phục tính nhất quán chuỗi migration từ `0000` đến `0008` (21 bảng), xử lý triệt để lỗi parse comment của LibSQL, chuẩn bị sẵn sàng cho lệnh `wrangler d1 migrations apply`.
+- [x] **Công Cụ Mở Sổ Tờ Giấy Trắng (`scripts/clean-slate-import.ts`):** Nhập kiểm đếm thực tế CSV, kiểm tra tính duy nhất chống nạp 2 lần (`Double-Entry Guard`), chế độ `--dry-run` không ghi CSDL, khắc mã biên bản `BB-KK-YYYYMMDD` và giờ G vào chứng từ Thẻ kho.
+- [x] **Hệ Thống Kiểm Thử Tự Động 16 Suites / 180 Test Cases:** Đạt tỷ lệ bao phủ và vượt qua 100% tất cả các kịch bản kiểm thử luân chuyển, kế toán sổ kép, chiết khấu, ký gửi, thu tiền settlement, combo đóng hộp, dự báo tái bản, lễ mở sổ Clean Slate và hợp đồng bản quyền/nhuận bút.
+
+---
+
+### 🟡 Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [ĐANG TRIỂN KHAI ~20%]
 *Mục tiêu: Đưa trí tuệ nhân tạo vào hỗ trợ trực tiếp nhân viên và giám đốc với chi phí 0 VNĐ/tháng (Free Tier First).*
 
 #### 📌 5.1. Smart Voice POS Dispatcher (Trợ Lý Lên Đơn Thần Tốc Bằng Giọng Nói)
@@ -208,26 +598,37 @@
 - [ ] LLM Function Calling (LLaMA 3.3 / Gemini Flash) bóc tách thực thể: Mã SKU, số lượng, kho xuất, tỷ lệ chiết khấu, cờ sổ kép.
 - [ ] Tự động điền dữ liệu vào Giỏ hàng POS theo nguyên tắc "Human-in-the-loop" (thu ngân kiểm tra và bấm xác nhận).
 
-#### 📌 5.2. Executive AI Copilot (Trợ Lý Điều Hành Giám Đốc)
-- [ ] Trợ lý đối thoại hỏi đáp bằng tiếng Việt tự nhiên qua Gemini 1.5 Flash.
-- [ ] Chế độ an toàn Read-only: Chỉ gọi các API đọc số liệu doanh thu, tồn kho; cấm tuyệt đối can thiệp sửa đổi CSDL.
-- [ ] Cơ chế RBAC Scope Guard: Không rò rỉ dữ liệu Sổ Quản trị nội bộ cho tài khoản vai trò Kế toán thuế.
+#### 📌 5.2. Executive AI Copilot (Trợ Lý Điều Hành Giám Đốc) - [LÕI NỀN TẢNG ĐÃ HOÀN THÀNH]
+- [x] Thiết lập hợp đồng phối hợp 2 Lane khóa cứng `docs/PHASE5_LANE_CONTRACT.md`.
+- [x] Động cơ AI Client dùng chung (`llm-client.ts`), Zod Schema Validation, 100% Edge-safe, timeout 6s, 3-tier fallback.
+- [x] Chế độ an toàn Read-only: 4 tool tra cứu (`query_stock_level`, `query_sales_summary`, `query_reprint_forecast`, `query_cashbox_reconciliation`). Cấm tuyệt đối can thiệp sửa đổi CSDL.
+- [x] Cơ chế phân quyền nghiêm ngặt: `ROLE_OWNER` và `ROLE_MANAGER` toàn quyền xem 2 sổ. Chặn đứng `ROLE_CASHIER`, `ROLE_WAREHOUSE`, `ROLE_TAX` (403 + `COPILOT_UNAUTHORIZED_ATTEMPT`).
+- [x] Bộ rate-limit sliding window 15 req/phút/staffId (`checkWindowRateLimit`) chống spam và flood token.
+- [x] Bộ kiểm thử Red-team `eval-executive-ai.ts` đạt 11/11 bài test (100%), xuất báo cáo JSON `eval-executive-ai-report.json`.
 
-#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting)
-- [ ] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực.
-- [ ] Cảnh báo điểm cạn kho trước 30-45 ngày để Giám đốc kịp làm việc với NXB và Nhà in.
+#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting) - [ĐÃ HOÀN THÀNH]
+- [x] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực từ thẻ kho vật lý.
+- [x] Cảnh báo phân cấp 3 tầng: RED_ALERT ($\le$ 30 ngày), YELLOW_WARNING (30-45 ngày), HEALTHY_NORMAL (> 45 ngày).
+- [x] Tính số lượng in kinh tế tối ưu EOQ dựa trên tổng chu kỳ lead time + buffer + an toàn 105 ngày.
+- [x] API `/api/forecast` phục vụ Dashboard quản trị và báo cáo ban giám đốc.
 
 #### 📌 5.4. Hồ Sơ Độc Giả Thân Thiết & Đọc Sách Theo Mùa (Reader Persona CRM)
 - [ ] Quản lý lịch sử mua sắm và sở thích đọc của từng bạn đọc.
 - [ ] Phân loại nhóm độc giả sưu tầm (sách bản đặc biệt, bìa cứng) vs độc giả mua combo theo mùa.
 - [ ] AI gợi ý danh sách bạn đọc phù hợp nhất khi ra mắt tác phẩm mới cùng dịch giả hoặc cùng chủ đề.
 
+#### 📌 5.5. Báo Cáo Tự Động Hàng Tháng Cho Giám Đốc Qua Email (Automated Monthly Executive Email Dispatcher)
+- [ ] Thiết kế mẫu Email HTML Responsive trực quan (Scorecards Doanh thu ròng, Cơ cấu Sổ kép Thuế vs Nội bộ, Top 5 tựa sách bán chạy, Cảnh báo đỏ sách sắp cạn kho).
+- [ ] Tích hợp AI Executive Briefing (Gemini Flash tóm lược nhận định 3 dòng: Điểm sáng - Rủi ro - Quyết sách tháng tới).
+- [ ] Tự động hóa gửi mail vào 07:00 sáng ngày mùng 1 hàng tháng bằng Cloudflare Cron / Resend API (0đ chi phí).
+- [ ] Tự động đính kèm file bảng tính Excel/CSV đối soát chi tiết cho ban điều hành.
+
 ---
 
 ### ⚪ Phase 6: Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện - [TẦM NHÌN DÀI HẠN]
 - [ ] Đồng bộ tồn kho 2 chiều với Shopee Open Platform & TikTok Shop theo hạn ngạch an toàn.
 - [ ] Kết nối API phần mềm Hóa đơn điện tử chính thức (VNPT / Viettel / MISA) cho các đơn `OFFICIAL_TAX`.
-- [ ] Đóng gói tài liệu bàn giao kỹ thuật, thiết lập cơ chế sao lưu CSDL tự động lên Google Drive hàng ngày.
+- [ ] Đóng gói tài liệu bàn giao kỹ thuật, thiết lập cơ chế sao lưu CSDL tự động lên Google Drive hàng ngày/hàng tuần linh hoạt.
 
 ---
 
@@ -242,4 +643,5 @@
 | **Đối soát ký gửi Đinh Lễ** | Số lượng sách gửi ký gửi thường xuyên lệch sau 3-6 tháng | Sổ cái ký gửi riêng biệt + Thuật toán so lệch kiểm đếm thực tế | 🟡 Quan trọng | **Phase 4** (Mục 4.2) |
 | **Lên đơn giọng nói bằng AI** | Hội chợ ồn ào hoặc đơn sỉ nhiều đầu sách cần lên nhanh | Groq Whisper + LLaMA 3.3 tự động bóc tách thực thể nạp vào Giỏ POS | 🟢 Trung hạn | **Phase 5** (Mục 5.1) |
 | **Cảnh báo tái bản sách** | In sách mất 30-40 ngày, để hết sách mới in sẽ mất mùa bán | Thuật toán đo vận tốc bán $V_{\text{sale}}$ cảnh báo trước điểm cạn kho | 🟢 Trung hạn | **Phase 5** (Mục 5.3) |
+| **Email Báo Cáo Giám Đốc Hàng Tháng** | Cần nắm toàn cảnh doanh thu, dòng tiền, tựa sách hot mà không cần đăng nhập ERP | Email HTML tự động ngày 1 hàng tháng + AI Briefing 3 dòng + File Excel đính kèm (Resend 0đ) | 🟢 Trung hạn | **Phase 5** (Mục 5.5) |
 

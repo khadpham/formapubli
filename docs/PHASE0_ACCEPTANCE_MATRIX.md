@@ -1,0 +1,106 @@
+# PHASE 0 — Ma trận điều hành và nghiệm thu
+
+Tài liệu này là bảng kiểm soát độc lập cho bản tích hợp cuối của Lane A và Lane B.
+Một hạng mục chỉ được đánh dấu `PASS` khi có bằng chứng trên commit tích hợp, qua HTTP hoặc UI phù hợp, và database kiểm thử riêng.
+
+## Trạng thái hiện tại
+
+- **Đợt 0 — Checkpoint 2 (CP2):** **PASS** (Accepted commit: `be1aaea`, kiểm toán độc lập Lane B: PASS).
+- **ATP nguyên tử & Chống bán vượt:** **PASS** (Đã loại bỏ hoàn toàn override/allowOverdraft; kiểm thử đa tiến trình Probes A - E đạt 100%).
+- **Concurrency đa process:** **PASS** (10 tiến trình độc lập tranh mua 1 cuốn duy nhất đạt phân xử nguyên tử).
+- **Idempotency Order:** **PASS** (So khớp fingerprint 11 trường vật chất; replay trả đơn cũ; xung đột trả mã lỗi `IDEMPOTENCY_CONFLICT`).
+- **Giới hạn Runtime của PRAGMA busy_timeout:** Ghi nhận thực nghiệm độc lập cho thấy `PRAGMA busy_timeout` qua `@libsql/client 0.10.0` trên Windows không hoạt động đáng tin cậy độc lập. Độ ổn định đạt được nhờ vào **connection transaction riêng**, **bounded retry** và **Full Jitter backoff**.
+- **Chuyển kho / Đổi trả / Két tiền tổng thể:** **PASS** (Hoàn thành CP3-A, CP3-B, CP3-R1, CP3-R2, CP3-R3; 36/36 suites kiểm thử cách ly đạt 100%).
+- **Tích hợp Phase 0 tổng thể:** **PASS** (Đã đóng toàn bộ các gates và checkpoints CP1, CP2, CP3 trên commit `0dd8f08`).
+
+## Gate trước khi tích hợp
+
+| Gate | Chủ trì | Bằng chứng bắt buộc | Trạng thái |
+|---|---|---|---|
+| Contract danh tính, mã lỗi, ATP | A + B | Contract được chốt, shared modules xác lập | ĐÃ CHỐT |
+| Schema và migration | A | Fresh DB + nâng cấp DB bản sao, journal khớp (0015_staff_accounts, 0016_cp3_transfer_return_hardening) | PASS |
+| ATP nguyên tử | B $\rightarrow$ A tiếp quản | Hai kết nối / 10 process tranh cuốn cuối; chỉ một thành công | PASS (`test-cp2-concurrency-probes`) |
+| Auth strict & Session Policy | A | Chuẩn hóa session policy trên 23 API route, fail-closed (`test-phase0-laneA`) | PASS (25 Gates) |
+| Danh tính không giả mạo | A + B | Client gửi `actorId/cashierId` khác vẫn ghi actor từ session (`test-phase0-laneA`) | PASS |
+| Rate limit & IP Trust Boundary | A | Khóa 5 lần -> 429 ngay; khóa IP tin cậy (cf-connecting-ip); chặn spoof | PASS |
+| Bán–trả–két–báo cáo | A + B | Bộ số liệu mẫu trong contract khớp từng bước (`test-order-sales`, `test-returns`, `test-cp3-reconciliation`) | PASS |
+| UI gatekeeper & SSR Zero Leakage | A | Server không trả dữ liệu bảo vệ trước session; role scope tại SSR query | PASS |
+| Tích hợp cuối Phase 0 | A + B | Toàn bộ CP1, CP2, CP3 hoàn tất trên commit `0dd8f08`, 36/36 suites cách ly | PASS |
+
+
+## Ma trận ca độc lập
+
+### Auth và identity
+
+1. Không cookie → `401`, không có dữ liệu nghiệp vụ trong response.
+2. Cookie sai chữ ký/hết hạn → `401`.
+3. Cookie Cashier + header Owner → vẫn là Cashier.
+4. Cookie hợp lệ nhưng sai action → `403`.
+5. Client gửi `actorId`, `cashierId`, `approvedBy` giả → bị bỏ qua hoặc từ chối; audit ghi staffId từ session.
+6. Tài khoản inactive/đổi quyền → session cũ xử lý theo chính sách thu hồi đã công bố.
+7. Đăng xuất, hết phiên, reload PWA → không còn dữ liệu phiên được dùng lại.
+
+### Rate limit
+
+8. Sai 5 lần cùng staffId → khóa staffId 15 phút.
+9. Sai 10 lần trên cùng IP tin cậy với nhiều staffId → khóa IP 15 phút.
+10. Đổi `x-forwarded-for` tùy ý → không né được giới hạn.
+11. Khởi động lại hoặc chạy instance thứ hai → hành vi đúng với phạm vi triển khai đã cam kết.
+
+### ATP và cạnh tranh
+
+12. Có 1 NEW, tạo pending giữ 1, bán ngay 1 → bị từ chối, ATP không âm.
+13. Hai request bán đồng thời tranh cuốn cuối → đúng 1 thành công.
+14. Hai request pending đồng thời tranh cuốn cuối → đúng 1 thành công.
+15. Pending duyệt → không trừ/đếm giữ chỗ hai lần.
+16. Pending hết hạn/hủy → nhả đúng lượng, không nhả hai lần.
+17. Transfer out, exchange, consignment dispatch tranh cùng hàng giữ → không xâm phạm ATP. *(CHỜ CP3)*
+18. Cùng idempotency key/cùng payload → một hiệu ứng; cùng key/khác payload → `409`.
+19. Rollback giữa chừng → không có ticket/đơn/bút toán mồ côi.
+
+### Tiền, trả hàng và báo cáo
+
+20. Bán 2 × 100.000, giảm 10% → thu 180.000.
+21. Trả 1 cuốn, hoàn 90.000 → két còn 90.000, tồn tăng 1.
+22. Gross 180.000, refund 90.000, net 90.000; báo cáo và két cùng định nghĩa.
+23. Refund ở kỳ sau → báo cáo ghi đúng kỳ hoàn trả.
+24. Đơn gift, sponsorship, COD → không bị tính sai vào doanh thu/tiền mặt/forecast.
+
+## Quy tắc bàn giao
+
+- Không merge nếu test chỉ chạy trên branch riêng.
+- Không dùng `git checkout ours/theirs` để giải quyết auth, schema hoặc transaction.
+- Mỗi lane gửi: commit, file đã sửa, contract/schema thay đổi, lệnh test, log, known limitations.
+- Bản nghiệm thu cuối chạy trên commit tích hợp, database test mới và một bản sao database nâng cấp.
+- Không ghi “100% an toàn”. Ghi rõ phạm vi runtime, số instance, driver và giới hạn còn lại.
+
+## Blocker đang mở
+
+*(Hiện không còn blocker đang mở cho Checkpoint 2. Các blocker mới cho Checkpoint 3 sẽ được xác định trong CP3 Design v2.1)*
+
+## Blocker CP2 đã giải quyết
+
+1. **Quyết định về `allowOverdraft`:** Đã loại bỏ hoàn toàn khỏi đường bán hàng thông thường và API `createOrder`. Bán hàng fail-closed tuyệt đối theo ATP.
+2. **Chủ sở hữu `actor-context.ts` và `app-error.ts`:** Đã chốt và bàn giao toàn bộ cho Lane A tiếp quản, tích hợp nhất quán trên codebase.
+3. **Cơ chế khóa transaction thực tế:** Đã xác nhận cơ chế SQLite write transaction với kết nối transaction riêng, bounded retry và full jitter; đã kiểm thử độc lập đa tiến trình qua Probe A–E (10 processes) trên database cách ly.
+
+## Punch-list trước Production (Lane A & B)
+
+### 1. Xử lý lỗi hạ tầng Database tại Authentication (Lane A)
+- **Hiện trạng:** `validateSessionAccount()` fail-closed với 401.
+- **Rủi ro:** Khi DB gián đoạn tạm thời, lỗi hạ tầng bị hiểu sai thành sai đăng nhập, client có thể bị xóa phiên hợp lệ oan, và thông báo lỗi thô (nếu có) có nguy cơ rò rỉ nội bộ.
+- **Yêu cầu trước Production:**
+  - Trả lỗi chung HTTP 503 `AUTH_SERVICE_UNAVAILABLE` (hoặc 500 nội bộ tương đương).
+  - Ghi log chi tiết lỗi tại server (`console.error` / telemetry).
+  - Không gửi chi tiết thông điệp database thô cho client.
+  - Không xóa cookie session của client khi gặp sự cố gián đoạn kết nối tạm thời.
+- **Phân loại:** Không chặn demo nội bộ / Đợt 0 đơn instance, nhưng CHẶN NGHIỆM THU PRODUCTION.
+
+### 2. Giới hạn kiểm thử động trên 23 API Routes (Lane A)
+- **Hiện trạng:** Đã áp dụng thống nhất middleware/helper phân giải session policy trên 23 route, xác minh tĩnh qua TypeScript & build, và kiểm thử động 25 gates độc lập trên các endpoint trọng yếu (`login`, `me`, `movement`, `orders`, `analytics`, `shipments`, `cashbox`).
+- **Phạm vi công bố:** Bằng chứng hiện tại KHÔNG đại diện cho việc kiểm thử động runtime đầy đủ 100% mọi method/action của toàn bộ 23 route. Cần tiếp tục bổ sung dynamic route integration suite ở các đợt kiểm thử mở rộng kế tiếp.
+
+### 3. Giới hạn Concurrency & Môi trường triển khai thực tế (CP2)
+- **Cơ chế hiện tại:** Đã xóa bỏ hoàn toàn in-memory mutex khỏi tầng concurrency. CP2 dùng SQLite write transaction, transaction connection riêng, bounded retry và full jitter. Đã kiểm tra đa process trên local file (Probes A - E đạt 100%).
+- **Giới hạn thực tế:** Chưa tuyên bố tương thích serverless hoặc database chia sẻ qua network (NFS/SMB hay multi-region distributed SQLite).
+

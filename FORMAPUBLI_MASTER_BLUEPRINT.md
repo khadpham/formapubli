@@ -38,6 +38,11 @@
 29. [Kiến Trúc PWA & Ứng Dụng Thiết Bị Cầm Tay (PWA Architecture & Hardware Capabilities)](#29-kiến-trúc-pwa--ứng-dụng-thiết-bị-cầm-tay-pwa-architecture--hardware-capabilities)
 30. [Hệ Sinh Thái Trí Tuệ Nhân Tạo Tinh Gọn (Zero-Cost Lean AI & Copilot Engine)](#30-hệ-sinh-thái-trí-tuệ-nhân-tạo-tinh-gọn-zero-cost-lean-ai--copilot-engine)
 31. ["Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)](#31-súng-quét-mã-vạch-0-đồng-bằng-camera-pwa-in-app-barcode-scanner-engine)
+32. [Ba Chuẩn Mực Vận Hành Thực Địa Mới (The 3 Grounded Operational Standards)](#32-ba-chuẩn-mực-vận-hành-thực-địa-mới-the-3-grounded-operational-standards)
+33. [Quy Chuẩn Kỹ Thuật Đúc Kết Từ Thực Địa (Hardened Engineering Specifications)](#33-quy-chuẩn-kỹ-thuật-đúc-kết-từ-thực-địa-hardened-engineering-specifications)
+34. [Quy Chuẩn Điều Hướng Pinned Bottom Settings & Workspace Phân Tích Chuyên Sâu](#34-quy-chuẩn-điều-hướng-pinned-bottom-settings--workspace-phân-tích-chuyên-sâu)
+35. [Chuẩn Hóa Xử Lý Phần Cứng Camera Đa Ống Kính (Anti-Macro Camera Architecture)](#35-chuẩn-hóa-xử-lý-phần-cứng-camera-đa-ống-kính-anti-macro-camera-architecture)
+36. [Quy Chuẩn Red-Team & Negative Testing (Bắt Buộc)](#36-quy-chuẩn-red-team--negative-testing-bắt-buộc)
 
 ---
 
@@ -674,7 +679,12 @@ Hệ thống cung cấp một phân hệ Báo cáo Trực quan tương tác cao 
 
 ### 20.2. Cơ chế Đồng bộ Tự động sang Google Drive (Automated Zero-cost Drive Backup)
 1. **Google Service Account**: Sử dụng tài khoản dịch vụ Google Cloud miễn phí, kết nối trực tiếp vào thư mục Google Drive của công ty.
-2. **Lịch trình Snapshot**: Cứ mỗi cuối ngày hoặc sau mỗi đợt kiểm kho lớn, hệ thống tự động xuất bản ghi Ledger và Balance thành file SQLite (ormapubli_backup_YYYYMMDD.db) và file nén JSON/CSV đẩy thẳng vào Google Drive.
+2. **Lịch trình Sao lưu Linh hoạt (Daily vs. Weekly Tiered Strategy)**:
+   - *Đánh giá tần suất vận hành:* Với quy mô vừa và nhỏ (< 100 đơn/ngày), dung lượng file `formapubli.db` chỉ dao động từ 1MB – 15MB (nén gzip còn < 2MB).
+   - *Cơ chế linh hoạt:* Hệ thống hỗ trợ 2 chế độ tùy chỉnh trong phần Cài đặt:
+     - **Chế độ Tuần (Weekly - Mặc định tinh gọn):** Tự động đóng gói và đẩy snapshot lên Google Drive vào 23:59 Chủ nhật hàng tuần. Phù hợp giai đoạn thấp điểm, tối giản tác vụ nền.
+     - **Chế độ Ngày (Daily Snapshot xoay vòng 7 ngày):** Lưu trữ xoay vòng 7 bản gần nhất lúc 23:59 mỗi đêm, giúp RPO (Recovery Point Objective) an toàn tuyệt đối — nếu máy tính hỏng ổ cứng thì tối đa chỉ mất số liệu trong ngày hôm đó thay vì mất cả tuần giao dịch.
+   - *Bản lưu trữ tháng (Monthly Archive):* Tự động lưu 1 snapshot cố định vào ngày cuối cùng của tháng để phục vụ đối soát kế toán và lưu trữ dài hạn.
 3. **An toàn kép**: Dù Cloudflare có sự cố hay máy tính văn phòng hỏng ổ cứng, dữ liệu vẫn luôn an toàn 100% trên cả 2 nơi.
 
 ---
@@ -1118,6 +1128,39 @@ graph LR
   - Nếu là `ROLE_CASHIER`: LLM bị tước quyền truy cập toàn bộ các hàm tính toán lợi nhuận gộp và doanh thu tổng.
 - **Không gửi dữ liệu định danh khách hàng:** Mọi câu lệnh AI chỉ truyền mã ấn bản, tên sách, số lượng và số tiền; loại bỏ hoàn toàn thông tin nhạy cảm của khách hàng trước khi gửi ra ngoài.
 
+### 30.5. Hệ Thống Gửi Email Báo Cáo Tự Động Hàng Tháng Cho Cấp Quản Lý (Automated Monthly Executive Email Dispatcher)
+Nhằm hiện thực hóa tôn chỉ *"Tự động hóa thông minh - Nói ít hiểu nhiều"*, hệ thống tích hợp bộ tự động gửi báo cáo quản trị tổng kết tháng (Executive Monthly Digest) trực tiếp vào hòm thư Giám đốc/Chủ sở hữu vào **07:00 sáng ngày mùng 1 hàng tháng**:
+
+#### 1. Triết Lý Thiết Kế: "3 Phút Nắm Toàn Cảnh Doanh Nghiệp"
+Email không dàn trải số liệu vụn vặt của nhân viên thu ngân, mà được cấu trúc như một **Executive Cockpit Dashboard** theo chuẩn Responsive HTML Email (hiển thị hoàn hảo trên iPhone, iPad, Outlook, Gmail):
+- **Phần 1: Nhận Định Điều Hành 1 Phút (AI Executive Briefing - Powered by Gemini Flash):**
+  - Tóm tắt 3 dòng ngắn gọn:
+    1. *Điểm sáng tháng qua:* Ví dụ: *"Doanh thu thực tế đạt 145 triệu (+18% MoM), đóng góp chủ yếu từ Hội chợ sách Mùa Thu."*
+    2. *Điểm nghẽn cần lưu ý:* Ví dụ: *"Tỷ lệ đơn thanh toán chuyển khoản chiếm 82%, kiểm tra đối soát sao kê tài khoản Techcombank."*
+    3. *Hành động ưu tiên tháng tới:* Ví dụ: *"Tác phẩm Baudelaire (H21) chỉ còn 12 cuốn tại kho Âu Cơ, cần ký lệnh tái bản trước ngày 10."*
+- **Phần 2: Bộ 4 Thẻ KPI Tài Chính Sổ Kép (Financial Scorecards):**
+  - **Tổng Thực Thu (Net Cashflow):** Tổng tiền thực thu về sau khi trừ toàn bộ chiết khấu.
+  - **Tách Bạch Sổ Kép:** Tỷ trọng Sổ Thuế (`OFFICIAL_TAX`) vs Sổ Quản Trị Nội Bộ (`INTERNAL_MANAGEMENT`) để chủ doanh nghiệp kiểm soát rủi ro kiểm toán.
+  - **Quy Mô Bán Hàng:** Tổng số đơn hàng chốt thành công & Giá trị trung bình/đơn (AOV - Average Order Value).
+  - **Cơ Cấu Thanh Toán:** % Tiền mặt tại quầy vs % Chuyển khoản QR code.
+- **Phần 3: Ma Trận Doanh Số Theo Kênh & Kho:**
+  - Kho 1 - Âu Cơ (Bán lẻ / Cửa hàng / Online).
+  - Kho 3 - Hội Chợ (Sự kiện phát hành sách / Doanh thu đột biến).
+  - Kho 2 - Quỳnh Mai (Đại lý sỉ, xuất kho tổng).
+- **Phần 4: Bảng Xếp Hạng Top 5 Best-Sellers & Vận Tốc Tiêu Thụ ($V_{\text{sale}}$):**
+  - Biểu đồ thanh ngang CSS thuần (CSS Bar Chart - tải ngay lập tức, không bị trình duyệt chặn ảnh ngoại vi).
+  - Thể hiện rõ: Tên tác phẩm, số cuốn bán, doanh thu mang lại và tăng trưởng so với tháng trước.
+- **Phần 5: Khối Cảnh Báo Đỏ - Điểm Cạn Kho & Dự Báo Tái Bản:**
+  - Danh sách các ấn bản có mức tồn kho dưới ngưỡng an toàn 30 ngày.
+  - Gợi ý số lượng in tối ưu dựa trên tốc độ bán thực tế.
+- **Phần 6: Tệp Đính Kèm Tự Động (Auto-Attached Financial Ledger):**
+  - Đính kèm file `formapubli_sales_report_YYYY_MM.xlsx` (hoặc CSV UTF-8) có chữ ký số xác thực để Giám đốc chuyển tiếp 1-click cho kế toán trưởng.
+
+#### 2. Kiến Trúc Kỹ Thuật 0 Đồng (Zero-Cost Email Pipeline)
+- **Lịch biểu (Trigger):** Cloudflare Workers Cron Trigger hoặc GitHub Actions / Vercel Cron chạy vào ngày đầu tiên mỗi tháng.
+- **Động cơ Email:** Tích hợp **Resend API** (Hạn mức miễn phí 3.000 email/tháng, tỷ lệ vào Inbox 99.9%) hoặc Mailchannels SMTP miễn phí trên Cloudflare Workers.
+- **Bảo mật tuyệt đối:** Cấu hình danh sách email nhận báo cáo độc quyền (`EXECUTIVE_EMAIL_RECIPIENTS`), chặn hoàn toàn việc rò rỉ sang các tài khoản nhân viên hoặc đối tác.
+
 ---
 
 ## 31. "Súng" Quét Mã Vạch 0 Đồng Bằng Camera PWA (In-App Barcode Scanner Engine)
@@ -1141,4 +1184,129 @@ Tận dụng nền tảng PWA trên thiết bị di động, formapubli OS tích
     4. Khung quét camera tiếp tục duy trì trạng thái sẵn sàng để quét liên tiếp cuốn tiếp theo mà không cần bấm lại nút.
 - **Tiết kiệm 100% chi phí:** Tận dụng chính smartphone của nhân viên, không tốn 1 đồng chi phí mua sắm thiết bị ngoại vi!
 
+---
 
+## 32. Ba Chuẩn Mực Vận Hành Thực Địa Mới (The 3 Grounded Operational Standards)
+
+### 32.1. Tiêu Chuẩn 1: Atomic Lost-Update Guard Phía Database
+- **Vấn đề triệt tiêu:** Trong SQLite/LibSQL ở môi trường mạng chập chờn, mô hình đọc trước kiểm tra rồi ghi sau (`select -> check -> upsert`) dễ gặp xung đột Lost-Update khi nhiều thu ngân bấm thanh toán cùng lúc.
+- **Giải pháp chuẩn:** Thực thi trực tiếp biểu thức cập nhật nguyên tử:
+  ```sql
+  UPDATE stock_balances
+  SET physical_quantity = physical_quantity + :delta,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE edition_id = :editionId
+    AND warehouse_id = :warehouseId
+    AND condition = :condition
+    AND (physical_quantity + :delta >= 0);
+  ```
+- **Nguyên tắc xử lý:** Đọc `rowsAffected` ngay trong transaction. Nếu `rowsAffected = 0`: kho không đủ hàng hoặc bị tranh chấp, hệ thống rẽ nhánh sang bù lệch kiểm kê hội chợ (`FAIR_VARIANCE`) nếu có cờ `allowOverdraft`, hoặc rollback an toàn tuyệt đối.
+
+### 32.2. Tiêu Chuẩn 2: Chiến Lược "Chia Mâm" Phân Bổ Hạn Ngạch Quầy (Counter Quota)
+- **Bối cảnh hội chợ:** Gian hàng hội chợ có nhiều thu ngân (ví dụ 3 thu ngân). Không để toàn bộ thu ngân cùng tranh chấp 1 kho vật lý chung khi ngoại tuyến.
+- **Cơ chế hạn ngạch:** Đầu ngày hoặc đầu ca, Trưởng gian hàng thực hiện "chia mâm" sách vật lý ra các quầy/bàn thu ngân:
+  - Bàn A: 50 cuốn mỗi tựa.
+  - Bàn B: 50 cuốn mỗi tựa.
+  - Thùng dự phòng chung: lượng còn lại.
+- Khi rớt mạng, mỗi máy thu ngân chỉ được trừ kho ngoại tuyến trong hạn ngạch bàn mình được giao. Khi chạm ngưỡng 0, máy phát cảnh báo "Hết sách tại mâm — Yêu cầu tiếp tế từ thùng dự phòng", chặn đứng 100% tình trạng bán ảo vượt quá tổng số sách thực tế mang đi hội chợ.
+
+### 32.3. Tiêu Chuẩn 3: Chính Sách Khởi Tạo Tồn Kho Tờ Giấy Trắng (Clean Slate Opening Stock)
+- **Quy tắc tuyệt đối:** Không cố gắng nhập toàn bộ lịch sử biến động hỗn loạn từ 55 Google Sheets con cũ vào Sổ Cái mới.
+- **Thủ tục Clean Slate:**
+  1. Ngày chuyển giao (Cut-over Day): Tiến hành tổng kiểm kê vật lý thực tế tại 3 kho (Âu Cơ, Quỳnh Mai, Hội Chợ).
+  2. Ký biên bản kiểm kê chốt số lượng vật lý thực tế hiện có.
+  3. Khởi tạo 1 bút toán duy nhất trong Sổ cái bất biến: `OPENING_BALANCE` với chữ ký số của Giám đốc điều hành.
+  4. Lịch sử Google Sheets cũ được đóng băng làm tài liệu lưu trữ tham khảo đối chiếu (Archived Reference), không can thiệp vào số dư động cơ mới.
+
+---
+
+## 33. Quy Chuẩn Kỹ Thuật Đúc Kết Từ Thực Địa (Hardened Engineering Specifications)
+> *Chương này đúc kết toàn bộ các nguyên tắc kiến trúc, quy chuẩn mã nguồn và mẫu thiết kế (design patterns) phát sinh trong quá trình thi công các phân hệ lõi, giải thích lý do vì sao hệ thống được xây dựng như hiện tại để kỹ sư mới tiếp nhận có thể hiểu và tuân thủ tuyệt đối.*
+
+### 33.1. Atomic Guard & Khấu Trừ Kho Bất Biến (Atomic Decrement Pattern)
+- **Vấn đề triệt tiêu:** Trong môi trường phân tán hoặc nhiều tab/quầy POS cùng ghi dữ liệu, việc đọc tồn trước bằng câu lệnh `SELECT`, kiểm tra điều kiện trên ứng dụng rồi mới chạy `UPDATE` sẽ dẫn đến lỗi tương tranh nghiêm trọng (Race Condition / Lost-Update).
+- **Quy chuẩn kỹ thuật:** Mọi câu lệnh cập nhật số dư tồn kho (`stock_balances`) bắt buộc phải nhúng điều kiện bảo toàn vật lý trực tiếp vào mệnh đề `WHERE` của câu lệnh `UPDATE`:
+  ```sql
+  UPDATE stock_balances
+  SET physical_quantity = physical_quantity + :delta,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE edition_id = :editionId
+    AND warehouse_id = :warehouseId
+    AND condition = :condition
+    AND (physical_quantity + :delta >= 0);
+  ```
+- **Xử lý kết quả:** Luôn đọc `rowsAffected` từ driver database. Nếu `rowsAffected === 0`, giao dịch bị từ chối ngay lập tức vì không đủ tồn vật lý.
+
+### 33.2. Mẫu Xử Lý Bán Vượt Hạn Ngạch Quầy (Overdraft Pattern & Fair Variance)
+- **Bối cảnh thực địa:** Tại hội chợ sách thực tế, tình huống "thực tế cầm sách trên tay nhưng máy tính báo hết hàng do chưa kịp nhập bổ sung từ thùng" diễn ra thường xuyên. Nếu chặn cứng, thu ngân sẽ không thể bán được sách cho khách đang xếp hàng.
+- **Quy chuẩn:** Phân hệ quầy POS hỗ trợ cờ `allowOverdraft = true`. Khi xảy ra thiếu tồn tại quầy:
+  1. Thay vì hủy đơn, hệ thống tự động sinh một bút toán điều chỉnh `FAIR_VARIANCE` hoặc `ADJUSTMENT` để bù lượng âm tức thì vào thẻ kho quầy.
+  2. Bút toán ghi rõ `correlationId` gắn với đơn hàng và người phê duyệt (`actorId`).
+  3. Ghi vết kiểm toán cảnh báo để trưởng gian hàng đối soát và xuất bù từ thùng dự phòng cuối ngày.
+
+### 33.3. Mốc Con Trỏ Thứ Tự Sổ Cái Ký Gửi (Opening Ledger RowID Marker)
+- **Vấn đề độ chính xác:** SQLite và LibSQL có hàm thời gian mặc định `CURRENT_TIMESTAMP` chỉ đạt độ chính xác tới đơn vị **giây**. Khi các thao tác luân chuyển, báo bán và chốt kỳ ký gửi phát sinh cùng một giây trong các bài kiểm thử hoặc giao dịch tự động, việc truy vấn theo mốc thời gian `effective_at >= start_time` sẽ dẫn đến lỗi sót hoặc trùng bút toán.
+- **Quy chuẩn:** Bảng kỳ đối soát ký gửi (`consignment_statements`) lưu trường `opening_ledger_rowid` (khóa tự tăng `rowid` của bút toán mở kỳ trên `inventory_ledger`). Mọi truy vấn phát sinh trong kỳ đều căn cứ theo:
+  `WHERE id > :opening_ledger_rowid AND id <= :closing_ledger_rowid`
+  Đảm bảo tính chính xác tuyệt đối 100% không phụ thuộc vào độ trễ đồng hồ hệ thống.
+
+### 33.4. Vỏ Hộp Là SKU Vật Lý Thực Tế (`BOX-...` Pseudo-SKU Architecture)
+- **Bối cảnh nghiệp vụ:** Một bộ sách combo/boxset (như Tuyển tập Molière, Dostoevsky) bao gồm các cuốn sách lẻ và một vỏ hộp carton cứng chuyên dụng. Chi phí vỏ hộp đáng kể và số lượng vỏ hộp in có giới hạn. Nếu chỉ quản lý sách lẻ mà không trừ kho vỏ hộp, quầy sẽ bán vượt quá số lượng hộp thực tế đang có.
+- **Quy chuẩn:**
+  1. Vỏ hộp được khai báo như một SKU ấn bản trong bảng `editions` với tiền tố quy ước: `BOX-<TEN_COMBO>` (ví dụ: `BOX-MOLIERE-2026`).
+  2. Do vỏ hộp không mang mã vạch sách thương mại ISBN, hệ thống quy định tiền tố ISBN của vỏ hộp là `BOX-...`.
+  3. **Bộ lọc an toàn (Scanner/Search Guard):** Động cơ quét mã vạch Barcode Scanner và tìm kiếm tiếng Việt loại trừ hoặc xử lý an toàn các mã phi số có tiền tố `BOX-`, ngăn chặn làm nhiễu danh mục 81 ấn bản sách chính thức.
+  4. Tồn kho combo khả dụng tuân thủ luật thắt nút cổ chai:
+     `available_combos = MIN(FLOOR(stock_i / req_i))` tính trên toàn bộ linh kiện VÀ vỏ hộp.
+
+### 33.5. Quy Ước Cách Ly Ấn Bản Kiểm Thử (The `FC-` Test SKU Convention)
+- **Nguyên tắc bất biến của kiểm toán:** Bộ test suite toàn diện (`test-master-audit.ts` và `test-vietnamese-search.ts`) assert bất biến nghiêm ngặt: hệ thống có đúng 81 ấn bản sách chuẩn (`H01` đến `H81`).
+- **Quy chuẩn kiểm thử:**
+  1. Bất kỳ suite kiểm thử nào cần tạo mới ấn bản sách tạm thời để test nghiệp vụ riêng (như `test-forecast.ts`) bắt buộc phải đặt mã SKU với tiền tố `FC-` (ví dụ `FC-FAST-SELLER`, `FC-SLOW-SELLER`).
+  2. Các suite này phải được sắp xếp chạy ở **cuối runner** (`scripts/run-isolated.ts`), sau khi các bài test kiểm toán danh mục chuẩn 81 ấn bản đã hoàn tất và đạt 100% kết quả xanh.
+
+---
+
+## 34. Quy Chuẩn Điều Hướng Pinned Bottom Settings & Workspace Phân Tích Chuyên Sâu
+> *Đúc kết từ buổi Big Review thực địa ngày 14/09/2026 với Ban Giám đốc và Quản lý.*
+
+### 34.1. Nguyên Tắc Phân Tách Không Gian (Workspaces Separation)
+- **Executive Dashboard (`Alt + 1`):** Thiết kế cho trải nghiệm **lướt nhanh trong 10-15 giây** (Glanceable Experience). Tập trung vào 4 chỉ số KPI cốt lõi, diễn biến doanh số 7 ngày, tỷ trọng Sổ Thuế vs Sổ Thực và Top 5 đơn hàng. Tuyệt đối không nhồi nhét bảng dữ liệu lớn vào Dashboard.
+- **Deep Analytics Studio (`Alt + 7`):** Không gian làm việc chuyên sâu dành cho Ban Giám đốc và Trưởng quầy khi có nhu cầu nghiên cứu chi tiết:
+  - Bảng dữ liệu lớn theo dõi toàn diện 81 ấn bản.
+  - Dự báo điểm cạn kho ($V_{\text{sale}}$, DoI, EOQ).
+  - Tra cứu hạn ngạch in hợp đồng bản quyền và định mức linh kiện combo đóng hộp.
+  - Xuất bảng tính CSV chuẩn UTF-8 BOM.
+
+### 34.2. Quy Chuẩn Bất Biến: Pinned Bottom Settings (`Alt + 8`)
+- **Quy định kiến trúc:** Dù trong tương lai formapubli OS có mở rộng thêm bất kỳ phân hệ hay tab nào mới, **Tab Cài Đặt (Settings & Phân Quyền) luôn luôn nằm ở vị trí đáy cùng của Sidebar điều hướng**.
+- Các phân hệ vận hành nghiệp vụ mới (như Studio, CRM, Tích hợp sàn) được chèn vào thân giữa, đẩy Settings giữ vững vị trí chân trang, đảm bảo tính trực giác và ổn định thị giác cho người dùng lâu năm.
+
+---
+
+## 35. Chuẩn Hóa Xử Lý Phần Cứng Camera Đa Ống Kính (Anti-Macro Camera Architecture)
+
+### 35.1. Vấn Đề Thực Địa Của Smartphone Hiện Đại
+- Các smartphone đời mới (iPhone Pro, Samsung Galaxy, Xiaomi...) trang bị từ 3 đến 4 camera sau.
+- Rất nhiều trình duyệt (đặc biệt là Google Chrome trên Android) khi gọi `getUserMedia({ facingMode: 'environment' })` tự động kết nối vào **ống kính Macro (siêu gần)** thay vì ống kính chính. Hậu quả là khung quét bị mờ tịt ở cự ly cầm sách thông thường (15-30cm), chỉ rõ khi dí sát 2cm, làm tê liệt thao tác quét mã vạch ISBN tại quầy hội chợ.
+
+### 35.2. Giải Pháp Kỹ Thuật 3 Lớp Chống Macro
+1. **Lọc Ưu Tiên Ống Kính Chính (Main Lens Priority Filter):**
+   - Duyệt danh sách thiết bị video qua `enumerateDevices()`.
+   - Ưu tiên các camera sau có nhãn chứa `"main"`, `"primary"`, `"0"`, `"standard"`, `"wide 1x"`.
+   - Loại trừ triệt để các camera có nhãn chứa `"macro"`, `"close-up"`, `"ultra"`, `"tele"`, `"depth"`.
+2. **Khắc Phục Race Condition Nhãn Rỗng (Post-Permission Rescan):**
+   - Trước khi người dùng bấm "Cho phép" quyền camera, trình duyệt chỉ trả về `label: ""` (chuỗi rỗng).
+   - Cơ chế `didPostPermissionRescanRef` thực hiện quét lại danh sách thiết bị đúng 1 lần duy nhất ngay sau khi đã có quyền, tự động chuyển luồng sang ống kính chính tốt nhất nếu ống kính ban đầu bị nhầm.
+3. **Menu Chuyển Đổi Ống Kính Chủ Động (Manual Lens Switcher):**
+   - Tích hợp dropdown nhỏ ngay trên thanh điều khiển ngắm quét nếu phát hiện máy có nhiều camera sau, trao toàn quyền cho nhân viên đổi camera chỉ với 1 chạm.
+
+---
+
+## 36. Quy Chuẩn Red-Team & Negative Testing (Bắt Buộc)
+
+Đúc kết từ đợt probes adversarial 09/2026 (23 suites xanh nhưng vẫn lọt 9 lỗ hổng P0/P1 + 1 bug bundle):
+toàn văn luật thi hành tại **`docs/ADVERSARIAL_TESTING_POLICY.md`** — 5 quy tắc bắt buộc
+(negative test tiền/kho/quyền; validate tầng sâu nhất; test tương tác chéo;
+test phân quyền endpoint đọc; gate red-team trước merge) kèm checklist DoD copy vào mỗi PR.
+Mọi PR đụng tiền/kho/quyền/đối soát mà thiếu checklist sẽ bị từ chối merge.

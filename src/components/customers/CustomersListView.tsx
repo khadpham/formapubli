@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { BookOpenCheck, Sparkles, UserCheck, Calendar } from 'lucide-react';
+import { BookOpenCheck } from 'lucide-react';
+import { CustomersDirectory } from './CustomersDirectory';
 
 export function CustomersListView() {
   return (
@@ -18,18 +19,11 @@ export function CustomersListView() {
         </div>
       </div>
 
-      <div className="p-8 bg-white rounded-2xl border border-slate-200 text-center space-y-3">
-        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
-          <Sparkles className="w-6 h-6" />
-        </div>
-        <h3 className="text-base font-extrabold text-slate-900">
-          Module CRM & Gói Phát Hành Theo Mùa (Phase 3)
-        </h3>
-        <p className="text-xs text-slate-500 max-w-md mx-auto">
-          Bao gồm hồ sơ 360 độ của độc giả, cơ chế tự động chống tặng trùng sách đã có trong tủ sách cá nhân, và quản lý đăng ký đặt trước mùa Hạ/mùa Xuân.
-        </p>
-        <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
-          Đang chuẩn bị dữ liệu Phase 3
+      <CustomersDirectory />
+
+      <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-center">
+        <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-white text-amber-800 border border-amber-200">
+          GĐ1 read-only đã xong • GĐ2 POS + GĐ3 Gói Mùa để sprint sau
         </span>
       </div>
     </div>

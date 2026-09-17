@@ -47,11 +47,25 @@ export function generateAcronym(title: string): string {
 }
 
 /**
+ * Kiểm tra viết tắt/acronym: "tg" khớp "Truong gia hoc lam sang" (tghls).
+ * Chuẩn hóa không dấu, so khớp prefix hoặc includes trên chuỗi acronym.
+ */
+export function matchesAcronym(target: string | null | undefined, query: string): boolean {
+  if (!target || !query) return false;
+  const cleanQuery = removeAccents(query).replace(/[^a-z0-9]/g, '');
+  if (!cleanQuery || cleanQuery.length < 2) return false;
+  const acronym = generateAcronym(target);
+  if (!acronym) return false;
+  return acronym.startsWith(cleanQuery) || acronym.includes(cleanQuery);
+}
+
+/**
  * Kiểm tra xem chuỗi target có khớp với query tìm kiếm hay không:
  * - Hỗ trợ gõ tiếng Việt có dấu hoặc KHÔNG DẤU (ví dụ: gõ "truong" khớp với "Trưởng giả học làm sang")
  * - Bỏ qua hoa thường
  * - Khớp một phần (partial substring match)
  * - Tự động đối soát ngữ âm (ch/tr, d/gi/r, s/x) để hỗ trợ tìm kiếm bằng giọng nói
+ * - BV-05: khớp viết tắt (gõ "tg" ra "Truong gia hoc lam sang", "bt" ra "Benh tuong")
  */
 export function matchesVietnameseSearch(target: string | null | undefined, query: string): boolean {
   if (!target || !query) return false;
@@ -61,6 +75,9 @@ export function matchesVietnameseSearch(target: string | null | undefined, query
 
   // 1. Khớp không dấu thông thường
   if (normalizedTarget.includes(normalizedQuery)) return true;
+
+  // 1b. BV-05: khớp viết tắt / cụm ký tự đầu (tg -> tghls)
+  if (matchesAcronym(target, query)) return true;
 
   // 2. Khớp ngữ âm phương ngữ cho giọng nói
   const phoneticTarget = phoneticSimplify(target);

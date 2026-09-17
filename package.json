@@ -12,6 +12,9 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
     "db:studio": "drizzle-kit studio",
+    "test:setup": "npx tsx scripts/setup-test-db.ts",
+    "test:discount-guard": "npx tsx scripts/test-discount-guard.ts",
+    "test:isolated": "npx tsx scripts/run-isolated.ts",
     "pages:build": "npx @cloudflare/next-on-pages"
   },
   "dependencies": {
@@ -22,7 +25,8 @@
     "next": "14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.2"
+    "tailwind-merge": "^2.5.2",
+    "zod": "^3.22.3"
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.16",
