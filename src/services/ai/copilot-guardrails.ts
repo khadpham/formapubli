@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ExecutiveQueryService } from '../executive-query.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
+import { removeAccents } from '@/lib/vietnamese';
 import { callGeminiJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel } from './llm-client';
 
 export const COPILOT_SYSTEM_PROMPT = `
@@ -46,18 +47,20 @@ export class CopilotGuardrails {
    */
   static async planQuery(question: string): Promise<CopilotPlan> {
     const qLower = question.toLowerCase();
+    // Chuẩn hóa không dấu để bắt paraphrase gõ không dấu (vd 'huy don', 'xoa so').
+    const qNorm = removeAccents(qLower);
 
-    // 1. Kiểm tra nhanh các mẫu câu tấn công / ép ghi / ngoài phạm vi (Prompt Injection & Scope Defense)
-    if (
-      qLower.includes('update ') ||
-      qLower.includes('delete ') ||
-      qLower.includes('insert ') ||
-      qLower.includes('drop table') ||
-      qLower.includes('sửa tồn') ||
-      qLower.includes('hủy đơn') ||
-      qLower.includes('chi tiền') ||
-      qLower.includes('xóa sổ')
-    ) {
+    // 1. Kiểm tra nhanh các mẫu câu tấn công / ép ghi / ngoài phạm vi (Prompt Injection & Scope Defense).
+    // So khớp trên chuỗi KHÔNG DẤU để một luật duy nhất bao phủ cả có dấu lẫn không dấu.
+    const MUTATION_PATTERNS = [
+      'huy don', 'xoa don', 'sua don', // hủy/xóa/sửa đơn
+      'xoa so', 'sua so', // xóa/sửa sổ
+      'sua ton', 'sua kho', 'tru kho', 'cong kho', 'dieu chinh kho', 'nhap kho', 'xuat kho', // sửa kho
+      'chi tien', 'hoan tien', 'chuyen tien', 'rut tien', 'mo ket', 'dong ket', // tiền/két
+      'sua gia', 'giam gia', 'tang gia', 'doi gia', // giá bán
+    ];
+    const SQL_RE = /\b(update|delete|insert|drop\s+table|alter\s+table|truncate|grant|revoke)\b/i;
+    if (MUTATION_PATTERNS.some((p) => qNorm.includes(p)) || SQL_RE.test(qLower)) {
       return {
         action: 'REFUSE_OUT_OF_SCOPE',
         directAnswer:
@@ -120,28 +123,30 @@ Trả về JSON chuẩn khớp schema:
    * Fallback heuristic nhận diện ý định nếu LLM lỗi hoặc offline.
    */
   private static heuristicPlan(q: string): CopilotPlan {
-    if (q.includes('két') || q.includes('tiền mặt') || q.includes('chênh lệch') || q.includes('đối soát') || q.includes('ca')) {
+    // Chuẩn hóa không dấu để câu hỏi gõ không dấu vẫn định tuyến đúng tool.
+    const n = removeAccents(q.toLowerCase());
+    if (n.includes('ket') || n.includes('tien mat') || n.includes('chenh lech') || n.includes('doi soat') || n.includes('ca lam') || n.includes('thu ngan')) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_cashbox_reconciliation', args: {} },
         reason: 'Heuristic keyword match: cashbox',
       };
     }
-    if (q.includes('tái bản') || q.includes('cạn kho') || q.includes('báo đỏ') || q.includes('sắp hết') || q.includes('dự báo')) {
+    if (n.includes('tai ban') || n.includes('can kho') || n.includes('bao do') || n.includes('sap het') || n.includes('du bao')) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_reprint_forecast', args: { level: 'RED_ALERT', limit: 20 } },
         reason: 'Heuristic keyword match: reprint forecast',
       };
     }
-    if (q.includes('doanh thu') || q.includes('doanh số') || q.includes('sổ thuế') || q.includes('sổ nội bộ') || q.includes('bán được')) {
+    if (n.includes('doanh thu') || n.includes('doanh so') || n.includes('so thue') || n.includes('so noi bo') || n.includes('ban duoc')) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_sales_summary', args: { windowDays: 30, fiscalScope: 'ALL' } },
         reason: 'Heuristic keyword match: sales',
       };
     }
-    if (q.includes('tồn kho') || q.includes('còn bao nhiêu') || q.includes('kho âu cơ') || q.includes('kho')) {
+    if (n.includes('ton kho') || n.includes('con bao nhieu') || n.includes('kho au co') || /(^| )kho( |$)/.test(n)) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_stock_level', args: {} },
