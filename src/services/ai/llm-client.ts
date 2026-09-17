@@ -36,11 +36,13 @@ export type LlmEngine = 'LLM_GEMINI' | 'LLM_OPENAI';
 /**
  * Model Gemini bắt buộc cấu hình qua env — không default cứng model cũ.
  *
- * QUYẾT ĐỊNH SPRINT 0 (Team B, tra cứu tháng 09/2026):
+ * QUYẾT ĐỊNH SPRINT 0 + ĐO THẬT 17/09/2026 (Chủ dự án duyệt):
  * - gemini-1.5-flash-002: retired 24/09/2025. gemini-2.0-flash: retired 01/06/2026.
  * - gemini-2.5-flash: retirement 20/10/2026 (đã ghi nhận 404 sớm) — KHÔNG dùng.
- * - KHUYẾN NGHỊ: GEMINI_MODEL=gemini-3.5-flash (stable, retirement ≥ 19/05/2027,
- *   hỗ trợ temperature + structured outputs, khớp client hiện tại).
+ * - CHỐT: GEMINI_MODEL=gemini-3.5-flash-lite (đo thật: ~950ms, JSON chuẩn,
+ *   đúng editionId + số lượng; bản full 3.5-flash chậm ~8.4s và 503 thất thường).
+ * - Tầng Groq đo thật cùng prompt: gpt-oss-20b đúng (~1150ms), qwen3.8-27b
+ *   nhanh (~420ms) nhưng bịa mã H01-001/H01-002 và chẻ số lượng — LOẠI khỏi chuỗi.
  * - Nếu chuyển sang 3.6+: Google đã bỏ temperature/top_p/top_k — phải cập nhật
  *   generationConfig trong file này trước (xóa temperature).
  */
@@ -48,8 +50,8 @@ export function resolveGeminiModel(): string {
   const model = (process.env.GEMINI_MODEL || '').trim();
   if (!model) {
     throw new LlmConfigError(
-      'Thiếu cấu hình GEMINI_MODEL. Đặt GEMINI_MODEL=gemini-3.5-flash ' +
-        '(khuyến nghị Sprint 0) — không dùng model mặc định cũ.'
+      'Thiếu cấu hình GEMINI_MODEL. Đặt GEMINI_MODEL=gemini-3.5-flash-lite ' +
+        '(đã chốt + đo thật 17/09/2026) — không dùng model mặc định cũ.'
     );
   }
   return model;
