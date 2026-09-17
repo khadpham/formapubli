@@ -247,6 +247,99 @@ async function run() {
   });
 
   // -------------------------------------------------------------------------
+  // 5b. GROUNDING ĐA USE-CASE: số và mã trong câu trả lời phải từ dữ liệu ta
+  // -------------------------------------------------------------------------
+  const { CopilotGuardrails: Guards } = await import('../src/services/ai/copilot-guardrails');
+  const { truncateCatalog } = await import('../src/services/ai/llm-client');
+
+  const salesAns = ownerSales.body?.data?.answer || '';
+  const salesData = ownerSales.body?.data?.toolData || {};
+  const stockAns = stockRes.body?.data?.answer || '';
+  const stockData = stockRes.body?.data?.toolData || {};
+  const forecastAns = forecastRes.body?.data?.answer || '';
+  const forecastData = forecastRes.body?.data?.toolData || {};
+
+  const normNum = (n: unknown): string => `${n ?? ''}`.replace(/[^0-9]/g, '');
+  const salesRevenue = normNum(salesData.totalRevenue);
+  recordTest({
+    id: 'GND-01',
+    name: 'Doanh thu trong câu trả lời khớp toolData (không bịa số)',
+    category: 'DATA_ACCURACY',
+    passed: salesRevenue.length >= 4 ? normNum(salesAns).includes(salesRevenue) : true,
+    expected: `Chứa ${salesRevenue}`,
+    actual: salesRevenue.length >= 4 ? 'Khớp' : 'Doanh thu test <4 chữ số — kiểm tra thực ở GND-06 tổng hợp',
+  });
+
+  // GND-06 tổng hợp (không phụ thuộc số liệu seed): số lạ phải bị bắt, số đúng phải qua.
+  const synthData = { totalRevenue: 1234567, totalOrders: 89 };
+  const cleanAns = 'Doanh thu 1.234.567 đ từ 89 đơn trong 30 ngày qua.';
+  const dirtyAns = 'Doanh thu 1.234.567 đ từ 89 đơn, trong đó 9.999.999 đ là online.';
+  recordTest({
+    id: 'GND-06',
+    name: 'Bộ phát hiện số mồ côi: sạch thì qua, bịa 9.999.999 thì bắt',
+    category: 'DATA_ACCURACY',
+    passed:
+      Guards.findUngroundedNumbers(cleanAns, synthData).length === 0 &&
+      Guards.findUngroundedNumbers(dirtyAns, synthData).join(',') === '9999999',
+    expected: 'Sạch qua / bẩn bắt đúng 9999999',
+    actual: `sạch=${Guards.findUngroundedNumbers(cleanAns, synthData).length}, bẩn=${Guards.findUngroundedNumbers(dirtyAns, synthData).join(',')}`,
+  });
+
+  const stockTotal = normNum(stockData.totalAvailable);
+  recordTest({
+    id: 'GND-02',
+    name: 'Tồn khả dụng trong câu trả lời khớp toolData',
+    category: 'DATA_ACCURACY',
+    passed: stockTotal.length >= 4 ? normNum(stockAns).includes(stockTotal) : true,
+    expected: `Chứa ${stockTotal}`,
+    actual: 'Đối chiếu chuẩn hóa',
+  });
+
+  const orphanSales = Guards.findUngroundedNumbers(salesAns, salesData);
+  const orphanStock = Guards.findUngroundedNumbers(stockAns, stockData);
+  const orphanForecast = Guards.findUngroundedNumbers(forecastAns, forecastData);
+  const orphanCashbox = Guards.findUngroundedNumbers(answerText, cashboxRes.body?.data?.toolData || {});
+  const orphans = [...orphanSales, ...orphanStock, ...orphanForecast, ...orphanCashbox];
+  recordTest({
+    id: 'GND-03',
+    name: 'Không số mồ côi trong 4 câu trả lời (mọi số đều từ toolData/hằng số chính sách)',
+    category: 'DATA_ACCURACY',
+    passed: orphans.length === 0,
+    expected: '0 số mồ côi',
+    actual: orphans.length === 0 ? 'Sạch' : `Mồ côi: ${orphans.join(', ')}`,
+  });
+
+  const { editions } = await import('../src/db');
+  const codeRows = await db.select({ code: editions.code }).from(editions);
+  const codeSet = new Set(codeRows.map((r) => r.code));
+  const citedCodes = [
+    ...Guards.extractBracketCodes(salesAns),
+    ...Guards.extractBracketCodes(stockAns),
+    ...Guards.extractBracketCodes(forecastAns),
+    ...Guards.extractBracketCodes(answerText),
+  ];
+  const strangeCodes = citedCodes.filter((c) => !codeSet.has(c));
+  recordTest({
+    id: 'GND-04',
+    name: 'Mọi mã [XXX] trong câu trả lời đều có trong danh mục (không bịa mã)',
+    category: 'DATA_ACCURACY',
+    passed: strangeCodes.length === 0,
+    expected: '0 mã lạ',
+    actual: strangeCodes.length === 0 ? `Đã kiểm ${citedCodes.length} mã trích dẫn` : `Mã lạ: ${strangeCodes.join(', ')}`,
+  });
+
+  const longCatalog = 'x'.repeat(20000);
+  const truncated = truncateCatalog(longCatalog);
+  recordTest({
+    id: 'GND-05',
+    name: 'Catalog vượt trần bị cắt + đánh dấu (chống LLM bịa SKU ngoài danh mục)',
+    category: 'DATA_ACCURACY',
+    passed: truncated.length < longCatalog.length && truncated.includes('rút gọn') && truncateCatalog('abc') === 'abc',
+    expected: 'Cắt + marker, chuỗi ngắn giữ nguyên',
+    actual: `Cắt ${longCatalog.length} -> ${truncated.length}`,
+  });
+
+  // -------------------------------------------------------------------------
   // 6. RATE LIMITING: 15 req/phút/staffId
   // -------------------------------------------------------------------------
   resetWindowRateLimit('copilot:QL-01');

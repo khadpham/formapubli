@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-09-17T09:51:55.604Z",
-  "totalTests": 20,
-  "passed": 20,
+  "timestamp": "2026-09-17T10:18:20.426Z",
+  "totalTests": 26,
+  "passed": 26,
   "passRatio": "100%",
   "results": [
     {
@@ -123,6 +123,54 @@
       "passed": true,
       "expected": "Chứa thông điệp lưu ý đối soát",
       "actual": "Đã đính kèm"
+    },
+    {
+      "id": "GND-01",
+      "name": "Doanh thu trong câu trả lời khớp toolData (không bịa số)",
+      "category": "DATA_ACCURACY",
+      "passed": true,
+      "expected": "Chứa 11298800",
+      "actual": "Khớp"
+    },
+    {
+      "id": "GND-06",
+      "name": "Bộ phát hiện số mồ côi: sạch thì qua, bịa 9.999.999 thì bắt",
+      "category": "DATA_ACCURACY",
+      "passed": true,
+      "expected": "Sạch qua / bẩn bắt đúng 9999999",
+      "actual": "sạch=0, bẩn=9999999"
+    },
+    {
+      "id": "GND-02",
+      "name": "Tồn khả dụng trong câu trả lời khớp toolData",
+      "category": "DATA_ACCURACY",
+      "passed": true,
+      "expected": "Chứa 10978",
+      "actual": "Đối chiếu chuẩn hóa"
+    },
+    {
+      "id": "GND-03",
+      "name": "Không số mồ côi trong 4 câu trả lời (mọi số đều từ toolData/hằng số chính sách)",
+      "category": "DATA_ACCURACY",
+      "passed": true,
+      "expected": "0 số mồ côi",
+      "actual": "Sạch"
+    },
+    {
+      "id": "GND-04",
+      "name": "Mọi mã [XXX] trong câu trả lời đều có trong danh mục (không bịa mã)",
+      "category": "DATA_ACCURACY",
+      "passed": true,
+      "expected": "0 mã lạ",
+      "actual": "Đã kiểm 0 mã trích dẫn"
+    },
+    {
+      "id": "GND-05",
+      "name": "Catalog vượt trần bị cắt + đánh dấu (chống LLM bịa SKU ngoài danh mục)",
+      "category": "DATA_ACCURACY",
+      "passed": true,
+      "expected": "Cắt + marker, chuỗi ngắn giữ nguyên",
+      "actual": "Cắt 20000 -> 12037"
     },
     {
       "id": "RATE-01",

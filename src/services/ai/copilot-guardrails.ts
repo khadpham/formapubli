@@ -221,6 +221,42 @@ Trả về JSON chuẩn khớp schema:
   }
 
   /**
+   * Trích các số có ý nghĩa (≥4 chữ số: tiền, tồn, lượt) từ văn bản,
+   * chuẩn hóa bằng cách bỏ dấu phân cách nghìn (1.234.567 -> 1234567).
+   */
+  static extractSignificantNumbers(text: string): string[] {
+    const matches = text.match(/\d[\d.,]*\d|\d/g) || [];
+    return matches
+      .map((m) => m.replace(/[.,]/g, ''))
+      .filter((d) => /^\d+$/.test(d) && d.length >= 4 && !(d.length === 4 && Number(d) >= 1900 && Number(d) <= 2100));
+  }
+
+  /**
+   * Trích mã ấn bản dạng [XXX] từ câu trả lời để đối chiếu catalog.
+   */
+  static extractBracketCodes(text: string): string[] {
+    const out: string[] = [];
+    const re = /\[([A-Za-z0-9][A-Za-z0-9\-_]{0,19})\]/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) out.push(m[1]);
+    return out;
+  }
+
+  /**
+   * Kiểm grounded: mọi số ý nghĩa trong câu trả lời PHẢI xuất hiện trong
+   * toolData (chuẩn hóa cùng cách), trừ chính sách hằng số đã biết
+   * (ngưỡng ngày 30/45, đệm 105=30+15+60, limit mặc định 20/50/200).
+   * Trả về danh sách số "mồ côi" — rỗng nghĩa là grounded.
+   */
+  static findUngroundedNumbers(answer: string, toolData: unknown): string[] {
+    const POLICY_CONSTANTS = new Set(['30', '45', '105', '15', '60', '20', '50', '200', '7', '100']);
+    const dataNums = new Set(CopilotGuardrails.extractSignificantNumbers(JSON.stringify(toolData ?? {})));
+    return CopilotGuardrails.extractSignificantNumbers(answer).filter(
+      (n) => !dataNums.has(n) && !POLICY_CONSTANTS.has(n)
+    );
+  }
+
+  /**
    * Hậu kiểm Output: Đảm bảo số liệu và các cảnh báo bắt buộc tuân thủ quy chuẩn.
    */
   static postProcessAnswer(answer: string, toolName?: string): string {

@@ -505,6 +505,112 @@ async function run() {
   delete process.env.GROQ_API_KEY;
   resetLlmBreaker('groq');
 
+  // ---- 23-26. GROUNDING ĐA USE-CASE VOICE ----
+  // 23. Transcript không dấu vẫn bóc đúng (STT thực tế hay mất dấu).
+  const noAccent = await extractOrderEntities('lay 2 cuon hoc x', FAKE_CATALOG);
+  ok(
+    '23. Không dấu vẫn khớp catalog đúng số lượng',
+    noAccent.checked.some((i) => i.editionId === 'ed-hx' && i.quantity === 2),
+    `engine=${noAccent.engine}`
+  );
+
+  // 24. LLM trộn SKU thật + SKU lạ + title sai cho SKU thật.
+  process.env.GEMINI_API_KEY = 'test-gemini-key';
+  process.env.GEMINI_MODEL = 'test-model-stubbed';
+  resetLlmBreaker('gemini');
+  stubFetch(async (url) => {
+    if (url.includes('generativelanguage.googleapis.com')) {
+      return Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    items: [
+                      { editionId: 'ed-hx', code: 'HX', title: 'TỰA BỊA SAI', quantity: 2 },
+                      { editionId: 'ed-GHOST', code: 'MA', title: 'Sách ma', quantity: 9 },
+                    ],
+                    warnings: [],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  });
+  const mixed = await extractOrderEntities('lấy sách', FAKE_CATALOG);
+  const keptHx = mixed.checked.find((i) => i.editionId === 'ed-hx');
+  ok(
+    '24. Giữ SKU thật + ép title/code theo catalog, loại SKU ma + warning',
+    mixed.engine === 'LLM_GEMINI' &&
+      mixed.checked.length === 1 &&
+      keptHx?.title === 'Học X' &&
+      keptHx?.code === 'HX' &&
+      keptHx?.quantity === 2 &&
+      mixed.checkWarnings.length > 0,
+    `title=${keptHx?.title}`
+  );
+  restoreFetch();
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_MODEL;
+  resetLlmBreaker('gemini');
+
+  // 25. Transcript không có sách nào -> items rỗng + warnings + confidence thấp.
+  const empty = await parseVoiceOrder({ text: 'alo chào chị nhé', catalog: FAKE_CATALOG });
+  ok(
+    '25. Không sách: items rỗng, có warning, confidence thấp, không crash',
+    empty.items.length === 0 && empty.warnings.length > 0 && empty.confidence.value <= 0.5,
+    `confidence=${empty.confidence.value}`
+  );
+
+  // 26. Confidence phản ánh tỉ lệ khớp: LLM 3/5 khớp -> < 0.9 heuristic.
+  process.env.GEMINI_API_KEY = 'test-gemini-key';
+  process.env.GEMINI_MODEL = 'test-model-stubbed';
+  resetLlmBreaker('gemini');
+  stubFetch(async (url) => {
+    if (url.includes('generativelanguage.googleapis.com')) {
+      return Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    items: [
+                      { editionId: 'ed-hx', code: 'HX', title: 'Học X', quantity: 1 },
+                      { editionId: 'ed-G1', code: 'G1', title: 'Ma 1', quantity: 1 },
+                      { editionId: 'ed-G2', code: 'G2', title: 'Ma 2', quantity: 1 },
+                      { editionId: 'ed-G3', code: 'G3', title: 'Ma 3', quantity: 1 },
+                      { editionId: 'ed-G4', code: 'G4', title: 'Ma 4', quantity: 1 },
+                    ],
+                    warnings: [],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }
+    throw new Error('unexpected fetch: ' + url);
+  });
+  const partial = await parseVoiceOrder({ text: 'lấy sách', catalog: FAKE_CATALOG });
+  ok(
+    '26. Khớp 1/5 -> confidence thấp + ghi nguồn heuristic',
+    partial.confidence.value < 0.9 &&
+      partial.confidence.source === 'heuristic' &&
+      partial.items.length === 1,
+    `confidence=${partial.confidence.value}`
+  );
+  restoreFetch();
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_MODEL;
+  resetLlmBreaker('gemini');
+
   console.log(`\n${passed === total ? '🎉' : '⚠️'} VOICE ORDER 5.1: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
 }
