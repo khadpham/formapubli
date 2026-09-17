@@ -2,7 +2,39 @@ import { UserRole } from './roles';
 import { db, auditLogs } from '@/db';
 
 export interface AuditLogParams {
-  action: 'VIEW_FISCAL_MANAGEMENT' | 'EXPORT_SALES_REPORT' | 'VOID_ORDER' | 'ADJUST_STOCK' | 'MUTATE_ORDER' | 'ORDER_CONFIRMED' | 'ORDER_CANCELLED' | 'LOGIN_SUCCESS' | 'LOGIN_FAILED' | 'BRUTE_FORCE_DETECTED' | 'LOGOUT' | 'FUND_CREATED' | 'FUND_DRAWN' | 'FUND_CLOSED' | 'MANAGER_DISCOUNT_APPROVED' | 'MANAGER_DISCOUNT_DENIED' | 'RETURN_REQUESTED' | 'RETURN_APPROVED' | 'RETURN_COMPLETED' | 'RETURN_REJECTED' | 'RETURN_VOIDED' | 'TRANSFER_DISPATCH' | 'TRANSFER_RECEIVE' | 'TRANSFER_CANCEL' | 'CONSIGNMENT_STATEMENT' | 'CONSIGNMENT_SALE' | 'CONSIGNMENT_RETURN' | 'SETTLEMENT_RECORD' | 'SETTLEMENT_VOID';
+  action:
+    | 'VIEW_FISCAL_MANAGEMENT'
+    | 'EXPORT_SALES_REPORT'
+    | 'VOID_ORDER'
+    | 'ADJUST_STOCK'
+    | 'MUTATE_ORDER'
+    | 'ORDER_CONFIRMED'
+    | 'ORDER_CANCELLED'
+    | 'LOGIN_SUCCESS'
+    | 'LOGIN_FAILED'
+    | 'BRUTE_FORCE_DETECTED'
+    | 'LOGOUT'
+    | 'FUND_CREATED'
+    | 'FUND_DRAWN'
+    | 'FUND_CLOSED'
+    | 'MANAGER_DISCOUNT_APPROVED'
+    | 'MANAGER_DISCOUNT_DENIED'
+    | 'RETURN_REQUESTED'
+    | 'RETURN_APPROVED'
+    | 'RETURN_COMPLETED'
+    | 'RETURN_REJECTED'
+    | 'RETURN_VOIDED'
+    | 'TRANSFER_DISPATCH'
+    | 'TRANSFER_RECEIVE'
+    | 'TRANSFER_CANCEL'
+    | 'CONSIGNMENT_STATEMENT'
+    | 'CONSIGNMENT_SALE'
+    | 'CONSIGNMENT_RETURN'
+    | 'SETTLEMENT_RECORD'
+    | 'SETTLEMENT_VOID'
+    | 'COPILOT_QUERY'
+    | 'COPILOT_TOOL_INVOKED'
+    | 'COPILOT_UNAUTHORIZED_ATTEMPT';
   actorRole: UserRole | string;
   actorId: string;
   resource: string;
@@ -70,7 +102,7 @@ export async function recordAuditLog(params: AuditLogParams): Promise<void> {
       actorRole: params.actorRole,
       actorId: params.actorId || 'unknown-actor',
       resource: params.resource,
-      details: params.details,
+      details: params.details ? params.details.slice(0, 500) : undefined,
       ipAddress: params.ipAddress || 'local',
     });
   } catch (error) {

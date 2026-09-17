@@ -598,10 +598,13 @@
 - [ ] LLM Function Calling (LLaMA 3.3 / Gemini Flash) bóc tách thực thể: Mã SKU, số lượng, kho xuất, tỷ lệ chiết khấu, cờ sổ kép.
 - [ ] Tự động điền dữ liệu vào Giỏ hàng POS theo nguyên tắc "Human-in-the-loop" (thu ngân kiểm tra và bấm xác nhận).
 
-#### 📌 5.2. Executive AI Copilot (Trợ Lý Điều Hành Giám Đốc)
-- [ ] Trợ lý đối thoại hỏi đáp bằng tiếng Việt tự nhiên qua Gemini 1.5 Flash.
-- [ ] Chế độ an toàn Read-only: Chỉ gọi các API đọc số liệu doanh thu, tồn kho; cấm tuyệt đối can thiệp sửa đổi CSDL.
-- [ ] Cơ chế RBAC Scope Guard: Không rò rỉ dữ liệu Sổ Quản trị nội bộ cho tài khoản vai trò Kế toán thuế.
+#### 📌 5.2. Executive AI Copilot (Trợ Lý Điều Hành Giám Đốc) - [LÕI NỀN TẢNG ĐÃ HOÀN THÀNH]
+- [x] Thiết lập hợp đồng phối hợp 2 Lane khóa cứng `docs/PHASE5_LANE_CONTRACT.md`.
+- [x] Động cơ AI Client dùng chung (`llm-client.ts`), Zod Schema Validation, 100% Edge-safe, timeout 6s, 3-tier fallback.
+- [x] Chế độ an toàn Read-only: 4 tool tra cứu (`query_stock_level`, `query_sales_summary`, `query_reprint_forecast`, `query_cashbox_reconciliation`). Cấm tuyệt đối can thiệp sửa đổi CSDL.
+- [x] Cơ chế phân quyền nghiêm ngặt: `ROLE_OWNER` và `ROLE_MANAGER` toàn quyền xem 2 sổ. Chặn đứng `ROLE_CASHIER`, `ROLE_WAREHOUSE`, `ROLE_TAX` (403 + `COPILOT_UNAUTHORIZED_ATTEMPT`).
+- [x] Bộ rate-limit sliding window 15 req/phút/staffId (`checkWindowRateLimit`) chống spam và flood token.
+- [x] Bộ kiểm thử Red-team `eval-executive-ai.ts` đạt 11/11 bài test (100%), xuất báo cáo JSON `eval-executive-ai-report.json`.
 
 #### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting) - [ĐÃ HOÀN THÀNH]
 - [x] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực từ thẻ kho vật lý.

@@ -10,7 +10,9 @@ import { eq, and, or, sql, inArray, isNull } from 'drizzle-orm';
  * - Tồn khả dụng: tổng NEW trên mọi kho TRỪ trạm transit (hàng đi đường
  *   chưa chắc chắn) và TRỪ hàng cách ly/hỏng (không bán được).
  * - DoI = tồn / V (V = 0 -> vô cùng). Phân cấp RED <= 30, YELLOW <= 45.
- * - Đề xuất in = CEIL(V × (lead 30 + buffer 15 + an toàn 60)).
+ * - Số lượng in đề xuất = CEIL(V × (lead 30 + buffer 15 + an toàn 60)).
+ *   Đây là chính sách bù tồn 105 ngày, KHÔNG phải EOQ tối ưu kinh tế
+ *   (Economic Order Quantity). Không gọi tắt là "EOQ" khi báo cáo lãnh đạo.
  */
 export const LEAD_TIME_DAYS = 30;
 export const BUFFER_DAYS = 15;
@@ -47,10 +49,20 @@ export function computeDoI(totalStock: number, vSale: number): number | null {
   return totalStock / vSale;
 }
 
-export function computeEOQ(vSale: number): number {
+/**
+ * Số lượng in đề xuất theo chính sách bù tồn 105 ngày
+ * (Lead 30 + Buffer 15 + Safety 60). KHÔNG phải EOQ kinh tế tối ưu.
+ */
+export function computeReprintSuggestion(vSale: number): number {
   if (vSale <= 0) return 0;
   return Math.ceil(vSale * (LEAD_TIME_DAYS + BUFFER_DAYS + SAFETY_DAYS));
 }
+
+/**
+ * @deprecated Giữ để tương thích ngược (test-forecast, script ngoài).
+ * Dùng `computeReprintSuggestion` cho mọi code mới.
+ */
+export const computeEOQ = computeReprintSuggestion;
 
 function sqliteCutoff(windowDays: number): string {
   return new Date(Date.now() - windowDays * 24 * 3600 * 1000)
@@ -69,7 +81,7 @@ export class ForecastService {
         qty: sql<number>`COALESCE(SUM(-${inventoryLedger.quantityDelta}), 0)`,
       })
       .from(inventoryLedger)
-      // FIX-08 + P2-11: loại đơn tặng/tài trợ/0đ khỏi vận tốc bán (kẻo EOQ đặt dư).
+      // FIX-08 + P2-11: loại đơn tặng/tài trợ/0đ khỏi vận tốc bán (kẻo đề xuất in bị đặt dư).
       // Giữ lại bút toán không gắn đơn (ký gửi: correlationId là statementId).
       // P2-11: chặn lách bằng CK 100% cấp dòng (discount tổng = 0 nhưng final = 0).
       .leftJoin(orders, eq(inventoryLedger.correlationId, orders.id))
@@ -130,7 +142,7 @@ export class ForecastService {
       totalStock,
       doi,
       level: classifyLevel(doi),
-      suggestedReprintQty: computeEOQ(vSale),
+      suggestedReprintQty: computeReprintSuggestion(vSale),
     };
   }
 
@@ -161,7 +173,7 @@ export class ForecastService {
         totalStock,
         doi,
         level: classifyLevel(doi),
-        suggestedReprintQty: computeEOQ(vSale),
+        suggestedReprintQty: computeReprintSuggestion(vSale),
       };
       if (!level || item.level === level) items.push(item);
     }

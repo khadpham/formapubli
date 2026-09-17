@@ -212,6 +212,55 @@ export function resetRateLimit(key: string): void {
   loginAttempts.delete(key);
 }
 
+// ---------------------------------------------------------------------------
+// SLIDING WINDOW RATE LIMITER (In-Memory, Edge-safe)
+// Dùng cho Copilot API (15 req/phút/staffId), không đụng checkRateLimit login.
+// ---------------------------------------------------------------------------
+
+const slidingWindows = new Map<string, number[]>();
+
+export interface WindowRateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAfterMs: number;
+}
+
+export function checkWindowRateLimit(
+  key: string,
+  limit: number = 15,
+  windowMs: number = 60 * 1000
+): WindowRateLimitResult {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  let timestamps = slidingWindows.get(key) || [];
+
+  // Lọc bỏ timestamp cũ ngoài window
+  timestamps = timestamps.filter((t) => t > windowStart);
+
+  if (timestamps.length >= limit) {
+    const oldest = timestamps[0];
+    const resetAfterMs = Math.max(0, oldest + windowMs - now);
+    slidingWindows.set(key, timestamps);
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAfterMs,
+    };
+  }
+
+  timestamps.push(now);
+  slidingWindows.set(key, timestamps);
+  return {
+    allowed: true,
+    remaining: limit - timestamps.length,
+    resetAfterMs: windowMs,
+  };
+}
+
+export function resetWindowRateLimit(key: string): void {
+  slidingWindows.delete(key);
+}
+
 
 // ---------------------------------------------------------------------------
 // ROLE PASSCODES STORE & VALIDATION

@@ -6,6 +6,7 @@ import {
   classifyLevel,
   computeDoI,
   computeEOQ,
+  computeReprintSuggestion,
 } from '../src/services/forecast.service';
 import { GET as ForecastGET } from '../src/app/api/forecast/route';
 import { assertIsolatedTestDb } from './test-guard';
@@ -126,7 +127,9 @@ async function runForecastTests() {
     classifyLevel(null) === 'HEALTHY_NORMAL' &&
     computeDoI(100, 0) === null &&
     computeEOQ(0) === 0 &&
-    computeEOQ(1.5) === 158,
+    computeEOQ(1.5) === 158 &&
+    computeReprintSuggestion(0) === 0 &&
+    computeReprintSuggestion(1.5) === 158,
     'Biên phân cấp + công thức thuần đúng tuyệt đối'
   );
 
