@@ -35,7 +35,8 @@ export interface AuditLogParams {
     | 'COPILOT_QUERY'
     | 'COPILOT_TOOL_INVOKED'
     | 'COPILOT_UNAUTHORIZED_ATTEMPT'
-    | 'VOICE_ORDER_PARSED'; // [5.1] Thu ngân dùng voice/text ra giỏ nháp
+    | 'VOICE_ORDER_PARSED' // [5.1] Thu ngân dùng voice/text ra giỏ nháp
+    | 'VIEW_READER_PROFILE'; // [5.4] Xem hồ sơ / gợi ý độc giả
   actorRole: UserRole | string;
   actorId: string;
   resource: string;

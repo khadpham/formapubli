@@ -9,6 +9,8 @@ import { eq } from 'drizzle-orm';
 import { InventoryService } from '../src/services/inventory.service';
 import { OrderService } from '../src/services/order.service';
 import { ReaderProfileService } from '../src/services/reader-profile.service';
+import { GET as getPersona } from '../src/app/api/ai/reader-persona/route';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-reader-persona');
@@ -121,6 +123,56 @@ async function run() {
   ok(
     '6. Khách 0 đơn: profile rỗng + không tự gợi ý',
     profE.orders.count === 0 && profE.topCategories.length === 0 && !matched3.some((m) => m.customerId === custE)
+  );
+
+  // ---- 7-11. Route read-only + RBAC ----
+  const callPersona = async (qs: string, role?: string) => {
+    let cookie = '';
+    if (role) {
+      const token = await signSession({
+        role: role as 'ROLE_OWNER' | 'ROLE_MANAGER' | 'ROLE_CASHIER' | 'ROLE_TAX',
+        actorId: 'persona-route-tester',
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 3600 * 1000,
+      });
+      cookie = `${SESSION_COOKIE_NAME}=${token}`;
+    }
+    const res = (await getPersona(
+      new Request(`http://localhost/api/ai/reader-persona${qs}`, {
+        headers: cookie ? { Cookie: cookie } : {},
+      }) as never
+    )) as Response;
+    return { status: res.status, body: (await res.json()) as { success: boolean; data?: unknown; code?: string } };
+  };
+
+  const r401 = await callPersona(`?customerId=${custC}`);
+  ok('7. Route thiếu session -> 401', r401.status === 401, `status=${r401.status}`);
+
+  const r403 = await callPersona(`?customerId=${custC}`, 'ROLE_TAX');
+  ok('8. Route TAX -> 403', r403.status === 403, `status=${r403.status}`);
+
+  const r400a = await callPersona('', 'ROLE_MANAGER');
+  const r400b = await callPersona(`?customerId=${custC}&matchForEdition=${edA3}`, 'ROLE_MANAGER');
+  ok(
+    '9. Thiếu cả 2 / gửi cả 2 param -> 400 INVALID_INPUT',
+    r400a.status === 400 && r400a.body?.code === 'INVALID_INPUT' && r400b.status === 400,
+    `${r400a.status}/${r400b.status}`
+  );
+
+  const rProfile = await callPersona(`?customerId=${custC}`, 'ROLE_CASHIER');
+  const profData = rProfile.body?.data as { orders?: { count?: number } } | undefined;
+  ok(
+    '10. Cashier xem profile -> 200 đúng shape',
+    rProfile.status === 200 && rProfile.body?.success === true && profData?.orders?.count === 1,
+    `status=${rProfile.status}`
+  );
+
+  const rMatch = await callPersona(`?matchForEdition=${edA3}&limit=10`, 'ROLE_MANAGER');
+  const matchData = (rMatch.body?.data ?? []) as Array<{ customerId?: string; score?: number }>;
+  ok(
+    '11. Match qua route -> 200, có C, có score',
+    rMatch.status === 200 && matchData.some((m) => m.customerId === custC && (m.score || 0) > 0),
+    `status=${rMatch.status} n=${matchData.length}`
   );
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} READER PERSONA 5.4: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
