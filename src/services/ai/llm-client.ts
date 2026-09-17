@@ -264,8 +264,19 @@ export function resetLlmBreaker(engine?: LlmEngineKey): void {
 
 export async function withLlmCircuit<T>(engine: LlmEngineKey, fn: () => Promise<T>): Promise<T> {
   const cfg = llmBreakerConfig();
+  const state = breakerStates[engine];
 
-  // 1. Ngân sách tháng (đếm lượt gọi, kể cả lỗi — vì lỗi vẫn có thể tốn quota).
+  // 1. Mạch đang mở trong cooldown -> fail-fast MIỄN PHÍ (không gọi mạng,
+  //    KHÔNG trừ budget — vì không tốn quota nhà cung cấp).
+  if (state.consecutiveFailures >= cfg.maxFailures) {
+    if (Date.now() - state.openedAt < cfg.cooldownMs) {
+      throw new LlmCircuitOpenError(engine);
+    }
+    // Hết cooldown: half-open — cho 1 trial bằng cách hạ failures xuống ngưỡng-1.
+    state.consecutiveFailures = cfg.maxFailures - 1;
+  }
+
+  // 2. Ngân sách tháng (đếm lượt gọi thật, kể cả lỗi — vì lỗi vẫn có thể tốn quota).
   if (cfg.monthlyBudget > 0) {
     const key = currentMonthKey();
     if (budgetState.monthKey !== key) {
@@ -276,16 +287,6 @@ export async function withLlmCircuit<T>(engine: LlmEngineKey, fn: () => Promise<
       throw new LlmBudgetExceededError(cfg.monthlyBudget);
     }
     budgetState.calls += 1;
-  }
-
-  // 2. Mạch đang mở trong cooldown -> fail-fast, không gọi mạng.
-  const state = breakerStates[engine];
-  if (state.consecutiveFailures >= cfg.maxFailures) {
-    if (Date.now() - state.openedAt < cfg.cooldownMs) {
-      throw new LlmCircuitOpenError(engine);
-    }
-    // Hết cooldown: half-open — cho 1 trial bằng cách hạ failures xuống ngưỡng-1.
-    state.consecutiveFailures = cfg.maxFailures - 1;
   }
 
   // 3. Thực thi trial.

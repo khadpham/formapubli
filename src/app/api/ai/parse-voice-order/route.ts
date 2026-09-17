@@ -74,13 +74,12 @@ export async function POST(req: NextRequest) {
     try {
       draft = await parseVoiceOrder({ audio, filename, text, catalog });
     } catch (err: unknown) {
-      if (err instanceof VoiceConfigError) {
-        // STT không khả dụng nhưng có text dự phòng -> parse text-only.
-        if (text) {
-          draft = await parseVoiceOrder({ text, catalog });
-        } else {
-          return NextResponse.json({ success: false, code: 'STT_UNAVAILABLE', message: err.message }, { status: 503 });
-        }
+      // Mọi lỗi STT (mạng, timeout, breaker, thiếu key) đều rơi về text dự phòng nếu có.
+      // parse text-only không ném lỗi khi text non-empty, nên fallback này an toàn tuyệt đối.
+      if (text) {
+        draft = await parseVoiceOrder({ text, catalog });
+      } else if (err instanceof VoiceConfigError) {
+        return NextResponse.json({ success: false, code: 'STT_UNAVAILABLE', message: err.message }, { status: 503 });
       } else {
         throw err;
       }
