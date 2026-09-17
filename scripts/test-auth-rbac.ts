@@ -109,14 +109,25 @@ async function run() {
   }, { Cookie: cash.cookie });
   ok('5. Cashier 403 movement', cash.status === 200 && r5.status === 403);
 
-  // 6. Tắt strict → legacy header chạy (27 suites cũ không gãy)
+  // 6. [P1b - 2026-09-17] Legacy header fallback bị khai tử theo phê chuẩn Ban Điều Phối.
+  // Cũ (CP3): Tắt strict -> legacy header x-formapubli-role chạy (kỳ vọng 200).
+  // /*
+  // process.env.AUTH_STRICT = '';
+  // const r6Legacy: any = await post(postMovement, {
+  //   editionId: eid, warehouseId: 'wh-au-co', eventType: 'ADJUSTMENT', quantityDelta: 1,
+  //   documentRef: 'S3-LEGACY', idempotencyKey: uniq('i'),
+  // }, { 'x-formapubli-role': 'ROLE_OWNER' });
+  // process.env.AUTH_STRICT = 'true';
+  // ok('6. Tắt strict giữ legacy', r6Legacy.status === 200);
+  // */
+  // Mới (P1b Default-Deny): Thiếu session cookie hợp lệ -> 401 AUTH_REQUIRED dù tắt strict.
   process.env.AUTH_STRICT = '';
   const r6: any = await post(postMovement, {
     editionId: eid, warehouseId: 'wh-au-co', eventType: 'ADJUSTMENT', quantityDelta: 1,
     documentRef: 'S3-LEGACY', idempotencyKey: uniq('i'),
   }, { 'x-formapubli-role': 'ROLE_OWNER' });
   process.env.AUTH_STRICT = 'true';
-  ok('6. Tắt strict giữ legacy', r6.status === 200);
+  ok('6. Thiếu session cookie 401 dù tắt strict', r6.status === 401 && (r6.body?.code === 'AUTH_REQUIRED' || r6.body?.error));
 
   // 7. Returns: cashier session REQUEST qua, APPROVE chặn
   const sale = await OrderService.createOrder({

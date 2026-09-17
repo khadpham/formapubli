@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TransferService, DEFAULT_STALE_HOURS } from '@/services/transfer.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -21,14 +21,7 @@ function toQty(v: unknown): number {
 // GET /api/transfers?id=TRF-... — chi tiết 1 phiếu
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(req), actorId: 'transfers-reader' }
-    );
-    if (identity.role === 'ROLE_TAX') {
-      throw new AuthError(403, 'Kế toán thuế không có quyền quản trị luân chuyển kho.');
-    }
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -59,18 +52,15 @@ export async function GET(req: NextRequest) {
 // POST /api/transfers { action: 'dispatch' | 'receive' | 'cancel', ... }
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
-    );
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
-    const actorContext = identity.actorContext;
-
-    if (userRole === 'ROLE_TAX') {
-      throw new AuthError(403, 'Kế toán thuế không có quyền luân chuyển kho.');
-    }
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
+    const userRole = session.role;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
 
     const body = await req.json();
     const { action } = body;

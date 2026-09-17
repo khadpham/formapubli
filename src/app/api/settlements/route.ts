@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SettlementService } from '@/services/settlement.service';
 import { ConsignmentService } from '@/services/consignment.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -11,16 +11,11 @@ export const dynamic = 'force-dynamic';
 // GET /api/settlements?partnerId=... — lịch sử thu theo đại lý
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    const session = await requireSessionRole(
       req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_TAX'],
-      { role: extractUserRole(req), actorId: 'settlements-reader' }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_TAX']
     );
-    const userRole = identity.role;
-
-    if (userRole === 'ROLE_WAREHOUSE') {
-      throw new AuthError(403, 'Thủ kho không có quyền truy cập công nợ thu tiền.');
-    }
+    const userRole = session.role;
 
     const { searchParams } = new URL(req.url);
     const statementId = searchParams.get('statementId');
@@ -60,18 +55,12 @@ export async function GET(req: NextRequest) {
 // POST /api/settlements { action: 'record' | 'void', ... }
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    const session = await requireSessionRole(
       req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']
     );
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
-
-    // Thu ngân quầy được thu CASH (tiền vào két), kế toán/thủ kho không.
-    if (userRole === 'ROLE_TAX' || userRole === 'ROLE_WAREHOUSE') {
-      throw new AuthError(403, 'Vai trò này không được thu tiền công nợ.');
-    }
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     const body = await req.json();
     const { action } = body;

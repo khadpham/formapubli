@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AllocationService } from '@/services/allocation.service';
-import { extractUserRole } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    await resolveRequestIdentity(
+    await requireSessionRole(
       request,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(request), actorId: 'allocations-reader' }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE']
     );
     const { searchParams } = new URL(request.url);
     const warehouseId = searchParams.get('warehouseId');
@@ -45,14 +43,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    await requireSessionRole(
       request,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(request), actorId: request.headers.get('x-formapubli-actor') || extractUserRole(request) }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']
     );
-    if (!['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'].includes(identity.role)) {
-      throw new AuthError(403, 'Chỉ Chủ/Quản lý hoặc Thủ kho mới có quyền phân bổ sách chia mâm.');
-    }
 
     const body = await request.json();
     const { warehouseId, counterName, cashboxSessionId, allocations } = body;

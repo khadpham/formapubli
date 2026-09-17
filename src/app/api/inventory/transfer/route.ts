@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
 import { isDirectTransferAllowed } from '@/services/direct-transfer-policy';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
@@ -10,20 +10,15 @@ export async function POST(req: NextRequest) {
   try {
     // CP3-B1 Invariant: Direct internal transfer is strictly restricted to ROLE_OWNER and ROLE_MANAGER
     const ALLOWED_TRANSFER_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
-    const identity = await resolveRequestIdentity(req, ALLOWED_TRANSFER_ROLES, {
-      role: extractUserRole(req),
-      actorId: req.headers.get('x-formapubli-actor') || 'Thủ kho formapubli',
-    });
-    const userRole = identity.role as UserRole;
-    const actorHeader = identity.actorId;
-    const actorContext = identity.actorContext;
-
-    if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-      return NextResponse.json(
-        { success: false, code: 'FORBIDDEN', error: 'Chuyển kho trực tiếp chỉ dành cho Quản lý hoặc Chủ cửa hàng.' },
-        { status: 403 }
-      );
-    }
+    const session = await requireSessionRole(req, ALLOWED_TRANSFER_ROLES);
+    const userRole = session.role as UserRole;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
 
     const body = await req.json();
     const { editionId, fromWarehouseId, toWarehouseId, quantity, documentRef, note } = body;

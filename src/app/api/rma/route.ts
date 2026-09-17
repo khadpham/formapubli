@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RmaService } from '@/services/rma.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { isAuthStrict, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 
 import { handleApiError } from '@/lib/api-response';
 
@@ -11,17 +11,9 @@ const QUARANTINE_ONLY = ['QUARANTINE', 'DEFECTIVE'];
 const VALID_REASONS = ['PRINT_DEFECT', 'BINDING_DEFECT', 'TRANSIT_DAMAGE', 'CUSTOMER_RETURN', 'WATER_DAMAGE', 'OTHER'];
 const VALID_ACTIONS = ['HOLD_IN_QUARANTINE', 'RETURN_TO_SUPPLIER', 'WRITE_OFF_SCRAP', 'REPAIRED_RESTOCK'];
 
-function deny(role: string, allowed: string[]) {
-  return !allowed.includes(role);
-}
-
 export async function GET(request: NextRequest) {
   try {
-    await resolveRequestIdentity(
-      request,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(request), actorId: 'rma-reader' }
-    );
+    await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
     const { searchParams } = new URL(request.url);
     const warehouseId = searchParams.get('warehouseId') || undefined;
     const status = searchParams.get('status') || undefined;
@@ -43,26 +35,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const userRole = extractUserRole(request);
-    const actorHeader = request.headers.get('x-formapubli-actor') || body.inspectedBy || body.actorId || userRole;
 
     if (body.action === 'resolve') {
-      // BƯỚC 3: strict → session OWNER/MANAGER
-      if (isAuthStrict()) {
-        try {
-          const id = await resolveRequestIdentity(request, ['ROLE_OWNER', 'ROLE_MANAGER'], { role: '', actorId: '' });
-          body.actorId = id.actorId;
-        } catch (e: any) {
-          if (e instanceof AuthError) {
-            return NextResponse.json({ error: e.message }, { status: e.status });
-          }
-          throw e;
-        }
-      }
-      // Xử lý phiếu đụng tồn kho (hủy/sửa/trả NCC) — chỉ Manager/Owner
-      if (deny(userRole, ['ROLE_OWNER', 'ROLE_MANAGER'])) {
-        return NextResponse.json({ error: 'Chỉ Manager/Owner được xử lý phiếu RMA.' }, { status: 403 });
-      }
+      const session = await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER']);
+      const userRole = session.role;
+      const actorHeader = request.headers.get('x-formapubli-actor') || body.actorId || session.actorId;
+      body.actorId = session.actorId;
+
       const { ticketId, resolutionAction, actorId, notes } = body;
       if (!ticketId || !resolutionAction) {
         return NextResponse.json(
@@ -88,22 +67,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // Mặc định là tạo ticket mới — chặn TAX/CASHIER khai báo tường minh
-    // BƯỚC 3: strict → session OWNER/MANAGER/WAREHOUSE
-    if (isAuthStrict()) {
-      try {
-        const id = await resolveRequestIdentity(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'], { role: '', actorId: '' });
-        body.inspectedBy = body.inspectedBy || id.actorId;
-      } catch (e: any) {
-        if (e instanceof AuthError) {
-          return NextResponse.json({ error: e.message }, { status: e.status });
-        }
-        throw e;
-      }
-    }
-    if (userRole === 'ROLE_TAX' || userRole === 'ROLE_CASHIER') {
-      return NextResponse.json({ error: 'Lập phiếu RMA chỉ dành cho Thủ kho/Quản lý.' }, { status: 403 });
-    }
+    // Mặc định là tạo ticket mới — OWNER, MANAGER, WAREHOUSE
+    const session = await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
+    const userRole = session.role;
+    const actorHeader = request.headers.get('x-formapubli-actor') || body.inspectedBy || session.actorId;
+    body.inspectedBy = body.inspectedBy || session.actorId;
     const {
       warehouseId,
       editionId,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ShipmentService } from '@/services/shipment.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -17,15 +17,14 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    const session = await requireSessionRole(
       req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'],
-      { role: extractUserRole(req), actorId: 'shipments-reader' }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX']
     );
     const { searchParams } = new URL(req.url);
 
     // FIX-06: Kế toán thuế chỉ được thấy đơn OFFICIAL_TAX, tuyệt đối không lộ đơn nội bộ
-    const safeFiscalScope = identity.role === 'ROLE_TAX' 
+    const safeFiscalScope = session.role === 'ROLE_TAX' 
       ? 'OFFICIAL_TAX' 
       : (searchParams.get('fiscalScope') || undefined);
 
@@ -43,14 +42,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    const session = await requireSessionRole(
       req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']
     );
     const body = await req.json();
-    const userRole = identity.role as any;
-    const actorHeader = identity.actorId;
+    const userRole = session.role as any;
+    const actorHeader = session.actorId;
 
     if (body.action === 'PUSH') {
       const result = await ShipmentService.push(

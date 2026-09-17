@@ -8,8 +8,11 @@ export const dynamic = 'force-dynamic';
 
 // GET /api/bundles — danh sách combo đang bán
 // GET /api/bundles?id=<bundleId>&warehouseId=<wh> — chi tiết + tồn khả dụng bottleneck
+// P1b (a): Khóa phiên đăng nhập cho nhân viên (OWNER, MANAGER, CASHIER, WAREHOUSE)
 export async function GET(req: NextRequest) {
   try {
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE']);
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     const warehouseId = searchParams.get('warehouseId');

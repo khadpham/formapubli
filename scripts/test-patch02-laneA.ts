@@ -30,12 +30,28 @@ async function fixture(stock = 20) {
   await InventoryService.recordMovement({ editionId: id, warehouseId: wh, eventType: 'OPENING_BALANCE', quantityDelta: stock, documentRef: 'P2A', idempotencyKey: uniq('idem-open') });
   return { id, wh };
 }
-const post = (fn: any, body: any, role?: string) =>
-  fn(new Request('http://localhost/x', {
+const post = async (fn: any, body: any, role?: string) => {
+  let cookieHeader = '';
+  if (role) {
+    const token = await signSession({
+      role: role as UserRole,
+      actorId: `test-${role.toLowerCase()}`,
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 3600 * 1000,
+    });
+    cookieHeader = `${SESSION_COOKIE_NAME}=${token}`;
+  }
+  const r: any = await fn(new Request('http://localhost/x', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(role ? { 'x-formapubli-role': role } : {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      ...(role ? { 'x-formapubli-role': role } : {}),
+    },
     body: J(body),
-  })).then(async (r: any) => ({ status: r.status, body: await r.json() }));
+  }));
+  return { status: r.status, body: await r.json() };
+};
 
 async function run() {
   console.log('🛡️ HỒI QUY LANE A PATCH-02 (DB cách ly)');

@@ -5,6 +5,7 @@ import { toActorContext } from '../src/services/actor-context';
 import { SettlementService } from '../src/services/settlement.service';
 import { POST as SettlementsPOST } from '../src/app/api/settlements/route';
 import { assertIsolatedTestDb } from './test-guard';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 
 assertIsolatedTestDb('test-settlement');
 
@@ -131,9 +132,19 @@ async function runSettlementTests() {
   }
   ok(draftBlocked, 'Kỳ DRAFT chưa chốt không được thu tiền');
 
+  const taxSessionToken = await signSession({
+    role: 'ROLE_TAX',
+    actorId: 'tax-test',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60 * 60 * 1000,
+  });
   const taxReq = new Request('http://localhost/api/settlements', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-formapubli-role': 'ROLE_TAX' },
+    headers: {
+      'content-type': 'application/json',
+      'x-formapubli-role': 'ROLE_TAX',
+      Cookie: `${SESSION_COOKIE_NAME}=${taxSessionToken}`,
+    },
     body: JSON.stringify({
       action: 'record', statementId: stmt.statementId, amount: 1000,
       paymentMethod: 'CASH', reference: 'BILL-TAX', receivedBy: 'tax-test',

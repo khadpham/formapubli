@@ -5,6 +5,7 @@ import { toActorContext } from '../src/services/actor-context';
 import { GET as ConsignGET } from '../src/app/api/consignments/route';
 import { eq } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 
 assertIsolatedTestDb('test-consignment');
 
@@ -143,8 +144,18 @@ async function runConsignmentTests() {
   ok(eff === 0.5, 'Override chiết khấu kỳ 50% thắng CK mặc định partner');
 
   // TEST 9: Kế toán thuế bị chặn xem kỳ nội bộ.
+  const taxSessionToken = await signSession({
+    role: 'ROLE_TAX',
+    actorId: 'tax-test',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60 * 60 * 1000,
+  });
   const taxReq = new Request(`http://localhost/api/consignments?id=${stmt.statementId}`, {
-    headers: { 'x-formapubli-role': 'ROLE_TAX', 'x-formapubli-actor': 'tax-test' },
+    headers: {
+      'x-formapubli-role': 'ROLE_TAX',
+      'x-formapubli-actor': 'tax-test',
+      Cookie: `${SESSION_COOKIE_NAME}=${taxSessionToken}`,
+    },
   });
   const taxRes: any = await ConsignGET(taxReq as any);
   ok(taxRes.status === 403, 'TAX xem kỳ INTERNAL_MANAGEMENT bị chặn 403');

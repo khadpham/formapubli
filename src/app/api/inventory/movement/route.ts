@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
-// P2-01/02/03 — Hardened: route bút toán kho trực tiếp.
-// - Chặn TAX/CASHIER khai báo tường minh (header vắng mặt = luồng UI nội bộ, mặc định OWNER).
+// P2-01/02/03 / P1b — Hardened: route bút toán kho trực tiếp (Default-Deny).
+// - Chỉ OWNER, MANAGER, WAREHOUSE có session cookie hợp lệ.
 // - Allowlist event + nhất quán dấu + số nguyên + khóa chống lặp BẮT BUỘC.
 const ALLOWED_EVENTS = ['RECEIPT', 'ADJUSTMENT', 'DISPATCH_SALE'];
 const ALLOWED_CONDITIONS = ['NEW', 'MINOR_DAMAGE', 'DEFECTIVE', 'QUARANTINE'];
@@ -14,20 +14,15 @@ const ALLOWED_CONDITIONS = ['NEW', 'MINOR_DAMAGE', 'DEFECTIVE', 'QUARANTINE'];
 export async function POST(req: NextRequest) {
   try {
     const ALLOWED_MOVEMENT_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'];
-    const identity = await resolveRequestIdentity(req, ALLOWED_MOVEMENT_ROLES, {
-      role: extractUserRole(req),
-      actorId: req.headers.get('x-formapubli-actor') || 'Thủ kho formapubli',
-    });
-    const userRole = identity.role as UserRole;
-    const actorHeader = identity.actorId;
-    const actorContext = identity.actorContext;
-
-    if (userRole === 'ROLE_TAX' || userRole === 'ROLE_CASHIER') {
-      return NextResponse.json(
-        { success: false, code: 'FORBIDDEN', error: 'Bút toán kho trực tiếp chỉ dành cho Thủ kho/Quản lý.' },
-        { status: 403 }
-      );
-    }
+    const session = await requireSessionRole(req, ALLOWED_MOVEMENT_ROLES);
+    const userRole = session.role as UserRole;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
     const body = await req.json();
     const { editionId, warehouseId, eventType, quantityDelta, documentRef, note, condition, idempotencyKey } = body;
 

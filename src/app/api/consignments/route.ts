@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConsignmentService } from '@/services/consignment.service';
 import { extractUserRole, enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -21,17 +21,12 @@ function toQty(v: unknown): number {
 // GET /api/consignments?partnerStock=<partnerId> — tồn hiện tại tại quầy
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    const session = await requireSessionRole(
       req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_TAX'],
-      { role: extractUserRole(req), actorId: 'consignments-reader' }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_TAX']
     );
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
-
-    if (userRole === 'ROLE_WAREHOUSE') {
-      throw new AuthError(403, 'Thủ kho không có quyền truy cập sổ ký gửi & công nợ.');
-    }
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     const { searchParams } = new URL(req.url);
 
@@ -83,21 +78,21 @@ export async function GET(req: NextRequest) {
 //   record-sale | record-return | confirm, ... }
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
+    const session = await requireSessionRole(
       req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
+      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']
     );
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
-
-    if (userRole === 'ROLE_TAX' || userRole === 'ROLE_WAREHOUSE') {
-      throw new AuthError(403, 'Vai trò này không được thao tác sổ ký gửi.');
-    }
+    const userRole = session.role;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
 
     const body = await req.json();
     const { action } = body;
-    const actorContext = identity.actorContext;
     const bodyKey = body.idempotencyKey;
     const cleanBodyKey = typeof bodyKey === 'string' ? bodyKey.trim() : '';
 
