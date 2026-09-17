@@ -51,6 +51,7 @@ const ALL_SUITES = [
   'scripts/test-cp3-return-exchange-void.ts',
   'scripts/test-cp3-reconciliation.ts',
   'scripts/eval-executive-ai.ts',
+  'scripts/test-voice-order.ts',
 ];
 
 function suiteShortName(p: string): string {

@@ -190,7 +190,7 @@ export class LlmBudgetExceededError extends Error {
   }
 }
 
-export type LlmEngineKey = 'gemini' | 'openai';
+export type LlmEngineKey = 'gemini' | 'openai' | 'groq';
 
 export interface LlmBreakerConfig {
   maxFailures: number;
@@ -218,6 +218,7 @@ interface BreakerState {
 const breakerStates: Record<LlmEngineKey, BreakerState> = {
   gemini: { consecutiveFailures: 0, openedAt: 0 },
   openai: { consecutiveFailures: 0, openedAt: 0 },
+  groq: { consecutiveFailures: 0, openedAt: 0 },
 };
 
 interface BudgetState {
@@ -248,13 +249,14 @@ export function getLlmHealth(): Record<
   return {
     gemini: snap('gemini'),
     openai: snap('openai'),
+    groq: snap('groq'),
     budget: { monthKey: budgetState.monthKey || currentMonthKey(), calls: budgetState.calls, limit: cfg.monthlyBudget },
   };
 }
 
 /** Dùng cho test/eval — reset mạch và ngân sách về trạng thái sạch. */
 export function resetLlmBreaker(engine?: LlmEngineKey): void {
-  const keys: LlmEngineKey[] = engine ? [engine] : ['gemini', 'openai'];
+  const keys: LlmEngineKey[] = engine ? [engine] : ['gemini', 'openai', 'groq'];
   for (const k of keys) breakerStates[k] = { consecutiveFailures: 0, openedAt: 0 };
   if (!engine) budgetState.monthKey = '';
   budgetState.calls = 0;
