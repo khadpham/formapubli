@@ -14,7 +14,7 @@
 | **Phase 2** | **Quầy POS Bán Sách & Sổ Kép Tài Chính 5 Roles**<br/>(Orders, Khấu trừ kho tức thì, POS Terminal, Bán sỉ đầu nậu/khách lẻ, Phân tách Sổ Thuế vs Sổ Thực, Executive Dashboard, Sidebar dọc, Suite cài đặt) | 🟢 **HOÀN THÀNH** | **100%** | `feat/sales-order-engine-and-dual-ledger` |
 | **Phase 3** | **Di Động Hóa Quầy, "Súng" Quét Barcode Camera & Offline Sync**<br/>(PWA Standalone, Quét mã vạch ISBN bằng Camera điện thoại 0 đồng chống Macro, IndexedDB Queue rớt mạng, Báo cáo doanh số đa chiều) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos` |
 | **Phase 4** | **Nghiệp Vụ Xuất Bản Mở Rộng & Bán Combo Đóng Hộp**<br/>(Động cơ Combo/Boxset trừ linh kiện, Sổ cái Ký gửi Đinh Lễ, Quản trị Bản quyền & Nhuận bút tác giả, Clean Slate Import) | 🟢 **HOÀN THÀNH** | **100%** | `feat/pwa-mobile-and-offline-pos`<br/>`feat/boxset-engine`<br/>`feat/consignment-ledger`<br/>`feat/consignment-settlement`<br/>`feat/clean-slate-ceremony`<br/>`feat/rights-and-royalties` |
-| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn, Deep Analytics Studio & Trợ Lý Bán Hàng 0 Đồng**<br/>(Deep Analytics Studio Alt+7, Báo cáo Power BI 3 Chart, Dự báo tái bản $V_{\text{sale}}$, Quản lý In-Transit/Ký gửi, Danh bạ CRM Độc giả GĐ1, Smart Voice POS, Executive AI Copilot) | 🟡 **ĐANG TRIỂN KHAI** | **~40%** | `feat/pwa-mobile-and-offline-pos` |
+| **Phase 5** | **Hệ Sinh Thái AI Tinh Gọn, Deep Analytics Studio & Trợ Lý Bán Hàng 0 Đồng**<br/>(Deep Analytics Studio Alt+7, Báo cáo Power BI 3 Chart, Dự báo tái bản $V_{\text{sale}}$, Quản lý In-Transit/Ký gửi, Danh bạ CRM Độc giả GĐ1, Smart Voice POS, Executive AI Copilot) | 🟢 **CƠ BẢN HOÀN THÀNH** | **~90%** (còn tầng gửi mail 5.5 + WER thật) | `main` (đã merge `feat/p1b-default-deny`) |
 | **Phase 6** | **Tích Hợp Đa Kênh & Bàn Giao Vận Hành Toàn Diện**<br/>(Đồng bộ sàn Shopee/TikTok, Hóa đơn điện tử VAT chính thức, Bàn giao trọn đời) | ⚪ **TẦM NHÌN DÀI HẠN** | **0%** | `feat/omnichannel-and-einvoice` |
 
 ---
@@ -590,38 +590,41 @@
 
 ---
 
-### 🟡 Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [ĐANG TRIỂN KHAI ~20%]
+### 🟢 Phase 5: Hệ Sinh Thái AI Tinh Gọn & Trợ Lý Bán Hàng 0 Đồng - [CƠ BẢN HOÀN THÀNH ~90%]
 *Mục tiêu: Đưa trí tuệ nhân tạo vào hỗ trợ trực tiếp nhân viên và giám đốc với chi phí 0 VNĐ/tháng (Free Tier First).*
 
-#### 📌 5.1. Smart Voice POS Dispatcher (Trợ Lý Lên Đơn Thần Tốc Bằng Giọng Nói)
-- [ ] Tích hợp Groq Whisper Large v3 (chuyển âm thanh tiếng Việt thành text chuẩn xác trong 0.3s).
-- [ ] LLM Function Calling (LLaMA 3.3 / Gemini Flash) bóc tách thực thể: Mã SKU, số lượng, kho xuất, tỷ lệ chiết khấu, cờ sổ kép.
-- [ ] Tự động điền dữ liệu vào Giỏ hàng POS theo nguyên tắc "Human-in-the-loop" (thu ngân kiểm tra và bấm xác nhận).
+#### 🛡️ P1b. Default-Deny Toàn Tuyến (Pre-Phase 5 Hardening) - [ĐÃ HOÀN THÀNH, đã merge `main`]
+- [x] Toàn bộ 21 route chuyển `requireSessionRole` (fail-closed 401/403), giữ nguyên allowlist nghiệp vụ (kể cả CP3-B1 transfer chỉ OWNER/MANAGER).
+- [x] Viết lại Case 6 `test-auth-rbac` sang kỳ vọng default-deny (có chữ ký Ban Điều Phối).
+- [x] Củng cố auth/session: ranh giới tin cậy IP (chỉ `cf-connecting-ip` khi `TRUST_PROXY=cloudflare`), trần tuổi token 24h, lỗi 500 generic ở production, chống phình RAM limiter.
 
-#### 📌 5.2. Executive AI Copilot (Trợ Lý Điều Hành Giám Đốc) - [LÕI NỀN TẢNG ĐÃ HOÀN THÀNH]
-- [x] Thiết lập hợp đồng phối hợp 2 Lane khóa cứng `docs/PHASE5_LANE_CONTRACT.md`.
-- [x] Động cơ AI Client dùng chung (`llm-client.ts`), Zod Schema Validation, 100% Edge-safe, timeout 6s, 3-tier fallback.
-- [x] Chế độ an toàn Read-only: 4 tool tra cứu (`query_stock_level`, `query_sales_summary`, `query_reprint_forecast`, `query_cashbox_reconciliation`). Cấm tuyệt đối can thiệp sửa đổi CSDL.
-- [x] Cơ chế phân quyền nghiêm ngặt: `ROLE_OWNER` và `ROLE_MANAGER` toàn quyền xem 2 sổ. Chặn đứng `ROLE_CASHIER`, `ROLE_WAREHOUSE`, `ROLE_TAX` (403 + `COPILOT_UNAUTHORIZED_ATTEMPT`).
-- [x] Bộ rate-limit sliding window 15 req/phút/staffId (`checkWindowRateLimit`) chống spam và flood token.
-- [x] Bộ kiểm thử Red-team `eval-executive-ai.ts` đạt 11/11 bài test (100%), xuất báo cáo JSON `eval-executive-ai-report.json`.
+#### 📌 5.1. Smart Voice POS Dispatcher - [BACKEND + UI TỐI THIỂU HOÀN THÀNH]
+- [x] Groq Whisper Large v3 STT tiếng Việt (timeout 15s, cap 10MB, kiểm MIME) + fallback text.
+- [x] Chuỗi trích xuất 4 tầng đo bằng bench 8 case: `gpt-oss-20b` (24/24) → `qwen3.8-27b` (21.5/24) → `gemini-3.5-flash-lite` (19/24) → rule-based; cross-check catalog chống bịa SKU; schema chịu null.
+- [x] Route `POST /api/ai/parse-voice-order` (multipart/text, OWNER/MANAGER/CASHIER, audit `VOICE_ORDER_PARSED`); chỉ trả giỏ nháp, không tạo đơn.
+- [x] Nút mic tối thiểu trong `SmartOrderParser` (thu tối đa 120s, đổ transcript vào ô chat, giữ nguyên luồng kiểm tra tay).
+- [x] Eval `test-voice-order.ts` 29/29 (gồm 8 case adversarial). WER harness `measure-stt-wer.ts` sẵn sàng.
+- [ ] Đo WER thật trên file ghi âm quầy (chờ mẫu của chủ dự án) để chốt v3 vs turbo.
 
-#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho (Reprint Runout Forecasting) - [ĐÃ HOÀN THÀNH]
-- [x] Tự động tính toán Vận tốc bán trung bình ($V_{\text{sale}} = \text{Số cuốn bán} / \text{Ngày}$) của từng tựa sách theo thời gian thực từ thẻ kho vật lý.
-- [x] Cảnh báo phân cấp 3 tầng: RED_ALERT ($\le$ 30 ngày), YELLOW_WARNING (30-45 ngày), HEALTHY_NORMAL (> 45 ngày).
-- [x] Tính số lượng in kinh tế tối ưu EOQ dựa trên tổng chu kỳ lead time + buffer + an toàn 105 ngày.
-- [x] API `/api/forecast` phục vụ Dashboard quản trị và báo cáo ban giám đốc.
+#### 📌 5.2. Executive AI Copilot - [HOÀN THÀNH KÈM UI + GIA CỐ]
+- [x] Hợp đồng 2 Lane `docs/PHASE5_LANE_CONTRACT.md` + phụ lục Sprint 0 v1.1→v1.3 đã ký (model `gemini-3.5-flash-lite` đo thật, budget 5000/tháng).
+- [x] `llm-client.ts` dùng chung (Zod, Edge-safe, timeout 6s, circuit breaker + budget, fail-fast không trừ budget oan).
+- [x] Read-only 4 tool + phân quyền OWNER=MANAGER + rate-limit 15 req/phút + 5 lớp guardrails.
+- [x] Guardrails không phân biệt dấu (chặn `huy don`, `xoa so` không dấu...), kiểm grounded số/mã (`findUngroundedNumbers`), eval 26/26 (gồm 6 paraphrase + 6 grounding).
+- [x] UI `CopilotDrawer` (Alt+C, 4 prompt chips, countdown 429, disclaimer két, render an toàn không innerHTML).
 
-#### 📌 5.4. Hồ Sơ Độc Giả Thân Thiết & Đọc Sách Theo Mùa (Reader Persona CRM)
-- [ ] Quản lý lịch sử mua sắm và sở thích đọc của từng bạn đọc.
-- [ ] Phân loại nhóm độc giả sưu tầm (sách bản đặc biệt, bìa cứng) vs độc giả mua combo theo mùa.
-- [ ] AI gợi ý danh sách bạn đọc phù hợp nhất khi ra mắt tác phẩm mới cùng dịch giả hoặc cùng chủ đề.
+#### 📌 5.3. Dự Báo Tái Bản Thông Minh & Điểm Cạn Kho - [ĐÃ HOÀN THÀNH]
+- [x] Vận tốc bán $V_{\text{sale}}$, phân cấp RED/YELLOW/HEALTHY, số lượng in đề xuất theo chính sách 105 ngày (đổi tên từ EOQ gây hiểu lầm sang `computeReprintSuggestion`, giữ alias tương thích).
+- [x] API `/api/forecast` phục vụ Dashboard và Copilot.
 
-#### 📌 5.5. Báo Cáo Tự Động Hàng Tháng Cho Giám Đốc Qua Email (Automated Monthly Executive Email Dispatcher)
-- [ ] Thiết kế mẫu Email HTML Responsive trực quan (Scorecards Doanh thu ròng, Cơ cấu Sổ kép Thuế vs Nội bộ, Top 5 tựa sách bán chạy, Cảnh báo đỏ sách sắp cạn kho).
-- [ ] Tích hợp AI Executive Briefing (Gemini Flash tóm lược nhận định 3 dòng: Điểm sáng - Rủi ro - Quyết sách tháng tới).
-- [ ] Tự động hóa gửi mail vào 07:00 sáng ngày mùng 1 hàng tháng bằng Cloudflare Cron / Resend API (0đ chi phí).
-- [ ] Tự động đính kèm file bảng tính Excel/CSV đối soát chi tiết cho ban điều hành.
+#### 📌 5.4. Hồ Sơ Độc Giả Thân Thiết (Reader Persona CRM) - [NỀN DỮ LIỆU + API + UI HOÀN THÀNH]
+- [x] `ReaderProfileService` read-only: hồ sơ 360° (đơn/chi tiêu/tủ sách/tag/top thể loại) + `matchReadersForEdition` chấm điểm giải thích được, loại người đã sở hữu.
+- [x] Route `GET /api/ai/reader-persona` (`customerId` | `matchForEdition` | `matchForCode`), RBAC tới thu ngân, audit riêng.
+- [x] UI: panel hồ sơ trong danh bạ + panel gợi ý theo mã SKU. Eval 13/13.
+
+#### 📌 5.5. Báo Cáo Tháng - [TẦNG DỮ LIỆU HOÀN THÀNH, TẦNG GỬI MAIL HOÃN]
+- [x] `ExecutiveDigestService`: digest tháng từ service hiện có, top 5, fiscal 3 góc, CSV đính kèm, `digestId` chống gửi trùng, briefing 3 dòng (Gemini→Groq→template). Eval 7/7.
+- [ ] Tầng gửi mail (Worker cron riêng + Resend + HTML): **HOÃN theo lệnh chủ dự án** — cần `RESEND_API_KEY` + tài khoản Cloudflare khi tái khởi động.
 
 ---
 
