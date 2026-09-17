@@ -10,6 +10,7 @@ import { db, auditLogs } from '../src/db';
 import { editions } from '../src/db/schema';
 import { POST } from '../src/app/api/orders/route';
 import { desc, eq } from 'drizzle-orm';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-discount-guard');
@@ -31,12 +32,20 @@ function baseBody(overrides: Record<string, any> = {}) {
 }
 
 async function postOrder(body: Record<string, any>, role: string, actor = 'test-cashier-guard') {
+  // P1b: route orders bắt buộc session cookie — ký session test thay cho header mock.
+  const token = await signSession({
+    role: role as any,
+    actorId: actor,
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 3600 * 1000,
+  });
   const req = new Request('http://localhost/api/orders', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-formapubli-role': role,
       'x-formapubli-actor': actor,
+      Cookie: `${SESSION_COOKIE_NAME}=${token}`,
     },
     body: JSON.stringify(body),
   });

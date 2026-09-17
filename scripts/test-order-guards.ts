@@ -14,6 +14,7 @@ import { ForecastService } from '../src/services/forecast.service';
 import { InventoryService } from '../src/services/inventory.service';
 import { POST as postOrder } from '../src/app/api/orders/route';
 import { toActorContext } from '../src/services/actor-context';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-order-guards');
@@ -53,9 +54,21 @@ async function run() {
   ok('1. FIX-01 service bỏ giá lậu', r1.subtotal > 1 && r1.finalAmount === r1.subtotal, `subtotal=${r1.subtotal}`);
 
   // 2. FIX-01 API: cashier POST unitCoverPrice:1 → vẫn giá bìa
+  // P1b: route orders bắt buộc session cookie — ký session test thay cho header mock.
+  const guardToken = await signSession({
+    role: 'ROLE_CASHIER',
+    actorId: 't',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 3600 * 1000,
+  });
   const req2 = new Request('http://localhost/api/orders', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-formapubli-role': 'ROLE_CASHIER', 'x-formapubli-actor': 't' },
+    headers: {
+      'content-type': 'application/json',
+      'x-formapubli-role': 'ROLE_CASHIER',
+      'x-formapubli-actor': 't',
+      Cookie: `${SESSION_COOKIE_NAME}=${guardToken}`,
+    },
     body: JSON.stringify({ warehouseId: 'wh-au-co', items: [{ editionId: edB, quantity: 1, unitCoverPrice: 1 }] }),
   });
   const res2: any = await postOrder(req2 as any);

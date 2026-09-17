@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReturnService } from '@/services/return.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { isValidManagerPin } from '@/lib/manager-pin';
 import { UserRole } from '@/lib/roles';
@@ -33,12 +33,10 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const ALLOWED_VIEW_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'];
-    const identity = await resolveRequestIdentity(req, ALLOWED_VIEW_ROLES, {
-      role: extractUserRole(req),
-      actorId: req.headers.get('x-formapubli-actor') || 'staff-admin',
-    });
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
+    // P1b: Default-Deny — bắt buộc session cookie hợp lệ.
+    const session = await requireSessionRole(req, ALLOWED_VIEW_ROLES);
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     if (userRole === 'ROLE_WAREHOUSE') {
       return NextResponse.json({ success: true, returns: [], message: 'Thủ kho không có quyền xem phiếu hoàn tiền.' });
@@ -64,14 +62,17 @@ export async function POST(req: NextRequest) {
       ? ['ROLE_OWNER', 'ROLE_MANAGER']
       : ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'];
 
-    const identity = await resolveRequestIdentity(req, allowedRoles, {
-      role: extractUserRole(req),
-      // CP3-R1 repair (mục 5): bỏ body.createdBy khỏi identity fallback.
-      actorId: req.headers.get('x-formapubli-actor') || 'staff-admin',
-    });
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
-    const actorContext = identity.actorContext;
+    // P1b: Default-Deny — danh tính lấy từ session (giữ nguyên CP3-R1:
+    // body.createdBy không bao giờ được dùng làm identity).
+    const session = await requireSessionRole(req, allowedRoles);
+    const userRole = session.role;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
 
 
     if (userRole === 'ROLE_TAX' || userRole === 'ROLE_WAREHOUSE') {

@@ -9,6 +9,7 @@ import { editions } from '../src/db/schema';
 import { OrderService } from '../src/services/order.service';
 import { InventoryService } from '../src/services/inventory.service';
 import { GET as getOrders, POST as postOrders } from '../src/app/api/orders/route';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-pending-view');
@@ -24,15 +25,31 @@ async function roomyEdition(): Promise<string> {
   throw new Error('Không đủ edition tồn dày.');
 }
 
-const get = (qs: string, role?: string) =>
+// P1b: route orders bắt buộc session cookie — ký session test thay cho header mock.
+async function authHeaders(role?: string, actor = 'test-pending'): Promise<Record<string, string>> {
+  if (!role) return {};
+  const token = await signSession({
+    role: role as any,
+    actorId: actor,
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 3600 * 1000,
+  });
+  return {
+    'x-formapubli-role': role,
+    'x-formapubli-actor': actor,
+    Cookie: `${SESSION_COOKIE_NAME}=${token}`,
+  };
+}
+
+const get = async (qs: string, role?: string) =>
   getOrders(new Request(`http://localhost/api/orders${qs}`, {
-    headers: { ...(role ? { 'x-formapubli-role': role } : {}) },
+    headers: { ...(await authHeaders(role)) },
   }) as any).then(async (r: any) => ({ status: r.status, body: await r.json() }));
 
-const post = (body: any, role?: string, actor = 'test-pending') =>
+const post = async (body: any, role?: string, actor = 'test-pending') =>
   postOrders(new Request('http://localhost/api/orders', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(role ? { 'x-formapubli-role': role, 'x-formapubli-actor': actor } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders(role, actor)) },
     body: JSON.stringify(body),
   }) as any).then(async (r: any) => ({ status: r.status, body: await r.json() }));
 

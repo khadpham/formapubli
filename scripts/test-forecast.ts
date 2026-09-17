@@ -9,6 +9,7 @@ import {
   computeReprintSuggestion,
 } from '../src/services/forecast.service';
 import { GET as ForecastGET } from '../src/app/api/forecast/route';
+import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-forecast');
@@ -138,8 +139,19 @@ async function runForecastTests() {
   ok(redAuCo.totalStock === 15, 'Lọc warehouseId=wh-au-co cho đúng tồn quầy Âu Cơ');
 
   // TEST 8: API smoke — lọc RED chứa FC-RED + summary.
+  // P1b: route forecast bắt buộc session cookie — ký session test thay cho header mock.
+  const forecastToken = await signSession({
+    role: 'ROLE_OWNER',
+    actorId: 'owner-test',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 3600 * 1000,
+  });
   const apiReq = new Request('http://localhost/api/forecast?level=RED_ALERT&limit=200', {
-    headers: { 'x-formapubli-role': 'ROLE_OWNER', 'x-formapubli-actor': 'owner-test' },
+    headers: {
+      'x-formapubli-role': 'ROLE_OWNER',
+      'x-formapubli-actor': 'owner-test',
+      Cookie: `${SESSION_COOKIE_NAME}=${forecastToken}`,
+    },
   });
   const apiRes: any = await ForecastGET(apiReq as any);
   const apiJson = await apiRes.json();

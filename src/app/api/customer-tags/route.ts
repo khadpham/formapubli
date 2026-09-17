@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CustomerTagService, VALID_CUSTOMER_TAGS } from '@/services/customer-tag.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -13,11 +13,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
-    await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
-      { role: extractUserRole(req), actorId: 'tags-reader' }
-    );
+    // P1b: Default-Deny — bắt buộc session cookie hợp lệ.
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
     const { searchParams } = new URL(req.url);
     const tags = (searchParams.get('tags') || '').split(',').map((t) => t.trim()).filter(Boolean);
     const match = (searchParams.get('match') || 'any') as 'any' | 'all';
@@ -31,17 +28,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
-    );
-    const userRole = identity.role;
-    const actorHeader = identity.actorId;
-
-    if (userRole === 'ROLE_TAX') {
-      throw new AuthError(403, 'Kế toán thuế không được gắn tag khách hàng.');
-    }
+    // P1b: Default-Deny — TAX không có trong allowlist nên bị chặn 403 tại requireSessionRole.
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
+    const userRole = session.role;
+    const actorHeader = session.actorId;
 
     const body = await req.json();
 

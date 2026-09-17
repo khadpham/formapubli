@@ -144,10 +144,22 @@ async function run() {
   }
   const oldOk = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', createdAt: oldTs, backdateApproved: true, idempotencyKey: uniq('i'), items: [{ editionId: f10.id, quantity: 1 }] });
   // API: cashier gõ bù thiếu PIN → 403, đủ PIN → qua
+  // P1b: route orders bắt buộc session cookie — ký session test thay cho header mock.
+  const p2bCashierToken = await signSession({
+    role: 'ROLE_CASHIER',
+    actorId: 't',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 3600 * 1000,
+  });
   const apiOld = (pin?: string) =>
     postOrder(new Request('http://localhost/api/orders', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-formapubli-role': 'ROLE_CASHIER', 'x-formapubli-actor': 't' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-formapubli-role': 'ROLE_CASHIER',
+        'x-formapubli-actor': 't',
+        Cookie: `${SESSION_COOKIE_NAME}=${p2bCashierToken}`,
+      },
       body: J({ warehouseId: 'wh-au-co', createdAt: oldTs, ...(pin ? { managerPin: pin } : {}), items: [{ editionId: f10.id, quantity: 1 }] }),
     }) as any).then(async (r: any) => ({ status: r.status, body: await r.json() }));
   const apiNoPin: any = await apiOld();

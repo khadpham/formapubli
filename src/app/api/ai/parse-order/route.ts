@@ -3,17 +3,13 @@ import { AIOrderParserService } from '@/services/ai-order-parser.service';
 import { db } from '@/db';
 import { editions, works } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { extractUserRole } from '@/lib/rbac-guard';
-import { resolveRequestIdentity } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export async function POST(req: NextRequest) {
   try {
-    await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(req), actorId: req.headers.get('x-formapubli-actor') || extractUserRole(req) }
-    );
+    // P1b: Default-Deny — giữ nguyên WAREHOUSE trong allowlist phục vụ 5.1, chỉ khóa fallback.
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE']);
     const body = await req.json();
     const { text, source, forceFallback } = body;
 

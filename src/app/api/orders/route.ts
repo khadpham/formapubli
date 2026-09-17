@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
-import { extractUserRole, enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
+import { enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
 import { isValidManagerPin } from '@/lib/manager-pin';
-import { resolveRequestIdentity } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
@@ -19,12 +19,10 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const ALLOWED_VIEW_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
-    const identity = await resolveRequestIdentity(req, ALLOWED_VIEW_ROLES, {
-      role: extractUserRole(req),
-      actorId: req.headers.get('x-formapubli-actor') || 'staff-admin',
-    });
-    const userRole = identity.role as UserRole;
-    const actorHeader = identity.actorId;
+    // P1b: Default-Deny — bắt buộc session cookie hợp lệ, không fallback header.
+    const session = await requireSessionRole(req, ALLOWED_VIEW_ROLES);
+    const userRole = session.role as UserRole;
+    const actorHeader = session.actorId;
 
     const requestedScope = searchParams.get('fiscalScope') || 'ALL';
     // Bước 1: mặc định chỉ liệt kê đơn COMPLETED (giữ nguyên hành vi cũ);
@@ -103,13 +101,17 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const ALLOWED_POST_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'];
-    const identity = await resolveRequestIdentity(req, ALLOWED_POST_ROLES, {
-      role: extractUserRole(req),
-      actorId: req.headers.get('x-formapubli-actor') || body.cashierId || 'staff-admin',
-    });
-    const userRole = identity.role as UserRole;
-    const actorHeader = identity.actorId;
-    const actorContext = identity.actorContext;
+    // P1b: Default-Deny — danh tính lấy từ session (chống mạo danh cashierId,
+    // PHASE0_CONTRACT §1: cashierId client gửi không còn được dùng làm actor).
+    const session = await requireSessionRole(req, ALLOWED_POST_ROLES);
+    const userRole = session.role as UserRole;
+    const actorHeader = session.actorId;
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+      sessionId: session.sessionId,
+    };
 
     // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce kép route + service)
     if (body.action === 'CONFIRM' || body.action === 'CANCEL') {

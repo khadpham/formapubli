@@ -9,8 +9,7 @@ import {
   YELLOW_DAYS,
   type RunoutLevel,
 } from '@/services/forecast.service';
-import { extractUserRole } from '@/lib/rbac-guard';
-import { resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -18,15 +17,8 @@ export const dynamic = 'force-dynamic';
 // GET /api/forecast?windowDays=30&warehouseId=&level=RED_ALERT&limit=200
 export async function GET(req: NextRequest) {
   try {
-    const identity = await resolveRequestIdentity(
-      req,
-      ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE'],
-      { role: extractUserRole(req), actorId: 'forecast-reader' }
-    );
-
-    if (identity.role === 'ROLE_CASHIER' || identity.role === 'ROLE_TAX') {
-      throw new AuthError(403, 'Vai trò này không có quyền xem dự báo tái bản.');
-    }
+    // P1b: Default-Deny — CASHIER/TAX không có trong allowlist nên bị chặn 403 tại requireSessionRole.
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
 
     const { searchParams } = new URL(req.url);
     const windowDays = searchParams.get('windowDays')
