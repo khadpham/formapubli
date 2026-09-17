@@ -4,6 +4,7 @@ import {
   callOpenAIJsonRaw,
   callGroqChatJsonRaw,
   resolveGroqChatModel,
+  nullableString,
   parseLlmJson,
   truncateCatalog,
   heuristicConfidence,
@@ -120,9 +121,9 @@ const VoiceOrderItemSchema = z.object({
 });
 
 const VoiceOrderSchema = z.object({
-  customerName: z.string().max(200).optional(),
-  phone: z.string().max(20).optional(),
-  address: z.string().max(500).optional(),
+  customerName: nullableString(200),
+  phone: nullableString(20),
+  address: nullableString(500),
   items: z.array(VoiceOrderItemSchema).max(MAX_ORDER_ITEMS),
   warnings: z.array(z.string().max(300)).max(20).default([]),
 });
@@ -180,6 +181,23 @@ export async function extractOrderEntities(
     }
   };
 
+  // Tầng 1 (khi admin bật): Groq chat — bench 8 case 24/24, strict JSON.
+  // Tầng 2: Gemini. Tầng 3: OpenAI. Cuối: rule-based nội bộ.
+  const groqKey = (process.env.GROQ_API_KEY || '').trim();
+  const groqModel = resolveGroqChatModel();
+  if (groqKey && groqModel) {
+    try {
+      const raw = await callGroqChatJsonRaw({ systemPrompt: prompt, userText: transcript, apiKey: groqKey, model: groqModel });
+      const entities = await tryParse(raw, 'VoiceGroq');
+      if (entities) {
+        const { items, warnings } = crossCheckCatalog(entities.items, catalog);
+        return { entities, checked: items, checkWarnings: [...entities.warnings, ...warnings], engine: 'LLM_GROQ' };
+      }
+    } catch (err) {
+      console.warn('⚠️ Voice Groq lỗi, thử tầng Gemini:', (err as Error)?.message || err);
+    }
+  }
+
   if (geminiKey) {
     try {
       const raw = await callGeminiJsonRaw({ systemPrompt: prompt, userText: transcript, apiKey: geminiKey });
@@ -203,22 +221,6 @@ export async function extractOrderEntities(
       }
     } catch (err) {
       console.warn('⚠️ Voice OpenAI lỗi, thử tầng Groq:', (err as Error)?.message || err);
-    }
-  }
-
-  // Tầng 3 (opt-in): Groq chat — chỉ chạy khi admin cấu hình GROQ_CHAT_MODEL.
-  const groqKey = (process.env.GROQ_API_KEY || '').trim();
-  const groqModel = resolveGroqChatModel();
-  if (groqKey && groqModel) {
-    try {
-      const raw = await callGroqChatJsonRaw({ systemPrompt: prompt, userText: transcript, apiKey: groqKey, model: groqModel });
-      const entities = await tryParse(raw, 'VoiceGroq');
-      if (entities) {
-        const { items, warnings } = crossCheckCatalog(entities.items, catalog);
-        return { entities, checked: items, checkWarnings: [...entities.warnings, ...warnings], engine: 'LLM_GROQ' };
-      }
-    } catch (err) {
-      console.warn('⚠️ Voice Groq lỗi, rơi về rule-based:', (err as Error)?.message || err);
     }
   }
 

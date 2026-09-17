@@ -199,6 +199,17 @@ export async function callOpenAIJsonRaw(params: {
 }
 
 /**
+ * Chuỗi optional chịu được null: LLM (đặc biệt Gemini) hay trả
+ * `"phone": null` thay vì省略 trường — coi null như không có.
+ */
+export function nullableString(max: number): z.ZodType<string | undefined> {
+  return z.preprocess(
+    (v) => (v === null ? undefined : v),
+    z.string().max(max).optional()
+  ) as z.ZodType<string | undefined>;
+}
+
+/**
  * Parse JSON từ LLM qua Zod schema. Ném `LlmSchemaError` khi JSON vỡ
  * hoặc lệch schema — caller bắt và rơi về fallback, không crash.
  */

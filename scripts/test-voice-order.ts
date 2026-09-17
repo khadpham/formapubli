@@ -611,6 +611,44 @@ async function run() {
   delete process.env.GEMINI_MODEL;
   resetLlmBreaker('gemini');
 
+  // 27. Ưu tiên tầng: đủ key Gemini + Groq -> Groq (quán quân bench) đi trước.
+  process.env.GEMINI_API_KEY = 'test-gemini-key';
+  process.env.GEMINI_MODEL = 'test-model-stubbed';
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  process.env.GROQ_CHAT_MODEL = 'openai/gpt-oss-20b';
+  resetLlmBreaker('gemini');
+  resetLlmBreaker('groq');
+  stubFetch(async (url) => {
+    if (url.includes('api.groq.com/openai/v1/chat/completions')) {
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                items: [{ editionId: 'ed-hx', code: 'HX', title: 'Học X', quantity: 2 }],
+                warnings: [],
+              }),
+            },
+          },
+        ],
+      });
+    }
+    throw new Error('unexpected fetch (Gemini không được gọi khi Groq khỏe): ' + url);
+  });
+  const prio = await extractOrderEntities('lấy sách', FAKE_CATALOG);
+  ok(
+    '27. Đủ 2 key -> tầng Groq đi trước, Gemini không bị gọi',
+    prio.engine === 'LLM_GROQ' && prio.checked.some((i) => i.editionId === 'ed-hx'),
+    `engine=${prio.engine}`
+  );
+  restoreFetch();
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_MODEL;
+  delete process.env.GROQ_API_KEY;
+  delete process.env.GROQ_CHAT_MODEL;
+  resetLlmBreaker('gemini');
+  resetLlmBreaker('groq');
+
   console.log(`\n${passed === total ? '🎉' : '⚠️'} VOICE ORDER 5.1: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
 }

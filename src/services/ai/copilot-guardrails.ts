@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ExecutiveQueryService } from '../executive-query.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { removeAccents } from '@/lib/vietnamese';
-import { callGeminiJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel } from './llm-client';
+import { callGeminiJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, nullableString } from './llm-client';
 
 export const COPILOT_SYSTEM_PROMPT = `
 Bạn là Executive AI Copilot — Trợ lý điều hành cấp cao của Nhà xuất bản Formapubli OS.
@@ -35,8 +35,8 @@ export const ToolCallSchema = z.object({
 export const CopilotPlanSchema = z.object({
   action: z.enum(['CALL_TOOL', 'DIRECT_ANSWER', 'REFUSE_OUT_OF_SCOPE']),
   toolCall: ToolCallSchema.optional(),
-  directAnswer: z.string().optional(),
-  reason: z.string().optional(),
+  directAnswer: nullableString(2000),
+  reason: nullableString(500),
 });
 
 export type CopilotPlan = z.output<typeof CopilotPlanSchema>;
