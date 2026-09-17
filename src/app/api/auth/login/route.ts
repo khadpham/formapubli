@@ -281,8 +281,11 @@ export async function POST(req: NextRequest) {
 
     return res;
   } catch (err: any) {
+    // Production: không rò chi tiết lỗi đăng nhập (DB down, secret...) ra client.
+    const safe = process.env.NODE_ENV === 'production' ? 'Lỗi hệ thống, vui lòng thử lại.' : err.message || 'Lỗi xử lý đăng nhập';
+    if (process.env.NODE_ENV === 'production') console.error('[auth/login] INTERNAL_ERROR:', err?.stack || err);
     return NextResponse.json(
-      { success: false, code: 'INTERNAL_ERROR', error: err.message || 'Lỗi xử lý đăng nhập' },
+      { success: false, code: 'INTERNAL_ERROR', error: safe },
       { status: 500 }
     );
   }

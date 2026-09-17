@@ -10,6 +10,7 @@ import {
   checkRateLimit,
   recordFailedAttempt,
   resetRateLimit,
+  extractClientIp,
 } from '../src/lib/auth-session';
 
 assertIsolatedTestDb('test-auth-gateway');
@@ -17,7 +18,7 @@ assertIsolatedTestDb('test-auth-gateway');
 async function run() {
   console.log('🔒 KIỂM THỬ BẢO MẬT AUTH GATEWAY & SIGNED SESSION');
   let passed = 0;
-  const total = 8;
+  const total = 13;
 
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
@@ -95,6 +96,57 @@ async function run() {
   resetRateLimit(testKey);
   const afterReset = checkRateLimit(testKey);
   ok('8. Mở khóa khi Reset Rate Limit thành công', afterReset.allowed === true);
+
+  // 9. Chặn token tuổi thọ 25h (vượt trần 24h) dù chữ ký đúng.
+  const longToken = await signSession({
+    role: 'ROLE_OWNER',
+    actorId: 'LongLife',
+    issuedAt: now,
+    expiresAt: now + 25 * 3600 * 1000,
+  });
+  ok('9. Từ chối token tuổi thọ vượt 24h', (await verifySession(longToken)) === null);
+
+  // 10. Chặn token phát hành trong tương lai (lệch giờ / giả mạo thời gian).
+  const futureToken = await signSession({
+    role: 'ROLE_OWNER',
+    actorId: 'Future',
+    issuedAt: now + 3600 * 1000,
+    expiresAt: now + 13 * 3600 * 1000,
+  });
+  ok('10. Từ chối token issuedAt trong tương lai', (await verifySession(futureToken)) === null);
+
+  // 11. Token 12h chuẩn vẫn qua (không phá ca làm việc hợp lệ).
+  const shiftToken = await signSession({
+    role: 'ROLE_MANAGER',
+    actorId: 'Shift',
+    issuedAt: now,
+    expiresAt: now + 12 * 3600 * 1000,
+  });
+  const shiftRes = await verifySession(shiftToken);
+  ok('11. Token ca 12h hợp lệ vẫn qua', shiftRes?.actorId === 'Shift');
+
+  // 12. Mặc định BỎ QUA x-forwarded-for/x-real-ip/cf-connecting-ip (chống giả IP).
+  delete process.env.TRUST_PROXY;
+  const spoofed = new Request('http://localhost/x', {
+    headers: {
+      'x-forwarded-for': '198.51.100.7, 10.0.0.1',
+      'x-real-ip': '198.51.100.8',
+      'cf-connecting-ip': '198.51.100.9',
+    },
+  });
+  ok('12. Mặc định bỏ qua mọi header IP giả', extractClientIp(spoofed) === '127.0.0.1');
+
+  // 13. TRUST_PROXY=cloudflare: chỉ tin cf-connecting-ip, vẫn bỏ x-forwarded-for.
+  process.env.TRUST_PROXY = 'cloudflare';
+  const behindCf = new Request('http://localhost/x', {
+    headers: { 'cf-connecting-ip': '203.0.113.195', 'x-forwarded-for': '198.51.100.7' },
+  });
+  const cfOnly = new Request('http://localhost/x', {
+    headers: { 'x-forwarded-for': '198.51.100.7' },
+  });
+  const cfOk = extractClientIp(behindCf) === '203.0.113.195' && extractClientIp(cfOnly) === '127.0.0.1';
+  delete process.env.TRUST_PROXY;
+  ok('13. Cloudflare: tin cf-connecting-ip, vẫn bỏ x-forwarded-for', cfOk);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} AUTH GATEWAY: ${passed}/${total} cases ${passed === total ? 'PASS 100%' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);

@@ -157,13 +157,17 @@ async function run() {
 
   // -------------------------------------------------------------------------
   // CA 9: Chống Brute Force đa tài khoản từ 1 IP (10 lần sai -> Khóa IP 15 phút)
+  // P1b-hardening: IP chỉ đáng tin qua cf-connecting-ip khi TRUST_PROXY=cloudflare
+  // (x-real-ip/x-forwarded-for mặc định bị bỏ qua để chống giả IP).
   // -------------------------------------------------------------------------
+  process.env.TRUST_PROXY = 'cloudflare';
   const attackerIp = '198.51.100.99';
   for (let i = 0; i < 10; i++) {
-    await post(postLogin, { staffId: `DUMMY-${i}`, passcode: 'wrong' }, { 'x-real-ip': attackerIp });
+    await post(postLogin, { staffId: `DUMMY-${i}`, passcode: 'wrong' }, { 'cf-connecting-ip': attackerIp });
   }
-  const ipBlockedAttempt = await post(postLogin, { staffId: 'ADMIN-01', passcode: 'owner9999' }, { 'x-real-ip': attackerIp });
+  const ipBlockedAttempt = await post(postLogin, { staffId: 'ADMIN-01', passcode: 'owner9999' }, { 'cf-connecting-ip': attackerIp });
   test('9. Dò mật khẩu 10 lần từ 1 IP bị khóa toàn bộ IP 15 phút (HTTP 429)', ipBlockedAttempt.status === 429 && ipBlockedAttempt.body?.code === 'RATE_LIMITED');
+  delete process.env.TRUST_PROXY;
 
   // -------------------------------------------------------------------------
   // CA 10: Chặn tài khoản nhân viên bị vô hiệu hóa (isActive = false)

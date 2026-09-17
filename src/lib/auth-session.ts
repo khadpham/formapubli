@@ -91,7 +91,14 @@ export async function verifySession(token: string, secret = getAuthSecret()): Pr
     const payload = JSON.parse(jsonStr) as SessionPayload;
 
     if (!payload.role || !payload.actorId || !payload.expiresAt) return null;
-    if (Date.now() > payload.expiresAt) return null; // Quá hạn 12h
+    if (Date.now() > payload.expiresAt) return null; // Quá hạn
+    // Chặn token tuổi thọ bất thường: tối đa 24h, không phát hành trong tương lai
+    // (chống token rò rỉ bị gia hạn thủ công khi key lộ).
+    const MAX_SESSION_AGE_MS = 24 * 3600 * 1000;
+    const CLOCK_SKEW_MS = 5 * 60 * 1000;
+    if (!payload.issuedAt) return null;
+    if (payload.expiresAt - payload.issuedAt > MAX_SESSION_AGE_MS) return null;
+    if (payload.issuedAt > Date.now() + CLOCK_SKEW_MS) return null;
 
     return payload;
   } catch {
@@ -112,6 +119,15 @@ interface AttemptRecord {
 const loginAttempts = new Map<string, AttemptRecord>();
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 phút
+// Chặn phình RAM: kẻ tấn công xoay key vô hạn không được tạo entry vô hạn.
+const MAX_TRACKED_KEYS = 10000;
+
+/** Xóa key cũ nhất khi map vượt trần (Map giữ thứ tự chèn). */
+function evictIfFull<K, V>(map: Map<K, V>): void {
+  if (map.size < MAX_TRACKED_KEYS) return;
+  const oldest = map.keys().next();
+  if (!oldest.done) map.delete(oldest.value);
+}
 
 export function checkRateLimit(key: string): { allowed: boolean; waitMinutes?: number } {
   const record = loginAttempts.get(key);
@@ -143,6 +159,7 @@ export function recordFailedAttempt(key: string): { locked: boolean; remainingAt
     return { locked: true, remainingAttempts: 0 };
   }
 
+  evictIfFull(loginAttempts);
   loginAttempts.set(key, record);
   return { locked: false, remainingAttempts: MAX_FAILED_ATTEMPTS - record.failedCount };
 }
@@ -240,6 +257,7 @@ export function checkWindowRateLimit(
   if (timestamps.length >= limit) {
     const oldest = timestamps[0];
     const resetAfterMs = Math.max(0, oldest + windowMs - now);
+    evictIfFull(slidingWindows);
     slidingWindows.set(key, timestamps);
     return {
       allowed: false,
@@ -249,6 +267,7 @@ export function checkWindowRateLimit(
   }
 
   timestamps.push(now);
+  evictIfFull(slidingWindows);
   slidingWindows.set(key, timestamps);
   return {
     allowed: true,
@@ -432,20 +451,15 @@ export async function getSessionFromRequest(req: Request): Promise<SessionPayloa
 }
 
 export function extractClientIp(req: Request): string {
+  // Ranh giới tin cậy IP: CHỈ tin header proxy khi triển khai sau Cloudflare
+  // (TRUST_PROXY=cloudflare) và chỉ tin cf-connecting-ip do Cloudflare ký.
+  // Mặc định KHÔNG tin x-forwarded-for/x-real-ip — kẻ tấn công tự đặt các
+  // header này để xoay IP, vượt khóa brute-force theo IP và đầu độc audit log.
+  // Khóa theo tài khoản (staff) không phụ thuộc IP nên vẫn bảo vệ đầy đủ.
   if (process.env.TRUST_PROXY === 'cloudflare') {
     const cf = req.headers.get('cf-connecting-ip');
     if (cf && cf.trim()) return cf.trim();
-    return (req as any).ip || '127.0.0.1';
   }
-  const cfIp = req.headers.get('cf-connecting-ip');
-  if (cfIp && cfIp.trim()) return cfIp.trim();
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp && realIp.trim()) return realIp.trim();
   return (req as any).ip || '127.0.0.1';
 }
 
