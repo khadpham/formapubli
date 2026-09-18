@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
           quantityInBundle: parseInt(it.quantityInBundle ?? 1, 10),
         })),
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
         actorId: actorHeader,

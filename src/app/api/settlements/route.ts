@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         cashboxSessionId,
         notes,
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'SETTLEMENT_RECORD',
         actorRole: userRole,
         actorId: effReceivedBy,
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
       // Chống mạo danh: strict ép người VOID = session (bỏ actorId client).
       const effVoidActor = resolveActorId(session, actorId);
       const result = await SettlementService.voidPayment(paymentId, effVoidActor, reason || '');
-      recordAuditLog({
+      await recordAuditLog({
         action: 'SETTLEMENT_VOID',
         actorRole: userRole,
         actorId: effVoidActor,

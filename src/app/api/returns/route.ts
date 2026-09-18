@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       const providedPin = `${body.managerPin ?? ''}`;
       const bypassWindow = isPrivileged(userRole) || (providedPin !== '' && (await isValidManagerPin(providedPin)));
       if (!isPrivileged(userRole) && body.expectWindowOverride && !bypassWindow) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'RETURN_REQUESTED', actorRole: userRole, actorId: actorHeader,
           resource: '/api/returns', details: `Từ chối phiếu quá hạn không PIN (đơn ${body.orderId}).`,
         });
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
         })) : [],
       });
       if (!result.isDuplicate) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'RETURN_REQUESTED', actorRole: userRole, actorId: actorHeader,
           resource: '/api/returns', details: `Lập phiếu ${result.returnCode} cho đơn ${body.orderId}.`,
         });
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được duyệt phiếu.' }, { status: 403 });
       }
       const result = await ReturnService.approve(body.returnId, userRole, actorHeader, actorContext, body.idempotencyKey);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'RETURN_APPROVED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/returns', details: `Duyệt phiếu ${body.returnId}.`,
       });
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
         actorContext,
         body.idempotencyKey,
       );
-      recordAuditLog({
+      await recordAuditLog({
         action: 'RETURN_COMPLETED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/returns', details: `Hoàn tất phiếu ${body.returnId} (hoàn kho RETURN_INBOUND).`,
       });
@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được từ chối phiếu.' }, { status: 403 });
       }
       const result = await ReturnService.reject(body.returnId, userRole, body.rejectNote, actorContext, body.idempotencyKey);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'RETURN_REJECTED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/returns', details: `Từ chối phiếu ${body.returnId}.`,
       });
@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
         actorContext,
         body.idempotencyKey,
       );
-      recordAuditLog({
+      await recordAuditLog({
         action: 'RETURN_VOIDED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/returns', details: `Hủy phiếu ${body.returnId} (lý do: ${body.voidReason}).`,
       });

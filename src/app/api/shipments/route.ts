@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         body.orderId, body.carrier || 'SPX', body.trackingCode,
         body.shippingFee !== undefined ? parseFloat(body.shippingFee) : 0, userRole
       );
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER', actorRole: userRole, actorId: actorHeader,
         resource: '/api/shipments', details: `Đẩy đơn ${body.orderId} sang ${result.carrier} (vận đơn ${result.trackingCode}, COD ${result.codAmount}).`,
       });
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'UPDATE_STATUS') {
       const result = await ShipmentService.updateStatus(body.orderId, body.shippingStatus, userRole);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER', actorRole: userRole, actorId: actorHeader,
         resource: '/api/shipments', details: `Vận đơn đơn ${body.orderId} → ${result.shippingStatus}.`,
       });
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         throw new AuthError(403, 'Chỉ Manager/Owner mới có quyền tất toán COD.');
       }
       const result = await ShipmentService.settleCod(body.orderId, userRole, body.bankReference);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER', actorRole: userRole, actorId: actorHeader,
         resource: '/api/shipments', details: `Tất toán COD đơn ${body.orderId}: ${result.codAmount}đ về NH (${result.bankReference}).`,
       });

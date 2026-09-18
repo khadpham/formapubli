@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
         notes,
       });
 
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
         actorId: effCashierId,
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
         notes,
       });
 
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
         actorId: result.cashierId,

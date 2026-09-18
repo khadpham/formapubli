@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         actorId: actorHeader,
         notes,
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'ADJUST_STOCK', actorRole: userRole, actorId: actorHeader,
         resource: '/api/rma', details: `Xử lý RMA ${ticketId}: ${resolutionAction}.`,
       });
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       inspectedBy: actorHeader,
       notes,
     });
-    recordAuditLog({
+    await recordAuditLog({
       action: 'ADJUST_STOCK', actorRole: userRole, actorId: actorHeader,
       resource: '/api/rma', details: `Lập RMA ${ticket.id}: ${qty} cuốn ${editionId} (${defectReason}) → ${safeTarget}.`,
     });

@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!(result as any).isDuplicate) {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'TRANSFER_DISPATCH', actorRole: userRole, actorId: actorHeader,
         resource: '/api/inventory/transfer', details: `Chuyển ${qty} cuốn ${editionId}: ${fromWarehouseId} → ${toWarehouseId} (${documentRef}).`,
       });

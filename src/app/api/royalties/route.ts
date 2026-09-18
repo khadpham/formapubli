@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         notes,
       });
       const effCreatedBy = resolveActorId(session, createdBy);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
         actorId: effCreatedBy,
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       // Chống mạo danh: strict ép người chấm dứt = session (bỏ actorId client).
       const effTerminateActor = resolveActorId(session, actorId);
       const result = await RoyaltyService.terminateContract(contractId, effTerminateActor, reason || '');
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
         actorId: effTerminateActor,

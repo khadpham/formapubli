@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     if (cookie) {
       const payload = await verifySession(cookie);
       if (payload) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'LOGOUT' as any,
           actorRole: payload.role,
           actorId: payload.actorId,

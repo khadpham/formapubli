@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       userRole === 'ROLE_TAX' ? list.filter((s) => s.fiscalScope === 'OFFICIAL_TAX') : list;
 
     if (safeScope !== 'OFFICIAL_TAX') {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'VIEW_FISCAL_MANAGEMENT',
         actorRole: userRole,
         actorId: actorHeader,
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
           notes: it.notes,
         })),
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'TRANSFER_DISPATCH',
         actorRole: userRole,
         actorId: actorHeader,
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
         actorContext,
         idempotencyKey: cleanBodyKey,
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'TRANSFER_RECEIVE',
         actorRole: userRole,
         actorId: actorHeader,
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
         notes,
       });
       const effCreatedBy = resolveActorId(session, createdBy);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'CONSIGNMENT_STATEMENT',
         actorRole: userRole,
         actorId: effCreatedBy,
@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
         actorId: resolveActorId(session, actorId),
       });
       const effSaleActor = resolveActorId(session, actorId);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'CONSIGNMENT_SALE',
         actorRole: userRole,
         actorId: effSaleActor,
@@ -242,7 +242,7 @@ export async function POST(req: NextRequest) {
         notes,
       });
       const effReturnActor = resolveActorId(session, actorId);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'CONSIGNMENT_RETURN',
         actorRole: userRole,
         actorId: effReturnActor,
@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
       // Chống mạo danh: strict ép người chốt = session (bỏ actorId client).
       const effConfirmActor = resolveActorId(session, actorId);
       const result = await ConsignmentService.confirm(statementId, effConfirmActor);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'CONSIGNMENT_STATEMENT',
         actorRole: userRole,
         actorId: effConfirmActor,
