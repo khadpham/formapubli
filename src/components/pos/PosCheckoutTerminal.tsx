@@ -371,27 +371,31 @@ export function PosCheckoutTerminal({
   };
 
   const handleVerifyPin = () => {
-    // Mã PIN chuẩn quản lý hội chợ: 9999 hoặc 1234
-    if (pinInput === '9999' || pinInput === '1234' || pinInput === '8888') {
-      setIsManagerOverride(true);
-      setApprovedPin(pinInput);
-      if (pendingDiscountRate !== null) {
-
-        setDiscountRate(pendingDiscountRate);
-        // BV-03: PIN duyệt CK 100% đồng nghĩa bật chế độ tặng
-        if (pendingDiscountRate === 1) {
-          setIsGift(true);
-          setFiscalScope('INTERNAL_MANAGEMENT');
-        }
-      }
-      setIsPinModalOpen(false);
-      setPinInput('');
-      setPinError(null);
-      setSyncToast('🔑 Quản lý đã phê duyệt chiết khấu đặc biệt!');
-      setTimeout(() => setSyncToast(null), 3000);
-    } else {
-      setPinError('Mã PIN Quản lý không chính xác!');
+    // Không hardcode PIN phía client (từng lộ 9999/1234/8888 trong source).
+    // Client chỉ thu PIN và gửi kèm đơn; SERVER xác thực hash và trả 403
+    // nếu sai — server là nguồn sự thật duy nhất cho mọi vượt trần.
+    const pin = pinInput.trim();
+    if (pin.length < 4) {
+      setPinError('PIN quản lý tối thiểu 4 ký tự.');
+      return;
     }
+    setIsManagerOverride(true);
+    setApprovedPin(pin);
+    if (pendingDiscountRate !== null) {
+
+      setDiscountRate(pendingDiscountRate);
+      // BV-03: PIN duyệt CK 100% đồng nghĩa bật chế độ tặng
+      if (pendingDiscountRate === 1) {
+        setIsGift(true);
+        setFiscalScope('INTERNAL_MANAGEMENT');
+      }
+    }
+    setIsPinModalOpen(false);
+    setPinInput('');
+    setPinError(null);
+    // Trung thực UX: server mới là bên phê duyệt cuối (403 nếu PIN sai lúc chốt).
+    setSyncToast('🔑 Đã ghi PIN quản lý — server xác thực khi chốt đơn.');
+    setTimeout(() => setSyncToast(null), 3000);
   };
 
   // Lắng nghe cuộn trang để kích hoạt thanh tìm kiếm nam châm (Magnet Bar)
@@ -2012,7 +2016,7 @@ export function PosCheckoutTerminal({
                   <p className="text-xs text-rose-600 font-bold mt-1 text-center">{pinError}</p>
                 )}
                 <p className="text-[11px] text-slate-400 text-center mt-1">
-                  (Mã mặc định quản lý gian hàng: 9999 hoặc 1234)
+                  Quản lý nhập PIN để phê duyệt — server xác thực khi chốt đơn.
                 </p>
               </div>
             </div>
