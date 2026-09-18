@@ -1,5 +1,5 @@
 import { db, loginAttemptBuckets } from '@/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 /**
  * Khóa brute-force bền vững dùng chung DB (sống qua restart isolate và đa
@@ -71,6 +71,23 @@ async function bumpDbKey(key: string, maxFails: number): Promise<{ locked: boole
         target: loginAttemptBuckets.key,
         set: { fails, lockedUntil, updatedAt: new Date().toISOString() },
       });
+    // Chặn phình bảng khi kẻ tấn công xoay key vô hạn (song song với
+    // MAX_TRACKED_KEYS của tầng memory): tỉa key cũ nhất khi vượt trần.
+    const total = await db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(loginAttemptBuckets)
+      .then((r) => Number(r[0]?.n || 0))
+      .catch(() => 0);
+    if (total > 20000) {
+      const stale = await db
+        .select({ key: loginAttemptBuckets.key })
+        .from(loginAttemptBuckets)
+        .orderBy(loginAttemptBuckets.updatedAt)
+        .limit(1000);
+      for (const row of stale) {
+        await db.delete(loginAttemptBuckets).where(eq(loginAttemptBuckets.key, row.key));
+      }
+    }
     return { locked, remaining: Math.max(0, maxFails - fails) };
   } catch (err) {
     console.warn('[login-attempts-db] bump fail-open:', (err as Error)?.message);
