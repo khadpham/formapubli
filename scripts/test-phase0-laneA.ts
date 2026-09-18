@@ -12,7 +12,6 @@ import {
   checkDualRateLimit,
   recordDualFailedAttempt,
   resetDualRateLimit,
-  hashStaffPasscode,
   safeEqual,
 } from '../src/lib/auth-session';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
@@ -231,6 +230,9 @@ async function run() {
   // CA 16: Thu hồi phiên đăng nhập tức thì khi tài khoản bị khóa trong CSDL
   // -------------------------------------------------------------------------
   resetDualRateLimit('127.0.0.1', 'NV-02');
+  // Đồng bộ reset tầng DB bền vững (khóa staff NV-02 từ CA 8 vẫn nằm trong DB).
+  const { resetDbDualLimit: resetDbLocks } = await import('../src/lib/login-attempts-db');
+  await resetDbLocks('127.0.0.1', 'NV-02');
   const nv02Login = await post(postLogin, { staffId: 'NV-02', passcode: '1234' });
   const nv02Cookie = extractCookie(nv02Login.headers);
   const meBefore = await get(getMe, { Cookie: nv02Cookie });

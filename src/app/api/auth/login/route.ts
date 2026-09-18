@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   signSession,
   verifyRolePasscode,
-  hashStaffPasscode,
-  safeEqual,
+  verifyStaffPasscode,
+  hashStaffPasscodeV2,
   checkDualRateLimit,
   recordDualFailedAttempt,
   resetDualRateLimit,
@@ -12,6 +12,11 @@ import {
   isAuthStrict,
   extractClientIp,
 } from '@/lib/auth-session';
+import {
+  checkDbDualLimit,
+  recordDbDualFail,
+  resetDbDualLimit,
+} from '@/lib/login-attempts-db';
 import { UserRole } from '@/lib/roles';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { db, staffAccounts } from '@/db';
@@ -34,10 +39,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 0. Ranh giới tin cậy proxy (#6): production bắt buộc khai báo TRUST_PROXY
+    // (cloudflare | direct) — nếu không mọi client đổ về 127.0.0.1, khóa 1
+    // người là khóa cả quầy + audit ghi sai IP. Fail-closed ngay khi boot logic.
+    const trustProxy = `${process.env.TRUST_PROXY || ''}`.trim().toLowerCase();
+    if (process.env.NODE_ENV === 'production' && trustProxy !== 'cloudflare' && trustProxy !== 'direct') {
+      console.error('[auth/login] REFUSED: production thiếu TRUST_PROXY=cloudflare|direct.');
+      return NextResponse.json(
+        { success: false, code: 'INTERNAL_ERROR', error: 'Cấu hình máy chủ chưa hoàn tất (proxy).' },
+        { status: 500 }
+      );
+    }
+    if (isAuthStrict() && !trustProxy) {
+      console.warn('[auth/login] AUTH_STRICT nhưng thiếu TRUST_PROXY — rate-limit IP gộp chung, audit IP có thể sai.');
+    }
+
     // 1. Kiểm tra Rate Limiting đa tầng (IP: 10 lần, Account: 5 lần -> khóa 15 phút)
+    // Tầng in-memory (nhanh, theo instance) + tầng DB bền vững (sống qua
+    // restart/đa instance) — chặn nếu MỘT trong hai từ chối.
     const limitCheck = checkDualRateLimit(ip, staffIdInput);
     if (!limitCheck.allowed) {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'LOGIN_FAILED' as any,
         actorRole: roleInput || 'UNKNOWN',
         actorId: staffIdInput,
@@ -55,6 +77,30 @@ export async function POST(req: NextRequest) {
             : `Tài khoản ${staffIdInput} tạm thời bị khóa trong ${limitCheck.waitMinutes} phút do nhập sai quá 5 lần.`,
           locked: true,
           waitMinutes: limitCheck.waitMinutes,
+        },
+        { status: 429 }
+      );
+    }
+
+    // 1b. Tầng DB bền vững (#5): sống qua restart isolate/đa instance.
+    const dbCheck = await checkDbDualLimit(ip, staffIdInput);
+    if (!dbCheck.allowed) {
+      await recordAuditLog({
+        action: 'LOGIN_FAILED' as any,
+        actorRole: roleInput || 'UNKNOWN',
+        actorId: staffIdInput,
+        resource: '/api/auth/login',
+        details: `CẢNH BÁO BRUTE-FORCE (khóa DB bền vững, ${dbCheck.reason}) trong ${dbCheck.waitMinutes} phút.`,
+        ipAddress: ip,
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'RATE_LIMITED',
+          error: `Tài khoản hoặc IP tạm thời bị khóa trong ${dbCheck.waitMinutes} phút do nhập sai quá số lần cho phép.`,
+          locked: true,
+          waitMinutes: dbCheck.waitMinutes,
         },
         { status: 429 }
       );
@@ -79,7 +125,8 @@ export async function POST(req: NextRequest) {
       // 2.1. Kiểm tra tài khoản có đang hoạt động không
       if (!staffRow.isActive) {
         recordDualFailedAttempt(ip, staffIdInput);
-        recordAuditLog({
+        await recordDbDualFail(ip, staffIdInput);
+        await recordAuditLog({
           action: 'LOGIN_FAILED' as any,
           actorRole: staffRow.role,
           actorId: staffRow.staffId,
@@ -94,14 +141,30 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 2.2. Kiểm tra Passcode băm với Salt riêng của tài khoản (Timing-Safe)
-      const computedHash = hashStaffPasscode(passcode, staffRow.salt);
-      const isMatch = safeEqual(computedHash, staffRow.passcodeHash.toLowerCase());
+      // 2.2. Kiểm tra Passcode: chịu cả hash legacy (SHA-256 1 vòng) và V2
+      // (PBKDF2). Khớp legacy → tự nâng lên V2 ngay (migrate mềm, không làm
+      // gián đoạn ca làm việc; nâng cấp thất bại cũng không chặn đăng nhập).
+      const { match: isMatch, needsUpgrade } = await verifyStaffPasscode(
+        passcode,
+        staffRow.salt,
+        staffRow.passcodeHash
+      );
+      if (needsUpgrade) {
+        try {
+          await db
+            .update(staffAccounts)
+            .set({ passcodeHash: await hashStaffPasscodeV2(passcode, staffRow.salt) })
+            .where(eq(staffAccounts.staffId, staffRow.staffId));
+        } catch {
+          // Best-effort: login vẫn tiếp tục.
+        }
+      }
 
       if (!isMatch) {
         const attemptRes = recordDualFailedAttempt(ip, staffIdInput);
-        const isLocked = attemptRes.staffLocked || attemptRes.ipLocked;
-        recordAuditLog({
+        const dbRes = await recordDbDualFail(ip, staffIdInput);
+        const isLocked = attemptRes.staffLocked || attemptRes.ipLocked || dbRes.staffLocked || dbRes.ipLocked;
+        await recordAuditLog({
           action: (isLocked ? 'BRUTE_FORCE_DETECTED' : 'LOGIN_FAILED') as any,
           actorRole: staffRow.role,
           actorId: staffRow.staffId,
@@ -146,8 +209,9 @@ export async function POST(req: NextRequest) {
       // Trong chế độ strict: Fail-closed! Không cho phép fallback role passcode khi tài khoản không tồn tại trong staff_accounts
       if (isAuthStrict()) {
         const attemptRes = recordDualFailedAttempt(ip, staffIdInput);
-        const isLocked = attemptRes.staffLocked || attemptRes.ipLocked;
-        recordAuditLog({
+        const dbRes = await recordDbDualFail(ip, staffIdInput);
+        const isLocked = attemptRes.staffLocked || attemptRes.ipLocked || dbRes.staffLocked || dbRes.ipLocked;
+        await recordAuditLog({
           action: (isLocked ? 'BRUTE_FORCE_DETECTED' : 'LOGIN_FAILED') as any,
           actorRole: roleInput || 'UNKNOWN',
           actorId: staffIdInput,
@@ -192,8 +256,9 @@ export async function POST(req: NextRequest) {
         fullName = staffIdInput || roleInput;
       } else {
         const attemptRes = recordDualFailedAttempt(ip, staffIdInput);
-        const isLocked = attemptRes.staffLocked || attemptRes.ipLocked;
-        recordAuditLog({
+        const dbRes = await recordDbDualFail(ip, staffIdInput);
+        const isLocked = attemptRes.staffLocked || attemptRes.ipLocked || dbRes.staffLocked || dbRes.ipLocked;
+        await recordAuditLog({
           action: (isLocked ? 'BRUTE_FORCE_DETECTED' : 'LOGIN_FAILED') as any,
           actorRole: roleInput || 'UNKNOWN',
           actorId: staffIdInput,
@@ -233,6 +298,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Đăng nhập thành công -> Reset rate limit & Sinh Signed Session Cookie
     resetDualRateLimit(ip, staffIdInput);
+    await resetDbDualLimit(ip, staffIdInput);
 
     const now = Date.now();
     const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
@@ -247,7 +313,7 @@ export async function POST(req: NextRequest) {
       expiresAt,
     });
 
-    recordAuditLog({
+    await recordAuditLog({
       action: 'LOGIN_SUCCESS' as any,
       actorRole: role,
       actorId,

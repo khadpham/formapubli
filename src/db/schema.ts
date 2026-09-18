@@ -584,3 +584,11 @@ export const exchangeReplacementItems = sqliteTable('exchange_replacement_items'
   editionIdx: index('idx_exchange_rep_edition').on(table.editionId),
   uniqueReturnEdition: uniqueIndex('idx_exchange_rep_unique').on(table.returnId, table.editionId),
 }));
+
+// 30. Login Attempt Buckets (khóa brute-force bền vững, sống qua restart/đa instance — dùng chung DB).
+export const loginAttemptBuckets = sqliteTable('login_attempt_buckets', {
+  key: text('key').primaryKey(), // staff:<id> | ip:<ip>
+  fails: integer('fails').default(0).notNull(),
+  lockedUntil: integer('locked_until').default(0).notNull(), // epoch ms
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});

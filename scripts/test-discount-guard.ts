@@ -125,7 +125,7 @@ async function run() {
   // 9-10. Env MANAGER_PIN_HASHES: PIN mới theo env được duyệt, PIN legacy bị vô hiệu.
   const { hashPinForEnv } = await import('../src/lib/manager-pin');
   const prevEnv = process.env.MANAGER_PIN_HASHES;
-  process.env.MANAGER_PIN_HASHES = hashPinForEnv('4321');
+  process.env.MANAGER_PIN_HASHES = await hashPinForEnv('4321');
   try {
     r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '4321' }), 'ROLE_CASHIER');
     ok('PIN theo env (4321) được duyệt', r.status === 200 && r.json?.success === true, `status=${r.status}`);

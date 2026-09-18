@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, works, editions, warehouses, partners, staffAccounts } from '../src/db';
-import { DEFAULT_STAFF_ACCOUNTS, hashStaffPasscode } from '../src/lib/auth-session';
+import { DEFAULT_STAFF_ACCOUNTS, hashStaffPasscodeV2 } from '../src/lib/auth-session';
 
 
 function removeAccents(str: string): string {
@@ -232,7 +232,7 @@ async function main() {
   if (shouldSeedStaff) {
     console.log('👥 Seeding default staff accounts (DEV / EXPLICIT FLAG ONLY)...');
     for (const staff of DEFAULT_STAFF_ACCOUNTS) {
-      const passcodeHash = hashStaffPasscode(staff.passcode, staff.salt);
+      const passcodeHash = await hashStaffPasscodeV2(staff.passcode, staff.salt);
       const staffRecord = {
         staffId: staff.staffId,
         fullName: staff.fullName,

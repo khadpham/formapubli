@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         note: body.note,
         actorRole: userRole,
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'FUND_CREATED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/sponsorships', details: `Mở quỹ ${result.fundCode} (${body.sponsorName}, nhận ${body.amountReceived}đ, ${body.quotaType}).`,
       });
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
         actorRole: userRole,
       });
       if (!result.isDuplicate) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'FUND_DRAWN', actorRole: userRole, actorId: actorHeader,
           resource: '/api/sponsorships', details: `Rút quỹ ${body.fundId}: ${body.quantity} cuốn ${body.editionId} (đơn ${result.orderCode}).`,
         });
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'CLOSE_FUND') {
       const result = await SponsorshipService.closeFund(body.fundId, userRole);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'FUND_CLOSED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/sponsorships', details: `Đóng quỹ ${body.fundId}.`,
       });

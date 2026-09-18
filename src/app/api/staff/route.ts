@@ -3,7 +3,7 @@ import { db, staffAccounts } from '@/db';
 import { eq, asc } from 'drizzle-orm';
 import {
   requireSessionRole,
-  hashStaffPasscode,
+  hashStaffPasscodeV2,
 } from '@/lib/auth-session';
 import { AppError } from '@/services/app-error';
 import { UserRole } from '@/lib/roles';
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       staffId,
       fullName,
       role,
-      passcodeHash: hashStaffPasscode(passcode, salt),
+      passcodeHash: await hashStaffPasscodeV2(passcode, salt),
       salt,
       isActive: true,
     });

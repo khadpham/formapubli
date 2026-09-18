@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@libsql/client';
 import { stripToExecutable } from './migrate-fresh';
-import { DEFAULT_STAFF_ACCOUNTS, hashStaffPasscode } from '../src/lib/auth-session';
+import { DEFAULT_STAFF_ACCOUNTS, hashStaffPasscodeV2 } from '../src/lib/auth-session';
 
 const args = process.argv.slice(2);
 const confirm = args.includes('--confirm');
@@ -65,7 +65,7 @@ async function main() {
         applied++;
       } catch (err: any) {
         const msg = `${err?.message || err}`;
-        if (/already exists/i.test(msg)) {
+        if (/already exists|duplicate column name/i.test(msg)) {
           skipped++;
           continue;
         }
@@ -93,7 +93,7 @@ async function main() {
       for (const s of missing) {
         await client.execute({
           sql: 'INSERT INTO staff_accounts (staff_id, full_name, role, passcode_hash, salt, is_active) VALUES (?, ?, ?, ?, ?, 1)',
-          args: [s.staffId, s.fullName, s.role, hashStaffPasscode(s.passcode, s.salt), s.salt],
+          args: [s.staffId, s.fullName, s.role, await hashStaffPasscodeV2(s.passcode, s.salt), s.salt],
         });
         console.log(`  + đã thêm ${s.staffId} (${s.role}).`);
       }

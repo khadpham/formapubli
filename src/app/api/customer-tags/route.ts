@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (body.action === 'ASSIGN') {
       const result = await CustomerTagService.assign(body.customerId, body.tag, userRole);
       if (!result.already) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'MUTATE_ORDER', actorRole: userRole, actorId: actorHeader,
           resource: '/api/customer-tags', details: `Gắn tag ${body.tag} cho khách ${body.customerId}.`,
         });
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     }
     if (body.action === 'UNASSIGN') {
       const result = await CustomerTagService.unassign(body.customerId, body.tag, userRole);
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MUTATE_ORDER', actorRole: userRole, actorId: actorHeader,
         resource: '/api/customer-tags', details: `Gỡ tag ${body.tag} khỏi khách ${body.customerId}.`,
       });

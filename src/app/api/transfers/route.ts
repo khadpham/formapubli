@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
         })),
       });
       if (!(result as any).isDuplicate) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'TRANSFER_DISPATCH',
           actorRole: userRole,
           actorId: actorHeader,
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       });
       const discrepancyCount = result.totalDamaged + result.totalLost;
       if (!(result as any).isDuplicate) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'TRANSFER_RECEIVE',
           actorRole: userRole,
           actorId: actorHeader,
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
         actorContext,
       });
       if (!(result as any).isDuplicate) {
-        recordAuditLog({
+        await recordAuditLog({
           action: 'TRANSFER_CANCEL',
           actorRole: userRole,
           actorId: actorHeader,

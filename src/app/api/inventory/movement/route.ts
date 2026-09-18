@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       idempotencyKey: `${idempotencyKey}`.trim(),
     });
 
-    recordAuditLog({
+    await recordAuditLog({
       action: 'ADJUST_STOCK',
       actorRole: userRole,
       actorId: actorHeader,

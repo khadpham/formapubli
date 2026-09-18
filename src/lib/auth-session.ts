@@ -299,6 +299,72 @@ export function hashStaffPasscode(passcode: string, salt: string): string {
   return hashString(`${passcode}:${salt}`);
 }
 
+// ---------------------------------------------------------------------------
+// KDF V2 (PBKDF2-SHA256 qua WebCrypto — native, Edge-safe, zero-dependency).
+// Hash SHA-256 1 vòng (legacy) quá nhanh → PIN 4 số bị vét cạn tức thì nếu
+// lộ DB. V2 dùng 100k vòng PBKDF2 + salt riêng + định dạng versioned:
+//   `v2$<iterations>$<hex>`
+// Tương thích mềm: hash legacy vẫn verify được và tự nâng lên V2 ngay sau
+// lần đăng nhập đúng đầu tiên (không bắt cả quầy đổi PIN).
+// ---------------------------------------------------------------------------
+
+export const STAFF_KDF_ITERATIONS = 100000;
+const STAFF_KDF_KEYLEN_BYTES = 32;
+
+async function pbkdf2Hex(passcode: string, salt: string, iterations: number): Promise<string> {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(`${passcode}:${salt}`),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt: enc.encode(`formapubli-staff-v2:${salt}`),
+      iterations,
+    },
+    baseKey,
+    STAFF_KDF_KEYLEN_BYTES * 8
+  );
+  return bufferToHex(bits);
+}
+
+/** Băm V2 cho PIN mới / reset PIN (luôn dùng cho tài khoản tạo mới). */
+export async function hashStaffPasscodeV2(
+  passcode: string,
+  salt: string,
+  iterations: number = STAFF_KDF_ITERATIONS
+): Promise<string> {
+  return `v2$${iterations}$${await pbkdf2Hex(passcode, salt, iterations)}`;
+}
+
+export function isV2StaffHash(stored: string): boolean {
+  return `${stored || ''}`.startsWith('v2$');
+}
+
+/** Verify chịu cả 2 đời hash; needsUpgrade=true khi khớp legacy (gọi nâng cấp). */
+export async function verifyStaffPasscode(
+  passcode: string,
+  salt: string,
+  storedHash: string
+): Promise<{ match: boolean; needsUpgrade: boolean }> {
+  const stored = `${storedHash || ''}`;
+  if (isV2StaffHash(stored)) {
+    const parts = stored.split('$');
+    const iterations = parseInt(parts[1] || '', 10) || STAFF_KDF_ITERATIONS;
+    const expected = (parts[2] || '').toLowerCase();
+    const computed = await pbkdf2Hex(passcode, salt, iterations);
+    return { match: safeEqual(computed, expected), needsUpgrade: false };
+  }
+  const legacy = hashString(`${passcode}:${salt}`);
+  const match = safeEqual(legacy, stored.toLowerCase());
+  return { match, needsUpgrade: match };
+}
+
 /** So sánh hằng thời gian (timing-safe) cho hash passcode — Edge-safe, thuần TS. */
 export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -422,6 +488,25 @@ export async function verifySessionCookie(raw: string | null | undefined): Promi
 /** Alias recordLoginFailure đúng contract (ủy thác sang recordFailedAttempt). */
 export function recordLoginFailure(key: string): { locked: boolean; remainingAttempts: number } {
   return recordFailedAttempt(key);
+}
+
+/**
+ * Chốt danh tính actor cho nghiệp vụ ghi sổ (chống mạo danh).
+ * - strict/production: LUÔN session.actorId, bỏ qua mọi actor client gửi
+ *   (header x-formapubli-actor, body.actorId/createdBy/receivedBy/inspectedBy).
+ * - non-strict (dev/test tương thích cũ): giữ hành vi legacy — ưu tiên
+ *   candidate client gửi, fallback session.
+ */
+export function resolveActorId(
+  session: SessionPayload,
+  ...candidates: Array<string | undefined | null>
+): string {
+  if (isAuthStrict()) return session.actorId;
+  for (const c of candidates) {
+    const v = `${c || ''}`.trim();
+    if (v) return v;
+  }
+  return session.actorId;
 }
 
 // ---------------------------------------------------------------------------

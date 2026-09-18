@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RmaService } from '@/services/rma.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, resolveActorId } from '@/lib/auth-session';
 
 import { handleApiError } from '@/lib/api-response';
 
@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
     if (body.action === 'resolve') {
       const session = await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER']);
       const userRole = session.role;
-      const actorHeader = request.headers.get('x-formapubli-actor') || body.actorId || session.actorId;
+      // Chống mạo danh: strict ép session.actorId (bỏ header/body).
+      const actorHeader = resolveActorId(session, request.headers.get('x-formapubli-actor'), body.actorId);
       body.actorId = session.actorId;
 
       const { ticketId, resolutionAction, actorId, notes } = body;
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
         actorId: actorHeader,
         notes,
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'ADJUST_STOCK', actorRole: userRole, actorId: actorHeader,
         resource: '/api/rma', details: `Xử lý RMA ${ticketId}: ${resolutionAction}.`,
       });
@@ -70,7 +71,8 @@ export async function POST(request: NextRequest) {
     // Mặc định là tạo ticket mới — OWNER, MANAGER, WAREHOUSE
     const session = await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
     const userRole = session.role;
-    const actorHeader = request.headers.get('x-formapubli-actor') || body.inspectedBy || session.actorId;
+    // Chống mạo danh: strict ép session.actorId (bỏ header/body).
+    const actorHeader = resolveActorId(session, request.headers.get('x-formapubli-actor'), body.inspectedBy);
     body.inspectedBy = body.inspectedBy || session.actorId;
     const {
       warehouseId,
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
       inspectedBy: actorHeader,
       notes,
     });
-    recordAuditLog({
+    await recordAuditLog({
       action: 'ADJUST_STOCK', actorRole: userRole, actorId: actorHeader,
       resource: '/api/rma', details: `Lập RMA ${ticket.id}: ${qty} cuốn ${editionId} (${defectReason}) → ${safeTarget}.`,
     });

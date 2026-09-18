@@ -9,6 +9,10 @@ import { GET as getAccounts } from '../src/app/api/auth/accounts/route';
 import { GET as listStaff, POST as createStaff } from '../src/app/api/staff/route';
 import { PATCH as patchStaff } from '../src/app/api/staff/[staffId]/route';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
+import { db } from '../src/db';
+import { staffAccounts } from '../src/db/schema';
+import { eq } from 'drizzle-orm';
+import { hashStaffPasscode as legacyHash, resetDualRateLimit } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-login-accounts');
@@ -58,7 +62,7 @@ async function loginAs(staffId: string, passcode: string) {
 async function run() {
   console.log('👆 LOGIN CHẠM-CHỌN + QUẢN TRỊ TÀI KHOẢN (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
-  const total = 14;
+  const total = 19;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -170,6 +174,46 @@ async function run() {
   );
   const r14login = await loginAs(mgr4, '2468');
   ok('14. Manager PIN 4 số 200 + login được', r14.status === 200 && r14login.status === 200, mgr4);
+
+  // 15-17. KDF V2: hash legacy tự nâng cấp mềm sau login đúng đầu tiên.
+  const legId = uniq('LEG');
+  await db.insert(staffAccounts).values({
+    staffId: legId, fullName: 'Legacy User', role: 'ROLE_CASHIER',
+    passcodeHash: legacyHash('7777', 'salt-leg'), salt: 'salt-leg', isActive: true,
+  });
+  const r15 = await loginAs(legId, '7777');
+  const afterLeg = (await db.select().from(staffAccounts).where(eq(staffAccounts.staffId, legId)).limit(1))[0] as any;
+  ok(
+    '15. Legacy login được + hash nâng lên v2$',
+    r15.status === 200 && `${afterLeg?.passcodeHash || ''}`.startsWith('v2$')
+  );
+  const r16 = await loginAs(legId, '7777');
+  ok('16. Login lại trên hash V2 vẫn 200', r16.status === 200);
+  const r17 = await loginAs(legId, '0000');
+  ok('17. Sai PIN trên hash V2 401', r17.status === 401);
+
+  // 18. Khóa DB bền vững: 5 sai → xóa tầng memory → PIN đúng vẫn 429 (DB giữ khóa).
+  const lockId = uniq('LOCK');
+  await db.insert(staffAccounts).values({
+    staffId: lockId, fullName: 'Lock Test', role: 'ROLE_CASHIER',
+    passcodeHash: 'v2$100000$' + '0'.repeat(64), salt: 'salt-lock', isActive: true,
+  });
+  for (let i = 0; i < 5; i++) await loginAs(lockId, 'wrong');
+  resetDualRateLimit('127.0.0.1', lockId); // xóa tầng memory, tầng DB phải còn khóa
+  const r18 = await loginAs(lockId, '1234');
+  ok('18. Khóa DB sống qua reset memory (đúng PIN vẫn 429)', r18.status === 429 && r18.body?.locked === true);
+
+  // 19. Production thiếu TRUST_PROXY → fail-closed 500 (không rò chi tiết).
+  const savedNodeEnv = process.env.NODE_ENV;
+  (process.env as any).NODE_ENV = 'production';
+  let r19: any = { status: 0, body: {} };
+  try {
+    r19 = await loginAs('NV-01', '1234');
+  } finally {
+    if (savedNodeEnv === undefined) delete (process.env as any).NODE_ENV;
+    else (process.env as any).NODE_ENV = savedNodeEnv;
+  }
+  ok('19. Production thiếu TRUST_PROXY 500 fail-closed', r19.status === 500);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} LOGIN-ACCOUNTS: ${passed}/${total} ${passed === total ? 'PASS' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SettlementService } from '@/services/settlement.service';
 import { ConsignmentService } from '@/services/consignment.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, resolveActorId, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -60,14 +60,14 @@ export async function POST(req: NextRequest) {
       ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']
     );
     const userRole = session.role;
-    const actorHeader = session.actorId;
 
     const body = await req.json();
     const { action } = body;
 
     if (action === 'record') {
       const { statementId, amount, paymentMethod, reference, paidAt, receivedBy, cashboxSessionId, notes } = body;
-      const effReceivedBy = receivedBy || actorHeader;
+      // Chống mạo danh: strict ép người thu = session (bỏ receivedBy client).
+      const effReceivedBy = resolveActorId(session, receivedBy);
       if (!statementId || amount === undefined || !paymentMethod || !effReceivedBy) {
         return NextResponse.json(
           { success: false, error: 'Thiếu kỳ đối soát, số tiền, hình thức hoặc người thu.' },
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         cashboxSessionId,
         notes,
       });
-      recordAuditLog({
+      await recordAuditLog({
         action: 'SETTLEMENT_RECORD',
         actorRole: userRole,
         actorId: effReceivedBy,
@@ -102,11 +102,13 @@ export async function POST(req: NextRequest) {
       if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
         throw new AuthError(403, 'Chỉ Quản lý/Chủ được VOID phiếu thu.');
       }
-      const result = await SettlementService.voidPayment(paymentId, actorId || actorHeader, reason || '');
-      recordAuditLog({
+      // Chống mạo danh: strict ép người VOID = session (bỏ actorId client).
+      const effVoidActor = resolveActorId(session, actorId);
+      const result = await SettlementService.voidPayment(paymentId, effVoidActor, reason || '');
+      await recordAuditLog({
         action: 'SETTLEMENT_VOID',
         actorRole: userRole,
-        actorId: actorId || actorHeader,
+        actorId: effVoidActor,
         resource: '/api/settlements',
         details: `VOID phiếu ${paymentId}: ${reason} (kỳ ${result.statementId} còn nợ ${result.remaining.toLocaleString('vi-VN')} đ).`,
       });

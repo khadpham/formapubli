@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
     // Ghi vết nhật ký nếu truy cập dữ liệu nội bộ
     if (safeFiscalScope !== 'OFFICIAL_TAX') {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'VIEW_FISCAL_MANAGEMENT',
         actorRole: userRole,
         actorId: actorHeader,
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       const result = body.action === 'CONFIRM'
         ? await OrderService.confirmOrder(body.orderId, userRole, actorHeader)
         : await OrderService.cancelOrder(body.orderId, userRole, body.reason);
-      recordAuditLog({
+      await recordAuditLog({
         action: body.action === 'CONFIRM' ? 'ORDER_CONFIRMED' : 'ORDER_CANCELLED',
         actorRole: userRole,
         actorId: actorHeader,
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được dọn đơn hết hạn.' }, { status: 403 });
       }
       const cleaned = await OrderService.cleanupExpiredPending();
-      recordAuditLog({
+      await recordAuditLog({
         action: 'ORDER_CANCELLED', actorRole: userRole, actorId: actorHeader,
         resource: '/api/orders', details: `Dọn ${cleaned} đơn PENDING quá hạn giữ chỗ.`,
       });
@@ -241,8 +241,8 @@ export async function POST(req: NextRequest) {
 
     if (exceedsHardCap && !isPrivilegedRole) {
       const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-      if (!isValidManagerPin(providedPin)) {
-        recordAuditLog({
+      if (!(await isValidManagerPin(providedPin))) {
+        await recordAuditLog({
           action: 'MANAGER_DISCOUNT_DENIED',
           actorRole: userRole,
           actorId: cashierId || userRole,
@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
       const ts = new Date(createdAt).getTime();
       if (!Number.isNaN(ts) && Date.now() - ts > 7 * 86400000 && !isPrivilegedRole) {
         const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-        if (!isValidManagerPin(providedPin)) {
+        if (!(await isValidManagerPin(providedPin))) {
           return NextResponse.json(
             { success: false, code: 'FORBIDDEN', error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
             { status: 403 }
@@ -315,7 +315,7 @@ export async function POST(req: NextRequest) {
         : undefined,
     });
 
-    recordAuditLog({
+    await recordAuditLog({
       action: 'MUTATE_ORDER',
       actorRole: userRole,
       actorId: actorHeader,
@@ -325,7 +325,7 @@ export async function POST(req: NextRequest) {
 
     // Ghi vết phê duyệt chiết khấu vượt trần (tuyệt đối không lưu mã PIN).
     if (exceedsHardCap) {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MANAGER_DISCOUNT_APPROVED',
         actorRole: userRole,
         actorId: actorHeader,
@@ -337,7 +337,7 @@ export async function POST(req: NextRequest) {
     // BV-03: vết kiểm toán riêng cho đơn quà tặng (doanh thu 0đ, vẫn trừ kho).
     // Tái dùng MANAGER_DISCOUNT_APPROVED để không phình enum audit (giữ nguyên rbac-guard).
     if (giftFlag) {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'MANAGER_DISCOUNT_APPROVED',
         actorRole: userRole,
         actorId: actorHeader,
