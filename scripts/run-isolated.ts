@@ -63,26 +63,6 @@ function suiteShortName(p: string): string {
   return path.basename(p, '.ts');
 }
 
-/** Xóa khóa brute-force DB giữa các suite: mỗi suite = tiến trình mới (như
- *  Map memory trước đây) — khóa bền vững chỉ có ý nghĩa TRONG một suite. */
-async function clearLoginBuckets(dbUrl: string): Promise<void> {
-  try {
-    const { createClient } = await import('@libsql/client');
-    const c = createClient({ url: dbUrl });
-    try {
-      await c.execute('DELETE FROM login_attempt_buckets');
-    } catch {
-      // Bảng chưa có (DB cũ) → bỏ qua.
-    }
-    // BẮT BUỘC await close: libsql giải phóng handle file bất đồng bộ; không
-    // await thì tiến trình con (spawnSync ngay sau) gặp EBUSY khi xóa DB trên
-    // Windows và migrate chồng lên file cũ ("table already exists").
-    await (c.close() as unknown as Promise<void>);
-  } catch {
-    // Không chặn suite vì dọn khóa thất bại.
-  }
-}
-
 function statOrNull(p: string) {
   try {
     const s = fs.statSync(p);
@@ -132,10 +112,13 @@ async function main() {
     const isWin = process.platform === 'win32';
     const command = isWin ? 'cmd.exe' : 'npx';
     const cmdArgs = isWin ? ['/c', 'npx', 'tsx', suite] : ['tsx', suite];
+    // LƯU Ý Windows: runner TUYỆT ĐỐI không mở file DB của suite (kể cả chỉ
+    // DELETE): handle libsql không nhả ngay cả sau close() → suite con gặp
+    // EBUSY khi xóa DB và migrate chồng lên file cũ. Mọi dọn dẹp phải nằm
+    // trong chính suite (xem resetDbDualLimit ở test-phase0-laneA).
     const suiteDb = suite.includes('test-cp3-reconciliation')
       ? 'file:formapubli_test_cp3_REC4.db'
       : `file:${TEST_DB_FILE}`;
-    await clearLoginBuckets(suiteDb);
     const res = spawnSync(command, cmdArgs, {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: suiteDb },
