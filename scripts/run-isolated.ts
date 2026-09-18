@@ -63,6 +63,23 @@ function suiteShortName(p: string): string {
   return path.basename(p, '.ts');
 }
 
+/** Xóa khóa brute-force DB giữa các suite: mỗi suite = tiến trình mới (như
+ *  Map memory trước đây) — khóa bền vững chỉ có ý nghĩa TRONG một suite. */
+async function clearLoginBuckets(dbUrl: string): Promise<void> {
+  try {
+    const { createClient } = await import('@libsql/client');
+    const c = createClient({ url: dbUrl });
+    try {
+      await c.execute('DELETE FROM login_attempt_buckets');
+    } catch {
+      // Bảng chưa có (DB cũ) → bỏ qua.
+    }
+    c.close();
+  } catch {
+    // Không chặn suite vì dọn khóa thất bại.
+  }
+}
+
 function statOrNull(p: string) {
   try {
     const s = fs.statSync(p);
@@ -115,6 +132,7 @@ async function main() {
     const suiteDb = suite.includes('test-cp3-reconciliation')
       ? 'file:formapubli_test_cp3_REC4.db'
       : `file:${TEST_DB_FILE}`;
+    await clearLoginBuckets(suiteDb);
     const res = spawnSync(command, cmdArgs, {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: suiteDb },

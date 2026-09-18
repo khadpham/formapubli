@@ -104,11 +104,11 @@ async function probeFresh() {
   for (const i of ['idx_transfer_ship_idempotency', 'idx_transfer_actions_idempotency', 'idx_return_actions_idempotency', 'idx_exchange_rep_unique']) {
     ok(`M-FRESH index ${i} ton tai`, idx.includes(i), `have=${idx.filter((x) => x.includes('idempot') || x.includes('exchange_rep')).join(',')}`);
   }
-  // Journal lien tuc 0000..0016 (khong dung generate de kiem: doc truc tiep metadata)
+  // Journal lien tuc 0000..0017 (khong dung generate de kiem: doc truc tiep metadata)
   const journal = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'src/db/migrations/meta/_journal.json'), 'utf-8'));
   const idxs = [...journal.entries].map((e: any) => e.idx).sort((a: number, b: number) => a - b);
-  ok('M-FRESH journal lien tuc 0..16',
-    idxs.length === 17 && idxs.every((v: number, i: number) => v === i), JSON.stringify(idxs));
+  ok('M-FRESH journal lien tuc 0..17',
+    idxs.length === 18 && idxs.every((v: number, i: number) => v === i), JSON.stringify(idxs));
 }
 
 // ------------------------------------------------- 2. Upgrade 0015 -> 0016 ---

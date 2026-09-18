@@ -119,6 +119,13 @@
       "when": 1789468000000,
       "tag": "0016_cp3_transfer_return_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789706000000,
+      "tag": "0017_login_attempt_buckets",
+      "breakpoints": true
     }
   ],
   "version": "7"
