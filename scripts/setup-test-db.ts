@@ -26,7 +26,7 @@ import {
 } from '../src/db/schema';
 import {
   DEFAULT_STAFF_ACCOUNTS,
-  hashStaffPasscode,
+  hashStaffPasscodeV2,
 } from '../src/lib/auth-session';
 
 
@@ -218,7 +218,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
 
   // 7. Seed tài khoản nhân viên chuẩn hóa (staff_accounts - Đợt 0)
   for (const staff of DEFAULT_STAFF_ACCOUNTS) {
-    const passcodeHash = hashStaffPasscode(staff.passcode, staff.salt);
+    const passcodeHash = await hashStaffPasscodeV2(staff.passcode, staff.salt);
     await testDb.insert(staffAccounts).values({
       staffId: staff.staffId,
       fullName: staff.fullName,

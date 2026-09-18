@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     if (action === 'REQUEST') {
       // Cashier quá hạn window: bắt buộc PIN quản lý (pattern hard-cap discount)
       const providedPin = `${body.managerPin ?? ''}`;
-      const bypassWindow = isPrivileged(userRole) || (providedPin !== '' && isValidManagerPin(providedPin));
+      const bypassWindow = isPrivileged(userRole) || (providedPin !== '' && (await isValidManagerPin(providedPin)));
       if (!isPrivileged(userRole) && body.expectWindowOverride && !bypassWindow) {
         recordAuditLog({
           action: 'RETURN_REQUESTED', actorRole: userRole, actorId: actorHeader,

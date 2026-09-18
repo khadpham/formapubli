@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, staffAccounts } from '@/db';
 import { eq } from 'drizzle-orm';
-import { requireSessionRole, hashStaffPasscode } from '@/lib/auth-session';
+import { requireSessionRole, hashStaffPasscodeV2 } from '@/lib/auth-session';
 import { UserRole } from '@/lib/roles';
 import { AppError } from '@/services/app-error';
 import { recordAuditLog } from '@/lib/rbac-guard';
@@ -80,7 +80,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
       if (raw.trim().length < 4 || raw.length > 64) throw AppError.invalid('Passcode 4-64 ký tự.');
       const salt = crypto.randomUUID();
       patch.salt = salt;
-      patch.passcodeHash = hashStaffPasscode(raw, salt);
+      patch.passcodeHash = await hashStaffPasscodeV2(raw, salt);
       notes.push('reset passcode');
     }
 

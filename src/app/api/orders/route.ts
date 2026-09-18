@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
 
     if (exceedsHardCap && !isPrivilegedRole) {
       const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-      if (!isValidManagerPin(providedPin)) {
+      if (!(await isValidManagerPin(providedPin))) {
         recordAuditLog({
           action: 'MANAGER_DISCOUNT_DENIED',
           actorRole: userRole,
@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
       const ts = new Date(createdAt).getTime();
       if (!Number.isNaN(ts) && Date.now() - ts > 7 * 86400000 && !isPrivilegedRole) {
         const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-        if (!isValidManagerPin(providedPin)) {
+        if (!(await isValidManagerPin(providedPin))) {
           return NextResponse.json(
             { success: false, code: 'FORBIDDEN', error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
             { status: 403 }

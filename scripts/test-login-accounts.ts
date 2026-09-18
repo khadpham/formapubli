@@ -9,6 +9,10 @@ import { GET as getAccounts } from '../src/app/api/auth/accounts/route';
 import { GET as listStaff, POST as createStaff } from '../src/app/api/staff/route';
 import { PATCH as patchStaff } from '../src/app/api/staff/[staffId]/route';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
+import { db } from '../src/db';
+import { staffAccounts } from '../src/db/schema';
+import { eq } from 'drizzle-orm';
+import { hashStaffPasscode as legacyHash } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-login-accounts');
@@ -58,7 +62,7 @@ async function loginAs(staffId: string, passcode: string) {
 async function run() {
   console.log('👆 LOGIN CHẠM-CHỌN + QUẢN TRỊ TÀI KHOẢN (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
-  const total = 14;
+  const total = 17;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -170,6 +174,23 @@ async function run() {
   );
   const r14login = await loginAs(mgr4, '2468');
   ok('14. Manager PIN 4 số 200 + login được', r14.status === 200 && r14login.status === 200, mgr4);
+
+  // 15-17. KDF V2: hash legacy tự nâng cấp mềm sau login đúng đầu tiên.
+  const legId = uniq('LEG');
+  await db.insert(staffAccounts).values({
+    staffId: legId, fullName: 'Legacy User', role: 'ROLE_CASHIER',
+    passcodeHash: legacyHash('7777', 'salt-leg'), salt: 'salt-leg', isActive: true,
+  });
+  const r15 = await loginAs(legId, '7777');
+  const afterLeg = (await db.select().from(staffAccounts).where(eq(staffAccounts.staffId, legId)).limit(1))[0] as any;
+  ok(
+    '15. Legacy login được + hash nâng lên v2$',
+    r15.status === 200 && `${afterLeg?.passcodeHash || ''}`.startsWith('v2$')
+  );
+  const r16 = await loginAs(legId, '7777');
+  ok('16. Login lại trên hash V2 vẫn 200', r16.status === 200);
+  const r17 = await loginAs(legId, '0000');
+  ok('17. Sai PIN trên hash V2 401', r17.status === 401);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} LOGIN-ACCOUNTS: ${passed}/${total} ${passed === total ? 'PASS' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);

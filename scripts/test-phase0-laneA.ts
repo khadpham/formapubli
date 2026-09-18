@@ -12,7 +12,6 @@ import {
   checkDualRateLimit,
   recordDualFailedAttempt,
   resetDualRateLimit,
-  hashStaffPasscode,
   safeEqual,
 } from '../src/lib/auth-session';
 import { POST as postLogin } from '../src/app/api/auth/login/route';

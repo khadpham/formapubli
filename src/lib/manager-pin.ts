@@ -13,6 +13,49 @@ import { hashString } from './export-hash';
 const DEFAULT_SALT = 'formapubli-pin-salt-2026';
 const LEGACY_DEFAULT_PINS = ['9999', '1234', '8888'];
 
+// KDF V2 cho PIN quản lý (PBKDF2-SHA256 native, Edge-safe):
+//   `mpv2$<iterations>$<hex>` — verify chịu cả hash legacy `sha256(pin+salt)`.
+const MP_KDF_ITERATIONS = 100000;
+
+function bufferToHexLocal(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+  return hex;
+}
+
+async function pbkdf2PinHex(pin: string, salt: string, iterations: number): Promise<string> {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(`formapubli-mgrpin-v2:${salt}`), iterations },
+    baseKey,
+    256
+  );
+  return bufferToHexLocal(bits);
+}
+
+export async function hashPinV2(pin: string, salt?: string, iterations: number = MP_KDF_ITERATIONS): Promise<string> {
+  const s = salt || getPinSalt();
+  return `mpv2$${iterations}$${await pbkdf2PinHex(pin, s, iterations)}`;
+}
+
+async function matchesWhitelist(clean: string, hashes: string[]): Promise<boolean> {
+  for (const h of hashes) {
+    const norm = `${h}`.trim().toLowerCase();
+    if (norm.startsWith('mpv2$')) {
+      const parts = norm.split('$');
+      const iterations = parseInt(parts[1] || '', 10) || MP_KDF_ITERATIONS;
+      const expected = parts[2] || '';
+      const computed = await pbkdf2PinHex(clean, getPinSalt(), iterations);
+      if (computed === expected) return true;
+    } else if (hashPin(clean) === norm) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getPinSalt(): string {
   return process.env.MANAGER_PIN_SALT || DEFAULT_SALT;
 }
@@ -34,7 +77,7 @@ function getWhitelistHashes(): { hashes: string[]; usingFallback: boolean } {
   return { hashes: LEGACY_DEFAULT_PINS.map((p) => hashPin(p)), usingFallback: true };
 }
 
-export function isValidManagerPin(pin: string | null | undefined): boolean {
+export async function isValidManagerPin(pin: string | null | undefined): Promise<boolean> {
   if (pin === null || pin === undefined) return false;
   const clean = `${pin}`.trim();
   if (!clean) return false;
@@ -44,10 +87,10 @@ export function isValidManagerPin(pin: string | null | undefined): boolean {
       '[manager-pin] MANAGER_PIN_HASHES chưa set — dùng PIN mặc định dev. Production bắt buộc set env!'
     );
   }
-  return hashes.includes(hashPin(clean));
+  return matchesWhitelist(clean, hashes);
 }
 
-/** Sinh hash để bỏ vào env (chạy 1 lần khi cấp PIN mới, không commit PIN). */
-export function hashPinForEnv(pin: string, salt?: string): string {
-  return hashString(`${pin}${salt || getPinSalt()}`);
+/** Sinh hash V2 để bỏ vào env (chạy 1 lần khi cấp PIN mới, không commit PIN). */
+export async function hashPinForEnv(pin: string, salt?: string): Promise<string> {
+  return hashPinV2(pin, salt);
 }

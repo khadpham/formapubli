@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   signSession,
   verifyRolePasscode,
-  hashStaffPasscode,
-  safeEqual,
+  verifyStaffPasscode,
+  hashStaffPasscodeV2,
   checkDualRateLimit,
   recordDualFailedAttempt,
   resetDualRateLimit,
@@ -94,9 +94,24 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 2.2. Kiểm tra Passcode băm với Salt riêng của tài khoản (Timing-Safe)
-      const computedHash = hashStaffPasscode(passcode, staffRow.salt);
-      const isMatch = safeEqual(computedHash, staffRow.passcodeHash.toLowerCase());
+      // 2.2. Kiểm tra Passcode: chịu cả hash legacy (SHA-256 1 vòng) và V2
+      // (PBKDF2). Khớp legacy → tự nâng lên V2 ngay (migrate mềm, không làm
+      // gián đoạn ca làm việc; nâng cấp thất bại cũng không chặn đăng nhập).
+      const { match: isMatch, needsUpgrade } = await verifyStaffPasscode(
+        passcode,
+        staffRow.salt,
+        staffRow.passcodeHash
+      );
+      if (needsUpgrade) {
+        try {
+          await db
+            .update(staffAccounts)
+            .set({ passcodeHash: await hashStaffPasscodeV2(passcode, staffRow.salt) })
+            .where(eq(staffAccounts.staffId, staffRow.staffId));
+        } catch {
+          // Best-effort: login vẫn tiếp tục.
+        }
+      }
 
       if (!isMatch) {
         const attemptRes = recordDualFailedAttempt(ip, staffIdInput);
