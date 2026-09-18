@@ -15,6 +15,7 @@ import { POST as postSettlements } from '../src/app/api/settlements/route';
 import { POST as postRma } from '../src/app/api/rma/route';
 import { POST as postRoyalties } from '../src/app/api/royalties/route';
 import { POST as postConsignments } from '../src/app/api/consignments/route';
+import { GET as getCashbox, POST as postCashbox } from '../src/app/api/cashbox/route';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
 import { assertIsolatedTestDb } from './test-guard';
 
@@ -49,7 +50,7 @@ async function loginAs(staffId: string, passcode: string) {
 async function run() {
   console.log('🛡️ CHỐNG MẠO DANH ACTOR (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
-  const total = 5;
+  const total = 8;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -192,6 +193,55 @@ async function run() {
     '5. record-sale spoof: đơn qua + audit ép về NV-01',
     r5.status === 200 && lastActor === 'NV-01',
     `audit.actor=${lastActor}`
+  );
+
+  // 6. CASHIER mở két đứng tên 'mallory' → két ép về NV-01.
+  const r6: any = await post(
+    postCashbox,
+    { action: 'OPEN', warehouseId: 'wh-au-co', cashierId: 'mallory', openingCash: 500000 },
+    cashierCk
+  );
+  ok(
+    '6. OPEN két mạo tên bị ép về NV-01',
+    r6.status === 200 && r6.body?.data?.cashierId === 'NV-01',
+    `cashierId=${r6.body?.data?.cashierId}`
+  );
+
+  // 7. CASHIER ngó két QL-01 (?cashierId=QL-01) → chỉ thấy của mình.
+  const r7q: any = await (async () => {
+    const req = new Request('http://localhost/x?cashierId=QL-01', { headers: cashierCk });
+    const res: any = await (getCashbox as any)(req);
+    return { status: res.status, body: await res.json() };
+  })();
+  const seenId = `${r7q.body?.data?.cashierId || ''}`;
+  ok(
+    '7. CASHIER ngó két người khác bị ép về mình',
+    r7q.status === 200 && seenId !== 'QL-01',
+    `thấy cashierId=${seenId || '(trống)'}`
+  );
+
+  // 8. CASHIER chốt két người khác → 403, két vẫn OPEN; Manager chốt hộ được.
+  const rVictim: any = await post(
+    postCashbox,
+    { action: 'OPEN', warehouseId: 'wh-au-co', cashierId: 'victim-01', openingCash: 100000 },
+    managerCk
+  );
+  const victimId = rVictim.body?.data?.id;
+  const r8: any = await post(
+    postCashbox,
+    { action: 'CLOSE', sessionId: victimId, closingCashActual: 100000 },
+    cashierCk
+  );
+  const stillOpen = await (await import('../src/services/order.service')).CashboxService.getActiveSession('victim-01');
+  const r8mgr: any = await post(
+    postCashbox,
+    { action: 'CLOSE', sessionId: victimId, closingCashActual: 100000 },
+    managerCk
+  );
+  ok(
+    '8. Chốt két người khác 403 + két còn OPEN, Manager chốt được',
+    r8.status === 403 && !!stillOpen && r8mgr.status === 200,
+    `cashier=${r8.status}, manager=${r8mgr.status}`
   );
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} ACTOR-BINDING: ${passed}/${total} ${passed === total ? 'PASS' : 'CÓ FAIL'}`);

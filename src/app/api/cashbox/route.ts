@@ -8,10 +8,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
 
     const { searchParams } = new URL(req.url);
-    const cashierId = searchParams.get('cashierId');
+    // Chống nhìn/chạm két người khác: CASHIER luôn bị ép về chính mình.
+    const cashierId =
+      session.role === 'ROLE_CASHIER' ? session.actorId : searchParams.get('cashierId');
 
     if (cashierId) {
       // Lấy phiên két tiền hiện đang mở của thu ngân
@@ -22,11 +24,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Liệt kê danh sách các phiên cho quản lý
+    // Liệt kê danh sách các phiên cho quản lý (CASHIER chỉ thấy của mình).
     const warehouseId = searchParams.get('warehouseId') || undefined;
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : 50;
 
-    const sessions = await CashboxService.listSessions({ warehouseId, limit });
+    const sessions = await CashboxService.listSessions({
+      cashierId: session.role === 'ROLE_CASHIER' ? session.actorId : undefined,
+      warehouseId,
+      limit,
+    });
     return NextResponse.json({
       success: true,
       data: sessions,
@@ -43,7 +49,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action, warehouseId, cashierId, openingCash, sessionId, closingCashActual, notes } = body;
     const userRole = session.role;
-    const effCashierId = cashierId || session.actorId;
+    // Chống mở két đứng tên người khác: CASHIER luôn bị ép về chính mình.
+    const effCashierId = userRole === 'ROLE_CASHIER' ? session.actorId : cashierId || session.actorId;
 
     if (action === 'OPEN') {
       if (!warehouseId || !effCashierId) {
@@ -81,6 +88,17 @@ export async function POST(req: NextRequest) {
           { success: false, error: 'Thiếu mã phiên (sessionId) hoặc số tiền thực đếm (closingCashActual).' },
           { status: 400 }
         );
+      }
+
+      // Chống chốt két người khác: CASHIER chỉ được chốt đúng phiên OPEN của mình.
+      if (userRole === 'ROLE_CASHIER') {
+        const mine = await CashboxService.getActiveSession(session.actorId);
+        if (!mine || mine.id !== sessionId) {
+          return NextResponse.json(
+            { success: false, code: 'FORBIDDEN', error: 'Bạn chỉ được chốt két ca của chính mình.' },
+            { status: 403 }
+          );
+        }
       }
 
       const result = await CashboxService.closeSession({
