@@ -76,11 +76,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
 
     if (body.passcode !== undefined && `${body.passcode || ''}`.trim() !== '') {
       const raw = `${body.passcode}`;
-      const effectiveRole = (patch.role || target.role) as UserRole;
+      // Chính sách quầy siêu tốc: mọi role PIN từ 4 ký tự (xem staff/route.ts).
       if (raw.trim().length < 4 || raw.length > 64) throw AppError.invalid('Passcode 4-64 ký tự.');
-      if (PRIVILEGED_ROLES.includes(effectiveRole) && raw.trim().length < 6) {
-        throw AppError.invalid('OWNER/MANAGER bắt buộc passcode tối thiểu 6 ký tự.');
-      }
       const salt = crypto.randomUUID();
       patch.salt = salt;
       patch.passcodeHash = hashStaffPasscode(raw, salt);

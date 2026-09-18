@@ -25,11 +25,12 @@ function validateStaffId(raw: unknown): string {
 
 function validatePasscodeForRole(role: UserRole, raw: unknown): string {
   const v = `${raw || ''}`;
+  // Chính sách quầy siêu tốc (theo lệnh chủ dự án): mọi role PIN từ 4 ký tự.
+  // Lưu ý an ninh: PIN ngắn + SHA-256 nhanh → phải đổi PIN ngay nếu lộ DB;
+  // chống đoán mò online vẫn do rate-limit 5 sai/15 phút đảm nhiệm.
+  void role;
   if (!v || v.trim().length < 4 || v.length > 64) {
     throw AppError.invalid('Passcode 4-64 ký tự.');
-  }
-  if (PRIVILEGED_ROLES.includes(role) && v.trim().length < 6) {
-    throw AppError.invalid('OWNER/MANAGER bắt buộc passcode tối thiểu 6 ký tự.');
   }
   return v;
 }

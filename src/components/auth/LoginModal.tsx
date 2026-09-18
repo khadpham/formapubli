@@ -212,7 +212,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
               <span>
                 Mã PIN{selected ? ` — ${selected.fullName}` : ''}
               </span>
-              <span className="text-[10px] text-slate-400 font-normal">4-6 số quầy, ≥6 ký tự Owner/Manager</span>
+              <span className="text-[10px] text-slate-400 font-normal">PIN 4+ ký tự mọi vai trò</span>
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

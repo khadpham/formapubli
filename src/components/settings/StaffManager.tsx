@@ -151,7 +151,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
           type="password"
           value={form.passcode}
           onChange={(e) => setForm({ ...form, passcode: e.target.value })}
-          placeholder="PIN (≥4, Owner/Mgr ≥6)"
+          placeholder="PIN (≥4 ký tự)"
           autoComplete="new-password"
           className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
         />
