@@ -5,7 +5,9 @@
 > (không ghi hash vì hash thay đổi mỗi lần sửa manual; xem `git log` để biết tip hiện tại).
 > **Ngày phát hành:** 18/09/2026.
 > **Nguyên tắc:** Email báo cáo tháng (5.5) vẫn TẮT — không test mail ở vòng này.
-> **Máy test LAN:** `http://192.168.1.246:3000` (cùng mạng 192.168.1.x).
+> **Máy test LAN:** `http://<IP-may-tinh>:3000` (cùng mạng wifi/LAN).
+> IP hiện tại (18/09): `http://192.168.1.4:3000` — IP do DHCP cấp, **đổi mạng là đổi IP**:
+> kiểm tra lại bằng `ipconfig` (dòng `IPv4 Address`) rồi thay vào link.
 
 ---
 
