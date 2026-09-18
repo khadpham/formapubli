@@ -265,6 +265,7 @@ export function MasterAppShell({
           {currentTab === 'settings' && (
             <SettingsRbacView
               currentRole={currentRole}
+              sessionRole={session?.role}
               onRoleChange={setCurrentRole}
             />
           )}

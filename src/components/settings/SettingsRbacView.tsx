@@ -21,13 +21,15 @@ import {
   Save,
 } from 'lucide-react';
 import { USER_ROLES, UserRole } from '@/lib/roles';
+import { StaffManager } from './StaffManager';
 
 interface SettingsRbacViewProps {
   currentRole: UserRole;
+  sessionRole?: UserRole;
   onRoleChange: (role: UserRole) => void;
 }
 
-export function SettingsRbacView({ currentRole, onRoleChange }: SettingsRbacViewProps) {
+export function SettingsRbacView({ currentRole, sessionRole, onRoleChange }: SettingsRbacViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<'roles' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>('roles');
 
   // Cấu hình lưu trữ cục bộ (Settings State)
@@ -332,6 +334,11 @@ export function SettingsRbacView({ currentRole, onRoleChange }: SettingsRbacView
               })}
             </div>
           </div>
+
+          {/* Quản trị tài khoản ca — chỉ session thật OWNER/MANAGER (không theo preview mô phỏng) */}
+          {(sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER') && (
+            <StaffManager canManagePrivileged={sessionRole === 'ROLE_OWNER'} />
+          )}
         </div>
       )}
 

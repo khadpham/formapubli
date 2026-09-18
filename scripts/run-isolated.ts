@@ -54,6 +54,8 @@ const ALL_SUITES = [
   'scripts/test-voice-order.ts',
   'scripts/test-monthly-digest.ts',
   'scripts/test-reader-persona.ts',
+  'scripts/test-login-accounts.ts',
+  'scripts/drill-go-live.ts',
 ];
 
 function suiteShortName(p: string): string {
