@@ -424,6 +424,25 @@ export function recordLoginFailure(key: string): { locked: boolean; remainingAtt
   return recordFailedAttempt(key);
 }
 
+/**
+ * Chốt danh tính actor cho nghiệp vụ ghi sổ (chống mạo danh).
+ * - strict/production: LUÔN session.actorId, bỏ qua mọi actor client gửi
+ *   (header x-formapubli-actor, body.actorId/createdBy/receivedBy/inspectedBy).
+ * - non-strict (dev/test tương thích cũ): giữ hành vi legacy — ưu tiên
+ *   candidate client gửi, fallback session.
+ */
+export function resolveActorId(
+  session: SessionPayload,
+  ...candidates: Array<string | undefined | null>
+): string {
+  if (isAuthStrict()) return session.actorId;
+  for (const c of candidates) {
+    const v = `${c || ''}`.trim();
+    if (v) return v;
+  }
+  return session.actorId;
+}
+
 // ---------------------------------------------------------------------------
 // BƯỚC 3 — ĐỌC SESSION TỪ REQUEST (async, dùng chung mọi route).
 // Đọc header Cookie thô nên chạy được cả NextRequest runtime lẫn Request

@@ -55,6 +55,7 @@ const ALL_SUITES = [
   'scripts/test-monthly-digest.ts',
   'scripts/test-reader-persona.ts',
   'scripts/test-login-accounts.ts',
+  'scripts/test-actor-binding.ts',
   'scripts/drill-go-live.ts',
 ];
 

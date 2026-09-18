@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConsignmentService } from '@/services/consignment.service';
 import { extractUserRole, enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, resolveActorId, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -182,13 +182,15 @@ export async function POST(req: NextRequest) {
             ? parseFloat(discountOverride)
             : undefined,
         fiscalScope: fiscalScope || 'INTERNAL_MANAGEMENT',
-        createdBy: createdBy || actorHeader,
+        // Chống mạo danh: strict ép người mở kỳ = session (bỏ createdBy client).
+        createdBy: resolveActorId(session, createdBy),
         notes,
       });
+      const effCreatedBy = resolveActorId(session, createdBy);
       recordAuditLog({
         action: 'CONSIGNMENT_STATEMENT',
         actorRole: userRole,
-        actorId: createdBy || actorHeader,
+        actorId: effCreatedBy,
         resource: '/api/consignments',
         details: `Mở kỳ đối soát ${result.statementId} cho ${partnerId} (${periodStart} -> ${periodEnd}).`,
       });
@@ -207,12 +209,14 @@ export async function POST(req: NextRequest) {
         statementId,
         editionId,
         quantity: toQty(quantity),
-        actorId: actorId || actorHeader,
+        // Chống mạo danh: strict ép session (bỏ actorId client).
+        actorId: resolveActorId(session, actorId),
       });
+      const effSaleActor = resolveActorId(session, actorId);
       recordAuditLog({
         action: 'CONSIGNMENT_SALE',
         actorRole: userRole,
-        actorId: actorId || actorHeader,
+        actorId: effSaleActor,
         resource: '/api/consignments',
         details: `Đại lý báo bán ${quantity} cuốn ${editionId} (kỳ ${statementId}).`,
       });
@@ -233,13 +237,15 @@ export async function POST(req: NextRequest) {
         editionId,
         newQty: toQty(newQty ?? 0),
         damagedQty: toQty(damagedQty ?? 0),
-        actorId: actorId || actorHeader,
+        // Chống mạo danh: strict ép session (bỏ actorId client).
+        actorId: resolveActorId(session, actorId),
         notes,
       });
+      const effReturnActor = resolveActorId(session, actorId);
       recordAuditLog({
         action: 'CONSIGNMENT_RETURN',
         actorRole: userRole,
-        actorId: actorId || actorHeader,
+        actorId: effReturnActor,
         resource: '/api/consignments',
         details: `Thu hồi ${editionId} từ quầy về ${toWarehouseId} (kỳ ${statementId}).`,
       });
@@ -251,11 +257,13 @@ export async function POST(req: NextRequest) {
       if (!statementId) {
         return NextResponse.json({ success: false, error: 'Thiếu kỳ đối soát (statementId).' }, { status: 400 });
       }
-      const result = await ConsignmentService.confirm(statementId, actorId || actorHeader);
+      // Chống mạo danh: strict ép người chốt = session (bỏ actorId client).
+      const effConfirmActor = resolveActorId(session, actorId);
+      const result = await ConsignmentService.confirm(statementId, effConfirmActor);
       recordAuditLog({
         action: 'CONSIGNMENT_STATEMENT',
         actorRole: userRole,
-        actorId: actorId || actorHeader,
+        actorId: effConfirmActor,
         resource: '/api/consignments',
         details: `Chốt kỳ đối soát ${statementId}: AR ${result.totalReceivable.toLocaleString('vi-VN')} đ.`,
       });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RoyaltyService } from '@/services/royalty.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, resolveActorId } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -46,7 +46,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     const userRole = session.role;
-    const actorHeader = session.actorId;
 
     if (action === 'create') {
       const {
@@ -69,13 +68,15 @@ export async function POST(req: NextRequest) {
         advanceAmount: advanceAmount !== undefined ? parseFloat(advanceAmount) : 0,
         effectiveDate,
         expirationDate,
-        createdBy: createdBy || actorHeader,
+        // Chống mạo danh: strict ép người ký = session (bỏ createdBy client).
+        createdBy: resolveActorId(session, createdBy),
         notes,
       });
+      const effCreatedBy = resolveActorId(session, createdBy);
       recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
-        actorId: createdBy || actorHeader,
+        actorId: effCreatedBy,
         resource: '/api/royalties',
         details: `Ký hợp đồng bản quyền ${contractNumber} (quota ${printQuota}, rate ${royaltyRate}).`,
       });
@@ -87,11 +88,13 @@ export async function POST(req: NextRequest) {
       if (!contractId) {
         return NextResponse.json({ success: false, error: 'Thiếu mã hợp đồng (contractId).' }, { status: 400 });
       }
-      const result = await RoyaltyService.terminateContract(contractId, actorId || actorHeader, reason || '');
+      // Chống mạo danh: strict ép người chấm dứt = session (bỏ actorId client).
+      const effTerminateActor = resolveActorId(session, actorId);
+      const result = await RoyaltyService.terminateContract(contractId, effTerminateActor, reason || '');
       recordAuditLog({
         action: 'MUTATE_ORDER',
         actorRole: userRole,
-        actorId: actorId || actorHeader,
+        actorId: effTerminateActor,
         resource: '/api/royalties',
         details: `Chấm dứt hợp đồng ${contractId}: ${reason}.`,
       });
