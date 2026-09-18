@@ -1,7 +1,8 @@
 # formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v1)
 
 > **Phạm vi:** bản mẫu giao team test vòng 1 — chỉ tính năng then chốt quầy + kho.
-> **Commit:** `9f644fc` (gồm merge `feat/login-account-picker` + manual này) trên nhánh `main`.
+> **Phiên bản:** Manual v1 — nhánh `main`, sau merge `feat/login-account-picker`
+> (không ghi hash vì hash thay đổi mỗi lần sửa manual; xem `git log` để biết tip hiện tại).
 > **Ngày phát hành:** 18/09/2026.
 > **Nguyên tắc:** Email báo cáo tháng (5.5) đã TẮT theo yêu cầu — không test mail ở vòng này.
 
