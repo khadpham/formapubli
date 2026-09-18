@@ -58,7 +58,7 @@ async function loginAs(staffId: string, passcode: string) {
 async function run() {
   console.log('👆 LOGIN CHẠM-CHỌN + QUẢN TRỊ TÀI KHOẢN (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
-  const total = 12;
+  const total = 13;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -153,7 +153,13 @@ async function run() {
     { staffId: 'NV-01', fullName: 'Trùng', role: 'ROLE_CASHIER', passcode: '1111' },
     ownerCk
   );
+  // 12. Trùng mã → 409.
+  // (assert ở trên, giữ nguyên)
   ok('12. Trùng mã 409', r12.status === 409);
+
+  // 13. staffId malformed (%ZZ) → 400, không 500 (hồi quy decodeURIComponent).
+  const r13: any = await patch('%ZZ', { fullName: 'X' }, ownerCk);
+  ok('13. staffId malformed 400 (không 500)', r13.status === 400);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} LOGIN-ACCOUNTS: ${passed}/${total} ${passed === total ? 'PASS' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);

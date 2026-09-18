@@ -19,7 +19,12 @@ const VALID_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', '
 export async function PATCH(req: NextRequest, { params }: { params: { staffId: string } }) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
-    const targetId = decodeURIComponent(params.staffId || '').trim();
+    let targetId: string;
+    try {
+      targetId = decodeURIComponent(params.staffId || '').trim();
+    } catch {
+      throw AppError.invalid('Mã nhân viên không hợp lệ.');
+    }
     if (!targetId) throw AppError.invalid('Thiếu mã nhân viên.');
 
     const rows = await db
