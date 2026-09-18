@@ -1,10 +1,11 @@
-# formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v1)
+# formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v2)
 
-> **Phạm vi:** bản mẫu giao team test vòng 1 — chỉ tính năng then chốt quầy + kho.
-> **Phiên bản:** Manual v1 — nhánh `main`, sau merge `feat/login-account-picker`
+> **Phạm vi:** bản mẫu giao team test vòng 2 — core quầy + kho + vá bảo mật audit.
+> **Phiên bản:** Manual v2 — nhánh `main`, sau merge audit-hardening
 > (không ghi hash vì hash thay đổi mỗi lần sửa manual; xem `git log` để biết tip hiện tại).
 > **Ngày phát hành:** 18/09/2026.
-> **Nguyên tắc:** Email báo cáo tháng (5.5) đã TẮT theo yêu cầu — không test mail ở vòng này.
+> **Nguyên tắc:** Email báo cáo tháng (5.5) vẫn TẮT — không test mail ở vòng này.
+> **Máy test LAN:** `http://192.168.1.246:3000` (cùng mạng 192.168.1.x).
 
 ---
 
@@ -34,9 +35,12 @@ Mở `http://localhost:3000`. Lần đầu mở sẽ hiện **màn hình Đăng 
 |---|---|---|---|---|
 | ADMIN-01 | Chủ Quản Lý | Owner | `owner9999` | Toàn quyền + quản trị tài khoản |
 | QL-01 | Quản Lý Vận Hành | Manager | `manager8888` | Bán, duyệt CK, quản lý Thu ngân/Thủ kho/Thuế |
-| NV-01 / NV-02 | Thu Ngân 01/02 | Cashier | `1234` | Bán quầy, không thấy doanh thu tổng |
+| NV-01 / NV-02 | Thu Ngân 01/02 | Cashier | `1234` | Bán quầy, chỉ chạm két của chính mình |
 | KHO-01 | Thủ Kho 01 | Warehouse | `5678` | Nhập/xuất/chuyển kho, không thấy doanh thu |
 | THUE-01 | Kế Toán Thuế | Tax | `7890` | Chỉ xem số liệu VAT (`OFFICIAL_TAX`) |
+
+> Mọi role đều PIN từ 4 ký tự (kể cả Owner/Manager — ưu tiên tốc độ quầy).
+> PIN lưu dạng băm PBKDF2, tự nâng cấp mềm sau lần đăng nhập đúng đầu tiên.
 
 ### 2.2. Owner/Manager quản trị tài khoản (mới)
 
@@ -128,6 +132,21 @@ Quy tắc: bug chặn bán/chặn két/chặn đồng bộ = P0 báo ngay; bug c
 
 ## 8. Gate kỹ thuật đã qua trước khi giao (để team yên tâm)
 
-- 42 suites cách ly xanh 100% (gồm suite login-chạm-chọn 13/13 + drill go-live 5/5).
+- 44 suites cách ly xanh 100% (gồm suite login-chạm-chọn 19/19, actor-binding 8/8, drill go-live 5/5).
 - `tsc` 0 lỗi, `npm run build` 0 lỗi.
 - `formapubli.db` production nguyên vẹn (không suite nào được chạm DB thật).
+
+## 9. Vá bảo mật vòng 2 (có gì mới so với vòng 1)
+
+1. **Chạm-chọn login:** lướt list → chạm tên → gõ PIN (mọi role PIN 4+ ký tự).
+2. **Két ca khóa theo người:** thu ngân chỉ mở/xem/chốt két của chính mình; Owner/Manager chốt hộ được.
+3. **Chống mạo danh:** mọi bút toán/audit ghi đúng người đăng nhập (không còn actor client gửi).
+4. **PIN băm PBKDF2** + tự nâng cấp mềm, không ai phải đổi PIN.
+5. **Khóa brute-force bền vững** (sống qua restart) + chặn production thiếu `TRUST_PROXY`.
+6. **PIN quản lý:** client không hardcode nữa, server là bên duyệt duy nhất (PIN sai → 403 khi chốt đơn).
+
+### Kịch bản bổ sung vòng 2 (sau 7 kịch bản cũ)
+
+8. **NV-01 mở két → NV-02 không xem/chốt được két NV-01** (403), Quản lý chốt hộ được.
+9. **Nhập sai PIN 5 lần → khóa 15 phút**, đúng PIN trong lúc khóa vẫn 403.
+10. **Nhập PIN quản lý sai ở modal duyệt CK → đơn chốt bị 403**, PIN đúng thì qua.
