@@ -119,6 +119,20 @@ async function main() {
     const suiteDb = suite.includes('test-cp3-reconciliation')
       ? 'file:formapubli_test_cp3_REC4.db'
       : `file:${TEST_DB_FILE}`;
+    // Dọn khóa brute-force DB giữa các suite TRONG TIẾN TRÌNH CON RIÊNG
+    // (thoát ngay → không giữ handle): khôi phục ngữ nghĩa "mỗi suite là
+    // tiến trình mới" của tầng memory trước đây.
+    {
+      const clearArgs = isWin
+        ? ['/c', 'npx', 'tsx', 'scripts/clear-login-buckets.ts']
+        : ['tsx', 'scripts/clear-login-buckets.ts'];
+      spawnSync(command, clearArgs, {
+        cwd: process.cwd(),
+        env: { ...process.env, DATABASE_URL: suiteDb },
+        stdio: 'ignore',
+        shell: false,
+      });
+    }
     const res = spawnSync(command, cmdArgs, {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: suiteDb },
