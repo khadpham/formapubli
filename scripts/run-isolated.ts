@@ -74,7 +74,10 @@ async function clearLoginBuckets(dbUrl: string): Promise<void> {
     } catch {
       // Bảng chưa có (DB cũ) → bỏ qua.
     }
-    c.close();
+    // BẮT BUỘC await close: libsql giải phóng handle file bất đồng bộ; không
+    // await thì tiến trình con (spawnSync ngay sau) gặp EBUSY khi xóa DB trên
+    // Windows và migrate chồng lên file cũ ("table already exists").
+    await (c.close() as unknown as Promise<void>);
   } catch {
     // Không chặn suite vì dọn khóa thất bại.
   }
