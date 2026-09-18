@@ -5,9 +5,12 @@
 > (không ghi hash vì hash thay đổi mỗi lần sửa manual; xem `git log` để biết tip hiện tại).
 > **Ngày phát hành:** 18/09/2026.
 > **Nguyên tắc:** Email báo cáo tháng (5.5) vẫn TẮT — không test mail ở vòng này.
-> **Máy test LAN:** `http://<IP-may-tinh>:3000` (cùng mạng wifi/LAN).
-> IP hiện tại (18/09): `http://192.168.1.4:3000` — IP do DHCP cấp, **đổi mạng là đổi IP**:
+> **Máy test LAN (HTTPS để dùng micro + camera):** `https://<IP-may-tinh>:3000`.
+> IP hiện tại (18/09): `https://192.168.1.4:3000` — IP do DHCP cấp, **đổi mạng là đổi IP**:
 > kiểm tra lại bằng `ipconfig` (dòng `IPv4 Address`) rồi thay vào link.
+> Lần đầu mở trên điện thoại sẽ báo chứng chỉ không tin cậy (cert tự ký):
+> Android Chrome bấm *Nâng cao → Tiếp tục truy cập*; cho phép Micro/Camera khi được hỏi.
+> Không dùng `http://` nữa vì trình duyệt chặn micro/camera trên http LAN.
 
 ---
 
