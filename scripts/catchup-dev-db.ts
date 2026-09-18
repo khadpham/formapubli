@@ -65,7 +65,7 @@ async function main() {
         applied++;
       } catch (err: any) {
         const msg = `${err?.message || err}`;
-        if (/already exists/i.test(msg)) {
+        if (/already exists|duplicate column name/i.test(msg)) {
           skipped++;
           continue;
         }
