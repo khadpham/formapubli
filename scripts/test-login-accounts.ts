@@ -58,7 +58,7 @@ async function loginAs(staffId: string, passcode: string) {
 async function run() {
   console.log('👆 LOGIN CHẠM-CHỌN + QUẢN TRỊ TÀI KHOẢN (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
-  const total = 13;
+  const total = 14;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -160,6 +160,16 @@ async function run() {
   // 13. staffId malformed (%ZZ) → 400, không 500 (hồi quy decodeURIComponent).
   const r13: any = await patch('%ZZ', { fullName: 'X' }, ownerCk);
   ok('13. staffId malformed 400 (không 500)', r13.status === 400);
+
+  // 14. Chính sách quầy siêu tốc: OWNER tạo Manager PIN 4 số → 200 + login được.
+  const mgr4 = uniq('MGR4');
+  const r14: any = await post(
+    createStaff,
+    { staffId: mgr4, fullName: 'Quản Lý 4 số', role: 'ROLE_MANAGER', passcode: '2468' },
+    ownerCk
+  );
+  const r14login = await loginAs(mgr4, '2468');
+  ok('14. Manager PIN 4 số 200 + login được', r14.status === 200 && r14login.status === 200, mgr4);
 
   console.log(`\n${passed === total ? '🎉' : '⚠️'} LOGIN-ACCOUNTS: ${passed}/${total} ${passed === total ? 'PASS' : 'CÓ FAIL'}`);
   if (passed !== total) process.exit(1);
