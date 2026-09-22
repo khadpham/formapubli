@@ -5,6 +5,7 @@ import { isValidManagerPin } from '@/lib/manager-pin';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
+import { DiscountApprovalService } from '@/services/discount-approval.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -173,6 +174,7 @@ export async function POST(req: NextRequest) {
       allowOverdraft,
       managerPin,
       managerApprovalCode,
+      discountApprovalId,
       isGift,
       giftReason,
       confirmImmediately,
@@ -240,19 +242,31 @@ export async function POST(req: NextRequest) {
     const isPrivilegedRole = userRole === 'ROLE_OWNER' || userRole === 'ROLE_MANAGER';
 
     if (exceedsHardCap && !isPrivilegedRole) {
-      const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-      if (!(await isValidManagerPin(providedPin))) {
-        await recordAuditLog({
-          action: 'MANAGER_DISCOUNT_DENIED',
-          actorRole: userRole,
-          actorId: cashierId || userRole,
-          resource: '/api/orders',
-          details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${cashierId || userRole}, thiếu PIN quản lý hợp lệ).`,
-        });
-        return NextResponse.json(
-          { success: false, error: 'Vượt trần chiết khấu 20%. Yêu cầu mã PIN Quản lý!' },
-          { status: 403 }
-        );
+      let isApprovalValid = false;
+      if (discountApprovalId) {
+        try {
+          const appr = await DiscountApprovalService.getRequest(discountApprovalId);
+          if (appr && appr.status === 'APPROVED') {
+            isApprovalValid = true;
+          }
+        } catch {}
+      }
+
+      if (!isApprovalValid) {
+        const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
+        if (!(await isValidManagerPin(providedPin))) {
+          await recordAuditLog({
+            action: 'MANAGER_DISCOUNT_DENIED',
+            actorRole: userRole,
+            actorId: cashierId || userRole,
+            resource: '/api/orders',
+            details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${cashierId || userRole}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
+          });
+          return NextResponse.json(
+            { success: false, error: 'Vượt trần chiết khấu 20%. Yêu cầu Quản lý phê duyệt!' },
+            { status: 403 }
+          );
+        }
       }
     }
 
@@ -314,6 +328,24 @@ export async function POST(req: NextRequest) {
         ? bundles.map((b: any) => ({ bundleId: b.bundleId, quantity: parseInt(b.quantity ?? 0, 10) }))
         : undefined,
     });
+
+    if (discountApprovalId) {
+      try {
+        await DiscountApprovalService.consumeApproval({
+          requestId: discountApprovalId,
+          currentItems: pricedItems.map((it: any) => ({
+            editionId: it.editionId,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice || 0,
+          })),
+          discountRate: discountRate ?? 0,
+          warehouseId,
+          orderCode: result.orderCode,
+        });
+      } catch (err: any) {
+        console.warn('Không thể tiêu thụ discount approval:', err);
+      }
+    }
 
     await recordAuditLog({
       action: 'MUTATE_ORDER',
