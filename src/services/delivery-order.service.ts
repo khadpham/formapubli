@@ -8,6 +8,8 @@ import {
   stockBalances,
   inventoryLedger,
   idempotencyKeys,
+  editions,
+  works,
 } from '../db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
@@ -489,10 +491,30 @@ export class DeliveryOrderService {
     }
 
     const { order, warehouseName, partnerName, partnerCode } = rows[0];
-    const items = await txOrDb
-      .select()
+    const rawItems = await txOrDb
+      .select({
+        id: deliveryOrderItems.id,
+        deliveryOrderId: deliveryOrderItems.deliveryOrderId,
+        editionId: deliveryOrderItems.editionId,
+        quantity: deliveryOrderItems.quantity,
+        unitCoverPrice: deliveryOrderItems.unitCoverPrice,
+        unitSellingPrice: deliveryOrderItems.unitSellingPrice,
+        totalAmount: deliveryOrderItems.totalAmount,
+        editionCode: editions.code,
+        isbn: editions.isbn,
+        editionTitle: editions.title,
+        workTitle: works.title,
+        author: works.author,
+      })
       .from(deliveryOrderItems)
+      .leftJoin(editions, eq(deliveryOrderItems.editionId, editions.id))
+      .leftJoin(works, eq(editions.workId, works.id))
       .where(eq(deliveryOrderItems.deliveryOrderId, order.id));
+
+    const items = rawItems.map((it: any) => ({
+      ...it,
+      title: it.editionTitle || it.workTitle || it.editionCode || 'Ấn bản',
+    }));
 
     return {
       ...order,

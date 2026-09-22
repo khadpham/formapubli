@@ -23,6 +23,9 @@ import { BatchTransferModal } from './inventory/BatchTransferModal';
 import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
+import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
+import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
+import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
@@ -71,6 +74,7 @@ interface StockOverviewMatrixProps {
   initialBooks: MatrixBookItem[];
   warehouses: WarehouseItem[];
   initialLedger: LedgerEntry[];
+  partners?: any[];
   currentRole?: string;
 }
 
@@ -78,6 +82,7 @@ export function StockOverviewMatrix({
   initialBooks,
   warehouses,
   initialLedger,
+  partners = [],
   currentRole = 'ROLE_OWNER',
 }: StockOverviewMatrixProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -86,9 +91,10 @@ export function StockOverviewMatrix({
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
+  const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT'>('MATRIX');
+  const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS'>('MATRIX');
   // Ticket 3 MVP: tab kho kiểu Sheets — chỉ lọc hiển thị read-only, không đụng ledger.
   const [warehouseTab, setWarehouseTab] = useState<'ALL' | 'wh-au-co' | 'wh-quynh-mai' | 'wh-du-phong'>('ALL');
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -458,10 +464,30 @@ export function StockOverviewMatrix({
               <ArrowRightLeft className="w-3.5 h-3.5" />
               Đi Đường
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('DELIVERY_ORDERS')}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                activeTab === 'DELIVERY_ORDERS'
+                  ? 'bg-white text-amber-700 font-bold shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Sổ PXK Đại Lý
+            </button>
           </div>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
+          <button
+            type="button"
+            onClick={() => setWholesaleModalOpen(true)}
+            title="Lập phiếu xuất kho bán buôn cho đại lý (PXK)"
+            className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" /> Bán Buôn PXK
+          </button>
           <button
             type="button"
             onClick={() => openAction('TRANSFER')}
@@ -769,6 +795,14 @@ export function StockOverviewMatrix({
         </div>
       )}
 
+      {/* 5. TAB SỔ PHIẾU XUẤT KHO BÁN BUÔN ĐẠI LÝ (DELIVERY ORDERS LEDGER) */}
+      {activeTab === 'DELIVERY_ORDERS' && (
+        <DeliveryOrdersLedger
+          currentRole={currentRole}
+          onOpenCreateModal={() => setWholesaleModalOpen(true)}
+        />
+      )}
+
       {/* Modal */}
       <StockMovementModal
         isOpen={modalOpen}
@@ -787,6 +821,17 @@ export function StockOverviewMatrix({
         books={initialBooks}
         warehouses={warehouses}
         onSuccess={handleRefresh}
+      />
+
+      {/* Wholesale Dispatch Modal (PXK) */}
+      <WholesaleDispatchModal
+        isOpen={wholesaleModalOpen}
+        onClose={() => setWholesaleModalOpen(false)}
+        warehouses={warehouses}
+        books={initialBooks}
+        partners={partners}
+        currentRole={currentRole}
+        onOrderCreated={handleRefresh}
       />
 
       {/* Pick List Modal */}
