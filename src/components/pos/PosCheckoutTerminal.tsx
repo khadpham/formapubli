@@ -29,10 +29,13 @@ import {
   CloudUpload,
   ClipboardPaste,
   RotateCcw,
+  ShieldCheck,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
 import { ReturnsModal } from '@/components/pos/ReturnsModal';
+import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
+import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -138,15 +141,21 @@ export function PosCheckoutTerminal({
   const [shiftNoteInput, setShiftNoteInput] = useState('');
   const [isSubmittingSession, setIsSubmittingSession] = useState(false);
 
-  // QUẢN LÝ TRẦN CHIẾT KHẤU & MÃ PIN QUẢN LÝ (Discount Hard-cap & Manager PIN)
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  // QUẢN LÝ TRẦN CHIẾT KHẤU & PHÊ DUYỆT BẢO MẬT (Discount Hard-cap & State Machine Approval)
+  const [isDiscountApprovalModalOpen, setIsDiscountApprovalModalOpen] = useState(false);
+  const [isManagerApprovalDrawerOpen, setIsManagerApprovalDrawerOpen] = useState(false);
+  const [approvedDiscountRequestId, setApprovedDiscountRequestId] = useState<string | null>(null);
   const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
-  const [pinInput, setPinInput] = useState('');
   // V4.1 S2.4: ô nhập CK lẻ (% nguyên)
   const [customDiscountInput, setCustomDiscountInput] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
   const [isManagerOverride, setIsManagerOverride] = useState(false);
   const [approvedPin, setApprovedPin] = useState<string | null>(null);
+  // Mã đơn hiện tại (sinh sẵn để đồng bộ với ShortCode duyệt chiết khấu)
+  const [activeOrderCode, setActiveOrderCode] = useState<string>(() => {
+    const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const r = Math.floor(1000 + Math.random() * 9000);
+    return `ORD-${d}-${r}`;
+  });
   // BV-03: chế độ Tặng sách 100% (doanh thu 0đ, vẫn trừ kho)
   const [isGift, setIsGift] = useState(false);
   const [giftReason, setGiftReason] = useState('Tặng sách / Quà tặng sự kiện');
@@ -424,9 +433,7 @@ export function PosCheckoutTerminal({
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
     if (isRestrictedCashier && rate > 0.2) {
       setPendingDiscountRate(rate);
-      setPinInput('');
-      setPinError(null);
-      setIsPinModalOpen(true);
+      setIsDiscountApprovalModalOpen(true);
       return;
     }
     setDiscountRate(rate);
@@ -436,7 +443,7 @@ export function PosCheckoutTerminal({
     }
   };
 
-  // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng PIN quản lý)
+  // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng duyệt chiết khấu bảo mật)
   const handleToggleGift = () => {
     if (isGift) {
       setIsGift(false);
@@ -450,34 +457,6 @@ export function PosCheckoutTerminal({
       setIsGift(true);
       setFiscalScope('INTERNAL_MANAGEMENT');
     }
-  };
-
-  const handleVerifyPin = () => {
-    // Không hardcode PIN phía client (từng lộ 9999/1234/8888 trong source).
-    // Client chỉ thu PIN và gửi kèm đơn; SERVER xác thực hash và trả 403
-    // nếu sai — server là nguồn sự thật duy nhất cho mọi vượt trần.
-    const pin = pinInput.trim();
-    if (pin.length < 4) {
-      setPinError('PIN quản lý tối thiểu 4 ký tự.');
-      return;
-    }
-    setIsManagerOverride(true);
-    setApprovedPin(pin);
-    if (pendingDiscountRate !== null) {
-
-      setDiscountRate(pendingDiscountRate);
-      // BV-03: PIN duyệt CK 100% đồng nghĩa bật chế độ tặng
-      if (pendingDiscountRate === 1) {
-        setIsGift(true);
-        setFiscalScope('INTERNAL_MANAGEMENT');
-      }
-    }
-    setIsPinModalOpen(false);
-    setPinInput('');
-    setPinError(null);
-    // Trung thực UX: server mới là bên phê duyệt cuối (403 nếu PIN sai lúc chốt).
-    setSyncToast('🔑 Đã ghi PIN quản lý — server xác thực khi chốt đơn.');
-    setTimeout(() => setSyncToast(null), 3000);
   };
 
   // Lắng nghe cuộn trang để kích hoạt thanh tìm kiếm nam châm (Magnet Bar)
@@ -890,6 +869,7 @@ export function PosCheckoutTerminal({
           cashierId,
           cashboxSessionId: activeSession?.id,
           managerPin: approvedPin || undefined,
+          discountApprovalId: approvedDiscountRequestId || undefined,
           note,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
@@ -924,7 +904,12 @@ export function PosCheckoutTerminal({
         setDiscountRate(0);
       }
       setApprovedPin(null);
+      setApprovedDiscountRequestId(null);
       setIsManagerOverride(false);
+      // Sinh mã đơn mới cho lượt khách kế tiếp
+      const nextDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const nextRand = Math.floor(1000 + Math.random() * 9000);
+      setActiveOrderCode(`ORD-${nextDate}-${nextRand}`);
       fetchActiveCashboxSession();
       if (onOrderCompleted) onOrderCompleted();
 
@@ -1280,6 +1265,17 @@ export function PosCheckoutTerminal({
               >
                 <ClipboardPaste className="w-4 h-4" />
               </button>
+              {/* Nút Duyệt Chiết Khấu POS (Dành cho Quản lý / Chủ quầy) */}
+              {(currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') && (
+                <button
+                  type="button"
+                  onClick={() => setIsManagerApprovalDrawerOpen(true)}
+                  className="p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center font-bold"
+                  title="Mở bảng duyệt chiết khấu POS (Quản lý)"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                </button>
+              )}
               {/* Nút Micro Giọng Nói Tiếng Việt */}
               <button
                 type="button"
@@ -2169,6 +2165,7 @@ export function PosCheckoutTerminal({
               </div>
             </div>
 
+
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
@@ -2190,87 +2187,6 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
-      {/* MODAL 3: NHẬP MÃ PIN QUẢN LÝ CHO CHIẾT KHẤU CAO (Manager PIN Modal) */}
-      {isPinModalOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              setIsPinModalOpen(false);
-              setPendingDiscountRate(null);
-            }
-          }}
-        >
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-amber-700">
-                <span className="text-lg">🔐</span>
-                <h3 className="font-extrabold text-base text-slate-900">Duyệt Chiết Khấu Quản Lý</h3>
-              </div>
-              <button
-                onClick={() => {
-                  setIsPinModalOpen(false);
-                  setPendingDiscountRate(null);
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-slate-600">
-                Chiết khấu <span className="font-bold text-amber-600 font-mono text-sm">{Math.round((pendingDiscountRate || 0) * 100)}%</span> vượt hạn mức trần 20% của thu ngân. Vui lòng yêu cầu Quản lý nhập mã PIN phê duyệt:
-              </p>
-
-              <div>
-                <input
-                  type="password"
-                  maxLength={6}
-                  autoFocus
-                  value={pinInput}
-                  onChange={(e) => {
-                    setPinInput(e.target.value);
-                    setPinError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleVerifyPin();
-                  }}
-                  placeholder="Nhập mã PIN (4 số)..."
-                  className="w-full text-center tracking-widest text-lg font-mono font-bold px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-amber-500"
-                />
-                {pinError && (
-                  <p className="text-xs text-rose-600 font-bold mt-1 text-center">{pinError}</p>
-                )}
-                <p className="text-[11px] text-slate-400 text-center mt-1">
-                  Quản lý nhập PIN để phê duyệt — server xác thực khi chốt đơn.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPinModalOpen(false);
-                  setPendingDiscountRate(null);
-                }}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="button"
-                onClick={handleVerifyPin}
-                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-md transition"
-              >
-                Phê Duyệt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Toast thông báo đã quét Barcode thành công */}
       {scanToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border border-emerald-500/50 text-emerald-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-slide-up">
@@ -2285,7 +2201,48 @@ export function PosCheckoutTerminal({
           </div>
         </div>
       )}
+
+      {/* MODAL 3: DUYỆT CHIẾT KHẤU BẢO MẬT (Discount Approval Modal - QR & ShortCode) */}
+      <DiscountApprovalModal
+        isOpen={isDiscountApprovalModalOpen}
+        orderCode={activeOrderCode}
+        warehouseId={selectedWarehouseId}
+        requestedDiscountRate={pendingDiscountRate || 0}
+        originalAmount={subtotal}
+        items={cart.map((item) => ({
+          editionId: item.editionId,
+          quantity: item.quantity,
+          unitPrice: item.coverPrice,
+        }))}
+        onApproved={(data) => {
+          setApprovedDiscountRequestId(data.requestId);
+          setIsManagerOverride(true);
+          setDiscountRate(data.rate);
+          if (data.rate === 1) {
+            setIsGift(true);
+            setFiscalScope('INTERNAL_MANAGEMENT');
+          }
+          setIsDiscountApprovalModalOpen(false);
+          setPendingDiscountRate(null);
+          setSyncToast(
+            `✅ Quản lý đã duyệt chiết khấu ${Math.round(data.rate * 100)}% (${data.method === 'ONE_TOUCH' ? '1-Chạm' : data.method === 'SHORTCODE_BOUND' ? 'Mã 4 số' : data.method === 'OFFLINE_EMERGENCY' ? 'Mã Khẩn Cấp' : 'QR Scan'})!`
+          );
+          setTimeout(() => setSyncToast(null), 4000);
+        }}
+        onClose={() => {
+          setIsDiscountApprovalModalOpen(false);
+          setPendingDiscountRate(null);
+        }}
+      />
+
+      {/* DRAWER DUYỆT CHIẾT KHẤU QUẢN LÝ (Chỉ hiển thị cho Manager / Owner) */}
+      {(currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') && (
+        <ManagerApprovalDrawer
+          isOpen={isManagerApprovalDrawerOpen}
+          onClose={() => setIsManagerApprovalDrawerOpen(false)}
+          warehouseId={selectedWarehouseId}
+        />
+      )}
     </div>
   );
 }
-
