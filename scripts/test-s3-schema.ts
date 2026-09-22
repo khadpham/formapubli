@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { setupTestDb } from './setup-test-db';
+import path from 'node:path';
+import fs from 'node:fs';
+import { assertIsolatedTestDb } from './test-guard';
+import { migrateFresh } from './migrate-fresh';
 import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import {
@@ -8,15 +11,25 @@ import {
   deliveryOrderItems,
   warehouses,
   partners,
+  works,
   editions,
 } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 
+const DB_FILE = path.resolve(process.cwd(), 'formapubli_test_s3_schema.db');
+for (const s of ['', '-wal', '-shm', '-journal']) {
+  try { fs.unlinkSync(DB_FILE + s); } catch { /* fresh */ }
+}
+
 async function run() {
   console.log('--- TEST S3 SCHEMA: discount_approval_requests & delivery_orders ---');
 
-  const { dbFile } = await setupTestDb();
-  const client = createClient({ url: `file:${dbFile}` });
+  process.env.DATABASE_URL = 'file:' + DB_FILE.split(path.sep).join('/');
+  assertIsolatedTestDb('test-s3-schema');
+
+  await migrateFresh({ targetUrl: process.env.DATABASE_URL! });
+
+  const client = createClient({ url: process.env.DATABASE_URL! });
   const db = drizzle(client, {
     schema: {
       discountApprovalRequests,
@@ -24,9 +37,29 @@ async function run() {
       deliveryOrderItems,
       warehouses,
       partners,
+      works,
       editions,
     },
   });
+
+  // Seed reference data
+  await db.insert(warehouses).values([
+    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Âu Cơ', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quỳnh Mai', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+  ]);
+
+  await db.insert(partners).values([
+    { id: 'part-direct', code: 'BAN_LE_DIRECT', name: 'Kênh Bán lẻ Trực tiếp', type: 'INTERNAL', discountRate: 0.0 },
+    { id: 'part-ca-chep', code: 'NS_CA_CHEP', name: 'Nhà sách Cá Chép', type: 'CONSIGNMENT', discountRate: 0.4 },
+  ]);
+
+  await db.insert(works).values([
+    { id: 'work-1', code: 'WORK-TEST-01', title: 'Tác phẩm Test', originalTitle: 'Test Work', author: 'Tác giả' },
+  ]);
+
+  await db.insert(editions).values([
+    { id: 'ed-h01', code: 'H01', workId: 'work-1', title: 'Sách H01', isbn: '9786040000001', isbnLast4: '0001', formatSize: 'PAPERBACK', coverPrice: 250000 },
+  ]);
 
   // 1. Verify discountApprovalRequests table insertion and querying
   const reqId = 'req-test-001';
@@ -129,6 +162,9 @@ async function run() {
   console.log('✓ Unique constraint trên PXK code OK');
 
   client.close();
+  for (const s of ['', '-wal', '-shm', '-journal']) {
+    try { fs.unlinkSync(DB_FILE + s); } catch {}
+  }
   console.log('🎉 TOÀN BỘ TEST S3 SCHEMA PASS 100%!');
 }
 

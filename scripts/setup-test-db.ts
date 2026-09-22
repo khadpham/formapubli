@@ -90,7 +90,20 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
   // 1. Clean Slate: xóa file test cũ (kèm -wal/-shm/-journal).
   for (const suffix of ['', '-wal', '-shm', '-journal']) {
     const p = resolved + suffix;
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    if (fs.existsSync(p)) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          fs.unlinkSync(p);
+          break;
+        } catch (err: any) {
+          if ((err.code === 'EBUSY' || err.code === 'EPERM') && attempt < 9) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
   }
 
   // 2. Dựng schema từ đúng chuỗi journal 0000 -> 0019 qua migrate-fresh
