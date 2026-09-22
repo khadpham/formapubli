@@ -493,6 +493,17 @@
     endpoint đọc; gate red-team) + checklist DoD copy vào PR + sổ lỗi đã trả học phí.
   - Master Blueprint Chương 36 trỏ về policy. PR thiếu checklist DoD bị từ chối merge.
 
+### 📅 Ngày 22/09/2026
+
+#### 🔹 [Mã: ENG-20260922-26] Go-live: xóa mô phỏng vai trò + Cài đặt mọi role + Copilot v2 + báo cáo nguồn thu
+- **Nội dung:**
+  - Xóa mô phỏng vai trò (sidebar + Settings): vai trò = phiên đăng nhập thật; mọi role đều thấy Cài Đặt; tab Nhân sự chỉ Owner/Manager.
+  - POS chiết khấu nút mốc 0–40% (cách 5%) + nút 🎁 100% gọn; PIN test 4 số mọi role (`9999`/`8888`/`1234`/`5678`/`7890`) — TEST ONLY, đổi trước go-live.
+  - Copilot: hết trả JSON thô; small-talk ngày/giờ; mic Web Speech live + nối câu + `Alt+V` ưu tiên + mini-mode bong bóng; tool `query_catalog` (tác giả/chữ cái/top) + `prepare_sale_draft` (lên đơn nháp → nút Áp vào POS, người tự thanh toán); ép grounded + phân giải mã/tên/kho.
+  - Sổ doanh số: bảng cuộn 20/50/100, slicer kênh, tổng theo bộ lọc; panel Sách Bán Chạy + Nguồn Doanh Thu & Dòng Tiền (CSV hash, chống formula injection).
+  - Review OCR 3 vòng (~30 finding, đã sửa hết phần code được); `tsc` + `next build` xanh; 43 suites cách ly xanh (exit 1 duy nhất do user test tay trùng giờ).
+- **Nhánh:** `main` → tiếp tục trên `dev` (quy ước mới: mọi sửa đổi ở nhánh riêng, duyệt mới merge main).
+
 ## 3. Kế Hoạch Triển Khai Chi Tiết Từng Phase (Actionable Master Roadmap)
 
 ### 🟢 Phase 1: Lõi Kho Vận Bất Biến & Ma Trận 3 Kho Vật Lý - [ĐÃ HOÀN THÀNH 100%]

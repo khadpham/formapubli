@@ -1310,3 +1310,36 @@ toàn văn luật thi hành tại **`docs/ADVERSARIAL_TESTING_POLICY.md`** — 5
 (negative test tiền/kho/quyền; validate tầng sâu nhất; test tương tác chéo;
 test phân quyền endpoint đọc; gate red-team trước merge) kèm checklist DoD copy vào mỗi PR.
 Mọi PR đụng tiền/kho/quyền/đối soát mà thiếu checklist sẽ bị từ chối merge.
+
+---
+
+## 37. Báo Cáo Nguồn Thu & Sổ Đơn v2 (09/2026)
+
+Nâng cấp phân hệ báo cáo doanh thu: sổ đơn cuộn mượt theo bộ lọc, hai panel phân tích gắn trên cùng nguồn số liệu, dọn giả lập vai trò, chốt chiết khấu theo mốc.
+
+### 37.1. Sổ đơn cuộn (scrollable ledger)
+- Bảng sổ đơn có vùng cuộn riêng, giữ header khi cuộn danh sách dài.
+- Phân trang 20 / 50 / 100 dòng, mặc định 50 để quầy hội chợ đọc nhanh.
+- Bộ lọc kênh (retail / wholesale / online / gift) dạng slicer một chạm.
+- Hàng tổng hợp (tổng đơn, tổng thu) luôn bám theo bộ lọc đang chọn.
+- Giữ nguyên trang và thứ tự sắp xếp khi đổi kênh, tránh reset về trang 1 làm mất dấu.
+
+### 37.2. TopEditionsPanel (bán chạy theo tựa)
+- Ba mốc thời gian: hôm nay / 7 ngày / 30 ngày.
+- Dùng chung nguồn `/api/analytics?view=top-editions`, chỉ đổi tham số mốc.
+- Hiển thị tựa, số lượng, doanh thu; bấm vào tựa lọc sổ đơn theo tựa đó.
+
+### 37.3. RevenueAnalyticsPanel (cơ cấu nguồn thu)
+- Tỉ trọng 4 kênh: bán lẻ (retail), sỉ (wholesale), online, quà tặng (gift).
+- Các dòng đặc thù: COD (thu hộ khi giao), tài trợ (sponsorship), ký gửi (consignment).
+- Xuất CSV có hàm băm (hash) kèm file để đối chiếu tính toàn vẹn.
+- Chặn formula-injection: mọi ô bắt đầu bằng `=`, `+`, `-`, `@` được chèn tiền tố khi xuất.
+
+### 37.4. Vai trò và chiết khấu
+- Gỡ chế độ giả lập vai trò (role-simulation) khỏi báo cáo; phân quyền đọc theo vai trò thật.
+- Tab Cài đặt mở cho mọi vai trò (ai cũng xem được cấu hình của mình, chỉ admin sửa).
+- Nút chiết khấu theo mốc (milestone discount): đạt mốc doanh thu / số lượng thì áp nút chiết khấu tương ứng, mọi lần áp ghi vết vào sổ.
+- Mốc chiết khấu cấu hình trong Cài đặt; báo cáo chỉ đọc mốc đã chốt, không tự sửa mốc.
+- Mọi con số trong §37 đọc từ cùng sổ đơn đã lọc, không dùng nguồn phụ.
+
+---

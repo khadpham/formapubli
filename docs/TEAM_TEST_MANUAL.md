@@ -1,9 +1,9 @@
-# formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v2)
+# formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v3)
 
-> **Phạm vi:** bản mẫu giao team test vòng 2 — core quầy + kho + vá bảo mật audit.
-> **Phiên bản:** Manual v2 — nhánh `main`, sau merge audit-hardening
+> **Phạm vi:** bản mẫu giao team test vòng 3 — core quầy + kho + Copilot AI (hỏi đáp, lên đơn nháp) + báo cáo nguồn doanh thu.
+> **Phiên bản:** Manual v3 — nhánh `dev`, sau review OCR vòng 3
 > (không ghi hash vì hash thay đổi mỗi lần sửa manual; xem `git log` để biết tip hiện tại).
-> **Ngày phát hành:** 18/09/2026.
+> **Ngày phát hành:** 22/09/2026.
 > **Nguyên tắc:** Email báo cáo tháng (5.5) vẫn TẮT — không test mail ở vòng này.
 > **Máy test LAN (HTTPS để dùng micro + camera):** `https://<IP-may-tinh>:3000`.
 > IP hiện tại (18/09): `https://192.168.1.4:3000` — IP do DHCP cấp, **đổi mạng là đổi IP**:
@@ -47,21 +47,24 @@ Mở `http://localhost:3000`. Lần đầu mở sẽ hiện **màn hình Đăng 
 > Mọi role đều PIN từ 4 ký tự (kể cả Owner/Manager — ưu tiên tốc độ quầy).
 > PIN lưu dạng băm PBKDF2, tự nâng cấp mềm sau lần đăng nhập đúng đầu tiên.
 
-### 2.2. Owner/Manager quản trị tài khoản (mới)
+### 2.2. Owner/Manager quản trị tài khoản
 
-Vào **Cài đặt (tab đáy sidebar) → 1. Phân Quyền 5 Roles**, kéo xuống khối **Quản Trị Tài Khoản Ca Làm Việc**:
+Vào **Cài đặt (Alt+8) → 1. Tài Khoản Nhân Sự** (chỉ Owner/Manager thấy tab này):
 - **Thêm:** nhập Mã NV (VD `NV3`) + Tên + Vai trò + PIN → Thêm.
 - **Reset PIN:** bấm 🔑 ở dòng nhân viên → nhập PIN mới → Lưu.
 - **Khóa/Mở:** bấm 🔒/🔓 (khóa = không đăng nhập được, nhưng két ca & lịch sử cũ giữ nguyên — không xóa cứng).
 - Giới hạn an toàn: Manager chỉ quản lý Thu ngân/Thủ kho/Thuế; không ai tự khóa hay tự hạ vai trò chính mình.
+
+> Chế độ **mô phỏng vai trò đã XÓA** (go-live): vai trò = phiên đăng nhập thật, không còn dropdown/cards đổi vai trò ở sidebar hay Cài đặt. Mọi role đều thấy nút **Cài Đặt**; tab Nhân sự chỉ Owner/Manager.
 
 ---
 
 ## 3. Tính năng SẴN SÀNG test (core)
 
 ### 3.1. Quầy POS bán sách (vai trò Thu ngân/Quản lý/Owner)
-- Tìm sách bằng tên không dấu / 4 số cuối ISBN / quét camera 📷 (`Alt+Shift+C`) / micro 🎙️.
+- Tìm sách bằng tên không dấu / 4 số cuối ISBN / quét camera 📷 (`Alt+Shift+C`) / micro 🎙️ (`Alt+V`).
 - Chọn kho xuất (Âu Cơ / Hội Chợ / Quỳnh Mai), chiết khấu, cờ VAT/Nội bộ.
+- Chiết khấu theo **nút mốc 0–40% (cách 5%)** + nút **🎁 100%** (tặng sự kiện, gọn trong lưới nút).
 - Thu ngân giảm tối đa **15%** — vượt mức cần **PIN quản lý** mở khóa cho đơn đó.
 - Chốt đơn `Ctrl+Enter` → trừ kho tức thì → in phiếu.
 - **Két ca:** mở két đầu ca, chốt ca đối soát thừa/thiếu tiền mặt.
@@ -86,8 +89,18 @@ Vào **Cài đặt (tab đáy sidebar) → 1. Phân Quyền 5 Roles**, kéo xu�
 - Studio (`Alt+7`): bảng DoI/EOQ, cảnh báo tái bản RED/YELLOW.
 
 ### 3.6. Giọng nói + Copilot (thu thập dữ liệu, không thay người kiểm)
-- Micro trong ô tìm kiếm đơn: **nói → transcript đổ vào ô chat → luôn kiểm tay trước khi chốt**.
-- Copilot (`Alt+C`, Owner/Manager): chỉ hỏi-đáp read-only, có 4 gợi ý sẵn.
+- Micro trong ô tìm kiếm/POS/kho: **nói đến đâu chữ hiện đến đấy** (Web Speech, Chrome/Edge/Cốc Cốc). Trình duyệt khác tự rơi về ghi âm Whisper.
+- Copilot (`Alt+C`, Owner/Manager): bong bóng góc phải → cửa sổ chat mini (phóng to full khi cần). `Esc` đóng.
+- Copilot trả lời **tiếng Việt tự nhiên** (không còn JSON thô): tồn kho, doanh số 2 sổ, cạn kho 105 ngày, đối soát két, **danh mục** (sách của tác giả X, tựa chữ cái Y, tác giả bán chạy), cả ngày/giờ.
+- Mic Copilot: bấm nói nhiều lần thì **nối câu** (không mất câu cũ); `Alt+V` khi Copilot mở thì ưu tiên mic Copilot.
+- **Lên đơn bằng lời nói:** nói *"lấy 2 cuốn H01 cho chị Lan"* → bấm **Áp vào POS** → qua quầy kiểm giỏ → tự bấm Thanh toán (`Ctrl+Enter`). Copilot **không bao giờ** tự tạo đơn/trừ kho.
+- Lệnh sửa/xóa/hủy ("hủy đơn...") luôn bị từ chối — đúng thiết kế read-only + đơn nháp.
+
+### 3.7. Sổ doanh số + phân tích nguồn thu (Owner/Manager)
+- Bảng đơn giới hạn chiều cao, cuộn trong bảng; chọn 20/50/100/**Xem toàn bộ**; slicer kênh Bán lẻ/Đại lý/Online/Tặng; thẻ tổng tiền **theo đúng bộ lọc đang xem**.
+- Panel **Sách Bán Chạy Nhất**: Hôm nay / 7 ngày qua / 30 ngày qua, Top 10/20/50, xuất CSV.
+- Panel **Nguồn Doanh Thu & Dòng Tiền**: nhóm Bán lẻ/Đại lý/Online/Tặng kèm tỷ trọng %, COD chờ về/đã về, sách tặng-tài trợ, ký gửi đại lý, xuất CSV kèm hash.
+- Tải lỗi mạng → panel báo đỏ + nút Thử lại (không hiện số 0 giả).
 
 ---
 
@@ -108,9 +121,11 @@ Vào **Cài đặt (tab đáy sidebar) → 1. Phân Quyền 5 Roles**, kéo xu�
 2. **Bán 1 đơn vượt 15% → bị chặn → Quản lý nhập PIN → qua.** (trần CK)
 3. **Tắt mạng bán 2 đơn → mở mạng đồng bộ → kiểm tồn không lệch.** (offline)
 4. **Thủ kho chuyển 20 cuốn Âu Cơ → Hội Chợ → nhận thiếu 2 cuốn (1 hỏng 1 mất) → kiểm phương trình R+D+L.** (in-transit)
-5. **Tạo NV3 trong Settings → đăng nhập NV3 bán 1 đơn → khóa NV3 → NV3 không vào được.** (quản trị tài khoản mới)
+5. **Tạo NV3 trong Cài đặt → 1. Tài Khoản Nhân Sự → đăng nhập NV3 bán 1 đơn → khóa NV3 → NV3 không vào được.** (quản trị tài khoản mới)
 6. **Kế toán thuế đăng nhập → chỉ thấy số VAT, không thấy đơn nội bộ.** (sổ kép)
 7. **Nói 5 đơn bằng micro ở quầy ồn → sửa tay → lưu audio+text.** (thu WER)
+8. **Copilot: hỏi "kho Âu Cơ còn bao nhiêu cuốn Bệnh tưởng" → đúng số; hỏi "hủy đơn" → bị từ chối; nói "lấy 2 cuốn H01" → Áp vào POS → thanh toán.** (copilot)
+9. **Sổ doanh số: slicer Online → thẻ tổng đổi theo; panel Sách bán chạy Hôm nay ra đúng sách vừa bán.** (báo cáo)
 
 ---
 
@@ -137,9 +152,9 @@ Quy tắc: bug chặn bán/chặn két/chặn đồng bộ = P0 báo ngay; bug c
 
 ## 8. Gate kỹ thuật đã qua trước khi giao (để team yên tâm)
 
-- 44 suites cách ly xanh 100% (gồm suite login-chạm-chọn 19/19, actor-binding 8/8, drill go-live 5/5).
+- 43+ suites cách ly xanh (gồm suite login-chạm-chọn 19/19, actor-binding 8/8, drill go-live 5/5).
 - `tsc` 0 lỗi, `npm run build` 0 lỗi.
-- `formapubli.db` production nguyên vẹn (không suite nào được chạm DB thật).
+- DB production chỉ thay đổi khi có người test tay (audit log); test suite chạy cách ly hoàn toàn.
 
 ## 9. Vá bảo mật vòng 2 (có gì mới so với vòng 1)
 

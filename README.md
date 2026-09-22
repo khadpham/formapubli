@@ -64,7 +64,11 @@ Truy cập: `http://localhost:3000`
 
 ## 5. Hướng dẫn Triển khai Cloudflare Pages / Workers (0 VNĐ)
 
-Hệ thống đã được tích hợp sẵn cấu hình tương thích hoàn toàn với Cloudflare Pages:
+> ⚠️ **Trạng thái thật (22/09/2026): CHƯA deploy được.** Khung `wrangler.toml` + `pages:build`
+> có sẵn nhưng còn thiếu: nối D1 vào code (`src/db` đang đọc file local),
+> `database_id` thật, secrets Workers env, rate-limit ra khỏi RAM.
+> Xem báo cáo review để biết danh sách chặn. Khi sẵn sàng mới làm theo dưới đây:
+
 - File cấu hình: `wrangler.toml` (tương thích `nodejs_compat`, binding `DB` D1)
 - Lệnh biên dịch trên Cloudflare Pages Build Settings:
   - **Framework Preset:** Next.js
