@@ -263,6 +263,7 @@ export function MasterAppShell({
                 initialBooks={matrixBooks}
                 warehouses={warehouseList}
                 initialLedger={ledgerList}
+                partners={partnerList}
                 currentRole={currentRole}
               />
             </div>
