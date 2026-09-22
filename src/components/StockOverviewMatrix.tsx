@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
+import { BatchTransferModal } from './inventory/BatchTransferModal';
 import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
@@ -84,6 +85,7 @@ export function StockOverviewMatrix({
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
+  const [batchTransferOpen, setBatchTransferOpen] = useState(false);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT'>('MATRIX');
@@ -471,6 +473,14 @@ export function StockOverviewMatrix({
           </button>
           <button
             type="button"
+            onClick={() => setBatchTransferOpen(true)}
+            title="Chuyển kho hàng loạt nhiều đầu sách (Hội chợ / Sự kiện)"
+            className="flex items-center gap-1 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển hàng loạt
+          </button>
+          <button
+            type="button"
             onClick={() => openAction('RECEIPT')}
             title="Nhập kho nhà in (Alt + Shift + R)"
             className="flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
@@ -767,6 +777,15 @@ export function StockOverviewMatrix({
         warehouses={warehouses}
         defaultAction={modalAction}
         selectedBook={selectedBookForAction}
+        onSuccess={handleRefresh}
+      />
+
+      {/* Batch Transfer Modal */}
+      <BatchTransferModal
+        isOpen={batchTransferOpen}
+        onClose={() => setBatchTransferOpen(false)}
+        books={initialBooks}
+        warehouses={warehouses}
         onSuccess={handleRefresh}
       />
 
