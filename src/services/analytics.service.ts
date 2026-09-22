@@ -127,6 +127,50 @@ export class AnalyticsService {
     return out.sort((a, b) => b.heldValue - a.heldValue);
   }
 
+  /** Sách bán chạy theo kỳ tùy chọn: group order_items của đơn COMPLETED trong range.
+   * Trả lời "cuốn nào bán chạy nhất hôm nay / tuần này / tháng này" cho Owner/Manager.
+   * - JOIN truc tiep editions (khong IN-list → khong vuot 999 bien SQLite).
+   * - Loai tang/tai tro/0d nhu salesByEdition. Loc kho qua orders.warehouseId. */
+  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string) {
+    const conds = [
+      eq(orders.status, 'COMPLETED'),
+      sql`${orders.discountRate} < 1`,
+      sql`${orders.channel} != 'SPONSORSHIP'`,
+      sql`${orders.finalAmount} > 0`,
+    ];
+    if (range.startDate) conds.push(gte(orders.createdAt, range.startDate));
+    if (range.endDate) conds.push(lte(orders.createdAt, range.endDate));
+    if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    const rows = await db
+      .select({
+        editionId: orderItems.editionId,
+        code: editions.code,
+        title: editions.title,
+        qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+        revenue: sql<number>`COALESCE(SUM(${orderItems.totalAmount}), 0)`,
+        orders: sql<number>`COUNT(DISTINCT ${orderItems.orderId})`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .leftJoin(editions, eq(orderItems.editionId, editions.id))
+      .where(and(...conds))
+      .groupBy(orderItems.editionId);
+    const totalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
+    const totalRevenue = rows.reduce((s, r) => s + Number(r.revenue || 0), 0);
+    const out = rows.map((r) => ({
+      editionId: r.editionId,
+      code: r.code || '?',
+      title: r.title || '?',
+      qty: Number(r.qty || 0),
+      orders: Number(r.orders || 0),
+      revenue: Number(r.revenue || 0),
+      qtyShare: totalQty > 0 ? Number(r.qty || 0) / totalQty : 0,
+      revenueShare: totalRevenue > 0 ? Number(r.revenue || 0) / totalRevenue : 0,
+    }));
+    out.sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
+    return { items: out.slice(0, Math.max(1, Math.min(100, topN))), totalQty, totalRevenue };
+  }
+
   /** Ma trận dòng tiền: doanh thu theo kênh + COD phải thu/đã về + tài trợ đã rút. */
   static async cashflow(range: DateRange = {}) {
     const channels = await this.byChannel(range);

@@ -17,6 +17,19 @@ import {
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
+import { RevenueAnalyticsPanel } from './RevenueAnalyticsPanel';
+import { TopEditionsPanel } from './TopEditionsPanel';
+
+// Slicer kenh ban -> nhom nguon (pivot nhanh kieu Excel)
+const CHANNEL_GROUP_OF: Record<string, 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT'> = {
+  FAIR_EVENT: 'RETAIL',
+  RETAIL_OFFICE: 'RETAIL',
+  WHOLESALE_PARTNER: 'WHOLESALE',
+  ONLINE: 'ONLINE',
+  RETAIL_ONLINE_WEB: 'ONLINE',
+  RETAIL_ONLINE_SOCIAL: 'ONLINE',
+  SPONSORSHIP: 'GIFT',
+};
 
 interface SalesLedgerViewProps {
   currentRole: UserRole;
@@ -24,7 +37,6 @@ interface SalesLedgerViewProps {
 
 export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [orders, setOrders] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeScope, setActiveScope] = useState<'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT'>('ALL');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('ALL');
@@ -32,6 +44,9 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+  // Slicer + phan trang cuc bo: gioi han chieu cao bang, mac dinh 20 don
+  const [channelSlicer, setChannelSlicer] = useState<'ALL' | 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT'>('ALL');
+  const [pageSize, setPageSize] = useState<number>(20); // 20 | 50 | 100 | -1 (tat ca)
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
 
@@ -85,7 +100,6 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       const data = await res.json();
       if (data.success) {
         setOrders(data.orders || []);
-        setSummary(data.summary || null);
       }
     } catch (err) {
       console.error('Lỗi tải danh sách doanh số:', err);
@@ -99,6 +113,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   }, [activeScope, currentRole, selectedWarehouse, startDate, endDate]);
 
   const filteredOrders = orders.filter((ord) => {
+    if (channelSlicer !== 'ALL' && CHANNEL_GROUP_OF[ord.channel] !== channelSlicer) return false;
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -108,6 +123,16 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     );
   });
 
+  // Gioi han so dong hien thi de bang gon trong 1 man hinh (cuon doc xem tiep)
+  const visibleOrders = pageSize === -1 ? filteredOrders : filteredOrders.slice(0, pageSize);
+
+  // The tong theo dung nhung gi dang thay (slicer kenh + tim kiem) de khong lech voi bang.
+  const viewSummary = {
+    totalSubtotal: filteredOrders.reduce((s, o) => s + Number(o.subtotal || 0), 0),
+    totalDiscount: filteredOrders.reduce((s, o) => s + Number(o.discountAmount || 0), 0),
+    totalRevenue: filteredOrders.reduce((s, o) => s + Number(o.finalAmount || 0), 0),
+  };
+
   // Xuất file CSV chuẩn UTF-8 BOM cho Excel
   const exportToCSV = () => {
     if (filteredOrders.length === 0) {
@@ -115,6 +140,11 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       return;
     }
 
+    // Chan Excel formula injection: o text bat dau =,+,-,@ thi chen ' phia truoc.
+    const cell = (v: string | number) => {
+      const s = `${v ?? ''}`;
+      return /^[=+\-@]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
+    };
     const headers = [
       'Mã Đơn Hàng',
       'Kho Xuất',
@@ -142,16 +172,16 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     }));
 
     const rows = filteredOrders.map((ord) => [
-      `"${ord.orderCode || ''}"`,
-      `"${ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai'}"`,
-      `"${(ord.customerName || '').replace(/"/g, '""')}"`,
-      `"${ord.paymentMethod || ''}"`,
+      cell(ord.orderCode || ''),
+      cell(ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai'),
+      cell(ord.customerName || ''),
+      cell(ord.paymentMethod || ''),
       ord.subtotal || 0,
       ord.discountAmount || 0,
       ord.finalAmount || 0,
-      `"${ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'}"`,
-      `"${ord.vatInvoiceCode || ''}"`,
-      `"${ord.createdAt || ''}"`,
+      cell(ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'),
+      cell(ord.vatInvoiceCode || ''),
+      cell(ord.createdAt || ''),
     ]);
 
     const baseCsv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
@@ -333,14 +363,14 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         </div>
       </div>
 
-      {/* Financial Summary Cards */}
+      {/* Financial Summary Cards — theo dung bo loc dang xem */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             Tổng Giá Bìa (Niêm yết)
           </span>
           <p className="text-xl font-extrabold text-slate-900 mt-1 font-mono">
-            {(summary?.totalSubtotal || 0).toLocaleString('vi-VN')} đ
+            {(viewSummary.totalSubtotal || 0).toLocaleString('vi-VN')} đ
           </p>
         </div>
 
@@ -349,7 +379,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             Tổng Tiền Chiết Khấu Đã Giảm
           </span>
           <p className="text-xl font-extrabold text-amber-600 mt-1 font-mono">
-            -{(summary?.totalDiscount || 0).toLocaleString('vi-VN')} đ
+            -{(viewSummary.totalDiscount || 0).toLocaleString('vi-VN')} đ
           </p>
         </div>
 
@@ -358,36 +388,83 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             Doanh Thu Thực Thu
           </span>
           <p className="text-xl font-extrabold text-emerald-700 mt-1 font-mono">
-            {(summary?.totalRevenue || 0).toLocaleString('vi-VN')} đ
+            {(viewSummary.totalRevenue || 0).toLocaleString('vi-VN')} đ
           </p>
+          {(channelSlicer !== 'ALL' || searchQuery) && (
+            <p className="text-[10px] text-slate-400 mt-0.5">Theo bộ lọc đang xem (kênh/tìm kiếm)</p>
+          )}
         </div>
       </div>
 
-      {/* Orders List Table */}
+      {/* Orders List Table — gioi han chieu cao + cuon, keo xuong la toi panel phan tich */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm mã đơn, tên khách, số hóa đơn..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500"
-            />
+        <div className="p-4 border-b border-slate-100 flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm mã đơn, tên khách, số hóa đơn..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500"
+              />
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-slate-500 font-medium">
+                Hiển thị <strong>{visibleOrders.length}/{filteredOrders.length}</strong> đơn
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-slate-50 border border-slate-300 text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none cursor-pointer"
+                title="Số đơn hiển thị"
+              >
+                <option value={20}>20 đơn</option>
+                <option value={50}>50 đơn</option>
+                <option value={100}>100 đơn</option>
+                <option value={-1}>Xem toàn bộ</option>
+              </select>
+            </div>
           </div>
-          <span className="text-xs text-slate-500 font-medium shrink-0">
-            Tìm thấy <strong>{filteredOrders.length}</strong> đơn hàng
-          </span>
+          {/* Slicer kenh ban kieu pivot */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              Kênh:
+            </span>
+            {(
+              [
+                { id: 'ALL', label: 'Tất cả kênh' },
+                { id: 'RETAIL', label: 'Bán lẻ' },
+                { id: 'WHOLESALE', label: 'Đại lý' },
+                { id: 'ONLINE', label: 'Online' },
+                { id: 'GIFT', label: 'Tặng' },
+              ] as const
+            ).map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setChannelSlicer(s.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  channelSlicer === s.id
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100">
+            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10">
               <tr>
                 <th className="p-3.5">Mã Đơn Hàng</th>
                 <th className="p-3.5">Kho Xuất</th>
                 <th className="p-3.5">Khách Hàng / Đại Lý</th>
+                <th className="p-3.5">Kênh</th>
                 <th className="p-3.5">Thanh Toán</th>
                 <th className="p-3.5">Tổng Bìa</th>
                 <th className="p-3.5">Chiết Khấu</th>
@@ -397,14 +474,14 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredOrders.length === 0 ? (
+              {visibleOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <td colSpan={10} className="p-8 text-center text-slate-400">
                     Không tìm thấy đơn hàng nào phù hợp với bộ lọc.
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((ord) => (
+                visibleOrders.map((ord) => (
                   <tr key={ord.id} className="hover:bg-slate-50/80">
                     <td className="p-3.5 font-mono font-bold text-indigo-700">
                       {ord.orderCode}
@@ -418,6 +495,18 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                     </td>
                     <td className="p-3.5 font-medium text-slate-900">
                       {ord.customerName}
+                    </td>
+                    <td className="p-3.5">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                        {ord.channel === 'FAIR_EVENT' ? 'Hội chợ'
+                          : ord.channel === 'RETAIL_OFFICE' ? 'Bán lẻ'
+                          : ord.channel === 'WHOLESALE_PARTNER' ? 'Đại lý'
+                          : ord.channel === 'RETAIL_ONLINE_WEB' ? 'Web'
+                          : ord.channel === 'RETAIL_ONLINE_SOCIAL' ? 'Mạng xã hội'
+                          : ord.channel === 'ONLINE' ? 'Online'
+                          : ord.channel === 'SPONSORSHIP' ? 'Tặng'
+                          : (ord.channel || '—')}
+                      </span>
                     </td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 font-mono">
@@ -453,7 +542,21 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             </tbody>
           </table>
         </div>
+        {pageSize !== -1 && filteredOrders.length > visibleOrders.length && (
+          <button
+            onClick={() => setPageSize(-1)}
+            className="w-full py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-t border-indigo-100 transition"
+          >
+            Xem toàn bộ {filteredOrders.length} đơn ↓
+          </button>
+        )}
       </div>
+
+      {/* Sach ban chay nhat (OWNER/MANAGER) — tra loi "cuon nao ban chay nhat hom nay/tuan nay/thang nay" */}
+      <TopEditionsPanel currentRole={currentRole} />
+
+      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang */}
+      <RevenueAnalyticsPanel currentRole={currentRole} />
     </div>
   );
 }

@@ -175,17 +175,19 @@ export class ForecastService {
         level: classifyLevel(doi),
         suggestedReprintQty: computeReprintSuggestion(vSale),
       };
-      if (!level || item.level === level) items.push(item);
+      items.push(item);
     }
 
     items.sort((a, b) => (a.doi ?? Number.POSITIVE_INFINITY) - (b.doi ?? Number.POSITIVE_INFINITY));
-    const sliced = items.slice(0, limit);
+    // Summary dem tren TOAN danh muc (truoc loc) — loc RED khong duoc lam mat so lieu tong.
     const summary: Record<RunoutLevel, number> = {
       RED_ALERT: 0,
       YELLOW_WARNING: 0,
       HEALTHY_NORMAL: 0,
     };
     for (const it of items) summary[it.level]++;
+    const filtered = level ? items.filter((it) => it.level === level) : items;
+    const sliced = filtered.slice(0, limit);
 
     return { items: sliced, summary };
   }

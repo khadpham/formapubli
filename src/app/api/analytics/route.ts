@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Bước 5 — OLAP read-only (0 migration).
- * GET /api/analytics?view=channels|trending|consignment|cashflow
+ * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions
  *   &startDate=&endDate=&top=20&warehouseId=
  * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).
  */
@@ -16,10 +16,18 @@ export async function GET(req: NextRequest) {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
     const { searchParams } = new URL(req.url);
     const view = searchParams.get('view') || 'channels';
-    const range = {
-      startDate: searchParams.get('startDate') || undefined,
-      endDate: searchParams.get('endDate') || undefined,
-    };
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
+    // Ngay khong hop le → 400 thay vi tra rong lang le.
+    for (const d of [startDate, endDate]) {
+      if (d !== undefined && Number.isNaN(Date.parse(d))) {
+        return NextResponse.json(
+          { success: false, error: `Tham số ngày không hợp lệ: ${d}` },
+          { status: 400 }
+        );
+      }
+    }
+    const range = { startDate, endDate };
     if (view === 'channels') {
       return NextResponse.json({ success: true, data: await AnalyticsService.byChannel(range) });
     }
@@ -33,8 +41,13 @@ export async function GET(req: NextRequest) {
     if (view === 'cashflow') {
       return NextResponse.json({ success: true, data: await AnalyticsService.cashflow(range) });
     }
+    if (view === 'top-editions') {
+      const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));
+      const warehouseId = searchParams.get('warehouseId') || undefined;
+      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId) });
+    }
     return NextResponse.json(
-      { success: false, error: 'view không hợp lệ (channels | trending | consignment | cashflow).' },
+      { success: false, error: 'view không hợp lệ (channels | trending | consignment | cashflow | top-editions).' },
       { status: 400 }
     );
   } catch (error: any) {
