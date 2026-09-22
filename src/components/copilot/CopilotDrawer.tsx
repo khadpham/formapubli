@@ -8,17 +8,22 @@ import {
   Loader2,
   AlertTriangle,
   Boxes,
+  BookOpen,
   Receipt,
   Scale,
   DollarSign,
+  ShoppingCart,
   Maximize2,
   Minimize2,
   Trash2,
   CheckCircle2,
   Shield,
   Clock,
+  Mic,
+  Square,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
+import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 
 export interface CopilotMessage {
   id: string;
@@ -34,6 +39,12 @@ interface CopilotDrawerProps {
   currentRole: UserRole;
   isOpen: boolean;
   onClose: () => void;
+  /** mini: cua so chat nho goc phai duoi, luon hien huu moi trang; full: drawer phai nhu cu. */
+  mode?: 'mini' | 'full';
+  onMinimize?: () => void;
+  onExpand?: () => void;
+  /** Nhan don nhap tu tool prepare_sale_draft de op vao gio POS. */
+  onApplyDraft?: (draft: { items: Array<{ editionId: string; quantity: number }>; customerName?: string; phone?: string; address?: string; note?: string }) => void;
 }
 
 const QUICK_PROMPT_CHIPS = [
@@ -55,8 +66,9 @@ const QUICK_PROMPT_CHIPS = [
   },
 ];
 
-export function CopilotDrawer({ currentRole, isOpen, onClose }: CopilotDrawerProps) {
+export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onMinimize, onExpand, onApplyDraft }: CopilotDrawerProps) {
   const isAuthorized = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+  const isMini = mode === 'mini';
 
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,12 +81,67 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
 - **Tồn kho khả dụng** (3 địa điểm, chống âm kho)
 - **Doanh số 2 sổ** (Sổ Thuế VAT & Sổ Quản trị nội bộ)
 - **Cảnh báo cạn kho & Đề xuất in** (Chính sách đệm an toàn 105 ngày)
-- **Đối soát két ca quầy** (Đầu ca, tiền mặt, số lệch ghi nhận)`,
+- **Đối soát két ca quầy** (Đầu ca, tiền mặt, số lệch ghi nhận)
+- **Danh mục**: sách của 1 tác giả, tựa bắt đầu bằng chữ nào, tác giả được yêu thích
+- **Lên đơn nháp**: nói "lấy 2 cuốn H01..." rồi bấm **Áp vào POS**, qua quầy kiểm tra và tự thanh toán`,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  // Chong op draft trung: vo hieu hoa nut sau lan bam dau (double-click tao 2 nonce → x2 gio).
+  const [appliedDraftIds, setAppliedDraftIds] = useState<Set<string>>(new Set());
+  // Voice-to-text: MAC DINH dung Web Speech API cua trinh duyet (nhanh, co interim live
+  // noi den dau chu hien den day, da kiem chung o POS/kho). Fallback Groq Whisper khi
+  // trinh duyet khong ho tro (qua /api/ai/parse-voice-order).
+  const voiceLive = useVoiceSearch();
+  const voiceLiveRef = useRef(voiceLive);
+  voiceLiveRef.current = voiceLive;
+  // Giu cau noi cu: moi lan bam mic chi NOI TIEP vao sau, khong thay the.
+  const voiceBaseRef = useRef<string>('');
+
+  // Dong bo transcript live (interim) vao o nhap: noi den dau chu hien den day.
+  useEffect(() => {
+    if (!voiceLive.transcript) return;
+    const base = voiceBaseRef.current.trim();
+    const live = voiceLive.transcript.trim();
+    setInputQuery(base ? (live ? base + ' ' + live : base) : live);
+  }, [voiceLive.transcript]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  // Dong drawer / unmount giua chung ghi am Whisper → dung + nha mic keo den mic treo.
+  useEffect(() => {
+    if (!isOpen && (isRecording || streamRef.current)) {
+      try {
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+          recorderRef.current.stop();
+        }
+      } catch {
+        // Bo qua
+      }
+      setIsRecording(false);
+      stopTracks();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+  useEffect(() => {
+    return () => {
+      try {
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+          recorderRef.current.stop();
+        }
+      } catch {
+        // Bo qua
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,9 +174,47 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
     return () => clearInterval(interval);
   }, [rateLimitTimer]);
 
+  // Uu tien mic Copilot: khi drawer dang mo, Alt+V goi mic Copilot thay vi mic
+  // cua trang POS/kho (capture + stopPropagation de chan handler bubble cua trang).
+  // Esc dong drawer (khop hint UI). Dong/mount → dung Whisper + nha mic.
+  const micHandlerRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (!isOpen || !isAuthorized) return;
+    const onKeyCapture = (e: KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
+        e.preventDefault();
+        e.stopPropagation();
+        micHandlerRef.current();
+      }
+    };
+    const onKeyEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        try {
+          voiceLiveRef.current?.stopListening();
+        } catch {
+          // Bo qua
+        }
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyCapture, true);
+    window.addEventListener('keydown', onKeyEsc, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyCapture, true);
+      window.removeEventListener('keydown', onKeyEsc, true);
+    };
+  }, [isOpen, isAuthorized, onClose]);
+
   const handleSend = async (queryToSend?: string) => {
     const text = (queryToSend || inputQuery).trim();
     if (!text || loading || !isAuthorized) return;
+    // Dung nghe live khi gui de cau hoi chot, tranh transcript tiep tuc doi chu.
+    try {
+      voiceLive.stopListening();
+    } catch {
+      // Bo qua
+    }
 
     const userMsg: CopilotMessage = {
       id: 'msg_' + Date.now(),
@@ -120,6 +225,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
 
     setMessages((prev) => [...prev, userMsg]);
     setInputQuery('');
+    voiceBaseRef.current = '';
     setLoading(true);
 
     try {
@@ -205,6 +311,104 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
         timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
+  };
+
+  // Voice-to-text cho Copilot: ghi am -> Groq Whisper STT -> do transcript vao o nhap lieu.
+  // Chi dung khi trinh duyet KHONG ho tro Web Speech API (fallback).
+  const stopTracks = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  const sendVoiceToStt = async (blob: Blob) => {
+    setVoiceBusy(true);
+    setVoiceError(null);
+    try {
+      const form = new FormData();
+      form.append('audio', blob, 'copilot-voice.webm');
+      const res = await fetch('/api/ai/parse-voice-order', { method: 'POST', body: form });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        setVoiceError('Không có quyền dùng giọng nói. Hãy nhập tay.');
+        return;
+      }
+      if (!res.ok || !json?.success) {
+        setVoiceError(json?.message || 'STT lỗi — hãy nhập tay.');
+        return;
+      }
+      const transcript: string = json.data?.transcript || '';
+      if (transcript) {
+        setInputQuery((prev) => (prev.trim() ? prev.trim() + ' ' + transcript : transcript));
+        inputRef.current?.focus();
+      } else {
+        setVoiceError('Không nghe rõ — nói lại gần mic hơn hoặc nhập tay.');
+      }
+    } catch {
+      setVoiceError('Mất kết nối STT — hãy nhập tay.');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  const handleMicClick = () => {
+    if (voiceLive.isSupported) {
+      // Engine mac dinh: Web Speech API — interim live, noi den dau chu hien den day.
+      if (voiceLive.isListening) {
+        voiceLive.stopListening();
+      } else {
+        setVoiceError(null);
+        // Chot cau cu lam nen truoc khi noi tiep.
+        voiceBaseRef.current = inputQuery;
+        inputRef.current?.focus();
+        voiceLive.startListening();
+      }
+      return;
+    }
+    // Fallback: thu am gui Whisper.
+    toggleVoiceRecording();
+  };
+
+  const micActive = voiceLive.isListening || isRecording;
+  const micBusy = voiceBusy;
+
+  // Dang ky handler mic moi nhat cho phim tat Alt+V (capture).
+  useEffect(() => {
+    micHandlerRef.current = handleMicClick;
+  });
+
+  const toggleVoiceRecording = async () => {
+    if (voiceBusy || loading) return;
+    if (isRecording && recorderRef.current) {
+      recorderRef.current.stop();
+      return;
+    }
+    setVoiceError(null);
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        setVoiceError('Thiết bị/trình duyệt không hỗ trợ micro — hãy nhập tay.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = async () => {
+        setIsRecording(false);
+        stopTracks();
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        chunksRef.current = [];
+        if (blob.size > 0) await sendVoiceToStt(blob);
+      };
+      rec.start();
+      setIsRecording(true);
+    } catch {
+      setVoiceError('Không mở được micro — kiểm tra quyền trình duyệt.');
+    }
   };
 
   // Render Markdown cơ bản an toàn (bullet, bold, code block, line breaks)
@@ -300,6 +504,8 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
       query_sales_summary: { label: 'Doanh số 2 sổ', icon: Receipt, color: 'bg-sky-50 text-sky-700 border-sky-200' },
       query_reprint_forecast: { label: 'Dự báo in 105 ngày', icon: Scale, color: 'bg-purple-50 text-purple-700 border-purple-200' },
       query_cashbox_reconciliation: { label: 'Đối soát két ca', icon: DollarSign, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+      query_catalog: { label: 'Danh mục sách', icon: BookOpen, color: 'bg-rose-50 text-rose-700 border-rose-200' },
+      prepare_sale_draft: { label: 'Đơn nháp POS', icon: ShoppingCart, color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
     };
     const info = map[toolName] || { label: toolName, icon: Sparkles, color: 'bg-slate-50 text-slate-700 border-slate-200' };
     const Icon = info.icon;
@@ -315,19 +521,25 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
-      />
+      {/* Backdrop — chi o che do full */}
+      {!isMini && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+          onClick={onClose}
+        />
+      )}
 
       {/* Drawer Panel */}
       <aside
-        className={`fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out ${
-          isExpanded ? 'w-full md:w-[720px]' : 'w-full md:w-[480px]'
-        }`}
+        className={
+          isMini
+            ? 'fixed bottom-4 right-4 z-50 flex flex-col bg-white shadow-2xl border border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 ease-in-out w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-6rem)]'
+            : `fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out ${
+                isExpanded ? 'w-full md:w-[720px]' : 'w-full md:w-[480px]'
+              }`
+        }
         role="dialog"
-        aria-modal="true"
+        aria-modal={!isMini}
         aria-label="Executive AI Copilot"
       >
         {/* Header */}
@@ -350,13 +562,33 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors hidden md:flex"
-              title={isExpanded ? 'Thu hẹp' : 'Mở rộng'}
-            >
-              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
+            {!isMini && onMinimize && (
+              <button
+                onClick={onMinimize}
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                title="Thu nhỏ thành bong bóng chat góc phải"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+            )}
+            {isMini && onExpand && (
+              <button
+                onClick={onExpand}
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                title="Mở rộng toàn màn hình phải"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            )}
+            {!isMini && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors hidden md:flex"
+                title={isExpanded ? 'Thu hẹp' : 'Mở rộng'}
+              >
+                {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            )}
             <button
               onClick={handleClearHistory}
               className="p-2 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition-colors"
@@ -443,6 +675,35 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                       </div>
                     </div>
                   )}
+
+                  {/* Nut Ap don nhap vao gio POS — user van tu bam Thanh toan */}
+                  {msg.toolUsed === 'prepare_sale_draft' && Array.isArray(msg.toolData?.items) && msg.toolData.items.length > 0 && onApplyDraft && (
+                    <button
+                      disabled={appliedDraftIds.has(msg.id)}
+                      onClick={() => {
+                        // Validate + chuan hoa truoc khi op: editionId chuoi, qty 1..999.
+                        const items = msg.toolData.items
+                          .filter((it: any) => it && typeof it.editionId === 'string' && it.editionId.trim())
+                          .map((it: any) => ({
+                            editionId: it.editionId.trim(),
+                            quantity: Math.min(999, Math.max(1, Math.floor(Number(it.quantity) || 1))),
+                          }));
+                        if (items.length === 0) return;
+                        setAppliedDraftIds((prev) => new Set(prev).add(msg.id));
+                        onApplyDraft({
+                          items,
+                          customerName: typeof msg.toolData.customerName === 'string' ? msg.toolData.customerName : undefined,
+                          phone: typeof msg.toolData.phone === 'string' ? msg.toolData.phone : undefined,
+                          address: typeof msg.toolData.address === 'string' ? msg.toolData.address : undefined,
+                          note: typeof msg.toolData.note === 'string' ? msg.toolData.note : undefined,
+                        });
+                      }}
+                      className="mt-2.5 w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      {appliedDraftIds.has(msg.id) ? 'Đã áp vào POS — qua quầy để thanh toán' : `Áp vào POS (${msg.toolData.items.length} dòng) — qua quầy để thanh toán`}
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -492,16 +753,52 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
               }}
               className="flex items-center gap-2"
             >
+              <button
+                type="button"
+                onClick={handleMicClick}
+                disabled={!isAuthorized || loading || micBusy}
+                title={
+                  micActive
+                    ? 'Dừng nghe'
+                    : voiceLive.isSupported
+                    ? 'Nói để nhập câu hỏi — chữ hiện trực tiếp khi nói (nhận diện trên trình duyệt)'
+                    : 'Nói để nhập câu hỏi (ghi âm gửi Whisper)'
+                }
+                className={`h-10 w-10 rounded-xl border flex items-center justify-center transition-all shrink-0 disabled:opacity-50 cursor-pointer ${
+                  micActive
+                    ? 'bg-rose-600 text-white border-rose-600 animate-pulse'
+                    : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300'
+                }`}
+              >
+                {micBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : micActive ? (
+                  <Square className="w-4 h-4" />
+                ) : (
+                  <Mic className="w-4 h-4" />
+                )}
+              </button>
               <input
                 ref={inputRef}
                 type="text"
                 disabled={!isAuthorized || loading}
                 value={inputQuery}
-                onChange={(e) => setInputQuery(e.target.value)}
+                onChange={(e) => {
+                  // Nguoi dung go tay khi dang nghe: dung voice, giu cau da co, nguoi tiep quan.
+                  if (voiceLive.isListening) {
+                    try {
+                      voiceLive.stopListening();
+                    } catch {
+                      // Bo qua
+                    }
+                    voiceBaseRef.current = e.target.value;
+                  }
+                  setInputQuery(e.target.value);
+                }}
                 placeholder={
                   !isAuthorized
                     ? 'Bạn không có quyền truy vấn Copilot...'
-                    : 'Hỏi về tồn kho, 2 sổ doanh thu, dự báo in 105 ngày, két quầy...'
+                    : 'Hỏi về tồn kho, 2 sổ doanh thu, dự báo in 105 ngày, két quầy... hoặc bấm mic để nói'
                 }
                 className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all disabled:opacity-50"
               />
@@ -517,7 +814,15 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
           )}
 
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 px-1">
-            <span>Executive Copilot • Dữ liệu nội bộ bảo mật Formapubli</span>
+            <span>
+              {voiceLive.isListening
+                ? 'Đang nghe trực tiếp... nói đến đâu chữ hiện đến đấy, bấm nút vuông để dừng.'
+                : isRecording
+                ? 'Đang ghi âm... bấm nút vuông để dừng và chuyển thành văn bản.'
+                : voiceError || voiceLive.error
+                ? voiceError || voiceLive.error
+                : 'Executive Copilot • Dữ liệu nội bộ bảo mật Formapubli'}
+            </span>
             <span>Esc để đóng • Alt+C để bật/tắt</span>
           </div>
         </div>

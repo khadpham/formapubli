@@ -69,6 +69,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  // Chan DoS CPU/LLM: cau hoi toi da 1000 ky tu (du cho cau phuc tap, chan dump KB).
+  if (question.length > 1000) {
+    return NextResponse.json(
+      { success: false, code: 'INVALID_INPUT', message: 'Câu hỏi tối đa 1000 ký tự — tách thành nhiều câu ngắn.' },
+      { status: 400 }
+    );
+  }
 
   // 4. Ghi vết kiểm toán phiên hỏi đáp
   await recordAuditLog({
@@ -111,32 +118,39 @@ export async function POST(req: NextRequest) {
     const openaiKey = process.env.OPENAI_API_KEY;
 
     if (geminiKey || openaiKey) {
+      // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam
+      // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
-Lãnh đạo vừa hỏi: "${question}"
 Hệ thống đã tra cứu dữ liệu thực tế từ công cụ [${toolCall.toolName}]:
 ${JSON.stringify(toolResult, null, 2)}
 
 HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC:
 - Mọi con số PHẢI lấy chính xác từ dữ liệu trên, không tự tính toán thêm.
 - Nếu là két tiền, TUYỆT ĐỐI không suy diễn thành gian lận hay buộc tội.
-- Trình bày dạng danh sách/bảng nếu có nhiều mục.`;
+- Trình bày dạng danh sách/bảng nếu có nhiều mục.
+- NEU DU LIEU CHI CO 1 DAU SACH (itemsCount=1): chi tra loi ve dung cuon do, lay so
+  availableStock va warehouseBreakdown. Neu itemsCount=0: bao khong tim thay, TUYET DOI
+  khong tu che so ton kho.
+- CHI TRA VE duy nhat 1 object JSON: {"response": "<markdown tieng Viet tu nhien>"}.`;
 
       try {
+        let raw = '';
         if (geminiKey) {
-          synthesizedAnswer = await callGeminiJsonRaw({
+          raw = await callGeminiJsonRaw({
             systemPrompt: synthPrompt,
-            userText: 'Hãy tổng hợp kết quả.',
+            userText: `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`,
             apiKey: geminiKey,
             timeoutMs: 5000,
           });
         } else if (openaiKey) {
-          synthesizedAnswer = await callOpenAIJsonRaw({
+          raw = await callOpenAIJsonRaw({
             systemPrompt: synthPrompt,
-            userText: 'Hãy tổng hợp kết quả.',
+            userText: `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`,
             apiKey: openaiKey,
             timeoutMs: 5000,
           });
         }
+        synthesizedAnswer = extractNaturalAnswer(raw);
       } catch (synthErr) {
         console.warn('⚠️ Lỗi tổng hợp LLM, dùng formatter nội bộ:', synthErr);
       }
@@ -147,7 +161,37 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
       synthesizedAnswer = formatFallbackAnswer(toolCall.toolName, toolResult);
     }
 
-    const finalAnswer = CopilotGuardrails.postProcessAnswer(synthesizedAnswer, toolCall.toolName);
+    const finalAnswer0 = CopilotGuardrails.postProcessAnswer(synthesizedAnswer, toolCall.toolName);
+
+    // Ep grounded: moi so co nghia trong cau tra loi PHAI co trong toolData.
+    // Neu LLM bia so (vd bao het hang trong khi ton > 0) → dung formatter noi bo.
+    // zeroClaim chi ban khi cau "het hang" KHONG kem con so nao (dau hieu bia);
+    // cau dung kieu "0 cuon o Au Co, con 10 o Quynh Mai" co so nen duoc giu.
+    // Rieng hoi 1 cuon: cau tra loi co so ma thieu dung tong ton that → fallback
+    // (bat duoc ca ao giac so nho "con 5" vs that "con 8").
+    let finalAnswer = finalAnswer0;
+    try {
+      const orphans = CopilotGuardrails.findUngroundedNumbers(finalAnswer, toolResult);
+      const hasAnyNumber = /\d/.test(finalAnswer);
+      const claimsZeroStock =
+        toolCall.toolName === 'query_stock_level' &&
+        Number(toolResult?.totalAvailable || 0) > 0 &&
+        !hasAnyNumber &&
+        /(hết hàng|het hang|không còn|khong con)\b/i.test(finalAnswer);
+      let wrongSingleTotal = false;
+      if (toolCall.toolName === 'query_stock_level' && Number(toolResult?.itemsCount) === 1) {
+        const trueTotal = Number(toolResult.items[0]?.availableStock);
+        const deGrouped = finalAnswer.replace(/(\d)[.,](?=\d{3}\b)/g, '$1');
+        const nums = (deGrouped.match(/\d+/g) || []).map(Number);
+        if (nums.length > 0 && !nums.includes(trueTotal)) wrongSingleTotal = true;
+      }
+      if (orphans.length > 0 || claimsZeroStock || wrongSingleTotal) {
+        console.warn(`Copilot ungrounded [${toolCall.toolName}]: orphans=${orphans.join(',')} zeroClaim=${claimsZeroStock} wrongTotal=${wrongSingleTotal} — dung fallback.`);
+        finalAnswer = formatFallbackAnswer(toolCall.toolName, toolResult);
+      }
+    } catch (err) {
+      console.warn('[copilot] grounded check failed:', err);
+    }
 
     return NextResponse.json({
       success: true,
@@ -167,8 +211,40 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
   }
 }
 
+function extractNaturalAnswer(raw: string): string {
+  let text = (raw || '').trim();
+  if (!text) return '';
+  // LLM doi khi boc fence ```json ... ``` — lot vo truoc khi parse.
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  if (!text) return '';
+  // LLM o che do JSON thuong tra {"response": "..."} — boc lay markdown tu nhien.
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const candidates = ['response', 'answer', 'text', 'content', 'message', 'result'];
+      for (const key of candidates) {
+        const v = parsed[key];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+      // Truong hop model boc { "tool": ..., "data": ... } — khong hien JSON tho.
+      return '';
+    } catch {
+      return text;
+    }
+  }
+  return text;
+}
+
 function formatFallbackAnswer(toolName: string, data: any): string {
   if (toolName === 'query_stock_level') {
+    if (data.warning && (!data.items || data.items.length === 0)) {
+      return `📦 **Tra cứu tồn kho**: ${data.warning}`;
+    }
+    if (data.itemsCount === 1 && data.items?.length === 1) {
+      const it = data.items[0];
+      const lines = Object.entries(it.warehouseBreakdown || {}).map(([w, q]) => `- ${w}: **${Number(q).toLocaleString('vi-VN')}** cuốn`);
+      return `📦 **${it.code}${it.title ? ' - ' + it.title : ''} còn ${Number(it.availableStock).toLocaleString('vi-VN')} cuốn khả dụng** (${data.warehouseScope}):\n${lines.join('\n')}`;
+    }
     return `📦 **Báo cáo Tồn kho Khả dụng**:
 - Phạm vi: ${data.warehouseScope}
 - Tổng số cuốn khả dụng: **${data.totalAvailable}** cuốn (${data.itemsCount} ấn bản).`;
@@ -185,6 +261,23 @@ function formatFallbackAnswer(toolName: string, data: any): string {
 - Cảnh báo Vàng (≤45 ngày): **${data.summary?.YELLOW_WARNING ?? 0}** đầu sách.
 - Bình thường: **${data.summary?.HEALTHY_NORMAL ?? 0}** đầu sách.`;
   }
+  if (toolName === 'query_catalog') {
+    if (data.warning && (!data.items || data.items.length === 0) && (!data.authors || data.authors.length === 0)) {
+      return `📚 **Tra cứu danh mục**: ${data.warning}`;
+    }
+    if (data.mode === 'top-authors' && data.authors?.length) {
+      const lines = data.authors.slice(0, 20).map((a: any, i: number) =>
+        `${i + 1}. **${a.author}** — ${a.titlesCount} đầu sách, đã bán ${Number(a.soldQty).toLocaleString('vi-VN')} cuốn`);
+      return `📚 **Top tác giả được yêu thích (${data.query})** — tổng ${data.total} tác giả:\n${lines.join('\n')}`;
+    }
+    const lines = (data.items || []).slice(0, 20).map((it: any, i: number) =>
+      `${i + 1}. **${it.code} - ${it.title}** (${it.author || 'chưa rõ tác giả'}) — giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ`);
+    const head = data.mode === 'author' ? `📚 **Sách của tác giả ${data.query}**`
+      : data.mode === 'title-prefix' ? `📚 **Tác phẩm bắt đầu bằng ${data.query}**`
+      : data.mode === 'top-editions' ? `📚 **Sách bán chạy (${data.query})**`
+      : `📚 **Danh mục (${data.query})**`;
+    return `${head} — tổng ${data.total} đầu sách:\n${lines.join('\n')}`;
+  }
   if (toolName === 'query_cashbox_reconciliation') {
     const active = data.activeSession;
     if (!active) {
@@ -194,6 +287,16 @@ function formatFallbackAnswer(toolName: string, data: any): string {
 - Thu ngân ca: **${active.cashierId}** (Kho: ${active.warehouseId}).
 - Tiền đầu ca: **${active.openingCash?.toLocaleString('vi-VN')} đ**.
 - Tiền mặt thu bán: **${active.totalCashSales?.toLocaleString('vi-VN')} đ** (${active.totalOrdersCount} đơn).`;
+  }
+  if (toolName === 'prepare_sale_draft') {
+    if (!data.items || data.items.length === 0) {
+      return `🧾 **Lên đơn nháp**: ${(data.warnings || []).join(' ')}`;
+    }
+    const lines = data.items.map((it: any, i: number) =>
+      `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ, tồn ${Number(it.availableStock || 0).toLocaleString('vi-VN')})`);
+    const warn = (data.warnings || []).length > 0 ? `\n⚠️ ${(data.warnings || []).join(' ')}` : '';
+    const who = data.customerName ? ` cho **${data.customerName}**` : '';
+    return `🧾 **Đơn nháp${who}** (${data.items.length} dòng) — mới là NHÁP, chưa tạo đơn, chưa trừ kho:\n${lines.join('\n')}${warn}\n\nBấm **Áp vào POS** để đổ vào giỏ, kiểm tra lại rồi tự bấm Thanh toán.`;
   }
   return JSON.stringify(data, null, 2);
 }
