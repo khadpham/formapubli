@@ -38,8 +38,8 @@ Mở `http://localhost:3000`. Lần đầu mở sẽ hiện **màn hình Đăng 
 
 | Mã NV | Tên hiện | Vai trò | PIN test | Được làm gì |
 |---|---|---|---|---|
-| ADMIN-01 | Chủ Quản Lý | Owner | `owner9999` | Toàn quyền + quản trị tài khoản |
-| QL-01 | Quản Lý Vận Hành | Manager | `manager8888` | Bán, duyệt CK, quản lý Thu ngân/Thủ kho/Thuế |
+| ADMIN-01 | Chủ Quản Lý | Owner | `9999` | Toàn quyền + quản trị tài khoản |
+| QL-01 | Quản Lý Vận Hành | Manager | `8888` | Bán, duyệt CK, quản lý Thu ngân/Thủ kho/Thuế |
 | NV-01 / NV-02 | Thu Ngân 01/02 | Cashier | `1234` | Bán quầy, chỉ chạm két của chính mình |
 | KHO-01 | Thủ Kho 01 | Warehouse | `5678` | Nhập/xuất/chuyển kho, không thấy doanh thu |
 | THUE-01 | Kế Toán Thuế | Tax | `7890` | Chỉ xem số liệu VAT (`OFFICIAL_TAX`) |

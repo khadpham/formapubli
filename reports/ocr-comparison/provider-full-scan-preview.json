@@ -1,0 +1,2099 @@
+{
+  "files": [
+    {
+      "path": ".env.example",
+      "status": "scan",
+      "insertions": 42,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "user_exclude"
+    },
+    {
+      "path": ".gitignore",
+      "status": "scan",
+      "insertions": 38,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "FORMAPUBLI_MASTER_BLUEPRINT.md",
+      "status": "scan",
+      "insertions": 1312,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "LICENSE",
+      "status": "scan",
+      "insertions": 201,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "PROJECT_TRACKER.md",
+      "status": "scan",
+      "insertions": 650,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "README.md",
+      "status": "scan",
+      "insertions": 79,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet1_danhmuc_gid_0.csv",
+      "status": "scan",
+      "insertions": 82,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet1_danhmuc_gid_1764843757.csv",
+      "status": "scan",
+      "insertions": 81,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_0.csv",
+      "status": "scan",
+      "insertions": 37,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_1197457300.csv",
+      "status": "scan",
+      "insertions": 16,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_1214382207.csv",
+      "status": "scan",
+      "insertions": 10,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_1325784184.csv",
+      "status": "scan",
+      "insertions": 0,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_1674212107.csv",
+      "status": "scan",
+      "insertions": 82,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_1807916279.csv",
+      "status": "scan",
+      "insertions": 27,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_2023951129.csv",
+      "status": "scan",
+      "insertions": 233,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_210608179.csv",
+      "status": "scan",
+      "insertions": 83,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_2136291213.csv",
+      "status": "scan",
+      "insertions": 320,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_721922952.csv",
+      "status": "scan",
+      "insertions": 25,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet2_ban_thang_gid_724757544.csv",
+      "status": "scan",
+      "insertions": 125,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1148267273.csv",
+      "status": "scan",
+      "insertions": 85,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1170968993.csv",
+      "status": "scan",
+      "insertions": 79,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1290093002.csv",
+      "status": "scan",
+      "insertions": 85,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1663976436.csv",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1666211934.csv",
+      "status": "scan",
+      "insertions": 72,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1807108762.csv",
+      "status": "scan",
+      "insertions": 83,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_1812872700.csv",
+      "status": "scan",
+      "insertions": 80,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_2039062334.csv",
+      "status": "scan",
+      "insertions": 80,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_2073254470.csv",
+      "status": "scan",
+      "insertions": 87,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_367799034.csv",
+      "status": "scan",
+      "insertions": 47,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_956647775.csv",
+      "status": "scan",
+      "insertions": 85,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet3_ban_nam_gid_980100867.csv",
+      "status": "scan",
+      "insertions": 87,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet4_kho_kiemkho_gid_1382296458.csv",
+      "status": "scan",
+      "insertions": 89,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet4_kho_kiemkho_gid_1384201733.csv",
+      "status": "scan",
+      "insertions": 141,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet4_kho_kiemkho_gid_1731554300.csv",
+      "status": "scan",
+      "insertions": 89,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet4_kho_kiemkho_gid_445705476.csv",
+      "status": "scan",
+      "insertions": 47,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet4_kho_kiemkho_gid_59915095.csv",
+      "status": "scan",
+      "insertions": 73,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet4_kho_kiemkho_gid_862711181.csv",
+      "status": "scan",
+      "insertions": 48,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_1210396760.csv",
+      "status": "scan",
+      "insertions": 79,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_1550587457.csv",
+      "status": "scan",
+      "insertions": 80,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_184713934.csv",
+      "status": "scan",
+      "insertions": 74,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_356971508.csv",
+      "status": "scan",
+      "insertions": 79,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_550962552.csv",
+      "status": "scan",
+      "insertions": 46,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_764374735.csv",
+      "status": "scan",
+      "insertions": 83,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet5_xuat_nhap_gid_997296637.csv",
+      "status": "scan",
+      "insertions": 15,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_0.csv",
+      "status": "scan",
+      "insertions": 647,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_1015741023.csv",
+      "status": "scan",
+      "insertions": 80,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_1200099539.csv",
+      "status": "scan",
+      "insertions": 88,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_141938761.csv",
+      "status": "scan",
+      "insertions": 5,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_1529763787.csv",
+      "status": "scan",
+      "insertions": 64,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_1787844922.csv",
+      "status": "scan",
+      "insertions": 72,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_453005445.csv",
+      "status": "scan",
+      "insertions": 13,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_525095784.csv",
+      "status": "scan",
+      "insertions": 1461,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet6_tang_gid_699654199.csv",
+      "status": "scan",
+      "insertions": 67,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_1038774476.csv",
+      "status": "scan",
+      "insertions": 20,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_1488380340.csv",
+      "status": "scan",
+      "insertions": 333,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_1728579464.csv",
+      "status": "scan",
+      "insertions": 85,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_2097116433.csv",
+      "status": "scan",
+      "insertions": 169,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_221473870.csv",
+      "status": "scan",
+      "insertions": 8,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_360864498.csv",
+      "status": "scan",
+      "insertions": 33,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_53432971.csv",
+      "status": "scan",
+      "insertions": 18,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "data_tabs/sheet7_money_flow_gid_933796055.csv",
+      "status": "scan",
+      "insertions": 26,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/ADVERSARIAL_TESTING_POLICY.md",
+      "status": "scan",
+      "insertions": 97,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/CP3_EXECUTION_PLAN.md",
+      "status": "scan",
+      "insertions": 355,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/FORMAPUBLI_KNOWLEDGE_BASE.md",
+      "status": "scan",
+      "insertions": 796,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PHASE0_ACCEPTANCE_MATRIX.md",
+      "status": "scan",
+      "insertions": 106,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PHASE0_CONTRACT.md",
+      "status": "scan",
+      "insertions": 106,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PHASE5_LANE_CONTRACT.md",
+      "status": "scan",
+      "insertions": 135,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PHASE5_SPRINT0_AMENDMENT.md",
+      "status": "scan",
+      "insertions": 42,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/REPORT_55_SHEETS_AUDIT.md",
+      "status": "scan",
+      "insertions": 154,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/TEAM_TEST_MANUAL.md",
+      "status": "scan",
+      "insertions": 133,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "drizzle.config.ts",
+      "status": "scan",
+      "insertions": 10,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "drizzle.test.config.ts",
+      "status": "scan",
+      "insertions": 13,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "eval-executive-ai-report.json",
+      "status": "scan",
+      "insertions": 216,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "next-env.d.ts",
+      "status": "scan",
+      "insertions": 5,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "next.config.mjs",
+      "status": "scan",
+      "insertions": 6,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "package-lock.json",
+      "status": "scan",
+      "insertions": 5763,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "too_large"
+    },
+    {
+      "path": "package.json",
+      "status": "scan",
+      "insertions": 44,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "postcss.config.mjs",
+      "status": "scan",
+      "insertions": 6,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "public/icons/icon-192.svg",
+      "status": "scan",
+      "insertions": 47,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "public/icons/icon-512.svg",
+      "status": "scan",
+      "insertions": 47,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "public/manifest.json",
+      "status": "scan",
+      "insertions": 41,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "public/sw.js",
+      "status": "scan",
+      "insertions": 59,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0005.ts",
+      "status": "scan",
+      "insertions": 27,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0006.ts",
+      "status": "scan",
+      "insertions": 30,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0007.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0008.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0009.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0010.ts",
+      "status": "scan",
+      "insertions": 28,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0011.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0012.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0013.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/apply-migration-0014.ts",
+      "status": "scan",
+      "insertions": 29,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/backup-db.ts",
+      "status": "scan",
+      "insertions": 59,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/clean-slate-import.ts",
+      "status": "scan",
+      "insertions": 243,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/concurrency-worker.ts",
+      "status": "scan",
+      "insertions": 79,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/cp3-concurrency-worker.ts",
+      "status": "scan",
+      "insertions": 105,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/cp3-return-complete-worker.ts",
+      "status": "scan",
+      "insertions": 92,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/cp3-return-concurrency-worker.ts",
+      "status": "scan",
+      "insertions": 87,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/drill-go-live.ts",
+      "status": "scan",
+      "insertions": 100,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/eval-executive-ai.ts",
+      "status": "scan",
+      "insertions": 508,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/measure-stt-wer.ts",
+      "status": "scan",
+      "insertions": 113,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/migrate-fresh.ts",
+      "status": "scan",
+      "insertions": 109,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/run-isolated.ts",
+      "status": "scan",
+      "insertions": 151,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/seed.ts",
+      "status": "scan",
+      "insertions": 261,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/setup-test-db.ts",
+      "status": "scan",
+      "insertions": 249,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-ai-order-parser.ts",
+      "status": "scan",
+      "insertions": 65,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-analytics.ts",
+      "status": "scan",
+      "insertions": 114,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-auth-gateway.ts",
+      "status": "scan",
+      "insertions": 158,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-auth-rbac.ts",
+      "status": "scan",
+      "insertions": 165,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-barcode-engine.ts",
+      "status": "scan",
+      "insertions": 117,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-bundle-engine.ts",
+      "status": "scan",
+      "insertions": 156,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-clean-slate.ts",
+      "status": "scan",
+      "insertions": 120,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-consignment.ts",
+      "status": "scan",
+      "insertions": 171,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp2-concurrency-probes.ts",
+      "status": "scan",
+      "insertions": 845,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp3-migrations.ts",
+      "status": "scan",
+      "insertions": 270,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp3-reconciliation.ts",
+      "status": "scan",
+      "insertions": 313,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp3-return-complete.ts",
+      "status": "scan",
+      "insertions": 430,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp3-return-concurrency.ts",
+      "status": "scan",
+      "insertions": 446,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp3-return-exchange-void.ts",
+      "status": "scan",
+      "insertions": 530,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-cp3-transfer-concurrency.ts",
+      "status": "scan",
+      "insertions": 554,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-customer-tags.ts",
+      "status": "scan",
+      "insertions": 89,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-d3-d4.ts",
+      "status": "scan",
+      "insertions": 247,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-discount-guard.ts",
+      "status": "scan",
+      "insertions": 147,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-forecast.ts",
+      "status": "scan",
+      "insertions": 174,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-guard.ts",
+      "status": "scan",
+      "insertions": 18,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-in-transit.ts",
+      "status": "scan",
+      "insertions": 192,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-inventory.ts",
+      "status": "scan",
+      "insertions": 160,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-lane-b-guards.ts",
+      "status": "scan",
+      "insertions": 99,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-login-accounts.ts",
+      "status": "scan",
+      "insertions": 171,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-master-audit.ts",
+      "status": "scan",
+      "insertions": 240,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-monthly-digest.ts",
+      "status": "scan",
+      "insertions": 181,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-offline-engine.ts",
+      "status": "scan",
+      "insertions": 182,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-online-orders.ts",
+      "status": "scan",
+      "insertions": 213,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-order-guards.ts",
+      "status": "scan",
+      "insertions": 159,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-order-sales.ts",
+      "status": "scan",
+      "insertions": 191,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-p0-verification.ts",
+      "status": "scan",
+      "insertions": 305,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-patch02-laneA.ts",
+      "status": "scan",
+      "insertions": 170,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-patch02-laneB.ts",
+      "status": "scan",
+      "insertions": 258,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-pending-view.ts",
+      "status": "scan",
+      "insertions": 128,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-phase0-laneA.ts",
+      "status": "scan",
+      "insertions": 278,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-reader-persona.ts",
+      "status": "scan",
+      "insertions": 200,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-returns.ts",
+      "status": "scan",
+      "insertions": 249,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-royalties.ts",
+      "status": "scan",
+      "insertions": 182,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-settlement.ts",
+      "status": "scan",
+      "insertions": 164,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-shipments.ts",
+      "status": "scan",
+      "insertions": 146,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-smart-parser.ts",
+      "status": "scan",
+      "insertions": 73,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-sponsorships.ts",
+      "status": "scan",
+      "insertions": 159,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-vietnamese-search.ts",
+      "status": "scan",
+      "insertions": 141,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "scripts/test-voice-order.ts",
+      "status": "scan",
+      "insertions": 712,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/ai/copilot/route.ts",
+      "status": "scan",
+      "insertions": 199,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/ai/parse-order/route.ts",
+      "status": "scan",
+      "insertions": 56,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/ai/parse-voice-order/route.ts",
+      "status": "scan",
+      "insertions": 100,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/ai/reader-persona/route.ts",
+      "status": "scan",
+      "insertions": 66,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/allocations/route.ts",
+      "status": "scan",
+      "insertions": 73,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/analytics/route.ts",
+      "status": "scan",
+      "insertions": 44,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/atp/route.ts",
+      "status": "scan",
+      "insertions": 36,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/auth/accounts/route.ts",
+      "status": "scan",
+      "insertions": 38,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/auth/login/route.ts",
+      "status": "scan",
+      "insertions": 293,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/auth/logout/route.ts",
+      "status": "scan",
+      "insertions": 32,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/auth/me/route.ts",
+      "status": "scan",
+      "insertions": 40,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/bundles/route.ts",
+      "status": "scan",
+      "insertions": 87,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/cashbox/route.ts",
+      "status": "scan",
+      "insertions": 114,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/consignments/route.ts",
+      "status": "scan",
+      "insertions": 273,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/customer-tags/route.ts",
+      "status": "scan",
+      "insertions": 64,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/customers/route.ts",
+      "status": "scan",
+      "insertions": 44,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/forecast/route.ts",
+      "status": "scan",
+      "insertions": 63,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/inventory/movement/route.ts",
+      "status": "scan",
+      "insertions": 96,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/inventory/transfer/route.ts",
+      "status": "scan",
+      "insertions": 75,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/orders/route.ts",
+      "status": "scan",
+      "insertions": 359,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/returns/route.ts",
+      "status": "scan",
+      "insertions": 202,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/rma/route.ts",
+      "status": "scan",
+      "insertions": 128,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/royalties/route.ts",
+      "status": "scan",
+      "insertions": 109,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/settlements/route.ts",
+      "status": "scan",
+      "insertions": 124,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/shipments/route.ts",
+      "status": "scan",
+      "insertions": 94,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/sponsorships/route.ts",
+      "status": "scan",
+      "insertions": 97,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/staff/[staffId]/route.ts",
+      "status": "scan",
+      "insertions": 113,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/staff/route.ts",
+      "status": "scan",
+      "insertions": 121,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/api/transfers/route.ts",
+      "status": "scan",
+      "insertions": 181,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/globals.css",
+      "status": "scan",
+      "insertions": 119,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/layout.tsx",
+      "status": "scan",
+      "insertions": 42,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/app/page.tsx",
+      "status": "scan",
+      "insertions": 80,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/CatalogTable.tsx",
+      "status": "scan",
+      "insertions": 477,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/StockMovementModal.tsx",
+      "status": "scan",
+      "insertions": 409,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/StockOverviewMatrix.tsx",
+      "status": "scan",
+      "insertions": 791,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/auth/LoginModal.tsx",
+      "status": "scan",
+      "insertions": 276,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/copilot/CopilotDrawer.tsx",
+      "status": "scan",
+      "insertions": 527,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/customers/CustomersDirectory.tsx",
+      "status": "scan",
+      "insertions": 105,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/customers/CustomersListView.tsx",
+      "status": "scan",
+      "insertions": 34,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/customers/ReaderMatchPanel.tsx",
+      "status": "scan",
+      "insertions": 86,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/customers/ReaderProfilePanel.tsx",
+      "status": "scan",
+      "insertions": 86,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/dashboard/ExecutiveDashboard.tsx",
+      "status": "scan",
+      "insertions": 541,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/inventory/PickListModal.tsx",
+      "status": "scan",
+      "insertions": 200,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/inventory/RmaTicketModal.tsx",
+      "status": "scan",
+      "insertions": 225,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/inventory/TransitPanel.tsx",
+      "status": "scan",
+      "insertions": 202,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/layout/AppSidebar.tsx",
+      "status": "scan",
+      "insertions": 286,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/layout/MasterAppShell.tsx",
+      "status": "scan",
+      "insertions": 306,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/partners/ConsignmentPanel.tsx",
+      "status": "scan",
+      "insertions": 189,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/partners/PartnersListView.tsx",
+      "status": "scan",
+      "insertions": 71,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/pos/PosCheckoutTerminal.tsx",
+      "status": "scan",
+      "insertions": 2060,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/pos/ReturnsModal.tsx",
+      "status": "scan",
+      "insertions": 323,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/pos/SmartOrderParser.tsx",
+      "status": "scan",
+      "insertions": 325,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/pwa/PwaRegister.tsx",
+      "status": "scan",
+      "insertions": 92,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/sales/PendingOrdersView.tsx",
+      "status": "scan",
+      "insertions": 432,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/sales/SalesLedgerView.tsx",
+      "status": "scan",
+      "insertions": 459,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/scanner/InAppBarcodeScanner.tsx",
+      "status": "scan",
+      "insertions": 639,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/settings/SettingsRbacView.tsx",
+      "status": "scan",
+      "insertions": 705,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/settings/StaffManager.tsx",
+      "status": "scan",
+      "insertions": 262,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/shipments/ShipmentTrackButton.tsx",
+      "status": "scan",
+      "insertions": 40,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/studio/AnalyticsStudio.tsx",
+      "status": "scan",
+      "insertions": 253,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/components/studio/BundleRoyaltyPanels.tsx",
+      "status": "scan",
+      "insertions": 78,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/index.ts",
+      "status": "scan",
+      "insertions": 38,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0000_late_nitro.sql",
+      "status": "scan",
+      "insertions": 166,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0001_secret_master_mold.sql",
+      "status": "scan",
+      "insertions": 9,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0002_chubby_saracen.sql",
+      "status": "scan",
+      "insertions": 49,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0003_slim_caretaker.sql",
+      "status": "scan",
+      "insertions": 14,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0004_fair_post.sql",
+      "status": "scan",
+      "insertions": 38,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0005_d3_d4_quota_rma.sql",
+      "status": "scan",
+      "insertions": 51,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0006_transfer_shipments.sql",
+      "status": "scan",
+      "insertions": 34,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0007_consignment_ledger.sql",
+      "status": "scan",
+      "insertions": 39,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0008_boxset_bundles.sql",
+      "status": "scan",
+      "insertions": 3,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0009_consignment_settlements.sql",
+      "status": "scan",
+      "insertions": 21,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0010_rights_and_royalties.sql",
+      "status": "scan",
+      "insertions": 24,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0011_sales_returns.sql",
+      "status": "scan",
+      "insertions": 38,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0012_spx_cod_tracking.sql",
+      "status": "scan",
+      "insertions": 8,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0013_customer_tags.sql",
+      "status": "scan",
+      "insertions": 9,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0014_sponsorship_funds.sql",
+      "status": "scan",
+      "insertions": 42,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0015_staff_accounts.sql",
+      "status": "scan",
+      "insertions": 12,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/0016_cp3_transfer_return_hardening.sql",
+      "status": "scan",
+      "insertions": 47,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0000_snapshot.json",
+      "status": "scan",
+      "insertions": 1167,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0001_snapshot.json",
+      "status": "scan",
+      "insertions": 1203,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0002_snapshot.json",
+      "status": "scan",
+      "insertions": 1569,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0003_snapshot.json",
+      "status": "scan",
+      "insertions": 1632,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0004_snapshot.json",
+      "status": "scan",
+      "insertions": 1890,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0008_snapshot.json",
+      "status": "scan",
+      "insertions": 2779,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0009_snapshot.json",
+      "status": "scan",
+      "insertions": 2930,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0010_snapshot.json",
+      "status": "scan",
+      "insertions": 3110,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0011_snapshot.json",
+      "status": "scan",
+      "insertions": 3384,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0012_snapshot.json",
+      "status": "scan",
+      "insertions": 3444,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0013_snapshot.json",
+      "status": "scan",
+      "insertions": 3505,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/0014_snapshot.json",
+      "status": "scan",
+      "insertions": 3816,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/migrations/meta/_journal.json",
+      "status": "scan",
+      "insertions": 125,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/db/schema.ts",
+      "status": "scan",
+      "insertions": 586,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/hooks/useVoiceSearch.ts",
+      "status": "scan",
+      "insertions": 195,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/api-response.ts",
+      "status": "scan",
+      "insertions": 55,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/auth-session.ts",
+      "status": "scan",
+      "insertions": 588,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/db-retry.ts",
+      "status": "scan",
+      "insertions": 60,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/export-hash.ts",
+      "status": "scan",
+      "insertions": 207,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/manager-pin.ts",
+      "status": "scan",
+      "insertions": 53,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/offline-db.ts",
+      "status": "scan",
+      "insertions": 164,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/rbac-guard.ts",
+      "status": "scan",
+      "insertions": 114,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/roles.ts",
+      "status": "scan",
+      "insertions": 58,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/smart-order-parser.ts",
+      "status": "scan",
+      "insertions": 146,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/thermalReceipt.ts",
+      "status": "scan",
+      "insertions": 278,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/transfer-fingerprint.ts",
+      "status": "scan",
+      "insertions": 92,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/uuidv7.ts",
+      "status": "scan",
+      "insertions": 51,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/lib/vietnamese.ts",
+      "status": "scan",
+      "insertions": 99,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/actor-context.ts",
+      "status": "scan",
+      "insertions": 23,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/ai-order-parser.service.ts",
+      "status": "scan",
+      "insertions": 204,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/ai/copilot-guardrails.ts",
+      "status": "scan",
+      "insertions": 274,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/ai/llm-client.ts",
+      "status": "scan",
+      "insertions": 397,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/ai/voice-order.service.ts",
+      "status": "scan",
+      "insertions": 300,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/allocation.service.ts",
+      "status": "scan",
+      "insertions": 311,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/analytics.service.ts",
+      "status": "scan",
+      "insertions": 172,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/app-error.ts",
+      "status": "scan",
+      "insertions": 51,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/bundle.service.ts",
+      "status": "scan",
+      "insertions": 208,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/consignment.service.ts",
+      "status": "scan",
+      "insertions": 589,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/customer-tag.service.ts",
+      "status": "scan",
+      "insertions": 93,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/direct-transfer-policy.ts",
+      "status": "scan",
+      "insertions": 138,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/executive-digest.service.ts",
+      "status": "scan",
+      "insertions": 227,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/executive-query.service.ts",
+      "status": "scan",
+      "insertions": 284,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/forecast.service.ts",
+      "status": "scan",
+      "insertions": 192,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/inventory.service.ts",
+      "status": "scan",
+      "insertions": 500,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/order.service.ts",
+      "status": "scan",
+      "insertions": 1261,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/reader-profile.service.ts",
+      "status": "scan",
+      "insertions": 190,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/return.service.ts",
+      "status": "scan",
+      "insertions": 1037,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/rma.service.ts",
+      "status": "scan",
+      "insertions": 288,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/royalty.service.ts",
+      "status": "scan",
+      "insertions": 229,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/settlement.service.ts",
+      "status": "scan",
+      "insertions": 205,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/shipment.service.ts",
+      "status": "scan",
+      "insertions": 101,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/sponsorship.service.ts",
+      "status": "scan",
+      "insertions": 200,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/services/transfer.service.ts",
+      "status": "scan",
+      "insertions": 847,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "src/types/cp3.ts",
+      "status": "scan",
+      "insertions": 139,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "tailwind.config.ts",
+      "status": "scan",
+      "insertions": 14,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "tsconfig.json",
+      "status": "scan",
+      "insertions": 26,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": "wrangler.toml",
+      "status": "scan",
+      "insertions": 9,
+      "deletions": 0,
+      "will_review": true
+    },
+    {
+      "path": ".vercel/project.json",
+      "status": "scan",
+      "insertions": 1,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "user_exclude"
+    },
+    {
+      "path": "reports/ocr-comparison/delegation-rules-and-scope.json",
+      "status": "scan",
+      "insertions": 756,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "user_exclude"
+    },
+    {
+      "path": "reports/ocr-comparison/provider-full-scan-preview.json",
+      "status": "scan",
+      "insertions": 2090,
+      "deletions": 0,
+      "will_review": false,
+      "exclude_reason": "user_exclude"
+    }
+  ],
+  "total_insertions": 69657,
+  "total_deletions": 0,
+  "total_files": 288,
+  "reviewable_count": 214,
+  "excluded_count": 74
+}
