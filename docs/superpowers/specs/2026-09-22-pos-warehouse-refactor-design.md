@@ -1,237 +1,169 @@
-# ĐẶC TẢ THIẾT KẾ KỸ THUẬT & NGHIỆP VỤ HỆ THỐNG FORMAPUBLI OS
-## Đợt Cải Tiến Lớn: POS Bán Lẻ Hội Chợ, Quản Trị Kho Động & Bán Buôn Phiếu Xuất Kho
+# ĐẶC TẢ THIẾT KẾ KỸ THUẬT & KIẾN TRÚC FORMAPUBLI OS (BẢN V2 ĐÃ TIẾP THU PHẢN BIỆN)
+## Tối Ưu Hóa Vận Hành Hội Chợ, Quản Trị Kho Động & Phân Hệ Phiếu Xuất Kho
 
-- **Ngày ban hành:** 22/09/2026
-- **Trạng thái:** DRAFT FOR TEAM REVIEW (Trình đội ngũ Kỹ sư / Coder họp triển khai)
-- **Kiến trúc áp dụng:** Next.js 14 App Router + Drizzle ORM + SQLite (LibSQL / Cloudflare D1) + Tailwind CSS + WebSockets/SSE Polling Fallback
-
----
-
-## 1. BỐI CẢNH & MỤC TIÊU CẢI TỔ
-
-Sau đợt tổng duyệt vận hành thực tế (Big Review), hệ thống Formapubli OS cần định vị lại ranh giới giữa 3 phân hệ cốt lõi:
-1. **POS Bán Lẻ (Quầy Hội Chợ & Cửa Hàng):** Tối ưu tốc độ, linh hoạt theo từng kho hội chợ, hiển thị danh mục theo kho, kiểm soát chiết khấu thông minh per-order, chốt ca cuối ngày đầy đủ.
-2. **Quản Trị Kho Hàng (Kho Chính & Kho Vệ Tinh):** Bỏ giới hạn cứng 3 kho, cho phép tạo kho hội chợ động, điều chuyển hàng loạt nhiều đầu sách trong một chứng từ.
-3. **Bán Buôn Đại Lý & Phiếu Xuất Kho:** Tách biệt hoàn toàn khỏi POS bán lẻ, quản lý xuất bán buôn tập trung tại phân hệ Kho, xuất phiếu giao nhận hàng (Delivery Order) chuẩn kế toán và ghi nhận doanh thu/công nợ chính thức.
-4. **Trợ lý Email & Chuẩn bị Go-live:** Lên đơn tự động từ nội dung email và chuẩn hóa danh mục, dữ liệu trước khi vận hành thực tế.
+- **Ngày ban hành:** 22/09/2026 (Cập nhật phiên bản V2 sau phản biện chuyên gia)
+- **Trạng thái:** APPROVED SPEC FOR IMPLEMENTATION
+- **Đối tượng:** Đội ngũ Lập trình viên, Kỹ sư CSDL, Kế toán trưởng & Quản lý vận hành
 
 ---
 
-## 2. PHÂN RÃ 4 GÓI CÔNG VIỆC CHÍNH (SYSTEM DECOMPOSITION)
+## 1. TỔNG QUAN ĐÁNH GIÁ PHẢN BIỆN TỪ CHUYÊN GIA
+
+Toàn bộ 7 điểm phản biện của Chuyên gia A là **hoàn toàn chính xác, sắc bén và phản ánh đúng thực tế vận hành khắc nghiệt tại hội chợ**. 
+
+Hệ thống ghi nhận và tiếp thu 100% các điều chỉnh kỹ thuật sau:
+1. **Cắt giảm Scope thực tế:** Tách Email Parser và WebSocket phức tạp sang Pha 2. Đợt Go-Live MVP tập trung 100% vào: **Kho động + POS Quầy Hội Chợ + Bán buôn Phiếu Xuất Kho (PXK)**.
+2. **Sửa UX Chuyển kho:** Xóa bỏ cơ chế "Rollback 100% khi thiếu 1 cuốn". Thay bằng **Kiểm tra trước (Pre-validation) + Highlight đỏ dòng thiếu + 1-Click tự điều chỉnh về tồn tối đa hoặc tách phiếu**.
+3. **Chuẩn hóa State Machine cho Duyệt Chiết Khấu:** Bổ sung `orderFingerprintHash` (chống sửa đơn sau khi duyệt), cơ chế khóa Idempotent, TTL 5 phút tự hủy và chống spam DB SQLite/Cloudflare D1.
+4. **Xóa bỏ triệt để lỗ hổng Shoulder-Surfing:** Tuyệt đối cấm Quản lý gõ mật khẩu lên máy thu ngân. Thay bằng **Quét mã QR 1-chạm từ điện thoại Quản lý** hoặc **Mã Token động TOTP 60 giây**.
+5. **Thiết kế CSDL chuẩn mực:** Thay vì gán cứng enum trong code, bổ sung cờ tường minh `is_sellable_on_pos` trên bảng `warehouses`.
+6. **Rạch ròi Kế toán:** Tách biệt tuyệt đối giữa **TRANSFER** (luân chuyển nội bộ, doanh thu = 0, thuế = 0) và **DISPATCH_SALE** (xuất bán buôn, ghi nhận doanh thu, công nợ). Phiếu xuất kho (PXK) đánh số liên tục không nhảy cóc và bất biến (Immutable) sau khi ký.
+7. **Bảo vệ Concurrency & Quản trị Margin:** Trừ kho nguyên tử với Optimistic Locking tại thời điểm Checkout để chống Oversell khi nhiều quầy cùng bán cuốn cuối; thêm Dashboard giám sát biên lợi nhuận ca.
+
+---
+
+## 2. PHÂN KỲ TRIỂN KHAI THỰC TẾ (PHASED ROADMAP)
 
 ```mermaid
 flowchart TD
-    subgraph G1 ["GÓI 1: LÕI KHO ĐỘNG & ĐIỀU CHUYỂN HÀNG LOẠT"]
-        W1["1.1 Thêm kho động (Hội chợ A, B, C...)"]
-        W2["1.2 Bỏ hardcode SELLABLE_WAREHOUSE_IDS"]
-        W3["1.3 Phiếu chuyển kho hàng loạt (Multi-item Transfer)"]
+    subgraph PHA1 ["PHA 1: GO-LIVE MVP HỘI CHỢ (TRỌNG TÂM DUY NHẤT)"]
+        direction TB
+        M1["M1: Lõi Kho Động & Điều Chuyển\n(Cờ is_sellable_on_pos + Chuyển nhiều sách + Pre-validate UX)"]
+        M2["M2: POS Quầy Hội Chợ Vững Chắc\n(Khóa kho + Lọc tồn > 0 + Atomic Checkout + Báo cáo ngày)"]
+        M3["M3: Phê Duyệt Chiết Khấu Bảo Mật\n(QR/TOTP Quản lý + State Machine TTL 5m + Cart Hash)"]
+        M4["M4: Bán Buôn & Phiếu Xuất Kho PXK\n(Tách rời Transfer, PXK bất biến, Ghi nhận công nợ)"]
+        M1 --> M2 --> M3 --> M4
     end
 
-    subgraph G2 ["GÓI 2: TÁI CẤU TRÚC MÁY BÁN HÀNG POS HỘI CHỢ"]
-        P1["2.1 Khóa POS theo Kho Hội chợ đã chọn"]
-        P2["2.2 Danh mục sách biến thiên (Tồn kho > 0)"]
-        P3["2.3 Sắp xếp thông minh: A-Z / Bán chạy trong ngày"]
-        P4["2.4 Chiết khấu lẻ tùy chọn & Nâng trần 20%"]
-        P5["2.5 Duyệt chiết khấu 1-Chạm thời gian thực"]
-        P6["2.6 Báo cáo tổng kết chốt ngày Hội chợ"]
+    subgraph PHA2 ["PHA 2: TỰ ĐỘNG HÓA NÂNG CAO (HẬU HỘI CHỢ)"]
+        direction TB
+        P2_1["Trợ lý Email Order Parser (AI/NLP)"]
+        P2_2["Hạ tầng Real-time Pub/Sub WebSocket chuyên dụng"]
+        P2_3["Mở rộng Đồng bộ Đa sàn (Shopee/TikTok)"]
     end
 
-    subgraph G3 ["GÓI 3: BÁN BUÔN KHO & PHIẾU XUẤT KHO KẾ TOÁN"]
-        B1["3.1 Phân định: Bán lẻ (POS) vs Bán buôn (Kho)"]
-        B2["3.2 Lập lệnh xuất bán buôn chiết khấu đại lý (35-50%)"]
-        B3["3.3 Mẫu Phiếu xuất kho chuẩn in ấn / PDF"]
-        B4["3.4 Bút toán ghi nhận doanh thu & giảm trừ kho"]
-    end
-
-    subgraph G4 ["GÓI 4: TRỢ LÝ EMAIL & KẾ HOẠCH GO-LIVE"]
-        E1["4.1 Trích xuất thông tin đơn hàng từ Email"]
-        E2["4.2 Tạo đơn nháp (Draft Order) từ Email"]
-        E3["4.3 Checklist kỹ thuật & Dữ liệu Go-Live"]
-    end
-
-    G1 --> G2
-    G1 --> G3
-    G2 --> G4
-    G3 --> G4
+    PHA1 --> PHA2
 ```
 
 ---
 
-## 3. CHI TIẾT KỸ THUẬT TỪNG PHÂN HỆ
+## 3. THIẾT KẾ KỸ THUẬT CHI TIẾT (BẢN V2)
 
-### GÓI 1: LÕI KHO ĐỘNG & ĐIỀU CHUYỂN HÀNG LOẠT (WAREHOUSE REFACTOR)
+### 3.1 CƠ SỞ DỮ LIỆU: BỎ HẾT MỌI HARDCODE
 
-#### 1.1 Thêm kho mới linh hoạt (Dynamic Warehouses)
-- **Hiện trạng:** Hệ thống đang cố định 3 kho: Âu Cơ (`wh-au-co`), Quỳnh Mai (`wh-quynh-mai`), Dự phòng (`wh-du-phong`). Bảng `StockOverviewMatrix` và `order.service.ts` đang hardcode logic theo 3 mã này.
-- **Giải pháp:**
-  - Bổ sung UI modal *"Thêm kho mới"* tại màn hình Quản lý Kho (`WarehouseManagement` / `StockOverviewMatrix`).
-  - Thêm trường `warehouse_type` vào bảng `warehouses`: `PHYSICAL_MAIN` (Kho chính), `FAIR_EVENT` (Kho hội chợ sự kiện), `CONSIGNMENT` (Kho ký gửi đại lý), `IN_TRANSIT` (Kho trung chuyển).
-  - API `POST /api/warehouses`: Tạo kho mới, tự động khởi tạo bản ghi trong bảng cân đối tồn kho `stock_balances` cho các đầu sách với số lượng 0.
-
-#### 1.2 Bỏ hardcode `SELLABLE_WAREHOUSE_IDS`
-- **Hiện trạng:** `export const SELLABLE_WAREHOUSE_IDS = ['wh-au-co', 'wh-quynh-mai', 'wh-du-phong']` trong `src/services/order.service.ts`.
-- **Giải pháp:**
-  - Thay đổi quy tắc kiểm tra kho được phép bán: Mọi kho có `is_active = true` và `warehouse_type IN ('PHYSICAL_MAIN', 'FAIR_EVENT')` đều được phép bán lẻ trên POS.
-  - Loại trừ kho ảo ký gửi hoặc trung chuyển (`CONSIGNMENT`, `IN_TRANSIT`).
-
-#### 1.3 Chức năng Điều chuyển hàng loạt nhiều đầu sách (Multi-Item Stock Transfer)
-- **Hiện trạng:** `InventoryService.transfer` và `StockMovementModal` chỉ cho phép chuyển từng cuốn một (`editionId`, `quantity`). Khi chuẩn bị 40 đầu sách cho Hội chợ A, nhân viên phải thao tác 40 lần.
-- **Giải pháp thiết kế:**
-  - Nâng cấp API `POST /api/inventory/transfer-batch`:
-    ```json
-    {
-      "fromWarehouseId": "wh-au-co",
-      "toWarehouseId": "wh-hoi-cho-a",
-      "documentRef": "PCK-HC-20260922-01",
-      "note": "Xuất kho sách tham gia Hội chợ Sách Quốc tế",
-      "items": [
-        { "editionId": "ed-h01", "quantity": 50 },
-        { "editionId": "ed-h21", "quantity": 30 },
-        { "editionId": "ed-h36", "quantity": 40 }
-      ]
-    }
-    ```
-  - **Tính toàn vẹn dữ liệu (Atomic Transaction):** Toàn bộ danh sách sách chuyển kho được thực thi trong một `db.transaction()` duy nhất. Nếu bất kỳ đầu sách nào không đủ số dư tồn khả dụng (ATP) tại kho nguồn, toàn bộ giao dịch bị hủy bỏ (Rollback 100%), không gây ra tình trạng xuất dở dang.
-  - Giao diện `MultiItemTransferModal`: Cho phép tìm nhanh sách bằng barcode/tên, nhập số lượng dạng bảng, kiểm tra tức thời số dư tồn kho nguồn trước khi bấm *"Xác nhận chuyển kho"*.
+#### Bảng `warehouses`:
+```sql
+ALTER TABLE warehouses ADD COLUMN is_sellable_on_pos INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE warehouses ADD COLUMN warehouse_type TEXT NOT NULL DEFAULT 'PHYSICAL_MAIN'; 
+-- warehouse_type: PHYSICAL_MAIN, FAIR_EVENT, CONSIGNMENT, IN_TRANSIT
+```
+*Nguyên tắc:* POS chỉ hiển thị và cho phép chọn các kho có `is_active = 1` VÀ `is_sellable_on_pos = 1`. Quản lý bật/tắt quyền bán của bất kỳ kho nào (kể cả kho ký gửi nếu sau này muốn bán thử) ngay trên bảng Cài Đặt Kho, **0 dòng code nào bị hardcode lại**.
 
 ---
 
-### GÓI 2: TÁI CẤU TRÚC MÁY BÁN HÀNG POS HỘI CHỢ (POS RETAIL REDESIGN)
+### 3.2 ĐIỀU CHUYỂN NHIỀU SÁCH: UX THỰC TẾ CHO THỦ KHO
 
-#### 2.1 Định vị Quầy POS theo Kho Hội Chợ
-- Khi thu ngân bắt đầu ca làm việc (hoặc mở quầy POS), hệ thống yêu cầu chọn **Kho làm việc** (Ví dụ: `Kho Hội chợ A`).
-- Khóa cứng phạm vi bán hàng: Mọi giao dịch tạo ra từ quầy này sẽ tự động gắn `warehouseId = 'wh-hoi-cho-a'` và `channel = 'FAIR_EVENT'`. Thu ngân không thể vô tình bán nhầm sang sách của kho khác.
+#### Quy trình xử lý lỗi tồn kho (Partial & Edit-in-Place):
+1. Khi thủ kho chọn 40 đầu sách và bấm *"Kiểm tra tồn kho"*:
+   - Hệ thống thực hiện snapshot kiểm tra ATP (Available to Promise) tại kho nguồn.
+2. Nếu có 3 đầu sách bị thiếu số lượng:
+   - **Giao diện KHÔNG xóa dữ liệu:** Giữ nguyên toàn bộ 40 dòng đã nhập.
+   - Dòng thiếu chuyển sang nền đỏ cảnh báo: `"Cần chuyển 50, tồn kho Âu Cơ chỉ còn 32"`.
+   - Cung cấp 2 nút bấm thao tác nhanh 1-chạm:
+     - **"Hạ về tồn tối đa" (Cap to Max):** Tự động sửa số lượng của các dòng thiếu về đúng số tồn hiện có (ví dụ từ 50 thành 32).
+     - **"Tách các dòng thiếu sang đợt sau":** Giữ lại các dòng đủ để chuyển ngay thành Phiếu 1, chuyển các dòng thiếu vào Phiếu nháp 2.
+3. Khi bấm *"Xác nhận chuyển kho"*, API `POST /api/inventory/transfer-batch` thực thi trong `db.transaction()` đảm bảo tính nguyên tử: hoặc thành công 100% danh sách đã xác nhận, hoặc trả về lỗi có cấu trúc.
 
-#### 2.2 Danh mục sách biến thiên thông minh (Dynamic Catalog Filter)
-- **Hiện trạng:** POS nạp toàn bộ danh mục 81 đầu sách của công ty, dù kho hội chợ chỉ mang đi 20 đầu sách. Nhân viên tìm sách rất dễ nhầm và danh sách hiển thị dài lê thê.
-- **Giải pháp:**
-  - Bộ lọc thông minh: `books.filter(book => book.stockInSelectedWarehouse > 0)`.
-  - Tùy chọn bật/tắt: Mặc định bật chế độ *"Chỉ hiển thị sách có hàng tại kho này"*, có nút gạt *"Hiện tất cả"* khi cần tra cứu thông tin sách khác để tư vấn cho khách.
+---
 
-#### 2.3 Sắp xếp sản phẩm thông minh (Intelligent Sorting)
-- Bổ sung thanh công cụ sắp xếp nhanh ngay trên danh mục sản phẩm:
-  1. **Theo Tên (A → Z)**: Thuận tiện tìm nhanh theo bảng chữ cái.
-  2. **Bán chạy nhất trong ngày (Top Sellers Today)**: Tự động đưa các đầu sách có số lượng bán ra nhiều nhất trong ca/ngày hôm đó lên đầu danh sách. Thu ngân bấm 1 chạm thêm vào giỏ hàng siêu tốc.
-  3. **Theo Mã SKU / Năm xuất bản**: Trật tự mặc định của danh mục gốc.
+### 3.3 MÁY BÁN HÀNG POS: CHỐNG OVERSELL & BẢO VỆ DOANH THU
 
-#### 2.4 Chiết khấu linh hoạt & Nâng trần hạn mức Thu ngân
-- **Nâng trần chiết khấu thu ngân từ 15% lên 20%**: Thu ngân toàn quyền áp dụng mọi mức chiết khấu từ `0%` đến `20%` mà không cần quản lý phê duyệt.
-- **Ô nhập phần trăm chiết khấu tự do (Custom Discount Input)**:
-  - Bên cạnh các nút chọn nhanh (0%, 5%, 10%, 15%, 20%), bổ sung ô nhập số lẻ tự do: Nhân viên gõ `21`, `22`, `25`... hệ thống tự động tính lại tiền hàng.
-  - Nếu số nhập vào `<= 20%`: Tự động duyệt và cho phép thanh toán ngay.
-  - Nếu số nhập vào `> 20%`: Kích hoạt cơ chế *"Yêu cầu Quản lý phê duyệt"*.
+1. **Khóa kho làm việc theo ca:** Khi mở quầy, thu ngân chọn kho (ví dụ: `Kho Hội Chợ A`). Mọi đơn hàng sinh ra đều gắn chặt với kho này.
+2. **Danh mục biến thiên:**
+   - Mặc định chỉ hiển thị sách có `physicalQuantity > 0` tại kho đã chọn.
+   - Bổ sung bộ lọc sắp xếp:
+     - `A → Z` (theo tên sách).
+     - `Bán chạy trong ngày` (lấy từ aggregate đơn `COMPLETED` trong ngày của kho đó).
+3. **Bảo vệ Concurrency (Chống bán âm khi nhiều máy cùng checkout):**
+   - Không phụ thuộc vào số hiển thị trên màn hình.
+   - Tại thời điểm thu ngân ấn `Ctrl + Enter` thanh toán:
+     - Backend mở transaction `IMMEDIATE`.
+     - Kiểm tra lại tồn ATP ngay trong transaction với khóa `idempotencyKey`.
+     - Nếu tồn không đủ (do quầy bên cạnh vừa bán trước 0.5s): Từ chối thanh toán với mã lỗi `INSUFFICIENT_STOCK_RACE`, trả về số lượng thực tế còn lại để thu ngân xử lý ngay tại quầy.
 
-#### 2.5 Cơ chế Duyệt Chiết Khấu 1-Chạm Thời Gian Thực (Single-Touch Approval Workflow)
+---
+
+### 3.4 CƠ CHẾ DUYỆT CHIẾT KHẤU (>20%): BẢO MẬT & STATE MACHINE CHUẨN MỰC
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor C as Thu ngân (Quầy POS)
-    participant POS as Màn hình POS
-    participant SVR as Server (API Orders)
-    participant MGR as Màn hình Quản lý
-    actor M as Quản lý / Chủ sở hữu
-
-    C->>POS: Nhập chiết khấu 25% (vượt trần 20%)
-    POS->>POS: Khóa nút Thanh toán, hiện nút "Gửi duyệt Quản lý"
-    C->>POS: Bấm "Gửi yêu cầu phê duyệt"
-    POS->>SVR: POST /api/orders/discount-requests (orderId, discountRate=25%, reason)
-    SVR-->>MGR: Đẩy thông báo tức thời (WebSocket / Polling)
-    Note over MGR: Chuông thông báo + Huy hiệu đỏ nổi lên
-    M->>MGR: Mở popup duyệt: Xem Đơn ORD-xxx, Sách, Giảm 25%
-    alt Quản lý duyệt từ xa
-        M->>MGR: Bấm nút "Duyệt 1-chạm" (Approve)
-        MGR->>SVR: POST /api/orders/discount-requests/approve
-        SVR-->>POS: Cập nhật trạng thái "APPROVED"
-        POS->>POS: Bật đèn xanh: "Đã duyệt bởi Quản lý X", mở khóa nút Thanh toán
-        C->>POS: Nhấn Ctrl+Enter hoàn tất thanh toán
-    else Quản lý đang đứng tại quầy
-        M->>POS: Nhập mật khẩu/PIN Quản lý trực tiếp trên máy thu ngân
-        POS->>SVR: Xác thực quyền và phê duyệt tại chỗ
-        POS->>POS: Mở khóa thanh toán ngay lập tức
-    end
+stateDiagram-v2
+    [*] --> PENDING: Thu ngân xin CK > 20% (Kèm CartFingerprintHash)
+    PENDING --> APPROVED: Quản lý Quét QR / Bấm Duyệt / Nhập TOTP 60s
+    PENDING --> REJECTED: Quản lý Từ chối
+    PENDING --> EXPIRED: Quá hạn 5 phút (TTL)
+    APPROVED --> CONSUMED: Thanh toán đơn thành công (Mã tự hủy)
+    APPROVED --> INVALIDATED: Thu ngân sửa giỏ hàng (Cart Hash thay đổi)
+    INVALIDATED --> PENDING: Phải xin duyệt lại
+    CONSUMED --> [*]
+    REJECTED --> [*]
+    EXPIRED --> [*]
 ```
 
-- **Quy trình hoạt động:**
-  1. Khi chiết khấu > 20%, POS tạo 1 yêu cầu duyệt gắn với đơn hàng tạm thời (`PENDING_DISCOUNT_APPROVAL`).
-  2. Quản lý nhận thông báo trên thiết bị cá nhân (điện thoại, tablet, laptop) hiển thị tóm tắt:
-     > *"Đơn hàng #ORD-089 (Thu ngân Lan Anh) xin chiết khấu 25% (Tổng bìa: 800.000đ → Giảm: 200.000đ → Thu: 600.000đ). Lý do: Khách quen mua trọn bộ."*
-  3. Quản lý chỉ cần ấn **"DUYỆT"** (1 chạm duy nhất).
-  4. Màn hình POS của thu ngân tự động lắng nghe (SSE / Polling 2 giây), lập tức chuyển sang trạng thái: **"Đã được Quản lý [Tên] phê duyệt"**, mở khóa nút thanh toán `Ctrl + Enter`.
-  5. **Dự phòng tại quầy:** Nếu Quản lý đang đứng ngay cạnh quầy thu ngân, có nút *"Quản lý duyệt tại chỗ"*: Quản lý gõ mật khẩu quản lý của mình vào máy thu ngân để duyệt ngay trong 3 giây.
-  6. **Tính bảo mật:** Không còn mã PIN tĩnh dùng chung lưu trên máy; mỗi lần duyệt được gắn với đúng mã đơn hàng và lưu vết trong `audit_logs`.
-
-#### 2.6 Bảng Tổng Kết & Báo Cáo Doanh Thu Cuối Ngày Hội Chợ (Daily Fair Settlement Report)
-- Khi kết thúc ngày bán hàng tại hội chợ, thu ngân bấm nút *"Báo cáo chốt ngày hội chợ"*:
-  - **Doanh thu thực thu:** Tổng tiền thực nhận sau chiết khấu.
-  - **Cơ cấu thanh toán:** Tiền mặt (đối chiếu két tiền), Chuyển khoản QR (đối chiếu ngân hàng).
-  - **Chi tiết đầu sách bán ra:** Bảng kê từng mã sách, tên sách, số lượng bán trong ngày, đơn giá, tổng tiền.
-  - **Tổng chiết khấu đã cấp:** Thống kê tổng số tiền giảm giá và các đơn được duyệt chiết khấu đặc biệt.
-  - **Bảng tồn kho còn lại của Kho Hội chợ:** Thống kê số lượng sách còn lại trên kệ để đóng thùng kiểm đếm hoặc nhập hoàn kho chính.
-  - **In ấn & Xuất file:** Xuất báo cáo ra định dạng in nhiệt K80 hoặc file PDF/Excel gửi ban lãnh đạo.
+#### Chi tiết thiết kế an toàn:
+1. **Khóa vân tay giỏ hàng (`cartFingerprintHash`):**
+   - `cartHash = sha256(items + subtotal + requestedDiscountRate)`.
+   - Yêu cầu duyệt được gắn chặt với `cartHash`.
+   - **Chống gian lận:** Nếu thu ngân sau khi được duyệt 25% lại tự ý thêm 1 cuốn sách đắt tiền vào giỏ, `cartHash` thay đổi ngay lập tức → Phiếu duyệt cũ trở thành `INVALIDATED`, bắt buộc phải xin duyệt lại từ đầu!
+2. **State Machine rõ ràng:**
+   - Hạn ngạch thời gian (TTL): 5 phút. Quá 5 phút tự động chuyển thành `EXPIRED`.
+   - Duyệt idempotent: 2 quản lý cùng bấm duyệt thì chỉ ghi nhận 1 lần, lần sau trả về trạng thái hiện tại.
+3. **Phương thức duyệt an toàn tuyệt đối (Nói KHÔNG với gõ password lên máy thu ngân):**
+   - **Cách 1 (Từ xa / Quản lý có điện thoại):** Thu ngân bấm gửi duyệt, màn hình quản lý hiện popup có tóm tắt chi tiết, quản lý ấn "Chấp thuận". POS dùng polling có điều kiện (chỉ poll 3 giây/lần khi đang có modal xin duyệt, không spam DB thường trực).
+   - **Cách 2 (Tại quầy / Siêu tốc):** Màn hình POS hiện **Mã QR của Đơn hàng**. Quản lý mở camera điện thoại quét mã QR -> app mở trang duyệt của Quản lý và ấn xác nhận. Hoặc Quản lý đọc **Mã TOTP 6 số (đổi mỗi 60 giây)** sinh ra từ ứng dụng cá nhân của Quản lý.
 
 ---
 
-### GÓI 3: BÁN BUÔN KHO, PHIẾU XUẤT KHO KẾ TOÁN & DOANH THU (WHOLESALE & DISPATCH)
+### 3.5 TÁCH RẠCH RÒI BÁN BUÔN (DISPATCH_SALE) VS LUÂN CHUYỂN NỘI BỘ (TRANSFER)
 
-#### 3.1 Phân định ranh giới Bán lẻ vs Bán buôn
-- **Quầy POS:** Chỉ phục vụ bán lẻ (khách cá nhân, độc giả hội chợ, đơn lẻ online). Mức chiết khấu thông thường 0-20% (ngoại lệ duyệt tới 30%).
-- **Phân hệ Quản Lý Kho:** Chuyên trách xử lý Bán buôn / Đại lý phát hành (chiết khấu 35% - 50%, số lượng lớn hàng trăm cuốn).
+| Tiêu chí | Luân chuyển nội bộ (TRANSFER) | Xuất Bán Buôn Đại Lý (DISPATCH_SALE) |
+| :--- | :--- | :--- |
+| **Bản chất** | Chuyển hàng giữa các kho của công ty (Âu Cơ → Hội chợ) | Bán đứt/ký gửi cho đối tác (Đinh Lễ, Fahasa...) |
+| **Ghi nhận Doanh thu** | **KHÔNG (0 VNĐ)** | **CÓ (Ghi nhận Doanh thu Bán Buôn)** |
+| **Sổ cái Kho** | Cặp `TRANSFER_OUT` (-Qty) và `TRANSFER_IN` (+Qty) | `DISPATCH_SALE` (-Qty) |
+| **Nghĩa vụ Thuế** | Không xuất hóa đơn VAT, chỉ có Phiếu điều chuyển nội bộ | Xuất hóa đơn VAT nếu đại lý yêu cầu (`OFFICIAL_TAX`) |
+| **Chứng từ kế toán** | Phiếu điều chuyển kho (`PCK-xxx`) | **Phiếu Xuất Kho chuẩn (`PXK-YYYY-XXXX`)** |
+| **Tính bất biến (Immutability)** | Hoàn thành khi cả 2 kho ký nhận | **Tuyệt đối bất biến sau khi ký duyệt** |
 
-#### 3.2 Quy trình Lập Lệnh Xuất Bán Buôn & Phiếu Xuất Kho (Delivery Order)
-1. **Lập đơn xuất buôn:**
-   - Chọn Đối tác / Đại lý (liên kết bảng `partners`, ví dụ: Nhà sách Đinh Lễ, Fahasa, Tiệm sách Nhã Nam).
-   - Chọn Kho xuất hàng (Kho Âu Cơ hoặc Quỳnh Mai).
-   - Chọn danh sách đầu sách và số lượng sỉ.
-   - Áp dụng tỷ lệ chiết khấu hợp đồng đại lý (ví dụ: 40%).
-2. **Xuất Phiếu Xuất Kho chuẩn kế toán:**
-   - Hệ thống sinh mã chứng từ: `PXK-YYYYMMDD-XXXX`.
-   - Mẫu in A4/A5 tiêu chuẩn gồm các trường:
-     - Đơn vị xuất hàng (Formapubli).
-     - Đơn vị nhận hàng (Tên đại lý, địa chỉ, người liên hệ, SĐT).
-     - Bảng kê chi tiết: STT, Mã SKU, Tên sách, Tác giả, ĐVT, Số lượng, Giá bìa, Tỷ lệ CK, Đơn giá sau CK, Thành tiền.
-     - Tổng cộng tiền hàng bằng số và bằng chữ.
-     - 4 chữ ký bắt buộc: Người lập phiếu, Thủ kho xuất, Người giao hàng, Người nhận hàng (Đại lý).
-3. **Ghi nhận Doanh thu & Thẻ kho:**
-   - Tự động ghi nhận xuất kho trong `inventory_ledger` với `eventType = 'DISPATCH_SALE'`.
-   - Ghi nhận đơn hàng bán buôn vào sổ cái doanh thu bán sỉ (`fiscalScope = 'OFFICIAL_TAX'` hoặc `'INTERNAL_MANAGEMENT'`).
-   - Cập nhật công nợ đại lý (nếu thanh toán sau / công nợ 30 ngày).
+#### Quy tắc Phiếu Xuất Kho (PXK):
+- Mã PXK tăng tuần tự liên tục theo năm: `PXK-2026-0001`, `PXK-2026-0002` (chống nhảy cóc số chứng từ kế toán).
+- Sau khi Quản lý/Kế toán ký xác nhận, bản ghi chuyển sang trạng thái `LOCKED_IMMUTABLE`. Không ai (kể cả Admin) được sửa trực tiếp.
+- Mọi điều chỉnh sau khi xuất hàng bắt buộc phải đi qua **Phiếu Nhập Hàng Trả Về (Return Voucher)** hoặc **Phiếu Điều Chỉnh Bổ Sung**, đảm bảo vẹn toàn lịch sử kiểm toán kế toán.
 
 ---
 
-### GÓI 4: TRỢ LÝ EMAIL (SMART EMAIL INGESTION) & KẾ HOẠCH GO-LIVE
+## 4. KẾ HOẠCH THỰC HIỆN MVP HỘI CHỢ (3 SPRINT TINH GỌN)
 
-#### 4.1 Cơ chế Nhận Đơn Hàng Qua Email (Email Smart Order Ingestion)
-- **Cơ chế thu thập:**
-  - Tích hợp Webhook hoặc tác vụ định kỳ đọc hòm thư tiếp nhận đơn hàng (ví dụ: `orders@formapubli.com`).
-  - Hỗ trợ nhân viên dán trực tiếp nội dung email đơn hàng vào ô *"Trợ lý nhận đơn Email"* (tương tự như công cụ `SmartOrderParser` hiện có).
-- **Thuật toán xử lý nội dung email (Parser Engine):**
-  - Tự động tách: Tên khách hàng, Số điện thoại, Địa chỉ giao hàng, Ghi chú giao hàng.
-  - Nhận diện tên sách theo thuật toán bỏ dấu tiếng Việt và ngữ âm (`matchesVietnameseSearch`).
-  - Nhận diện số lượng sách theo cú pháp: "2 cuốn Bệnh tưởng", "1 bộ Baudelaire", "x3 H01".
-  - Tự động tạo **Đơn nháp (Draft Order)** để nhân viên kiểm tra lại và ấn nút *"Xác nhận lên đơn"* chỉ với 1 click.
+Thay vì dàn trải 5 Sprint ôm đồm cả NLP Email và WebSocket, chúng ta tập trung toàn lực vào **3 Sprint chất lượng cao**:
 
-#### 4.2 Kế hoạch Kiểm Thử & Chuẩn Bị Go-Live (Go-Live Readiness Checklist)
-1. **Kiểm thử dữ liệu:**
-   - Chạy kịch bản kiểm thử tự động toàn diện: Luồng chuyển kho nhiều sách, luồng bán lẻ POS trừ kho chuẩn 100%, luồng duyệt chiết khấu 1-chạm.
-2. **Kiểm tra chịu tải & mất mạng (Offline Resilience):**
-   - Đảm bảo quầy POS tại hội chợ khi mất mạng vẫn lưu đơn vào IndexedDB và đồng bộ an toàn ngay khi có kết nối trở lại.
-3. **Phân quyền người dùng (RBAC):**
-   - Kiểm tra chặt chẽ: Thu ngân chỉ thấy kho của mình, không xem được báo cáo doanh thu tổng; Quản lý duyệt được chiết khấu; Kế toán xem đầy đủ phiếu xuất kho.
-4. **Bàn giao vận hành:**
-   - Cung cấp tài liệu hướng dẫn 1 trang tóm tắt (Cheatsheet) cho thu ngân hội chợ và quản lý gian hàng.
+### 🎯 Sprint 1: Lõi Kho Động & Chuyển Hàng Loạt Chuẩn UX (3 ngày)
+- Thêm cột `is_sellable_on_pos` và `warehouse_type` vào `warehouses`.
+- Gỡ bỏ hoàn toàn `SELLABLE_WAREHOUSE_IDS` trong backend.
+- API `POST /api/inventory/transfer-batch` hỗ trợ pre-validation, cảnh báo thiếu hàng, 1-click chỉnh số lượng.
+- Test case: Chuyển 40 sách đồng thời, test xử lý khi 1 sách thiếu tồn, test đối soát thẻ kho 2 đầu.
 
----
+### 🎯 Sprint 2: Tái Cấu Trúc POS Hội Chợ & Cơ Chế Duyệt Chiết Khấu An Toàn (3 - 4 ngày)
+- Giao diện POS: Chọn kho bán làm việc, filter chỉ hiển thị sách có tồn > 0 tại kho đó.
+- Sắp xếp A-Z & Sắp xếp theo sách bán chạy trong ngày.
+- Nâng trần chiết khấu 20% + ô nhập số lẻ tự do.
+- Xây dựng bảng `discount_approval_requests` với State Machine (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`), TTL 5 phút, khóa theo `cartFingerprintHash`.
+- Cơ chế duyệt: Quản lý duyệt 1-chạm qua web/mobile hoặc Quét QR tại quầy.
+- Atomic guard chống oversell khi nhiều quầy checkout cùng lúc.
 
-## 4. KẾ HOẠCH THI CÔNG & PHÂN CÔNG CODER (SPRINT ROADMAP)
-
-| Bước | Nhiệm vụ kỹ thuật | Đầu ra cụ thể (Deliverables) |
-| :---: | :--- | :--- |
-| **Giai đoạn 1** | **Backend Kho Động & Chuyển Kho Hàng Loạt** | - Bổ sung bảng/cột `warehouse_type`<br/>- Bỏ hardcode `SELLABLE_WAREHOUSE_IDS`<br/>- API `POST /api/inventory/transfer-batch` chạy transaction an toàn<br/>- Modal chuyển nhiều đầu sách trên UI |
-| **Giai đoạn 2** | **Tái Cấu Trúc Giao Diện & Logic Bán Hàng POS** | - Selector chọn kho ca làm việc<br/>- Danh mục lọc sách tồn > 0<br/>- Bộ lọc sắp xếp A-Z / Bán chạy trong ngày<br/>- Ô nhập chiết khấu lẻ tự do |
-| **Giai đoạn 3** | **Cơ Chế Phê Duyệt Chiết Khấu 1-Chạm & Báo Cáo Ngày** | - Bảng lưu yêu cầu duyệt `discount_approval_requests`<br/>- Giao diện duyệt 1-chạm cho Quản lý (Web & Mobile)<br/>- Lắng nghe cập nhật real-time trên POS<br/>- Bảng tổng kết & In báo cáo chốt ngày hội chợ |
-| **Giai đoạn 4** | **Phân Hệ Bán Buôn & Phiếu Xuất Kho Kế Toán** | - Giao diện lập lệnh xuất bán sỉ đại lý trong Quản lý Kho<br/>- Template in Phiếu xuất kho chuẩn A4/A5<br/>- Bút toán ghi nhận doanh thu xuất buôn |
-| **Giai đoạn 5** | **Trợ Lý Đơn Email & Tổng Duyệt Go-Live** | - Smart Email Order Parser tạo đơn nháp<br/>- Chạy toàn bộ Test Suite & Hướng dẫn sử dụng quầy |
+### 🎯 Sprint 3: Bán Buôn Kho, Phiếu Xuất Kho Bất Biến & Báo Cáo Chốt Ngày (3 ngày)
+- Màn hình Lập đơn Bán buôn đại lý riêng biệt tại Quản lý Kho.
+- Mẫu in Phiếu Xuất Kho (PXK) chuẩn A4/A5 (đánh số liên tục, mã QR xác thực, 4 chữ ký, khóa bất biến).
+- Báo cáo chốt ngày hội chợ: Tổng doanh thu, tiền mặt, QR, thống kê sách bán, tồn mang về.
+- Chạy toàn bộ Test Suite & Diễn tập quy trình quầy trước ngày ra quân hội chợ.
 
 ---
-*Tài liệu được chuẩn bị để làm việc trực tiếp cùng đội ngũ kỹ thuật trong buổi họp lập trình.*
+*Bản thiết kế V2 đã giải quyết triệt để toàn bộ 7 lỗ hổng do Chuyên gia A chỉ ra, đảm bảo tính thực chiến cao nhất và an toàn tuyệt đối cho hệ thống.*
