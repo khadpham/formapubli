@@ -65,9 +65,28 @@ Vào **Cài đặt (Alt+8) → 1. Tài Khoản Nhân Sự** (chỉ Owner/Manager
 - Tìm sách bằng tên không dấu / 4 số cuối ISBN / quét camera 📷 (`Alt+Shift+C`) / micro 🎙️ (`Alt+V`).
 - Chọn kho xuất (Âu Cơ / Hội Chợ / Quỳnh Mai), chiết khấu, cờ VAT/Nội bộ.
 - Chiết khấu theo **nút mốc 0–40% (cách 5%)** + nút **🎁 100%** (tặng sự kiện, gọn trong lưới nút).
-- Thu ngân giảm tối đa **15%** — vượt mức cần **PIN quản lý** mở khóa cho đơn đó.
+- Thu ngân giảm tối đa **20%** — vượt mức cần **PIN quản lý** mở khóa cho đơn đó.
 - Chốt đơn `Ctrl+Enter` → trừ kho tức thì → in phiếu.
 - **Két ca:** mở két đầu ca, chốt ca đối soát thừa/thiếu tiền mặt.
+
+### 3.1.1. Quét camera trên iPhone và Android
+
+**Bản sửa scanner 22/09:** có bộ giải mã dự phòng chạy trong ứng dụng. Không yêu cầu bật `Shape Detection API`, đổi trình duyệt hay cài ứng dụng khác. Kiểm tra trên cả Safari/Chrome iPhone và Chrome Android qua địa chỉ HTTPS LAN ở đầu tài liệu.
+
+1. Tải lại trang để nhận bản sửa, mở POS → camera (`Alt+Shift+C` trên bàn phím). Trạng thái chuẩn bị nằm ở phần tiêu đề; khi camera hoạt động, không có hộp “Sẵn sàng quét” che hình ảnh.
+2. Dùng mã EAN-13/ISBN in thật trên bìa sách có trong danh mục. Đưa toàn bộ mã, gồm khoảng trắng hai đầu, vào khung; giữ đủ xa để các vạch sắc nét. Thử cả đặt sách ngang và xoay 90°.
+3. Đạt khi scanner hiện **Đã nhận diện!** với đúng ISBN, giỏ thêm đúng sách hoặc hiện lựa chọn nếu trùng ISBN. Giữ nguyên mã không được tự tăng liên tục. Đưa mã ra ngoài khung rồi quét lại sau ít nhất 2 giây: được thêm lần nữa.
+4. Để camera nhìn vùng không có mã vài giây rồi đưa sách vào: vẫn đọc được. Trên Android, native đang hoạt động vẫn được ưu tiên sau khi chờ.
+5. Thử bật/tắt flash nếu có, đổi ống kính, đóng/mở scanner bằng nút X hoặc chạm nền tối bên ngoài khung. Đóng ngay khi đang xin quyền/đang chuẩn bị/đang quét: camera phải tắt, không được phát sinh lần thêm giỏ đến muộn.
+6. Nếu thấy thông báo không tải/không đọc được mã vạch: kiểm tra kết nối, đóng/mở lại scanner hoặc tải lại trang. Khi xác minh lỗi, ghi lại nguyên văn thông báo và có xuất hiện **Đã nhận diện!** hay chưa.
+
+**Không dùng các nút “Mã Vạch Test Nhanh” để nghiệm thu camera:** chúng gọi thẳng xử lý ISBN, bỏ qua giải mã ảnh. Kiểm thử tự động đọc ảnh mã thật và mô phỏng vòng quét, nhưng không thay thế kiểm tra lấy nét/tốc độ trên thiết bị. Trạng thái nghiệm thu iPhone thật: **chờ kiểm tra thiết bị**.
+
+### Thoát nhanh hộp thoại trên điện thoại
+
+Chạm vùng nền bên ngoài khung để đóng scanner, phiếu nhập/xuất/chuyển kho, pick list, RMA, đổi/trả, biên lai, chọn ISBN trùng, dán chat, mở/chốt két và duyệt PIN. Chạm nút, nhập liệu hay cuộn **bên trong** không đóng hộp thoại. Sidebar và Copilot cũng đóng bằng nền ngoài; Copilot chừa một mép nền ở bên trái trên điện thoại.
+
+Chạm ngoài tương đương nút X/Hủy, không phải lưu hay xác nhận. Khi đang gửi giao dịch kho/RMA/đổi trả/mở-chốt két, chạm nền tạm thời không đóng để giữ kết quả xử lý trên màn hình. Đăng nhập chỉ đóng được khi chức năng đó đã cho phép Hủy; màn hình yêu cầu đăng nhập bắt buộc không thể bỏ qua. Kiểm thử tự động: `npx tsx scripts/test-modal-dismiss.ts`.
 
 ### 3.2. Bán rớt mạng Offline-First
 1. Tắt wifi/4G → bán 1–2 đơn (app báo 🟡 Mất mạng, đơn lưu mã `OFF-...`).
@@ -118,7 +137,7 @@ Vào **Cài đặt (Alt+8) → 1. Tài Khoản Nhân Sự** (chỉ Owner/Manager
 ## 5. Kịch bản test hiệu quả nhất (ưu tiên theo thứ tự)
 
 1. **Mở ca thu ngân (NV-01) → bán 3 đơn lẻ → chốt két khớp tiền.** (lõi POS + két)
-2. **Bán 1 đơn vượt 15% → bị chặn → Quản lý nhập PIN → qua.** (trần CK)
+2. **Bán 1 đơn vượt 20% → bị chặn → Quản lý nhập PIN → qua.** (trần CK)
 3. **Tắt mạng bán 2 đơn → mở mạng đồng bộ → kiểm tồn không lệch.** (offline)
 4. **Thủ kho chuyển 20 cuốn Âu Cơ → Hội Chợ → nhận thiếu 2 cuốn (1 hỏng 1 mất) → kiểm phương trình R+D+L.** (in-transit)
 5. **Tạo NV3 trong Cài đặt → 1. Tài Khoản Nhân Sự → đăng nhập NV3 bán 1 đơn → khóa NV3 → NV3 không vào được.** (quản trị tài khoản mới)

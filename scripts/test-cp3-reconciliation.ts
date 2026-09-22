@@ -126,7 +126,7 @@ async function main() {
     isbn: '9786040000000', isbnLast4: '0000', coverPrice: 100000,
   });
   await db0.insert(warehouses).values([
-    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (REC)', isActive: true },
+    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (REC)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   await db0.insert(stockBalances).values({
     id: 'sb-erec', editionId: 'erec', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50,

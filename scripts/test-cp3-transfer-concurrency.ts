@@ -84,9 +84,9 @@ async function freshProbeDb(probe: string, openingQty: number) {
     isbn: '9786040000000', isbnLast4: '0000', coverPrice: 100000,
   });
   await db.insert(warehouses).values([
-    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (CP3)', isActive: true },
-    { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quynh Mai (CP3)', isActive: true },
-    { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Du Phong (CP3)', isActive: true },
+    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (CP3)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quynh Mai (CP3)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Du Phong (CP3)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   await db.insert(inventoryLedger).values({
     id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',

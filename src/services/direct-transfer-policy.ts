@@ -27,6 +27,22 @@ export const FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES: ReadonlySet<string> = new Set
 ]);
 
 /**
+ * V4.1 S1.3: kiểm tra họ kho cấm dùng chung cho cả direct 1-cuốn và batch nhiều-cuốn.
+ * (transit / consignment / quarantine / damaged — theo id hoặc substring).
+ */
+export function isForbiddenWarehouseFamily(warehouseId: string): boolean {
+  const w = (warehouseId || '').trim();
+  if (!w) return true;
+  if (FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES.has(w)) return true;
+  return (
+    w.includes('transit') ||
+    w.includes('consignment') ||
+    w.includes('quarantine') ||
+    w.includes('damaged')
+  );
+}
+
+/**
  * Chuẩn hóa cặp kho để so sánh hai chiều (bidirectional).
  * Ví dụ: 'wh-hn-main', 'wh-hn-display' -> 'wh-hn-display<->wh-hn-main'
  */
@@ -105,19 +121,8 @@ export function isDirectTransferAllowed(fromWarehouseId: string, toWarehouseId: 
   const to = toWarehouseId.trim();
   if (from === to) return false;
 
-  // Cấm kho ảo
-  if (
-    FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES.has(from) ||
-    FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES.has(to) ||
-    from.includes('transit') ||
-    to.includes('transit') ||
-    from.includes('consignment') ||
-    to.includes('consignment') ||
-    from.includes('quarantine') ||
-    to.includes('quarantine') ||
-    from.includes('damaged') ||
-    to.includes('damaged')
-  ) {
+  // Cấm kho ảo (dùng chung helper với transfer-batch).
+  if (isForbiddenWarehouseFamily(from) || isForbiddenWarehouseFamily(to)) {
     return false;
   }
 

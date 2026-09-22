@@ -10,10 +10,10 @@ export const dynamic = 'force-dynamic';
 
 // ---------------------------------------------------------------------------
 // Server-side Discount Hard-cap (chống thu ngân tự ý chiết khấu sâu).
-// Trần thu ngân: 15%. Vượt trần bắt buộc có mã PIN quản lý phê duyệt.
+// Trần thu ngân: 20%. Vượt trần bắt buộc có mã PIN quản lý phê duyệt.
 // PIN xác thực bằng hash (manager-pin.ts + env MANAGER_PIN_HASHES).
 // ---------------------------------------------------------------------------
-const MAX_CASHIER_DISCOUNT_RATE = 0.15;
+const MAX_CASHIER_DISCOUNT_RATE = 0.2;
 
 export async function GET(req: NextRequest) {
   try {
@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
           details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${cashierId || userRole}, thiếu PIN quản lý hợp lệ).`,
         });
         return NextResponse.json(
-          { success: false, error: 'Vượt trần chiết khấu 15%. Yêu cầu mã PIN Quản lý!' },
+          { success: false, error: 'Vượt trần chiết khấu 20%. Yêu cầu mã PIN Quản lý!' },
           { status: 403 }
         );
       }

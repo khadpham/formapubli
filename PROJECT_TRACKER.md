@@ -203,9 +203,9 @@
     - Liên kết mỗi đơn hàng với `cashbox_session_id`.
     - Xây dựng dịch vụ `CashboxService` và API route `/api/cashbox` (`OPEN`, `CLOSE`, truy vấn ca hiện tại, liệt kê lịch sử ca).
     - Giao diện POS tích hợp Huy hiệu Két tiền trên thanh tiêu đề, nút "Mở Két Ca Mới", Modal Mở Ca, Modal Chốt Ca & Kiểm Kê Két Tiền hiển thị chênh lệch thời gian thực (Khớp 100% / Thừa / Thiếu).
-  - **Triển Khai Phân Hệ D2: Trần Chiết Khấu Quầy (Hard-cap 15%) & Modal Mã PIN Quản Lý:**
-    - Thu ngân bị giới hạn chiết khấu tối đa 15%. Mức chiết khấu sỉ/đầu nậu (20%, 35%, 40%) tự động khóa với biểu tượng 🔒.
-    - Khi áp dụng mức chiết khấu > 15%, hệ thống kích hoạt Modal Mã PIN Quản Lý (Mã: 9999 / 1234 / 8888). Sau khi Quản lý nhập đúng PIN, hạn mức được mở khóa cho giao dịch hiện tại.
+  - **Triển Khai Phân Hệ D2: Trần Chiết Khấu Quầy (Hard-cap 20%) & Modal Mã PIN Quản Lý:**
+    - Thu ngân bị giới hạn chiết khấu tối đa 20%. Mức chiết khấu sỉ/đầu nậu (20%, 35%, 40%) tự động khóa với biểu tượng 🔒.
+    - Khi áp dụng mức chiết khấu > 20%, hệ thống kích hoạt Modal Mã PIN Quản Lý (Mã: 9999 / 1234 / 8888). Sau khi Quản lý nhập đúng PIN, hạn mức được mở khóa cho giao dịch hiện tại.
   - **Cập Nhật Master Blueprint Chương 32:** Bổ sung Ba Chuẩn Mực Vận Hành Thực Địa (Atomic Guard, Counter Quota "Chia Mâm", Clean Slate Opening Stock).
   - **Kiểm Thử Tự Động Toàn Diện:**
     - Nâng cấp `scripts/test-p0-verification.ts` lên **10/10 test cases đạt chuẩn 100%** (bao gồm kiểm thử Atomic UPDATE rowsAffected, Vòng đời ca két tiền & đối soát chênh lệch, và Cô lập đơn hàng của thu ngân).
@@ -242,10 +242,10 @@
 #### 🔹 [Mã: ENG-20260913-15] Hợp Nhất Phân Hệ Bảo Vệ Server-Enforce Discount/PIN & Cô Lập Toàn Bộ 9 Test Suites (Clean Slate Runner)
 - **Nhánh:** `feat/pwa-mobile-and-offline-pos` (Merge từ `feat/server-discount-test-db` & `feat/isolate-all-test-suites`)
 - **Nội dung:**
-  - **Server-Side Discount Hard-Cap 15% & PIN Check (`src/app/api/orders/route.ts`):**
-    - Đặt hằng số `MAX_CASHIER_DISCOUNT_RATE = 0.15` (15%), danh sách PIN quản lý `['9999', '1234', '8888']`.
+  - **Server-Side Discount Hard-Cap 20% & PIN Check (`src/app/api/orders/route.ts`):**
+    - Đặt hằng số `MAX_CASHIER_DISCOUNT_RATE = 0.2` (20%), danh sách PIN quản lý `['9999', '1234', '8888']`.
     - Tính `effectiveItemDiscounts` bằng `Math.max` của cả `discountRate` tổng lẫn `unitDiscountRate` từng dòng (chặn đứng mọi thủ thuật lách chiết khấu từng cuốn).
-    - Phân quyền kép: `ROLE_OWNER` / `ROLE_MANAGER` được miễn trừ tự nhiên; `ROLE_CASHIER` gửi đơn vượt 15% mà không có PIN hoặc sai PIN sẽ bị chặn cứng với HTTP 403 Forbidden.
+    - Phân quyền kép: `ROLE_OWNER` / `ROLE_MANAGER` được miễn trừ tự nhiên; `ROLE_CASHIER` gửi đơn vượt 20% mà không có PIN hoặc sai PIN sẽ bị chặn cứng với HTTP 403 Forbidden.
     - Ghi nhận `MANAGER_DISCOUNT_APPROVED` và `MANAGER_DISCOUNT_DENIED` vào `audit_logs` — **tuyệt đối không lưu mã PIN vào log kiểm toán**.
   - **Cô Lập Toàn Bộ CSDL Kiểm Thử (Clean Slate Test DB Runner):**
     - `scripts/test-guard.ts`: Hàm `assertIsolatedTestDb()` tự động ném `exit 2` chặn ngay lập tức nếu bất kỳ file test nào trỏ vào `formapubli.db` production.
@@ -336,7 +336,7 @@
       `available_combos = MIN(FLOOR(stock_i / req_i))`
     - Từ chối tạo đơn ngay lập tức nếu bất kỳ linh kiện nào (hoặc vỏ hộp) bị thiếu hụt, đồng thời nêu đích danh đầu sách bị cạn và số lượng thiếu.
   - **Miễn Trừ Hợp Lệ Với Hard-Cap Chiết Khấu Quầy:**
-    - Giá combo là giá niêm yết do ban quản lý quy định trước; các dòng chi tiết combo mang `unitDiscountRate = 0`, ngăn chặn double-dipping chiết khấu và miễn trừ hợp lệ qua trần 15% của thu ngân.
+    - Giá combo là giá niêm yết do ban quản lý quy định trước; các dòng chi tiết combo mang `unitDiscountRate = 0`, ngăn chặn double-dipping chiết khấu và miễn trừ hợp lệ qua trần 20% của thu ngân.
   - **Kiểm Thử Toàn Diện & Tối Ưu:**
     - Test suite `scripts/test-bundle-engine.ts` đạt **10/10 PASS**.
     - Nâng tổng số test suites lên **12 suites cách ly / 131 test cases đạt chuẩn 100%**.
@@ -592,7 +592,7 @@
 *Mục tiêu: Đảm bảo tính toàn vẹn dữ liệu kế toán, bảo mật cấp độ doanh nghiệp và khả năng sẵn sàng triển khai Cloudflare D1 100%.*
 
 - [x] **Luân Chuyển Hàng 2 Bước Chống Mất Mát (`IN_TRANSIT` Two-Step Engine):** Trạm trung chuyển ảo `wh-in-transit`, phương trình bảo toàn $R + D + L = X$, bóc tách sách lành NEW, hỏng QUARANTINE nối RMA, và thất thoát `TRANSFER_LOSS`.
-- [x] **Bảo Mật Két Tiền & Chống Thất Thoát Chiết Khấu (`Cashbox & Discount Hard-Cap`):** Trần chiết khấu thu ngân 15%, thẩm quyền Manager PIN mở khóa, phân quyền xem doanh số theo vai trò, nhật ký kiểm toán Audit Trail.
+- [x] **Bảo Mật Két Tiền & Chống Thất Thoát Chiết Khấu (`Cashbox & Discount Hard-Cap`):** Trần chiết khấu thu ngân 20%, thẩm quyền Manager PIN mở khóa, phân quyền xem doanh số theo vai trò, nhật ký kiểm toán Audit Trail.
 - [x] **Mã Hóa PIN Quản Lý Zero-Dependency (`src/lib/manager-pin.ts`):** Băm `sha256(PIN + salt)` thuần TypeScript qua `export-hash.ts`, nạp danh sách hash từ biến môi trường `MANAGER_PIN_HASHES`, tương thích ngược 100% với giao diện POS client.
 - [x] **Cách Ly DB Kiểm Thử & Chống Ô Nhiễm Prod (`assertIsolatedTestDb`):** Tự động phát hiện và chặn đứng mọi script kiểm thử chạm vào `formapubli.db`, bảo toàn dữ liệu thật 100%.
 - [x] **Đồng Bộ Drizzle Migration Journal (`scripts/migrate-fresh.ts`):** Khôi phục tính nhất quán chuỗi migration từ `0000` đến `0008` (21 bảng), xử lý triệt để lỗi parse comment của LibSQL, chuẩn bị sẵn sàng cho lệnh `wrangler d1 migrations apply`.

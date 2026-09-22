@@ -271,8 +271,10 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
         `${i + 1}. **${a.author}** — ${a.titlesCount} đầu sách, đã bán ${Number(a.soldQty).toLocaleString('vi-VN')} cuốn`);
       return `📚 **Top tác giả được yêu thích (${data.query})** — tổng ${data.total} tác giả:\n${lines.join('\n')}`;
     }
-    const lines = (data.items || []).slice(0, 20).map((it: { code?: string; title?: string; author?: string; coverPrice?: number; quantity?: number; availableStock?: number }, i: number) =>
-      `${i + 1}. **${it.code} - ${it.title}** (${it.author || 'chưa rõ tác giả'}) — giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ`);
+    const lines = (data.items || []).slice(0, 20).map((it: { code?: string; title?: string; author?: string; coverPrice?: number; availableStock?: number }, i: number) => {
+      const stock = Number(it.availableStock || 0);
+      return `${i + 1}. **${it.code} - ${it.title}** (${it.author || 'chưa rõ tác giả'}) — giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ — ${stock > 0 ? 'Còn hàng' : 'Hết hàng'}: ${stock.toLocaleString('vi-VN')} cuốn`;
+    });
     const head = data.mode === 'author' ? `📚 **Sách của tác giả ${data.query}**`
       : data.mode === 'title-prefix' ? `📚 **Tác phẩm bắt đầu bằng ${data.query}**`
       : data.mode === 'top-editions' ? `📚 **Sách bán chạy (${data.query})**`

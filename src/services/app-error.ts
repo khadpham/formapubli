@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'INVALID_INPUT'
   | 'INSUFFICIENT_ATP'
+  | 'TRANSFER_TOCTOU_ATP_STALE'
   | 'STATE_CONFLICT'
   | 'IDEMPOTENCY_CONFLICT'
   | 'OVER_RETURN_LIMIT'
@@ -31,6 +32,11 @@ export class AppError extends Error {
 
   static atp(message: string, details?: unknown): AppError {
     return new AppError('INSUFFICIENT_ATP', message, details);
+  }
+
+  // V4.1 S1.3: tồn biến động giữa validate và commit — client re-cap 1 chạm từ details.staleItems.
+  static toctouStale(message: string, details?: unknown): AppError {
+    return new AppError('TRANSFER_TOCTOU_ATP_STALE', message, details);
   }
 
   static conflict(message: string, details?: unknown): AppError {

@@ -44,13 +44,17 @@ export const editions = sqliteTable('editions', {
   workIdIdx: index('idx_editions_work_id').on(table.workId),
 }));
 
-// 3. Physical Warehouses (3 Kho vật lý)
+// 3. Physical Warehouses (kho động: chính, hội chợ sự kiện, ký gửi, trung chuyển)
 export const warehouses = sqliteTable('warehouses', {
   id: text('id').primaryKey(),
-  code: text('code').notNull().unique(), // KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG
+  code: text('code').notNull().unique(), // KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG, KHO_HOI_CHO_A...
   name: text('name').notNull(),
   address: text('address'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  // V4.1 S1: cờ tường minh thay hardcode SELLABLE_WAREHOUSE_IDS — POS chỉ bán kho active + cờ này.
+  isSellableOnPos: integer('is_sellable_on_pos', { mode: 'boolean' }).default(false).notNull(),
+  // V4.1 S1: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT
+  warehouseType: text('warehouse_type').default('PHYSICAL_MAIN').notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -591,4 +595,23 @@ export const loginAttemptBuckets = sqliteTable('login_attempt_buckets', {
   fails: integer('fails').default(0).notNull(),
   lockedUntil: integer('locked_until').default(0).notNull(), // epoch ms
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// 31. Document Sequences (cấp số PCK/PXK/PXK_R liên tục — V4.1 S1, gọi TRONG cùng tx với insert phiếu)
+export const documentSequences = sqliteTable('document_sequences', {
+  id: text('id').primaryKey(), // seq-<doc_type>-<fiscal_year>
+  docType: text('doc_type').notNull(), // PCK | PXK | PXK_R | ORD
+  fiscalYear: integer('fiscal_year').notNull(),
+  currentVal: integer('current_val').default(0).notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  docYearIdx: uniqueIndex('uq_doc_seq').on(table.docType, table.fiscalYear),
+}));
+
+// 32. Idempotency Keys (chống double-commit transfer-batch/checkout/pxk-create — V4.1 S1)
+export const idempotencyKeys = sqliteTable('idempotency_keys', {
+  key: text('key').primaryKey(),
+  scope: text('scope').notNull(), // transfer-batch | checkout | pxk-create
+  responseJson: text('response_json'), // envelope {reqFingerprint, response} để replay an toàn
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });

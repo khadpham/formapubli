@@ -57,6 +57,8 @@ async function main() {
       name: 'Kho 1 - Âu Cơ (Văn phòng chính & Xuất lẻ)',
       address: 'Âu Cơ, Tây Hồ, Hà Nội',
       isActive: true,
+      isSellableOnPos: true,
+      warehouseType: 'PHYSICAL_MAIN',
     },
     {
       id: 'wh-quynh-mai',
@@ -64,6 +66,8 @@ async function main() {
       name: 'Kho 2 - Quỳnh Mai (Kho Tổng & Lưu kho sỉ)',
       address: 'Quỳnh Mai, Hai Bà Trưng, Hà Nội',
       isActive: true,
+      isSellableOnPos: true,
+      warehouseType: 'PHYSICAL_MAIN',
     },
     {
       id: 'wh-du-phong',
@@ -71,6 +75,8 @@ async function main() {
       name: 'Kho 3 - Dự phòng (Hội chợ & Lưu động)',
       address: 'Linh hoạt theo địa điểm sự kiện',
       isActive: true,
+      isSellableOnPos: true,
+      warehouseType: 'PHYSICAL_MAIN',
     },
   ];
 

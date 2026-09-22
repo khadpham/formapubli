@@ -1,5 +1,6 @@
 import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger } from '../db';
 import { InventoryService } from './inventory.service';
+import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
@@ -24,9 +25,9 @@ const VALID_CHANNELS: OrderChannel[] = [
 ];
 const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE', 'COD'];
 
-// P2-07: chỉ bán từ 3 kho vật lý bán hàng. Cấm kho ảo trung chuyển (wh-in-transit)
-// và kho ký gửi đối tác (wh-consign-*) — hàng ở đó không thuộc quyền xuất bán trực tiếp.
-export const SELLABLE_WAREHOUSE_IDS = ['wh-au-co', 'wh-quynh-mai', 'wh-du-phong'];
+// V4.1 S1.2: SELLABLE_WAREHOUSE_IDS hardcode đã XÓA — quy tắc kho bán đọc từ
+// DB qua WarehouseService.assertSellable(). (Giữ comment để ai grep cũng thấy.)
+
 
 // Bước 1: TTL giữ chỗ ATP cho đơn PENDING (giờ). Quá hạn coi như nhả chỗ.
 export const PENDING_TTL_HOURS = 48;
@@ -135,9 +136,12 @@ export class OrderService {
     if (!VALID_PAYMENTS.includes(paymentMethod)) {
       throw AppError.invalid(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
     }
-    // P2-07: chặn bán từ kho ảo/ký gửi ngay từ cổng vào
-    if (!SELLABLE_WAREHOUSE_IDS.includes(warehouseId)) {
-      throw AppError.invalid(`Kho ${warehouseId} không được phép bán trực tiếp (chỉ: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
+    // V4.1 S1.2: chặn bán từ kho ảo/ký gửi/ngưng bán ngay từ cổng vào (đọc DB, không hardcode).
+    const sellRow = await WarehouseService.assertSellable(warehouseId);
+    // V4.1 S1.2 (lock Q5): đơn giữ chỗ online (PENDING) chỉ được giữ ở kho chính —
+    // sách đã ra gian hàng hội chợ chỉ bán trực tiếp tại quầy.
+    if (params.confirmImmediately === false && sellRow.warehouseType === 'FAIR_EVENT') {
+      throw AppError.invalid('Đơn online không được giữ chỗ tại kho hội chợ (chỉ giữ tại kho chính).');
     }
     // P2-08/09: két ca gắn vào đơn phải OPEN + đúng kho + đúng thu ngân (chống bán ké két)
     if (params.cashboxSessionId) {
@@ -741,12 +745,18 @@ export class OrderService {
   }
 
   /**
-   * Bước 1 — Tồn khả dụng ATP: tồn vật lý NEW trừ phần đơn PENDING còn hạn giữ chỗ.
+   * V4.1 S1.2 (lock Q5) — Tồn khả dụng ATP chia theo loại kho:
+   * - Kho hội chợ (FAIR_EVENT): ATP = physical (sách ra gian hàng chỉ bán tại quầy;
+   *   API giữ chỗ online từ chối kho hội chợ bằng 422 nên không cần trừ).
+   * - Kho còn lại: ATP = physical NEW trừ phần đơn PENDING còn hạn giữ chỗ.
    * Đơn PENDING không có bút toán ledger nên phải tính động từ order_items.
    * Hỗ trợ nhận `txOrDb` để thực thi đồng nhất trong cùng write transaction.
    */
   static async getATP(editionId: string, warehouseId: string, txOrDb: any = db): Promise<number> {
     const physical = await InventoryService.getBalance(editionId, warehouseId, 'NEW', txOrDb);
+    const wh = await WarehouseService.getWarehouse(warehouseId, txOrDb);
+    // ponytail: đọc thêm 1 row warehouses mỗi lần tính ATP; cache lại khi thành điểm nghẽn đo được.
+    if (wh?.warehouseType === 'FAIR_EVENT') return physical;
     const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
     const held = await txOrDb
       .select({ qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })

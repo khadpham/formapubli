@@ -1,6 +1,6 @@
 import { db, orders, orderItems, editions, sponsorshipFunds, sponsorshipDrawdowns } from '../db';
 import { InventoryService } from './inventory.service';
-import { SELLABLE_WAREHOUSE_IDS } from './order.service';
+import { WarehouseService } from './warehouse.service';
 import { eq, desc, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 
@@ -75,9 +75,8 @@ export class SponsorshipService {
   }) {
     const { fundId, editionId, warehouseId, quantity, drawnBy = 'staff-admin', note, actorRole = 'ROLE_OWNER' } = params;
     if (actorRole === 'ROLE_TAX') throw new Error('Kế toán thuế không được rút sách tài trợ.');
-    if (!SELLABLE_WAREHOUSE_IDS.includes(warehouseId)) {
-      throw new Error(`Kho xuất tài trợ ${warehouseId} không hợp lệ (chỉ xuất từ: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
-    }
+    // V4.1 S1.2: guard kho bán dùng chung (đọc DB).
+    await WarehouseService.assertSellable(warehouseId).catch((e) => { throw new Error(e.message); });
     if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Số lượng rút phải nguyên > 0.');
 
     const fund = await this.getFund(fundId);

@@ -3,7 +3,7 @@ import { ForecastService, RunoutLevel } from './forecast.service';
 import { OrderService } from './order.service';
 import { InventoryService } from './inventory.service';
 import { removeAccents } from '@/lib/vietnamese';
-import { eq, desc, sql, and, gte, inArray } from 'drizzle-orm';
+import { eq, desc, sql, and, gte, inArray, ne } from 'drizzle-orm';
 
 export interface QueryStockParams {
   editionId?: string;
@@ -61,6 +61,7 @@ export interface CatalogItem {
   author: string | null;
   coverPrice: number;
   status: string | null;
+  availableStock: number;
   soldQty?: number;
 }
 
@@ -511,14 +512,28 @@ export class ExecutiveQueryService {
       .groupBy(orderItems.editionId);
     const salesMap = new Map(salesRows.map((r) => [r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) }]));
 
-    const toItem = (r: (typeof catalog)[number]): CatalogItem => ({
-      code: r.code,
-      title: titleOf(r),
-      author: r.author,
-      coverPrice: r.coverPrice ?? 0,
-      status: r.status,
-      soldQty: salesMap.get(r.editionId)?.qty ?? 0,
-    });
+    const stockRows = await db
+      .select({
+        editionId: stockBalances.editionId,
+        qty: sql<number>`COALESCE(SUM(${stockBalances.physicalQuantity}), 0)`,
+      })
+      .from(stockBalances)
+      .where(and(eq(stockBalances.condition, 'NEW'), ne(stockBalances.warehouseId, 'wh-in-transit')))
+      .groupBy(stockBalances.editionId);
+    const stockMap = new Map(stockRows.map((r) => [r.editionId, Number(r.qty || 0)]));
+
+    const toItem = (r: (typeof catalog)[number]): CatalogItem => {
+      const availableStock = stockMap.get(r.editionId) ?? 0;
+      return {
+        code: r.code,
+        title: titleOf(r),
+        author: r.author,
+        coverPrice: r.coverPrice ?? 0,
+        status: availableStock > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+        availableStock,
+        soldQty: salesMap.get(r.editionId)?.qty ?? 0,
+      };
+    };
 
     // --- Che do tuong minh tu planner ---
     if (params.topAuthors) {

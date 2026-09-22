@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-22T07:08:36.008Z",
+  "timestamp": "2026-09-22T17:36:09.852Z",
   "totalTests": 26,
   "passed": 26,
   "passRatio": "100%",
@@ -129,7 +129,7 @@
       "name": "Doanh thu trong câu trả lời khớp toolData (không bịa số)",
       "category": "DATA_ACCURACY",
       "passed": true,
-      "expected": "Chứa 11298800",
+      "expected": "Chứa 11297000",
       "actual": "Khớp"
     },
     {
