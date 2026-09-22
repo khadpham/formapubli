@@ -29,7 +29,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-blue-700 border-blue-300',
     badgeBg: 'bg-blue-50',
     description: 'Điều phối bán hàng, duyệt chuyển kho, áp chiết khấu cho phép',
-    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'partners', 'customers', 'studio'],
+    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'partners', 'customers', 'settings', 'studio'],
   },
   ROLE_CASHIER: {
     id: 'ROLE_CASHIER',
@@ -37,7 +37,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-emerald-700 border-emerald-300',
     badgeBg: 'bg-emerald-50',
     description: 'Bán hàng quầy siêu tốc, tra cứu sách tại kho, không thấy doanh thu tổng',
-    allowedNavItems: ['pos', 'inventory'],
+    allowedNavItems: ['pos', 'inventory', 'settings'],
   },
   ROLE_WAREHOUSE: {
     id: 'ROLE_WAREHOUSE',
@@ -45,7 +45,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-amber-700 border-amber-300',
     badgeBg: 'bg-amber-50',
     description: 'Quản lý thẻ kho, nhập/xuất/chuyển kho 3 kho vật lý, không thấy doanh thu',
-    allowedNavItems: ['inventory'],
+    allowedNavItems: ['inventory', 'settings'],
   },
   ROLE_TAX: {
     id: 'ROLE_TAX',
@@ -53,6 +53,6 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-rose-700 border-rose-300',
     badgeBg: 'bg-rose-50',
     description: 'Chỉ xem số liệu Hóa đơn điện tử VAT chính thức (OFFICIAL_TAX), cách ly dữ liệu nội bộ',
-    allowedNavItems: ['sales', 'inventory'],
+    allowedNavItems: ['sales', 'inventory', 'settings'],
   },
 };

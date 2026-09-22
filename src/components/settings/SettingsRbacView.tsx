@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Settings,
-  Shield,
   Keyboard,
   Sun,
   Moon,
@@ -19,8 +18,9 @@ import {
   Sparkles,
   Command,
   Save,
+  Users,
 } from 'lucide-react';
-import { USER_ROLES, UserRole } from '@/lib/roles';
+import { UserRole } from '@/lib/roles';
 import { StaffManager } from './StaffManager';
 
 interface SettingsRbacViewProps {
@@ -30,7 +30,20 @@ interface SettingsRbacViewProps {
 }
 
 export function SettingsRbacView({ currentRole, sessionRole, onRoleChange }: SettingsRbacViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'roles' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>('roles');
+  // Go-live: da xoa mo phong vai tro. Tab "Tai khoan nhan su" chi hien voi OWNER/MANAGER.
+  const canManageStaff = sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER';
+  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(
+    canManageStaff ? 'staff' : 'shortcuts'
+  );
+
+  // Session den tre (login sau mount): mo tab staff khi vua du quyen, khong cuop tab nguoi dung.
+  useEffect(() => {
+    if (canManageStaff) {
+      setActiveSubTab((prev) => (prev === 'shortcuts' ? 'staff' : prev));
+    } else {
+      setActiveSubTab((prev) => (prev === 'staff' ? 'shortcuts' : prev));
+    }
+  }, [canManageStaff]);
 
   // Cấu hình lưu trữ cục bộ (Settings State)
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('light');
@@ -179,10 +192,10 @@ export function SettingsRbacView({ currentRole, sessionRole, onRoleChange }: Set
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Settings className="w-5 h-5 text-indigo-600" />
-            Cài Đặt Hệ Thống & Phân Quyền Vai Trò
+            Cài Đặt Hệ Thống & Vai Trò
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quản trị 5 vai trò nhân sự, tùy biến phím tắt, giao diện hiển thị, thông báo và máy in nhiệt
+            Tùy biến phím tắt, giao diện hiển thị, thông báo và máy in nhiệt. Mục phân quyền nhân sự chỉ dành cho Chủ sở hữu / Quản lý.
           </p>
         </div>
 
@@ -205,17 +218,19 @@ export function SettingsRbacView({ currentRole, sessionRole, onRoleChange }: Set
 
       {/* Settings Navigation Tabs */}
       <div className="flex items-center gap-1.5 p-1.5 bg-slate-200/80 rounded-2xl overflow-x-auto">
-        <button
-          onClick={() => setActiveSubTab('roles')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-            activeSubTab === 'roles'
-              ? 'bg-white text-indigo-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Shield className="w-3.5 h-3.5" />
-          <span>1. Phân Quyền 5 Roles</span>
-        </button>
+        {canManageStaff && (
+          <button
+            onClick={() => setActiveSubTab('staff')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'staff'
+                ? 'bg-white text-indigo-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>1. Tài Khoản Nhân Sự</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveSubTab('shortcuts')}
@@ -278,68 +293,9 @@ export function SettingsRbacView({ currentRole, sessionRole, onRoleChange }: Set
         </button>
       </div>
 
-      {/* TAB 1: ROLES & RBAC SIMULATION */}
-      {activeSubTab === 'roles' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div>
-              <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                <Shield className="w-4 h-4 text-indigo-600" />
-                Mô Phỏng Trực Tiếp Quyền Hạn (RBAC 5 Roles)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Chạm vào một vai trò bên dưới để kiểm tra ngay lập tức giao diện thay đổi theo quyền tương ứng:
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {Object.values(USER_ROLES).map((role) => {
-                const isSelected = currentRole === role.id;
-                return (
-                  <div
-                    key={role.id}
-                    onClick={() => {
-                      onRoleChange(role.id);
-                      if (enableSound) playSuccessTone();
-                    }}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer select-none flex flex-col justify-between ${
-                      isSelected
-                        ? 'border-indigo-600 bg-indigo-50/50 shadow-md ring-2 ring-indigo-500/20'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-mono text-[10px] font-bold text-slate-400">
-                          {role.id}
-                        </span>
-                        {isSelected && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white flex items-center gap-1">
-                            <Check className="w-3 h-3" /> Đang kích hoạt
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-sm font-extrabold text-slate-900">{role.label}</h4>
-                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                        {role.description}
-                      </p>
-                    </div>
-
-                    <div className="mt-4 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-slate-400">
-                      <span>Phân hệ truy cập:</span>
-                      <span className="font-bold text-slate-700">{role.allowedNavItems.length} / 7</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Quản trị tài khoản ca — chỉ session thật OWNER/MANAGER (không theo preview mô phỏng) */}
-          {(sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER') && (
-            <StaffManager canManagePrivileged={sessionRole === 'ROLE_OWNER'} />
-          )}
-        </div>
+      {/* TAB 1: TAI KHOAN NHAN SU (chi OWNER/MANAGER — quan tri ma NV + PIN, khong mo phong vai tro) */}
+      {activeSubTab === 'staff' && canManageStaff && (
+        <StaffManager canManagePrivileged={sessionRole === 'ROLE_OWNER'} />
       )}
 
       {/* TAB 2: KEYBOARD SHORTCUTS */}

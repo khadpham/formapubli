@@ -88,8 +88,8 @@ async function run() {
 
   const cashierCk = { Cookie: await loginAs('NV-01', '1234') };
   const keeperCk = { Cookie: await loginAs('KHO-01', '5678') };
-  const managerCk = { Cookie: await loginAs('QL-01', 'manager8888') };
-  const ownerCk = { Cookie: await loginAs('ADMIN-01', 'owner9999') };
+  const managerCk = { Cookie: await loginAs('QL-01', '8888') };
+  const ownerCk = { Cookie: await loginAs('ADMIN-01', '9999') };
 
   // 1. Thu tiền ghi receivedBy:'mallory' → DB ép về NV-01.
   const ref1 = `BIND-${Date.now()}`;

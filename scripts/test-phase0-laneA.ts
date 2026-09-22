@@ -112,7 +112,7 @@ async function run() {
   // -------------------------------------------------------------------------
   const loginRes = await post(postLogin, {
     staffId: 'ADMIN-01',
-    passcode: 'owner9999',
+    passcode: '9999',
   });
   const adminCookie = extractCookie(loginRes.headers);
   test('5. Đăng nhập ADMIN-01 qua staff_accounts thành công, cấp cookie session', loginRes.status === 200 && !!adminCookie);
@@ -164,7 +164,7 @@ async function run() {
   for (let i = 0; i < 10; i++) {
     await post(postLogin, { staffId: `DUMMY-${i}`, passcode: 'wrong' }, { 'cf-connecting-ip': attackerIp });
   }
-  const ipBlockedAttempt = await post(postLogin, { staffId: 'ADMIN-01', passcode: 'owner9999' }, { 'cf-connecting-ip': attackerIp });
+  const ipBlockedAttempt = await post(postLogin, { staffId: 'ADMIN-01', passcode: '9999' }, { 'cf-connecting-ip': attackerIp });
   test('9. Dò mật khẩu 10 lần từ 1 IP bị khóa toàn bộ IP 15 phút (HTTP 429)', ipBlockedAttempt.status === 429 && ipBlockedAttempt.body?.code === 'RATE_LIMITED');
   delete process.env.TRUST_PROXY;
 
@@ -223,7 +223,7 @@ async function run() {
   // -------------------------------------------------------------------------
   // CA 15: Chế độ Strict fail-closed: Tài khoản lạ + role passcode -> 401 AUTH_REQUIRED
   // -------------------------------------------------------------------------
-  const r15 = await post(postLogin, { staffId: 'FAKE-STAFF-999', role: 'ROLE_OWNER', passcode: 'owner9999' });
+  const r15 = await post(postLogin, { staffId: 'FAKE-STAFF-999', role: 'ROLE_OWNER', passcode: '9999' });
   test('15. Tài khoản không tồn tại trong staff_accounts bị từ chối 401 (fail-closed, không fallback role passcode)', r15.status === 401 && r15.body?.code === 'AUTH_REQUIRED');
 
   // -------------------------------------------------------------------------
@@ -256,7 +256,7 @@ async function run() {
       'x-forwarded-for': `198.51.100.${i + 1}, 10.0.0.1`,
     });
   }
-  const cfBlockedAttempt = await post(postLogin, { staffId: 'ADMIN-01', passcode: 'owner9999' }, {
+  const cfBlockedAttempt = await post(postLogin, { staffId: 'ADMIN-01', passcode: '9999' }, {
     'cf-connecting-ip': proxyIp,
     'x-forwarded-for': '192.0.2.1',
   });

@@ -72,8 +72,8 @@ async function run() {
     }
   };
 
-  const owner = await loginAs('ADMIN-01', 'owner9999');
-  const manager = await loginAs('QL-01', 'manager8888');
+  const owner = await loginAs('ADMIN-01', '9999');
+  const manager = await loginAs('QL-01', '8888');
   const ownerCk = { Cookie: owner.cookie };
   const managerCk = { Cookie: manager.cookie };
 
@@ -148,7 +148,7 @@ async function run() {
 
   // 11. OWNER không tự khóa mình → 400.
   const r11: any = await patch('ADMIN-01', { isActive: false }, ownerCk);
-  const r11login = await loginAs('ADMIN-01', 'owner9999');
+  const r11login = await loginAs('ADMIN-01', '9999');
   ok('11. Chống tự khóa 400 + vẫn login được', r11.status === 400 && r11login.status === 200);
 
   // 12. Trùng mã → 409.

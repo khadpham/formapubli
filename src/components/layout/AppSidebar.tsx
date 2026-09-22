@@ -96,7 +96,7 @@ export function AppSidebar({
     },
     {
       id: 'settings',
-      label: 'Phân Quyền & Cài Đặt',
+      label: 'Cài Đặt',
       icon: Settings,
       shortcut: 'Alt+8',
       color: 'text-slate-600',
@@ -148,39 +148,33 @@ export function AppSidebar({
           </button>
         </div>
 
-        {/* Role Selector Card */}
+        {/* Role Selector Card — Go-live: hiển thị vai trò phiên đăng nhập thật (read-only), đã xóa mô phỏng */}
         <div className="p-3 border-b border-slate-800">
           {!isCollapsed ? (
             <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                  <Shield className="w-3.5 h-3.5 text-indigo-400" />
-                  Mô phỏng Vai trò (RBAC)
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  Vai trò đăng nhập
                 </span>
               </div>
-              <select
-                value={currentRole}
-                onChange={(e) => onRoleChange(e.target.value as UserRole)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
-              >
-                {Object.values(USER_ROLES).map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium">
+                {roleConfig.label}
+              </div>
               <p className="text-[10px] text-slate-400 leading-tight">
                 {roleConfig.description}
               </p>
             </div>
           ) : (
-            <div
-              title={`Vai trò: ${roleConfig.label}`}
-              className="flex items-center justify-center p-2 rounded-xl bg-slate-800 text-indigo-400 cursor-pointer"
+            <button
+              type="button"
+              title={`Vai trò: ${roleConfig.label} — bấm để mở rộng menu`}
+              aria-label={`Vai trò hiện tại: ${roleConfig.label}. Bấm để mở rộng menu.`}
+              className="w-full flex items-center justify-center p-2 rounded-xl bg-slate-800 text-indigo-400 cursor-pointer hover:bg-slate-700"
               onClick={onToggleCollapse}
             >
               <Shield className="w-5 h-5" />
-            </div>
+            </button>
           )}
         </div>
 

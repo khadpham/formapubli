@@ -41,7 +41,30 @@ export function MasterAppShell({
   const [currentRole, setCurrentRole] = useState<UserRole>(initialSession?.role || 'ROLE_OWNER');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  // Copilot 3 trang thai: closed (bong bong) • mini (chat nho goc phai) • full (drawer phai).
+  const [copilotView, setCopilotView] = useState<'closed' | 'mini' | 'full'>('closed');
+  // Don nhap tu Copilot (prepare_sale_draft) → op vao gio POS khi qua tab POS.
+  const [posDraft, setPosDraft] = useState<{
+    nonce: number;
+    items: Array<{ editionId: string; quantity: number }>;
+    customerName?: string;
+    phone?: string;
+    address?: string;
+    note?: string;
+  } | null>(null);
+
+  const handleApplyDraft = (draft: { items: Array<{ editionId: string; quantity: number }>; customerName?: string; phone?: string; address?: string; note?: string }) => {
+    setPosDraft({ ...draft, nonce: Date.now() });
+    if (roleConfig.allowedNavItems.includes('pos')) {
+      setCurrentTab('pos');
+    }
+  };
+
+  // Go-live: vai trò = phiên đăng nhập thật, đã xóa mô phỏng vai trò.
+  // Giữ state currentRole để tương thích component con, nhưng luôn đồng bộ từ session.
+  const handleRoleChangeNoop = React.useCallback((_role: UserRole) => {
+    if (session?.role) setCurrentRole(session.role);
+  }, [session?.role]);
 
   // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
@@ -80,11 +103,11 @@ export function MasterAppShell({
     const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
       // Bắt tổ hợp Alt + [phím] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        // Phím tắt Alt + C mở Copilot
+        // Phím tắt Alt + C mở Copilot (dang mini nho gon)
         if (e.key === 'c' || e.key === 'C') {
           e.preventDefault();
           if (canUseCopilot) {
-            setIsCopilotOpen((prev) => !prev);
+            setCopilotView((prev) => (prev === 'closed' ? 'mini' : 'closed'));
           }
           return;
         }
@@ -121,12 +144,12 @@ export function MasterAppShell({
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         currentRole={currentRole}
-        onRoleChange={setCurrentRole}
+        onRoleChange={handleRoleChangeNoop}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
-        onOpenCopilot={() => setIsCopilotOpen(true)}
+        onOpenCopilot={() => setCopilotView('mini')}
       />
 
       {/* Main Content Area */}
@@ -156,7 +179,7 @@ export function MasterAppShell({
                 {currentTab === 'partners' && 'Đối Tác & Đại Lý (Alt+5)'}
                 {currentTab === 'customers' && 'Độc Giả CRM (Alt+6)'}
                 {currentTab === 'studio' && 'Phân Tích & Dự Báo (Alt+7)'}
-                {currentTab === 'settings' && 'Cài Đặt & Phân Quyền (Alt+8)'}
+                {currentTab === 'settings' && 'Cài Đặt (Alt+8)'}
               </span>
             </div>
           </div>
@@ -165,7 +188,7 @@ export function MasterAppShell({
             {/* AI Executive Copilot Trigger Button (Chỉ dành cho OWNER & MANAGER) */}
             {canUseCopilot && (
               <button
-                onClick={() => setIsCopilotOpen(true)}
+                onClick={() => setCopilotView('mini')}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
                 title="Mở Executive AI Copilot (Alt+C)"
               >
@@ -181,7 +204,7 @@ export function MasterAppShell({
             <div
               onClick={() => setCurrentTab('settings')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-transform active:scale-95 ${roleConfig.badgeBg} ${roleConfig.badgeColor}`}
-              title="Nhấn để đổi vai trò"
+              title="Xem Cài đặt"
             >
               <Shield className="w-3.5 h-3.5" />
               <span>{roleConfig.label}</span>
@@ -221,6 +244,8 @@ export function MasterAppShell({
             <PosCheckoutTerminal
               books={matrixBooks}
               currentRole={currentRole}
+              externalDraft={posDraft}
+              onDraftApplied={() => setPosDraft(null)}
               onOrderCompleted={() => {
                 // Refresh data if needed
               }}
@@ -266,7 +291,7 @@ export function MasterAppShell({
             <SettingsRbacView
               currentRole={currentRole}
               sessionRole={session?.role}
-              onRoleChange={setCurrentRole}
+              onRoleChange={handleRoleChangeNoop}
             />
           )}
 
@@ -294,11 +319,26 @@ export function MasterAppShell({
         />
       )}
 
-      {/* Executive AI Copilot Slide-over Drawer */}
+      {/* Bong bong Copilot goc phai duoi — hien khi dong, mo mini 1 cham */}
+      {canUseCopilot && copilotView === 'closed' && (
+        <button
+          onClick={() => setCopilotView('mini')}
+          title="Mở Executive AI Copilot (Alt+C)"
+          className="fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-xl shadow-indigo-600/30 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+        >
+          <Sparkles className="w-6 h-6 animate-pulse" />
+        </button>
+      )}
+
+      {/* Executive AI Copilot: mini chat + full drawer */}
       <CopilotDrawer
         currentRole={currentRole}
-        isOpen={isCopilotOpen}
-        onClose={() => setIsCopilotOpen(false)}
+        isOpen={copilotView !== 'closed'}
+        mode={copilotView === 'full' ? 'full' : 'mini'}
+        onMinimize={() => setCopilotView('mini')}
+        onExpand={() => setCopilotView('full')}
+        onClose={() => setCopilotView('closed')}
+        onApplyDraft={handleApplyDraft}
       />
     </div>
   );

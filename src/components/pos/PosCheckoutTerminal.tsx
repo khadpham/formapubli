@@ -75,12 +75,24 @@ interface PosCheckoutTerminalProps {
   books: BookItem[];
   currentRole: UserRole;
   onOrderCompleted?: () => void;
+  /** Don nhap tu Copilot (prepare_sale_draft) — op vao gio 1 lan duy nhat. */
+  externalDraft?: {
+    nonce: number;
+    items: Array<{ editionId: string; quantity: number }>;
+    customerName?: string;
+    phone?: string;
+    address?: string;
+    note?: string;
+  } | null;
+  onDraftApplied?: () => void;
 }
 
 export function PosCheckoutTerminal({
   books,
   currentRole,
   onOrderCompleted,
+  externalDraft,
+  onDraftApplied,
 }: PosCheckoutTerminalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('wh-au-co');
@@ -568,6 +580,44 @@ export function PosCheckoutTerminal({
     setIsParserOpen(false);
     searchInputRef.current?.focus();
   };
+
+  // Don nhap tu Copilot: op vao gio 1 lan theo nonce, qua guard ATP/ton nhu don tay.
+  // Danh dau nonce DONG BO ngay dau effect (ke ca StrictMode dev double-effect
+  // cung chi ap 1 lan); try/catch de draft loi khong ket posDraft.
+  const appliedDraftNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!externalDraft || appliedDraftNonce.current === externalDraft.nonce) return;
+    const draft = externalDraft;
+    appliedDraftNonce.current = draft.nonce;
+    const items = Array.isArray(draft.items)
+      ? draft.items
+          .filter((it) => it && typeof it.editionId === 'string' && it.editionId.trim())
+          .map((it) => ({ editionId: it.editionId.trim(), quantity: Math.min(999, Math.max(1, Math.floor(Number(it.quantity) || 1))) }))
+      : [];
+    if (items.length === 0) {
+      onDraftApplied?.();
+      return;
+    }
+    (async () => {
+      try {
+        await handleParserOrder({
+          customerName: typeof draft.customerName === 'string' && draft.customerName.trim() ? draft.customerName.trim() : 'Khách lẻ vãng lai',
+          phone: typeof draft.phone === 'string' ? draft.phone : undefined,
+          address: typeof draft.address === 'string' ? draft.address : undefined,
+          items,
+          note: typeof draft.note === 'string' && draft.note ? draft.note : '[COPILOT DRAFT]',
+        });
+        appliedDraftNonce.current = draft.nonce;
+        setSyncToast('Đã ốp đơn nháp từ Copilot vào giỏ — kiểm tra lại rồi bấm Thanh toán (Ctrl+Enter).');
+        setTimeout(() => setSyncToast(null), 4000);
+      } catch (err: any) {
+        setErrorMessage('Ốp đơn nháp thất bại: ' + (err?.message || 'lỗi không xác định'));
+      } finally {
+        onDraftApplied?.();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalDraft]);
 
   const updateQuantity = (editionId: string, delta: number) => {
     setErrorMessage(null);
@@ -1412,15 +1462,17 @@ export function PosCheckoutTerminal({
                   </span>
                 </div>
                 <div className="grid grid-cols-5 gap-1.5">
-                  {[0, 0.10, 0.15, 0.35, 0.40].map((rate) => {
+                  {[0, 10, 15, 20, 25, 30, 35, 40].map((pct) => {
+                    const rate = pct / 100;
                     const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate > 0.15;
+                    const isActive = Math.round(discountRate * 100) === pct && !isGift;
                     return (
                       <button
-                        key={rate}
+                        key={pct}
                         type="button"
                         onClick={() => handleRequestDiscount(rate)}
-                        className={`py-1 rounded-lg text-xs font-bold font-mono transition-colors flex items-center justify-center gap-1 ${
-                          discountRate === rate
+                        className={`py-1.5 rounded-lg text-xs font-bold font-mono transition-colors flex items-center justify-center gap-1 ${
+                          isActive
                             ? 'bg-amber-500 text-white shadow-sm'
                             : isLockedForCashier
                             ? 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-700 border border-dashed border-slate-300'
@@ -1429,24 +1481,25 @@ export function PosCheckoutTerminal({
                         title={isLockedForCashier ? 'Chiết khấu > 15% cần Quản lý nhập mã PIN' : undefined}
                       >
                         {isLockedForCashier && <span className="text-[10px]">🔒</span>}
-                        <span>{rate === 0 ? '0%' : `${rate * 100}%`}</span>
+                        <span>{pct}%</span>
                       </button>
                     );
                   })}
+                  {/* Nut tang 100% gon nhe — tai dung luong PIN quan ly nhu cu */}
+                  <button
+                    type="button"
+                    onClick={handleToggleGift}
+                    className={`py-1.5 rounded-lg text-xs font-extrabold font-mono transition active:scale-[0.99] ${
+                      isGift
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                    }`}
+                    title="Tặng 100%: doanh thu 0đ, vẫn trừ kho, chỉ ghi Sổ Nội bộ (thu ngân cần PIN quản lý)"
+                  >
+                    🎁 100%
+                  </button>
                 </div>
-                {/* BV-03: nút Tặng sách 100% */}
-                <button
-                  type="button"
-                  onClick={handleToggleGift}
-                  className={`w-full py-2 rounded-xl text-xs font-extrabold border transition active:scale-[0.99] ${
-                    isGift
-                      ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                      : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                  }`}
-                  title="Tặng sách: chiết khấu 100%, doanh thu 0đ, vẫn trừ kho (cần PIN quản lý với thu ngân)"
-                >
-                  {isGift ? '🎁 ĐANG TẶNG 100% — bấm để tắt' : '🎁 Tặng sách 100% (quà tặng sự kiện)'}
-                </button>
+                <p className="text-[10px] text-slate-400 mt-1">Thu ngân quá 15% cần PIN quản lý • 100% là tặng sự kiện</p>
                 {isGift && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-rose-700 block">

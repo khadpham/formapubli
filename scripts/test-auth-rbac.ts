@@ -25,8 +25,8 @@ const J = (o: any) => JSON.stringify(o);
 const SALT = 'formapubli-auth-passcode-salt-2026';
 process.env.AUTH_SECRET = 'test-auth-secret-32-chars-minimum!';
 process.env.AUTH_ROLE_PASSCODES = J({
-  ROLE_OWNER: hashString(`owner9999${SALT}`),
-  ROLE_MANAGER: hashString(`manager8888${SALT}`),
+  ROLE_OWNER: hashString(`9999${SALT}`),
+  ROLE_MANAGER: hashString(`8888${SALT}`),
   ROLE_CASHIER: hashString(`1234${SALT}`),
   ROLE_WAREHOUSE: hashString(`5678${SALT}`),
   ROLE_TAX: hashString(`7890${SALT}`),
@@ -81,7 +81,7 @@ async function run() {
   ok('2. Header tự xưng OWNER vô hiệu', r2.status === 401);
 
   // 3. Cookie sửa payload (đổi role lậu) → 401
-  const owner = await loginAs('ROLE_OWNER', `step3-owner-${Date.now()}`, 'owner9999');
+  const owner = await loginAs('ROLE_OWNER', `step3-owner-${Date.now()}`, '9999');
   const tampered = owner.cookie.replace(/formapubli_session=([^.]+)\.(.+)/, (_m: string, p: string, s: string) => {
     const forged = Buffer.from(JSON.stringify({ role: 'ROLE_OWNER', actorId: 'mallory', issuedAt: 1, expiresAt: Date.now() + 3600000 })).toString('base64url');
     void p;

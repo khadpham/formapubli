@@ -386,14 +386,14 @@ export const DEFAULT_STAFF_ACCOUNTS: StaffSeedData[] = [
     staffId: 'ADMIN-01',
     fullName: 'Chủ Quản Lý',
     role: 'ROLE_OWNER',
-    passcode: 'owner9999',
+    passcode: '9999',
     salt: 'salt_admin_01',
   },
   {
     staffId: 'QL-01',
     fullName: 'Quản Lý Vận Hành',
     role: 'ROLE_MANAGER',
-    passcode: 'manager8888',
+    passcode: '8888',
     salt: 'salt_ql_01',
   },
   {
@@ -431,8 +431,8 @@ export const DEFAULT_STAFF_ACCOUNTS: StaffSeedData[] = [
  * Production: cấu hình AUTH_ROLE_PASSCODES dạng JSON băm hoặc chuỗi env
  */
 const DEFAULT_DEV_PASSCODES: Record<UserRole, string> = {
-  ROLE_OWNER: 'owner9999',     // Owner cần passcode an toàn dài hơn
-  ROLE_MANAGER: 'manager8888', // Manager passcode
+  ROLE_OWNER: '9999',        // Test nhanh: PIN 4 so (doi lai PIN manh truoc go-live)
+  ROLE_MANAGER: '8888',      // Test nhanh: PIN 4 so (doi lai PIN manh truoc go-live)
   ROLE_CASHIER: '1234',        // Thu ngân quầy
   ROLE_WAREHOUSE: '5678',      // Thủ kho
   ROLE_TAX: '7890',            // Kế toán thuế

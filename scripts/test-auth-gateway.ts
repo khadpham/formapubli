@@ -72,8 +72,8 @@ async function run() {
   // 5. Xác thực Passcode theo từng Role
   ok('5. Xác thực đúng Passcode từng vai trò',
     verifyRolePasscode('ROLE_CASHIER', '1234') === true &&
-    verifyRolePasscode('ROLE_OWNER', 'owner9999') === true &&
-    verifyRolePasscode('ROLE_MANAGER', 'manager8888') === true &&
+    verifyRolePasscode('ROLE_OWNER', '9999') === true &&
+    verifyRolePasscode('ROLE_MANAGER', '8888') === true &&
     verifyRolePasscode('ROLE_CASHIER', '9999_wrong') === false
   );
 
