@@ -1,6 +1,7 @@
 import { db, orders, orderItems, editions, exchangeReplacementItems, returnOrders, returnOrderItems, returnActions, inventoryLedger, rmaTickets, cashboxSessions } from '../db';
 import { InventoryService } from './inventory.service';
-import { OrderService, SELLABLE_WAREHOUSE_IDS } from './order.service';
+import { OrderService } from './order.service';
+import { WarehouseService } from './warehouse.service';
 import { eq, and, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { canonicalHash } from '../lib/transfer-fingerprint';
@@ -121,9 +122,8 @@ export class ReturnService {
     if (inventoryDisposition !== 'RESTOCK' && inventoryDisposition !== 'DEFECTIVE_HOLD') {
       throw AppError.invalid('inventoryDisposition phải là RESTOCK hoặc DEFECTIVE_HOLD.');
     }
-    if (!SELLABLE_WAREHOUSE_IDS.includes(targetWarehouseId)) {
-      throw AppError.invalid(`Kho nhận hàng trả ${targetWarehouseId} không hợp lệ (chỉ nhận tại: ${SELLABLE_WAREHOUSE_IDS.join(', ')}).`);
-    }
+    // V4.1 S1.2: guard kho nhận dùng chung (đọc DB).
+    await WarehouseService.assertSellable(targetWarehouseId);
     if (!items || items.length === 0) throw AppError.invalid('Phiếu trả phải có ít nhất 1 dòng sách.');
     for (const it of items) {
       if (!Number.isInteger(it.quantity) || (it.quantity as number) <= 0) {

@@ -32,12 +32,14 @@ export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
   const [preset, setPreset] = useState<Preset>('WEEK');
   const [topN, setTopN] = useState(20);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<any[]>([]);
   const [totals, setTotals] = useState({ totalQty: 0, totalRevenue: 0 });
 
   const fetchTop = async (p: Preset = preset, n: number = topN) => {
     if (!canView) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const r = presetRange(p);
       const params = new URLSearchParams({
@@ -51,7 +53,11 @@ export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
       if (json?.success) {
         setItems(json.data?.items || []);
         setTotals({ totalQty: json.data?.totalQty || 0, totalRevenue: json.data?.totalRevenue || 0 });
+      } else {
+        setLoadError('Không tải được số liệu sách bán chạy — kiểm tra mạng rồi bấm Tải lại.');
       }
+    } catch {
+      setLoadError('Không tải được số liệu sách bán chạy — kiểm tra mạng rồi bấm Tải lại.');
     } finally {
       setLoading(false);
     }
@@ -169,7 +175,20 @@ export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.length === 0 ? (
+            {loadError ? (
+              <tr>
+                <td colSpan={6} className="p-8 text-center">
+                  <p className="text-rose-700 font-medium">{loadError}</p>
+                  <button
+                    onClick={() => fetchTop()}
+                    disabled={loading}
+                    className="mt-2 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition disabled:opacity-50"
+                  >
+                    Thử lại
+                  </button>
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={6} className="p-8 text-center text-slate-400">
                   {loading ? 'Đang tải số liệu...' : 'Chưa phát sinh đơn bán trong kỳ này.'}

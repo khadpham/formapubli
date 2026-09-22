@@ -126,7 +126,6 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
     },
   ]);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
   // Chong op draft trung: vo hieu hoa nut sau lan bam dau (double-click tao 2 nonce → x2 gio).
   const [appliedDraftIds, setAppliedDraftIds] = useState<Set<string>>(new Set());
   // Voice-to-text: MAC DINH dung Web Speech API cua trinh duyet (nhanh, co interim live
@@ -182,7 +181,14 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
   }, []);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 144)}px`;
+  }, [inputQuery]);
 
   // Tự động cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
@@ -539,9 +545,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
         className={
           isMini
             ? 'fixed bottom-4 right-4 z-50 flex flex-col bg-white shadow-2xl border border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 ease-in-out w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-6rem)]'
-            : `fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out ${
-                isExpanded ? 'w-full md:w-[720px]' : 'w-full md:w-[480px]'
-              }`
+            : 'fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out w-[calc(100%_-_1rem)] md:w-[480px]'
         }
         role="dialog"
         aria-modal={!isMini}
@@ -583,15 +587,6 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                 title="Mở rộng toàn màn hình phải"
               >
                 <Maximize2 className="w-4 h-4" />
-              </button>
-            )}
-            {!isMini && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors hidden md:flex"
-                title={isExpanded ? 'Thu hẹp' : 'Mở rộng'}
-              >
-                {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
             )}
             <button
@@ -756,7 +751,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                 e.preventDefault();
                 handleSend();
               }}
-              className="flex items-center gap-2"
+              className="flex items-end gap-2"
             >
               <button
                 type="button"
@@ -783,11 +778,17 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                   <Mic className="w-4 h-4" />
                 )}
               </button>
-              <input
+              <textarea
                 ref={inputRef}
-                type="text"
+                rows={1}
                 disabled={!isAuthorized || loading}
                 value={inputQuery}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
                 onChange={(e) => {
                   // Nguoi dung go tay khi dang nghe: dung voice, giu cau da co, nguoi tiep quan.
                   if (voiceLive.isListening) {
@@ -805,7 +806,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                     ? 'Bạn không có quyền truy vấn Copilot...'
                     : 'Hỏi về tồn kho, 2 sổ doanh thu, dự báo in 105 ngày, két quầy... hoặc bấm mic để nói'
                 }
-                className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all disabled:opacity-50"
+                className="flex-1 min-h-10 max-h-36 resize-none overflow-y-auto bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all disabled:opacity-50"
               />
               <button
                 type="submit"

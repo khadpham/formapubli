@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createBarcodeDecoder, type BarcodeDecoder } from '@/lib/barcode-decoder';
 import {
   Camera,
   X,
@@ -30,6 +31,7 @@ export function InAppBarcodeScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -38,13 +40,32 @@ export function InAppBarcodeScanner({
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [scanSuccessAnim, setScanSuccessAnim] = useState<boolean>(false);
-  const [detectorSupported, setDetectorSupported] = useState<boolean>(true);
+  const [scannerStatus, setScannerStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [scannerError, setScannerError] = useState<string | null>(null);
 
   const lastScannedTimeRef = useRef<number>(0);
   const didPostPermissionRescanRef = useRef<boolean>(false);
 
+  const CAMERA_ID_KEY = 'formapubli.scanner.cameraId';
+  const ZOOM_KEY = 'formapubli.scanner.zoom';
   const [availableCameras, setAvailableCameras] = useState<Array<{ deviceId: string; label: string }>>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [selectedCameraId, setSelectedCameraId] = useState<string>(() => {
+    try {
+      return typeof window !== 'undefined' ? window.localStorage.getItem(CAMERA_ID_KEY) || '' : '';
+    } catch {
+      return '';
+    }
+  });
+  const [zoomLevel, setZoomLevel] = useState<number>(() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem(ZOOM_KEY) === '2' ? 2 : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [hasOpticalZoom, setHasOpticalZoom] = useState<boolean>(false);
+  const zoomLevelRef = useRef<number>(1);
+  zoomLevelRef.current = zoomLevel;
 
   // Ref theo dõi cơ chế hãm phanh Lost-Track & Cooldown (BV-02)
   const lockedCodeRef = useRef<string | null>(null); // Mã đang bị khóa trong khung hình
@@ -90,6 +111,15 @@ export function InAppBarcodeScanner({
       }));
       setAvailableCameras(formatted);
 
+      try {
+        const saved = typeof window !== 'undefined' ? window.localStorage.getItem(CAMERA_ID_KEY) : null;
+        if (saved && videoInputs.some((d) => d.deviceId === saved)) {
+          setSelectedCameraId(saved);
+          return saved;
+        }
+      } catch {
+        // bỏ qua, chọn tự động
+      }
       if (selectedCameraId && videoInputs.some((d) => d.deviceId === selectedCameraId)) {
         return selectedCameraId;
       }
@@ -143,6 +173,7 @@ export function InAppBarcodeScanner({
   const startCamera = async (targetDeviceId?: string) => {
     setErrorMessage(null);
     stopCamera();
+    const request = cameraRequestRef.current;
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -157,6 +188,7 @@ export function InAppBarcodeScanner({
 
       // Tìm thiết bị phù hợp nhất nếu chưa có
       const activeDeviceId = targetDeviceId || (await enumerateAndSelectBestCamera());
+      if (request !== cameraRequestRef.current) return;
 
       // Trên iOS Safari: 1080p hoặc 720p mềm mỏng giúp lấy nét cự ly gần tốt hơn 4K
       const videoConstraints: MediaTrackConstraints = isIOS
@@ -184,6 +216,10 @@ export function InAppBarcodeScanner({
         video: videoConstraints,
         audio: false,
       });
+      if (request !== cameraRequestRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
 
       streamRef.current = stream;
       if (videoRef.current) {
@@ -192,6 +228,7 @@ export function InAppBarcodeScanner({
         videoRef.current.setAttribute('webkit-playsinline', 'true');
         await videoRef.current.play();
       }
+      if (request !== cameraRequestRef.current) return;
 
       setHasPermission(true);
 
@@ -206,6 +243,7 @@ export function InAppBarcodeScanner({
         if (needsRescan) {
           didPostPermissionRescanRef.current = true;
           const bestAfterPermission = await enumerateAndSelectBestCamera();
+          if (request !== cameraRequestRef.current) return;
           // Nếu best khác hẳn device đang stream và không phải do user chọn tay, restart 1 lần.
           if (
             bestAfterPermission &&
@@ -222,7 +260,18 @@ export function InAppBarcodeScanner({
         // Bỏ qua, giữ stream hiện tại
       }
 
-      // Kiểm tra hỗ trợ Flash / Torch
+      // Lưu camera đang dùng để lần sau mở lại đúng ống kính
+      try {
+        const currentId = stream.getVideoTracks()[0]?.getSettings?.().deviceId || activeDeviceId;
+        if (currentId) {
+          setSelectedCameraId(currentId);
+          window.localStorage.setItem(CAMERA_ID_KEY, currentId);
+        }
+      } catch {
+        // bỏ qua
+      }
+
+      // Kiểm tra hỗ trợ Flash / Torch + Zoom + ép nét gần cho quét mã
       const track = stream.getVideoTracks()[0];
       const capabilities = track.getCapabilities?.() as any;
       if (capabilities && capabilities.torch) {
@@ -230,7 +279,22 @@ export function InAppBarcodeScanner({
       } else {
         setHasTorch(false);
       }
+      setHasOpticalZoom(Boolean(capabilities?.zoom));
+      try {
+        // ponytail: zoom quang + continuous focus là đủ nhanh, focusDistance thủ công dễ kẹt nét xa nên bỏ qua
+        const wanted = zoomLevelRef.current === 2 ? 2 : 1;
+        if (capabilities?.zoom) {
+          const z = capabilities.zoom;
+          const target = Math.min(Math.max(wanted, z.min ?? 1), z.max ?? wanted);
+          await track.applyConstraints({ advanced: [{ zoom: target, focusMode: 'continuous' } as any] });
+        } else {
+          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] });
+        }
+      } catch {
+        // máy không hỗ trợ zoom/focus: vẫn quét bằng crop 2x ở vòng decode bên dưới
+      }
     } catch (err: any) {
+      if (request !== cameraRequestRef.current) return;
       console.warn('Lỗi mở Camera:', err);
       // Fallback an toàn 2 tầng:
       // 1) Nếu lỗi do deviceId exact / advanced (Overconstrained) -> thử lại minimal.
@@ -248,6 +312,10 @@ export function InAppBarcodeScanner({
             },
             audio: false,
           });
+          if (request !== cameraRequestRef.current) {
+            fallbackStream.getTracks().forEach(track => track.stop());
+            return;
+          }
           streamRef.current = fallbackStream;
           if (videoRef.current) {
             videoRef.current.srcObject = fallbackStream;
@@ -255,6 +323,7 @@ export function InAppBarcodeScanner({
             videoRef.current.setAttribute('webkit-playsinline', 'true');
             await videoRef.current.play();
           }
+          if (request !== cameraRequestRef.current) return;
           setHasPermission(true);
           try {
             await enumerateAndSelectBestCamera();
@@ -263,6 +332,7 @@ export function InAppBarcodeScanner({
           }
           return;
         } catch (fallbackErr) {
+          if (request !== cameraRequestRef.current) return;
           // Bỏ qua, báo lỗi bên dưới
         }
       }
@@ -280,6 +350,8 @@ export function InAppBarcodeScanner({
 
   // 3. Tắt Camera Stream
   const stopCamera = () => {
+    // Invalidate pending permission/device requests as well as the current stream.
+    cameraRequestRef.current += 1;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -297,6 +369,28 @@ export function InAppBarcodeScanner({
       setIsTorchOn(!isTorchOn);
     } catch (e) {
       console.warn('Không thể điều khiển đèn Flash:', e);
+    }
+  };
+
+  // 4b. Đổi zoom 1x/2x: ưu tiên zoom quang, không có thì crop trung tâm ở vòng decode
+  const toggleZoom = async () => {
+    const next = zoomLevel === 2 ? 1 : 2;
+    setZoomLevel(next);
+    zoomLevelRef.current = next;
+    try {
+      window.localStorage.setItem(ZOOM_KEY, String(next));
+    } catch {
+      // bỏ qua
+    }
+    try {
+      const track = streamRef.current?.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as any;
+      if (track && caps?.zoom) {
+        const target = Math.min(Math.max(next, caps.zoom.min ?? 1), caps.zoom.max ?? next);
+        await track.applyConstraints({ advanced: [{ zoom: target, focusMode: 'continuous' } as any] });
+      }
+    } catch {
+      // crop số ở dưới vẫn cho hiệu quả 2x cho bộ giải mã
     }
   };
 
@@ -339,12 +433,13 @@ export function InAppBarcodeScanner({
     onScan(cleanCode);
   };
 
-  // 6. Quét Barcode liên tục qua BarcodeDetector API với Fallback Canvas cho Safari WebKit (BV-01)
+  // 6. Share the same camera frames between native and software barcode decoders.
   useEffect(() => {
     if (!isOpen) {
       didPostPermissionRescanRef.current = false;
       lockedCodeRef.current = null;
       framesWithoutBarcodeRef.current = 0;
+      lastScannedTimeRef.current = 0;
       stopCamera();
       return;
     }
@@ -352,66 +447,37 @@ export function InAppBarcodeScanner({
     startCamera();
 
     let isScanning = true;
-    let barcodeDetector: any = null;
+    let timer: ReturnType<typeof setTimeout>;
+    let barcodeDetector: BarcodeDecoder;
+    setScannerStatus('loading');
+    setScannerError(null);
 
-    // Giới hạn định dạng chuẩn EAN-13, EAN-8, Code-128 và QR để Safari không bị quá tải
-    const supportedFormats = ['ean_13', 'ean_8', 'code_128', 'qr_code'];
-
-    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+    const scan = async () => {
+      if (!isScanning) return;
       try {
-        barcodeDetector = new (window as any).BarcodeDetector({
-          formats: supportedFormats,
-        });
-        setDetectorSupported(true);
-      } catch (e) {
-        console.warn('Lỗi khởi tạo BarcodeDetector:', e);
-        setDetectorSupported(false);
-      }
-    } else {
-      setDetectorSupported(false);
-    }
-
-    const intervalId = setInterval(async () => {
-      if (!isScanning || !videoRef.current || videoRef.current.readyState < 2) return;
-
-      if (barcodeDetector) {
-        try {
-          const video = videoRef.current;
-          let barcodes: any[] = [];
-
-          // CHIẾN LƯỢC CHO SAFARI / WEBKIT:
-          // Safari trên iOS thường không decode được trực tiếp từ thẻ <video>
-          // Vẽ frame lên canvas ẩn rồi quét trên canvas
-          if (canvasRef.current && (video.videoWidth > 0 && video.videoHeight > 0)) {
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (ctx) {
-              // Chuẩn hóa kích thước khung hình xử lý (giới hạn 720p để quét siêu nhanh)
-              const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
-              const targetW = Math.round(video.videoWidth * scale);
-              const targetH = Math.round(video.videoHeight * scale);
-
-              if (canvas.width !== targetW || canvas.height !== targetH) {
-                canvas.width = targetW;
-                canvas.height = targetH;
-              }
-
-              ctx.drawImage(video, 0, 0, targetW, targetH);
-              try {
-                // Thử quét trước trên canvas (WebKit tối ưu cực tốt trên CanvasImageSource)
-                barcodes = await barcodeDetector.detect(canvas);
-              } catch {
-                // Nếu fail, fallback quét trực tiếp trên video element
-                barcodes = await barcodeDetector.detect(video);
-              }
-            } else {
-              barcodes = await barcodeDetector.detect(video);
-            }
-          } else {
-            barcodes = await barcodeDetector.detect(video);
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        if (video && canvas && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) throw new Error('Không đọc được hình ảnh từ camera.');
+          const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+          const targetW = Math.round(video.videoWidth * scale);
+          const targetH = Math.round(video.videoHeight * scale);
+          if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
           }
-
-          if (barcodes && barcodes.length > 0) {
+          if (zoomLevelRef.current === 2) {
+            // Crop 50% trung tâm rồi phóng to = zoom số 2x cho bộ giải mã (đúng ý: không cần dí sát)
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            ctx.drawImage(video, vw * 0.25, vh * 0.25, vw * 0.5, vh * 0.5, 0, 0, targetW, targetH);
+          } else {
+            ctx.drawImage(video, 0, 0, targetW, targetH);
+          }
+          const barcodes = await barcodeDetector.detect(canvas);
+          if (!isScanning) return;
+          if (barcodes.length > 0) {
             framesWithoutBarcodeRef.current = 0;
             handleBarcodeFound(barcodes[0].rawValue);
           } else {
@@ -424,15 +490,33 @@ export function InAppBarcodeScanner({
               lockedCodeRef.current = null;
             }
           }
-        } catch (err) {
-          // Bỏ qua lỗi frame đơn lẻ
         }
+      } catch (error) {
+        if (!isScanning) return;
+        console.warn('Lỗi nhận diện mã vạch:', error);
+        setScannerStatus('error');
+        setScannerError('Không thể đọc mã vạch. Hãy đóng và mở lại camera; nếu vẫn lỗi, tải lại trang.');
+        return;
       }
-    }, 180); // Quét chu kỳ 180ms - cân bằng hoàn hảo giữa độ nhạy và hiệu năng pin
+      // Schedule only after decoding finishes, avoiding overlapping work on slow phones.
+      if (isScanning) timer = setTimeout(scan, 180);
+    };
+
+    void createBarcodeDecoder().then(decoder => {
+      if (!isScanning) return;
+      barcodeDetector = decoder;
+      setScannerStatus('ready');
+      void scan();
+    }).catch(error => {
+      if (!isScanning) return;
+      console.warn('Lỗi khởi tạo bộ đọc mã vạch:', error);
+      setScannerStatus('error');
+      setScannerError('Không tải được bộ đọc mã vạch. Kiểm tra kết nối rồi tải lại trang.');
+    });
 
     return () => {
       isScanning = false;
-      clearInterval(intervalId);
+      clearTimeout(timer);
       stopCamera();
     };
   }, [isOpen, facingMode]);
@@ -440,7 +524,15 @@ export function InAppBarcodeScanner({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          stopCamera();
+          onClose();
+        }
+      }}
+    >
       <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col max-h-[95vh]">
         {/* Header bar */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
@@ -453,7 +545,9 @@ export function InAppBarcodeScanner({
                 Súng Quét Mã Vạch Camera 0 Đồng
               </h3>
               <p className="text-[11px] text-slate-400">
-                Lia camera vào mã ISBN-13 sau bìa sách để tự động thêm giỏ
+                {scannerStatus === 'loading' || !hasPermission
+                  ? 'Đang chuẩn bị camera và bộ đọc mã vạch…'
+                  : 'Lia camera vào mã ISBN-13 sau bìa sách để tự động thêm giỏ'}
               </p>
             </div>
           </div>
@@ -473,6 +567,7 @@ export function InAppBarcodeScanner({
           <video
             ref={videoRef}
             className="w-full h-full object-cover"
+            style={zoomLevel === 2 && !hasOpticalZoom ? { transform: 'scale(2)' } : undefined}
             playsInline
             muted
             autoPlay
@@ -503,10 +598,6 @@ export function InAppBarcodeScanner({
                 }`}
               />
 
-              {/* Center crosshair */}
-              <div className="absolute inset-0 flex items-center justify-center text-white/30 text-xs font-mono">
-                [ CĂN MÃ VẠCH VÀO KHUNG ]
-              </div>
             </div>
           </div>
 
@@ -518,6 +609,12 @@ export function InAppBarcodeScanner({
                 <p className="font-bold">Lỗi truy cập Camera</p>
                 <p className="text-[11px] text-rose-300 mt-0.5">{errorMessage}</p>
               </div>
+            </div>
+          )}
+
+          {!errorMessage && scannerError && (
+            <div role="alert" className="absolute inset-x-4 top-4 rounded-xl bg-slate-950/90 px-3 py-2 text-xs text-slate-200">
+              {scannerError}
             </div>
           )}
 
@@ -553,10 +650,28 @@ export function InAppBarcodeScanner({
           )}
 
           <button
+            onClick={toggleZoom}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              zoomLevel === 2
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+            title={hasOpticalZoom ? 'Zoom quang 2x: mã to gấp đôi, không cần dí sát' : 'Zoom số 2x: crop trung tâm cho bộ giải mã'}
+          >
+            <Camera className="w-4 h-4" />
+            {zoomLevel === 2 ? 'Zoom 2x: Bật' : 'Zoom 1x'}
+          </button>
+
+          <button
             onClick={() => {
               const nextMode = facingMode === 'environment' ? 'user' : 'environment';
               setFacingMode(nextMode);
               setSelectedCameraId('');
+              try {
+                window.localStorage.removeItem(CAMERA_ID_KEY);
+              } catch {
+                // bỏ qua
+              }
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors"
           >
@@ -571,6 +686,11 @@ export function InAppBarcodeScanner({
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedCameraId(newId);
+                try {
+                  window.localStorage.setItem(CAMERA_ID_KEY, newId);
+                } catch {
+                  // bỏ qua
+                }
                 startCamera(newId);
               }}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[160px] truncate"

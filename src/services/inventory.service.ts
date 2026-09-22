@@ -1,9 +1,11 @@
-import { db, inventoryLedger, stockBalances, editions, warehouses, works } from '../db';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, warehouses, works } from '../db';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
-import { isDirectTransferAllowed } from './direct-transfer-policy';
+import { isDirectTransferAllowed, isForbiddenWarehouseFamily } from './direct-transfer-policy';
+import { WarehouseService } from './warehouse.service';
+import { computeTransferDispatchFingerprint } from '../lib/transfer-fingerprint';
 
 export interface RecordMovementParams {
   editionId: string;
@@ -24,6 +26,27 @@ export interface RecordMovementParams {
   effectiveAt?: string;
   tx?: any; // Cho phép truyền transaction context bên ngoài
   actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
+}
+
+export interface TransferBatchItemInput {
+  editionId: string;
+  quantity: number;
+}
+
+export interface TransferBatchParams {
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  items: TransferBatchItemInput[];
+  note?: string;
+  // Chống replay — bắt buộc từ caller (route đã 400 khi thiếu).
+  idempotencyKey: string;
+  actorContext: ActorContext; // Bắt buộc: chỉ OWNER/MANAGER.
+}
+
+export interface StaleItem {
+  editionId: string;
+  requested: number;
+  availableNow: number;
 }
 
 export interface TransferParams {
@@ -406,6 +429,197 @@ export class InventoryService {
       };
       })
     );
+  }
+
+  /**
+   * V4.1 S1.3 — Điều chuyển hàng loạt nhiều đầu sách trong 1 phiếu (chuẩn bị hội chợ).
+   * Khác transfer() 1-cuốn: không cần pair-allowlist tĩnh (kho hội chợ tạo động),
+   * bù lại bắt buộc role OWNER/MANAGER + 2 kho active + số PCK do server cấp trong cùng tx.
+   */
+  static async transferBatch(params: TransferBatchParams) {
+    const { fromWarehouseId, toWarehouseId, note = '' } = params;
+
+    const role = params.actorContext?.role;
+    if (!params.actorContext || !params.actorContext.staffId?.trim()) {
+      throw AppError.invalid('Thiếu actorContext cho thao tác chuyển kho hàng loạt.');
+    }
+    if (role !== 'ROLE_OWNER' && role !== 'ROLE_MANAGER') {
+      throw AppError.forbidden(
+        `Chuyển kho hàng loạt chỉ dành cho Quản lý hoặc Chủ cửa hàng (vai trò hiện tại: ${role || 'không xác định'}).`
+      );
+    }
+    const effActor = params.actorContext.staffId.trim();
+    const batchKey = params.idempotencyKey?.trim() || '';
+    if (!batchKey) {
+      throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác chuyển kho hàng loạt.');
+    }
+
+    const merged = this.normalizeBatchItems(params.items);
+    const fingerprint = computeTransferDispatchFingerprint({
+      fromWarehouseId: fromWarehouseId.trim(),
+      toWarehouseId: toWarehouseId.trim(),
+      dispatcherId: effActor,
+      items: merged,
+    });
+
+    return await withDbRetry(() =>
+      db.transaction(async (tx) => {
+        // Replay: key đã commit → trả cached (đúng nội dung) hoặc CONFLICT (sai nội dung).
+        const prior = await tx.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, batchKey)).limit(1);
+        if (prior.length > 0) {
+          let envelope: any = null;
+          try { envelope = JSON.parse(prior[0].responseJson || 'null'); } catch { envelope = null; }
+          if (envelope?.fp === fingerprint && envelope?.res) {
+            return { ...envelope.res, isDuplicate: true as const };
+          }
+          throw AppError.idempotency(`IDEMPOTENCY_CONFLICT: Key "${batchKey}" đã được sử dụng cho một phiếu chuyển kho khác.`);
+        }
+
+        // Re-validate ATP trong tx (TOCTOU) — stale → 409 kèm số thực để UI re-cap 1 chạm.
+        const check = await this.checkBatchAvailability(
+          { fromWarehouseId, toWarehouseId, items: merged },
+          tx
+        );
+        if (!check.ok) {
+          throw AppError.toctouStale('Tồn kho nguồn đã biến động kể từ lúc kiểm tra.', { staleItems: check.staleItems });
+        }
+
+        // Số PCK do server cấp, cùng commit/rollback với phiếu.
+        const pckCode = await WarehouseService.getNextDocumentCode('PCK', tx);
+
+        const lines: Array<{ editionId: string; quantity: number; outLedgerId: string; inLedgerId: string }> = [];
+        let idx = 0;
+        for (const it of merged) {
+          const outResult = await this.recordMovement({
+            editionId: it.editionId,
+            warehouseId: fromWarehouseId.trim(),
+            eventType: 'TRANSFER_OUT',
+            quantityDelta: -it.quantity,
+            condition: 'NEW',
+            documentRef: pckCode,
+            actorId: effActor,
+            correlationId: batchKey,
+            note: `Chuyển kho hàng loạt tới [${toWarehouseId.trim()}] (${pckCode}). ${note}`.trim(),
+            idempotencyKey: `${batchKey}-out-${idx}`,
+            tx,
+          });
+          const inResult = await this.recordMovement({
+            editionId: it.editionId,
+            warehouseId: toWarehouseId.trim(),
+            eventType: 'TRANSFER_IN',
+            quantityDelta: it.quantity,
+            condition: 'NEW',
+            documentRef: pckCode,
+            actorId: effActor,
+            correlationId: batchKey,
+            note: `Tiếp nhận chuyển kho hàng loạt từ [${fromWarehouseId.trim()}] (${pckCode}). ${note}`.trim(),
+            idempotencyKey: `${batchKey}-in-${idx}`,
+            tx,
+          });
+          lines.push({ editionId: it.editionId, quantity: it.quantity, outLedgerId: outResult.ledgerId, inLedgerId: inResult.ledgerId });
+          idx++;
+        }
+
+        const response = {
+          transferBatchId: batchKey,
+          pckCode,
+          fromWarehouseId: fromWarehouseId.trim(),
+          toWarehouseId: toWarehouseId.trim(),
+          lines,
+          isDuplicate: false as const,
+        };
+        try {
+          await tx.insert(idempotencyKeys).values({
+            key: batchKey,
+            scope: 'transfer-batch',
+            responseJson: JSON.stringify({ fp: fingerprint, res: response }),
+          });
+        } catch (e: any) {
+          // Đua key cùng tick: đọc lại để replay thay vì văng lỗi UNIQUE thô.
+          const hay = `${e?.message || ''} ${e?.code || ''}`;
+          if (!/UNIQUE constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(hay)) throw e;
+          const raced = await tx.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, batchKey)).limit(1);
+          let envelope: any = null;
+          try { envelope = JSON.parse(raced[0]?.responseJson || 'null'); } catch { envelope = null; }
+          if (envelope?.fp === fingerprint && envelope?.res) {
+            return { ...envelope.res, isDuplicate: true as const };
+          }
+          throw AppError.idempotency(`IDEMPOTENCY_CONFLICT: Key "${batchKey}" đã được sử dụng cho một phiếu chuyển kho khác.`);
+        }
+        return response;
+      })
+    );
+  }
+
+  /**
+   * V4.1 S1.3 — Kiểm tra tồn trước (pre-validation, không ghi gì).
+   * Nút "Kiểm tra tồn kho" gọi hàm này (200 + ok:false để UI highlight đỏ, không toast lỗi);
+   * commit gọi lại trong tx, stale lúc đó mới ném 409.
+   */
+  static async checkBatchAvailability(
+    params: { fromWarehouseId: string; toWarehouseId: string; items: TransferBatchItemInput[] },
+    txOrDb: any = db
+  ): Promise<{ ok: true } | { ok: false; staleItems: StaleItem[] }> {
+    const { fromWarehouseId, toWarehouseId } = params;
+    if (!fromWarehouseId?.trim() || !toWarehouseId?.trim()) {
+      throw AppError.invalid('Thiếu kho nguồn hoặc kho đích.');
+    }
+    if (fromWarehouseId.trim() === toWarehouseId.trim()) {
+      throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
+    }
+    for (const w of [fromWarehouseId.trim(), toWarehouseId.trim()]) {
+      const row = await WarehouseService.getWarehouse(w, txOrDb);
+      if (!row || row.isActive !== true) {
+        throw AppError.invalid(`Kho ${w} không tồn tại hoặc đã ngưng hoạt động.`);
+      }
+      if (isForbiddenWarehouseFamily(w)) {
+        throw AppError.forbidden(`Kho ${w} thuộc họ kho ảo/ký gửi/cách ly, không được điều chuyển trực tiếp.`);
+      }
+    }
+    const merged = this.normalizeBatchItems(params.items);
+    const existingEditions = await txOrDb
+      .select({ id: editions.id })
+      .from(editions)
+      .where(inArray(editions.id, merged.map((m) => m.editionId)));
+    if (existingEditions.length !== merged.length) {
+      const known = new Set(existingEditions.map((e: any) => e.id));
+      const unknown = merged.filter((m) => !known.has(m.editionId)).map((m) => m.editionId);
+      throw AppError.invalid(`Ấn bản không tồn tại trong danh mục: ${unknown.join(', ')}.`);
+    }
+    const { OrderService } = await import('./order.service');
+    const staleItems: StaleItem[] = [];
+    for (const it of merged) {
+      const atpNow = await OrderService.getATP(it.editionId, fromWarehouseId.trim(), txOrDb);
+      if (atpNow < it.quantity) {
+        staleItems.push({ editionId: it.editionId, requested: it.quantity, availableNow: atpNow });
+      }
+    }
+    if (staleItems.length > 0) return { ok: false, staleItems };
+    return { ok: true };
+  }
+
+  /** Chuẩn hóa dòng batch: gộp trùng edition (cộng dồn), validate tồn tại ấn bản + số nguyên > 0. */
+  private static normalizeBatchItems(items: TransferBatchItemInput[]): Array<{ editionId: string; quantity: number }> {
+    if (!items || items.length === 0) {
+      throw AppError.invalid('Phiếu chuyển kho phải có ít nhất 1 đầu sách.');
+    }
+    // ponytail: trần 100 dòng/phiếu để giữ tx gọn; ca chuẩn bị hội chợ 20-50 dòng.
+    if (items.length > 100) {
+      throw AppError.invalid('Phiếu chuyển kho tối đa 100 dòng (tách thành nhiều phiếu).');
+    }
+    const merged = new Map<string, number>();
+    for (const it of items) {
+      const editionId = `${it?.editionId || ''}`.trim();
+      if (!editionId) throw AppError.invalid('Dòng chuyển kho thiếu editionId.');
+      const qty = typeof it.quantity === 'number' ? it.quantity : Number(`${it.quantity}`.trim());
+      if (!Number.isInteger(qty) || qty <= 0) {
+        throw AppError.invalid(`Số lượng chuyển cho ấn bản ${editionId} phải là số nguyên > 0.`);
+      }
+      merged.set(editionId, (merged.get(editionId) || 0) + qty);
+    }
+    return Array.from(merged.entries())
+      .map(([editionId, quantity]) => ({ editionId, quantity }))
+      .sort((a, b) => a.editionId.localeCompare(b.editionId));
   }
 
   /**

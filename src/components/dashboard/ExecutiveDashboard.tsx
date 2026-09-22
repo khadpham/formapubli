@@ -14,8 +14,10 @@ import {
   RefreshCw,
   Eye,
   CheckCircle2,
+  CalendarCheck,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
+import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 
 interface ExecutiveDashboardProps {
   currentRole: UserRole;
@@ -30,6 +32,7 @@ export function ExecutiveDashboard({
   const [orders, setOrders] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [matrixBooks, setMatrixBooks] = useState<any[]>([]);
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -137,6 +140,14 @@ export function ExecutiveDashboard({
           >
             <ShoppingCart className="w-4 h-4" />
             Mở Quầy POS
+          </button>
+          <button
+            onClick={() => setIsSettlementModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-amber-600/30 transition-all cursor-pointer"
+            title="Xem báo cáo chốt ngày & kiểm kê kho hội chợ (Sprint 4)"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            Chốt Ngày Hội Chợ
           </button>
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
@@ -536,6 +547,15 @@ export function ExecutiveDashboard({
           </table>
         </div>
       </div>
+
+      {/* Modal Báo Cáo Chốt Ngày Hội Chợ & Đối Soát Kiểm Kê (Sprint 4) */}
+      <DailyFairSettlementModal
+        isOpen={isSettlementModalOpen}
+        onClose={() => setIsSettlementModalOpen(false)}
+        warehouseId="wh-du-phong"
+        warehouseName="Kho 3 - Hội Chợ (Gian hàng sự kiện)"
+        currentRole={currentRole}
+      />
     </div>
   );
 }

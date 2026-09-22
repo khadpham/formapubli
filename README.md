@@ -62,9 +62,19 @@ Truy cập: `http://localhost:3000`
 
 ---
 
+### Kiểm tra quét mã vạch bằng camera
+
+Scanner ưu tiên `BarcodeDetector` nếu hỗ trợ EAN-13, tự tải ZXing JavaScript khi API thiếu/lỗi hoặc để kiểm tra khi native liên tục không nhận diện. ZXing được phục vụ cùng ứng dụng, không cần CDN hay bật cờ thử nghiệm trên iPhone. Camera vẫn cần HTTPS khi truy cập từ điện thoại qua LAN.
+
+Chạy `npx tsx scripts/test-camera-scanner.ts` để kiểm tra ảnh EAN-13 thật, fallback, ảnh xoay, trạng thái lỗi và hủy quét. Suite này cũng nằm trong `npm run test:isolated`. Sau thay đổi scanner phải thử camera thật trên Safari/Chrome iPhone và Chrome Android; xem checklist trong [hướng dẫn test](docs/TEAM_TEST_MANUAL.md#311-quét-camera-trên-iphone-và-android).
+
 ## 5. Hướng dẫn Triển khai Cloudflare Pages / Workers (0 VNĐ)
 
-Hệ thống đã được tích hợp sẵn cấu hình tương thích hoàn toàn với Cloudflare Pages:
+> ⚠️ **Trạng thái thật (22/09/2026): CHƯA deploy được.** Khung `wrangler.toml` + `pages:build`
+> có sẵn nhưng còn thiếu: nối D1 vào code (`src/db` đang đọc file local),
+> `database_id` thật, secrets Workers env, rate-limit ra khỏi RAM.
+> Xem báo cáo review để biết danh sách chặn. Khi sẵn sàng mới làm theo dưới đây:
+
 - File cấu hình: `wrangler.toml` (tương thích `nodejs_compat`, binding `DB` D1)
 - Lệnh biên dịch trên Cloudflare Pages Build Settings:
   - **Framework Preset:** Next.js

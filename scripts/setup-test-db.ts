@@ -23,6 +23,9 @@ import {
   inventoryLedger,
   stockBalances,
   staffAccounts,
+  discountApprovalRequests,
+  deliveryOrders,
+  deliveryOrderItems,
 } from '../src/db/schema';
 import {
   DEFAULT_STAFF_ACCOUNTS,
@@ -87,10 +90,23 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
   // 1. Clean Slate: xóa file test cũ (kèm -wal/-shm/-journal).
   for (const suffix of ['', '-wal', '-shm', '-journal']) {
     const p = resolved + suffix;
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    if (fs.existsSync(p)) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          fs.unlinkSync(p);
+          break;
+        } catch (err: any) {
+          if ((err.code === 'EBUSY' || err.code === 'EPERM') && attempt < 9) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
   }
 
-  // 2. Dựng schema từ đúng chuỗi journal 0000 -> 0008 qua migrate-fresh
+  // 2. Dựng schema từ đúng chuỗi journal 0000 -> 0019 qua migrate-fresh
   // (runner chuẩn bỏ qua chunk comment-only, nội dung SQL giữ nguyên).
   // Đồng thời dogfood đường migrate journal trên mọi lần chạy test.
   await migrateFresh({
@@ -104,22 +120,33 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       'transfer_shipment_items', 'consignment_statements',
       'consignment_statement_lines', 'consignment_payments',
       'rights_contracts', 'return_orders', 'return_order_items',
-      'staff_accounts',
+      'staff_accounts', 'document_sequences', 'idempotency_keys',
+      'discount_approval_requests', 'delivery_orders', 'delivery_order_items',
     ],
   });
 
 
   const client = createClient({ url: `file:${resolved}` });
   const testDb = drizzle(client, {
-    schema: { warehouses, partners, works, editions, inventoryLedger, stockBalances },
+    schema: {
+      warehouses,
+      partners,
+      works,
+      editions,
+      inventoryLedger,
+      stockBalances,
+      discountApprovalRequests,
+      deliveryOrders,
+      deliveryOrderItems,
+    },
   });
 
   // 3. Seed 3 kho vật lý (giữ nguyên ID prod để test nào dùng ID cứng vẫn chạy).
   await testDb.insert(warehouses).values([
-    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Âu Cơ (Test)', address: 'Test', isActive: true },
-    { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quỳnh Mai (Test)', address: 'Test', isActive: true },
-    { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Dự phòng (Test)', address: 'Test', isActive: true },
-    { id: 'wh-in-transit', code: 'KHO_IN_TRANSIT', name: 'Kho ảo Trung chuyển (Test)', address: 'Test', isActive: true },
+    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Âu Cơ (Test)', address: 'Test', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho 2 - Quỳnh Mai (Test)', address: 'Test', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Dự phòng (Test)', address: 'Test', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: 'wh-in-transit', code: 'KHO_IN_TRANSIT', name: 'Kho ảo Trung chuyển (Test)', address: 'Test', isActive: true, isSellableOnPos: false, warehouseType: 'IN_TRANSIT' },
   ]);
 
   // 4. Seed đối tác (giữ nguyên ID prod).

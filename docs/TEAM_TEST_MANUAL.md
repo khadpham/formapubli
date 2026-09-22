@@ -1,9 +1,9 @@
-# formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v2)
+# formapubli OS — Sổ Tay Test Bản Mẫu (Team Test Manual v3)
 
-> **Phạm vi:** bản mẫu giao team test vòng 2 — core quầy + kho + vá bảo mật audit.
-> **Phiên bản:** Manual v2 — nhánh `main`, sau merge audit-hardening
+> **Phạm vi:** bản mẫu giao team test vòng 3 — core quầy + kho + Copilot AI (hỏi đáp, lên đơn nháp) + báo cáo nguồn doanh thu.
+> **Phiên bản:** Manual v3 — nhánh `dev`, sau review OCR vòng 3
 > (không ghi hash vì hash thay đổi mỗi lần sửa manual; xem `git log` để biết tip hiện tại).
-> **Ngày phát hành:** 18/09/2026.
+> **Ngày phát hành:** 22/09/2026.
 > **Nguyên tắc:** Email báo cáo tháng (5.5) vẫn TẮT — không test mail ở vòng này.
 > **Máy test LAN (HTTPS để dùng micro + camera):** `https://<IP-may-tinh>:3000`.
 > IP hiện tại (18/09): `https://192.168.1.4:3000` — IP do DHCP cấp, **đổi mạng là đổi IP**:
@@ -47,24 +47,46 @@ Mở `http://localhost:3000`. Lần đầu mở sẽ hiện **màn hình Đăng 
 > Mọi role đều PIN từ 4 ký tự (kể cả Owner/Manager — ưu tiên tốc độ quầy).
 > PIN lưu dạng băm PBKDF2, tự nâng cấp mềm sau lần đăng nhập đúng đầu tiên.
 
-### 2.2. Owner/Manager quản trị tài khoản (mới)
+### 2.2. Owner/Manager quản trị tài khoản
 
-Vào **Cài đặt (tab đáy sidebar) → 1. Phân Quyền 5 Roles**, kéo xuống khối **Quản Trị Tài Khoản Ca Làm Việc**:
+Vào **Cài đặt (Alt+8) → 1. Tài Khoản Nhân Sự** (chỉ Owner/Manager thấy tab này):
 - **Thêm:** nhập Mã NV (VD `NV3`) + Tên + Vai trò + PIN → Thêm.
 - **Reset PIN:** bấm 🔑 ở dòng nhân viên → nhập PIN mới → Lưu.
 - **Khóa/Mở:** bấm 🔒/🔓 (khóa = không đăng nhập được, nhưng két ca & lịch sử cũ giữ nguyên — không xóa cứng).
 - Giới hạn an toàn: Manager chỉ quản lý Thu ngân/Thủ kho/Thuế; không ai tự khóa hay tự hạ vai trò chính mình.
+
+> Chế độ **mô phỏng vai trò đã XÓA** (go-live): vai trò = phiên đăng nhập thật, không còn dropdown/cards đổi vai trò ở sidebar hay Cài đặt. Mọi role đều thấy nút **Cài Đặt**; tab Nhân sự chỉ Owner/Manager.
 
 ---
 
 ## 3. Tính năng SẴN SÀNG test (core)
 
 ### 3.1. Quầy POS bán sách (vai trò Thu ngân/Quản lý/Owner)
-- Tìm sách bằng tên không dấu / 4 số cuối ISBN / quét camera 📷 (`Alt+Shift+C`) / micro 🎙️.
+- Tìm sách bằng tên không dấu / 4 số cuối ISBN / quét camera 📷 (`Alt+Shift+C`) / micro 🎙️ (`Alt+V`).
 - Chọn kho xuất (Âu Cơ / Hội Chợ / Quỳnh Mai), chiết khấu, cờ VAT/Nội bộ.
-- Thu ngân giảm tối đa **15%** — vượt mức cần **PIN quản lý** mở khóa cho đơn đó.
+- Chiết khấu theo **nút mốc 0–40% (cách 5%)** + nút **🎁 100%** (tặng sự kiện, gọn trong lưới nút).
+- Thu ngân giảm tối đa **20%** — vượt mức cần **PIN quản lý** mở khóa cho đơn đó.
 - Chốt đơn `Ctrl+Enter` → trừ kho tức thì → in phiếu.
 - **Két ca:** mở két đầu ca, chốt ca đối soát thừa/thiếu tiền mặt.
+
+### 3.1.1. Quét camera trên iPhone và Android
+
+**Bản sửa scanner 22/09:** có bộ giải mã dự phòng chạy trong ứng dụng. Không yêu cầu bật `Shape Detection API`, đổi trình duyệt hay cài ứng dụng khác. Kiểm tra trên cả Safari/Chrome iPhone và Chrome Android qua địa chỉ HTTPS LAN ở đầu tài liệu.
+
+1. Tải lại trang để nhận bản sửa, mở POS → camera (`Alt+Shift+C` trên bàn phím). Trạng thái chuẩn bị nằm ở phần tiêu đề; khi camera hoạt động, không có hộp “Sẵn sàng quét” che hình ảnh.
+2. Dùng mã EAN-13/ISBN in thật trên bìa sách có trong danh mục. Đưa toàn bộ mã, gồm khoảng trắng hai đầu, vào khung; giữ đủ xa để các vạch sắc nét. Thử cả đặt sách ngang và xoay 90°.
+3. Đạt khi scanner hiện **Đã nhận diện!** với đúng ISBN, giỏ thêm đúng sách hoặc hiện lựa chọn nếu trùng ISBN. Giữ nguyên mã không được tự tăng liên tục. Đưa mã ra ngoài khung rồi quét lại sau ít nhất 2 giây: được thêm lần nữa.
+4. Để camera nhìn vùng không có mã vài giây rồi đưa sách vào: vẫn đọc được. Trên Android, native đang hoạt động vẫn được ưu tiên sau khi chờ.
+5. Thử bật/tắt flash nếu có, đổi ống kính, đóng/mở scanner bằng nút X hoặc chạm nền tối bên ngoài khung. Đóng ngay khi đang xin quyền/đang chuẩn bị/đang quét: camera phải tắt, không được phát sinh lần thêm giỏ đến muộn.
+6. Nếu thấy thông báo không tải/không đọc được mã vạch: kiểm tra kết nối, đóng/mở lại scanner hoặc tải lại trang. Khi xác minh lỗi, ghi lại nguyên văn thông báo và có xuất hiện **Đã nhận diện!** hay chưa.
+
+**Không dùng các nút “Mã Vạch Test Nhanh” để nghiệm thu camera:** chúng gọi thẳng xử lý ISBN, bỏ qua giải mã ảnh. Kiểm thử tự động đọc ảnh mã thật và mô phỏng vòng quét, nhưng không thay thế kiểm tra lấy nét/tốc độ trên thiết bị. Trạng thái nghiệm thu iPhone thật: **chờ kiểm tra thiết bị**.
+
+### Thoát nhanh hộp thoại trên điện thoại
+
+Chạm vùng nền bên ngoài khung để đóng scanner, phiếu nhập/xuất/chuyển kho, pick list, RMA, đổi/trả, biên lai, chọn ISBN trùng, dán chat, mở/chốt két và duyệt PIN. Chạm nút, nhập liệu hay cuộn **bên trong** không đóng hộp thoại. Sidebar và Copilot cũng đóng bằng nền ngoài; Copilot chừa một mép nền ở bên trái trên điện thoại.
+
+Chạm ngoài tương đương nút X/Hủy, không phải lưu hay xác nhận. Khi đang gửi giao dịch kho/RMA/đổi trả/mở-chốt két, chạm nền tạm thời không đóng để giữ kết quả xử lý trên màn hình. Đăng nhập chỉ đóng được khi chức năng đó đã cho phép Hủy; màn hình yêu cầu đăng nhập bắt buộc không thể bỏ qua. Kiểm thử tự động: `npx tsx scripts/test-modal-dismiss.ts`.
 
 ### 3.2. Bán rớt mạng Offline-First
 1. Tắt wifi/4G → bán 1–2 đơn (app báo 🟡 Mất mạng, đơn lưu mã `OFF-...`).
@@ -86,8 +108,18 @@ Vào **Cài đặt (tab đáy sidebar) → 1. Phân Quyền 5 Roles**, kéo xu�
 - Studio (`Alt+7`): bảng DoI/EOQ, cảnh báo tái bản RED/YELLOW.
 
 ### 3.6. Giọng nói + Copilot (thu thập dữ liệu, không thay người kiểm)
-- Micro trong ô tìm kiếm đơn: **nói → transcript đổ vào ô chat → luôn kiểm tay trước khi chốt**.
-- Copilot (`Alt+C`, Owner/Manager): chỉ hỏi-đáp read-only, có 4 gợi ý sẵn.
+- Micro trong ô tìm kiếm/POS/kho: **nói đến đâu chữ hiện đến đấy** (Web Speech, Chrome/Edge/Cốc Cốc). Trình duyệt khác tự rơi về ghi âm Whisper.
+- Copilot (`Alt+C`, Owner/Manager): bong bóng góc phải → cửa sổ chat mini (phóng to full khi cần). `Esc` đóng.
+- Copilot trả lời **tiếng Việt tự nhiên** (không còn JSON thô): tồn kho, doanh số 2 sổ, cạn kho 105 ngày, đối soát két, **danh mục** (sách của tác giả X, tựa chữ cái Y, tác giả bán chạy), cả ngày/giờ.
+- Mic Copilot: bấm nói nhiều lần thì **nối câu** (không mất câu cũ); `Alt+V` khi Copilot mở thì ưu tiên mic Copilot.
+- **Lên đơn bằng lời nói:** nói *"lấy 2 cuốn H01 cho chị Lan"* → bấm **Áp vào POS** → qua quầy kiểm giỏ → tự bấm Thanh toán (`Ctrl+Enter`). Copilot **không bao giờ** tự tạo đơn/trừ kho.
+- Lệnh sửa/xóa/hủy ("hủy đơn...") luôn bị từ chối — đúng thiết kế read-only + đơn nháp.
+
+### 3.7. Sổ doanh số + phân tích nguồn thu (Owner/Manager)
+- Bảng đơn giới hạn chiều cao, cuộn trong bảng; chọn 20/50/100/**Xem toàn bộ**; slicer kênh Bán lẻ/Đại lý/Online/Tặng; thẻ tổng tiền **theo đúng bộ lọc đang xem**.
+- Panel **Sách Bán Chạy Nhất**: Hôm nay / 7 ngày qua / 30 ngày qua, Top 10/20/50, xuất CSV.
+- Panel **Nguồn Doanh Thu & Dòng Tiền**: nhóm Bán lẻ/Đại lý/Online/Tặng kèm tỷ trọng %, COD chờ về/đã về, sách tặng-tài trợ, ký gửi đại lý, xuất CSV kèm hash.
+- Tải lỗi mạng → panel báo đỏ + nút Thử lại (không hiện số 0 giả).
 
 ---
 
@@ -105,12 +137,14 @@ Vào **Cài đặt (tab đáy sidebar) → 1. Phân Quyền 5 Roles**, kéo xu�
 ## 5. Kịch bản test hiệu quả nhất (ưu tiên theo thứ tự)
 
 1. **Mở ca thu ngân (NV-01) → bán 3 đơn lẻ → chốt két khớp tiền.** (lõi POS + két)
-2. **Bán 1 đơn vượt 15% → bị chặn → Quản lý nhập PIN → qua.** (trần CK)
+2. **Bán 1 đơn vượt 20% → bị chặn → Quản lý nhập PIN → qua.** (trần CK)
 3. **Tắt mạng bán 2 đơn → mở mạng đồng bộ → kiểm tồn không lệch.** (offline)
 4. **Thủ kho chuyển 20 cuốn Âu Cơ → Hội Chợ → nhận thiếu 2 cuốn (1 hỏng 1 mất) → kiểm phương trình R+D+L.** (in-transit)
-5. **Tạo NV3 trong Settings → đăng nhập NV3 bán 1 đơn → khóa NV3 → NV3 không vào được.** (quản trị tài khoản mới)
+5. **Tạo NV3 trong Cài đặt → 1. Tài Khoản Nhân Sự → đăng nhập NV3 bán 1 đơn → khóa NV3 → NV3 không vào được.** (quản trị tài khoản mới)
 6. **Kế toán thuế đăng nhập → chỉ thấy số VAT, không thấy đơn nội bộ.** (sổ kép)
 7. **Nói 5 đơn bằng micro ở quầy ồn → sửa tay → lưu audio+text.** (thu WER)
+8. **Copilot: hỏi "kho Âu Cơ còn bao nhiêu cuốn Bệnh tưởng" → đúng số; hỏi "hủy đơn" → bị từ chối; nói "lấy 2 cuốn H01" → Áp vào POS → thanh toán.** (copilot)
+9. **Sổ doanh số: slicer Online → thẻ tổng đổi theo; panel Sách bán chạy Hôm nay ra đúng sách vừa bán.** (báo cáo)
 
 ---
 
@@ -137,9 +171,9 @@ Quy tắc: bug chặn bán/chặn két/chặn đồng bộ = P0 báo ngay; bug c
 
 ## 8. Gate kỹ thuật đã qua trước khi giao (để team yên tâm)
 
-- 44 suites cách ly xanh 100% (gồm suite login-chạm-chọn 19/19, actor-binding 8/8, drill go-live 5/5).
+- 43+ suites cách ly xanh (gồm suite login-chạm-chọn 19/19, actor-binding 8/8, drill go-live 5/5).
 - `tsc` 0 lỗi, `npm run build` 0 lỗi.
-- `formapubli.db` production nguyên vẹn (không suite nào được chạm DB thật).
+- DB production chỉ thay đổi khi có người test tay (audit log); test suite chạy cách ly hoàn toàn.
 
 ## 9. Vá bảo mật vòng 2 (có gì mới so với vòng 1)
 

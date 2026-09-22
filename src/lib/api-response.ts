@@ -9,6 +9,7 @@ export function handleApiError(err: unknown): NextResponse {
       FORBIDDEN: 403,
       INVALID_INPUT: 400,
       INSUFFICIENT_ATP: 409,
+      TRANSFER_TOCTOU_ATP_STALE: 409,
       STATE_CONFLICT: 409,
       IDEMPOTENCY_CONFLICT: 409,
       OVER_RETURN_LIMIT: 409,

@@ -44,13 +44,17 @@ export const editions = sqliteTable('editions', {
   workIdIdx: index('idx_editions_work_id').on(table.workId),
 }));
 
-// 3. Physical Warehouses (3 Kho vật lý)
+// 3. Physical Warehouses (kho động: chính, hội chợ sự kiện, ký gửi, trung chuyển)
 export const warehouses = sqliteTable('warehouses', {
   id: text('id').primaryKey(),
-  code: text('code').notNull().unique(), // KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG
+  code: text('code').notNull().unique(), // KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG, KHO_HOI_CHO_A...
   name: text('name').notNull(),
   address: text('address'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  // V4.1 S1: cờ tường minh thay hardcode SELLABLE_WAREHOUSE_IDS — POS chỉ bán kho active + cờ này.
+  isSellableOnPos: integer('is_sellable_on_pos', { mode: 'boolean' }).default(false).notNull(),
+  // V4.1 S1: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT
+  warehouseType: text('warehouse_type').default('PHYSICAL_MAIN').notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -592,3 +596,89 @@ export const loginAttemptBuckets = sqliteTable('login_attempt_buckets', {
   lockedUntil: integer('locked_until').default(0).notNull(), // epoch ms
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+// 31. Document Sequences (cấp số PCK/PXK/PXK_R liên tục — V4.1 S1, gọi TRONG cùng tx với insert phiếu)
+export const documentSequences = sqliteTable('document_sequences', {
+  id: text('id').primaryKey(), // seq-<doc_type>-<fiscal_year>
+  docType: text('doc_type').notNull(), // PCK | PXK | PXK_R | ORD
+  fiscalYear: integer('fiscal_year').notNull(),
+  currentVal: integer('current_val').default(0).notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  docYearIdx: uniqueIndex('uq_doc_seq').on(table.docType, table.fiscalYear),
+}));
+
+// 32. Idempotency Keys (chống double-commit transfer-batch/checkout/pxk-create — V4.1 S1)
+export const idempotencyKeys = sqliteTable('idempotency_keys', {
+  key: text('key').primaryKey(),
+  scope: text('scope').notNull(), // transfer-batch | checkout | pxk-create
+  responseJson: text('response_json'), // envelope {reqFingerprint, response} để replay an toàn
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// 33. Discount Approval Requests (Duyệt chiết khấu POS thông minh — V4.1 S3)
+export const discountApprovalRequests = sqliteTable('discount_approval_requests', {
+  id: text('id').primaryKey(),
+  orderCode: text('order_code').notNull(),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  cashierId: text('cashier_id').notNull(),
+  cartHash: text('cart_hash').notNull(),
+  cartSnapshot: text('cart_snapshot'),
+  requestedDiscountRate: real('requested_discount_rate').notNull(),
+  originalAmount: real('original_amount').notNull(),
+  discountAmount: real('discount_amount').notNull(),
+  finalAmount: real('final_amount').notNull(),
+  status: text('status').default('PENDING').notNull(), // PENDING | APPROVED | REJECTED | EXPIRED | CONSUMED | SUPERSEDED
+  approvedBy: text('approved_by'),
+  approvalMethod: text('approval_method'), // ONE_TOUCH | QR_JWT | SHORTCODE_BOUND | OFFLINE_EMERGENCY
+  rejectedReason: text('rejected_reason'),
+  nonce: text('nonce').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  version: integer('version').default(1).notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  statusIdx: index('idx_disc_appr_status').on(table.status, table.expiresAt),
+  orderIdx: index('idx_disc_appr_order').on(table.orderCode),
+  whIdx: index('idx_disc_appr_warehouse').on(table.warehouseId),
+}));
+
+// 34. Delivery Orders (Phiếu xuất kho bán buôn đại lý / ký gửi — V4.1 S3)
+export const deliveryOrders = sqliteTable('delivery_orders', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(), // PXK-YYYY-XXXX hoặc PXK_R-YYYY-XXXX
+  partnerId: text('partner_id').notNull().references(() => partners.id),
+  fromWarehouseId: text('from_warehouse_id').notNull().references(() => warehouses.id),
+  subtotal: real('subtotal').notNull(),
+  discountRate: real('discount_rate').default(0.0).notNull(),
+  finalAmount: real('final_amount').notNull(),
+  fiscalScope: text('fiscal_scope').default('COMMERCIAL_WHOLESALE').notNull(), // COMMERCIAL_WHOLESALE | CONSIGNMENT_DISPATCH
+  status: text('status').default('DRAFT').notNull(), // DRAFT | DISPATCHED_LOCKED | VOIDED_REVERSED
+  reversalOf: text('reversal_of'),
+  note: text('note'),
+  createdBy: text('created_by').notNull(),
+  dispatchedBy: text('dispatched_by'),
+  dispatchedAt: text('dispatched_at'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  codeIdx: uniqueIndex('idx_delivery_orders_code').on(table.code),
+  partnerIdx: index('idx_delivery_orders_partner').on(table.partnerId),
+  statusIdx: index('idx_delivery_orders_status').on(table.status),
+}));
+
+// 35. Delivery Order Items (Chi tiết ấn bản xuất kho bán buôn — V4.1 S3)
+export const deliveryOrderItems = sqliteTable('delivery_order_items', {
+  id: text('id').primaryKey(),
+  deliveryOrderId: text('delivery_order_id').notNull().references(() => deliveryOrders.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull(),
+  unitCoverPrice: real('unit_cover_price').notNull(),
+  unitSellingPrice: real('unit_selling_price').notNull(),
+  totalAmount: real('total_amount').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  orderIdx: index('idx_delivery_items_order').on(table.deliveryOrderId),
+  editionIdx: index('idx_delivery_items_edition').on(table.editionId),
+}));
+

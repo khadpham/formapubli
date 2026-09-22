@@ -1,5 +1,5 @@
 /**
- * Kiểm thử Server-enforce Discount Hard-cap 15% + Manager PIN.
+ * Kiểm thử Server-enforce Discount Hard-cap 20% + Manager PIN.
  *
  * AN TOÀN: script này TỪ CHỐI chạy nếu DATABASE_URL không trỏ vào
  * formapubli_test.db — để không bao giờ ghi đơn test vào DB production.
@@ -55,7 +55,7 @@ async function postOrder(body: Record<string, any>, role: string, actor = 'test-
 }
 
 async function run() {
-  console.log('🛡️ KIỂM THỬ SERVER-ENFORCE DISCOUNT HARD-CAP 15% (DB cách ly)');
+  console.log('🛡️ KIỂM THỬ SERVER-ENFORCE DISCOUNT HARD-CAP 20% (DB cách ly)');
   const seeded = await db.select({ id: editions.id }).from(editions).limit(1);
   if (seeded.length === 0) throw new Error('Test DB chưa được seed (chạy setup-test-db trước).');
   const testEditionId = seeded[0].id;
@@ -75,9 +75,9 @@ async function run() {
   let r = await postOrder(baseBody({ discountRate: 0.1 }), 'ROLE_CASHIER');
   ok('Cashier CK 10% được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
 
-  // 2. Cashier đúng trần 15% -> cho qua (boundary).
-  r = await postOrder(baseBody({ discountRate: 0.15 }), 'ROLE_CASHIER');
-  ok('Cashier đúng trần 15% được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+  // 2. Cashier đúng trần 20% -> cho qua (boundary).
+  r = await postOrder(baseBody({ discountRate: 0.2 }), 'ROLE_CASHIER');
+  ok('Cashier đúng trần 20% được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
 
   // 3. Cashier 35% không PIN -> 403.
   r = await postOrder(baseBody({ discountRate: 0.35 }), 'ROLE_CASHIER');

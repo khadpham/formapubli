@@ -107,7 +107,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
     return wid;
   };
   await db.insert(warehouses).values([
-    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (CP3X)', isActive: true },
+    { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (CP3X)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   const edA = await mk('a', 100000);
   const edB = await mk('b', 99000);

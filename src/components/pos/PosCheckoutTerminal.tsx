@@ -29,10 +29,15 @@ import {
   CloudUpload,
   ClipboardPaste,
   RotateCcw,
+  ShieldCheck,
+  CalendarCheck,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
 import { ReturnsModal } from '@/components/pos/ReturnsModal';
+import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
+import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
+import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -96,6 +101,12 @@ export function PosCheckoutTerminal({
 }: PosCheckoutTerminalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('wh-au-co');
+  // V4.1 S2.1/S2.2/S2.3: kho bán + ATP nạp từ server (fallback cứng khi offline)
+  const [sellableWarehouses, setSellableWarehouses] = useState<Array<{ id: string; code: string; name: string; warehouseType: string }>>([]);
+  const [catalogAtp, setCatalogAtp] = useState<Record<string, { atp: number; soldToday: number }>>({});
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [showAllBooks, setShowAllBooks] = useState(false); // mặc định ẩn sách hết hàng tại kho
+  const [sortMode, setSortMode] = useState<'default' | 'az' | 'hot'>('default');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('Khách lẻ vãng lai');
   const [discountRate, setDiscountRate] = useState(0.0);
@@ -132,13 +143,22 @@ export function PosCheckoutTerminal({
   const [shiftNoteInput, setShiftNoteInput] = useState('');
   const [isSubmittingSession, setIsSubmittingSession] = useState(false);
 
-  // QUẢN LÝ TRẦN CHIẾT KHẤU & MÃ PIN QUẢN LÝ (Discount Hard-cap & Manager PIN)
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  // QUẢN LÝ TRẦN CHIẾT KHẤU & PHÊ DUYỆT BẢO MẬT (Discount Hard-cap & State Machine Approval)
+  const [isDiscountApprovalModalOpen, setIsDiscountApprovalModalOpen] = useState(false);
+  const [isManagerApprovalDrawerOpen, setIsManagerApprovalDrawerOpen] = useState(false);
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [approvedDiscountRequestId, setApprovedDiscountRequestId] = useState<string | null>(null);
   const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
+  // V4.1 S2.4: ô nhập CK lẻ (% nguyên)
+  const [customDiscountInput, setCustomDiscountInput] = useState('');
   const [isManagerOverride, setIsManagerOverride] = useState(false);
   const [approvedPin, setApprovedPin] = useState<string | null>(null);
+  // Mã đơn hiện tại (sinh sẵn để đồng bộ với ShortCode duyệt chiết khấu)
+  const [activeOrderCode, setActiveOrderCode] = useState<string>(() => {
+    const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const r = Math.floor(1000 + Math.random() * 9000);
+    return `ORD-${d}-${r}`;
+  });
   // BV-03: chế độ Tặng sách 100% (doanh thu 0đ, vẫn trừ kho)
   const [isGift, setIsGift] = useState(false);
   const [giftReason, setGiftReason] = useState('Tặng sách / Quà tặng sự kiện');
@@ -279,6 +299,50 @@ export function PosCheckoutTerminal({
     fetchActiveCashboxSession();
   }, [currentRole, selectedWarehouseId]);
 
+  // V4.1 S2.1: nạp kho bán động 1 lần khi mở quầy (thay hardcode 3 kho)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/warehouses');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setSellableWarehouses(json.data);
+          setSelectedWarehouseId((prev) =>
+            json.data.some((w: any) => w.id === prev) ? prev : json.data[0].id
+          );
+        }
+      } catch {
+        // offline: giữ fallback cứng trong selector
+      }
+    })();
+  }, []);
+
+  // V4.1 S2.2/S2.3: nạp ATP + số bán hôm nay mỗi khi đổi kho (1 request)
+  useEffect(() => {
+    if (!isOnline) {
+      setCatalogReady(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/pos/catalog?warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
+        const json = await res.json();
+        if (!cancelled && json.success) {
+          const map: Record<string, { atp: number; soldToday: number }> = {};
+          for (const it of json.data.items) map[it.editionId] = { atp: it.atp, soldToday: it.soldToday };
+          setCatalogAtp(map);
+          setCatalogReady(true);
+        }
+      } catch {
+        if (!cancelled) setCatalogReady(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWarehouseId, isOnline]);
+
   // Mở ca làm việc mới
   const handleOpenShift = async () => {
     setIsSubmittingSession(true);
@@ -347,16 +411,32 @@ export function PosCheckoutTerminal({
     }
   };
 
-  // Kiểm tra trần chiết khấu (Hard-cap 15% cho Cashier, cần PIN Quản lý nếu > 15%)
+  // V4.1 S2.4: áp dụng CK lẻ từ ô nhập — chỉ CK thường (không phải tặng 100%)
+  const applyCustomDiscount = () => {
+    const raw = customDiscountInput.trim();
+    if (raw === '') {
+      setErrorMessage('Nhập số nguyên phần trăm chiết khấu (0 – 100).');
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0 || n > 100) {
+      setErrorMessage('Chiết khấu phải là số nguyên trong khoảng 0 – 100%.');
+      return;
+    }
+    handleRequestDiscount(n / 100);
+    setCustomDiscountInput('');
+  };
   const handleRequestDiscount = (rate: number) => {
     // BV-03: rời chế độ tặng khi chọn CK thường
     if (rate !== 1) setIsGift(false);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+      setErrorMessage('Chiết khấu phải nằm trong khoảng 0 - 100%.');
+      return;
+    }
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
-    if (isRestrictedCashier && rate > 0.15) {
+    if (isRestrictedCashier && rate > 0.2) {
       setPendingDiscountRate(rate);
-      setPinInput('');
-      setPinError(null);
-      setIsPinModalOpen(true);
+      setIsDiscountApprovalModalOpen(true);
       return;
     }
     setDiscountRate(rate);
@@ -366,7 +446,7 @@ export function PosCheckoutTerminal({
     }
   };
 
-  // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng PIN quản lý)
+  // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng duyệt chiết khấu bảo mật)
   const handleToggleGift = () => {
     if (isGift) {
       setIsGift(false);
@@ -380,34 +460,6 @@ export function PosCheckoutTerminal({
       setIsGift(true);
       setFiscalScope('INTERNAL_MANAGEMENT');
     }
-  };
-
-  const handleVerifyPin = () => {
-    // Không hardcode PIN phía client (từng lộ 9999/1234/8888 trong source).
-    // Client chỉ thu PIN và gửi kèm đơn; SERVER xác thực hash và trả 403
-    // nếu sai — server là nguồn sự thật duy nhất cho mọi vượt trần.
-    const pin = pinInput.trim();
-    if (pin.length < 4) {
-      setPinError('PIN quản lý tối thiểu 4 ký tự.');
-      return;
-    }
-    setIsManagerOverride(true);
-    setApprovedPin(pin);
-    if (pendingDiscountRate !== null) {
-
-      setDiscountRate(pendingDiscountRate);
-      // BV-03: PIN duyệt CK 100% đồng nghĩa bật chế độ tặng
-      if (pendingDiscountRate === 1) {
-        setIsGift(true);
-        setFiscalScope('INTERNAL_MANAGEMENT');
-      }
-    }
-    setIsPinModalOpen(false);
-    setPinInput('');
-    setPinError(null);
-    // Trung thực UX: server mới là bên phê duyệt cuối (403 nếu PIN sai lúc chốt).
-    setSyncToast('🔑 Đã ghi PIN quản lý — server xác thực khi chốt đơn.');
-    setTimeout(() => setSyncToast(null), 3000);
   };
 
   // Lắng nghe cuộn trang để kích hoạt thanh tìm kiếm nam châm (Magnet Bar)
@@ -465,28 +517,46 @@ export function PosCheckoutTerminal({
     }
   };
 
-  // Bộ lọc sách thời gian thực
+  // V4.1 S2.2: tồn hiển thị = ATP server khi đã nạp; offline fallback snapshot ma trận, kho lạ → 0.
+  // Server là guard cuối lúc thanh toán nên số hiển thị chỉ để tìm nhanh, không quyết định được bán.
+  const getBookStock = (book: BookItem): number => {
+    const hit = catalogAtp[book.id];
+    if (hit) return hit.atp;
+    if (selectedWarehouseId === 'wh-au-co') return book.stockAuCo;
+    if (selectedWarehouseId === 'wh-du-phong') return book.stockDuPhong;
+    if (selectedWarehouseId === 'wh-quynh-mai') return book.stockQuynhMai;
+    return 0;
+  };
+
+  const selectedWarehouseType = useMemo(
+    () =>
+      sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.warehouseType ??
+      (selectedWarehouseId === 'wh-du-phong' ? 'FAIR_EVENT' : 'PHYSICAL_MAIN'),
+    [selectedWarehouseId, sellableWarehouses]
+  );
+
+  // Bộ lọc sách thời gian thực + V4.1 S2.2/S2.3: ẩn hết hàng mặc định, sắp xếp A-Z / bán chạy
   const filteredBooks = useMemo(() => {
-    if (!searchQuery.trim()) return books.slice(0, 20); // Hiển thị 20 cuốn đầu
-    return books.filter((b) =>
-      matchesAnyVietnameseField(searchQuery, [
-        b.title,
-        b.code,
-        b.isbnLast4,
-        b.author,
-      ])
-    );
-  }, [books, searchQuery]);
+    const q = searchQuery.trim();
+    let list = q
+      ? books.filter((b) =>
+          matchesAnyVietnameseField(searchQuery, [b.title, b.code, b.isbnLast4, b.author])
+        )
+      : books.slice();
+    if (!showAllBooks) list = list.filter((b) => getBookStock(b) > 0);
+    if (sortMode === 'az') list = [...list].sort((a, b) => a.title.localeCompare(b.title, 'vi'));
+    else if (sortMode === 'hot' && catalogReady) {
+      list = [...list].sort(
+        (a, b) => (catalogAtp[b.id]?.soldToday || 0) - (catalogAtp[a.id]?.soldToday || 0)
+      );
+    }
+    return q ? list : list.slice(0, 20); // Không tìm kiếm: hiển thị 20 cuốn đầu sau lọc/sắp xếp
+  }, [books, searchQuery, showAllBooks, sortMode, catalogAtp, catalogReady, selectedWarehouseId]);
 
   // Thêm sách vào giỏ
   const addToCart = (book: BookItem, atpOverride?: number | null) => {
     setErrorMessage(null);
-    const availableStock =
-      selectedWarehouseId === 'wh-au-co'
-        ? book.stockAuCo
-        : selectedWarehouseId === 'wh-du-phong'
-        ? book.stockDuPhong
-        : book.stockQuynhMai;
+    const availableStock = getBookStock(book);
 
     if (availableStock <= 0) {
       setErrorMessage(`Sách [${book.code}] ${book.title} hiện đã hết hàng tại kho được chọn!`);
@@ -697,7 +767,7 @@ export function PosCheckoutTerminal({
     const orderUuid = generateUUIDv7();
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const shortSuffix = orderUuid.slice(-5).toUpperCase();
-    const channel = selectedWarehouseId === 'wh-du-phong' ? 'FAIR_EVENT' : 'RETAIL_OFFICE';
+    const channel = selectedWarehouseType === 'FAIR_EVENT' ? 'FAIR_EVENT' : 'RETAIL_OFFICE';
     const cashierId = `User-${currentRole}`;
     const orderTimestamp = new Date().toISOString();
     const idempotencyKey = `idem-${orderUuid}`;
@@ -802,6 +872,7 @@ export function PosCheckoutTerminal({
           cashierId,
           cashboxSessionId: activeSession?.id,
           managerPin: approvedPin || undefined,
+          discountApprovalId: approvedDiscountRequestId || undefined,
           note,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
@@ -836,7 +907,12 @@ export function PosCheckoutTerminal({
         setDiscountRate(0);
       }
       setApprovedPin(null);
+      setApprovedDiscountRequestId(null);
       setIsManagerOverride(false);
+      // Sinh mã đơn mới cho lượt khách kế tiếp
+      const nextDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const nextRand = Math.floor(1000 + Math.random() * 9000);
+      setActiveOrderCode(`ORD-${nextDate}-${nextRand}`);
       fetchActiveCashboxSession();
       if (onOrderCompleted) onOrderCompleted();
 
@@ -971,9 +1047,18 @@ export function PosCheckoutTerminal({
               }}
               className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer min-h-[40px]"
             >
-              <option value="wh-au-co">Kho 1 - Âu Cơ (Văn phòng chính)</option>
-              <option value="wh-du-phong">Kho 3 - Hội Chợ (Gian hàng sự kiện)</option>
-              <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
+              {(sellableWarehouses.length > 0
+                ? sellableWarehouses
+                : [
+                    { id: 'wh-au-co', name: 'Kho 1 - Âu Cơ (Văn phòng chính)' },
+                    { id: 'wh-du-phong', name: 'Kho 3 - Hội Chợ (Gian hàng sự kiện)' },
+                    { id: 'wh-quynh-mai', name: 'Kho 2 - Quỳnh Mai (Kho tổng)' },
+                  ]
+              ).map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -1015,6 +1100,17 @@ export function PosCheckoutTerminal({
               </button>
             )}
           </div>
+
+          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ (Sprint 4) */}
+          <button
+            type="button"
+            onClick={() => setIsSettlementModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
+            title="Báo cáo chốt ngày hội chợ & Đối soát kiểm kê (Sprint 4)"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            <span>Chốt Ngày (S4)</span>
+          </button>
         </div>
       </div>
 
@@ -1183,6 +1279,17 @@ export function PosCheckoutTerminal({
               >
                 <ClipboardPaste className="w-4 h-4" />
               </button>
+              {/* Nút Duyệt Chiết Khấu POS (Dành cho Quản lý / Chủ quầy) */}
+              {(currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') && (
+                <button
+                  type="button"
+                  onClick={() => setIsManagerApprovalDrawerOpen(true)}
+                  className="p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center font-bold"
+                  title="Mở bảng duyệt chiết khấu POS (Quản lý)"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                </button>
+              )}
               {/* Nút Micro Giọng Nói Tiếng Việt */}
               <button
                 type="button"
@@ -1249,15 +1356,49 @@ export function PosCheckoutTerminal({
             </div>
           )}
 
+          {/* V4.1 S2.2/S2.3: gạt hiện tất cả + sắp xếp nhanh */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {(
+              [
+                ['default', 'Mặc định'],
+                ['az', 'A → Z'],
+                ['hot', '🔥 Bán chạy'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setSortMode(mode)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  sortMode === mode
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowAllBooks((v) => !v)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                showAllBooks
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              title={showAllBooks ? 'Ẩn sách hết hàng tại kho' : 'Hiện cả sách hết hàng để tư vấn'}
+            >
+              {showAllBooks ? 'Ẩn hết hàng' : 'Hiện tất cả'}
+            </button>
+            {!catalogReady && isOnline && (
+              <span className="text-[11px] text-slate-400 font-medium">Đang tải tồn kho…</span>
+            )}
+          </div>
+
           {/* Book Catalog Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
             {filteredBooks.map((b) => {
-              const currentStock =
-                selectedWarehouseId === 'wh-au-co'
-                  ? b.stockAuCo
-                  : selectedWarehouseId === 'wh-du-phong'
-                  ? b.stockDuPhong
-                  : b.stockQuynhMai;
+              const currentStock = getBookStock(b);
 
               const isOutOfStock = currentStock <= 0;
 
@@ -1453,7 +1594,7 @@ export function PosCheckoutTerminal({
                     </span>
                     {currentRole === 'ROLE_CASHIER' && (
                       <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                        {isManagerOverride ? '🔓 Đã duyệt PIN' : '🔒 Thu ngân max 15%'}
+                        {isManagerOverride ? '🔓 Đã duyệt PIN' : '🔒 Thu ngân max 20%'}
                       </span>
                     )}
                   </div>
@@ -1462,9 +1603,9 @@ export function PosCheckoutTerminal({
                   </span>
                 </div>
                 <div className="grid grid-cols-5 gap-1.5">
-                  {[0, 10, 15, 20, 25, 30, 35, 40].map((pct) => {
+                  {[0, 5, 10, 15, 20].map((pct) => {
                     const rate = pct / 100;
-                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate > 0.15;
+                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate > 0.2;
                     const isActive = Math.round(discountRate * 100) === pct && !isGift;
                     return (
                       <button
@@ -1478,7 +1619,7 @@ export function PosCheckoutTerminal({
                             ? 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-700 border border-dashed border-slate-300'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}
-                        title={isLockedForCashier ? 'Chiết khấu > 15% cần Quản lý nhập mã PIN' : undefined}
+                        title={isLockedForCashier ? 'Chiết khấu > 20% cần Quản lý nhập mã PIN' : undefined}
                       >
                         {isLockedForCashier && <span className="text-[10px]">🔒</span>}
                         <span>{pct}%</span>
@@ -1499,7 +1640,31 @@ export function PosCheckoutTerminal({
                     🎁 100%
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Thu ngân quá 15% cần PIN quản lý • 100% là tặng sự kiện</p>
+                {/* V4.1 S2.4: ô nhập CK lẻ */}
+                <div className="flex items-center gap-2 mt-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    inputMode="numeric"
+                    value={customDiscountInput}
+                    onChange={(e) => setCustomDiscountInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') applyCustomDiscount();
+                    }}
+                    placeholder="CK lẻ %"
+                    className="w-24 px-2 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyCustomDiscount}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Áp dụng
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Thu ngân quá 20% cần PIN quản lý • 100% là tặng sự kiện • Nhập số nguyên để chọn CK lẻ</p>
                 {isGift && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-rose-700 block">
@@ -1616,7 +1781,10 @@ export function PosCheckoutTerminal({
 
       {/* Order Success Receipt Modal */}
       {completedOrder && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => { if (event.target === event.currentTarget) setCompletedOrder(null); }}
+        >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-base">
@@ -1738,7 +1906,10 @@ export function PosCheckoutTerminal({
 
       {/* Modal Xử Lý Trùng Mã Vạch ISBN (Disambiguation Modal) */}
       {ambiguousMatches && ambiguousMatches.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => { if (event.target === event.currentTarget) setAmbiguousMatches(null); }}
+        >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
@@ -1752,11 +1923,7 @@ export function PosCheckoutTerminal({
 
             <div className="space-y-2.5 my-4">
               {ambiguousMatches.map((book) => {
-                const stock = selectedWarehouseId === 'wh-au-co'
-                  ? book.stockAuCo
-                  : selectedWarehouseId === 'wh-du-phong'
-                  ? book.stockDuPhong
-                  : book.stockQuynhMai;
+                const stock = getBookStock(book);
 
                 return (
                   <button
@@ -1814,7 +1981,10 @@ export function PosCheckoutTerminal({
 
       {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
       {isParserOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => { if (event.target === event.currentTarget) setIsParserOpen(false); }}
+        >
           <div className="max-w-lg w-full max-h-[92vh] overflow-y-auto">
             <SmartOrderParser
               books={books.map((b) => ({ id: b.id, code: b.code, title: b.title, author: b.author }))}
@@ -1833,7 +2003,10 @@ export function PosCheckoutTerminal({
 
       {/* MODAL 1: MỞ CA KÉT TIỀN (Open Cashbox Shift Modal) */}
       {isOpenShiftModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsOpenShiftModalOpen(false); }}
+        >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-indigo-700">
@@ -1916,7 +2089,10 @@ export function PosCheckoutTerminal({
 
       {/* MODAL 2: CHỐT CA & ĐỐI SOÁT KÉT TIỀN (Close Shift & Reconciliation Modal) */}
       {isCloseShiftModalOpen && activeSession && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsCloseShiftModalOpen(false); }}
+        >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-emerald-700">
@@ -2003,6 +2179,7 @@ export function PosCheckoutTerminal({
               </div>
             </div>
 
+
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
@@ -2024,79 +2201,6 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
-      {/* MODAL 3: NHẬP MÃ PIN QUẢN LÝ CHO CHIẾT KHẤU CAO (Manager PIN Modal) */}
-      {isPinModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-amber-700">
-                <span className="text-lg">🔐</span>
-                <h3 className="font-extrabold text-base text-slate-900">Duyệt Chiết Khấu Quản Lý</h3>
-              </div>
-              <button
-                onClick={() => {
-                  setIsPinModalOpen(false);
-                  setPendingDiscountRate(null);
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-slate-600">
-                Chiết khấu <span className="font-bold text-amber-600 font-mono text-sm">{Math.round((pendingDiscountRate || 0) * 100)}%</span> vượt hạn mức trần 15% của thu ngân. Vui lòng yêu cầu Quản lý nhập mã PIN phê duyệt:
-              </p>
-
-              <div>
-                <input
-                  type="password"
-                  maxLength={6}
-                  autoFocus
-                  value={pinInput}
-                  onChange={(e) => {
-                    setPinInput(e.target.value);
-                    setPinError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleVerifyPin();
-                  }}
-                  placeholder="Nhập mã PIN (4 số)..."
-                  className="w-full text-center tracking-widest text-lg font-mono font-bold px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-amber-500"
-                />
-                {pinError && (
-                  <p className="text-xs text-rose-600 font-bold mt-1 text-center">{pinError}</p>
-                )}
-                <p className="text-[11px] text-slate-400 text-center mt-1">
-                  Quản lý nhập PIN để phê duyệt — server xác thực khi chốt đơn.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPinModalOpen(false);
-                  setPendingDiscountRate(null);
-                }}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="button"
-                onClick={handleVerifyPin}
-                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-md transition"
-              >
-                Phê Duyệt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Toast thông báo đã quét Barcode thành công */}
       {scanToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border border-emerald-500/50 text-emerald-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-slide-up">
@@ -2111,7 +2215,57 @@ export function PosCheckoutTerminal({
           </div>
         </div>
       )}
+
+      {/* MODAL 3: DUYỆT CHIẾT KHẤU BẢO MẬT (Discount Approval Modal - QR & ShortCode) */}
+      <DiscountApprovalModal
+        isOpen={isDiscountApprovalModalOpen}
+        orderCode={activeOrderCode}
+        warehouseId={selectedWarehouseId}
+        requestedDiscountRate={pendingDiscountRate || 0}
+        originalAmount={subtotal}
+        items={cart.map((item) => ({
+          editionId: item.editionId,
+          quantity: item.quantity,
+          unitPrice: item.coverPrice,
+        }))}
+        onApproved={(data) => {
+          setApprovedDiscountRequestId(data.requestId);
+          setIsManagerOverride(true);
+          setDiscountRate(data.rate);
+          if (data.rate === 1) {
+            setIsGift(true);
+            setFiscalScope('INTERNAL_MANAGEMENT');
+          }
+          setIsDiscountApprovalModalOpen(false);
+          setPendingDiscountRate(null);
+          setSyncToast(
+            `✅ Quản lý đã duyệt chiết khấu ${Math.round(data.rate * 100)}% (${data.method === 'ONE_TOUCH' ? '1-Chạm' : data.method === 'SHORTCODE_BOUND' ? 'Mã 4 số' : data.method === 'OFFLINE_EMERGENCY' ? 'Mã Khẩn Cấp' : 'QR Scan'})!`
+          );
+          setTimeout(() => setSyncToast(null), 4000);
+        }}
+        onClose={() => {
+          setIsDiscountApprovalModalOpen(false);
+          setPendingDiscountRate(null);
+        }}
+      />
+
+      {/* DRAWER DUYỆT CHIẾT KHẤU QUẢN LÝ (Chỉ hiển thị cho Manager / Owner) */}
+      {(currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') && (
+        <ManagerApprovalDrawer
+          isOpen={isManagerApprovalDrawerOpen}
+          onClose={() => setIsManagerApprovalDrawerOpen(false)}
+          warehouseId={selectedWarehouseId}
+        />
+      )}
+
+      {/* MODAL 4: BÁO CÁO CHỐT NGÀY HỘI CHỢ & ĐỐI SOÁT KIỂM KÊ (Sprint 4) */}
+      <DailyFairSettlementModal
+        isOpen={isSettlementModalOpen}
+        onClose={() => setIsSettlementModalOpen(false)}
+        warehouseId={selectedWarehouseId}
+        warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name}
+        currentRole={currentRole}
+      />
     </div>
   );
 }
-

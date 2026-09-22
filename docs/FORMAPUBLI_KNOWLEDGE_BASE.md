@@ -794,3 +794,44 @@ Nhằm đảm bảo **an toàn tuyệt đối cho mã nguồn**, loại bỏ m�
 4. **Cơ chế Rollback tức thời**: Nếu phát hiện sai sót sau khi merge, hệ thống có thể hoàn tác (Revert) về commit ổn định trước đó trong vòng **30 giây** bằng lệnh git revert mà không làm mất mát bất kỳ dữ liệu nghiệp vụ nào đã ghi vào CSDL.
 
 ---
+
+## 24. Executive Copilot v2 (09/2026)
+
+Trợ lý điều hành tiếng Việt cho quản lý: hỏi bằng ngôn ngữ tự nhiên, trả lời có căn cứ số liệu, chỉ đọc và soạn nháp — không tự ý ghi giao dịch.
+
+### 24.1. Bộ 6 công cụ truy vấn
+- `query_stock_level`: tồn kho theo mã / tựa / kho.
+- `query_sales_summary`: tổng doanh thu theo ngày / kênh / tựa.
+- `query_reprint_forecast`: gợi ý tái bản từ tốc độ bán và tồn còn lại.
+- `query_cashbox_reconciliation`: đối soát quỹ (mở / đóng / chênh lệch).
+- `query_catalog`: tra cứu danh mục (mã, tựa, giá bìa).
+- `prepare_sale_draft`: soạn nháp giỏ hàng để POS thanh toán.
+
+### 24.2. Phân giải tiếng Việt (NL resolution)
+- Nhận diện mã sách, tựa sách (không dấu / viết tắt) và tên kho ngay trong câu hỏi.
+- Ví dụ: "tồn LĐ-2024 ở kho hội chợ còn mấy" → `query_stock_level` với mã + kho đã phân giải.
+- Không đoán mò: thiếu tham số thì hỏi lại, không tự điền giá trị mặc định.
+
+### 24.3. Thực thi có căn cứ (grounded enforcement)
+- Mọi câu trả lời số liệu phải kèm nguồn tool; tool lỗi hoặc trống → dùng fallback formatter báo rõ "không có dữ liệu".
+- Kiểm tra zero-claim: không tuyên bố con số nào mà tool không trả về.
+- Kiểm tra single-total: mỗi bản nháp / tổng tiền chỉ chốt một tổng duy nhất, tránh cộng dồn hai lần.
+
+### 24.4. An toàn read-only + draft-only
+- Copilot chỉ đọc và soạn nháp; thao tác ghi tiền/kho vẫn do nhân viên bấm thanh toán trong POS.
+- Guard phía server giữ nguyên, không nới lỏng quyền cho Copilot.
+
+### 24.5. Micro thoại trực tiếp (Web Speech live mic)
+- Nút mic dùng Web Speech API, nhận dạng liên tục và nối thêm (append) vào ô nhập.
+- Ưu tiên phím tắt `Alt + V` để bật/tắt mic; có chế độ mini thu gọn khi quầy đông.
+- Tắt mic tự dừng nhận dạng, không gửi câu hỏi thay người dùng.
+
+### 24.6. Câu hỏi kiểm tra nhanh
+1. "Tồn cuốn X ở kho chính còn bao nhiêu?" → `query_stock_level`.
+2. "Hôm nay bán được bao nhiêu?" → `query_sales_summary` (ngày hiện tại).
+3. "Cuốn nào sắp hết, có nên tái bản?" → `query_reprint_forecast`.
+4. "Quỹ tối nay lệch không?" → `query_cashbox_reconciliation`.
+5. "Giá bìa cuốn Y là bao nhiêu?" → `query_catalog`.
+6. "Soạn giúp 3 cuốn X cho khách VIP" → `prepare_sale_draft`, chờ bấm thanh toán ở POS.
+
+---
