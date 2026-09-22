@@ -23,6 +23,9 @@ import {
   inventoryLedger,
   stockBalances,
   staffAccounts,
+  discountApprovalRequests,
+  deliveryOrders,
+  deliveryOrderItems,
 } from '../src/db/schema';
 import {
   DEFAULT_STAFF_ACCOUNTS,
@@ -90,7 +93,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
 
-  // 2. Dựng schema từ đúng chuỗi journal 0000 -> 0008 qua migrate-fresh
+  // 2. Dựng schema từ đúng chuỗi journal 0000 -> 0019 qua migrate-fresh
   // (runner chuẩn bỏ qua chunk comment-only, nội dung SQL giữ nguyên).
   // Đồng thời dogfood đường migrate journal trên mọi lần chạy test.
   await migrateFresh({
@@ -105,13 +108,24 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       'consignment_statement_lines', 'consignment_payments',
       'rights_contracts', 'return_orders', 'return_order_items',
       'staff_accounts', 'document_sequences', 'idempotency_keys',
+      'discount_approval_requests', 'delivery_orders', 'delivery_order_items',
     ],
   });
 
 
   const client = createClient({ url: `file:${resolved}` });
   const testDb = drizzle(client, {
-    schema: { warehouses, partners, works, editions, inventoryLedger, stockBalances },
+    schema: {
+      warehouses,
+      partners,
+      works,
+      editions,
+      inventoryLedger,
+      stockBalances,
+      discountApprovalRequests,
+      deliveryOrders,
+      deliveryOrderItems,
+    },
   });
 
   // 3. Seed 3 kho vật lý (giữ nguyên ID prod để test nào dùng ID cứng vẫn chạy).
