@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, getSessionFromRequest } from '@/lib/auth-session';
+import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, getSessionFromRequest, type SessionPayload } from '@/lib/auth-session';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
 import { callGeminiJsonRaw, callOpenAIJsonRaw, resolveGeminiModel } from '@/services/ai/llm-client';
 
 export async function POST(req: NextRequest) {
   const ip = extractClientIp(req);
-  let sessionPayload: any = null;
+  let sessionPayload: SessionPayload;
 
   try {
     // 1. Kiểm tra xác thực và ma trận phân quyền: Chỉ ROLE_OWNER & ROLE_MANAGER
     sessionPayload = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
-  } catch (authErr: any) {
+  } catch (authErr: unknown) {
     // Nếu có session nhưng không đủ thẩm quyền (vd: ROLE_CASHIER, ROLE_TAX)
     const rawSession = await getSessionFromRequest(req);
     await recordAuditLog({
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       actorRole: rawSession?.role || 'UNKNOWN_ROLE',
       actorId: rawSession?.actorId || 'unknown-actor',
       resource: 'api/ai/copilot',
-      details: `Từ chối truy cập Copilot: ${authErr?.message || 'Unauthorized'}`,
+      details: `Từ chối truy cập Copilot: ${authErr instanceof Error ? authErr.message : "Unauthorized"}`,
       ipAddress: ip,
     });
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Đọc dữ liệu câu hỏi từ request body
-  let body: any;
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
@@ -62,7 +62,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const question = typeof body?.question === 'string' ? body.question.trim() : '';
+  const rawQuestion = (body as { question?: unknown })?.question;
+  const question = typeof rawQuestion === 'string' ? rawQuestion.trim() : '';
   if (!question) {
     return NextResponse.json(
       { success: false, code: 'INVALID_INPUT', message: 'Vui lòng cung cấp nội dung câu hỏi (`question`).' },
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
     const toolResult = await CopilotGuardrails.executeToolSafely(
       toolCall.toolName,
       toolCall.args || {},
-      sessionPayload
+      { staffId: sessionPayload.actorId, role: sessionPayload.role }
     );
 
     // 7. Tổng hợp câu trả lời từ kết quả Tool
@@ -202,10 +203,10 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
         toolData: toolResult,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('❌ Lỗi xử lý Copilot:', err);
     return NextResponse.json(
-      { success: false, code: 'INTERNAL_ERROR', message: `Lỗi xử lý Copilot: ${err?.message || err}` },
+      { success: false, code: "INTERNAL_ERROR", message: `Lỗi xử lý Copilot: ${err instanceof Error ? err.message : String(err)}` },
       { status: 500 }
     );
   }
@@ -235,7 +236,7 @@ function extractNaturalAnswer(raw: string): string {
   return text;
 }
 
-function formatFallbackAnswer(toolName: string, data: any): string {
+function formatFallbackAnswer(toolName: string, data: Record<string, any>): string {
   if (toolName === 'query_stock_level') {
     if (data.warning && (!data.items || data.items.length === 0)) {
       return `📦 **Tra cứu tồn kho**: ${data.warning}`;
@@ -266,11 +267,11 @@ function formatFallbackAnswer(toolName: string, data: any): string {
       return `📚 **Tra cứu danh mục**: ${data.warning}`;
     }
     if (data.mode === 'top-authors' && data.authors?.length) {
-      const lines = data.authors.slice(0, 20).map((a: any, i: number) =>
+      const lines = data.authors.slice(0, 20).map((a: { author?: string; titlesCount?: number; soldQty?: number }, i: number) =>
         `${i + 1}. **${a.author}** — ${a.titlesCount} đầu sách, đã bán ${Number(a.soldQty).toLocaleString('vi-VN')} cuốn`);
       return `📚 **Top tác giả được yêu thích (${data.query})** — tổng ${data.total} tác giả:\n${lines.join('\n')}`;
     }
-    const lines = (data.items || []).slice(0, 20).map((it: any, i: number) =>
+    const lines = (data.items || []).slice(0, 20).map((it: { code?: string; title?: string; author?: string; coverPrice?: number; quantity?: number; availableStock?: number }, i: number) =>
       `${i + 1}. **${it.code} - ${it.title}** (${it.author || 'chưa rõ tác giả'}) — giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ`);
     const head = data.mode === 'author' ? `📚 **Sách của tác giả ${data.query}**`
       : data.mode === 'title-prefix' ? `📚 **Tác phẩm bắt đầu bằng ${data.query}**`
@@ -292,7 +293,7 @@ function formatFallbackAnswer(toolName: string, data: any): string {
     if (!data.items || data.items.length === 0) {
       return `🧾 **Lên đơn nháp**: ${(data.warnings || []).join(' ')}`;
     }
-    const lines = data.items.map((it: any, i: number) =>
+    const lines = data.items.map((it: { code?: string; title?: string; author?: string; coverPrice?: number; quantity?: number; availableStock?: number }, i: number) =>
       `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ, tồn ${Number(it.availableStock || 0).toLocaleString('vi-VN')})`);
     const warn = (data.warnings || []).length > 0 ? `\n⚠️ ${(data.warnings || []).join(' ')}` : '';
     const who = data.customerName ? ` cho **${data.customerName}**` : '';

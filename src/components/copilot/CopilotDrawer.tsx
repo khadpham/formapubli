@@ -66,6 +66,44 @@ const QUICK_PROMPT_CHIPS = [
   },
 ];
 
+
+const HEADER_PREFIX_REGEX = /^#+\s*/;
+const INLINE_FORMAT_REGEX = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+
+function formatInline(text: string): React.ReactNode {
+  const parts: (string | React.ReactNode)[] = [];
+  const regex = new RegExp(INLINE_FORMAT_REGEX.source, 'g');
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith('**') && token.endsWith('**')) {
+      parts.push(
+        <strong key={match.index} className="font-bold text-slate-900">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      parts.push(
+        <code key={match.index} className="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-[11px] text-indigo-700 font-semibold border border-slate-200">
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : text;
+}
+
 export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onMinimize, onExpand, onApplyDraft }: CopilotDrawerProps) {
   const isAuthorized = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const isMini = mode === 'mini';
@@ -435,7 +473,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
 
           // Header 3/4 (### hoặc ##)
           if (trimmed.startsWith('### ') || trimmed.startsWith('## ')) {
-            const hText = trimmed.replace(/^#+\s*/, '');
+            const hText = trimmed.replace(HEADER_PREFIX_REGEX, '');
             return (
               <p key={idx} className="font-extrabold text-slate-900 mt-2 mb-1">
                 {formatInline(hText)}
@@ -462,40 +500,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
     );
   };
 
-  // Xử lý Bold **...** và Code `...` inline
-  const formatInline = (text: string) => {
-    const parts: (string | React.ReactNode)[] = [];
-    const regex = /(\*\*[^*]+\*\*|`[^`]+`)/g;
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
 
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.substring(lastIndex, match.index));
-      }
-      const token = match[0];
-      if (token.startsWith('**') && token.endsWith('**')) {
-        parts.push(
-          <strong key={match.index} className="font-bold text-slate-900">
-            {token.slice(2, -2)}
-          </strong>
-        );
-      } else if (token.startsWith('`') && token.endsWith('`')) {
-        parts.push(
-          <code key={match.index} className="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-[11px] text-indigo-700 font-semibold border border-slate-200">
-            {token.slice(1, -1)}
-          </code>
-        );
-      }
-      lastIndex = regex.lastIndex;
-    }
-
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
-    return parts.length > 0 ? parts : text;
-  };
 
   const getToolBadge = (toolName?: string | null) => {
     if (!toolName) return null;
