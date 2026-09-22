@@ -30,12 +30,14 @@ import {
   ClipboardPaste,
   RotateCcw,
   ShieldCheck,
+  CalendarCheck,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
 import { ReturnsModal } from '@/components/pos/ReturnsModal';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
+import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -144,6 +146,7 @@ export function PosCheckoutTerminal({
   // QUẢN LÝ TRẦN CHIẾT KHẤU & PHÊ DUYỆT BẢO MẬT (Discount Hard-cap & State Machine Approval)
   const [isDiscountApprovalModalOpen, setIsDiscountApprovalModalOpen] = useState(false);
   const [isManagerApprovalDrawerOpen, setIsManagerApprovalDrawerOpen] = useState(false);
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [approvedDiscountRequestId, setApprovedDiscountRequestId] = useState<string | null>(null);
   const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
   // V4.1 S2.4: ô nhập CK lẻ (% nguyên)
@@ -1097,6 +1100,17 @@ export function PosCheckoutTerminal({
               </button>
             )}
           </div>
+
+          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ (Sprint 4) */}
+          <button
+            type="button"
+            onClick={() => setIsSettlementModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
+            title="Báo cáo chốt ngày hội chợ & Đối soát kiểm kê (Sprint 4)"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            <span>Chốt Ngày (S4)</span>
+          </button>
         </div>
       </div>
 
@@ -2243,6 +2257,15 @@ export function PosCheckoutTerminal({
           warehouseId={selectedWarehouseId}
         />
       )}
+
+      {/* MODAL 4: BÁO CÁO CHỐT NGÀY HỘI CHỢ & ĐỐI SOÁT KIỂM KÊ (Sprint 4) */}
+      <DailyFairSettlementModal
+        isOpen={isSettlementModalOpen}
+        onClose={() => setIsSettlementModalOpen(false)}
+        warehouseId={selectedWarehouseId}
+        warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name}
+        currentRole={currentRole}
+      />
     </div>
   );
 }
