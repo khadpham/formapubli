@@ -29,6 +29,7 @@ const SOURCE_GROUPS: { id: string; label: string; channels: string[]; icon: any 
 export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProps) {
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [channels, setChannels] = useState<any[]>([]);
   const [cashflow, setCashflow] = useState<any>(null);
   const [consignment, setConsignment] = useState<any[]>([]);
@@ -36,15 +37,23 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
   const fetchAll = async () => {
     if (!canView) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [cRes, fRes, sRes] = await Promise.all([
         fetch('/api/analytics?view=channels').then((r) => r.json()).catch(() => null),
         fetch('/api/analytics?view=cashflow').then((r) => r.json()).catch(() => null),
         fetch('/api/analytics?view=consignment').then((r) => r.json()).catch(() => null),
       ]);
+      const failed: string[] = [];
       if (cRes?.success) setChannels(cRes.data || []);
+      else failed.push('kênh');
       if (fRes?.success) setCashflow(fRes.data || null);
+      else failed.push('dòng tiền');
       if (sRes?.success) setConsignment(sRes.data || []);
+      else failed.push('ký gửi');
+      if (failed.length > 0) {
+        setLoadError(`Không tải được số liệu ${failed.join(', ')} — kiểm tra mạng rồi bấm Tải lại.`);
+      }
     } finally {
       setLoading(false);
     }
@@ -140,6 +149,20 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
           </button>
         </div>
       </div>
+
+      {/* Bao loi tai — phan biet "tai loi" voi "khong co du lieu" */}
+      {loadError && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center justify-between gap-2">
+          <span className="font-medium">{loadError}</span>
+          <button
+            onClick={fetchAll}
+            disabled={loading}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition disabled:opacity-50 shrink-0"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
 
       {/* Tổng quan dòng tiền */}
       {cashflow && (

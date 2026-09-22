@@ -24,12 +24,10 @@ import { UserRole } from '@/lib/roles';
 import { StaffManager } from './StaffManager';
 
 interface SettingsRbacViewProps {
-  currentRole: UserRole;
   sessionRole?: UserRole;
-  onRoleChange: (role: UserRole) => void;
 }
 
-export function SettingsRbacView({ currentRole, sessionRole, onRoleChange }: SettingsRbacViewProps) {
+export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   // Go-live: da xoa mo phong vai tro. Tab "Tai khoan nhan su" chi hien voi OWNER/MANAGER.
   const canManageStaff = sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER';
   const [activeSubTab, setActiveSubTab] = useState<'staff' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(

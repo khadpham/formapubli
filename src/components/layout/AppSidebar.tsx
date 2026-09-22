@@ -22,7 +22,6 @@ interface AppSidebarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
   currentRole: UserRole;
-  onRoleChange: (role: UserRole) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   isMobileOpen: boolean;
@@ -34,7 +33,6 @@ export function AppSidebar({
   currentTab,
   onSelectTab,
   currentRole,
-  onRoleChange,
   isCollapsed,
   onToggleCollapse,
   isMobileOpen,

@@ -31,6 +31,17 @@ const CHANNEL_GROUP_OF: Record<string, 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT
   SPONSORSHIP: 'GIFT',
 };
 
+// Nhan kenh hien thi (map thay nested ternary 7 cap).
+const CHANNEL_LABEL: Record<string, string> = {
+  FAIR_EVENT: 'Hội chợ',
+  RETAIL_OFFICE: 'Bán lẻ',
+  WHOLESALE_PARTNER: 'Đại lý',
+  RETAIL_ONLINE_WEB: 'Web',
+  RETAIL_ONLINE_SOCIAL: 'Mạng xã hội',
+  ONLINE: 'Online',
+  SPONSORSHIP: 'Tặng',
+};
+
 interface SalesLedgerViewProps {
   currentRole: UserRole;
 }
@@ -498,14 +509,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                     </td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                        {ord.channel === 'FAIR_EVENT' ? 'Hội chợ'
-                          : ord.channel === 'RETAIL_OFFICE' ? 'Bán lẻ'
-                          : ord.channel === 'WHOLESALE_PARTNER' ? 'Đại lý'
-                          : ord.channel === 'RETAIL_ONLINE_WEB' ? 'Web'
-                          : ord.channel === 'RETAIL_ONLINE_SOCIAL' ? 'Mạng xã hội'
-                          : ord.channel === 'ONLINE' ? 'Online'
-                          : ord.channel === 'SPONSORSHIP' ? 'Tặng'
-                          : (ord.channel || '—')}
+                        {CHANNEL_LABEL[ord.channel] || ord.channel || '—'}
                       </span>
                     </td>
                     <td className="p-3.5">

@@ -61,10 +61,6 @@ export function MasterAppShell({
   };
 
   // Go-live: vai trò = phiên đăng nhập thật, đã xóa mô phỏng vai trò.
-  // Giữ state currentRole để tương thích component con, nhưng luôn đồng bộ từ session.
-  const handleRoleChangeNoop = React.useCallback((_role: UserRole) => {
-    if (session?.role) setCurrentRole(session.role);
-  }, [session?.role]);
 
   // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
@@ -144,7 +140,6 @@ export function MasterAppShell({
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         currentRole={currentRole}
-        onRoleChange={handleRoleChangeNoop}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileOpen={isMobileSidebarOpen}
@@ -288,11 +283,7 @@ export function MasterAppShell({
           {currentTab === 'customers' && <CustomersListView />}
 
           {currentTab === 'settings' && (
-            <SettingsRbacView
-              currentRole={currentRole}
-              sessionRole={session?.role}
-              onRoleChange={handleRoleChangeNoop}
-            />
+            <SettingsRbacView sessionRole={session?.role} />
           )}
 
           {currentTab === 'studio' && (
