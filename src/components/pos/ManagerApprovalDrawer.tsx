@@ -230,7 +230,7 @@ export function ManagerApprovalDrawer({
               <CheckCircle2 className="w-10 h-10 mx-auto text-slate-300" />
               <p className="text-xs font-semibold text-slate-600">Hiện không có yêu cầu nào chờ duyệt</p>
               <p className="text-[11px] text-slate-400">
-                Khi thu ngân xin chiết khấu &gt;20%, đơn sẽ lập tức xuất hiện tại đây.
+                Khi thu ngân xin chiết khấu &ge;20%, đơn sẽ lập tức xuất hiện tại đây.
               </p>
             </div>
           )}
@@ -252,9 +252,6 @@ export function ManagerApprovalDrawer({
                       <span className="font-mono font-extrabold text-sm text-slate-900">
                         {item.orderCode}
                       </span>
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-mono font-bold text-xs rounded-md">
-                        #{item.shortCode}
-                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
                       <span className="flex items-center gap-1">
@@ -270,6 +267,21 @@ export function ManagerApprovalDrawer({
                   <span className="px-2.5 py-1 bg-rose-50 text-rose-700 font-black text-sm rounded-xl border border-rose-200/60">
                     {isGift ? 'TẶNG 100%' : `${Math.round(item.requestedDiscountRate * 100)}%`}
                   </span>
+                </div>
+
+                {/* Hộp Mã cấp phép / OTP cấp cho Thu ngân */}
+                <div className="bg-amber-500/10 border border-amber-300/80 rounded-xl p-2.5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 block">
+                      Mã Cấp Phép / OTP (4 Số):
+                    </span>
+                    <span className="text-[11px] text-amber-700 block">
+                      Đọc mã này cho Thu ngân gõ tại quầy
+                    </span>
+                  </div>
+                  <div className="px-3 py-1 bg-amber-500 text-white font-mono font-black text-base rounded-lg shadow-sm tracking-widest">
+                    {item.shortCode}
+                  </div>
                 </div>
 
                 {/* Tiền hàng */}
