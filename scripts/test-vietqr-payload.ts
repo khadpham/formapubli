@@ -23,9 +23,9 @@ async function run() {
   const p2 = generateVietQRPayload({ bankBin: '970405', accountNo: '3180281056609', amount: 50000, content: 'Thanh toan don Dep qua!!!' });
   assert(!p2.includes('!!!'), 'loai ky tu dac biet');
   const p3 = generateVietQRPayload({ bankBin: '970405', accountNo: '1', amount: 0 });
-  assert(!p3.includes('54'), 'amount=0 thi bo field 54');
+  assert(p3 === generateVietQRPayload({ bankBin: '970405', accountNo: '1' }), 'amount=0 thi bo field 54');
   const p4 = generateVietQRPayload({ bankBin: '970405', accountNo: '1', amount: 50000, content: '@@@###$$$' });
-  assert(!p4.includes('62'), 'content toan ky tu dac biet thi bo field 62');
+  assert(p4 === generateVietQRPayload({ bankBin: '970405', accountNo: '1', amount: 50000 }), 'content toan ky tu dac biet thi bo field 62');
   console.log('ALL VIETQR TESTS PASSED');
 }
 

@@ -27,8 +27,8 @@ export function CreateWarehouseModal({
   useEffect(() => {
     if (!isOpen) return;
     fetch('/api/bank-accounts')
-      .then((r) => r.json())
-      .then((j) => { if (j?.success) setBankAccounts(j.data.list || []); })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((j) => { if (j?.success && Array.isArray(j.data?.list)) setBankAccounts(j.data.list); })
       .catch(() => {});
   }, [isOpen]);
 
