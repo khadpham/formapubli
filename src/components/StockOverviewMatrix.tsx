@@ -16,6 +16,7 @@ import {
   Keyboard,
   PackageSearch,
   ShieldAlert,
+  Store,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
@@ -24,6 +25,7 @@ import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
 import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
+import { CreateWarehouseModal } from './inventory/CreateWarehouseModal';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -92,6 +94,7 @@ export function StockOverviewMatrix({
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
+  const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS'>('MATRIX');
@@ -474,19 +477,30 @@ export function StockOverviewMatrix({
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
-              Sổ PXK Đại Lý
+              Sổ Phiếu Xuất Đối Tác (PXK)
             </button>
           </div>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setCreateWarehouseOpen(true)}
+              title="Mở thêm kho hoặc gian hàng hội chợ mới (Chỉ Quản lý / Chủ)"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho / Gian Hàng
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setWholesaleModalOpen(true)}
-            title="Lập phiếu xuất kho bán buôn cho đại lý (PXK)"
+            title="Lập phiếu xuất kho cung ứng cho đối tác: Nhà sách, Thư viện, Trường học, Đại lý (PXK)"
             className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5" /> Bán Buôn PXK
+            <FileText className="w-3.5 h-3.5" /> Xuất Kho Đối Tác
           </button>
           <button
             type="button"
@@ -849,6 +863,13 @@ export function StockOverviewMatrix({
         books={initialBooks}
         warehouses={warehouses}
         onSuccess={handleRefresh}
+      />
+
+      {/* Create Warehouse Modal */}
+      <CreateWarehouseModal
+        isOpen={createWarehouseOpen}
+        onClose={() => setCreateWarehouseOpen(false)}
+        onCreated={handleRefresh}
       />
     </div>
   );

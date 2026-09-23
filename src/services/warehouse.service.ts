@@ -39,6 +39,76 @@ export class WarehouseService {
       .where(and(eq(warehouses.isActive, true), eq(warehouses.isSellableOnPos, true)));
   }
 
+  /** Danh sách tất cả các kho đang hoạt động. */
+  static async listAll(txOrDb: any = db): Promise<WarehouseRow[]> {
+    return await txOrDb
+      .select()
+      .from(warehouses)
+      .where(eq(warehouses.isActive, true));
+  }
+
+  /**
+   * Tạo kho mới (Gian hàng hội chợ hoặc Kho vật lý) - Chỉ cấp Quản lý trở lên.
+   */
+  static async createWarehouse(
+    params: {
+      code?: string;
+      name: string;
+      address?: string;
+      warehouseType?: 'PHYSICAL_MAIN' | 'FAIR_EVENT' | 'CONSIGNMENT' | 'IN_TRANSIT';
+      isSellableOnPos?: boolean;
+    },
+    txOrDb: any = db
+  ): Promise<WarehouseRow> {
+    const name = params.name?.trim();
+    if (!name) {
+      throw AppError.invalid('Tên kho không được để trống.');
+    }
+
+    const rawCode = (params.code || name)
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/Đ/g, 'D')
+      .replace(/[^A-Z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '');
+
+    const code = rawCode.startsWith('KHO_') ? rawCode : `KHO_${rawCode}`;
+    const id = `wh-${code.toLowerCase().replace(/_/g, '-')}`;
+
+    // Kiểm tra trùng lặp mã kho hoặc id
+    const existing = await txOrDb
+      .select()
+      .from(warehouses)
+      .where(eq(warehouses.code, code))
+      .limit(1);
+
+    if (existing.length > 0) {
+      throw AppError.conflict(`Mã kho '${code}' đã tồn tại.`);
+    }
+
+    const warehouseType = params.warehouseType || 'FAIR_EVENT';
+    const isSellableOnPos =
+      params.isSellableOnPos !== undefined
+        ? params.isSellableOnPos
+        : warehouseType === 'FAIR_EVENT' || warehouseType === 'PHYSICAL_MAIN';
+
+    const newWarehouse = {
+      id,
+      code,
+      name,
+      address: params.address?.trim() || null,
+      isActive: true,
+      isSellableOnPos,
+      warehouseType,
+    };
+
+    await txOrDb.insert(warehouses).values(newWarehouse);
+    return newWarehouse as WarehouseRow;
+  }
+
   /**
    * V4.1 S1.3 — Cấp số chứng từ liên tục (PCK/PXK/PXK_R).
    * BẮT BUỘC gọi trong cùng tx với INSERT phiếu (cùng commit/rollback → không nhảy số).

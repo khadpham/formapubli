@@ -75,9 +75,9 @@ async function run() {
   let r = await postOrder(baseBody({ discountRate: 0.1 }), 'ROLE_CASHIER');
   ok('Cashier CK 10% được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
 
-  // 2. Cashier đúng trần 20% -> cho qua (boundary).
+  // 2. Cashier chạm trần 20% (>= 20%) thiếu duyệt/PIN -> bị chặn 403 (boundary).
   r = await postOrder(baseBody({ discountRate: 0.2 }), 'ROLE_CASHIER');
-  ok('Cashier đúng trần 20% được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+  ok('Cashier chạm trần 20% thiếu duyệt/PIN bị chặn 403', r.status === 403 && /PIN|Quản lý/i.test(r.json?.error || ''), `status=${r.status}`);
 
   // 3. Cashier 35% không PIN -> 403.
   r = await postOrder(baseBody({ discountRate: 0.35 }), 'ROLE_CASHIER');

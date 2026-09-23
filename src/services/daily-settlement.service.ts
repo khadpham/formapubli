@@ -88,10 +88,10 @@ export class DailySettlementService {
     }
 
     const averageDiscountRate = grossSales > 0 ? totalDiscount / grossSales : 0;
-    const isDiscountRateWarning = averageDiscountRate > 0.12; // Cảnh báo nếu CK bình quân > 12%
+    const isDiscountRateWarning = averageDiscountRate > 0.20; // Cảnh báo nếu CK bình quân > 20%
 
-    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (> 20%)
-    const overCapOrders = dayOrders.filter((ord: any) => (ord.discountRate || 0) > 0.2);
+    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%)
+    const overCapOrders = dayOrders.filter((ord: any) => (ord.discountRate || 0) >= 0.2);
 
     // Bổ sung thông tin phê duyệt từ discount_approval_requests nếu có
     const approvalRows = await txOrDb

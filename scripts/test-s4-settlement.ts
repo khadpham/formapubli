@@ -199,10 +199,10 @@ async function run() {
 
   console.log('✓ Doanh số và phân bổ thanh toán khớp 100%');
 
-  // [Case 2] Cảnh báo chiết khấu bình quân ngày
+  // [Case 2] Cảnh báo chiết khấu bình quân ngày (Ngưỡng an toàn 20%)
   console.log('\n[Case 2] Giám sát tỷ lệ chiết khấu bình quân ngày');
-  // 200.000 / 1.400.000 = ~14.28% > 12% -> Cảnh báo bật
-  assert.strictEqual(report.financials.isDiscountRateWarning, true, 'Kích hoạt cảnh báo CK > 12%');
+  // 200.000 / 1.400.000 = ~14.28% <= 20% -> Nằm trong hạn mức an toàn, không cảnh báo
+  assert.strictEqual(report.financials.isDiscountRateWarning, false, 'An toàn dưới ngưỡng 20%');
   console.log(`✓ Tỷ lệ CK bình quân: ${(report.financials.averageDiscountRate * 100).toFixed(2)}% (Cảnh báo: ${report.financials.isDiscountRateWarning})`);
 
   // [Case 3] Danh sách đơn duyệt đặc biệt (> 20%)

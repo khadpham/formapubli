@@ -434,7 +434,7 @@ export function PosCheckoutTerminal({
       return;
     }
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
-    if (isRestrictedCashier && rate > 0.2) {
+    if (isRestrictedCashier && rate >= 0.2) {
       setPendingDiscountRate(rate);
       setIsDiscountApprovalModalOpen(true);
       return;
@@ -1605,7 +1605,7 @@ export function PosCheckoutTerminal({
                 <div className="grid grid-cols-5 gap-1.5">
                   {[0, 5, 10, 15, 20].map((pct) => {
                     const rate = pct / 100;
-                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate > 0.2;
+                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate >= 0.2;
                     const isActive = Math.round(discountRate * 100) === pct && !isGift;
                     return (
                       <button
@@ -1619,7 +1619,7 @@ export function PosCheckoutTerminal({
                             ? 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-700 border border-dashed border-slate-300'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}
-                        title={isLockedForCashier ? 'Chiết khấu > 20% cần Quản lý nhập mã PIN' : undefined}
+                        title={isLockedForCashier ? 'Chiết khấu từ 20% trở lên cần Quản lý cấp phép' : undefined}
                       >
                         {isLockedForCashier && <span className="text-[10px]">🔒</span>}
                         <span>{pct}%</span>
@@ -1717,6 +1717,15 @@ export function PosCheckoutTerminal({
                   </select>
                 </div>
               </div>
+              {paymentMethod === 'QR_CODE' && (
+                <div className="mt-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs text-indigo-900 flex items-center gap-2.5">
+                  <QrCode className="w-5 h-5 text-indigo-600 shrink-0" />
+                  <div>
+                    <p className="font-bold">Quét mã QR Chuyển khoản ngân hàng</p>
+                    <p className="text-[11px] text-indigo-700">Khách quét mã QR tài khoản ngân hàng gian hàng để thanh toán đơn hàng.</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1853,6 +1862,7 @@ export function PosCheckoutTerminal({
                 ? '💾 Đã chốt bill ngoại tuyến thành công. Có thể in phiếu giao hàng ngay!'
                 : '✅ Thẻ kho vật lý đã được khấu trừ tức thì. Kho máy = Kho kệ 100%!'}
             </p>
+
 
             {/* Paper Size Preset Switcher (K80 vs K57) */}
             <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between">
