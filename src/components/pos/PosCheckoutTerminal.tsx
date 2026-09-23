@@ -2405,7 +2405,15 @@ export function PosCheckoutTerminal({
       {cart.length > 0 && (
         <div className="lg:hidden fixed bottom-16 inset-x-3 z-30 animate-slide-up">
           <div className="bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-700/80 flex items-center justify-between gap-3">
-            <div className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              title="Quét mã thêm vào giỏ"
+              className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 active:scale-95 transition-all flex items-center justify-center shrink-0"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col flex-1 min-w-0">
               <span className="text-[11px] text-slate-400 font-medium">
                 {totalCopies} cuốn • Giảm {Math.round(discountRate * 100)}%
               </span>
@@ -2428,6 +2436,19 @@ export function PosCheckoutTerminal({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Nút quét nổi mobile (giỏ trống mới hiện — có giỏ thì dùng nút quét trong thanh trên).
+          Đặt bên trái để không đè bong bóng Copilot (phải) và dock đáy. */}
+      {cart.length === 0 && (
+        <button
+          type="button"
+          onClick={() => setIsScannerOpen(true)}
+          title="Quét mã thêm vào giỏ"
+          className="lg:hidden fixed bottom-24 left-4 z-40 w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 flex items-center justify-center active:scale-95 transition-all"
+        >
+          <Camera className="w-6 h-6" />
+        </button>
       )}
     </div>
   );
