@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
       Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
       ...effectiveItemDiscounts
     );
-    const exceedsHardCap = maxDiscountRate > MAX_CASHIER_DISCOUNT_RATE;
+    const exceedsHardCap = maxDiscountRate >= MAX_CASHIER_DISCOUNT_RATE;
     const isPrivilegedRole = userRole === 'ROLE_OWNER' || userRole === 'ROLE_MANAGER';
 
     if (exceedsHardCap && !isPrivilegedRole) {

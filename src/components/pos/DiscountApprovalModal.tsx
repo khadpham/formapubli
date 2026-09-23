@@ -53,6 +53,9 @@ export function DiscountApprovalModal({
 
   // Tab: Online (QR/ShortCode) vs Offline Emergency
   const [activeTab, setActiveTab] = useState<'ONLINE' | 'OFFLINE'>('ONLINE');
+  const [managerOtpInput, setManagerOtpInput] = useState('');
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
   const [emergencyCodeInput, setEmergencyCodeInput] = useState('');
   const [isSubmittingEmergency, setIsSubmittingEmergency] = useState(false);
   const [emergencyError, setEmergencyError] = useState<string | null>(null);
@@ -75,6 +78,8 @@ export function DiscountApprovalModal({
     setStatus('LOADING');
     setErrorMessage(null);
     setRejectedReason(null);
+    setManagerOtpInput('');
+    setOtpError(null);
     setEmergencyCodeInput('');
     setEmergencyError(null);
 
@@ -205,7 +210,51 @@ export function DiscountApprovalModal({
     };
   }, [requestId, status, onApproved, onClose]);
 
-  // 5. Xử lý nhập mã khẩn cấp (Offline Emergency)
+  // 5. Xử lý nhập mã cấp phép / OTP từ Quản lý (Đảo chiều luồng OTP)
+  const handleVerifyManagerOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!requestId) return;
+    const code = managerOtpInput.trim().toUpperCase();
+    if (!code) {
+      setOtpError('Vui lòng nhập mã cấp phép / OTP từ Quản lý.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    setOtpError(null);
+    try {
+      const res = await fetch(`/api/pos/discount-approvals/${requestId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'APPROVE',
+          method: 'SHORTCODE_BOUND',
+          shortCode: code,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Mã cấp phép không chính xác hoặc đã hết hạn.');
+      }
+
+      setStatus('APPROVED');
+      setTimeout(() => {
+        onApproved({
+          requestId,
+          rate: requestedDiscountRate,
+          method: 'SHORTCODE_BOUND',
+        });
+        onClose();
+      }, 1000);
+    } catch (err: any) {
+      setOtpError(err.message || 'Mã cấp phép không hợp lệ.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  // 6. Xử lý nhập mã khẩn cấp (Offline Emergency)
   const handleApplyEmergencyCode = async () => {
     if (!requestId) return;
     const code = emergencyCodeInput.trim();
@@ -275,7 +324,7 @@ export function DiscountApprovalModal({
                 {isGift ? 'Duyệt Tặng Sách 100%' : 'Duyệt Chiết Khấu Quản Lý'}
               </h3>
               <p className="text-[11px] text-slate-400">
-                Vượt trần thu ngân (&gt;20%) • Bảo mật State Machine
+                Vượt trần thu ngân (&ge;20%) • Bảo mật State Machine
               </p>
             </div>
           </div>
@@ -392,7 +441,7 @@ export function DiscountApprovalModal({
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                1-Chạm &amp; Mã QR (Online)
+                Mã OTP / 1-Chạm (Online)
               </button>
               <button
                 type="button"
@@ -407,34 +456,83 @@ export function DiscountApprovalModal({
               </button>
             </div>
 
-            {/* TAB 1: ONLINE (ShortCode + QR) */}
+            {/* TAB 1: ONLINE (Nhập mã Quản lý cấp / Chờ Duyệt 1-chạm) */}
             {activeTab === 'ONLINE' && (
-              <div className="space-y-3 text-center">
-                {/* ShortCode nổi bật */}
-                <div className="bg-amber-500/10 border-2 border-dashed border-amber-400 rounded-2xl p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800 mb-1">
-                    Đọc to mã 4 số cho Quản lý:
-                  </p>
-                  <div className="text-4xl font-mono font-black tracking-widest text-amber-700 py-1">
-                    {shortCode}
+              <div className="space-y-3.5 text-center">
+                {/* Form nhập mã cấp phép từ Quản lý */}
+                <form
+                  onSubmit={handleVerifyManagerOtp}
+                  className="bg-amber-500/10 border-2 border-amber-400/80 rounded-2xl p-3.5 text-left space-y-2.5 shadow-sm"
+                >
+                  <div>
+                    <label className="text-xs font-black uppercase tracking-wider text-amber-900 block">
+                      Nhập mã cấp phép / OTP từ Quản lý:
+                    </label>
+                    <p className="text-[11px] text-amber-700 mt-0.5">
+                      Xin mã phê duyệt từ Quản lý trực tiếp tại gian hàng hoặc qua điện thoại
+                    </p>
                   </div>
-                  <p className="text-[10px] text-amber-600/90 mt-1">
-                    Quản lý gõ 4 số này trên máy để duyệt 1-chạm trong &le; 8 giây.
-                  </p>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      maxLength={8}
+                      autoFocus
+                      value={managerOtpInput}
+                      onChange={(e) => {
+                        setManagerOtpInput(e.target.value.toUpperCase());
+                        setOtpError(null);
+                      }}
+                      placeholder="Mã 4 số (VD: 4821)..."
+                      className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl font-mono text-center text-base font-black tracking-widest text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isVerifyingOtp || !managerOtpInput.trim()}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5 shrink-0"
+                    >
+                      {isVerifyingOtp ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang kiểm tra...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Mở Khóa Đơn
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {otpError && (
+                    <div className="text-xs text-rose-600 font-bold flex items-center gap-1 pt-0.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{otpError}</span>
+                    </div>
+                  )}
+                </form>
+
+                {/* Hoặc chờ duyệt 1-chạm từ xa */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-slate-600 text-left">
+                    <RefreshCw className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
+                    <div>
+                      <span className="font-bold block text-slate-800">Hoặc chờ Duyệt 1-chạm từ xa</span>
+                      <span className="text-[10px] text-slate-400 block">Quản lý bấm duyệt trên máy, quầy sẽ tự động mở</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-slate-500 font-bold text-[11px] shrink-0 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    <span>{timeFormatted}</span>
+                  </div>
                 </div>
 
-                {/* QR Code */}
-                <div className="flex flex-col items-center justify-center p-2 bg-slate-50 border border-slate-200 rounded-2xl">
-                  <div ref={qrContainerRef} className="w-40 h-40 bg-white p-2 rounded-xl shadow-sm border border-slate-100 flex items-center justify-center" />
-                  <p className="text-[11px] text-slate-500 font-medium mt-1.5 flex items-center gap-1">
-                    <QrCode className="w-3.5 h-3.5" /> Quản lý có thể quét mã QR này từ điện thoại
-                  </p>
-                </div>
-
-                {/* Countdown Timer */}
-                <div className="flex items-center justify-center gap-1.5 text-xs font-mono font-bold text-slate-500">
-                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                  <span>Tự hủy sau: <strong className="text-slate-800">{timeFormatted}</strong></span>
+                {/* Quét mã QR nếu Quản lý đứng gần quầy */}
+                <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-left">
+                  <div className="text-[11px] text-slate-500 pl-1">
+                    <span className="font-bold text-slate-700 block">Quét QR duyệt nhanh:</span>
+                    <span>Quản lý dùng camera quét mã bên cạnh</span>
+                  </div>
+                  <div ref={qrContainerRef} className="w-14 h-14 bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0 flex items-center justify-center" />
                 </div>
               </div>
             )}

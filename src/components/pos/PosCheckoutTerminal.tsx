@@ -38,6 +38,7 @@ import { ReturnsModal } from '@/components/pos/ReturnsModal';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
+import { VietQrPay } from '@/components/pos/VietQrPay';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -434,7 +435,7 @@ export function PosCheckoutTerminal({
       return;
     }
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
-    if (isRestrictedCashier && rate > 0.2) {
+    if (isRestrictedCashier && rate >= 0.2) {
       setPendingDiscountRate(rate);
       setIsDiscountApprovalModalOpen(true);
       return;
@@ -1605,7 +1606,7 @@ export function PosCheckoutTerminal({
                 <div className="grid grid-cols-5 gap-1.5">
                   {[0, 5, 10, 15, 20].map((pct) => {
                     const rate = pct / 100;
-                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate > 0.2;
+                    const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate >= 0.2;
                     const isActive = Math.round(discountRate * 100) === pct && !isGift;
                     return (
                       <button
@@ -1619,7 +1620,7 @@ export function PosCheckoutTerminal({
                             ? 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-700 border border-dashed border-slate-300'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}
-                        title={isLockedForCashier ? 'Chiết khấu > 20% cần Quản lý nhập mã PIN' : undefined}
+                        title={isLockedForCashier ? 'Chiết khấu từ 20% trở lên cần Quản lý cấp phép' : undefined}
                       >
                         {isLockedForCashier && <span className="text-[10px]">🔒</span>}
                         <span>{pct}%</span>
@@ -1717,6 +1718,11 @@ export function PosCheckoutTerminal({
                   </select>
                 </div>
               </div>
+              {paymentMethod === 'QR_CODE' && (
+                <div className="mt-3">
+                  <VietQrPay warehouseId={selectedWarehouseId} amount={isGift ? 0 : finalAmount} orderContent={note || 'THANH TOAN POS'} />
+                </div>
+              )}
             </div>
           </div>
 

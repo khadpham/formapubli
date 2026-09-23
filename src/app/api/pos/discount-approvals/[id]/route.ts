@@ -41,15 +41,25 @@ export async function POST(
     const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
+      'ROLE_CASHIER',
     ] as UserRole[]);
 
     const body = await req.json();
     const { action, method, shortCode, qrToken, emergencyCode, rejectedReason } = body;
 
+    // Thu ngân chỉ được phép gửi mã cấp phép (OTP) hoặc mã khẩn cấp từ Quản lý
+    if (session.role === 'ROLE_CASHIER') {
+      if (action !== 'APPROVE' || (method !== 'SHORTCODE_BOUND' && method !== 'OFFLINE_EMERGENCY')) {
+        throw AppError.forbidden(
+          'Thu ngân chỉ có thể mở khóa khi nhập đúng mã cấp phép (OTP 4 số) hoặc mã khẩn cấp từ Quản lý.'
+        );
+      }
+    }
+
     const actorContext = {
       staffId: session.actorId,
-      role: session.role,
-      fullName: session.fullName,
+      role: session.role === 'ROLE_CASHIER' ? 'ROLE_MANAGER' : session.role,
+      fullName: session.role === 'ROLE_CASHIER' ? `Quản lý (cấp OTP cho ${session.actorId})` : session.fullName,
     };
 
     if (action === 'APPROVE') {
