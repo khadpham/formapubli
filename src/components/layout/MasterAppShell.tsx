@@ -11,10 +11,11 @@ import { PartnersListView } from '@/components/partners/PartnersListView';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
-import { UserRole, USER_ROLES } from '@/lib/roles';
-import { Menu, Shield, LogOut, Sparkles } from 'lucide-react';
+import { Menu, Shield, LogOut, Sparkles, ShoppingCart, Boxes, Receipt, LayoutDashboard } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
+import { matchNavShortcut, matchActionShortcut, getShortcutLabel } from '@/lib/keyboard';
+import { UserRole, USER_ROLES } from '@/lib/roles';
 
 interface MasterAppShellProps {
   matrixBooks: any[];
@@ -93,21 +94,22 @@ export function MasterAppShell({
 
 
   // Phím tắt bàn phím toàn cục:
-  // - Alt + 1..8: chuyển Tab siêu tốc
-  // - Alt + C: Bật/tắt Executive AI Copilot Drawer (chỉ cho OWNER & MANAGER)
+  // - Windows: Alt + 1..8 (chuyển Tab), Alt + C (Copilot)
+  // - macOS: Option + 1..8 hoặc Cmd + 1..8 (chuyển Tab), Option + C (Copilot)
   React.useEffect(() => {
     const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
-      // Bắt tổ hợp Alt + [phím] (không giữ Ctrl hay Meta để tránh xung đột với trình duyệt)
-      if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        // Phím tắt Alt + C mở Copilot (dang mini nho gon)
-        if (e.key === 'c' || e.key === 'C') {
-          e.preventDefault();
-          if (canUseCopilot) {
-            setCopilotView((prev) => (prev === 'closed' ? 'mini' : 'closed'));
-          }
-          return;
+      // Phím tắt mở Copilot (Alt+C trên Win, Option+C trên Mac)
+      if (matchActionShortcut(e, 'KeyC')) {
+        e.preventDefault();
+        if (canUseCopilot) {
+          setCopilotView((prev) => (prev === 'closed' ? 'mini' : 'closed'));
         }
+        return;
+      }
 
+      // Phím tắt chuyển Tab 1..8 (tự động nhận diện Win Alt+1..8 và Mac Option/Cmd+1..8)
+      const digit = matchNavShortcut(e);
+      if (digit) {
         const keyMap: Record<string, string> = {
           '1': 'dashboard',
           '2': 'pos',
@@ -119,7 +121,7 @@ export function MasterAppShell({
           '8': 'settings',
         };
 
-        const targetTab = keyMap[e.key];
+        const targetTab = keyMap[digit];
         if (targetTab) {
           e.preventDefault();
           if (roleConfig.allowedNavItems.includes(targetTab)) {
@@ -227,7 +229,7 @@ export function MasterAppShell({
 
 
         {/* Dynamic View Body */}
-        <main className="p-4 md:p-8 max-w-7xl w-full mx-auto flex-1">
+        <main className="p-3 sm:p-4 md:p-8 max-w-7xl w-full mx-auto flex-1 pb-32 lg:pb-8">
           {currentTab === 'dashboard' && (
             <ExecutiveDashboard
               currentRole={currentRole}
@@ -293,6 +295,75 @@ export function MasterAppShell({
         </main>
       </div>
 
+      {/* Mobile Bottom Navigation Dock */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 px-2">
+        <div className="flex items-center justify-around max-w-md mx-auto">
+          {roleConfig.allowedNavItems.includes('dashboard') && (
+            <button
+              onClick={() => setCurrentTab('dashboard')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all min-h-[44px] ${
+                currentTab === 'dashboard'
+                  ? 'text-indigo-600 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Tổng quan</span>
+            </button>
+          )}
+
+          {roleConfig.allowedNavItems.includes('pos') && (
+            <button
+              onClick={() => setCurrentTab('pos')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all min-h-[44px] ${
+                currentTab === 'pos'
+                  ? 'text-indigo-600 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <ShoppingCart className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Quầy POS</span>
+            </button>
+          )}
+
+          {roleConfig.allowedNavItems.includes('inventory') && (
+            <button
+              onClick={() => setCurrentTab('inventory')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all min-h-[44px] ${
+                currentTab === 'inventory'
+                  ? 'text-indigo-600 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Boxes className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Kho hàng</span>
+            </button>
+          )}
+
+          {roleConfig.allowedNavItems.includes('sales') && (
+            <button
+              onClick={() => setCurrentTab('sales')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all min-h-[44px] ${
+                currentTab === 'sales'
+                  ? 'text-indigo-600 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Receipt className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5 tracking-tight">Đơn hàng</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="flex flex-col items-center justify-center flex-1 py-1 rounded-xl text-slate-500 hover:text-slate-800 transition-all min-h-[44px]"
+          >
+            <Menu className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5 tracking-tight">Menu</span>
+          </button>
+        </div>
+      </nav>
+
       {/* Login Modal ca làm việc */}
       {showLoginModal && (
         <LoginModal
@@ -315,8 +386,8 @@ export function MasterAppShell({
       {canUseCopilot && copilotView === 'closed' && (
         <button
           onClick={() => setCopilotView('mini')}
-          title="Mở Executive AI Copilot (Alt+C)"
-          className="fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-xl shadow-indigo-600/30 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                title={`Mở Executive AI Copilot (${getShortcutLabel('C', { alt: true })})`}
+          className="fixed bottom-32 right-4 lg:bottom-6 lg:right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-xl shadow-indigo-600/30 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
         >
           <Sparkles className="w-6 h-6 animate-pulse" />
         </button>

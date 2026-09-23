@@ -42,6 +42,7 @@ import { VietQrPay } from '@/components/pos/VietQrPay';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
+import { matchActionShortcut } from '@/lib/keyboard';
 import {
   saveOfflineOrder,
   getPendingOfflineOrders,
@@ -976,22 +977,22 @@ export function PosCheckoutTerminal({
         return;
       }
 
-      // 3. Phím tắt Alt + V hoặc Alt + Shift + V -> Bật/Tắt Micro giọng nói tiếng Việt
-      if (e.altKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
+      // 3. Phím tắt Alt + V hoặc Alt + Shift + V (Mac: Option+V / Option+Shift+V / Cmd+Shift+V) -> Bật/Tắt Micro giọng nói tiếng Việt
+      if (matchActionShortcut(e, 'KeyV') || matchActionShortcut(e, 'KeyV', { shift: true })) {
         e.preventDefault();
         toggleListening();
         return;
       }
 
-      // 4. Tổ hợp Alt + Shift + C -> Bật/Tắt Súng Quét Mã Vạch Camera
-      if (e.altKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+      // 4. Tổ hợp Alt + Shift + C (Mac: Option+Shift+C / Cmd+Shift+C) -> Bật/Tắt Súng Quét Mã Vạch Camera
+      if (matchActionShortcut(e, 'KeyC', { shift: true })) {
         e.preventDefault();
         setIsScannerOpen((prev) => !prev);
         return;
       }
 
-      // 1.1: Tổ hợp Alt + Shift + P -> Mở modal Dán Chat Khách
-      if (e.altKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+      // 1.1: Tổ hợp Alt + Shift + P (Mac: Option+Shift+P / Cmd+Shift+P) -> Mở modal Dán Chat Khách
+      if (matchActionShortcut(e, 'KeyP', { shift: true })) {
         e.preventDefault();
         setIsParserOpen((prev) => !prev);
         return;
@@ -1476,7 +1477,7 @@ export function PosCheckoutTerminal({
         </div>
 
         {/* Right Side: Order Cart & Checkout Controls */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
@@ -2313,6 +2314,35 @@ export function PosCheckoutTerminal({
         warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name}
         currentRole={currentRole}
       />
+
+      {/* Thanh thanh toán nhanh nổi trên Mobile (Pixel 11, iPhone, điện thoại hẹp) */}
+      {cart.length > 0 && (
+        <div className="lg:hidden fixed bottom-16 inset-x-3 z-30 animate-slide-up">
+          <div className="bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-700/80 flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-[11px] text-slate-400 font-medium">
+                {totalCopies} cuốn • Giảm {Math.round(discountRate * 100)}%
+              </span>
+              <span className="text-base font-extrabold text-emerald-400 font-mono">
+                {finalAmount.toLocaleString('vi-VN')} đ
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('cart-checkout-panel');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-950/30 flex items-center gap-1.5 active:scale-95 transition-all min-h-[44px] cursor-pointer"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>Xem giỏ & Thanh toán</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
+import { matchActionShortcut } from '@/lib/keyboard';
 
 export interface CopilotMessage {
   id: string;
@@ -241,7 +242,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
   useEffect(() => {
     if (!isOpen || !isAuthorized) return;
     const onKeyCapture = (e: KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
+      if (matchActionShortcut(e, 'KeyV') || matchActionShortcut(e, 'KeyV', { shift: true })) {
         e.preventDefault();
         e.stopPropagation();
         micHandlerRef.current();

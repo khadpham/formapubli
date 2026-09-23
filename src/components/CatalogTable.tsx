@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, BookOpen, Warehouse, CheckCircle2, AlertCircle, Mic, MicOff, X } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
+import { matchActionShortcut } from '@/lib/keyboard';
 
 interface BookItem {
   code: string;
@@ -111,7 +112,7 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
         return;
       }
 
-      if (e.altKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
+      if (matchActionShortcut(e, 'KeyV') || matchActionShortcut(e, 'KeyV', { shift: true })) {
         e.preventDefault();
         toggleListening();
         return;

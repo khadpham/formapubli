@@ -33,6 +33,7 @@ import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
+import { matchActionShortcut } from '@/lib/keyboard';
 
 interface MatrixBookItem {
   id: string;
@@ -165,31 +166,29 @@ export function StockOverviewMatrix({
         return;
       }
 
-      // Phím tắt Alt + V hoặc Alt + Shift + V -> Bật/Tắt Micro giọng nói tiếng Việt
-      if (e.altKey && (e.key === 'V' || e.key === 'v' || e.code === 'KeyV')) {
+      // Phím tắt Alt + V hoặc Alt + Shift + V (Mac: Option+V / Option+Shift+V / Cmd+Shift+V) -> Bật/Tắt Micro giọng nói tiếng Việt
+      if (matchActionShortcut(e, 'KeyV') || matchActionShortcut(e, 'KeyV', { shift: true })) {
         e.preventDefault();
         toggleListening();
         return;
       }
 
-      // Tổ hợp Alt + Shift + T -> Mở Phiếu Chuyển Kho (Transfer)
-      // Dùng e.code để bắt đúng phím vật lý kể cả khi bộ gõ TV đổi e.key.
-      // Không reopen khi modal đã mở để tránh reset state đang nhập.
-      if (e.altKey && e.shiftKey && (e.key === 'T' || e.key === 't' || e.code === 'KeyT')) {
+      // Tổ hợp Alt + Shift + T (Mac: Option+Shift+T / Cmd+Shift+T) -> Mở Phiếu Chuyển Kho
+      if (matchActionShortcut(e, 'KeyT', { shift: true })) {
         e.preventDefault();
         if (!modalOpen) openAction('TRANSFER');
         return;
       }
 
-      // Tổ hợp Alt + Shift + R -> Mở Phiếu Nhập Kho (Receipt)
-      if (e.altKey && e.shiftKey && (e.key === 'R' || e.key === 'r' || e.code === 'KeyR')) {
+      // Tổ hợp Alt + Shift + R (Mac: Option+Shift+R / Cmd+Shift+R) -> Mở Phiếu Nhập Kho
+      if (matchActionShortcut(e, 'KeyR', { shift: true })) {
         e.preventDefault();
         if (!modalOpen) openAction('RECEIPT');
         return;
       }
 
-      // Tổ hợp Alt + Shift + X -> Mở Phiếu Xuất Kho (Dispatch)
-      if (e.altKey && e.shiftKey && (e.key === 'X' || e.key === 'x' || e.code === 'KeyX')) {
+      // Tổ hợp Alt + Shift + X (Mac: Option+Shift+X / Cmd+Shift+X) -> Mở Phiếu Xuất Kho
+      if (matchActionShortcut(e, 'KeyX', { shift: true })) {
         e.preventDefault();
         if (!modalOpen) openAction('DISPATCH');
         return;
