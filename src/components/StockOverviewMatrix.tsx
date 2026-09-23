@@ -17,6 +17,7 @@ import {
   PackageSearch,
   ShieldAlert,
   Store,
+  Landmark,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
@@ -26,6 +27,7 @@ import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
 import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
 import { CreateWarehouseModal } from './inventory/CreateWarehouseModal';
+import { WarehouseBankManager } from './inventory/WarehouseBankManager';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -95,6 +97,7 @@ export function StockOverviewMatrix({
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
+  const [bankManagerOpen, setBankManagerOpen] = useState(false);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS'>('MATRIX');
@@ -493,6 +496,16 @@ export function StockOverviewMatrix({
               <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho / Gian Hàng
             </button>
           )}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setBankManagerOpen(true)}
+              title="Gán tài khoản nhận VietQR mặc định cho từng kho (Chỉ Quản lý / Chủ)"
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <Landmark className="w-3.5 h-3.5" /> TK Nhận Tiền
+            </button>
+          )}
 
           <button
             type="button"
@@ -871,6 +884,9 @@ export function StockOverviewMatrix({
         onClose={() => setCreateWarehouseOpen(false)}
         onCreated={handleRefresh}
       />
+      {bankManagerOpen && (
+        <WarehouseBankManager onClose={() => { setBankManagerOpen(false); handleRefresh(); }} />
+      )}
     </div>
   );
 }

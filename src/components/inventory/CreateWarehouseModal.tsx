@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, X, PlusCircle, CheckCircle2, AlertTriangle, Store } from 'lucide-react';
 
 interface CreateWarehouseModalProps {
@@ -19,8 +19,18 @@ export function CreateWarehouseModal({
   const [address, setAddress] = useState('');
   const [warehouseType, setWarehouseType] = useState<'FAIR_EVENT' | 'PHYSICAL_MAIN'>('FAIR_EVENT');
   const [isSellableOnPos, setIsSellableOnPos] = useState(true);
+  const [bankAccounts, setBankAccounts] = useState<Array<{ id: string; label: string; accountNo: string }>>([]);
+  const [defaultBankAccountId, setDefaultBankAccountId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/bank-accounts')
+      .then((r) => r.json())
+      .then((j) => { if (j?.success) setBankAccounts(j.data.list || []); })
+      .catch(() => {});
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -63,6 +73,7 @@ export function CreateWarehouseModal({
           address: address.trim() || undefined,
           warehouseType,
           isSellableOnPos,
+          defaultBankAccountId: defaultBankAccountId || undefined,
         }),
       });
 
@@ -79,6 +90,7 @@ export function CreateWarehouseModal({
       setAddress('');
       setWarehouseType('FAIR_EVENT');
       setIsSellableOnPos(true);
+      setDefaultBankAccountId('');
     } catch (err: any) {
       setError(err.message || 'Lỗi hệ thống khi tạo kho.');
     } finally {
@@ -225,6 +237,23 @@ export function CreateWarehouseModal({
               onChange={(e) => setIsSellableOnPos(e.target.checked)}
               className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
             />
+          </div>
+
+          {/* TK nhận VietQR mặc định */}
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              TK nhận VietQR mặc định:
+            </label>
+            <select
+              value={defaultBankAccountId}
+              onChange={(e) => setDefaultBankAccountId(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white"
+            >
+              <option value="">— Dùng TK mặc định chung —</option>
+              {bankAccounts.map((b) => (
+                <option key={b.id} value={b.id}>{b.label} — {b.accountNo}</option>
+              ))}
+            </select>
           </div>
 
           {/* Nút hành động */}

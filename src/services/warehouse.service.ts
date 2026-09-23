@@ -1,4 +1,4 @@
-import { db, documentSequences, warehouses } from '../db';
+import { db, documentSequences, warehouses, bankAccounts } from '../db';
 import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { AppError } from './app-error';
@@ -45,6 +45,28 @@ export class WarehouseService {
       .select()
       .from(warehouses)
       .where(eq(warehouses.isActive, true));
+  }
+
+  /** VietQR offline: list TK active + default của kho (1 TK dùng N kho, 1 kho đổi TK tay lúc bán). */
+  static async listBankAccounts(txOrDb: any = db) {
+    return await txOrDb.select().from(bankAccounts).where(eq(bankAccounts.isActive, true));
+  }
+
+  static async getDefaultBankAccount(warehouseId: string, txOrDb: any = db) {
+    const wh = await this.getWarehouse(warehouseId, txOrDb);
+    const list = await this.listBankAccounts(txOrDb);
+    const def = list.find((b: any) => b.id === (wh as any)?.defaultBankAccountId) || list[0];
+    return { default: def, list };
+  }
+
+  /** Gán TK mặc định cho kho (Owner/Manager). */
+  static async setDefaultBankAccount(warehouseId: string, bankAccountId: string | null, txOrDb: any = db) {
+    if (bankAccountId) {
+      const acc = await txOrDb.select().from(bankAccounts).where(eq(bankAccounts.id, bankAccountId)).limit(1);
+      if (!acc[0] || acc[0].isActive !== true) throw AppError.invalid('Tài khoản nhận tiền không tồn tại hoặc đã ngưng.');
+    }
+    await txOrDb.update(warehouses).set({ defaultBankAccountId: bankAccountId }).where(eq(warehouses.id, warehouseId));
+    return await this.getWarehouse(warehouseId, txOrDb);
   }
 
   /**

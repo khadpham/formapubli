@@ -25,6 +25,8 @@ export interface PrintableReceiptOrder {
   cashierId?: string;
   note?: string;
   isOffline?: boolean;
+  qrDataUrl?: string | null;
+  qrAccountNo?: string | null;
   items: Array<{
     code: string;
     title: string;
@@ -218,6 +220,17 @@ export function printThermalReceipt(
         ${
           order.note
             ? `<div style="font-size: 9.5px; margin-bottom: 4px;"><strong>Ghi chú:</strong> ${escapeHtml(order.note)}</div>`
+            : ''
+        }
+
+        ${
+          order.qrDataUrl
+            ? `<div class="text-center" style="margin: 6px 0;">
+                 <img src="${order.qrDataUrl}" style="width: 45mm; height: 45mm;" />
+                 <div style="font-size: 10px; font-weight: bold; font-family: monospace;">${order.finalAmount.toLocaleString('vi-VN')} đ${order.qrAccountNo ? ` - ${escapeHtml(order.qrAccountNo)}` : ''}</div>
+                 <div style="font-size: 8px;">Quét VietQR để thanh toán</div>
+               </div>
+               <div class="divider-dashed"></div>`
             : ''
         }
 

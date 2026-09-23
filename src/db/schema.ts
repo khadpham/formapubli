@@ -45,6 +45,16 @@ export const editions = sqliteTable('editions', {
 }));
 
 // 3. Physical Warehouses (kho động: chính, hội chợ sự kiện, ký gửi, trung chuyển)
+export const bankAccounts = sqliteTable('bank_accounts', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  bankBin: text('bank_bin').notNull(),
+  accountNo: text('account_no').notNull(),
+  accountName: text('account_name'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const warehouses = sqliteTable('warehouses', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(), // KHO_AU_CO, KHO_QUYNH_MAI, KHO_DU_PHONG, KHO_HOI_CHO_A...
@@ -55,6 +65,7 @@ export const warehouses = sqliteTable('warehouses', {
   isSellableOnPos: integer('is_sellable_on_pos', { mode: 'boolean' }).default(false).notNull(),
   // V4.1 S1: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT
   warehouseType: text('warehouse_type').default('PHYSICAL_MAIN').notNull(),
+  defaultBankAccountId: text('default_bank_account_id').references(() => bankAccounts.id),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 

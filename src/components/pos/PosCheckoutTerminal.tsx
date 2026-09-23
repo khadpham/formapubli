@@ -14,7 +14,6 @@ import {
   Receipt,
   CreditCard,
   Banknote,
-  QrCode,
   Mic,
   MicOff,
   Keyboard,
@@ -38,6 +37,7 @@ import { ReturnsModal } from '@/components/pos/ReturnsModal';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
+import { VietQrPay } from '@/components/pos/VietQrPay';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -116,6 +116,7 @@ export function PosCheckoutTerminal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
+  const [qrSnapshot, setQrSnapshot] = useState<{ dataUrl: string; payload: string; accountNo: string; content: string } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   // 1.1: modal dán chat FB/Zalo
@@ -826,10 +827,13 @@ export function PosCheckoutTerminal({
           date: new Date().toLocaleString('vi-VN'),
           isOffline: true,
           isGift,
+          qrDataUrl: paymentMethod === 'QR_CODE' ? qrSnapshot?.dataUrl || null : null,
+          qrAccountNo: paymentMethod === 'QR_CODE' ? qrSnapshot?.accountNo || null : null,
         });
 
         setCart([]);
         setNote('');
+        setQrSnapshot(null);
         if (isGift) {
           setIsGift(false);
           setDiscountRate(0);
@@ -897,11 +901,14 @@ export function PosCheckoutTerminal({
         date: new Date().toLocaleString('vi-VN'),
         isOffline: false,
         isGift,
+        qrDataUrl: paymentMethod === 'QR_CODE' ? qrSnapshot?.dataUrl || null : null,
+        qrAccountNo: paymentMethod === 'QR_CODE' ? qrSnapshot?.accountNo || null : null,
       });
 
       // Xóa giỏ hàng
       setCart([]);
       setNote('');
+      setQrSnapshot(null);
       if (isGift) {
         setIsGift(false);
         setDiscountRate(0);
@@ -1718,12 +1725,13 @@ export function PosCheckoutTerminal({
                 </div>
               </div>
               {paymentMethod === 'QR_CODE' && (
-                <div className="mt-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs text-indigo-900 flex items-center gap-2.5">
-                  <QrCode className="w-5 h-5 text-indigo-600 shrink-0" />
-                  <div>
-                    <p className="font-bold">Quét mã QR Chuyển khoản ngân hàng</p>
-                    <p className="text-[11px] text-indigo-700">Khách quét mã QR tài khoản ngân hàng gian hàng để thanh toán đơn hàng.</p>
-                  </div>
+                <div className="mt-3">
+                  <VietQrPay
+                    warehouseId={selectedWarehouseId}
+                    amount={isGift ? 0 : finalAmount}
+                    initialContent={activeOrderCode}
+                    onQr={setQrSnapshot}
+                  />
                 </div>
               )}
             </div>
@@ -1960,7 +1968,17 @@ export function PosCheckoutTerminal({
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
                         Giá bìa: {book.coverPrice.toLocaleString('vi-VN')} đ • Tồn kho: <span className={stock > 0 ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>{stock} cuốn</span>
-                      </p>
+            </p>
+
+            {completedOrder.qrDataUrl && (
+              <div className="flex flex-col items-center gap-1 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={completedOrder.qrDataUrl} alt="VietQR thanh toán" className="w-[180px] h-[180px] rounded-xl border border-slate-200 bg-white" />
+                <div className="text-[11px] font-mono font-bold text-slate-700">
+                  {completedOrder.finalAmount.toLocaleString('vi-VN')} đ{completedOrder.qrAccountNo ? ` → ${completedOrder.qrAccountNo}` : ''}
+                </div>
+              </div>
+            )}
                     </div>
                     <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
                       Chọn ➔

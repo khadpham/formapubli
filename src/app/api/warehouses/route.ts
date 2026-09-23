@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
         address: w.address,
         warehouseType: w.warehouseType,
         isSellableOnPos: w.isSellableOnPos,
+        defaultBankAccountId: (w as any).defaultBankAccountId || null,
       })),
     });
   } catch (error: any) {
@@ -62,6 +63,10 @@ export async function POST(req: NextRequest) {
       warehouseType: body.warehouseType,
       isSellableOnPos: body.isSellableOnPos,
     });
+
+    if (body.defaultBankAccountId) {
+      await WarehouseService.setDefaultBankAccount(created.id, body.defaultBankAccountId);
+    }
 
     return NextResponse.json(
       {
