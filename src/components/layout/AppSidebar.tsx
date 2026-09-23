@@ -12,6 +12,7 @@ import {
   Shield,
   ChevronLeft,
   ChevronRight,
+  LogOut,
   X,
   FlaskConical,
   Sparkles,
@@ -27,6 +28,7 @@ interface AppSidebarProps {
   isMobileOpen: boolean;
   onCloseMobile: () => void;
   onOpenCopilot?: () => void;
+  onLogout?: () => void;
 }
 
 export function AppSidebar({
@@ -38,6 +40,7 @@ export function AppSidebar({
   isMobileOpen,
   onCloseMobile,
   onOpenCopilot,
+  onLogout,
 }: AppSidebarProps) {
   const roleConfig = USER_ROLES[currentRole];
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
@@ -271,6 +274,19 @@ export function AppSidebar({
               </>
             )}
           </button>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              title="Đăng xuất ca làm việc"
+              className={`flex items-center gap-2 w-full py-2 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-slate-800 text-xs font-semibold transition-colors ${
+                isCollapsed ? 'justify-center px-0' : 'px-3'
+              }`}
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              {!isCollapsed && <span>Đăng xuất</span>}
+            </button>
+          )}
         </div>
       </aside>
     </>

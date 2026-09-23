@@ -220,7 +220,7 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
                 magnetInputRef.current?.focus();
               }}
               className="p-1 hover:bg-slate-200/60 rounded-full text-slate-400 hover:text-slate-600 transition"
-              title="Xóa tìm kiếm (Esc)"
+              title="Xóa tìm kiếm"
             >
               <X className="w-4 h-4" />
             </button>

@@ -577,7 +577,7 @@ export function WholesaleDispatchModal({
                   </span>
                 </div>
                 <div className="pt-2 border-t border-amber-200 flex justify-between items-center text-sm font-black text-slate-900">
-                  <span>TỔNG CỘNG THANH TOÁN (PXK):</span>
+                  <span>TỔNG CỘNG THANH TOÁN:</span>
                   <span className="font-mono text-base text-amber-700">
                     {finalAmount.toLocaleString('vi-VN')} đ
                   </span>

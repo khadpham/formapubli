@@ -457,7 +457,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                       : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <span>Thoải mái (Comfortable)</span>
+                  <span>Thoải mái</span>
                   <span className="text-[10px] text-slate-400 font-normal">Tối ưu cho cảm ứng tablet</span>
                 </button>
                 <button
@@ -469,7 +469,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                       : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <span>Gọn gàng (Compact)</span>
+                  <span>Gọn gàng</span>
                   <span className="text-[10px] text-slate-400 font-normal">Nhiều dòng trên màn hình PC</span>
                 </button>
               </div>

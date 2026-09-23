@@ -53,7 +53,7 @@ export function BundleRoyaltyPanels({ currentRole }: { currentRole: UserRole }) 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center gap-2">
           <Scale className="w-4 h-4 text-amber-600" />
-          <h3 className="text-sm font-extrabold text-slate-900">Bản quyền & Nhuận bút (ACTIVE)</h3>
+          <h3 className="text-sm font-extrabold text-slate-900">Bản quyền & Nhuận bút</h3>
           <span className="ml-auto text-[10px] text-slate-400">Owner/Manager</span>
         </div>
         {royaltyBlocked ? (

@@ -327,7 +327,7 @@ export function StockOverviewMatrix({
               type="button"
               onClick={() => setSearchTerm('')}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0 transition-colors"
-              title="Xóa tìm kiếm (Esc)"
+              title="Xóa tìm kiếm"
             >
               <X className="w-4 h-4" />
             </button>
@@ -394,7 +394,7 @@ export function StockOverviewMatrix({
               type="button"
               onClick={() => setSearchTerm('')}
               className="absolute right-12 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              title="Xóa tìm kiếm (Esc)"
+              title="Xóa tìm kiếm"
             >
               <X className="w-4 h-4" />
             </button>

@@ -236,7 +236,7 @@ export function DailyFairSettlementModal({
             <button
               onClick={onClose}
               className="p-1.5 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
-              title="Đóng (Esc)"
+              title="Đóng"
             >
               <X className="w-5 h-5" />
             </button>
@@ -510,7 +510,7 @@ export function DailyFairSettlementModal({
                         <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
                           <th className="p-3 w-10 text-center">#</th>
                           <th className="p-3">Ấn phẩm sách</th>
-                          <th className="p-3 text-right">Đã bán (POS)</th>
+                          <th className="p-3 text-right">Đã bán</th>
                           <th className="p-3 text-center">Tồn máy (Lý thuyết)</th>
                           <th className="p-3 text-center w-32">Thực đếm (Kệ)</th>
                           <th className="p-3 text-center w-28">Chênh lệch</th>

@@ -190,7 +190,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                 ) : order.status === 'VOIDED_REVERSED' ? (
                   <span className="text-rose-400 font-bold">ĐÃ ĐẢO BÚT TOÁN HỦY</span>
                 ) : (
-                  <span className="text-amber-400 font-bold">BẢN NHÁP (DRAFT)</span>
+                  <span className="text-amber-400 font-bold">BẢN NHÁP</span>
                 )}
               </p>
             </div>

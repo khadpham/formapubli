@@ -13,21 +13,18 @@ import {
   AlertCircle,
   Volume2,
   ScanLine,
-  Barcode,
 } from 'lucide-react';
 
 interface InAppBarcodeScannerProps {
   isOpen: boolean;
   onClose: () => void;
   onScan: (scannedCode: string) => void;
-  sampleBooks?: Array<{ code: string; title: string; isbn?: string | null }>;
 }
 
 export function InAppBarcodeScanner({
   isOpen,
   onClose,
   onScan,
-  sampleBooks = [],
 }: InAppBarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -721,55 +718,6 @@ export function InAppBarcodeScanner({
               ))}
             </select>
           )}
-        </div>
-
-        {/* Simulated Barcode Strip for Instant Testing */}
-        <div className="p-3 bg-slate-950/70 overflow-y-auto max-h-44 space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-            <span className="font-bold flex items-center gap-1">
-              <Barcode className="w-3.5 h-3.5 text-indigo-400" />
-              Mã Vạch Test Nhanh:
-            </span>
-            <span className="text-[10px] text-slate-500">Mô phỏng súng quét</span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {(sampleBooks.length > 0
-              ? sampleBooks.slice(0, 6)
-              : [
-                  { code: 'H01', title: 'Bệnh tưởng', isbn: '9786043687507' },
-                  { code: 'H02', title: 'Người biển lận', isbn: '9786043687491' },
-                  { code: 'H03', title: 'Trưởng giả học làm sang', isbn: '9786043687484' },
-                  { code: 'H21', title: 'Le Spleen de Paris', isbn: '9786044737690' },
-                  { code: 'H48', title: 'Dưỡng đường đồng hồ cát', isbn: '9786044737706' },
-                  { code: 'H81', title: 'Nhà tiên tri', isbn: '9786044737713' },
-                ]
-            ).map((book) => {
-              const isbnClean = book.isbn ? book.isbn.replace(/[^0-9]/g, '') : '';
-              return (
-                <button
-                  key={book.code}
-                  onClick={() => isbnClean && handleBarcodeFound(isbnClean)}
-                  className="flex flex-col text-left p-2 rounded-xl bg-slate-800/80 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-700/60 transition-all active:scale-95 group"
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="font-mono text-[10px] font-bold text-indigo-400 group-hover:text-indigo-300">
-                      [{book.code}]
-                    </span>
-                    <span className="font-mono text-[9px] text-slate-400">
-                      {isbnClean.slice(-4)}
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-semibold text-slate-200 truncate w-full mt-0.5">
-                    {book.title}
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-500 group-hover:text-indigo-300 truncate">
-                    {isbnClean || 'Chưa có ISBN'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </div>
       </div>
     </div>,

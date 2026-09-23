@@ -11,7 +11,7 @@ import { PartnersListView } from '@/components/partners/PartnersListView';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
-import { Menu, Shield, LogOut, Sparkles, ShoppingCart, Boxes, Receipt, LayoutDashboard } from 'lucide-react';
+import { Menu, Shield, Sparkles, ShoppingCart, Boxes, Receipt, LayoutDashboard } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 import { matchNavShortcut, matchActionShortcut, getShortcutLabel } from '@/lib/keyboard';
@@ -95,7 +95,7 @@ export function MasterAppShell({
 
   // Phím tắt bàn phím toàn cục:
   // - Windows: Alt + 1..8 (chuyển Tab), Alt + C (Copilot)
-  // - macOS: Option + 1..8 hoặc Cmd + 1..8 (chuyển Tab), Option + C (Copilot)
+  // - macOS: Option + 1..8 (chuyển Tab), Option + C (Copilot)
   React.useEffect(() => {
     const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
       // Phím tắt mở Copilot (Alt+C trên Win, Option+C trên Mac)
@@ -147,6 +147,7 @@ export function MasterAppShell({
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         onOpenCopilot={() => setCopilotView('mini')}
+        onLogout={session ? handleLogout : undefined}
       />
 
       {/* Main Content Area */}
@@ -157,13 +158,8 @@ export function MasterAppShell({
       >
         {/* Top Bar for Mobile & Quick Status */}
         <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 md:px-8 flex items-center justify-between gap-4">
+          {/* Mobile: chỉ tên trang (mở menu bằng nút Menu ở dock đáy) */}
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
             <div className="flex items-center gap-2">
               <span className="font-bold text-slate-800 text-sm hidden sm:inline">
                 Khung Vận Hành:
@@ -182,11 +178,11 @@ export function MasterAppShell({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* AI Executive Copilot Trigger Button (Chỉ dành cho OWNER & MANAGER) */}
+            {/* AI Copilot: chỉ desktop (mobile dùng bong bóng nổi góc) */}
             {canUseCopilot && (
               <button
                 onClick={() => setCopilotView('mini')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
                 title="Mở Executive AI Copilot (Alt+C)"
               >
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
@@ -197,11 +193,10 @@ export function MasterAppShell({
               </button>
             )}
 
-            {/* Active Role Badge */}
+            {/* Role badge: chỉ desktop (mỗi máy đã đăng nhập role cố định) */}
             <div
-              onClick={() => setCurrentTab('settings')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-transform active:scale-95 ${roleConfig.badgeBg} ${roleConfig.badgeColor}`}
-              title="Xem Cài đặt"
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${roleConfig.badgeBg} ${roleConfig.badgeColor}`}
+              title={roleConfig.label}
             >
               <Shield className="w-3.5 h-3.5" />
               <span>{roleConfig.label}</span>
@@ -212,18 +207,6 @@ export function MasterAppShell({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>Edge: {dbStatus}</span>
             </div>
-
-            {/* Logout Button */}
-            {session && (
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-slate-200 transition-colors"
-                title="Đăng xuất ca làm việc"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Đăng xuất</span>
-              </button>
-            )}
           </div>
         </header>
 

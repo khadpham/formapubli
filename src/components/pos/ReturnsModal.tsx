@@ -295,7 +295,7 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
         {/* Cuốn thay thế khi EXCHANGE */}
         {returnType === 'EXCHANGE' && (
           <div className="space-y-2 p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl">
-            <p className="text-[11px] font-bold text-indigo-800">Cuốn thay thế (check ATP trước khi gửi):</p>
+            <p className="text-[11px] font-bold text-indigo-800">Cuốn thay thế (kiểm ATP trước khi gửi):</p>
             {exchangeLines.map((l, i) => (
               <div key={i} className="flex gap-2">
                 <select value={l.editionId} onChange={(e) => setLine(i, { editionId: e.target.value }, true)} className="flex-1 px-2 py-2 bg-white border border-indigo-200 rounded-xl text-xs outline-none min-w-0">
@@ -315,7 +315,7 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
             <input value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} inputMode="decimal" placeholder="0" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-500 block mb-1">Két chi (hoàn CASH bắt buộc):</label>
+              <label className="text-[11px] font-bold text-slate-500 block mb-1">Két chi (hoàn tiền mặt bắt buộc):</label>
             <input value={cashboxSessionId} onChange={(e) => setCashboxSessionId(e.target.value)} placeholder={openSession ? openSession.id : 'Chưa có két OPEN'} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
         </div>

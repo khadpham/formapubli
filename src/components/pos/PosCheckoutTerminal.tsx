@@ -31,6 +31,8 @@ import {
   RotateCcw,
   ShieldCheck,
   CalendarCheck,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
@@ -108,6 +110,55 @@ export function PosCheckoutTerminal({
   const [catalogAtp, setCatalogAtp] = useState<Record<string, { atp: number; soldToday: number }>>({});
   const [catalogReady, setCatalogReady] = useState(false);
   const [showAllBooks, setShowAllBooks] = useState(false); // mặc định ẩn sách hết hàng tại kho
+  // Danh mục thu gọn mặc định (scan-first trên mobile): chỉ hiện vài món đầu.
+  // Desktop giữ full grid nguyên bản (không gian rộng) — chỉ mobile mới thu gọn.
+  const [catalogExpanded, setCatalogExpanded] = useState(false);
+  const CATALOG_COLLAPSED_COUNT = 3;
+  // Noti duyệt chiết khấu cho quản lý: poll số đơn chờ + badge + toast + rung
+  const [pendingApprovals, setPendingApprovals] = useState<Array<{ id: string }>>([]);
+  const [approvalToast, setApprovalToast] = useState<string | null>(null);
+  const knownApprovalIds = useRef<Set<string>>(new Set());
+  const isApprovalViewer = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+  useEffect(() => {
+    if (!isApprovalViewer) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/pos/discount-approvals');
+        const j = await res.json();
+        if (!alive || !j?.success || !Array.isArray(j.data)) return;
+        const ids = j.data.map((r: any) => `${r.id}`);
+        const prev = knownApprovalIds.current;
+        const fresh = ids.filter((id: string) => !prev.has(id));
+        if (prev.size > 0 && fresh.length > 0) {
+          setApprovalToast(`${fresh.length} yêu cầu duyệt chiết khấu mới cần xử lý!`);
+          try {
+            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
+          } catch {}
+          setTimeout(() => {
+            if (alive) setApprovalToast(null);
+          }, 5000);
+        }
+        knownApprovalIds.current = new Set(ids);
+        setPendingApprovals(j.data);
+      } catch {}
+    };
+    poll();
+    const timer = setInterval(poll, 15000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [isApprovalViewer]);
+  const [isMobileView, setIsMobileView] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsMobileView(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
   const [sortMode, setSortMode] = useState<'default' | 'az' | 'hot'>('default');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('Khách lẻ vãng lai');
@@ -1016,8 +1067,9 @@ export function PosCheckoutTerminal({
   return (
     <div className="space-y-6">
       {/* Top Header Controls */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+      <div className="bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+        {/* Tiêu đề: chỉ desktop — mobile giấu để dành chỗ cho thao tác thu ngân */}
+        <div className="hidden md:block">
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-emerald-600" />
             Quầy Thu Ngân POS
@@ -1278,7 +1330,7 @@ export function PosCheckoutTerminal({
                     searchInputRef.current?.focus();
                   }}
                   className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
-                  title="Xóa tìm kiếm (Esc)"
+                  title="Xóa tìm kiếm"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1306,10 +1358,15 @@ export function PosCheckoutTerminal({
                 <button
                   type="button"
                   onClick={() => setIsManagerApprovalDrawerOpen(true)}
-                  className="p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center font-bold"
+                  className="relative p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center font-bold"
                   title="Mở bảng duyệt chiết khấu POS (Quản lý)"
                 >
                   <ShieldCheck className="w-4 h-4" />
+                  {pendingApprovals.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center shadow animate-pulse">
+                      {pendingApprovals.length > 99 ? '99+' : pendingApprovals.length}
+                    </span>
+                  )}
                 </button>
               )}
               {/* Nút Micro Giọng Nói Tiếng Việt */}
@@ -1417,9 +1474,36 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Book Catalog Grid */}
+          {/* Mobile: nút Quét mã to rõ — cách thêm món chính khi bán thực tế */}
+          <button
+            type="button"
+            onClick={() => setIsScannerOpen(true)}
+            className="md:hidden w-full min-h-[48px] px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white text-sm font-extrabold shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <Camera className="w-5 h-5" />
+            Quét mã thêm vào giỏ
+          </button>
+
+          {/* Book Catalog Grid — mobile thu gọn mặc định, desktop full như cũ */}
+          <div className="md:hidden flex items-center justify-between mb-2">
+            <span className="text-xs font-extrabold text-slate-800">Danh mục ({filteredBooks.length})</span>
+            {filteredBooks.length > CATALOG_COLLAPSED_COUNT && (
+              <button
+                type="button"
+                onClick={() => setCatalogExpanded((v) => !v)}
+                aria-expanded={catalogExpanded}
+                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 min-h-[36px] px-2 active:scale-95 transition-all"
+              >
+                {catalogExpanded ? (
+                  <>Thu gọn <ChevronUp className="w-4 h-4" /></>
+                ) : (
+                  <>Xem tất cả <ChevronDown className="w-4 h-4" /></>
+                )}
+              </button>
+            )}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
-            {filteredBooks.map((b) => {
+            {(catalogExpanded || !isMobileView ? filteredBooks : filteredBooks.slice(0, CATALOG_COLLAPSED_COUNT)).map((b) => {
               const currentStock = getBookStock(b);
 
               const isOutOfStock = currentStock <= 0;
@@ -2021,7 +2105,6 @@ export function PosCheckoutTerminal({
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScan={handleBarcodeScan}
-        sampleBooks={books.map((b) => ({ code: b.code, title: b.title, isbn: b.isbn }))}
       />
 
       {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
@@ -2247,6 +2330,13 @@ export function PosCheckoutTerminal({
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Toast yêu cầu duyệt chiết khấu mới (chỉ quản lý) */}
+      {approvalToast && (
+        <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-40 px-4 py-2.5 rounded-2xl bg-amber-500 text-white text-xs font-bold shadow-xl animate-slide-up whitespace-nowrap max-w-[calc(100vw-2rem)] overflow-hidden text-ellipsis">
+          {approvalToast}
+        </div>
       )}
 
       {/* Toast thông báo đã quét Barcode thành công */}
