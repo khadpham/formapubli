@@ -294,9 +294,9 @@ export function WholesaleDispatchModal({
                 <FileText className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-base">Lập Phiếu Xuất Kho Bán Buôn (PXK)</h3>
+                <h3 className="font-extrabold text-base">Lập Phiếu Xuất Kho Cung Ứng Đối Tác (PXK)</h3>
                 <p className="text-xs text-slate-400">
-                  Xuất hàng đại lý, phát hành & ký gửi — Cấp số liên tục trong Transaction
+                  Xuất hàng đối tác (nhà sách, thư viện, trường học, đại lý...) — Cấp số liên tục trong Transaction
                 </p>
               </div>
             </div>
@@ -323,14 +323,14 @@ export function WholesaleDispatchModal({
               {/* Chọn Đại lý / Đối tác */}
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Đại lý / Đối tác nhận hàng (*):
+                  Đơn vị / Đối tác nhận hàng (*):
                 </label>
                 <select
                   value={partnerId}
                   onChange={(e) => handleSelectPartner(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="">-- Chọn đối tác đại lý --</option>
+                  <option value="">-- Chọn đơn vị / đối tác nhận hàng --</option>
                   {partners.map((p) => (
                     <option key={p.id} value={p.id}>
                       [{p.code}] {p.name} {p.discountRate ? `(CK: ${Math.round(p.discountRate * 100)}%)` : ''}
@@ -551,7 +551,7 @@ export function WholesaleDispatchModal({
                   </span>
                 </div>
                 <div className="flex justify-between text-rose-600">
-                  <span>Chiết khấu đại lý ({discountPercent}%):</span>
+                  <span>Chiết khấu đối tác ({discountPercent}%):</span>
                   <span className="font-mono font-bold">
                     -{discountAmount.toLocaleString('vi-VN')} đ
                   </span>
