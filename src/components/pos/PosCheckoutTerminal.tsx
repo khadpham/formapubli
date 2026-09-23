@@ -153,7 +153,9 @@ export function PosCheckoutTerminal({
           }, 5000);
         }
         knownApprovalIds.current = new Set(ids);
-        setPendingApprovals(j.data);
+        if (JSON.stringify(ids) !== JSON.stringify(Array.from(prev))) {
+          setPendingApprovals(j.data);
+        }
       } catch {}
     };
     poll();
