@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ShieldAlert, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react';
 
 interface RmaTicketModalProps {
@@ -32,8 +33,22 @@ export function RmaTicketModal({
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [mounted, setMounted] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, submitting, onClose]);
+
+  if (!isOpen || !mounted) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,12 +89,12 @@ export function RmaTicketModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
       onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}
     >
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-rose-50/50">
           <div className="flex items-center gap-3">
@@ -87,7 +102,7 @@ export function RmaTicketModal({
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Cách Ly Sách Lỗi & Đổi Trả (RMA)</h3>
+              <h3 className="text-lg font-bold text-slate-900">Cách Ly Sách Lỗi & Đổi Trả</h3>
               <p className="text-xs text-slate-500">
                 Chuyển sách hỏng vào kho cách ly, tuyệt đối không lẫn vào tồn NEW
               </p>
@@ -223,6 +238,7 @@ export function RmaTicketModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

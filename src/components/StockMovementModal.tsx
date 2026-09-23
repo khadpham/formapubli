@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ArrowRightLeft, PlusCircle, MinusCircle, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface BookItem {
@@ -82,6 +83,12 @@ export function StockMovementModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, defaultAction, selectedBook?.id]);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Lắng nghe phím tắt trong modal: Ctrl+Enter để submit, Escape để đóng.
   // Đặt trước early-return để tránh lỗi "Rendered fewer hooks than expected"
   // khi isOpen chuyển false -> true (nguyên nhân crash Alt+Shift+T).
@@ -105,7 +112,7 @@ export function StockMovementModal({
     return () => window.removeEventListener('keydown', handleModalKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const currentBook = books.find((b) => b.id === selectedEditionId);
 
@@ -169,9 +176,9 @@ export function StockMovementModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
       onClick={(event) => { if (event.target === event.currentTarget && !loading) onClose(); }}
     >
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
@@ -391,22 +398,21 @@ export function StockMovementModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors flex items-center gap-1"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
             >
               Hủy
-              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">Esc</span>
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
+              className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors"
             >
               {loading ? 'Đang ghi sổ cái...' : 'Ghi Bút Toán Sổ Cái'}
-              <span className="text-[10px] font-mono opacity-80 bg-indigo-800 px-1 py-0.5 rounded">Ctrl+Enter</span>
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

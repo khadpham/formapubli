@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Sparkles,
   X,
@@ -53,11 +54,11 @@ const QUICK_PROMPT_CHIPS = [
     query: 'Báo cáo tồn kho khả dụng trên toàn hệ thống?',
   },
   {
-    label: '📊 Doanh số 30 ngày (2 sổ)',
+    label: '📊 Doanh số 30 ngày',
     query: 'Báo cáo doanh số và đơn hàng trong 30 ngày qua (cả 2 sổ)?',
   },
   {
-    label: '⚠️ Sách cạn kho (Đề xuất in 105 ngày)',
+    label: '⚠️ Sách cạn kho',
     query: 'Những đầu sách nào đang cạn kho mức Đỏ (≤30 ngày) cần tái bản?',
   },
   {
@@ -126,8 +127,23 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
     },
   ]);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
-  // Chong op draft trung: vo hieu hoa nut sau lan bam dau (double-click tao 2 nonce → x2 gio).
   const [appliedDraftIds, setAppliedDraftIds] = useState<Set<string>>(new Set());
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
   // Voice-to-text: MAC DINH dung Web Speech API cua trinh duyet (nhanh, co interim live
   // noi den dau chu hien den day, da kiem chung o POS/kho). Fallback Groq Whisper khi
   // trinh duyet khong ho tro (qua /api/ai/parse-voice-order).
@@ -528,14 +544,14 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
     );
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop — chi o che do full */}
       {!isMini && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+          className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-xs transition-opacity"
           onClick={onClose}
         />
       )}
@@ -544,8 +560,8 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
       <aside
         className={
           isMini
-            ? 'fixed bottom-4 right-4 z-50 flex flex-col bg-white shadow-2xl border border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 ease-in-out w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-6rem)]'
-            : 'fixed top-0 bottom-0 right-0 z-50 flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out w-[calc(100%_-_1rem)] md:w-[480px]'
+            ? 'fixed bottom-4 right-4 z-[70] flex flex-col bg-white shadow-2xl border border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 ease-in-out w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-6rem)]'
+            : 'fixed top-0 bottom-0 right-0 z-[70] flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out w-[calc(100%_-_1rem)] md:w-[480px]'
         }
         role="dialog"
         aria-modal={!isMini}
@@ -565,7 +581,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Thẩm quyền: <span className="text-emerald-400 font-semibold">{currentRole}</span> (CEO Vận hành)
+                Thẩm quyền: <span className="text-emerald-400 font-semibold">{currentRole}</span>
               </p>
             </div>
           </div>
@@ -833,6 +849,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
           </div>
         </div>
       </aside>
-    </>
+    </>,
+    document.body
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Shield, KeyRound, User, Lock, AlertCircle } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -29,6 +30,21 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
   const [error, setError] = useState<string | null>(null);
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isClosable && !loading) {
+        onCancel?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isClosable, loading, onCancel]);
 
   useEffect(() => {
     let alive = true;
@@ -118,9 +134,11 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
     }
   };
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4"
       onClick={(event) => { if (event.target === event.currentTarget && isClosable && !loading) onCancel?.(); }}
     >
       <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200/80 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
@@ -274,6 +292,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
           🔒 Phiên đăng nhập được mã hóa HMAC-SHA256 & lưu trong HttpOnly Cookie. Đăng xuất khi kết thúc ca để đảm bảo tính toàn vẹn sổ sách.
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

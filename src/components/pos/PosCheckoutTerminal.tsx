@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   ShoppingCart,
@@ -134,6 +135,11 @@ export function PosCheckoutTerminal({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const magnetInputRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // QUẢN LÝ KÉT TIỀN CA THU NGÂN (Cashbox Session)
   const [activeSession, setActiveSession] = useState<any | null>(null);
@@ -953,6 +959,14 @@ export function PosCheckoutTerminal({
       if (e.key === 'Escape') {
         if (completedOrder) {
           setCompletedOrder(null);
+        } else if (ambiguousMatches) {
+          setAmbiguousMatches(null);
+        } else if (isParserOpen) {
+          setIsParserOpen(false);
+        } else if (isOpenShiftModalOpen) {
+          setIsOpenShiftModalOpen(false);
+        } else if (isCloseShiftModalOpen) {
+          setIsCloseShiftModalOpen(false);
         } else if (searchQuery) {
           setSearchQuery('');
           searchInputRef.current?.focus();
@@ -993,7 +1007,7 @@ export function PosCheckoutTerminal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen, isParserOpen]);
+  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen, isParserOpen, ambiguousMatches, isOpenShiftModalOpen, isCloseShiftModalOpen]);
 
   // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT hoặc ĐANG BẬT MICRO GIỌNG NÓI)
   const showMagnetBar = isScrolledPast && (searchQuery.trim().length > 0 || isInputFocused || isListening);
@@ -1005,7 +1019,7 @@ export function PosCheckoutTerminal({
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-emerald-600" />
-            Quầy Thu Ngân Bán Sách Siêu Tốc (POS)
+            Quầy Thu Ngân POS
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Phím tắt <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">/</kbd> tìm sách | <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">Ctrl+Enter</kbd> thanh toán & trừ kho
@@ -1024,7 +1038,7 @@ export function PosCheckoutTerminal({
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse">
                 <WifiOff className="w-3.5 h-3.5 text-amber-600" />
-                <span>Ngoại tuyến (Offline)</span>
+                <span>Ngoại Tuyến</span>
               </span>
             )}
 
@@ -1057,9 +1071,9 @@ export function PosCheckoutTerminal({
               {(sellableWarehouses.length > 0
                 ? sellableWarehouses
                 : [
-                    { id: 'wh-au-co', name: 'Kho 1 - Âu Cơ (Văn phòng chính)' },
-                    { id: 'wh-du-phong', name: 'Kho 3 - Hội Chợ (Gian hàng sự kiện)' },
-                    { id: 'wh-quynh-mai', name: 'Kho 2 - Quỳnh Mai (Kho tổng)' },
+                    { id: 'wh-au-co', name: 'Kho 1 - Âu Cơ' },
+                    { id: 'wh-du-phong', name: 'Kho 3 - Hội Chợ' },
+                    { id: 'wh-quynh-mai', name: 'Kho 2 - Quỳnh Mai' },
                   ]
               ).map((w) => (
                 <option key={w.id} value={w.id}>
@@ -1108,15 +1122,15 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ (Sprint 4) */}
+          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ */}
           <button
             type="button"
             onClick={() => setIsSettlementModalOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
-            title="Báo cáo chốt ngày hội chợ & Đối soát kiểm kê (Sprint 4)"
+            title="Báo cáo chốt ngày & Đối soát kiểm kê"
           >
             <CalendarCheck className="w-4 h-4" />
-            <span>Chốt Ngày (S4)</span>
+            <span>Chốt Ngày</span>
           </button>
         </div>
       </div>
@@ -1766,19 +1780,19 @@ export function PosCheckoutTerminal({
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>{isGift ? 'XÁC NHẬN TẶNG & TRỪ KHO (Ctrl+Enter)' : 'THANH TOÁN & KHẤU TRỪ KHO (Ctrl+Enter)'}</span>
+                  <span>{isGift ? 'XÁC NHẬN TẶNG & TRỪ KHO' : 'THANH TOÁN & KHẤU TRỪ KHO'}</span>
                 </>
               )}
             </button>
 
-            {/* 1.3: mở modal Đổi/Trả BV-06 */}
+            {/* 1.3: mở modal Đổi/Trả */}
             <button
               type="button"
               onClick={() => setIsReturnsOpen(true)}
               className="w-full py-2.5 px-4 bg-white hover:bg-indigo-50 active:scale-[0.99] text-indigo-700 font-extrabold rounded-2xl text-xs border-2 border-dashed border-indigo-300 transition-all flex items-center justify-center gap-2"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>ĐỔI / TRẢ HÀNG (BV-06)</span>
+              <span>ĐỔI / TRẢ HÀNG</span>
             </button>
           </div>
         </div>
@@ -1797,16 +1811,16 @@ export function PosCheckoutTerminal({
       )}
 
       {/* Order Success Receipt Modal */}
-      {completedOrder && (
+      {completedOrder && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={(event) => { if (event.target === event.currentTarget) setCompletedOrder(null); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-base">
                 <CheckCircle2 className="w-6 h-6" />
-                <span>{completedOrder.isGift ? 'Đã Tặng Sách Thành Công! 🎁' : completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến (Offline)!' : 'Bán Hàng Thành Công!'}</span>
+                <span>{completedOrder.isGift ? 'Đã Tặng Sách Thành Công! 🎁' : completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến!' : 'Bán Hàng Thành Công!'}</span>
               </div>
               <button
                 onClick={() => setCompletedOrder(null)}
@@ -1929,13 +1943,14 @@ export function PosCheckoutTerminal({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal Xử Lý Trùng Mã Vạch ISBN (Disambiguation Modal) */}
-      {ambiguousMatches && ambiguousMatches.length > 0 && (
+      {ambiguousMatches && ambiguousMatches.length > 0 && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={(event) => { if (event.target === event.currentTarget) setAmbiguousMatches(null); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
@@ -1996,7 +2011,8 @@ export function PosCheckoutTerminal({
               Hủy Bỏ
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Súng Quét Mã Vạch Bằng Camera 0 Đồng (In-App Barcode Scanner) */}
@@ -2008,9 +2024,9 @@ export function PosCheckoutTerminal({
       />
 
       {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
-      {isParserOpen && (
+      {isParserOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={(event) => { if (event.target === event.currentTarget) setIsParserOpen(false); }}
         >
           <div className="max-w-lg w-full max-h-[92vh] overflow-y-auto">
@@ -2023,16 +2039,17 @@ export function PosCheckoutTerminal({
               onClick={() => setIsParserOpen(false)}
               className="mt-2 w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
             >
-              Đóng (Alt + Shift + P)
+              Đóng
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 1: MỞ CA KÉT TIỀN (Open Cashbox Shift Modal) */}
-      {isOpenShiftModalOpen && (
+      {isOpenShiftModalOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsOpenShiftModalOpen(false); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
@@ -2055,7 +2072,7 @@ export function PosCheckoutTerminal({
                   Thu ngân nhận ca:
                 </label>
                 <div className="px-3 py-2 bg-slate-100 rounded-xl text-xs font-mono font-bold text-slate-800">
-                  User-{currentRole} ({selectedWarehouseId === 'wh-du-phong' ? 'Hội chợ' : 'Văn phòng Âu Cơ'})
+                  User-{currentRole} - {selectedWarehouseId === 'wh-du-phong' ? 'Kho Hội chợ' : 'Kho Âu Cơ'}
                 </div>
               </div>
 
@@ -2112,13 +2129,14 @@ export function PosCheckoutTerminal({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 2: CHỐT CA & ĐỐI SOÁT KÉT TIỀN (Close Shift & Reconciliation Modal) */}
-      {isCloseShiftModalOpen && activeSession && (
+      {isCloseShiftModalOpen && activeSession && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsCloseShiftModalOpen(false); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
@@ -2144,7 +2162,7 @@ export function PosCheckoutTerminal({
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Doanh số tiền mặt ({activeSession.totalOrdersCount || 0} đơn):</span>
+                <span className="text-slate-500 font-medium">Doanh số tiền mặt:</span>
                 <span className="font-mono font-bold text-emerald-700">
                   +{(activeSession.totalCashSales || 0).toLocaleString('vi-VN')} đ
                 </span>
@@ -2226,7 +2244,8 @@ export function PosCheckoutTerminal({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Toast thông báo đã quét Barcode thành công */}

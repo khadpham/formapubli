@@ -167,14 +167,14 @@ export function MasterAppShell({
                 Khung Vận Hành:
               </span>
               <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5">
-                {currentTab === 'dashboard' && 'Bảng Quản Trị (Alt+1)'}
-                {currentTab === 'pos' && 'Quầy Bán Hàng POS (Alt+2)'}
-                {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho (Alt+3)'}
-                {currentTab === 'sales' && 'Doanh Số & Sổ Kép (Alt+4)'}
-                {currentTab === 'partners' && 'Đối Tác & Đại Lý (Alt+5)'}
-                {currentTab === 'customers' && 'Độc Giả CRM (Alt+6)'}
-                {currentTab === 'studio' && 'Phân Tích & Dự Báo (Alt+7)'}
-                {currentTab === 'settings' && 'Cài Đặt (Alt+8)'}
+                {currentTab === 'dashboard' && 'Bảng Quản Trị'}
+                {currentTab === 'pos' && 'Quầy Bán Hàng POS'}
+                {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho'}
+                {currentTab === 'sales' && 'Doanh Số & Sổ Kép'}
+                {currentTab === 'partners' && 'Đối Tác & Đại Lý'}
+                {currentTab === 'customers' && 'Độc Giả CRM'}
+                {currentTab === 'studio' && 'Phân Tích & Dự Báo'}
+                {currentTab === 'settings' && 'Cài Đặt'}
               </span>
             </div>
           </div>
@@ -252,7 +252,7 @@ export function MasterAppShell({
               <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                    Kho Hàng & Thẻ Kho Bất Biến (3 Địa Điểm)
+                    Kho Hàng & Thẻ Kho
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Kho 1 - Âu Cơ | Kho 2 - Quỳnh Mai | Kho 3 - Hội Chợ. Append-only Ledger chống âm kho tuyệt đối.

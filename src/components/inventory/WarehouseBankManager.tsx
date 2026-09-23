@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Landmark, Plus } from 'lucide-react';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
@@ -12,6 +13,16 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [newBank, setNewBank] = useState({ label: '', bankBin: '', accountNo: '', accountName: '' });
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const reload = async () => {
     const [w, b] = await Promise.all([
@@ -62,9 +73,11 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] overflow-y-auto">
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
@@ -111,6 +124,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
           <button type="submit" className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs">Thêm TK</button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

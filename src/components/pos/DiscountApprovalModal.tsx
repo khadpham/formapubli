@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ShieldAlert,
   QrCode,
@@ -66,6 +67,21 @@ export function DiscountApprovalModal({
   const discountAmount = Math.round(originalAmount * requestedDiscountRate);
   const finalAmount = originalAmount - discountAmount;
   const isGift = requestedDiscountRate === 1.0;
+
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && status !== 'LOADING') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, status, onClose]);
 
   // 1. Tạo yêu cầu duyệt khi mở modal
   useEffect(() => {
@@ -299,15 +315,15 @@ export function DiscountApprovalModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const minutes = Math.floor(secondsRemaining / 60);
   const seconds = secondsRemaining % 60;
   const timeFormatted = `${minutes}:${String(seconds).padStart(2, '0')}`;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget && status !== 'LOADING') onClose();
       }}
@@ -602,6 +618,7 @@ export function DiscountApprovalModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

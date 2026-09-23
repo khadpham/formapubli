@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Printer, CheckSquare, Square, PackageSearch, Layers, Sparkles } from 'lucide-react';
 
 interface PickListModalProps {
@@ -23,8 +24,22 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [pickList, setPickList] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, loading, onClose]);
+
+  if (!isOpen || !mounted) return null;
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -59,12 +74,12 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
     window.print();
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+      onClick={(event) => { if (event.target === event.currentTarget && !loading) onClose(); }}
     >
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-3">
@@ -72,9 +87,9 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
               <PackageSearch className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Danh Sách Soạn Sách Kệ Kho (Shelf Pick List)</h3>
+              <h3 className="text-lg font-bold text-slate-900">Danh Sách Soạn Sách Kệ Kho</h3>
               <p className="text-xs text-slate-500">
-                Gom nhóm sách theo thứ tự vị trí kệ (Shelf Location) để tối ưu đường đi soạn hàng
+                Gom nhóm sách theo thứ tự vị trí kệ để tối ưu đường đi soạn hàng
               </p>
             </div>
           </div>
@@ -198,6 +213,7 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

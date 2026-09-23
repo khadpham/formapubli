@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   ArrowRightLeft,
@@ -71,6 +72,20 @@ export function BatchTransferModal({
   const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting && !isValidating) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, isValidating, onClose]);
 
   // Lấy tồn của sách tại kho nguồn
   const getFromStock = (bookId: string): number => {
@@ -299,16 +314,16 @@ export function BatchTransferModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting && !isValidating) onClose();
       }}
     >
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-2.5">
@@ -317,7 +332,7 @@ export function BatchTransferModal({
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Phiếu Chuyển Kho Hàng Loạt (Multi-Item Batch Transfer)
+                Phiếu Chuyển Kho Hàng Loạt
               </h2>
               <p className="text-xs text-slate-500">
                 Xuất nhanh danh sách N đầu sách sang kho hội chợ hoặc kho chi nhánh với 1 chứng từ PCK duy nhất
@@ -589,7 +604,7 @@ export function BatchTransferModal({
                 className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isValidating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                Kiểm tra tồn kho (Dry-run)
+                Kiểm tra tồn kho
               </button>
               <button
                 type="button"
@@ -604,6 +619,7 @@ export function BatchTransferModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

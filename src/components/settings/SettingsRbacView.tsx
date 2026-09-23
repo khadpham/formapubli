@@ -19,9 +19,11 @@ import {
   Command,
   Save,
   Users,
+  Landmark,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { StaffManager } from './StaffManager';
+import { BankAccountsManager } from './BankAccountsManager';
 
 interface SettingsRbacViewProps {
   sessionRole?: UserRole;
@@ -30,7 +32,7 @@ interface SettingsRbacViewProps {
 export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   // Go-live: da xoa mo phong vai tro. Tab "Tai khoan nhan su" chi hien voi OWNER/MANAGER.
   const canManageStaff = sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER';
-  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(
+  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'banks' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(
     canManageStaff ? 'staff' : 'shortcuts'
   );
 
@@ -39,7 +41,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
     if (canManageStaff) {
       setActiveSubTab((prev) => (prev === 'shortcuts' ? 'staff' : prev));
     } else {
-      setActiveSubTab((prev) => (prev === 'staff' ? 'shortcuts' : prev));
+      setActiveSubTab((prev) => (prev === 'staff' || prev === 'banks' ? 'shortcuts' : prev));
     }
   }, [canManageStaff]);
 
@@ -226,7 +228,21 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>1. Tài Khoản Nhân Sự</span>
+            <span>Tài Khoản Nhân Sự</span>
+          </button>
+        )}
+
+        {canManageStaff && (
+          <button
+            onClick={() => setActiveSubTab('banks')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'banks'
+                ? 'bg-white text-indigo-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Landmark className="w-3.5 h-3.5" />
+            <span>Tài Khoản Ngân Hàng</span>
           </button>
         )}
 
@@ -239,7 +255,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           }`}
         >
           <Keyboard className="w-3.5 h-3.5" />
-          <span>2. Nút Bấm Tắt</span>
+          <span>Phím Tắt</span>
         </button>
 
         <button
@@ -251,7 +267,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           }`}
         >
           <Sun className="w-3.5 h-3.5" />
-          <span>3. Giao Diện & Mật Độ</span>
+          <span>Giao Diện & Mật Độ</span>
         </button>
 
         <button
@@ -263,7 +279,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           }`}
         >
           <Volume2 className="w-3.5 h-3.5" />
-          <span>4. Âm Thanh & Cảnh Báo</span>
+          <span>Âm Thanh</span>
         </button>
 
         <button
@@ -275,7 +291,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           }`}
         >
           <Printer className="w-3.5 h-3.5" />
-          <span>5. Máy In Nhiệt</span>
+          <span>Máy In Nhiệt</span>
         </button>
 
         <button
@@ -287,16 +303,21 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           }`}
         >
           <Globe className="w-3.5 h-3.5" />
-          <span>6. Ngôn Ngữ</span>
+          <span>Ngôn Ngữ</span>
         </button>
       </div>
 
-      {/* TAB 1: TAI KHOAN NHAN SU (chi OWNER/MANAGER — quan tri ma NV + PIN, khong mo phong vai tro) */}
+      {/* TAB: TAI KHOAN NHAN SU */}
       {activeSubTab === 'staff' && canManageStaff && (
         <StaffManager canManagePrivileged={sessionRole === 'ROLE_OWNER'} />
       )}
 
-      {/* TAB 2: KEYBOARD SHORTCUTS */}
+      {/* TAB: TAI KHOAN NGAN HANG */}
+      {activeSubTab === 'banks' && canManageStaff && (
+        <BankAccountsManager sessionRole={sessionRole} />
+      )}
+
+      {/* TAB: KEYBOARD SHORTCUTS */}
       {activeSubTab === 'shortcuts' && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
@@ -304,7 +325,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               <div>
                 <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
                   <Keyboard className="w-4 h-4 text-emerald-600" />
-                  Danh Mục Phím Tắt Hệ Thống (Không Xung Đột Chrome/Edge)
+                  Danh Mục Phím Tắt Hệ Thống
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Tối ưu 100% cho thao tác bán hàng hội chợ và nhập xuất kho không cần đụng chuột

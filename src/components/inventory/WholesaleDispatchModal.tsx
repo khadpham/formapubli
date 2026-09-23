@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText,
   Building2,
@@ -86,6 +87,20 @@ export function WholesaleDispatchModal({
   const [searchBookTerm, setSearchBookTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
 
   // State hiển thị modal in A4 sau khi xuất kho thành công
   const [createdOrderForPrint, setCreatedOrderForPrint] = useState<DeliveryOrderData | null>(null);
@@ -281,11 +296,16 @@ export function WholesaleDispatchModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <div
+        className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !isSubmitting) onClose();
+        }}
+      >
         <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
           {/* Header Modal */}
           <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
@@ -294,9 +314,9 @@ export function WholesaleDispatchModal({
                 <FileText className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-base">Lập Phiếu Xuất Kho Cung Ứng Đối Tác (PXK)</h3>
+                <h3 className="font-extrabold text-base">Lập Phiếu Xuất Kho Đối Tác</h3>
                 <p className="text-xs text-slate-400">
-                  Xuất hàng đối tác (nhà sách, thư viện, trường học, đại lý...) — Cấp số liên tục trong Transaction
+                  Xuất hàng đối tác: nhà sách, thư viện, trường học, đại lý — Cấp số liên tục trong Transaction
                 </p>
               </div>
             </div>
@@ -610,6 +630,7 @@ export function WholesaleDispatchModal({
           }}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 }

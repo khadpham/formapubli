@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer, X, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { BrowserQRCodeSvgWriter } from '@zxing/library';
 
@@ -113,14 +114,34 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
     }
   }, [isOpen, order.code, order.finalAmount, order.partnerCode]);
 
-  if (!isOpen) return null;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !mounted) return null;
 
   const handlePrint = () => {
     window.print();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       {/* Styles dành riêng cho khổ in A4 */}
       <style jsx global>{`
         @media print {
@@ -397,6 +418,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { RotateCcw, Search, CheckCircle2, AlertTriangle, X, Plus, Trash2 } from 'lucide-react';
 
 interface BookRef {
@@ -59,6 +60,19 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
     : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   const isPriv = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [busy, onClose]);
 
   // Nạp két ca OPEN của thu ngân để chọn khi hoàn tiền mặt
   useEffect(() => {
@@ -208,16 +222,18 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
     }
   };
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
       onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}
     >
-      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
             <RotateCcw className="w-4 h-4 text-indigo-600" />
-            Đổi / Trả Hàng (BV-06)
+            Đổi / Trả Hàng
           </h3>
           <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
@@ -321,6 +337,7 @@ export function ReturnsModal({ books, currentRole, warehouseId, cashierId, onClo
         </div>
         {!isPriv && <p className="text-[11px] text-slate-400">Thu ngân lập phiếu, Manager/Owner bấm Duyệt & Hoàn tất.</p>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

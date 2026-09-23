@@ -146,29 +146,29 @@ export function ExecutiveDashboard({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             onClick={fetchDashboardData}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-colors"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-colors shrink-0"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Làm mới số liệu
           </button>
           <button
             onClick={() => onNavigateTab('pos')}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all shrink-0"
           >
             <ShoppingCart className="w-4 h-4" />
             Mở Quầy POS
           </button>
           {/* Bộ chọn kho & nút chốt ngày hội chợ */}
-          <div className="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl p-1 shadow-inner">
+          <div className="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl p-1 shadow-inner shrink-0 max-w-full">
             <Building2 className="w-3.5 h-3.5 text-amber-400 ml-2 mr-1 shrink-0" />
             <select
               value={selectedSettlementWarehouseId}
               onChange={(e) => setSelectedSettlementWarehouseId(e.target.value)}
-              className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer pr-2 max-w-[150px] truncate"
+              className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer pr-2 max-w-[200px] truncate min-w-0"
               title="Chọn kho / gian hàng cần kết toán"
             >
               {warehouses.length > 0 ? (
@@ -195,10 +195,10 @@ export function ExecutiveDashboard({
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               onClick={() => onNavigateTab('studio')}
-              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all shrink-0"
               title="Mở Không Gian Phân Tích Chuyên Sâu & Dự Báo (Alt+7)"
             >
-              🔬 Mở Phân Tích Chuyên Sâu ➔
+              🔬 Phân Tích Chuyên Sâu
             </button>
           )}
         </div>

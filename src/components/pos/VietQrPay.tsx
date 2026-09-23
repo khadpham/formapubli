@@ -23,6 +23,8 @@ export function VietQrPay({
   const [qrUrl, setQrUrl] = useState('');
   const [payload, setPayload] = useState('');
   const reqRef = useRef(0);
+  const onQrRef = useRef(onQr);
+  useEffect(() => { onQrRef.current = onQr; }, [onQr]);
 
   useEffect(() => { setContent(initialContent); }, [initialContent]);
 
@@ -45,7 +47,7 @@ export function VietQrPay({
     const acc = list.find((b) => b.id === selectedId);
     if (!acc || amount <= 0) {
       setQrUrl(''); setPayload('');
-      onQr?.(null);
+      onQrRef.current?.(null);
       return;
     }
     const p = generateVietQRPayload({ bankBin: acc.bankBin, accountNo: acc.accountNo, amount, content });
@@ -54,10 +56,9 @@ export function VietQrPay({
       .then((url) => {
         if (req !== reqRef.current) return;
         setQrUrl(url);
-        onQr?.({ dataUrl: url, payload: p, accountNo: acc.accountNo, content });
+        onQrRef.current?.({ dataUrl: url, payload: p, accountNo: acc.accountNo, content });
       })
-      .catch(() => { if (req !== reqRef.current) return; setQrUrl(''); onQr?.(null); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      .catch(() => { if (req !== reqRef.current) return; setQrUrl(''); onQrRef.current?.(null); });
   }, [list, selectedId, amount, content]);
 
   if (amount <= 0) return null;

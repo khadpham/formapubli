@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText,
   Printer,
@@ -43,6 +44,22 @@ export function DeliveryOrdersLedger({
 
   // Ký duyệt phiếu DRAFT
   const [isDispatchingId, setIsDispatchingId] = useState<string | null>(null);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!reversalTargetOrder) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isReversing) {
+        setReversalTargetOrder(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [reversalTargetOrder, isReversing]);
 
   const fetchOrders = async () => {
     try {
@@ -213,7 +230,7 @@ export function DeliveryOrdersLedger({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Đã hủy (PXK_R)
+              Đã hủy
             </button>
           </div>
 
@@ -262,8 +279,8 @@ export function DeliveryOrdersLedger({
                 <th className="p-3.5">Kho Nguồn</th>
                 <th className="p-3.5">Đối Tác Nhận Hàng</th>
                 <th className="p-3.5 text-right">Tổng Tiền Bìa</th>
-                <th className="p-3.5 text-center">CK (%)</th>
-                <th className="p-3.5 text-right">Thực Thu (VNĐ)</th>
+                <th className="p-3.5 text-center">Chiết Khấu</th>
+                <th className="p-3.5 text-right">Thực Thu</th>
                 <th className="p-3.5 text-center">Trạng Thái</th>
                 <th className="p-3.5 text-center w-28">Thao Tác</th>
               </tr>
@@ -368,7 +385,7 @@ export function DeliveryOrdersLedger({
                             <button
                               onClick={() => setReversalTargetOrder(o)}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                              title="Đảo bút toán hủy phiếu (PXK_R)"
+                              title="Đảo bút toán hủy phiếu"
                             >
                               <RotateCcw className="w-4 h-4" />
                             </button>
@@ -385,8 +402,11 @@ export function DeliveryOrdersLedger({
       </div>
 
       {/* Modal xác nhận Đảo bút toán hủy (Reversal) */}
-      {reversalTargetOrder && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      {reversalTargetOrder && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget && !isReversing) setReversalTargetOrder(null); }}
+        >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-rose-700">
@@ -412,7 +432,7 @@ export function DeliveryOrdersLedger({
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Lý do đảo bút toán hủy chứng từ (*):
+                  Lý do đảo bút toán hủy chứng từ:
                 </label>
                 <textarea
                   rows={3}
@@ -446,11 +466,12 @@ export function DeliveryOrdersLedger({
                 disabled={isReversing}
                 className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {isReversing ? 'Đang đảo sổ...' : 'Xác Nhận Đảo Hủy (PXK_R)'}
+                {isReversing ? 'Đang đảo sổ...' : 'Xác Nhận Đảo Hủy'}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal In Phiếu Xuất Kho A4 */}

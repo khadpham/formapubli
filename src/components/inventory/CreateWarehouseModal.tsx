@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Building2, X, PlusCircle, CheckCircle2, AlertTriangle, Store } from 'lucide-react';
 
 interface CreateWarehouseModalProps {
@@ -24,6 +25,12 @@ export function CreateWarehouseModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     fetch('/api/bank-accounts')
@@ -32,7 +39,16 @@ export function CreateWarehouseModal({
       .catch(() => {});
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
+  if (!isOpen || !mounted) return null;
 
   // Tự động sinh mã kho gợi ý từ tên kho
   const handleNameChange = (val: string) => {
@@ -98,9 +114,9 @@ export function CreateWarehouseModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) onClose();
       }}
@@ -276,6 +292,7 @@ export function CreateWarehouseModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -49,6 +50,22 @@ export function ManagerApprovalDrawer({
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
   const [rejectReasonInput, setRejectReasonInput] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const fetchPending = async () => {
     try {
@@ -148,11 +165,11 @@ export function ManagerApprovalDrawer({
     setQuickShortCode('');
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150"
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -166,7 +183,7 @@ export function ManagerApprovalDrawer({
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-white">
-                Duyệt Chiết Khấu POS (Quản Lý)
+                Duyệt Chiết Khấu POS
               </h3>
               <p className="text-[11px] text-slate-400">
                 {items.length} yêu cầu đang chờ xử lý
@@ -376,6 +393,7 @@ export function ManagerApprovalDrawer({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

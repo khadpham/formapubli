@@ -480,7 +480,7 @@ export function StockOverviewMatrix({
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
-              Sổ Phiếu Xuất Đối Tác (PXK)
+              Sổ Phiếu Xuất
             </button>
           </div>
 
@@ -490,17 +490,17 @@ export function StockOverviewMatrix({
             <button
               type="button"
               onClick={() => setCreateWarehouseOpen(true)}
-              title="Mở thêm kho hoặc gian hàng hội chợ mới (Chỉ Quản lý / Chủ)"
+              title="Mở thêm kho hoặc gian hàng hội chợ mới"
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
-              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho / Gian Hàng
+              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho
             </button>
           )}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
               onClick={() => setBankManagerOpen(true)}
-              title="Gán tài khoản nhận VietQR mặc định cho từng kho (Chỉ Quản lý / Chủ)"
+              title="Gán tài khoản nhận VietQR mặc định cho từng kho"
               className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
               <Landmark className="w-3.5 h-3.5" /> TK Nhận Tiền
@@ -510,7 +510,7 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={() => setWholesaleModalOpen(true)}
-            title="Lập phiếu xuất kho cung ứng cho đối tác: Nhà sách, Thư viện, Trường học, Đại lý (PXK)"
+            title="Lập phiếu xuất kho cung ứng cho đối tác"
             className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
             <FileText className="w-3.5 h-3.5" /> Xuất Kho Đối Tác
@@ -518,16 +518,15 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={() => openAction('TRANSFER')}
-            title="Chuyển kho giữa 3 kho (Alt + Shift + T)"
+            title="Chuyển kho giữa 3 kho"
             className="flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
-            <span className="text-[9px] opacity-70 bg-indigo-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+T</span>
           </button>
           <button
             type="button"
             onClick={() => setBatchTransferOpen(true)}
-            title="Chuyển kho hàng loạt nhiều đầu sách (Hội chợ / Sự kiện)"
+            title="Chuyển kho hàng loạt nhiều đầu sách"
             className="flex items-center gap-1 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
             <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển hàng loạt
@@ -535,20 +534,18 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={() => openAction('RECEIPT')}
-            title="Nhập kho nhà in (Alt + Shift + R)"
+            title="Nhập kho nhà in"
             className="flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <PlusCircle className="w-3.5 h-3.5" /> Nhập in
-            <span className="text-[9px] opacity-70 bg-emerald-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+R</span>
           </button>
           <button
             type="button"
             onClick={() => openAction('DISPATCH')}
-            title="Xuất bán / Quà tặng (Alt + Shift + X)"
+            title="Xuất bán / Quà tặng"
             className="flex items-center gap-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <MinusCircle className="w-3.5 h-3.5" /> Xuất bán
-            <span className="text-[9px] opacity-70 bg-rose-800 px-1 py-0.2 rounded hidden lg:inline">Alt+Shift+X</span>
           </button>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
@@ -556,7 +553,7 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={() => setPickListOpen(true)}
-            title="Danh sách soạn sách gom hàng theo kệ (Shelf Pick List)"
+            title="Danh sách soạn sách gom hàng theo kệ"
             className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
             <PackageSearch className="w-3.5 h-3.5" /> Soạn Kệ
@@ -565,10 +562,10 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={() => setRmaModalOpen(true)}
-            title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly (RMA)"
+            title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly"
             className="flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
-            <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly RMA
+            <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly Sách Lỗi
           </button>
         </div>
       </div>
@@ -645,7 +642,7 @@ export function StockOverviewMatrix({
               </button>
             ))}
             <span className="ml-auto text-[10px] text-slate-400 whitespace-nowrap hidden sm:inline">
-              RMA tạo bằng nút Cách Ly RMA
+              Tạo phiếu bằng nút Cách Ly Sách Lỗi
             </span>
           </div>
           <div className="overflow-x-auto">

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { createBarcodeDecoder, type BarcodeDecoder } from '@/lib/barcode-decoder';
 import {
   Camera,
@@ -66,6 +67,23 @@ export function InAppBarcodeScanner({
   const [hasOpticalZoom, setHasOpticalZoom] = useState<boolean>(false);
   const zoomLevelRef = useRef<number>(1);
   zoomLevelRef.current = zoomLevel;
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        stopCamera();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Ref theo dõi cơ chế hãm phanh Lost-Track & Cooldown (BV-02)
   const lockedCodeRef = useRef<string | null>(null); // Mã đang bị khóa trong khung hình
@@ -521,11 +539,11 @@ export function InAppBarcodeScanner({
     };
   }, [isOpen, facingMode]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in"
+      className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           stopCamera();
@@ -542,7 +560,7 @@ export function InAppBarcodeScanner({
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-white">
-                Súng Quét Mã Vạch Camera 0 Đồng
+                Quét Mã Vạch Camera
               </h3>
               <p className="text-[11px] text-slate-400">
                 {scannerStatus === 'loading' || !hasPermission
@@ -710,7 +728,7 @@ export function InAppBarcodeScanner({
           <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
             <span className="font-bold flex items-center gap-1">
               <Barcode className="w-3.5 h-3.5 text-indigo-400" />
-              Mã Vạch Test Nhanh (Click để quét thử trực tiếp):
+              Mã Vạch Test Nhanh:
             </span>
             <span className="text-[10px] text-slate-500">Mô phỏng súng quét</span>
           </div>
@@ -754,6 +772,7 @@ export function InAppBarcodeScanner({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
