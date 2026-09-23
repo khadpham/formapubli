@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReturnService } from '@/services/return.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
-import { isValidManagerPin } from '@/lib/manager-pin';
+import { verifyManagerPinRateLimited } from '@/lib/manager-pin';
 import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
@@ -87,9 +87,14 @@ export async function POST(req: NextRequest) {
     };
 
     if (action === 'REQUEST') {
-      // Cashier quá hạn window: bắt buộc PIN quản lý (pattern hard-cap discount)
+      // Cashier quá hạn window: bắt buộc PIN quản lý (pattern hard-cap discount).
+      // PIN sai quá 5 lần / 15 phút -> khóa (chống vét mã qua route này).
       const providedPin = `${body.managerPin ?? ''}`;
-      const bypassWindow = isPrivileged(userRole) || (providedPin !== '' && (await isValidManagerPin(providedPin)));
+      const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
+      if (pinCheck.locked) {
+        return NextResponse.json({ success: false, error: 'Mã PIN quản lý tạm khóa 15 phút do nhập sai nhiều lần.' }, { status: 429 });
+      }
+      const bypassWindow = isPrivileged(userRole) || pinCheck.ok;
       if (!isPrivileged(userRole) && body.expectWindowOverride && !bypassWindow) {
         await recordAuditLog({
           action: 'RETURN_REQUESTED', actorRole: userRole, actorId: actorHeader,

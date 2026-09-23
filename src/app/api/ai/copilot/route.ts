@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, getSessionFromRequest, type SessionPayload } from '@/lib/auth-session';
+import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
 import { callGeminiJsonRaw, callOpenAIJsonRaw, resolveGeminiModel } from '@/services/ai/llm-client';
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Sliding Window Rate Limiting: 15 req / phút / staffId
+  // Tầng memory (nhanh) + tầng DB bền vững (sống qua restart isolate) — chặn
+  // nếu MỘT trong hai từ chối.
   const rateKey = `copilot:${sessionPayload.actorId}`;
   const rateResult = checkWindowRateLimit(rateKey, 15, 60 * 1000);
   if (!rateResult.allowed) {
@@ -46,6 +49,19 @@ export async function POST(req: NextRequest) {
         code: 'RATE_LIMITED',
         message: `Bạn đã vượt quá giới hạn 15 câu hỏi/phút. Vui lòng thử lại sau ${waitSec} giây.`,
         resetAfterMs: rateResult.resetAfterMs,
+      },
+      { status: 429 }
+    );
+  }
+  const dbRate = await checkDbWindowLimit(rateKey, 15, 60 * 1000);
+  if (!dbRate.allowed) {
+    const waitSec = Math.ceil(dbRate.resetAfterMs / 1000);
+    return NextResponse.json(
+      {
+        success: false,
+        code: 'RATE_LIMITED',
+        message: `Bạn đã vượt quá giới hạn 15 câu hỏi/phút. Vui lòng thử lại sau ${waitSec} giây.`,
+        resetAfterMs: dbRate.resetAfterMs,
       },
       { status: 429 }
     );

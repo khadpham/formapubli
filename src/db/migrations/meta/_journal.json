@@ -147,6 +147,13 @@
       "when": 1790200000000,
       "tag": "0020_bank_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790300000000,
+      "tag": "0021_session_version",
+      "breakpoints": true
     }
   ],
   "version": "7"

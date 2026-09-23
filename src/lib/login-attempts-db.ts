@@ -113,6 +113,12 @@ export async function recordDbDualFail(
   return { staffLocked, ipLocked, remainingStaffAttempts };
 }
 
+/** Ghi 1 lần fail cho key tuỳ ý (vd: `mgrpin:<actor>`) — dùng cho rate-limit
+ *  mã PIN quản lý ở orders/returns. Fail-open khi lỗi DB như mọi tầng DB. */
+export async function recordDbFailKey(key: string, maxFails: number): Promise<{ locked: boolean; remaining: number }> {
+  return bumpDbKey(key, maxFails);
+}
+
 export async function resetDbDualLimit(ip: string, staffId: string): Promise<void> {
   try {
     if (staffId?.trim()) await resetDbKey(bucketKey('staff', staffId));
@@ -123,4 +129,46 @@ export async function resetDbDualLimit(ip: string, staffId: string): Promise<voi
 
 export async function resetDbKey(key: string): Promise<void> {
   await db.delete(loginAttemptBuckets).where(eq(loginAttemptBuckets.key, key));
+}
+
+// ---------------------------------------------------------------------------
+// FIXED-WINDOW BỀN VỮNG (DB) cho sliding-window memory (copilot, acctlist).
+// Tái dùng bảng loginAttemptBuckets với prefix `w:`: fails = số hit trong
+// window, lockedUntil = mốc hết window. Chặn nếu MỘT trong hai tầng từ chối.
+// Fail-open khi lỗi DB (tầng memory vẫn chặn trong instance hiện tại).
+// ---------------------------------------------------------------------------
+
+export async function checkDbWindowLimit(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<{ allowed: boolean; resetAfterMs: number }> {
+  const now = Date.now();
+  const namespaced = `w:${key}`;
+  try {
+    const cur = await readBucket(namespaced);
+    if (cur && cur.lockedUntil > now) {
+      if (cur.fails >= limit) return { allowed: false, resetAfterMs: cur.lockedUntil - now };
+      await db
+        .insert(loginAttemptBuckets)
+        .values({ key: namespaced, fails: cur.fails + 1, lockedUntil: cur.lockedUntil })
+        .onConflictDoUpdate({
+          target: loginAttemptBuckets.key,
+          set: { fails: cur.fails + 1, lockedUntil: cur.lockedUntil, updatedAt: new Date().toISOString() },
+        });
+      return { allowed: true, resetAfterMs: cur.lockedUntil - now };
+    }
+    const windowEnd = now + windowMs;
+    await db
+      .insert(loginAttemptBuckets)
+      .values({ key: namespaced, fails: 1, lockedUntil: windowEnd })
+      .onConflictDoUpdate({
+        target: loginAttemptBuckets.key,
+        set: { fails: 1, lockedUntil: windowEnd, updatedAt: new Date().toISOString() },
+      });
+    return { allowed: true, resetAfterMs: windowMs };
+  } catch (err) {
+    console.warn('[login-attempts-db] window fail-open:', (err as Error)?.message);
+    return { allowed: true, resetAfterMs: windowMs };
+  }
 }

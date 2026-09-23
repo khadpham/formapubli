@@ -10,6 +10,9 @@ export interface SessionPayload {
   sessionId?: string;
   issuedAt: number;
   expiresAt: number;
+  // M2: version thu hồi — đổi passcode bump DB, token cũ lệch -> 401.
+  // Token cấp trước khi có version (undefined) được ân hạn tới hết hạn tự nhiên.
+  sessionVersion?: number;
 }
 
 
@@ -474,9 +477,12 @@ export function verifyRolePasscode(role: UserRole, passcode: string): boolean {
 /** Alias tên cookie đúng contract. */
 export const SESSION_COOKIE = SESSION_COOKIE_NAME;
 
-/** Chế độ strict: AUTH_STRICT === 'true' (không dựa NODE_ENV). */
+/** Chế độ strict: AUTH_STRICT === 'true', hoặc luôn strict trên production
+ *  (fail-closed: deploy prod quên cờ cũng không rơi về legacy tin client). */
 export function isAuthStrict(): boolean {
-  return process.env.AUTH_STRICT === 'true';
+  if (process.env.AUTH_STRICT === 'true') return true;
+  if (process.env.NODE_ENV === 'production') return true;
+  return false;
 }
 
 /** Verify cookie thô → payload (null = thiếu/hết hạn/sai ký tự). */
@@ -549,6 +555,18 @@ export function extractClientIp(req: Request): string {
 }
 
 /**
+ * M2: token không version (cấp trước migration) được ân hạn tới hết hạn;
+ * token có version phải khớp DB — đổi passcode bump version là thu hồi.
+ */
+function enforceSessionVersion(sess: SessionPayload, rowVersion: number | null | undefined): void {
+  if (sess.sessionVersion === undefined) return;
+  const current = rowVersion ?? 1;
+  if (sess.sessionVersion !== current) {
+    throw new AuthError(401, 'Phiên đã hết hiệu lực (đổi passcode). Vui lòng đăng nhập lại.');
+  }
+}
+
+/**
  * Kiểm tra trạng thái tài khoản thời gian thực với CSDL.
  * Nếu tài khoản bị khóa/vô hiệu hóa (isActive = false) -> lập tức ném AuthError(401).
  * Nếu vai trò bị thay đổi -> ném AuthError(403).
@@ -569,6 +587,7 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
       if (rows[0].role !== sess.role) {
         throw new AuthError(403, `Vai trò của tài khoản đã thay đổi thành ${rows[0].role}.`);
       }
+      enforceSessionVersion(sess, rows[0].sessionVersion);
     } else {
       if (rows.length > 0) {
         if (!rows[0].isActive) {
@@ -577,6 +596,7 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
         if (rows[0].role !== sess.role) {
           throw new AuthError(403, `Vai trò của tài khoản đã thay đổi.`);
         }
+        enforceSessionVersion(sess, rows[0].sessionVersion);
       }
     }
   } catch (err: any) {

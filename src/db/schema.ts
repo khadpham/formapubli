@@ -549,6 +549,8 @@ export const staffAccounts = sqliteTable('staff_accounts', {
   role: text('role').notNull(), // UserRole: ROLE_OWNER | ROLE_MANAGER | ROLE_CASHIER | ROLE_WAREHOUSE | ROLE_TAX
   passcodeHash: text('passcode_hash').notNull(),
   salt: text('salt').notNull(),
+  // M2 thu hồi session: bump mỗi lần reset passcode; token cũ lệch version -> 401.
+  sessionVersion: integer('session_version').default(1).notNull(),
   isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({

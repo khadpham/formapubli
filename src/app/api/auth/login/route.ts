@@ -311,6 +311,8 @@ export async function POST(req: NextRequest) {
       sessionId,
       issuedAt: now,
       expiresAt,
+      // M2: gắn version hiện tại — đổi passcode sau này làm token này hết hiệu lực.
+      ...(staffRow ? { sessionVersion: staffRow.sessionVersion ?? 1 } : {}),
     });
 
     await recordAuditLog({

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
 import { enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
-import { isValidManagerPin } from '@/lib/manager-pin';
-import { requireSessionRole } from '@/lib/auth-session';
+import { verifyManagerPinRateLimited } from '@/lib/manager-pin';
+import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
@@ -254,7 +254,14 @@ export async function POST(req: NextRequest) {
 
       if (!isApprovalValid) {
         const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-        if (!(await isValidManagerPin(providedPin))) {
+        const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
+        if (pinCheck.locked) {
+          return NextResponse.json(
+            { success: false, code: 'RATE_LIMITED', error: 'Mã PIN quản lý tạm khóa 15 phút do nhập sai nhiều lần.' },
+            { status: 429 }
+          );
+        }
+        if (!pinCheck.ok) {
           await recordAuditLog({
             action: 'MANAGER_DISCOUNT_DENIED',
             actorRole: userRole,
@@ -282,7 +289,14 @@ export async function POST(req: NextRequest) {
       const ts = new Date(createdAt).getTime();
       if (!Number.isNaN(ts) && Date.now() - ts > 7 * 86400000 && !isPrivilegedRole) {
         const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-        if (!(await isValidManagerPin(providedPin))) {
+        const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
+        if (pinCheck.locked) {
+          return NextResponse.json(
+            { success: false, code: 'RATE_LIMITED', error: 'Mã PIN quản lý tạm khóa 15 phút do nhập sai nhiều lần.' },
+            { status: 429 }
+          );
+        }
+        if (!pinCheck.ok) {
           return NextResponse.json(
             { success: false, code: 'FORBIDDEN', error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
             { status: 403 }

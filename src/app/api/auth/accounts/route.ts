@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, staffAccounts } from '@/db';
 import { eq, asc } from 'drizzle-orm';
 import { checkWindowRateLimit, extractClientIp } from '@/lib/auth-session';
+import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,14 @@ export async function GET(req: NextRequest) {
     const ip = extractClientIp(req);
     const rl = checkWindowRateLimit(`acctlist:${ip}`, 60, 60 * 1000);
     if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, code: 'RATE_LIMITED', error: 'Quá nhiều yêu cầu, vui lòng thử lại sau.' },
+        { status: 429 }
+      );
+    }
+    // Tầng DB bền vững (sống qua restart isolate) — chặn nếu một trong hai từ chối.
+    const dbRl = await checkDbWindowLimit(`acctlist:${ip}`, 60, 60 * 1000);
+    if (!dbRl.allowed) {
       return NextResponse.json(
         { success: false, code: 'RATE_LIMITED', error: 'Quá nhiều yêu cầu, vui lòng thử lại sau.' },
         { status: 429 }

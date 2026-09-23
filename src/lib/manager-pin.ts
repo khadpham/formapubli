@@ -1,4 +1,5 @@
 import { hashString } from './export-hash';
+import { checkDbLocked, recordDbFailKey, resetDbKey } from './login-attempts-db';
 
 /**
  * Xác thực mã PIN quản lý bằng hash (không bao giờ so plain-text trong source).
@@ -93,4 +94,27 @@ export async function isValidManagerPin(pin: string | null | undefined): Promise
 /** Sinh hash V2 để bỏ vào env (chạy 1 lần khi cấp PIN mới, không commit PIN). */
 export async function hashPinForEnv(pin: string, salt?: string): Promise<string> {
   return hashPinV2(pin, salt);
+}
+
+// 5 lần sai / 15 phút cho mỗi actor (chống vét mã PIN 4 số qua orders/returns).
+export const MGRPIN_MAX_FAILS = 5;
+
+/**
+ * Verify PIN quản lý kèm rate-limit bền vững (DB, sống qua restart isolate).
+ * PIN rỗng không đốt lượt (không phải nỗ lực đoán). Trả locked=true khi
+ * vừa chạm trần để route trả 429 thay vì 403.
+ */
+export async function verifyManagerPinRateLimited(
+  pin: string | null | undefined,
+  rateKey: string
+): Promise<{ ok: boolean; locked: boolean }> {
+  if (!`${pin ?? ''}`.trim()) return { ok: false, locked: false };
+  const key = `mgrpin:${`${rateKey}`.trim().toLowerCase() || 'unknown'}`;
+  if (await checkDbLocked(key)) return { ok: false, locked: true };
+  if (await isValidManagerPin(pin)) {
+    await resetDbKey(key).catch(() => {});
+    return { ok: true, locked: false };
+  }
+  await recordDbFailKey(key, MGRPIN_MAX_FAILS);
+  return { ok: false, locked: await checkDbLocked(key) };
 }

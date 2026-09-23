@@ -81,6 +81,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
       const salt = crypto.randomUUID();
       patch.salt = salt;
       patch.passcodeHash = await hashStaffPasscodeV2(raw, salt);
+      // M2: reset passcode = thu hồi mọi session cũ của tài khoản này.
+      patch.sessionVersion = (target.sessionVersion ?? 1) + 1;
       notes.push('reset passcode');
     }
 
