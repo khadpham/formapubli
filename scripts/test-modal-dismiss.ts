@@ -11,10 +11,10 @@ const cases = [
   ['src/components/inventory/RmaTicketModal.tsx', [['onClose']]],
   ['src/components/pos/ReturnsModal.tsx', [['onClose']]],
   ['src/components/auth/LoginModal.tsx', [['onCancel']]],
+  ['src/components/pos/DiscountApprovalModal.tsx', [['onClose']]],
   ['src/components/pos/PosCheckoutTerminal.tsx', [
     ['setCompletedOrder'], ['setAmbiguousMatches'], ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],
-    ['setIsPinModalOpen', 'setPendingDiscountRate'],
   ]],
 ] as const;
 let tested = 0;
@@ -36,7 +36,7 @@ for (const [file, expected] of cases) {
   assert.equal(handlers.length, expected.length, `${file}: cover each modal backdrop`);
   handlers.forEach((handler, index) => {
     const calls: Array<{ name: string; value: unknown }> = [];
-    const scope: Record<string, unknown> = { loading: false, submitting: false, busy: false, isSubmittingSession: false, isClosable: true };
+    const scope: Record<string, unknown> = { loading: false, submitting: false, busy: false, isSubmittingSession: false, isClosable: true, status: 'PENDING' };
     for (const name of expected[index]) scope[name] = (value: unknown) => calls.push({ name, value });
     vm.createContext(scope);
     const js = ts.transpileModule(`const handle = ${handler}; handle;`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
@@ -50,10 +50,10 @@ for (const [file, expected] of cases) {
       if (['setCompletedOrder', 'setAmbiguousMatches', 'setPendingDiscountRate'].includes(call.name)) assert.equal(call.value, null);
       if (call.name.startsWith('setIs')) assert.equal(call.value, false);
     }
-    const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('ReturnsModal') ? 'busy' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : null;
+    const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('ReturnsModal') ? 'busy' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : file.includes('DiscountApprovalModal') ? 'status' : null;
     if (pending) {
       calls.length = 0;
-      scope[pending] = true;
+      scope[pending] = pending === 'status' ? 'LOADING' : true;
       click?.({ target: backdrop, currentTarget: backdrop });
       assert.equal(calls.length, 0, 'Do not dismiss an in-flight transaction by accidental backdrop tap');
     }
