@@ -29,6 +29,20 @@ async function run() {
         eq(stockBalances.condition, 'NEW')
       )
     );
+  await db.delete(stockBalances).where(
+    and(
+      eq(stockBalances.editionId, edition.id),
+      eq(stockBalances.warehouseId, 'wh-in-transit'),
+      eq(stockBalances.condition, 'NEW')
+    )
+  );
+  await db.delete(stockBalances).where(
+    and(
+      eq(stockBalances.editionId, edition.id),
+      eq(stockBalances.warehouseId, 'wh-quynh-mai'),
+      eq(stockBalances.condition, 'DEFECTIVE')
+    )
+  );
   await db.insert(stockBalances).values([
     {
       id: `sb-${edition.id}-wh-in-transit-NEW`,

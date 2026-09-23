@@ -33,6 +33,8 @@ export function ExecutiveDashboard({
   const [summary, setSummary] = useState<any>(null);
   const [matrixBooks, setMatrixBooks] = useState<any[]>([]);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [selectedSettlementWarehouseId, setSelectedSettlementWarehouseId] = useState<string>('wh-du-phong');
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -56,6 +58,25 @@ export function ExecutiveDashboard({
   useEffect(() => {
     fetchDashboardData();
   }, [currentRole]);
+
+  useEffect(() => {
+    async function loadWarehouses() {
+      try {
+        const res = await fetch('/api/warehouses?all=true');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setWarehouses(json.data);
+          const fairWh = json.data.find((w: any) => w.type === 'FAIR_EVENT');
+          if (fairWh) {
+            setSelectedSettlementWarehouseId(fairWh.id);
+          }
+        }
+      } catch (err) {
+        console.error('Lỗi tải danh mục kho cho Dashboard:', err);
+      }
+    }
+    loadWarehouses();
+  }, []);
 
   // Sách sắp hết hàng (tồn kho tổng dưới 15 cuốn hoặc bằng 0)
   const lowStockBooks = matrixBooks.filter((b) => (b.totalStock || 0) < 15).slice(0, 5);
@@ -141,14 +162,36 @@ export function ExecutiveDashboard({
             <ShoppingCart className="w-4 h-4" />
             Mở Quầy POS
           </button>
-          <button
-            onClick={() => setIsSettlementModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-amber-600/30 transition-all cursor-pointer"
-            title="Xem báo cáo chốt ngày & kiểm kê kho hội chợ (Sprint 4)"
-          >
-            <CalendarCheck className="w-4 h-4" />
-            Chốt Ngày Hội Chợ
-          </button>
+          {/* Bộ chọn kho & nút chốt ngày hội chợ */}
+          <div className="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl p-1 shadow-inner">
+            <Building2 className="w-3.5 h-3.5 text-amber-400 ml-2 mr-1 shrink-0" />
+            <select
+              value={selectedSettlementWarehouseId}
+              onChange={(e) => setSelectedSettlementWarehouseId(e.target.value)}
+              className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer pr-2 max-w-[150px] truncate"
+              title="Chọn kho / gian hàng cần kết toán"
+            >
+              {warehouses.length > 0 ? (
+                warehouses.map((w) => (
+                  <option key={w.id} value={w.id} className="bg-slate-900 text-white">
+                    {w.name}
+                  </option>
+                ))
+              ) : (
+                <option value="wh-du-phong" className="bg-slate-900 text-white">
+                  Kho 3 - Hội Chợ
+                </option>
+              )}
+            </select>
+            <button
+              onClick={() => setIsSettlementModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer shrink-0"
+              title="Xem báo cáo chốt ngày & kiểm kê kho đã chọn"
+            >
+              <CalendarCheck className="w-3.5 h-3.5" />
+              Chốt Ngày
+            </button>
+          </div>
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               onClick={() => onNavigateTab('studio')}
@@ -552,8 +595,10 @@ export function ExecutiveDashboard({
       <DailyFairSettlementModal
         isOpen={isSettlementModalOpen}
         onClose={() => setIsSettlementModalOpen(false)}
-        warehouseId="wh-du-phong"
-        warehouseName="Kho 3 - Hội Chợ (Gian hàng sự kiện)"
+        warehouseId={selectedSettlementWarehouseId}
+        warehouseName={
+          warehouses.find((w) => w.id === selectedSettlementWarehouseId)?.name || 'Kho 3 - Hội Chợ (Gian hàng sự kiện)'
+        }
         currentRole={currentRole}
       />
     </div>

@@ -14,6 +14,7 @@ import {
   Building2,
   TrendingUp,
   Package,
+  Boxes,
   ShieldAlert,
   ShieldCheck,
   RefreshCw,
@@ -40,6 +41,9 @@ export function DailyFairSettlementModal({
 }: DailyFairSettlementModalProps) {
   const [data, setData] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
+  const [warehouseList, setWarehouseList] = useState<any[]>([]);
+  const [discountDisplayMode, setDiscountDisplayMode] = useState<'PERCENT' | 'VND'>('PERCENT');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activeTab, setActiveTab] = useState<'FINANCIALS' | 'STOCKTAKE' | 'DISCOUNT'>('FINANCIALS');
 
@@ -47,11 +51,30 @@ export function DailyFairSettlementModal({
   const [actualCounts, setActualCounts] = useState<Record<string, number>>({});
   const [stocktakeNote, setStocktakeNote] = useState('');
 
+  useEffect(() => {
+    setCurrentWarehouseId(warehouseId);
+  }, [warehouseId]);
+
+  useEffect(() => {
+    async function loadWarehouses() {
+      try {
+        const res = await fetch('/api/warehouses?all=true');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setWarehouseList(json.data);
+        }
+      } catch {}
+    }
+    if (isOpen) {
+      loadWarehouses();
+    }
+  }, [isOpen]);
+
   const fetchSettlement = async () => {
     try {
       setIsLoading(true);
       const res = await fetch(
-        `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(warehouseId)}&date=${encodeURIComponent(selectedDate)}`,
+        `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}&date=${encodeURIComponent(selectedDate)}`,
         { headers: { 'x-formapubli-role': currentRole } }
       );
       const json = await res.json();
@@ -72,10 +95,10 @@ export function DailyFairSettlementModal({
   };
 
   useEffect(() => {
-    if (isOpen && warehouseId) {
+    if (isOpen && currentWarehouseId) {
       fetchSettlement();
     }
-  }, [isOpen, warehouseId, selectedDate]);
+  }, [isOpen, currentWarehouseId, selectedDate]);
 
   if (!isOpen) return null;
 
@@ -92,6 +115,11 @@ export function DailyFairSettlementModal({
   };
 
   // Tính tổng số lượng sách lý thuyết vs thực tế
+  const activeWarehouseName =
+    warehouseList.find((w) => w.id === currentWarehouseId)?.name || warehouseName || data?.warehouse?.name || currentWarehouseId;
+
+  if (!isOpen) return null;
+
   const totalTheoreticalBooks = (data?.inventoryReconciliation || []).reduce(
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
@@ -103,8 +131,8 @@ export function DailyFairSettlementModal({
   const totalBookVariance = totalActualBooks - totalTheoreticalBooks;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      {/* Styles dành riêng cho in A4 Biên bản chốt ca & kiểm kê */}
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      {/* CSS ẩn mọi thứ khác khi in khổ A4 (Print Stylesheet) */}
       <style jsx global>{`
         @media print {
           body * {
@@ -119,12 +147,9 @@ export function DailyFairSettlementModal({
             left: 0;
             top: 0;
             width: 100%;
-            margin: 0;
-            padding: 12mm;
             background: white !important;
-            color: black !important;
-            box-shadow: none !important;
-            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
           }
           .no-print {
             display: none !important;
@@ -149,13 +174,30 @@ export function DailyFairSettlementModal({
                 <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-600/60 font-mono">Sprint 4</span>
               </h3>
               <p className="text-xs text-slate-400">
-                Kho: <strong className="text-white">{warehouseName || data?.warehouse?.name || warehouseId}</strong> |
+                Kho: <strong className="text-white">{activeWarehouseName}</strong> |
                 Ngày: <span className="font-mono text-amber-300">{selectedDate}</span>
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {warehouseList.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-700">
+                <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <select
+                  value={currentWarehouseId}
+                  onChange={(e) => setCurrentWarehouseId(e.target.value)}
+                  className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer max-w-[180px] truncate"
+                  title="Chọn kho / gian hàng cần kết toán"
+                >
+                  {warehouseList.map((w) => (
+                    <option key={w.id} value={w.id} className="bg-slate-900 text-white">
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <input
               type="date"
               value={selectedDate}
@@ -202,8 +244,8 @@ export function DailyFairSettlementModal({
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Package className="w-4 h-4" />
-              Kiểm Kê Tồn Kệ Thực Tế ({data?.inventoryReconciliation?.length || 0})
+              <Boxes className="w-4 h-4" />
+              Kiểm Kê Đóng Thùng
             </button>
             <button
               onClick={() => setActiveTab('DISCOUNT')}
@@ -213,18 +255,33 @@ export function DailyFairSettlementModal({
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Percent className="w-4 h-4" />
+              <ShieldAlert className="w-4 h-4" />
               Giám Sát Chiết Khấu ({data?.discountSupervision?.overCapOrdersCount || 0})
             </button>
           </div>
 
-          <button
-            onClick={fetchSettlement}
-            className="text-slate-400 hover:text-indigo-600 p-1.5 mb-2 rounded-lg hover:bg-slate-200 transition"
-            title="Tải lại số liệu"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setDiscountDisplayMode((prev) => (prev === 'PERCENT' ? 'VND' : 'PERCENT'))}
+              className="px-2.5 py-1 text-xs font-bold rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 shadow-sm transition"
+              title="Chuyển đổi cách hiển thị chiết khấu giữa % và số tiền VNĐ"
+            >
+              <Percent className="w-3.5 h-3.5 text-amber-600" />
+              <span>Đơn vị CK:</span>
+              <span className="font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-extrabold text-[11px]">
+                {discountDisplayMode === 'PERCENT' ? '%' : 'VNĐ'}
+              </span>
+            </button>
+
+            <button
+              onClick={fetchSettlement}
+              className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-slate-200 transition"
+              title="Tải lại số liệu"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {/* Nội dung báo cáo tương tác trên màn hình (Interactive UI) */}
@@ -254,13 +311,28 @@ export function DailyFairSettlementModal({
                     </div>
 
                     <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80">
-                      <p className="text-[11px] font-bold text-amber-700">Tổng chiết khấu đã cấp:</p>
-                      <p className="text-base font-black font-mono text-rose-600 mt-1">
-                        -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
+                      <p className="text-[11px] font-bold text-amber-700">
+                        {discountDisplayMode === 'PERCENT' ? 'Tỷ lệ chiết khấu bình quân:' : 'Tổng chiết khấu đã cấp:'}
                       </p>
-                      <p className="text-[10px] text-amber-600 font-semibold mt-0.5">
-                        Bình quân: {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
-                      </p>
+                      {discountDisplayMode === 'PERCENT' ? (
+                        <>
+                          <p className="text-base font-black font-mono text-rose-600 mt-1">
+                            {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
+                          </p>
+                          <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
+                            Quy đổi tiền: -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-base font-black font-mono text-rose-600 mt-1">
+                            -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
+                          </p>
+                          <p className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                            Tỷ lệ bình quân: {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
+                          </p>
+                        </>
+                      )}
                     </div>
 
                     <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
@@ -501,7 +573,7 @@ export function DailyFairSettlementModal({
                           <strong className="font-mono text-rose-950 font-black">
                             {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
                           </strong>{' '}
-                          (Vượt ngưỡng an toàn 12%). Yêu cầu kiểm tra danh sách đơn duyệt đặc biệt bên dưới.
+                          (Vượt ngưỡng an toàn 20%). Yêu cầu kiểm tra danh sách đơn duyệt đặc biệt bên dưới.
                         </p>
                       </div>
                     </div>
@@ -515,7 +587,7 @@ export function DailyFairSettlementModal({
                           <strong className="font-mono text-emerald-950">
                             {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
                           </strong>{' '}
-                          (Dưới trần kiểm soát 12%).
+                          (Dưới trần kiểm soát 20%).
                         </p>
                       </div>
                     </div>
@@ -525,7 +597,7 @@ export function DailyFairSettlementModal({
                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                     <div className="bg-slate-100 px-4 py-3 border-b border-slate-200">
                       <h4 className="font-bold text-xs text-slate-800 uppercase">
-                        Đơn Hàng Duyệt Chiết Khấu Vượt Trần (&gt; 20%) ({data.discountSupervision?.overCapOrdersCount || 0})
+                        Đơn Hàng Duyệt Chiết Khấu Từ Trần Cho Phép (≥ 20%) ({data.discountSupervision?.overCapOrdersCount || 0})
                       </h4>
                     </div>
 
@@ -535,7 +607,7 @@ export function DailyFairSettlementModal({
                           <th className="p-3">Mã Đơn</th>
                           <th className="p-3">Thu Ngân</th>
                           <th className="p-3 text-right">Giá Gốc</th>
-                          <th className="p-3 text-center">Tỷ Lệ CK</th>
+                          <th className="p-3 text-center">{discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ CK' : 'Chiết Khấu'}</th>
                           <th className="p-3 text-right">Thực Thu</th>
                           <th className="p-3 text-center">Phương Thức</th>
                           <th className="p-3">Người Duyệt</th>
@@ -557,7 +629,21 @@ export function DailyFairSettlementModal({
                                 {(ord.subtotal || 0).toLocaleString('vi-VN')} đ
                               </td>
                               <td className="p-3 text-center font-mono font-bold text-rose-600">
-                                {Math.round((ord.discountRate || 0) * 100)}%
+                                {discountDisplayMode === 'PERCENT' ? (
+                                  <div>
+                                    <span>{Math.round((ord.discountRate || 0) * 100)}%</span>
+                                    <span className="block text-[10px] text-slate-400 font-normal">
+                                      -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <span>-{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ</span>
+                                    <span className="block text-[10px] text-slate-400 font-normal">
+                                      {Math.round((ord.discountRate || 0) * 100)}%
+                                    </span>
+                                  </div>
+                                )}
                               </td>
                               <td className="p-3 text-right font-mono font-bold text-slate-900">
                                 {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
@@ -658,7 +744,7 @@ export function DailyFairSettlementModal({
               <div className="grid grid-cols-2 gap-x-8 gap-y-1">
                 <div>- Tổng số đơn hàng bán ra: <strong>{data.financials?.totalOrdersCount} đơn</strong></div>
                 <div>- Doanh thu gộp (Giá bìa): <strong>{(data.financials?.grossSales || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>- Tổng chiết khấu thương mại: <strong>-{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ</strong> ({((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%)</div>
+                <div>- Tổng chiết khấu thương mại: <strong>{((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%</strong> (Quy đổi: -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ)</div>
                 <div>- Doanh thu thực thu: <strong>{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
                 <div>+ Doanh số tiền mặt (Cash): <strong>{(data.paymentBreakdown?.cash?.sales || 0).toLocaleString('vi-VN')} đ</strong></div>
                 <div>+ Doanh số Chuyển khoản QR: <strong>{(data.paymentBreakdown?.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ</strong></div>

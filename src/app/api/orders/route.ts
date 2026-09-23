@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
             details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${cashierId || userRole}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
           });
           return NextResponse.json(
-            { success: false, error: 'Vượt trần chiết khấu 20%. Yêu cầu Quản lý phê duyệt!' },
+            { success: false, error: 'Chiết khấu từ 20% trở lên bắt buộc có mã PIN hoặc phê duyệt của Quản lý.' },
             { status: 403 }
           );
         }

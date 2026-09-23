@@ -14,6 +14,7 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Printer,
+  Percent,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
@@ -51,6 +52,8 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [loading, setLoading] = useState(true);
   const [activeScope, setActiveScope] = useState<'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT'>('ALL');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('ALL');
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [discountDisplayMode, setDiscountDisplayMode] = useState<'PERCENT' | 'VND'>('PERCENT');
   const [datePreset, setDatePreset] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'>('ALL');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -60,6 +63,22 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [pageSize, setPageSize] = useState<number>(20); // 20 | 50 | 100 | -1 (tat ca)
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
+
+  // Tải danh mục kho động từ server
+  useEffect(() => {
+    async function loadWarehouses() {
+      try {
+        const res = await fetch('/api/warehouses?all=true');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setWarehouses(json.data);
+        }
+      } catch (err) {
+        console.error('Lỗi tải danh mục kho:', err);
+      }
+    }
+    loadWarehouses();
+  }, []);
 
   // Nếu là Kế toán thuế: Ép cứng chỉ được xem OFFICIAL_TAX
   useEffect(() => {
@@ -143,6 +162,9 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     totalDiscount: filteredOrders.reduce((s, o) => s + Number(o.discountAmount || 0), 0),
     totalRevenue: filteredOrders.reduce((s, o) => s + Number(o.finalAmount || 0), 0),
   };
+  const avgDiscountPercent = viewSummary.totalSubtotal > 0
+    ? ((viewSummary.totalDiscount / viewSummary.totalSubtotal) * 100).toFixed(1)
+    : '0.0';
 
   // Xuất file CSV chuẩn UTF-8 BOM cho Excel
   const exportToCSV = () => {
@@ -162,6 +184,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       'Khách Hàng',
       'Phương Thức TT',
       'Tổng Giá Bìa (VND)',
+      'Tỷ Lệ CK (%)',
       'Tiền Chiết Khấu (VND)',
       'Thực Thu (VND)',
       'Phân Loại Sổ',
@@ -182,18 +205,24 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       createdAt: ord.createdAt || '',
     }));
 
-    const rows = filteredOrders.map((ord) => [
-      cell(ord.orderCode || ''),
-      cell(ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai'),
-      cell(ord.customerName || ''),
-      cell(ord.paymentMethod || ''),
-      ord.subtotal || 0,
-      ord.discountAmount || 0,
-      ord.finalAmount || 0,
-      cell(ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'),
-      cell(ord.vatInvoiceCode || ''),
-      cell(ord.createdAt || ''),
-    ]);
+    const rows = filteredOrders.map((ord) => {
+      const whName = warehouses.find((w) => w.id === ord.warehouseId)?.name ||
+        (ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai');
+      const discountPct = ord.subtotal > 0 ? `${Math.round(((ord.discountAmount || 0) / ord.subtotal) * 100)}%` : '0%';
+      return [
+        cell(ord.orderCode || ''),
+        cell(whName),
+        cell(ord.customerName || ''),
+        cell(ord.paymentMethod || ''),
+        ord.subtotal || 0,
+        cell(discountPct),
+        ord.discountAmount || 0,
+        ord.finalAmount || 0,
+        cell(ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'),
+        cell(ord.vatInvoiceCode || ''),
+        cell(ord.createdAt || ''),
+      ];
+    });
 
     const baseCsv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const watermarkedCsv = appendExportWatermark(baseCsv, rawObjectsForHash, {
@@ -235,6 +264,18 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <button
+            type="button"
+            onClick={() => setDiscountDisplayMode((prev) => (prev === 'PERCENT' ? 'VND' : 'PERCENT'))}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
+            title="Chuyển đổi hiển thị chiết khấu giữa % và số tiền VNĐ"
+          >
+            <Percent className="w-3.5 h-3.5 text-amber-600" />
+            <span>Đơn vị CK:</span>
+            <span className="font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-extrabold text-[11px]">
+              {discountDisplayMode === 'PERCENT' ? '%' : 'VNĐ'}
+            </span>
+          </button>
           <button
             onClick={fetchOrders}
             disabled={loading}
@@ -367,9 +408,19 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer min-h-[36px]"
           >
             <option value="ALL">Tất cả các kho (Toàn hệ thống)</option>
-            <option value="wh-au-co">Kho 1 - Âu Cơ (VP chính)</option>
-            <option value="wh-du-phong">Kho 3 - Hội Chợ (Sự kiện)</option>
-            <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
+            {warehouses.length > 0 ? (
+              warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="wh-au-co">Kho 1 - Âu Cơ (VP chính)</option>
+                <option value="wh-du-phong">Kho 3 - Hội Chợ (Sự kiện)</option>
+                <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
+              </>
+            )}
           </select>
         </div>
       </div>
@@ -387,10 +438,15 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            Tổng Tiền Chiết Khấu Đã Giảm
+            {discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ Chiết Khấu Bình Quân' : 'Tổng Tiền Chiết Khấu Đã Giảm'}
           </span>
           <p className="text-xl font-extrabold text-amber-600 mt-1 font-mono">
-            -{(viewSummary.totalDiscount || 0).toLocaleString('vi-VN')} đ
+            {discountDisplayMode === 'PERCENT' ? `${avgDiscountPercent}%` : `-${(viewSummary.totalDiscount || 0).toLocaleString('vi-VN')} đ`}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5 font-medium">
+            {discountDisplayMode === 'PERCENT'
+              ? `Quy đổi tiền: -${(viewSummary.totalDiscount || 0).toLocaleString('vi-VN')} đ`
+              : `Tỷ lệ bình quân: ${avgDiscountPercent}%`}
           </p>
         </div>
 
@@ -478,7 +534,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                 <th className="p-3.5">Kênh</th>
                 <th className="p-3.5">Thanh Toán</th>
                 <th className="p-3.5">Tổng Bìa</th>
-                <th className="p-3.5">Chiết Khấu</th>
+                <th className="p-3.5">{discountDisplayMode === 'PERCENT' ? 'Chiết Khấu (%)' : 'Chiết Khấu (VNĐ)'}</th>
                 <th className="p-3.5">Thực Thu</th>
                 <th className="p-3.5">Phân Loại Sổ</th>
                 <th className="p-3.5">Thời Gian</th>
@@ -498,11 +554,12 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                       {ord.orderCode}
                     </td>
                     <td className="p-3.5 font-medium text-slate-700">
-                      {ord.warehouseId === 'wh-au-co'
-                        ? 'Kho Âu Cơ'
-                        : ord.warehouseId === 'wh-du-phong'
-                        ? 'Kho Hội Chợ'
-                        : 'Kho Quỳnh Mai'}
+                      {warehouses.find((w) => w.id === ord.warehouseId)?.name ||
+                        (ord.warehouseId === 'wh-au-co'
+                          ? 'Kho Âu Cơ'
+                          : ord.warehouseId === 'wh-du-phong'
+                          ? 'Kho Hội Chợ'
+                          : 'Kho Quỳnh Mai')}
                     </td>
                     <td className="p-3.5 font-medium text-slate-900">
                       {ord.customerName}
@@ -521,7 +578,25 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                       {ord.subtotal.toLocaleString('vi-VN')} đ
                     </td>
                     <td className="p-3.5 font-mono text-amber-600">
-                      -{ord.discountAmount ? ord.discountAmount.toLocaleString('vi-VN') : 0} đ
+                      {discountDisplayMode === 'PERCENT' ? (
+                        <div>
+                          <span className="font-bold">
+                            {ord.subtotal > 0 ? `${Math.round(((ord.discountAmount || 0) / ord.subtotal) * 100)}%` : '0%'}
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            -{Number(ord.discountAmount || 0).toLocaleString('vi-VN')} đ
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="font-bold">
+                            -{Number(ord.discountAmount || 0).toLocaleString('vi-VN')} đ
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            {ord.subtotal > 0 ? `${Math.round(((ord.discountAmount || 0) / ord.subtotal) * 100)}%` : '0%'}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="p-3.5 font-mono font-bold text-emerald-700">
                       {ord.finalAmount.toLocaleString('vi-VN')} đ

@@ -38,7 +38,6 @@ import { ReturnsModal } from '@/components/pos/ReturnsModal';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
-import { VietQrPay } from '@/components/pos/VietQrPay';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -1719,8 +1718,12 @@ export function PosCheckoutTerminal({
                 </div>
               </div>
               {paymentMethod === 'QR_CODE' && (
-                <div className="mt-3">
-                  <VietQrPay warehouseId={selectedWarehouseId} amount={isGift ? 0 : finalAmount} orderContent={note || 'THANH TOAN POS'} />
+                <div className="mt-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs text-indigo-900 flex items-center gap-2.5">
+                  <QrCode className="w-5 h-5 text-indigo-600 shrink-0" />
+                  <div>
+                    <p className="font-bold">Quét mã QR Chuyển khoản ngân hàng</p>
+                    <p className="text-[11px] text-indigo-700">Khách quét mã QR tài khoản ngân hàng gian hàng để thanh toán đơn hàng.</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1859,6 +1862,7 @@ export function PosCheckoutTerminal({
                 ? '💾 Đã chốt bill ngoại tuyến thành công. Có thể in phiếu giao hàng ngay!'
                 : '✅ Thẻ kho vật lý đã được khấu trừ tức thì. Kho máy = Kho kệ 100%!'}
             </p>
+
 
             {/* Paper Size Preset Switcher (K80 vs K57) */}
             <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between">
