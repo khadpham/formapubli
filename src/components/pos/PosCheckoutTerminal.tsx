@@ -112,6 +112,19 @@ export function PosCheckoutTerminal({
   // Desktop giữ full grid nguyên bản (không gian rộng) — chỉ mobile mới thu gọn.
   const [catalogExpanded, setCatalogExpanded] = useState(false);
   const CATALOG_COLLAPSED_COUNT = 3;
+  // FAB quét chỉ hiện khi nút Quét to đã trôi khỏi viewport (IntersectionObserver)
+  const scanButtonRef = useRef<HTMLButtonElement>(null);
+  const [scanButtonVisible, setScanButtonVisible] = useState(true);
+  useEffect(() => {
+    const el = scanButtonRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setScanButtonVisible(entry.isIntersecting),
+      { threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
   // Panel kho/két ca: setup 1 lần đầu ca + cuối ca nên mobile thu gọn mặc định
   const [shiftPanelExpanded, setShiftPanelExpanded] = useState(false);
   // Noti duyệt chiết khấu cho quản lý: poll số đơn chờ + badge + toast + rung
@@ -1490,6 +1503,7 @@ export function PosCheckoutTerminal({
 
           {/* Mobile: nút Quét mã to rõ — cách thêm món chính khi bán thực tế */}
           <button
+            ref={scanButtonRef}
             type="button"
             onClick={() => setIsScannerOpen(true)}
             className="md:hidden w-full min-h-[48px] px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white text-sm font-extrabold shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
@@ -2438,9 +2452,9 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
-      {/* Nút quét nổi mobile (giỏ trống mới hiện — có giỏ thì dùng nút quét trong thanh trên).
-          Đặt bên trái để không đè bong bóng Copilot (phải) và dock đáy. */}
-      {cart.length === 0 && (
+      {/* Nút quét nổi mobile: chỉ hiện khi giỏ trống VÀ nút Quét to đã trôi khỏi
+          màn hình (kéo xuống). Có giỏ thì dùng nút quét trong thanh trên. */}
+      {cart.length === 0 && !scanButtonVisible && (
         <button
           type="button"
           onClick={() => setIsScannerOpen(true)}
