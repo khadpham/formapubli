@@ -1078,12 +1078,12 @@ export function PosCheckoutTerminal({
         </div>
 
         {/* Mobile slim: kho + két tóm tắt 1 dòng, sticky thay top bar (bấm để mở full setup đầu/ca-cuối ca) */}
-        <div className="md:hidden sticky top-0 z-30 -mx-3 px-3 pt-3 pb-2 bg-slate-50/95 backdrop-blur-md">
+        <div className="md:hidden sticky top-0 z-30 -mx-3 px-3 pt-2 pb-1 bg-slate-50/95 backdrop-blur-md">
         <button
           type="button"
           onClick={() => setShiftPanelExpanded((v) => !v)}
           aria-expanded={shiftPanelExpanded}
-          className="w-full flex items-center gap-2 px-3 py-2 bg-white rounded-2xl border border-slate-200/80 shadow-sm text-xs font-bold text-slate-700 min-h-[44px] active:scale-[0.99] transition-all"
+          className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded-xl border border-slate-200/80 shadow-sm text-[11px] font-bold text-slate-700 min-h-[38px] active:scale-[0.99] transition-all"
         >
           <span className={`w-2 h-2 rounded-full shrink-0 ${activeSession ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
           <span className="flex-1 text-left truncate">
@@ -1304,7 +1304,7 @@ export function PosCheckoutTerminal({
       {/* Main Split-View: Left Products (2 Cols) + Right Cart (1 Col) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Side: Search & Book Catalog Selection */}
-        <div className="lg:col-span-7 space-y-4">
+        <div className="lg:col-span-7 space-y-3 md:space-y-4">
           {/* Search Box with Voice Mic */}
           <div ref={searchContainerRef} className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
