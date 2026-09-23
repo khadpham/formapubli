@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { generateVietQRPayload } from '@/lib/vietqr';
 
@@ -22,21 +22,26 @@ export function VietQrPay({
   const [content, setContent] = useState(initialContent);
   const [qrUrl, setQrUrl] = useState('');
   const [payload, setPayload] = useState('');
+  const reqRef = useRef(0);
 
   useEffect(() => { setContent(initialContent); }, [initialContent]);
 
   useEffect(() => {
+    let alive = true;
     fetch(`/api/bank-accounts?warehouseId=${encodeURIComponent(warehouseId)}`)
       .then((r) => r.json())
       .then((j) => {
+        if (!alive) return;
         const l: BankAccount[] = j?.data?.list || [];
         setList(l);
         setSelectedId(j?.data?.default?.id || l[0]?.id || '');
       })
       .catch(() => {});
+    return () => { alive = false; };
   }, [warehouseId]);
 
   useEffect(() => {
+    const req = ++reqRef.current;
     const acc = list.find((b) => b.id === selectedId);
     if (!acc || amount <= 0) {
       setQrUrl(''); setPayload('');
@@ -47,10 +52,11 @@ export function VietQrPay({
     setPayload(p);
     QRCode.toDataURL(p, { width: 280, margin: 1 })
       .then((url) => {
+        if (req !== reqRef.current) return;
         setQrUrl(url);
         onQr?.({ dataUrl: url, payload: p, accountNo: acc.accountNo, content });
       })
-      .catch(() => { setQrUrl(''); onQr?.(null); });
+      .catch(() => { if (req !== reqRef.current) return; setQrUrl(''); onQr?.(null); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, selectedId, amount, content]);
 

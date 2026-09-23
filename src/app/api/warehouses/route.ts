@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { WarehouseService } from '@/services/warehouse.service';
+import type { BankAccountRow } from '@/services/warehouse.service';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
+import { AppError } from '@/services/app-error';
 import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
@@ -56,6 +58,13 @@ export async function POST(req: NextRequest) {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);
     const body = await req.json();
 
+    if (body.defaultBankAccountId) {
+      const accounts = await WarehouseService.listBankAccounts();
+      if (!accounts.some((b: BankAccountRow) => b.id === body.defaultBankAccountId)) {
+        throw AppError.invalid('Tài khoản nhận tiền không tồn tại hoặc đã ngưng.');
+      }
+    }
+
     const created = await WarehouseService.createWarehouse({
       code: body.code,
       name: body.name,
@@ -64,17 +73,18 @@ export async function POST(req: NextRequest) {
       isSellableOnPos: body.isSellableOnPos,
     });
 
+    const out = created as typeof created & { defaultBankAccountId: string | null };
     if (body.defaultBankAccountId) {
       await WarehouseService.setDefaultBankAccount(created.id, body.defaultBankAccountId);
-      (created as any).defaultBankAccountId = body.defaultBankAccountId;
+      out.defaultBankAccountId = body.defaultBankAccountId;
     } else {
-      (created as any).defaultBankAccountId = null;
+      out.defaultBankAccountId = null;
     }
 
     return NextResponse.json(
       {
         success: true,
-        data: created,
+        data: out,
         message: `Đã mở kho/gian hàng [${created.code}] ${created.name} thành công.`,
       },
       { status: 201 }

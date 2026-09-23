@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { WarehouseService } from '@/services/warehouse.service';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
+import { AppError } from '@/services/app-error';
 import { UserRole } from '@/lib/roles';
 import { db, bankAccounts } from '@/db';
+import { and, eq } from 'drizzle-orm';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +45,9 @@ export async function POST(req: NextRequest) {
     if (!label) {
       return NextResponse.json({ success: false, error: 'Thiếu tên gợi nhớ (label).' }, { status: 400 });
     }
+    const dup = await db.select({ id: bankAccounts.id }).from(bankAccounts)
+      .where(and(eq(bankAccounts.bankBin, bankBin), eq(bankAccounts.accountNo, accountNo))).limit(1);
+    if (dup[0]) throw AppError.conflict('Tài khoản này đã tồn tại.');
     const row = {
       id: `bank-${generateUUIDv7().slice(-8)}`,
       label,

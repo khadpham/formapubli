@@ -18,8 +18,9 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
       fetch('/api/warehouses?all=true').then((r) => r.json()),
       fetch('/api/bank-accounts').then((r) => r.json()),
     ]);
-    if (w?.success) setWarehouses(w.data);
-    if (b?.success) setBanks(b.data.list);
+    if (w?.success && Array.isArray(w.data)) setWarehouses(w.data);
+    if (b?.success && Array.isArray(b.data?.list)) setBanks(b.data.list);
+    else throw new Error('Không tải được danh sách TK nhận tiền.');
   };
 
   useEffect(() => { reload().catch(() => {}); }, []);
