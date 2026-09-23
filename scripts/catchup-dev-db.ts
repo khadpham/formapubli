@@ -8,7 +8,7 @@
  * - Mặc định --dry-run: chỉ báo thiếu gì, không ghi 1 byte.
  * - Chạy thật: npx tsx scripts/catchup-dev-db.ts --confirm [--target=file:formapubli.db]
  * - Câu lệnh CREATE TABLE/INDEX đã tồn tại được bỏ qua (không lỗi).
- * - Seed 6 tài khoản ca idempotent: chỉ thêm mã còn thiếu, không ghi đè PIN.
+  * - Seed 8 tài khoản ca idempotent: chỉ thêm mã còn thiếu, không ghi đè PIN.
  */
 import fs from 'node:fs';
 import path from 'node:path';

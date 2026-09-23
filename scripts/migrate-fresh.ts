@@ -19,6 +19,8 @@ import { createClient } from '@libsql/client';
 export interface MigrateFreshOptions {
   targetUrl: string;
   expectTables?: string[];
+  /** Token khi target là Turso remote (libsql://). Local file không cần. */
+  authToken?: string;
 }
 
 interface JournalEntry {
@@ -37,7 +39,7 @@ export function stripToExecutable(chunk: string): string {
 }
 
 export async function migrateFresh(options: MigrateFreshOptions): Promise<{ appliedFiles: string[] }> {
-  const { targetUrl, expectTables = [] } = options;
+  const { targetUrl, expectTables = [], authToken } = options;
 
   if (/(^|[/:])formapubli\.db$/.test(targetUrl) && !targetUrl.startsWith('file:formapubli_test')) {
     throw new Error('REFUSED: migrate-fresh không bao giờ trỏ vào formapubli.db production!');
@@ -47,7 +49,7 @@ export async function migrateFresh(options: MigrateFreshOptions): Promise<{ appl
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
   const entries: JournalEntry[] = [...journal.entries].sort((a, b) => a.idx - b.idx);
 
-  const client = createClient({ url: targetUrl });
+  const client = createClient({ url: targetUrl, authToken });
   const appliedFiles: string[] = [];
 
   for (const entry of entries) {

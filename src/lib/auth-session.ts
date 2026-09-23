@@ -414,6 +414,20 @@ export const DEFAULT_STAFF_ACCOUNTS: StaffSeedData[] = [
     salt: 'salt_nv_02',
   },
   {
+    staffId: 'NV-03',
+    fullName: 'Thu Ngân 03',
+    role: 'ROLE_CASHIER',
+    passcode: '2345',
+    salt: 'salt_nv_03',
+  },
+  {
+    staffId: 'NV-04',
+    fullName: 'Thu Ngân 04',
+    role: 'ROLE_CASHIER',
+    passcode: '3456',
+    salt: 'salt_nv_04',
+  },
+  {
     staffId: 'KHO-01',
     fullName: 'Thủ Kho 01',
     role: 'ROLE_WAREHOUSE',
