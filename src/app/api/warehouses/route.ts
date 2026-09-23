@@ -66,6 +66,9 @@ export async function POST(req: NextRequest) {
 
     if (body.defaultBankAccountId) {
       await WarehouseService.setDefaultBankAccount(created.id, body.defaultBankAccountId);
+      (created as any).defaultBankAccountId = body.defaultBankAccountId;
+    } else {
+      (created as any).defaultBankAccountId = null;
     }
 
     return NextResponse.json(

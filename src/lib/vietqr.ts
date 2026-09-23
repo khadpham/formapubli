@@ -35,7 +35,8 @@ export function generateVietQRPayload(params: {
   let payload = tlv('00', '01') + tlv('01', '12') + tlv('38', provider) + tlv('53', '704');
   if (Math.round(amount) > 0) payload += tlv('54', Math.round(amount).toString());
   payload += tlv('58', 'VN');
-  if (content) payload += tlv('62', tlv('08', normalizeVietqrContent(content)));
+  const normContent = content ? normalizeVietqrContent(content) : '';
+  if (normContent.length > 0) payload += tlv('62', tlv('08', normContent));
   payload += '6304';
   return payload + crc16Ccitt(payload);
 }
