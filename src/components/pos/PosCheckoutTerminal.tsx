@@ -1865,6 +1865,16 @@ export function PosCheckoutTerminal({
               </div>
             </div>
 
+            {completedOrder.qrDataUrl && (
+              <div className="flex flex-col items-center gap-1 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={completedOrder.qrDataUrl} alt="VietQR thanh toán" className="w-[180px] h-[180px] rounded-xl border border-slate-200 bg-white" />
+                <div className="text-[11px] font-mono font-bold text-slate-700">
+                  {completedOrder.finalAmount.toLocaleString('vi-VN')} đ{completedOrder.qrAccountNo ? ` → ${completedOrder.qrAccountNo}` : ''}
+                </div>
+              </div>
+            )}
+
             <p className="text-[11px] text-emerald-700 text-center font-medium bg-emerald-50 py-1.5 rounded-lg border border-emerald-200">
               {completedOrder.isOffline
                 ? '💾 Đã chốt bill ngoại tuyến thành công. Có thể in phiếu giao hàng ngay!'
@@ -1968,17 +1978,7 @@ export function PosCheckoutTerminal({
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
                         Giá bìa: {book.coverPrice.toLocaleString('vi-VN')} đ • Tồn kho: <span className={stock > 0 ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>{stock} cuốn</span>
-            </p>
-
-            {completedOrder.qrDataUrl && (
-              <div className="flex flex-col items-center gap-1 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={completedOrder.qrDataUrl} alt="VietQR thanh toán" className="w-[180px] h-[180px] rounded-xl border border-slate-200 bg-white" />
-                <div className="text-[11px] font-mono font-bold text-slate-700">
-                  {completedOrder.finalAmount.toLocaleString('vi-VN')} đ{completedOrder.qrAccountNo ? ` → ${completedOrder.qrAccountNo}` : ''}
-                </div>
-              </div>
-            )}
+                      </p>
                     </div>
                     <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
                       Chọn ➔
