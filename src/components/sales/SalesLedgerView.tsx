@@ -252,10 +252,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     <div className="space-y-6">
       {/* Header Controls */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+        <div className="hidden md:block">
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Receipt className="w-5 h-5 text-sky-600" />
-            Sổ Doanh Số & Dòng Tiền (Dual Fiscal Ledger)
+            Sổ Doanh Số & Dòng Tiền
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Quản trị kép: Phân tách rõ ràng giữa Báo Cáo Kế Toán Thuế và Sổ Quản Trị Thực Tế Nội Bộ

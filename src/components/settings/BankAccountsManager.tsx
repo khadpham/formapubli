@@ -290,7 +290,7 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
             <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
               Tài Khoản Ngân Hàng & VietQR
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="hidden md:block text-xs text-slate-500 mt-0.5">
               Quản lý danh sách tài khoản thụ hưởng, cấu hình mã BIN chuẩn Napas và gán mặc định cho từng kho.
             </p>
           </div>

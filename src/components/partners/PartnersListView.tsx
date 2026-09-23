@@ -22,11 +22,11 @@ interface PartnersListViewProps {
 export function PartnersListView({ partners, currentRole = 'ROLE_OWNER' }: PartnersListViewProps) {
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Users className="w-5 h-5 text-purple-600" />
-            Đối Tác & Kênh Phân Phối Sỉ (Partners & B2B)
+            Đối Tác & Kênh Phân Phối Sỉ
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Quản lý mạng lưới đối tác phát hành, nhà in ấn, NXB liên kết và các đại lý sỉ Đinh Lễ

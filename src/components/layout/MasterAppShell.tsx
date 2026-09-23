@@ -156,8 +156,8 @@ export function MasterAppShell({
           isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-72'
         }`}
       >
-        {/* Top Bar for Mobile & Quick Status */}
-        <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 md:px-8 flex items-center justify-between gap-4">
+        {/* Top Bar — mobile POS ẩn hẳn (thanh kho sticky trong trang thay thế) */}
+        <header className={`sticky top-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 md:px-8 items-center justify-between gap-4 ${currentTab === 'pos' ? 'hidden md:flex' : 'flex'}`}>
           {/* Mobile: chỉ tên trang (mở menu bằng nút Menu ở dock đáy) */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -234,7 +234,8 @@ export function MasterAppShell({
 
           {currentTab === 'inventory' && (
             <div className="space-y-6">
-              <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              {/* Tên kho đã có ở pill top bar — ẩn cả card trên mobile */}
+              <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
                     Kho Hàng & Thẻ Kho

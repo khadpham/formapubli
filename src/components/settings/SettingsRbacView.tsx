@@ -189,7 +189,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
     <div className="space-y-6">
       {/* Top Header */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+        <div className="hidden md:block">
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Settings className="w-5 h-5 text-indigo-600" />
             Cài Đặt Hệ Thống & Vai Trò

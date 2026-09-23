@@ -128,7 +128,7 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div>
+        <div className="hidden md:block">
           <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
             <FlaskConical className="w-5 h-5 text-indigo-600" />
             Không Gian Phân Tích Chuyên Sâu & Dự Báo Tái Bản

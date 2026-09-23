@@ -28,7 +28,6 @@ import {
   RefreshCw,
   CloudUpload,
   ClipboardPaste,
-  RotateCcw,
   ShieldCheck,
   CalendarCheck,
   ChevronDown,
@@ -36,7 +35,6 @@ import {
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
-import { ReturnsModal } from '@/components/pos/ReturnsModal';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
@@ -114,6 +112,8 @@ export function PosCheckoutTerminal({
   // Desktop giữ full grid nguyên bản (không gian rộng) — chỉ mobile mới thu gọn.
   const [catalogExpanded, setCatalogExpanded] = useState(false);
   const CATALOG_COLLAPSED_COUNT = 3;
+  // Panel kho/két ca: setup 1 lần đầu ca + cuối ca nên mobile thu gọn mặc định
+  const [shiftPanelExpanded, setShiftPanelExpanded] = useState(false);
   // Noti duyệt chiết khấu cho quản lý: poll số đơn chờ + badge + toast + rung
   const [pendingApprovals, setPendingApprovals] = useState<Array<{ id: string }>>([]);
   const [approvalToast, setApprovalToast] = useState<string | null>(null);
@@ -174,8 +174,6 @@ export function PosCheckoutTerminal({
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   // 1.1: modal dán chat FB/Zalo
   const [isParserOpen, setIsParserOpen] = useState(false);
-  // 1.3: modal đổi/trả BV-06
-  const [isReturnsOpen, setIsReturnsOpen] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
   const [ambiguousMatches, setAmbiguousMatches] = useState<BookItem[] | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -1079,8 +1077,24 @@ export function PosCheckoutTerminal({
           </p>
         </div>
 
+        {/* Mobile slim: kho + két tóm tắt 1 dòng, sticky thay top bar (bấm để mở full setup đầu/ca-cuối ca) */}
+        <div className="md:hidden sticky top-0 z-30 -mx-3 px-3 pt-3 pb-2 bg-slate-50/95 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => setShiftPanelExpanded((v) => !v)}
+          aria-expanded={shiftPanelExpanded}
+          className="w-full flex items-center gap-2 px-3 py-2 bg-white rounded-2xl border border-slate-200/80 shadow-sm text-xs font-bold text-slate-700 min-h-[44px] active:scale-[0.99] transition-all"
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${activeSession ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+          <span className="flex-1 text-left truncate">
+            {sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name ?? 'Chọn kho'} • {activeSession ? 'Két mở' : 'Chưa mở két'}
+          </span>
+          {shiftPanelExpanded ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+        </button>
+        </div>
+
         {/* Network Status & Warehouse Selector */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className={`${shiftPanelExpanded ? 'flex' : 'hidden'} md:flex flex-wrap items-center gap-3 w-full md:w-auto`}>
           {/* Online/Offline Status Indicator */}
           <div className="flex items-center gap-2">
             {isOnline ? (
@@ -1484,8 +1498,11 @@ export function PosCheckoutTerminal({
             Quét mã thêm vào giỏ
           </button>
 
-          {/* Book Catalog Grid — mobile thu gọn mặc định, desktop full như cũ */}
-          <div className="md:hidden flex items-center justify-between mb-2">
+          {/* Book Catalog Grid — mobile thu gọn mặc định, desktop full như cũ.
+              Hàng nút và slice dùng chung 1 cờ isMobileView (không dùng md:hidden
+              để 2 phía không bao giờ lệch nhau). */}
+          {isMobileView && (
+          <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-extrabold text-slate-800">Danh mục ({filteredBooks.length})</span>
             {filteredBooks.length > CATALOG_COLLAPSED_COUNT && (
               <button
@@ -1502,6 +1519,7 @@ export function PosCheckoutTerminal({
               </button>
             )}
           </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
             {(catalogExpanded || !isMobileView ? filteredBooks : filteredBooks.slice(0, CATALOG_COLLAPSED_COUNT)).map((b) => {
               const currentStock = getBookStock(b);
@@ -1869,31 +1887,9 @@ export function PosCheckoutTerminal({
                 </>
               )}
             </button>
-
-            {/* 1.3: mở modal Đổi/Trả */}
-            <button
-              type="button"
-              onClick={() => setIsReturnsOpen(true)}
-              className="w-full py-2.5 px-4 bg-white hover:bg-indigo-50 active:scale-[0.99] text-indigo-700 font-extrabold rounded-2xl text-xs border-2 border-dashed border-indigo-300 transition-all flex items-center justify-center gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>ĐỔI / TRẢ HÀNG</span>
-            </button>
           </div>
         </div>
       </div>
-
-      {/* 1.3: Modal Đổi/Trả */}
-      {isReturnsOpen && (
-        <ReturnsModal
-          books={books.map((b) => ({ id: b.id, code: b.code, title: b.title }))}
-          currentRole={currentRole}
-          warehouseId={selectedWarehouseId}
-          cashierId={`User-${currentRole}`}
-          onClose={() => setIsReturnsOpen(false)}
-          onCompleted={() => { if (onOrderCompleted) onOrderCompleted(); }}
-        />
-      )}
 
       {/* Order Success Receipt Modal */}
       {completedOrder && mounted && createPortal(
