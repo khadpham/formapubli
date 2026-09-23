@@ -11,12 +11,11 @@
  *   DATABASE_URL="libsql://..." DATABASE_AUTH_TOKEN="..." BOOTSTRAP_OWNER_PIN="..." npx tsx scripts/bootstrap-owner.ts
  *
  * Fail-closed:
- * - Thiếu DATABASE_URL hoặc BOOTSTRAP_OWNER_PIN (< 6 ký tự) -> từ chối.
+ * - Thiếu DATABASE_URL hoặc BOOTSTRAP_OWNER_PIN (4-64 ký tự) -> từ chối.
  * - Đã có BẤT KỲ staff nào -> từ chối (dùng UI reset PIN thay vì chạy lại).
  * - Xong việc PHẢI unset BOOTSTRAP_OWNER_PIN khỏi shell/env.
  */
 import { createClient } from '@libsql/client';
-import { drizzle } from 'drizzle-orm/libsql';
 import crypto from 'node:crypto';
 import { hashStaffPasscodeV2 } from '../src/lib/auth-session';
 
