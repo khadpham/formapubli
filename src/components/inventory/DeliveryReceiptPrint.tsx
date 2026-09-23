@@ -229,7 +229,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
             {/* Tiêu đề Phiếu */}
             <div className="text-center my-6">
               <h1 className="font-sans font-black text-2xl tracking-wide uppercase text-slate-900">
-                {isReversal ? 'PHIẾU XUẤT KHO (ĐẢO BÚT TOÁN)' : 'PHIẾU XUẤT KHO BÁN HÀNG'}
+                {isReversal ? 'PHIẾU XUẤT KHO (ĐẢO BÚT TOÁN)' : 'PHIẾU XUẤT KHO CUNG ỨNG ĐỐI TÁC'}
               </h1>
               <p className="font-sans italic text-xs text-slate-600 mt-1">
                 Ngày {createdDate.getDate()} tháng {createdDate.getMonth() + 1} năm {createdDate.getFullYear()}
@@ -249,7 +249,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
               <div className="flex">
                 <span className="w-48 text-slate-600">- Họ và tên người nhận hàng:</span>
                 <strong className="text-slate-900 uppercase">
-                  {order.partnerName || 'Đại lý phân phối'} ({order.partnerCode || order.partnerId})
+                  {order.partnerName || 'Đối tác nhận hàng'} ({order.partnerCode || order.partnerId})
                 </strong>
               </div>
               <div className="flex">
@@ -257,7 +257,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                 <span className="text-slate-800">
                   {order.fiscalScope === 'CONSIGNMENT_DISPATCH'
                     ? 'Xuất kho ký gửi đại lý theo hợp đồng liên kết phát hành'
-                    : 'Xuất bán buôn phát hành đại lý thương mại'}
+                    : 'Xuất kho cung ứng đối tác (nhà sách / thư viện / trường học / đại lý)'}
                   {order.note ? ` (${order.note})` : ''}
                 </span>
               </div>

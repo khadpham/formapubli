@@ -477,7 +477,7 @@ export function StockOverviewMatrix({
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
-              Sổ PXK Đại Lý
+              Sổ Phiếu Xuất Đối Tác (PXK)
             </button>
           </div>
 
@@ -497,10 +497,10 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={() => setWholesaleModalOpen(true)}
-            title="Lập phiếu xuất kho bán buôn cho đại lý (PXK)"
+            title="Lập phiếu xuất kho cung ứng cho đối tác: Nhà sách, Thư viện, Trường học, Đại lý (PXK)"
             className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5" /> Bán Buôn PXK
+            <FileText className="w-3.5 h-3.5" /> Xuất Kho Đối Tác
           </button>
           <button
             type="button"

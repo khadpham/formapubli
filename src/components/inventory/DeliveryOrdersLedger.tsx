@@ -233,7 +233,7 @@ export function DeliveryOrdersLedger({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm mã PXK, đại lý, kho..."
+              placeholder="Tìm mã PXK, đối tác, kho..."
               className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500"
             />
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
@@ -245,7 +245,7 @@ export function DeliveryOrdersLedger({
               className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition shrink-0"
             >
               <FileText className="w-4 h-4" />
-              Lập Phiếu Mới
+              Lập Phiếu Xuất Đối Tác
             </button>
           )}
         </div>
@@ -260,7 +260,7 @@ export function DeliveryOrdersLedger({
                 <th className="p-3.5">Mã Phiếu</th>
                 <th className="p-3.5">Ngày Xuất</th>
                 <th className="p-3.5">Kho Nguồn</th>
-                <th className="p-3.5">Đại Lý Nhận Hàng</th>
+                <th className="p-3.5">Đối Tác Nhận Hàng</th>
                 <th className="p-3.5 text-right">Tổng Tiền Bìa</th>
                 <th className="p-3.5 text-center">CK (%)</th>
                 <th className="p-3.5 text-right">Thực Thu (VNĐ)</th>
