@@ -1,7 +1,7 @@
-import { db, editions, orderItems, orders, works } from '../db';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { db, editions, orderItems, orders, stockBalances, works } from '../db';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
-import { OrderService } from './order.service';
+import { PENDING_TTL_HOURS } from './order.service';
 import { WarehouseService } from './warehouse.service';
 
 export interface PosCatalogLine {
@@ -63,9 +63,49 @@ export class PosCatalogService {
       .from(editions)
       .innerJoin(works, eq(editions.workId, works.id));
 
+    // Batch ATP (BV hiệu năng): gom physical NEW + giữ chỗ PENDING theo lô,
+    // đúng semantics OrderService.getATP (fair = physical, còn lại trừ giữ chỗ).
+    // Gọi getATP từng cuốn = ~165 round-trip Turso nối tiếp (~60s); batch = 2 query.
+    const ids = all.map((e) => e.id);
+    const [balRows, heldRows] = await Promise.all([
+      ids.length
+        ? db
+            .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
+            .from(stockBalances)
+            .where(
+              and(
+                inArray(stockBalances.editionId, ids),
+                eq(stockBalances.warehouseId, warehouseId),
+                eq(stockBalances.condition, 'NEW')
+              )
+            )
+        : [],
+      ids.length
+        ? db
+            .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+            .from(orderItems)
+            .innerJoin(orders, eq(orderItems.orderId, orders.id))
+            .where(
+              and(
+                inArray(orderItems.editionId, ids),
+                eq(orders.warehouseId, warehouseId),
+                eq(orders.status, 'PENDING_CONFIRMATION'),
+                gte(orders.createdAt, new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString())
+              )
+            )
+            .groupBy(orderItems.editionId)
+        : [],
+    ]);
+    const balMap = new Map<string, number>();
+    for (const r of balRows) balMap.set(r.editionId, Number(r.qty || 0));
+    const heldMap = new Map<string, number>();
+    for (const r of heldRows) heldMap.set(r.editionId, Number(r.qty || 0));
+    const isFair = wh?.warehouseType === 'FAIR_EVENT';
+
     const items: PosCatalogLine[] = [];
     for (const e of all) {
       if (e.isActive === false) continue;
+      const physical = balMap.get(e.id) || 0;
       items.push({
         editionId: e.id,
         code: e.code,
@@ -75,7 +115,7 @@ export class PosCatalogService {
         isbnLast4: e.isbnLast4,
         coverPrice: e.coverPrice || 0,
         // getATP đã khóa chốt theo loại kho (fair = physical, chính trừ giữ chỗ).
-        atp: await OrderService.getATP(e.id, warehouseId),
+        atp: isFair ? physical : physical - (heldMap.get(e.id) || 0),
         soldToday: soldMap.get(e.id) || 0,
       });
     }
