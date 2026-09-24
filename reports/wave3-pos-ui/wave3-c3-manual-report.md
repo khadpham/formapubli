@@ -72,10 +72,20 @@ Các ảnh chụp thực tế đã được xuất vào thư mục [`reports/wav
 1. [`pos-mobile-320px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-320px.png): Hiển thị lưới 2x2 trên thiết bị màn hình siêu nhỏ (320px CSS width).
 2. [`pos-mobile-375px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-375px.png): Hiển thị lưới 2x2 trên iPhone tiêu chuẩn (375px CSS width).
 3. [`pos-mobile-390px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-390px.png): Hiển thị lưới 2x2 trên iPhone 12/13/14 Pro (390px CSS width).
-4. [`pos-manager-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-manager-topbar.png): Đối chiếu giao diện Topbar khi đăng nhập vai trò Manager (hiện nút Chốt ngày) so với Cashier (ẩn nút Chốt ngày).
+4. [`pos-manager-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-manager-topbar.png): Ảnh chụp trực tiếp từ component thật khi đăng nhập vai trò Manager (hiển thị nút "📅 Chốt Ngày" màu hổ phách).
+5. [`pos-cashier-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-cashier-topbar.png): Ảnh chụp trực tiếp từ component thật khi đăng nhập vai trò Cashier (nút "Chốt Ngày" hoàn toàn bị ẩn khỏi DOM).
 
-### 2.2. Kết Quả Kiểm Tra Tự Động
+> **Ghi chú nghiệm thu:** Toàn bộ các ảnh PNG trên đều được chụp trực tiếp từ component thực tế [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx) được mount và render hoàn chỉnh bằng Google Chrome Headless thông qua test harness [`scripts/run-real-pos-terminal-test.ts`](file:///d:/Data%20Project/formapubli/scripts/run-real-pos-terminal-test.ts), không sử dụng HTML mockup độc lập.
+
+### 2.2. Kết Quả Kiểm Tra Tự Động Trên Component Thực Tế
+- `npx tsx scripts/run-real-pos-terminal-test.ts`: **6/6 PASS** (Exit code: 0) — Test trực tiếp trên DOM của component thật trong Chrome Headless:
+  - Test 1: Lưới danh mục sử dụng responsive 2 cột (`grid-cols-2`).
+  - Test 2: Mặc định trên mobile chỉ hiển thị đúng 4 cuốn sách (khung 2×2).
+  - Test 3: Nhấn nút "Xem tất cả" mở rộng toàn bộ danh mục lên 6 sách.
+  - Test 4: Nhấn nút "Thu gọn" đưa về lại khung 2×2 (4 sách).
+  - Test 5: Nút "Chốt Ngày" hoàn toàn không có trong DOM khi là `ROLE_CASHIER`.
+  - Test 6: Nút "Chốt Ngày" xuất hiện hợp lệ trong DOM khi chuyển sang `ROLE_MANAGER`.
 - `npx tsx scripts/smoke-pos-mobile-grid.ts`: **4/4 PASS** (Exit code: 0).
 - `npx tsc --noEmit`: **PASS** (Exit code: 0).
 - `npm run build`: **PASS** (Exit code: 0).
-- Git diff: Chỉ thay đổi đúng vùng danh mục và nút chốt ngày trong [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx), không đụng chạm logic thanh toán hay server.
+- Git diff: Chỉ thay đổi đúng vùng danh mục và nút chốt ngày trong [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx), không đụng chạm logic thanh toán, migration hay server.
