@@ -29,6 +29,7 @@ import {
   CloudUpload,
   ClipboardPaste,
   ShieldCheck,
+  ShieldAlert,
   CalendarCheck,
   ChevronDown,
   ChevronUp,
@@ -94,6 +95,33 @@ interface PosCheckoutTerminalProps {
   onDraftApplied?: () => void;
 }
 
+/** F5 (#8): thu ngân xác nhận TAY đã nhận tiền chuyển khoản/QR trước khi chốt đơn. */
+function MoneyReceivedToggle({
+  id,
+  confirmed,
+  onToggle,
+}: {
+  id: string;
+  confirmed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      id={id}
+      aria-pressed={confirmed}
+      onClick={onToggle}
+      className={`mt-2 w-full py-2 rounded-xl text-xs font-extrabold border transition flex items-center justify-center gap-1.5 min-h-[40px] ${
+        confirmed
+          ? 'bg-emerald-600 text-white border-emerald-700'
+          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+      }`}
+    >
+      <ShieldCheck className="w-4 h-4" />
+      {confirmed ? 'Đã nhận tiền (bấm để bỏ xác nhận)' : 'Xác nhận đã nhận tiền'}
+    </button>
+  );
+}
 export function PosCheckoutTerminal({
   books,
   currentRole,
@@ -111,7 +139,7 @@ export function PosCheckoutTerminal({
   // Danh mục thu gọn mặc định (scan-first trên mobile): chỉ hiện vài món đầu.
   // Desktop giữ full grid nguyên bản (không gian rộng) — chỉ mobile mới thu gọn.
   const [catalogExpanded, setCatalogExpanded] = useState(false);
-  const CATALOG_COLLAPSED_COUNT = 3;
+  const CATALOG_COLLAPSED_COUNT = 4; // 2x2 grid gọn gàng trên mobile (Ticket #11)
   // FAB quét chỉ hiện khi nút Quét to đã trôi khỏi viewport (IntersectionObserver)
   const scanButtonRef = useRef<HTMLButtonElement>(null);
   const [scanButtonVisible, setScanButtonVisible] = useState(true);
@@ -219,8 +247,56 @@ export function PosCheckoutTerminal({
   const [isDiscountApprovalModalOpen, setIsDiscountApprovalModalOpen] = useState(false);
   const [isManagerApprovalDrawerOpen, setIsManagerApprovalDrawerOpen] = useState(false);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [isMobileCheckoutSheetOpen, setIsMobileCheckoutSheetOpen] = useState(false);
   const [approvedDiscountRequestId, setApprovedDiscountRequestId] = useState<string | null>(null);
   const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
+  // A1-F / #1 UI: Freeze giỏ hàng khi chờ phê duyệt chiết khấu bảo mật
+  const [isApprovalPending, setIsApprovalPending] = useState(false);
+  // requestId yêu cầu đang chờ (do modal tạo) — cần để gọi API CANCEL trước khi mở khóa
+  const [pendingApprovalRequestId, setPendingApprovalRequestId] = useState<string | null>(null);
+  const [isCancellingApproval, setIsCancellingApproval] = useState(false);
+  // F5 (#8): chuyển khoản/QR phải được thu ngân xác nhận TAY "Đã nhận tiền" trước khi chốt
+  const [isMoneyReceived, setIsMoneyReceived] = useState(false);
+
+  // Đang chờ Quản lý duyệt (chặn cả chốt đơn) vs giỏ bị khóa để sửa: chờ duyệt HOẶC
+  // đã có phê duyệt gắn với giỏ này (sửa giỏ = phê duyệt hết hiệu lực → server 403).
+  const isApprovalPendingState =
+    isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
+  const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null;
+
+  // F1/F2: hủy yêu cầu duyệt TRÊN SERVER rồi mới mở khóa giỏ; lỗi thì GIỮ khóa.
+  const handleCancelApproval = async () => {
+    const requestId = approvedDiscountRequestId || pendingApprovalRequestId;
+    setIsCancellingApproval(true);
+    try {
+      if (requestId) {
+        const res = await fetch(`/api/pos/discount-approvals/${requestId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'CANCEL' }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message || json?.error || 'Không hủy được yêu cầu duyệt chiết khấu.');
+        }
+      }
+      // ponytail: nếu thu ngân hủy đúng lúc modal đang tạo yêu cầu (chưa có id) thì
+      // yêu cầu đó tự hết hạn sau 5 phút — không có rủi ro tiền, không thêm cơ chế chờ.
+      setIsApprovalPending(false);
+      setIsDiscountApprovalModalOpen(false);
+      setPendingDiscountRate(null);
+      setDiscountRate(0);
+      setApprovedDiscountRequestId(null);
+      setPendingApprovalRequestId(null);
+      setIsManagerOverride(false);
+      if (isGift) setIsGift(false);
+      setErrorMessage(null);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Không hủy được yêu cầu duyệt — giỏ vẫn tạm khóa.');
+    } finally {
+      setIsCancellingApproval(false);
+    }
+  };
   // V4.1 S2.4: ô nhập CK lẻ (% nguyên)
   const [customDiscountInput, setCustomDiscountInput] = useState('');
   const [isManagerOverride, setIsManagerOverride] = useState(false);
@@ -485,6 +561,10 @@ export function PosCheckoutTerminal({
 
   // V4.1 S2.4: áp dụng CK lẻ từ ô nhập — chỉ CK thường (không phải tặng 100%)
   const applyCustomDiscount = () => {
+    if (isCartFrozen) {
+      setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
+      return;
+    }
     const raw = customDiscountInput.trim();
     if (raw === '') {
       setErrorMessage('Nhập số nguyên phần trăm chiết khấu (0 – 100).');
@@ -499,6 +579,10 @@ export function PosCheckoutTerminal({
     setCustomDiscountInput('');
   };
   const handleRequestDiscount = (rate: number) => {
+    if (isCartFrozen) {
+      setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
+      return;
+    }
     // BV-03: rời chế độ tặng khi chọn CK thường
     if (rate !== 1) setIsGift(false);
     if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
@@ -508,6 +592,7 @@ export function PosCheckoutTerminal({
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
     if (isRestrictedCashier && rate >= 0.2) {
       setPendingDiscountRate(rate);
+      setIsApprovalPending(true);
       setIsDiscountApprovalModalOpen(true);
       return;
     }
@@ -520,6 +605,10 @@ export function PosCheckoutTerminal({
 
   // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng duyệt chiết khấu bảo mật)
   const handleToggleGift = () => {
+    if (isCartFrozen) {
+      setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
+      return;
+    }
     if (isGift) {
       setIsGift(false);
       setDiscountRate(0);
@@ -679,6 +768,10 @@ export function PosCheckoutTerminal({
 
   // 1.0: bọc tra ATP trước khi thêm — cảnh báo hổ phách khi có giữ chỗ, rớt mạng thì bán theo tồn vật lý
   const handleAddToCart = async (book: BookItem, times = 1) => {
+    if (isCartFrozen) {
+      setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu. Hãy hủy yêu cầu duyệt nếu muốn thêm sách.');
+      return;
+    }
     let atp: number | null = null;
     try {
       const res = await fetch(`/api/atp?editionId=${encodeURIComponent(book.id)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
@@ -762,6 +855,10 @@ export function PosCheckoutTerminal({
   }, [externalDraft]);
 
   const updateQuantity = (editionId: string, delta: number) => {
+    if (isCartFrozen) {
+      setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu. Hãy hủy yêu cầu duyệt nếu muốn chỉnh số lượng.');
+      return;
+    }
     setErrorMessage(null);
     setCart((prev) =>
       prev
@@ -789,6 +886,10 @@ export function PosCheckoutTerminal({
   };
 
   const removeFromCart = (editionId: string) => {
+    if (isCartFrozen) {
+      setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu. Hãy hủy yêu cầu duyệt nếu muốn xóa sách.');
+      return;
+    }
     setCart((prev) => prev.filter((item) => item.editionId !== editionId));
   };
 
@@ -813,6 +914,13 @@ export function PosCheckoutTerminal({
     // BV-03: đơn tặng bắt buộc có lý do
     if (isGift && !giftReason.trim() && !note.trim()) {
       setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
+      return;
+    }
+    // F5 (#8): chuyển khoản/QR chỉ chốt khi thu ngân đã xác nhận tay "Đã nhận tiền"
+    if (!isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && !isMoneyReceived) {
+      setErrorMessage(
+        'Vui lòng xác nhận "Đã nhận tiền" (đã kiểm tra tài khoản/QR của khách) trước khi chốt đơn chuyển khoản/QR.'
+      );
       return;
     }
 
@@ -924,11 +1032,13 @@ export function PosCheckoutTerminal({
           date: new Date().toLocaleString('vi-VN'),
           isOffline: true,
           isGift,
-          qrDataUrl: paymentMethod === 'QR_CODE' ? qrSnapshot?.dataUrl || null : null,
-          qrAccountNo: paymentMethod === 'QR_CODE' ? qrSnapshot?.accountNo || null : null,
+          qrDataUrl: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.dataUrl || null : null,
+          qrAccountNo: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.accountNo || null : null,
         });
 
+        setIsMobileCheckoutSheetOpen(false);
         setCart([]);
+        setIsMoneyReceived(false);
         setNote('');
         setQrSnapshot(null);
         if (isGift) {
@@ -998,12 +1108,14 @@ export function PosCheckoutTerminal({
         date: new Date().toLocaleString('vi-VN'),
         isOffline: false,
         isGift,
-        qrDataUrl: paymentMethod === 'QR_CODE' ? qrSnapshot?.dataUrl || null : null,
-        qrAccountNo: paymentMethod === 'QR_CODE' ? qrSnapshot?.accountNo || null : null,
+        qrDataUrl: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.dataUrl || null : null,
+        qrAccountNo: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.accountNo || null : null,
       });
 
       // Xóa giỏ hàng
+      setIsMobileCheckoutSheetOpen(false);
       setCart([]);
+      setIsMoneyReceived(false);
       setNote('');
       setQrSnapshot(null);
       if (isGift) {
@@ -1230,16 +1342,18 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ */}
-          <button
-            type="button"
-            onClick={() => setIsSettlementModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
-            title="Báo cáo chốt ngày & Đối soát kiểm kê"
-          >
-            <CalendarCheck className="w-4 h-4" />
-            <span>Chốt Ngày</span>
-          </button>
+          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ (#3-UI button: chỉ Owner & Manager) */}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setIsSettlementModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
+              title="Báo cáo chốt ngày & Đối soát kiểm kê"
+            >
+              <CalendarCheck className="w-4 h-4" />
+              <span>Chốt Ngày</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1562,7 +1676,7 @@ export function PosCheckoutTerminal({
             )}
           </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 max-h-[560px] overflow-y-auto pr-1">
             {(catalogExpanded || !isMobileView ? filteredBooks : filteredBooks.slice(0, CATALOG_COLLAPSED_COUNT)).map((b) => {
               const currentStock = getBookStock(b);
 
@@ -1572,7 +1686,8 @@ export function PosCheckoutTerminal({
                 <div
                   key={b.id}
                   onClick={() => !isOutOfStock && handleAddToCart(b)}
-                  className={`p-3.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none ${
+                  title={b.title}
+                  className={`p-2.5 sm:p-3.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none min-h-[110px] ${
                     isOutOfStock
                       ? 'opacity-50 border-slate-200 cursor-not-allowed bg-slate-50/60'
                       : 'border-slate-200/80 hover:border-emerald-500 hover:shadow-md active:scale-[0.98]'
@@ -1580,11 +1695,11 @@ export function PosCheckoutTerminal({
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-mono font-black">
+                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-mono font-black truncate max-w-[65px]">
                         {b.code}
                       </span>
                       <span
-                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
                           currentStock > 10
                             ? 'bg-emerald-50 text-emerald-700'
                             : currentStock > 0
@@ -1595,21 +1710,29 @@ export function PosCheckoutTerminal({
                         Tồn: {currentStock}
                       </span>
                     </div>
-                    <h4 className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
+                    <h4
+                      title={b.title}
+                      className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug break-words"
+                    >
                       {b.title}
                     </h4>
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    <p
+                      title={b.author}
+                      className="text-[11px] text-slate-500 truncate mt-0.5"
+                    >
                       {b.author}
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-                    <span className="text-xs font-black text-emerald-700 font-mono">
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 gap-1">
+                    <span className="text-[11px] sm:text-xs font-black text-emerald-700 font-mono truncate">
                       {b.coverPrice.toLocaleString('vi-VN')} đ
                     </span>
                     <button
+                      type="button"
                       disabled={isOutOfStock}
-                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-colors"
+                      aria-label={`Thêm ${b.title} vào giỏ`}
+                      className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-colors shrink-0 min-h-[32px] sm:min-h-[36px]"
                     >
                       + Thêm
                     </button>
@@ -1630,17 +1753,61 @@ export function PosCheckoutTerminal({
               </h3>
               {cart.length > 0 && (
                 <button
-                  onClick={() => setCart([])}
-                  className="text-xs text-rose-600 hover:text-rose-800 font-semibold"
+                  type="button"
+                  disabled={isCartFrozen}
+                  onClick={() => !isCartFrozen && setCart([])}
+                  className="text-xs text-rose-600 hover:text-rose-800 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Xóa giỏ
                 </button>
               )}
             </div>
 
+            {/* A1-F / #1 UI: Cart Frozen Banner */}
+            {isCartFrozen && (
+              <div id="pos-cart-frozen-banner" className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between gap-2 text-amber-900 shadow-sm animate-pulse">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold">🔒 Giỏ hàng đang tạm khóa</p>
+                    <p className="text-[11px] text-amber-700">
+                      {approvedDiscountRequestId
+                        ? `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
+                        : `Đang chờ Quản lý duyệt chiết khấu ${pendingDiscountRate ? Math.round(pendingDiscountRate * 100) + '%' : ''}. Không thể sửa giỏ.`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!isDiscountApprovalModalOpen && !approvedDiscountRequestId && (
+                    <button
+                      type="button"
+                      onClick={() => setIsDiscountApprovalModalOpen(true)}
+                      className="px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 text-xs font-bold transition shadow-sm cursor-pointer"
+                    >
+                      Mở lại mã
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    id="btn-cancel-approval"
+                    disabled={isCancellingApproval}
+                    onClick={handleCancelApproval}
+                    className="px-2.5 py-1 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={approvedDiscountRequestId ? 'Hủy phê duyệt để sửa giỏ hàng' : 'Hủy yêu cầu duyệt để mở khóa giỏ hàng'}
+                  >
+                    {isCancellingApproval
+                      ? 'Đang hủy...'
+                      : approvedDiscountRequestId
+                      ? 'Sửa giỏ và hủy phê duyệt'
+                      : 'Hủy duyệt để sửa giỏ'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Error Message */}
             {errorMessage && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+              <div id="pos-error-message" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
@@ -1683,8 +1850,11 @@ export function PosCheckoutTerminal({
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden">
                         <button
+                          type="button"
+                          disabled={isCartFrozen}
+                          aria-label="Giảm số lượng"
                           onClick={() => updateQuantity(item.editionId, -1)}
-                          className="p-1 hover:bg-slate-100 text-slate-600 min-h-[32px] min-w-[32px] flex items-center justify-center"
+                          className="p-1 hover:bg-slate-100 text-slate-600 min-h-[32px] min-w-[32px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </button>
@@ -1692,16 +1862,22 @@ export function PosCheckoutTerminal({
                           {item.quantity}
                         </span>
                         <button
+                          type="button"
+                          disabled={isCartFrozen}
+                          aria-label="Tăng số lượng"
                           onClick={() => updateQuantity(item.editionId, 1)}
-                          className="p-1 hover:bg-slate-100 text-slate-600 min-h-[32px] min-w-[32px] flex items-center justify-center"
+                          className="p-1 hover:bg-slate-100 text-slate-600 min-h-[32px] min-w-[32px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
                       <button
+                        type="button"
+                        disabled={isCartFrozen}
+                        aria-label="Xóa khỏi giỏ"
                         onClick={() => removeFromCart(item.editionId)}
-                        className="p-1 text-slate-400 hover:text-rose-600"
+                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1777,15 +1953,18 @@ export function PosCheckoutTerminal({
                       <button
                         key={pct}
                         type="button"
+                        disabled={isCartFrozen}
                         onClick={() => handleRequestDiscount(rate)}
                         className={`py-1.5 rounded-lg text-xs font-bold font-mono transition-colors flex items-center justify-center gap-1 ${
                           isActive
                             ? 'bg-amber-500 text-white shadow-sm'
+                            : isCartFrozen
+                            ? 'bg-slate-100 text-slate-300 cursor-not-allowed border border-dashed border-slate-200'
                             : isLockedForCashier
                             ? 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-700 border border-dashed border-slate-300'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}
-                        title={isLockedForCashier ? 'Chiết khấu từ 20% trở lên cần Quản lý cấp phép' : undefined}
+                        title={isCartFrozen ? 'Giỏ hàng đang tạm khóa' : isLockedForCashier ? 'Chiết khấu từ 20% trở lên cần Quản lý cấp phép' : undefined}
                       >
                         {isLockedForCashier && <span className="text-[10px]">🔒</span>}
                         <span>{pct}%</span>
@@ -1795,13 +1974,16 @@ export function PosCheckoutTerminal({
                   {/* Nut tang 100% gon nhe — tai dung luong PIN quan ly nhu cu */}
                   <button
                     type="button"
+                    disabled={isCartFrozen}
                     onClick={handleToggleGift}
                     className={`py-1.5 rounded-lg text-xs font-extrabold font-mono transition active:scale-[0.99] ${
                       isGift
                         ? 'bg-rose-600 text-white shadow-sm'
+                        : isCartFrozen
+                        ? 'bg-slate-100 text-slate-300 cursor-not-allowed border border-dashed border-slate-200'
                         : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                     }`}
-                    title="Tặng 100%: doanh thu 0đ, vẫn trừ kho, chỉ ghi Sổ Nội bộ (thu ngân cần PIN quản lý)"
+                    title={isCartFrozen ? 'Giỏ hàng đang tạm khóa' : 'Tặng 100%: doanh thu 0đ, vẫn trừ kho, chỉ ghi Sổ Nội bộ (thu ngân cần PIN quản lý)'}
                   >
                     🎁 100%
                   </button>
@@ -1813,6 +1995,7 @@ export function PosCheckoutTerminal({
                     min="0"
                     max="100"
                     step="1"
+                    disabled={isCartFrozen}
                     inputMode="numeric"
                     value={customDiscountInput}
                     onChange={(e) => setCustomDiscountInput(e.target.value)}
@@ -1820,12 +2003,13 @@ export function PosCheckoutTerminal({
                       if (e.key === 'Enter') applyCustomDiscount();
                     }}
                     placeholder="CK lẻ %"
-                    className="w-24 px-2 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-24 px-2 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
+                    disabled={isCartFrozen}
                     onClick={applyCustomDiscount}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors"
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Áp dụng
                   </button>
@@ -1873,23 +2057,31 @@ export function PosCheckoutTerminal({
                     Thanh toán:
                   </label>
                   <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as any)}
+                    id="pos-payment-method-select"
+                    value={paymentMethod === 'QR_CODE' ? 'BANK_TRANSFER' : paymentMethod}
+                    onChange={(e) => {
+                      setPaymentMethod(e.target.value as any);
+                      setIsMoneyReceived(false);
+                    }}
                     className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                   >
                     <option value="CASH">Tiền mặt</option>
-                    <option value="BANK_TRANSFER">Chuyển khoản</option>
-                    <option value="QR_CODE">Mã QR</option>
+                    <option value="BANK_TRANSFER">Chuyển khoản / Quét QR</option>
                   </select>
                 </div>
               </div>
-              {paymentMethod === 'QR_CODE' && (
+              {(paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
                 <div className="mt-3">
                   <VietQrPay
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
                     onQr={setQrSnapshot}
+                  />
+                  <MoneyReceivedToggle
+                    id="btn-money-received"
+                    confirmed={isMoneyReceived}
+                    onToggle={() => setIsMoneyReceived((v) => !v)}
                   />
                 </div>
               )}
@@ -1916,8 +2108,10 @@ export function PosCheckoutTerminal({
             </div>
 
             <button
+              type="button"
+              id="btn-desktop-checkout"
               onClick={handleCheckout}
-              disabled={isSubmitting || cart.length === 0}
+              disabled={isSubmitting || isApprovalPendingState || cart.length === 0}
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
@@ -2404,8 +2598,11 @@ export function PosCheckoutTerminal({
           quantity: item.quantity,
           unitPrice: item.coverPrice,
         }))}
+        onRequestCreated={setPendingApprovalRequestId}
         onApproved={(data) => {
+          setIsApprovalPending(false);
           setApprovedDiscountRequestId(data.requestId);
+          setPendingApprovalRequestId(null);
           setIsManagerOverride(true);
           setDiscountRate(data.rate);
           if (data.rate === 1) {
@@ -2421,7 +2618,6 @@ export function PosCheckoutTerminal({
         }}
         onClose={() => {
           setIsDiscountApprovalModalOpen(false);
-          setPendingDiscountRate(null);
         }}
       />
 
@@ -2445,7 +2641,7 @@ export function PosCheckoutTerminal({
 
       {/* Thanh thanh toán nhanh nổi trên Mobile (Pixel 11, iPhone, điện thoại hẹp) */}
       {cart.length > 0 && (
-        <div className="lg:hidden fixed bottom-16 inset-x-3 z-30 animate-slide-up">
+        <div id="cart-checkout-bar" className="lg:hidden fixed bottom-16 inset-x-3 z-30 animate-slide-up">
           <div className="bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-700/80 flex items-center justify-between gap-3">
             <button
               type="button"
@@ -2465,17 +2661,148 @@ export function PosCheckoutTerminal({
             </div>
             <button
               type="button"
-              onClick={() => {
-                const el = document.getElementById('cart-checkout-panel');
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
+              id="btn-open-mobile-checkout-sheet"
+              onClick={() => setIsMobileCheckoutSheetOpen(true)}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-950/30 flex items-center gap-1.5 active:scale-95 transition-all min-h-[44px] cursor-pointer"
             >
               <ShoppingCart className="w-4 h-4" />
               <span>Xem giỏ & Thanh toán</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: MOBILE CHECKOUT BOTTOM SHEET (Bug #7) */}
+      {isMobileCheckoutSheetOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end lg:hidden animate-in fade-in duration-200">
+          <div
+            className="fixed inset-0"
+            onClick={(event) => {
+              // #7 / F1: bấm ra ngoài sheet để đóng (không đóng khi đang gửi đơn)
+              if (event.target === event.currentTarget && !isSubmitting) {
+                setIsMobileCheckoutSheetOpen(false);
+              }
+            }}
+          />
+          <div
+            id="mobile-checkout-sheet"
+            className="relative z-10 bg-white rounded-t-3xl max-h-[88vh] w-full flex flex-col shadow-2xl border-t border-slate-200 animate-in slide-in-from-bottom duration-200 overflow-hidden"
+          >
+            {/* Sheet Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-extrabold text-slate-900">Chi tiết Đơn hàng & Thanh toán</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    {totalCopies} cuốn • Giảm {Math.round(discountRate * 100)}%
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="close-mobile-checkout-sheet"
+                disabled={isSubmitting}
+                onClick={() => setIsMobileCheckoutSheetOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Sheet Body (scrollable) */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Cart Items Summary */}
+              <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                {cart.map((item) => (
+                  <div key={item.editionId} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
+                    <div className="truncate flex-1 pr-2">
+                      <span className="font-bold text-slate-800 truncate block">{item.title}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {item.quantity} × {item.coverPrice.toLocaleString('vi-VN')} đ
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-slate-900 shrink-0">
+                      {(item.quantity * item.coverPrice).toLocaleString('vi-VN')} đ
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Payment selector */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 block mb-1">
+                  Hình thức thanh toán:
+                </label>
+                <select
+                  value={paymentMethod === 'QR_CODE' ? 'BANK_TRANSFER' : paymentMethod}
+                  onChange={(e) => {
+                    setPaymentMethod(e.target.value as any);
+                    setIsMoneyReceived(false);
+                  }}
+                  className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                >
+                  <option value="CASH">Tiền mặt</option>
+                  <option value="BANK_TRANSFER">Chuyển khoản / Quét QR</option>
+                </select>
+              </div>
+
+              {(paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
+                <div className="mt-2">
+                  <VietQrPay
+                    warehouseId={selectedWarehouseId}
+                    amount={isGift ? 0 : finalAmount}
+                    initialContent={activeOrderCode}
+                    onQr={setQrSnapshot}
+                  />
+                  <MoneyReceivedToggle
+                    id="btn-money-received-mobile"
+                    confirmed={isMoneyReceived}
+                    onToggle={() => setIsMoneyReceived((v) => !v)}
+                  />
+                </div>
+              )}
+
+              {/* Price Breakdown */}
+              <div className="bg-slate-50 rounded-xl p-3 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-500">
+                  <span>Tạm tính:</span>
+                  <span className="font-mono font-bold text-slate-700">{subtotal.toLocaleString('vi-VN')} đ</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-amber-600">
+                    <span>Chiết khấu ({Math.round(discountRate * 100)}%):</span>
+                    <span className="font-mono font-bold">-{discountAmount.toLocaleString('vi-VN')} đ</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-1 border-t border-slate-200 text-sm font-extrabold text-slate-900">
+                  <span>Khách thanh toán:</span>
+                  <span className="font-mono text-emerald-600 font-black">{finalAmount.toLocaleString('vi-VN')} đ</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sheet Footer */}
+            <div className="p-3 bg-slate-50 border-t border-slate-200">
+              <button
+                type="button"
+                id="btn-confirm-mobile-checkout"
+                disabled={isSubmitting || isApprovalPendingState || cart.length === 0}
+                onClick={handleCheckout}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-extrabold shadow-lg shadow-emerald-950/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <span>Đang xử lý tạo đơn...</span>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Xác nhận Thanh toán ({finalAmount.toLocaleString('vi-VN')} đ)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

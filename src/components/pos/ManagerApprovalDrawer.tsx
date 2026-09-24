@@ -14,6 +14,17 @@ import {
   Building2,
   User,
 } from 'lucide-react';
+import type { CartItemSnapshot } from './DiscountApprovalModal';
+
+/** F4: giỏ đã khóa lúc xin duyệt — parse an toàn, dữ liệu hỏng coi như rỗng. */
+function parseCartSnapshot(raw?: string | null): CartItemSnapshot[] {
+  try {
+    const parsed = JSON.parse(`${raw ?? '[]'}`);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 interface PendingApprovalItem {
   id: string;
@@ -28,6 +39,7 @@ interface PendingApprovalItem {
   status: string;
   expiresAt: string;
   createdAt: string;
+  cartSnapshot?: string | null;
 }
 
 interface ManagerApprovalDrawerProps {
@@ -50,6 +62,7 @@ export function ManagerApprovalDrawer({
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
   const [rejectReasonInput, setRejectReasonInput] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -316,6 +329,32 @@ export function ManagerApprovalDrawer({
                     </span>
                   </div>
                 </div>
+
+                {/* F4: giỏ đã khóa tại thời điểm xin duyệt — Quản lý đối chiếu TRƯỚC khi duyệt */}
+                {parseCartSnapshot(item.cartSnapshot).length > 0 && (
+                  <button
+                    type="button"
+                    id={`btn-view-cart-${item.id}`}
+                    onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                    className="w-full py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition"
+                  >
+                    {expandedId === item.id ? 'Ẩn giỏ đã khóa' : 'Xem giỏ đã khóa'}
+                  </button>
+                )}
+                {expandedId === item.id && (
+                  <div
+                    id={`drawer-cart-snapshot-${item.id}`}
+                    className="p-2.5 bg-white border border-slate-200 rounded-xl space-y-1 text-[11px] font-mono"
+                  >
+                    {parseCartSnapshot(item.cartSnapshot).map((line) => (
+                      <div key={line.editionId} className="flex items-center justify-between">
+                        <span className="text-slate-900 font-bold">
+                          {line.editionId} × {line.quantity} — {line.unitPrice.toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Khung nhập lý do từ chối nếu đang mở */}
                 {isRejecting ? (
