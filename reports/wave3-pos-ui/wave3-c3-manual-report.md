@@ -65,27 +65,69 @@ Bản tài liệu này tổng hợp hướng dẫn thao tác (User & Cashier Ope
 
 ---
 
+### 1.6. Nút Thanh Toán Nổi & Bottom Sheet Thanh Toán Mobile (Ticket #7)
+- **Thanh thanh toán nổi (Sticky Cart Checkout Bar)**:
+  - Trên giao diện di động (`lg:hidden`), khi giỏ hàng có ít nhất 1 sản phẩm, một thanh nổi cố định xuất hiện ở đáy màn hình hiển thị tổng số món và tổng tiền cần thanh toán.
+  - Nhấn nút **"Thanh toán ngay"** (`#btn-open-mobile-checkout-sheet`) sẽ trượt mở bảng **Bottom Sheet Thanh toán** (`#mobile-checkout-sheet`) từ dưới lên mượt mà, thay vì chỉ cuộn trang xuống giỏ hàng.
+- **Quy trình thanh toán an toàn, không tự tạo đơn khi mở sheet**:
+  - Việc mở sheet chỉ nhằm mục đích cho phép thu ngân/khách rà soát lại đơn hàng và chọn phương thức thanh toán.
+  - Tuyệt đối **không gọi tạo đơn tự động** khi mở sheet. Chỉ khi thu ngân nhấn nút xác nhận cuối cùng **"Xác nhận thanh toán"** (`#btn-confirm-mobile-checkout`) bên trong sheet thì đơn hàng mới được gửi đi xử lý.
+  - Hỗ trợ đóng sheet linh hoạt thông qua nút đóng (`#close-mobile-checkout-sheet`) hoặc bấm ra vùng backdrop.
+
+---
+
+### 1.7. Gộp Lựa Chọn "Chuyển Khoản / Quét QR" & VietQR Động (Ticket #8)
+- **Hợp nhất trải nghiệm thanh toán không dùng tiền mặt**:
+  - Menu phương thức thanh toán loại bỏ sự phân mảnh giữa hai lựa chọn "Chuyển khoản" và "Quét mã QR".
+  - Giờ đây chỉ gồm 2 lựa chọn trực quan:
+    1. **💵 Tiền mặt** (`CASH`)
+    2. **💳 Chuyển khoản / Quét QR** (`BANK_TRANSFER`)
+- **Hiển thị thông tin chuyển khoản & VietQR đồng thời**:
+  - Khi chọn "Chuyển khoản / Quét QR", hệ thống tự động kích hoạt component [`VietQrPay.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/VietQrPay.tsx).
+  - Khách hàng có thể quét mã VietQR động được tạo chuẩn theo số tiền và mã đơn, hoặc xem trực tiếp thông tin số tài khoản / ngân hàng thụ hưởng để chuyển khoản thủ công.
+  - Toàn bộ dữ liệu mã QR và số tài khoản thụ hưởng được đóng gói đầy đủ vào payload đơn hàng (`qrDataUrl`, `qrAccountNo`).
+
+---
+
+### 1.8. Đóng Băng Giỏ Hàng Khi Chờ Phê Duyệt Chiết Khấu (Ticket A1-F / #1 UI)
+- **Cơ chế Freeze giỏ hàng an toàn**:
+  - Khi thu ngân chọn mức chiết khấu vượt thẩm quyền (cần Quản lý phê duyệt), hệ thống tự động đưa giỏ hàng vào trạng thái **"Đóng băng" (Frozen Cart)**:
+    - Khóa toàn bộ các nút tăng/giảm số lượng (`+`, `-`) của từng món trong giỏ hàng.
+    - Khóa các nút xóa từng mặt hàng và nút xóa trắng giỏ hàng.
+    - Khóa các nút chọn chiết khấu và ô nhập chiết khấu thủ công.
+    - Khóa việc bấm thêm sách mới từ danh mục (`handleAddToCart` bị chặn kèm thông báo).
+- **Banner cảnh báo trực quan & Nút Hủy duyệt**:
+  - Một banner màu hổ phách cảnh báo nổi bật xuất hiện ngay đầu giỏ hàng (`#pos-cart-frozen-banner`): *"Giỏ hàng đang đóng băng chờ quản lý duyệt chiết khấu. Không thể sửa số lượng hoặc thêm sách mới."*
+  - Banner tích hợp sẵn nút **"Hủy duyệt để sửa giỏ"** (`#btn-cancel-approval`). Thu ngân có thể chủ động hủy yêu cầu duyệt bất kỳ lúc nào để giỏ hàng lập tức được rã đông, cho phép tiếp tục bán hàng hoặc chỉnh sửa số lượng bình thường mà không bị kẹt.
+
+---
+
 ## 2. Bằng Chứng Kiểm Thử UI & Viewport Responsive
 
 ### 2.1. Danh Sách Ảnh Chụp Màn Hình Thực Tế (Chrome Headless)
-Các ảnh chụp thực tế đã được xuất vào thư mục [`reports/wave3-pos-ui/`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/):
-1. [`pos-mobile-320px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-320px.png): Hiển thị lưới 2x2 trên thiết bị màn hình siêu nhỏ (320px CSS width).
-2. [`pos-mobile-375px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-375px.png): Hiển thị lưới 2x2 trên iPhone tiêu chuẩn (375px CSS width).
-3. [`pos-mobile-390px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-390px.png): Hiển thị lưới 2x2 trên iPhone 12/13/14 Pro (390px CSS width).
-4. [`pos-manager-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-manager-topbar.png): Ảnh chụp trực tiếp từ component thật khi đăng nhập vai trò Manager (hiển thị nút "📅 Chốt Ngày" màu hổ phách).
-5. [`pos-cashier-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-cashier-topbar.png): Ảnh chụp trực tiếp từ component thật khi đăng nhập vai trò Cashier (nút "Chốt Ngày" hoàn toàn bị ẩn khỏi DOM).
+Toàn bộ các ảnh PNG dưới đây đều được chụp trực tiếp từ component thực tế [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx) được mount và render hoàn chỉnh bằng Google Chrome Headless thông qua test harness [`scripts/run-real-pos-terminal-test.ts`](file:///d:/Data%20Project/formapubli/scripts/run-real-pos-terminal-test.ts), lưu tại thư mục [`reports/wave3-pos-ui/`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/):
 
-> **Ghi chú nghiệm thu:** Toàn bộ các ảnh PNG trên đều được chụp trực tiếp từ component thực tế [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx) được mount và render hoàn chỉnh bằng Google Chrome Headless thông qua test harness [`scripts/run-real-pos-terminal-test.ts`](file:///d:/Data%20Project/formapubli/scripts/run-real-pos-terminal-test.ts), không sử dụng HTML mockup độc lập.
+1. [`pos-mobile-checkout-sheet.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-checkout-sheet.png): Mobile Checkout Bottom Sheet mở từ nút nổi, hiển thị tóm tắt giỏ hàng, chọn phương thức và nút xác nhận thanh toán.
+2. [`pos-combined-payment.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-combined-payment.png): Giao diện phương thức thanh toán gộp "Chuyển khoản / Quét QR" kèm khối VietQR Pay động.
+3. [`pos-cart-frozen.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-cart-frozen.png): Trạng thái đóng băng giỏ hàng khi chờ phê duyệt chiết khấu, các nút số lượng bị vô hiệu hóa kèm banner cảnh báo và nút "Hủy duyệt để sửa giỏ".
+4. [`pos-mobile-320px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-320px.png): Hiển thị lưới 2x2 trên thiết bị màn hình siêu nhỏ (320px CSS width, không tràn mép).
+5. [`pos-mobile-375px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-375px.png): Hiển thị lưới 2x2 trên iPhone tiêu chuẩn (375px CSS width).
+6. [`pos-mobile-390px.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-mobile-390px.png): Hiển thị lưới 2x2 trên iPhone 12/13/14 Pro (390px CSS width).
+7. [`pos-manager-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-manager-topbar.png): Ảnh chụp trực tiếp khi đăng nhập vai trò Manager (hiển thị nút "📅 Chốt Ngày").
+8. [`pos-cashier-topbar.png`](file:///d:/Data%20Project/formapubli/reports/wave3-pos-ui/pos-cashier-topbar.png): Ảnh chụp trực tiếp khi đăng nhập vai trò Cashier (nút "Chốt Ngày" ẩn hoàn toàn khỏi DOM).
 
-### 2.2. Kết Quả Kiểm Tra Tự Động Trên Component Thực Tế
-- `npx tsx scripts/run-real-pos-terminal-test.ts`: **6/6 PASS** (Exit code: 0) — Test trực tiếp trên DOM của component thật trong Chrome Headless:
+### 2.2. Kết Quả Kiểm Tra Tự Động Trên Component Thực Tế & Kiểm Soát Tràn Ngang
+- `npx tsx scripts/run-real-pos-terminal-test.ts`: **10/10 PASS** (Exit code: 0) — Test trực tiếp trên DOM của component thật trong Chrome Headless:
   - Test 1: Lưới danh mục sử dụng responsive 2 cột (`grid-cols-2`).
   - Test 2: Mặc định trên mobile chỉ hiển thị đúng 4 cuốn sách (khung 2×2).
   - Test 3: Nhấn nút "Xem tất cả" mở rộng toàn bộ danh mục lên 6 sách.
   - Test 4: Nhấn nút "Thu gọn" đưa về lại khung 2×2 (4 sách).
   - Test 5: Nút "Chốt Ngày" hoàn toàn không có trong DOM khi là `ROLE_CASHIER`.
   - Test 6: Nút "Chốt Ngày" xuất hiện hợp lệ trong DOM khi chuyển sang `ROLE_MANAGER`.
-- `npx tsx scripts/smoke-pos-mobile-grid.ts`: **4/4 PASS** (Exit code: 0).
-- `npx tsc --noEmit`: **PASS** (Exit code: 0).
-- `npm run build`: **PASS** (Exit code: 0).
-- Git diff: Chỉ thay đổi đúng vùng danh mục và nút chốt ngày trong [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx), không đụng chạm logic thanh toán, migration hay server.
+  - Test 7: **Kiểm tra tràn ngang (Horizontal Overflow & Boundary Check)** tại cả 3 kích thước 320px, 375px và 390px (`scrollWidth <= clientWidth`, thẻ sách nằm gọn trong khung nhìn).
+  - Test 8: **Gộp phương thức thanh toán (Ticket #8)**: Tùy chọn `BANK_TRANSFER` hiển thị nhãn "Chuyển khoản / Quét QR", không có tùy chọn `QR_CODE` riêng lẻ, kích hoạt khối VietQR component.
+  - Test 9: **Đóng băng giỏ hàng & Hủy duyệt (Ticket A1-F / #1 UI)**: Khi kích hoạt phê duyệt chiết khấu, các nút tăng/giảm/xóa bị disable (`aria-disabled="true"` hoặc `disabled`), banner cảnh báo `#pos-cart-frozen-banner` xuất hiện; bấm `#btn-cancel-approval` mở khóa giỏ hàng thành công.
+  - Test 10: **Mobile Checkout Floating Sheet (Ticket #7)**: Nhấn nút nổi mở `#mobile-checkout-sheet`, kiểm tra nút xác nhận thanh toán `#btn-confirm-mobile-checkout`, đóng sheet qua nút `#close-mobile-checkout-sheet`.
+- `npx tsc --noEmit`: **PASS** (Exit code: 0, 0 type errors).
+- `npm run build`: **PASS** (Exit code: 0, Next.js optimized production build thành công 100%).
+- Phạm vi thay đổi (Scope boundary): Chỉ chỉnh sửa giao diện người dùng POS trong [`PosCheckoutTerminal.tsx`](file:///d:/Data%20Project/formapubli/src/components/pos/PosCheckoutTerminal.tsx) và test harness, tuân thủ nghiêm ngặt ranh giới Agent C (không chạm vào server, offline sync logic hay database migrations).

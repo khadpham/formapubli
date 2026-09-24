@@ -53,7 +53,8 @@ if (logMatches) {
   }
 }
 
-if (!domOutput.includes('ALL REAL POS COMPONENT TESTS PASSED (6/6)')) {
+const passMatch = domOutput.match(/ALL REAL POS COMPONENT TESTS PASSED \((\d+\/\d+)\)/);
+if (!passMatch) {
   console.error('\n❌ REAL COMPONENT TEST SUITE FAILED OR TIMED OUT');
   fs.writeFileSync(path.join(tempDir, 'pos-test-output-debug.html'), domOutput, 'utf8');
   console.log('Debug output saved to:', path.join(tempDir, 'pos-test-output-debug.html'));
@@ -61,26 +62,30 @@ if (!domOutput.includes('ALL REAL POS COMPONENT TESTS PASSED (6/6)')) {
 }
 
 console.log('\n======================================================');
-console.log('>>> VERIFICATION PASSED: REAL COMPONENT TESTS 6/6 PASS! <<<');
+console.log(`>>> VERIFICATION PASSED: REAL COMPONENT TESTS ${passMatch[1]} PASS! <<<`);
 console.log('======================================================\n');
 
 console.log('4. Capturing REAL component screenshots from Google Chrome Headless...');
 const viewports = [
-  { name: 'pos-mobile-320px', width: 320, height: 600, role: 'ROLE_CASHIER' },
-  { name: 'pos-mobile-375px', width: 375, height: 640, role: 'ROLE_CASHIER' },
-  { name: 'pos-mobile-390px', width: 390, height: 660, role: 'ROLE_CASHIER' },
-  { name: 'pos-manager-topbar', width: 1024, height: 500, role: 'ROLE_MANAGER' },
-  { name: 'pos-cashier-topbar', width: 1024, height: 500, role: 'ROLE_CASHIER' }
+  { name: 'pos-mobile-320px', width: 320, height: 600, role: 'ROLE_CASHIER', mode: 'view' },
+  { name: 'pos-mobile-375px', width: 375, height: 640, role: 'ROLE_CASHIER', mode: 'view' },
+  { name: 'pos-mobile-390px', width: 390, height: 660, role: 'ROLE_CASHIER', mode: 'view' },
+  { name: 'pos-manager-topbar', width: 1024, height: 500, role: 'ROLE_MANAGER', mode: 'view' },
+  { name: 'pos-cashier-topbar', width: 1024, height: 500, role: 'ROLE_CASHIER', mode: 'view' },
+  { name: 'pos-mobile-checkout-sheet', width: 375, height: 640, role: 'ROLE_CASHIER', mode: 'sheet' },
+  { name: 'pos-cart-frozen', width: 390, height: 660, role: 'ROLE_CASHIER', mode: 'frozen' },
+  { name: 'pos-combined-payment', width: 420, height: 700, role: 'ROLE_CASHIER', mode: 'payment-qr' },
 ];
 
 for (const vp of viewports) {
   const artifactOutput = path.join(artifactDir, `${vp.name}.png`);
   const reportOutput = path.join(reportDir, `${vp.name}.png`);
-  const shotCmd = `"${chromePath}" --headless=new --no-sandbox --disable-gpu --window-size=${vp.width},${vp.height} --virtual-time-budget=2000 --screenshot="${artifactOutput}" "file:///${htmlPath.replace(/\\/g, '/')}?mode=view&role=${vp.role}"`;
+  const widthQuery = vp.width < 500 ? `&width=${vp.width}` : '';
+  const shotCmd = `"${chromePath}" --headless=new --no-sandbox --disable-gpu --window-size=${vp.width},${vp.height} --virtual-time-budget=2000 --screenshot="${artifactOutput}" "file:///${htmlPath.replace(/\\/g, '/')}?mode=${vp.mode}&role=${vp.role}${widthQuery}"`;
   execSync(shotCmd, { stdio: 'pipe' });
 
   fs.copyFileSync(artifactOutput, reportOutput);
-  console.log(`✓ Real Component Screenshot: ${vp.name}.png (${vp.width}x${vp.height}) [${vp.role}]`);
+  console.log(`✓ Real Component Screenshot: ${vp.name}.png (${vp.width}x${vp.height}) [${vp.role}] [mode=${vp.mode}]`);
 }
 
 console.log('\nAll REAL component screenshots and tests successfully verified!');
