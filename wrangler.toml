@@ -6,3 +6,10 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+[vars]
+# Bắt buộc cho Next 14 trên Workers: chạy server ở minimal mode (y hệt
+# `next start` production) để bỏ qua require middleware-manifest động
+# (workerd không hỗ trợ dynamic require đường dẫn file). Thiếu biến này mọi
+# function 500 với lỗi "Dynamic require ... middleware-manifest.json".
+NEXT_PRIVATE_MINIMAL_MODE = "1"
