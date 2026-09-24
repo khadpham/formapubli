@@ -10,6 +10,9 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
   isAuthStrict,
+  isLeaseEnforcedRole,
+  claimCashierLease,
+  LeaseError,
   extractClientIp,
 } from '@/lib/auth-session';
 import {
@@ -302,7 +305,42 @@ export async function POST(req: NextRequest) {
 
     const now = Date.now();
     const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
-    const sessionId = `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    // S-01: sessionId random mạnh (WebCrypto) để đối chiếu lease server.
+    const sessionId = crypto.randomUUID();
+
+    // S-01: cashier chiếm lease TRƯỚC khi ký token (không mint token khi bị
+    // chặn). Tài khoản đang sống ở máy khác -> 403, máy cũ không hề hấn.
+    if (isLeaseEnforcedRole(role)) {
+      try {
+        await claimCashierLease({
+          staffId: actorId,
+          sessionId,
+          deviceLabel: `${body.deviceLabel || ''}`,
+          nowMs: now,
+        });
+      } catch (err: any) {
+        if (err instanceof LeaseError) {
+          await recordAuditLog({
+            action: 'LOGIN_FAILED' as any,
+            actorRole: role,
+            actorId,
+            resource: '/api/auth/login',
+            details: `Từ chối đăng nhập đồng thời: ${err.message}`,
+            ipAddress: ip,
+          });
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'SESSION_ACTIVE_ELSEWHERE',
+              error: 'Tài khoản đang mở ca trên thiết bị khác. Đăng xuất máy kia (hoặc nhờ quản lý giải phóng) rồi đăng nhập lại.',
+              details: err.details,
+            },
+            { status: 403 }
+          );
+        }
+        throw err;
+      }
+    }
 
     const token = await signSession({
       role,

@@ -4,6 +4,7 @@ import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
+import { checkCashierLease, isLeaseEnforcedRole } from '../lib/auth-session';
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
 
@@ -460,6 +461,24 @@ export class OrderService {
             status: existing[0].status,
             isDuplicate: true,
           };
+        }
+
+        // B0c (S-01): kiểm tra lại lease cashier trong transaction — request có
+        // thể qua guard rồi chờ, bị force-release/TTL trước commit. Chỉ enforce
+        // khi caller truyền sessionId (route luôn có từ session; caller nội bộ
+        // legacy thiếu sessionId thì bỏ qua, sẽ migrate dần). MERGE NOTE: đặt
+        // cạnh B0b consume approval của branch #1-hotfix khi gộp nhánh.
+        {
+          const leaseRole = params.actorContext?.role;
+          const leaseSessionId = params.actorContext?.sessionId;
+          if (isLeaseEnforcedRole(leaseRole) && leaseSessionId) {
+            const leaseOk = await checkCashierLease(params.actorContext!.staffId, leaseSessionId);
+            if (!leaseOk) {
+              throw AppError.forbidden(
+                'Phiên cashier đã hết hiệu lực hoặc đang mở trên thiết bị khác. Vui lòng đăng nhập lại.'
+              );
+            }
+          }
         }
 
         // B1. Xác thực phiên két bên trong Transaction

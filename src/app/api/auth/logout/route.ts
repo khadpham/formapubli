@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME, verifySession } from '@/lib/auth-session';
+import {
+  SESSION_COOKIE_NAME,
+  verifySession,
+  releaseCashierLease,
+  isLeaseEnforcedRole,
+} from '@/lib/auth-session';
 import { recordAuditLog } from '@/lib/rbac-guard';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +15,11 @@ export async function POST(req: NextRequest) {
     if (cookie) {
       const payload = await verifySession(cookie);
       if (payload) {
+        // S-01: nhả lease CÓ ĐIỀU KIỆN (staff + session) — cookie cũ không
+        // xóa lease của phiên mới hơn nếu đã có máy khác chiếm.
+        if (isLeaseEnforcedRole(payload.role)) {
+          await releaseCashierLease(payload.actorId, payload.sessionId).catch(() => false);
+        }
         await recordAuditLog({
           action: 'LOGOUT' as any,
           actorRole: payload.role,

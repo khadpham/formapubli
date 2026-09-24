@@ -13,6 +13,7 @@ import { POST as postMovement } from '../src/app/api/inventory/movement/route';
 import { POST as postReturns } from '../src/app/api/returns/route';
 import { POST as postRma } from '../src/app/api/rma/route';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
+import { POST as postLogout } from '../src/app/api/auth/logout/route';
 import { OrderService } from '../src/services/order.service';
 import { assertIsolatedTestDb } from './test-guard';
 
@@ -108,6 +109,12 @@ async function run() {
     documentRef: 'S3-NO', idempotencyKey: uniq('i'),
   }, { Cookie: cash.cookie });
   ok('5. Cashier 403 movement', cash.status === 200 && r5.status === 403);
+  // S-01: nhả lease NV-01 để case 7 login lại không bị 403 oan.
+  {
+    const m = `${cash.cookie}`.match(/formapubli_session=([^;]+)/);
+    const r: any = { cookies: { get: (n: string) => (n === 'formapubli_session' && m ? { value: m[1] } : undefined) } };
+    await postLogout(r);
+  }
 
   // 6. [P1b - 2026-09-17] Legacy header fallback bị khai tử theo phê chuẩn Ban Điều Phối.
   // Cũ (CP3): Tắt strict -> legacy header x-formapubli-role chạy (kỳ vọng 200).

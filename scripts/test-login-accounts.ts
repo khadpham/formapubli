@@ -9,6 +9,7 @@ import { GET as getAccounts } from '../src/app/api/auth/accounts/route';
 import { GET as listStaff, POST as createStaff } from '../src/app/api/staff/route';
 import { PATCH as patchStaff } from '../src/app/api/staff/[staffId]/route';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
+import { POST as postLogout } from '../src/app/api/auth/logout/route';
 import { db } from '../src/db';
 import { staffAccounts } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
@@ -59,6 +60,17 @@ async function loginAs(staffId: string, passcode: string) {
   return { status: r.status, body: r.body, cookie: sessionCookie(r.headers.get('set-cookie')) };
 }
 
+// S-01: lease một phiên cashier — logout sau mỗi login thành công để case
+// sau login lại cùng staff không bị 403 SESSION_ACTIVE_ELSEWHERE oan.
+async function logoutAs(cookie: string) {
+  if (!cookie) return;
+  const m = `${cookie}`.match(/formapubli_session=([^;]+)/);
+  const r: any = {
+    cookies: { get: (n: string) => (n === 'formapubli_session' && m ? { value: m[1] } : undefined) },
+  };
+  await postLogout(r);
+}
+
 async function run() {
   console.log('👆 LOGIN CHẠM-CHỌN + QUẢN TRỊ TÀI KHOẢN (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
@@ -88,6 +100,7 @@ async function run() {
   // 2. Tile-login: chọn NV-01 + PIN 1234 → 200 + cookie.
   const r2 = await loginAs('NV-01', '1234');
   ok('2. Chạm NV-01 + PIN đúng mở ca', r2.status === 200 && !!r2.cookie);
+  await logoutAs(r2.cookie);
 
   // 3. PIN sai → 401 + còn lượt thử.
   const r3 = await loginAs('NV-01', '0000');
@@ -110,6 +123,7 @@ async function run() {
   );
   const r5login = await loginAs(nvId, '4321');
   ok('5. OWNER tạo NV + login được', r5.status === 200 && r5login.status === 200, nvId);
+  await logoutAs(r5login.cookie);
 
   // 6. MANAGER tạo thu ngân → 200.
   const nvM = uniq('NVM');
@@ -125,6 +139,7 @@ async function run() {
   const r7new = await loginAs(nvId, '9999');
   const r7old = await loginAs(nvId, '4321');
   ok('7. Reset PIN: mới 200 + cũ 401', r7.status === 200 && r7new.status === 200 && r7old.status === 401);
+  await logoutAs(r7new.cookie);
 
   // 8. MANAGER khóa NV → login 403; mở lại → 200.
   const r8a: any = await patch(nvM, { isActive: false }, managerCk);
@@ -135,11 +150,13 @@ async function run() {
     '8. Khóa 403 + mở lại 200',
     r8a.status === 200 && r8locked.status === 403 && r8b.status === 200 && r8open.status === 200
   );
+  await logoutAs(r8open.cookie);
 
   // 9. CASHIER gọi staff API → 403.
   const cashier = await loginAs('NV-01', '1234');
   const r9: any = await get(listStaff, { Cookie: cashier.cookie });
   ok('9. CASHIER xem staff 403', r9.status === 403);
+  await logoutAs(cashier.cookie);
 
   // 10. MANAGER phong OWNER / sờ ADMIN-01 → 403 cả hai.
   const r10a: any = await patch(nvM, { role: 'ROLE_OWNER' }, managerCk);
@@ -187,8 +204,11 @@ async function run() {
     '15. Legacy login được + hash nâng lên v2$',
     r15.status === 200 && `${afterLeg?.passcodeHash || ''}`.startsWith('v2$')
   );
+  await logoutAs(r15.cookie);
+  // NOTE: nhả lease r15 để case 16 login lại không bị 403 oan.
   const r16 = await loginAs(legId, '7777');
   ok('16. Login lại trên hash V2 vẫn 200', r16.status === 200);
+  await logoutAs(r16.cookie);
   const r17 = await loginAs(legId, '0000');
   ok('17. Sai PIN trên hash V2 401', r17.status === 401);
 

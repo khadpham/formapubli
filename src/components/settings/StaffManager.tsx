@@ -10,6 +10,13 @@ interface StaffRow {
   role: UserRole;
   isActive: boolean;
   createdAt?: string;
+  sessionVersion?: number;
+  lease?: {
+    sessionId: string;
+    startedAt?: string;
+    leaseExpiresAt?: string;
+    deviceLabel?: string | null;
+  } | null;
 }
 
 interface StaffManagerProps {
@@ -75,8 +82,41 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
     }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // S-01: force-release lease cashier (máy kẹt/không logout được).
+  // Gửi expected session+version để chống hủy nhầm phiên mới (409 → tải lại).
+  const forceRelease = async (row: StaffRow) => {
+    if (!row.lease) return;
+    const reason = window.prompt(
+      `Giải phóng phiên đang mở của ${row.staffId}?\nMáy kia sẽ bị đăng xuất. Đơn chưa sync KHÔNG bị xóa.\nNhập lý do:`
+    );
+    if (!reason || !reason.trim()) return;
+    if (!window.confirm(`Chắc chắn giải phóng phiên ${row.staffId}?`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/staff/${encodeURIComponent(row.staffId)}/release-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: reason.trim(),
+          expectedSessionId: row.lease.sessionId,
+          expectedSessionVersion: row.sessionVersion,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setError(json.error || 'Giải phóng phiên thất bại.');
+        await load();
+        return;
+      }
+      setNotice(`Đã giải phóng phiên ${row.staffId}.`);
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'Lỗi kết nối.');
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {    e.preventDefault();
     setError(null);
     setNotice(null);
     setCreating(true);
@@ -240,6 +280,15 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                               className="p-1.5 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-emerald-700 cursor-pointer"
                             >
                               <Unlock className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {r.lease && (
+                            <button
+                              title={`Giải phóng phiên đang mở (từ ${r.lease.startedAt || 'không rõ'})`}
+                              onClick={() => forceRelease(r)}
+                              className="p-1.5 bg-rose-100 hover:bg-rose-200 rounded-lg text-rose-700 cursor-pointer"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </>

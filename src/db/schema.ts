@@ -558,6 +558,19 @@ export const staffAccounts = sqliteTable('staff_accounts', {
   activeIdx: index('idx_staff_active').on(table.isActive),
 }));
 
+// 28. Active Sessions (lease một phiên cashier — S-01: giữ máy cũ, chặn máy mới).
+// Một staff tối đa một row đang sống; hết TTL coi như không có (không cần cron).
+export const activeSessions = sqliteTable('active_sessions', {
+  staffId: text('staff_id').primaryKey().references(() => staffAccounts.staffId),
+  sessionId: text('session_id').notNull().unique(),
+  startedAt: text('started_at').default(sql`CURRENT_TIMESTAMP`),
+  lastSeenAt: text('last_seen_at').default(sql`CURRENT_TIMESTAMP`),
+  leaseExpiresAt: text('lease_expires_at').notNull(),
+  deviceLabel: text('device_label'),
+}, (table) => ({
+  sessionIdx: uniqueIndex('uq_active_session_id').on(table.sessionId),
+}));
+
 // 27. Transfer Actions (Lịch sử hành động receive / cancel của phiếu luân chuyển — CP3)
 export const transferActions = sqliteTable('transfer_actions', {
   id: text('id').primaryKey(),
