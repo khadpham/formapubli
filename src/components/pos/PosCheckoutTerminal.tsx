@@ -858,7 +858,10 @@ export function PosCheckoutTerminal({
         let leaseFresh = false;
         try {
           const lastOk = Number(window.localStorage.getItem('formapubli.last_lease_ok') || 0);
-          leaseFresh = !!lastOk && Date.now() - lastOk <= 10 * 60 * 1000;
+          const now = Date.now();
+          // Từ chối cả stamp tương lai (đồng hồ thiết bị sai) — chỉ chấp nhận
+          // mốc trong quá khứ và trong TTL 10 phút.
+          leaseFresh = !!lastOk && lastOk <= now && now - lastOk <= 10 * 60 * 1000;
         } catch {
           leaseFresh = false;
         }
