@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, KeyRound, User, Lock, AlertCircle } from 'lucide-react';
+import { Shield, KeyRound, User, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
 interface LoginModalProps {
@@ -30,6 +30,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
   const [manualId, setManualId] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [passcode, setPasscode] = useState('');
+  const [showPasscode, setShowPasscode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
@@ -43,6 +44,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isClosable && !loading) {
+        setShowPasscode(false);
         onCancel?.();
       }
     };
@@ -81,17 +83,14 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
     [accounts, selectedId]
   );
 
-  const grouped = useMemo(() => {
-    const map = new Map<UserRole, AccountTile[]>();
-    for (const r of ROLE_ORDER) map.set(r, []);
-    for (const a of accounts) {
-      if (!map.has(a.role)) map.set(a.role, []);
-      map.get(a.role)!.push(a);
-    }
-    return ROLE_ORDER.filter((r) => (map.get(r) || []).length > 0).map((r) => ({
-      role: r,
-      items: map.get(r)!,
-    }));
+  const sortedAccounts = useMemo(() => {
+    return [...accounts].sort((a, b) => {
+      const orderA = ROLE_ORDER.indexOf(a.role);
+      const orderB = ROLE_ORDER.indexOf(b.role);
+      const diff = (orderA === -1 ? 99 : orderA) - (orderB === -1 ? 99 : orderB);
+      if (diff !== 0) return diff;
+      return a.fullName.localeCompare(b.fullName, 'vi');
+    });
   }, [accounts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,9 +145,14 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
   return createPortal(
     <div
       className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4"
-      onClick={(event) => { if (event.target === event.currentTarget && isClosable && !loading) onCancel?.(); }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && isClosable && !loading) {
+          setShowPasscode(false);
+          onCancel?.();
+        }
+      }}
     >
-      <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200/80 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md sm:max-w-xl w-full shadow-2xl border border-slate-200/80 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/30">
             <Shield className="w-6 h-6" />
@@ -179,42 +183,57 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
           {listLoading ? (
             <p className="text-xs text-slate-500 text-center py-4">Đang tải danh sách ca...</p>
           ) : !manualMode && accounts.length > 0 ? (
-            <div className="space-y-3">
-              {grouped.map((g) => (
-                <div key={g.role} className="space-y-1.5">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                    {USER_ROLES[g.role]?.label || g.role}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {g.items.map((a) => {
-                      const active = a.staffId === selectedId;
-                      return (
-                        <button
-                          key={a.staffId}
-                          type="button"
-                          disabled={isLocked}
-                          onClick={() => setSelectedId(a.staffId)}
-                          className={`px-3 py-2.5 rounded-xl border text-left transition cursor-pointer ${
-                            active
-                              ? 'border-indigo-600 bg-indigo-50 shadow-sm'
-                              : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-white'
-                          }`}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-xs font-bold text-slate-800 truncate">
-                              {a.fullName}
-                            </span>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span>Chọn nhân viên ({sortedAccounts.length})</span>
+                <span className="text-[10px] font-normal text-slate-400">Chạm để chọn</span>
+              </div>
+              <div className="max-h-[195px] sm:max-h-[250px] overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {sortedAccounts.map((a) => {
+                    const active = a.staffId === selectedId;
+                    return (
+                      <button
+                        key={a.staffId}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => {
+                          setSelectedId(a.staffId);
+                          setShowPasscode(false);
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[58px] ${
+                          active
+                            ? 'border-indigo-600 bg-indigo-50 shadow-sm ring-1 ring-indigo-600'
+                            : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <User className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-indigo-600' : 'text-slate-400'}`} />
+                          <span className="text-xs font-bold text-slate-800 truncate">
+                            {a.fullName}
                           </span>
-                          <span className="block text-[10px] font-mono text-slate-400 mt-0.5 truncate">
+                        </span>
+                        <div className="flex items-center justify-between mt-1 text-[10px] w-full gap-1">
+                          <span className="font-mono text-slate-400 truncate">
                             {a.staffId}
                           </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0 ${
+                              a.role === 'ROLE_OWNER'
+                                ? 'bg-purple-100 text-purple-700'
+                                : a.role === 'ROLE_MANAGER'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}
+                          >
+                            {a.role === 'ROLE_OWNER' ? 'Chủ' : a.role === 'ROLE_MANAGER' ? 'Quản lý' : 'Thu ngân'}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -243,17 +262,27 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
               <span className="text-[10px] text-slate-400 font-normal">PIN 4+ ký tự mọi vai trò</span>
             </label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                type="password"
+                type={showPasscode ? 'text' : 'password'}
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="••••"
                 value={passcode}
                 disabled={isLocked}
                 onChange={(e) => setPasscode(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono tracking-widest text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono tracking-widest text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"
               />
+              <button
+                type="button"
+                disabled={isLocked}
+                onClick={() => setShowPasscode((prev) => !prev)}
+                aria-label={showPasscode ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
+                aria-pressed={showPasscode}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none focus:text-indigo-600 rounded-lg transition disabled:opacity-40 cursor-pointer"
+              >
+                {showPasscode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
@@ -261,7 +290,10 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
             {isClosable && onCancel && (
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={() => {
+                  setShowPasscode(false);
+                  onCancel?.();
+                }}
                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
               >
                 Hủy
@@ -287,7 +319,10 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
             <button
               type="button"
               disabled={isLocked}
-              onClick={() => setManualMode(!manualMode)}
+              onClick={() => {
+                setManualMode(!manualMode);
+                setShowPasscode(false);
+              }}
               className="w-full text-center text-[11px] text-indigo-600 hover:text-indigo-500 font-semibold cursor-pointer"
             >
               {manualMode ? '← Quay lại chạm-chọn tài khoản' : 'Không thấy tên? Nhập tay mã NV →'}
