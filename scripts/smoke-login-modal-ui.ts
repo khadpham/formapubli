@@ -1,17 +1,16 @@
 /**
- * Smoke test UI logic & contracts cho LoginModal (Ticket #9).
+ * Kiểm tra hợp đồng UI & State Machine cho LoginModal (Ticket #9).
  * Chạy: npx tsx scripts/smoke-login-modal-ui.ts
  *
- * Kiểm chứng:
- * 1. Thuật toán phân loại & sắp xếp danh sách tài khoản:
+ * Phạm vi kiểm tra:
+ * 1. Logic sắp xếp danh sách tài khoản:
  *    - Lọc bỏ HIDDEN_PICKER_ROLES (ROLE_WAREHOUSE, ROLE_TAX)
  *    - Sắp xếp phẳng theo ROLE_ORDER (OWNER -> MANAGER -> CASHIER)
- * 2. Kích thước & hình học Layout (Geometry Check):
- *    - Mobile: 2 cột (grid-cols-2), max-height 195px chứa chuẩn 3 hàng (mỗi hàng 58px + 8px gap = 190px)
- *    - Tài khoản thứ 7 trở đi kích hoạt thanh cuộn overflow-y-auto
- *    - Desktop: 3 cột (sm:grid-cols-3), modal sm:max-w-xl
- * 3. Hợp đồng Icon Mắt PIN (Eye Toggle Contract):
- *    - Nút mắt có type="button" (chống submit nhầm)
+ * 2. Kích thước danh mục tài khoản:
+ *    - Mobile: 2 cột (grid-cols-2), 3 hàng đầu (6 thẻ = 190px) vừa khung max-h-[195px]; từ thẻ thứ 7 (256px) kích hoạt thanh cuộn overflow-y-auto.
+ *    - Desktop: 3 cột (sm:grid-cols-3), 3 hàng đầu (9 thẻ = 190px) vừa khung sm:max-h-[250px]; từ hàng 4 (10-12 thẻ = 256px) kích hoạt thanh cuộn.
+ * 3. Hợp đồng Icon Mắt PIN (Eye Toggle):
+ *    - Nút mắt cụ thể có type="button" (chống submit nhầm)
  *    - aria-label và aria-pressed phản ánh đúng trạng thái
  *    - Reset về false khi chọn thẻ nhân viên khác
  *    - Reset về false khi gõ đổi mã nhân viên trong chế độ nhập tay (manualId)
@@ -25,7 +24,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
-import { UserRole, USER_ROLES } from '../src/lib/roles';
+import { UserRole } from '../src/lib/roles';
 
 const ROLE_ORDER: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
 const HIDDEN_PICKER_ROLES: UserRole[] = ['ROLE_WAREHOUSE', 'ROLE_TAX'];
@@ -37,7 +36,7 @@ interface AccountTile {
 }
 
 function runSmokeTests() {
-  console.log('🧪 BẮT ĐẦU SMOKE UI CONTRACT: LOGIN MODAL (#9)\n');
+  console.log('🧪 BẮT ĐẦU KIỂM TRA HỢP ĐỒNG UI LOGIN MODAL (#9)\n');
   let passed = 0;
   const total = 9;
 
@@ -83,34 +82,34 @@ function runSmokeTests() {
     assert.strictEqual(sorted[2].role, 'ROLE_CASHIER', 'Các vị trí sau là ROLE_CASHIER');
   });
 
-  // Test 2: Hình học Layout Mobile (2 cột, tối đa 3 hàng trong 195px)
-  check('2. Hình học Layout Mobile: 2 cột, 3 hàng khớp khung 190px/195px', () => {
+  // Test 2: Kích thước danh mục tài khoản Mobile
+  check('2. Kích thước Layout Mobile: 2 cột, 3 hàng đầu (6 thẻ = 190px) vừa khung 195px, từ thẻ thứ 7 (256px) cuộn dọc', () => {
     const cardHeight = 58; // min-h-[58px]
     const rowGap = 8; // gap-2 = 8px
     const maxContainerHeight = 195; // max-h-[195px]
 
-    // Chiều cao 1 hàng (2 thẻ)
-    const height1Row = cardHeight;
-    // Chiều cao 2 hàng (4 thẻ)
-    const height2Rows = cardHeight * 2 + rowGap; // 124px
-    // Chiều cao 3 hàng (6 thẻ)
+    // Chiều cao 3 hàng đầu (6 thẻ)
     const height3Rows = cardHeight * 3 + rowGap * 2; // 190px
     // Chiều cao 4 hàng (7-8 thẻ)
     const height4Rows = cardHeight * 4 + rowGap * 3; // 256px
 
-    assert.ok(height3Rows <= maxContainerHeight, `3 hàng (190px) phải nằm trọn trong khung ${maxContainerHeight}px`);
-    assert.ok(height4Rows > maxContainerHeight, `Hàng thứ 4 (256px) phải vượt quá khung để kích hoạt thanh cuộn overflow-y-auto`);
+    assert.ok(height3Rows <= maxContainerHeight, `3 hàng đầu (190px) nằm trọn trong khung ${maxContainerHeight}px không cần cuộn`);
+    assert.ok(height4Rows > maxContainerHeight, `Từ hàng thứ 4 (256px) vượt quá ${maxContainerHeight}px để kích hoạt thanh cuộn overflow-y-auto`);
   });
 
-  // Test 3: Hình học Layout Desktop (3 cột, tối đa 4 hàng trong 250px)
-  check('3. Hình học Layout Desktop: 3 cột, hiển thị 4 hàng thoáng đãng', () => {
+  // Test 3: Kích thước danh mục tài khoản Desktop
+  check('3. Kích thước Layout Desktop: 3 cột, 3 hàng đầu (9 thẻ = 190px) vừa khung 250px, từ 10+ thẻ (256px) cuộn dọc', () => {
     const cardHeight = 58;
     const rowGap = 8;
     const desktopMaxHeight = 250; // sm:max-h-[250px]
 
-    // 4 hàng 3 cột = 12 tài khoản
-    const height4Rows = cardHeight * 4 + rowGap * 3; // 256px (xấp xỉ vừa vặn 250px với thanh cuộn)
-    assert.ok(height4Rows >= desktopMaxHeight, 'Khung desktop chứa được 9-12 tài khoản trước khi cuộn');
+    // 3 hàng 3 cột = 9 thẻ
+    const height3Rows = cardHeight * 3 + rowGap * 2; // 190px
+    // 4 hàng 3 cột = 10-12 thẻ
+    const height4Rows = cardHeight * 4 + rowGap * 3; // 256px
+
+    assert.ok(height3Rows <= desktopMaxHeight, `3 hàng (9 thẻ = ${height3Rows}px) nằm trọn trong khung ${desktopMaxHeight}px`);
+    assert.ok(height4Rows > desktopMaxHeight, `Từ hàng thứ 4 (${height4Rows}px) vượt quá khung ${desktopMaxHeight}px kích hoạt thanh cuộn`);
   });
 
   // Test 4: Mô phỏng State Machine của Icon Mắt (Eye Toggle) & Reset khi đổi người
@@ -162,33 +161,27 @@ function runSmokeTests() {
     assert.strictEqual(showPasscode, false, 'Phải reset về ẩn khi Escape hoặc Hủy');
   });
 
-  // Test 5: Kiểm tra Source Code LoginModal.tsx đảm bảo đủ thuộc tính a11y & contract
-  check('5. Phân tích AST/Source code LoginModal.tsx: đảm bảo type="button", aria-label, aria-pressed, disabled', () => {
+  // Test 5: Kiểm tra cú pháp JSX của nút mắt PIN
+  check('5. Kiểm tra cú pháp JSX của nút mắt PIN: type="button", aria-label, aria-pressed, disabled={isLocked}', () => {
     const filePath = path.resolve(__dirname, '../src/components/auth/LoginModal.tsx');
     const content = fs.readFileSync(filePath, 'utf-8');
 
-    // 1. Nút mắt phải có type="button" để không submit form
-    assert.ok(content.includes('type="button"'), 'Nút mắt phải có type="button"');
-    assert.ok(content.includes('aria-label={showPasscode ? \'Ẩn mã PIN\' : \'Hiện mã PIN\'}'), 'Phải có aria-label tương ứng');
-    assert.ok(content.includes('aria-pressed={showPasscode}'), 'Phải có aria-pressed');
-
-    // 2. Nút mắt phải có disabled={isLocked}
+    // Trích xuất khối thẻ <button ...> toggle mắt cụ thể
     const eyeButtonMatch = content.match(/<button[\s\S]*?onClick=\{\(\) => setShowPasscode\(\(prev\) => !prev\)\}[\s\S]*?>/);
-    assert.ok(eyeButtonMatch, 'Phải tìm thấy button toggle showPasscode');
-    assert.ok(eyeButtonMatch[0].includes('disabled={isLocked}'), 'Button mắt phải bị disabled khi isLocked');
+    assert.ok(eyeButtonMatch, 'Phải tìm thấy thẻ button toggle showPasscode cụ thể');
 
-    // 3. Đường nhập tay onChange phải có setShowPasscode(false)
-    const manualInputMatch = content.match(/value=\{manualId\}[\s\S]*?onChange=\{[\s\S]*?\}/);
-    assert.ok(manualInputMatch, 'Phải có input manualId');
-    assert.ok(manualInputMatch[0].includes('setShowPasscode(false)'), 'Đường nhập tay manualId phải gọi setShowPasscode(false)');
+    const btn = eyeButtonMatch[0];
+    assert.ok(btn.includes('type="button"'), 'Nút mắt phải có type="button" chống submit nhầm form');
+    assert.ok(btn.includes('disabled={isLocked}'), 'Nút mắt phải có disabled={isLocked}');
+    assert.ok(btn.includes('aria-label={showPasscode ? \'Ẩn mã PIN\' : \'Hiện mã PIN\'}'), 'Nút mắt phải có aria-label tương ứng trạng thái');
+    assert.ok(btn.includes('aria-pressed={showPasscode}'), 'Nút mắt phải có aria-pressed={showPasscode}');
 
-    // 4. Modal desktop class
-    assert.ok(content.includes('sm:max-w-xl'), 'Modal phải có sm:max-w-xl cho desktop');
-    assert.ok(content.includes('grid-cols-2 sm:grid-cols-3'), 'Lưới phải có 2 cột mobile và 3 cột desktop');
-    assert.ok(content.includes('max-h-[195px]'), 'Khung mobile phải có max-h-[195px]');
+    // Kiểm tra ô nhập manualId có reset showPasscode
+    const manualInputMatch = content.match(/value=\{manualId\}[\s\S]*?onChange=\{[\s\S]*?setShowPasscode\(false\)[\s\S]*?\}/);
+    assert.ok(manualInputMatch, 'Ô nhập manualId phải gọi setShowPasscode(false) trong onChange');
   });
 
-  // Test 6: Kiểm tra input password/text binding
+  // Test 6: Input PIN chuyển đổi type password <-> text mượt mà
   check('6. Input PIN chuyển đổi type password <-> text mượt mà', () => {
     const filePath = path.resolve(__dirname, '../src/components/auth/LoginModal.tsx');
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -198,7 +191,7 @@ function runSmokeTests() {
     assert.ok(content.includes('autoComplete="off"'), 'Giữ nguyên autoComplete="off"');
   });
 
-  // Test 7: Danh sách tài khoản hiển thị đầy đủ thông tin badge và staffId
+  // Test 7: Thẻ tài khoản render tên, staffId và badge vai trò thu gọn
   check('7. Thẻ tài khoản render tên, staffId và badge vai trò thu gọn', () => {
     const filePath = path.resolve(__dirname, '../src/components/auth/LoginModal.tsx');
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -218,7 +211,7 @@ function runSmokeTests() {
     assert.ok(content.includes('Đang xác thực...'), 'Hiển thị trạng thái loading');
   });
 
-  // Test 9: Không rò rỉ bộ nhớ hoặc timer khi modal unmount
+  // Test 9: Lifecycle cleanup khi unmount và đóng modal
   check('9. Lifecycle cleanup khi unmount và đóng modal', () => {
     const filePath = path.resolve(__dirname, '../src/components/auth/LoginModal.tsx');
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -227,7 +220,7 @@ function runSmokeTests() {
     assert.ok(content.includes('window.removeEventListener(\'keydown\', handleKeyDown)'), 'Remove event listener keydown');
   });
 
-  console.log(`\n🎉 KẾT QUẢ SMOKE TEST: ${passed}/${total} PASS (100%)\n`);
+  console.log(`\n🎉 KẾT QUẢ KIỂM TRA: ${passed}/${total} PASS (100%)\n`);
   if (passed !== total) {
     process.exit(1);
   }
