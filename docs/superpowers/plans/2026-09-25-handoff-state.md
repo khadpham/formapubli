@@ -63,6 +63,35 @@ LƯU Ý SỰ CỐ ĐÃ XẢY RA: thiếu `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` 
 
 ## 5. Còn lại (ai làm gì)
 
+### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main 5beb414, worker 9994dfb8)
+- **#2 login/logout 2 lần** — 3 nguyên nhân, đều đã sửa:
+  1. route login tạo `sessionId` mới mỗi lần bấm → tự chặn 403 chính mình;
+     nay tái dùng `sessionId` của cookie hợp lệ (đúng spec S-01 §4.4.1).
+  2. service worker trả **HTML cache cũ** (pre-login) sau reload → nay
+     navigation luôn ưu tiên mạng, bỏ precache `/`, cache v2.
+  3. `PwaRegister` gắn listener `load` trong useEffect nên thường không đăng ký
+     SW (và bản cũ kéo dài mãi) → nay đăng ký ngay khi `readyState=complete`.
+- **#4 "Kiểm tra tồn kho" luôn lỗi** — route trả `{success,data:{ok}}` nhưng UI
+  đọc `data.ok` (undefined). Sửa cả validate và commit (mã phiếu `pckCode` cũng
+  đang đọc sai chỗ nên hiện "PCK-SUCCESS" giả).
+- **#6 CRUD** — kho: thêm `PATCH/DELETE /api/warehouses/[id]` (xóa chỉ khi kho
+  rỗng & chưa có đơn/sổ kho, còn dữ liệu thì 409 kèm lý do + hướng dẫn "Ngưng
+  hoạt động"); UI thêm nút Sửa / Ngưng / Bật / Xóa. Nhân sự: thêm nút Sửa tên +
+  Đổi vai trò (API đã có sẵn, thiếu UI).
+- **Gộp nút kho**: 5 nút rối → 2 nút có menu: **Xuất kho** (bán lẻ/quà tặng,
+  cung ứng đối tác) và **Chuyển kho** (1 phiếu, hàng loạt, soạn kệ).
+- Test mới `scripts/test-ux-crud-fixes.ts` 21/21; 17 suite cũ xanh; tsc+build
+  xanh; gate live 11/11 (API) + 7/7 (Chrome thật: login 1 lần → vào app, logout
+  1 lần → ra login).
+
+### CHỜ USER
+1. Xóa token `cfut_pE1...` ở Cloudflare dashboard (3 click) — token không còn được
+   dùng, deploy chạy bằng wrangler OAuth.
+2. Đổi PIN 8 nhân viên (đang mặc định, prod công khai).
+3. Nghiệm thu thật iPhone (#2 đã sửa tận gốc, vẫn nên thử 1 lần trên máy bạn).
+4. Nếu "Kiểm tra tồn kho" vẫn lỗi: báo câu báo lỗi + kho nguồn/đích + số dòng —
+   sẽ tail log Worker để bắt stack thật.
+
 ### XONG HẾT PHẦN CODE — không còn WIP nào chưa commit
 - #1 (A1-H verify-before-create + A1-F cancel/scoping), #3, #5, #7, #8, #9,
   #10, #11, #3-UI, S-01 + S-OFFLINE — code + test + UI + deploy ĐỀU XONG.
