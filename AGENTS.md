@@ -1,5 +1,17 @@
 # Workspace Agent Guidelines & Always-On Rules
 
+## 0. PROJECT STATE — READ FIRST (mọi session/agent, trước mọi việc)
+
+- Đọc ngay: `docs/superpowers/plans/2026-09-25-handoff-state.md` (trạng thái,
+  branches, việc còn lại, gotchas). Việc đang chờ user nằm ở mục 5 của doc đó.
+- Vai trò: A = review (không code), B = server/merge/deploy (push refspec +
+  verify), C = UI (không checkout/push — B commit hộ).
+- BẤT BIẾN, CẤM ĐỤNG: `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` trong `wrangler.toml`;
+  twin backslash `@libsql\\client` trong `next.config.mjs`; KHÔNG commit
+  secret/token (kể cả `scripts/deploy-cloudflare.ts`).
+- Test: suite DB chung → `npx tsx scripts/run-isolated.ts --only=...`;
+  không hạ assertion để xanh; không log PIN/giá trị secret.
+
 This repository is configured with two always-on frameworks:
 1. **Ponytail** (Lazy senior dev mode — YAGNI, standard library first, shortest diffs, root-cause bug fixing)
 2. **Superpowers** (Core engineering skills library & mandatory skill-first discipline)
