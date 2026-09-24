@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
         address: w.address,
         warehouseType: w.warehouseType,
         isSellableOnPos: w.isSellableOnPos,
+        isActive: w.isActive,
         defaultBankAccountId: (w as any).defaultBankAccountId || null,
       })),
     });

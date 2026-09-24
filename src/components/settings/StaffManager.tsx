@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, UserPlus, Lock, Unlock, KeyRound, ShieldCheck } from 'lucide-react';
+import { Users, UserPlus, Lock, Unlock, KeyRound, ShieldCheck, Pencil } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
 interface StaffRow {
@@ -35,6 +35,8 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   const [creating, setCreating] = useState(false);
   const [resetId, setResetId] = useState('');
   const [resetPin, setResetPin] = useState('');
+  const [editId, setEditId] = useState('');
+  const [editName, setEditName] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,7 +156,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
           {canManagePrivileged
             ? 'Owner: toàn quyền thêm / khóa / reset PIN mọi tài khoản (không tự khóa chính mình).'
             : 'Manager: chỉ quản lý Thu ngân / Thủ kho / Kế toán thuế.'}{' '}
-          Không xóa cứng — khóa là vô hiệu hóa, giữ nguyên két ca & audit.
+          Không xóa cứng nhân viên — dùng nút Khóa (vô hiệu hóa), giữ nguyên két ca & lịch sử bán.
         </p>
       </div>
 
@@ -222,8 +224,38 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
               {rows.map((r) => (
                 <tr key={r.staffId} className="border-b border-slate-50">
                   <td className="px-3 py-2 font-mono font-bold text-slate-800">{r.staffId}</td>
-                  <td className="px-3 py-2 text-slate-700">{r.fullName}</td>
-                  <td className="px-3 py-2 text-slate-500">{USER_ROLES[r.role]?.label || r.role}</td>
+                  <td className="px-3 py-2 text-slate-700">
+                    {editId === r.staffId ? (
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder="Tên hiển thị"
+                        autoFocus
+                        className="w-40 px-2 py-1.5 bg-white border border-indigo-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    ) : (
+                      r.fullName
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {editId === r.staffId && canManagePrivileged ? (
+                      <select
+                        value={r.role}
+                        onChange={(e) => mutate(
+                          r.staffId,
+                          { role: e.target.value },
+                          `Đổi vai trò ${r.staffId} sang ${USER_ROLES[e.target.value as UserRole]?.label || e.target.value}?`
+                        )}
+                        className="px-2 py-1.5 bg-white border border-indigo-300 rounded-lg text-xs font-semibold outline-none"
+                      >
+                        {roleOptions.map((role) => (
+                          <option key={role} value={role}>{USER_ROLES[role]?.label || role}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-slate-500">{USER_ROLES[r.role]?.label || r.role}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     {r.isActive ? (
                       <span className="text-emerald-700 font-bold">Đang hoạt động</span>
@@ -258,6 +290,29 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                         </>
                       ) : (
                         <>
+                          <button
+                            title="Sửa tên / vai trò"
+                            onClick={() => { setEditId(r.staffId); setEditName(r.fullName); }}
+                            className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          {editId === r.staffId && (
+                            <>
+                              <button
+                                onClick={() => mutate(r.staffId, { fullName: editName }, `Đổi tên ${r.staffId} thành "${editName}"?`)}
+                                className="px-2.5 py-1.5 bg-indigo-600 text-white font-bold rounded-lg text-[11px] cursor-pointer"
+                              >
+                                Lưu tên
+                              </button>
+                              <button
+                                onClick={() => { setEditId(''); setEditName(''); }}
+                                className="px-2.5 py-1.5 bg-slate-100 text-slate-600 font-bold rounded-lg text-[11px] cursor-pointer"
+                              >
+                                Hủy
+                              </button>
+                            </>
+                          )}
                           <button
                             title="Reset PIN"
                             onClick={() => { setResetId(r.staffId); setResetPin(''); }}

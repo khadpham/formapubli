@@ -40,12 +40,10 @@ export class WarehouseService {
       .where(and(eq(warehouses.isActive, true), eq(warehouses.isSellableOnPos, true)));
   }
 
-  /** Danh sách tất cả các kho đang hoạt động. */
+  /** Danh sách tất cả các kho (kể cả đã ngưng) — màn hình quản trị cần thấy
+   * kho đã ngưng để bật lại được. */
   static async listAll(txOrDb: any = db): Promise<WarehouseRow[]> {
-    return await txOrDb
-      .select()
-      .from(warehouses)
-      .where(eq(warehouses.isActive, true));
+    return await txOrDb.select().from(warehouses);
   }
 
   /** VietQR offline: list TK active + default của kho (1 TK dùng N kho, 1 kho đổi TK tay lúc bán). */
@@ -70,6 +68,77 @@ export class WarehouseService {
     }
     await txOrDb.update(warehouses).set({ defaultBankAccountId: bankAccountId }).where(eq(warehouses.id, warehouseId));
     return await this.getWarehouse(warehouseId, txOrDb);
+  }
+
+  /**
+   * Sửa thông tin kho (Owner/Manager). KHÔNG cho đổi `code`/`id` vì đó là
+   * khoá nghiệp vụ đã gắn vào đơn, phiếu và sổ kho.
+   */
+  static async updateWarehouse(
+    warehouseId: string,
+    patch: { name?: string; address?: string | null; isSellableOnPos?: boolean; isActive?: boolean },
+    txOrDb: any = db
+  ): Promise<WarehouseRow> {
+    const wh = await this.getWarehouse(warehouseId, txOrDb);
+    if (!wh) throw AppError.invalid('Kho không tồn tại.');
+    const set: Partial<typeof warehouses.$inferInsert> = {};
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name) throw AppError.invalid('Tên kho không được để trống.');
+      set.name = name;
+    }
+    if (patch.address !== undefined) set.address = patch.address?.trim() || null;
+    if (patch.isSellableOnPos !== undefined) set.isSellableOnPos = patch.isSellableOnPos === true;
+    if (patch.isActive !== undefined) set.isActive = patch.isActive === true;
+    if (Object.keys(set).length === 0) throw AppError.invalid('Không có gì để cập nhật.');
+    await txOrDb.update(warehouses).set(set).where(eq(warehouses.id, warehouseId));
+    return (await this.getWarehouse(warehouseId, txOrDb))!;
+  }
+
+  /**
+   * Xóa kho chỉ khi RỖNG và chưa từng phát sinh nghiệp vụ. Kho còn tồn hoặc đã
+   * có đơn/phiếu → ném 409 kèm lý do cụ thể để người dùng chuyển sang "Ngưng
+   * hoạt động" (isActive=false) thay vì xóa cứng, tránh mất dữ liệu.
+   */
+  static async deleteWarehouse(warehouseId: string, txOrDb: any = db): Promise<{ id: string; name: string }> {
+    const wh = await this.getWarehouse(warehouseId, txOrDb);
+    if (!wh) throw AppError.invalid('Kho không tồn tại.');
+
+    const { stockBalances, orders, inventoryLedger } = await import('../db/schema');
+    const stock = await txOrDb
+      .select()
+      .from(stockBalances)
+      .where(eq(stockBalances.warehouseId, warehouseId));
+    const withStock = stock.filter((s: any) => Number(s.physicalQuantity || 0) !== 0);
+    if (withStock.length > 0) {
+      const total = withStock.reduce((acc: number, s: any) => acc + Number(s.physicalQuantity || 0), 0);
+      throw AppError.conflict(
+        `Kho [${wh.code}] còn ${total} cuốn tồn nên không xóa được. Hãy dùng "Ngưng hoạt động" thay cho xóa.`
+      );
+    }
+    const usedByOrders = await txOrDb
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.warehouseId, warehouseId))
+      .limit(1);
+    if (usedByOrders.length > 0) {
+      throw AppError.conflict(
+        `Kho [${wh.code}] đã có đơn hàng nên không xóa được (giữ lịch sử). Hãy dùng "Ngưng hoạt động".`
+      );
+    }
+    const usedByLedger = await txOrDb
+      .select({ id: inventoryLedger.id })
+      .from(inventoryLedger)
+      .where(eq(inventoryLedger.warehouseId, warehouseId))
+      .limit(1);
+    if (usedByLedger.length > 0) {
+      throw AppError.conflict(
+        `Kho [${wh.code}] đã có biến động kho trong sổ kho nên không xóa được. Hãy dùng "Ngưng hoạt động".`
+      );
+    }
+
+    await txOrDb.delete(warehouses).where(eq(warehouses.id, warehouseId));
+    return { id: wh.id, name: wh.name };
   }
 
   /**

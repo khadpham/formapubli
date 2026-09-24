@@ -12,6 +12,7 @@ import {
   isAuthStrict,
   isLeaseEnforcedRole,
   claimCashierLease,
+  verifySession,
   LeaseError,
   extractClientIp,
 } from '@/lib/auth-session';
@@ -306,7 +307,22 @@ export async function POST(req: NextRequest) {
     const now = Date.now();
     const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
     // S-01: sessionId random mạnh (WebCrypto) để đối chiếu lease server.
-    const sessionId = crypto.randomUUID();
+    // Bấm lại (submit lặp, Enter 2 lần, mạng chậm) trên CÙNG máy đã có cookie
+    // phiên hợp lệ → tái dùng sessionId cũ, KHÔNG sinh id mới (id mới bị
+    // claimCashierLease coi là "máy khác" và tự chặn 403 — bug #2).
+    let sessionId = crypto.randomUUID();
+    const rawCookieHeader = req.headers.get('cookie') || '';
+    const currentCookie = rawCookieHeader
+      .split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))
+      ?.slice(SESSION_COOKIE_NAME.length + 1);
+    if (currentCookie) {
+      const current = await verifySession(currentCookie).catch(() => null);
+      if (current && current.sessionId && current.actorId === actorId) {
+        sessionId = current.sessionId;
+      }
+    }
 
     // S-01: cashier chiếm lease TRƯỚC khi ký token (không mint token khi bị
     // chặn). Tài khoản đang sống ở máy khác -> 403, máy cũ không hề hấn.

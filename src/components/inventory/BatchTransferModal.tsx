@@ -337,14 +337,18 @@ export function BatchTransferModal({
       // Bỏ qua nếu có thao tác mới xảy ra trong lúc chờ mạng
       if (reqId !== validationRequestIdRef.current) return;
 
-      if (res.ok && data.ok) {
+      // Route trả {success, data:{ok, staleItems}}; đọc data.ok ở top-level
+      // luôn undefined nên validate thành công vẫn bị coi là lỗi (bug #4).
+      const result = data?.data ?? data;
+
+      if (res.ok && result?.ok) {
         setValidationSuccess(true);
         // Xóa cảnh báo cũ nếu có
         setLines((prev) => prev.map((l) => ({ ...l, staleWarning: undefined })));
-      } else if (res.status === 409 && data.data?.staleItems) {
+      } else if (res.status === 409 && result?.staleItems) {
         setValidationSuccess(false);
         const staleMap = new Map<string, { requested: number; availableNow: number }>();
-        for (const item of data.data.staleItems) {
+        for (const item of result.staleItems) {
           staleMap.set(item.editionId, item);
         }
         setLines((prev) =>
@@ -467,17 +471,18 @@ export function BatchTransferModal({
       });
 
       const data = await res.json();
+      const committed = data?.data ?? data;
 
-      if (res.ok) {
+      if (res.ok && data?.success !== false) {
         setSuccessInfo({
-          pckCode: data.pckCode || 'PCK-SUCCESS',
+          pckCode: committed?.pckCode || 'PCK-SUCCESS',
           totalItems: lines.reduce((acc, l) => acc + l.quantity, 0),
         });
-      } else if (res.status === 409 && data.data?.staleItems) {
+      } else if (res.status === 409 && committed?.staleItems) {
         // TOCTOU lúc commit
         setValidationSuccess(false);
         const staleMap = new Map<string, number>();
-        for (const item of data.data.staleItems) {
+        for (const item of committed.staleItems) {
           staleMap.set(item.editionId, item.availableNow);
         }
         setLines((prev) =>

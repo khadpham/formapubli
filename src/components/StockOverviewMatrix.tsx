@@ -14,11 +14,11 @@ import {
   MicOff,
   X,
   Keyboard,
-  PackageSearch,
   ShieldAlert,
   Store,
   Landmark,
   Building2,
+  ChevronDown,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
@@ -100,6 +100,8 @@ export function StockOverviewMatrix({
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [bankManagerOpen, setBankManagerOpen] = useState(false);
+  // Gộp nút kho: 'OUT' = các loại xuất, 'MOVE' = chuyển kho/soạn kệ.
+  const [actionMenu, setActionMenu] = useState<'OUT' | 'MOVE' | null>(null);
   const [createdWarehouseToast, setCreatedWarehouseToast] = useState<{
     id: string;
     name: string;
@@ -443,7 +445,7 @@ export function StockOverviewMatrix({
         </div>
 
         {/* Tab & Action Buttons with Keyboard Shortcut Tooltips */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap relative">
           <div className="bg-slate-100 p-1 rounded-lg flex text-xs font-semibold">
             <button
               type="button"
@@ -518,30 +520,78 @@ export function StockOverviewMatrix({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setWholesaleModalOpen(true)}
-            title="Lập phiếu xuất kho cung ứng cho đối tác"
-            className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <FileText className="w-3.5 h-3.5" /> Xuất Kho Đối Tác
-          </button>
-          <button
-            type="button"
-            onClick={() => openAction('TRANSFER')}
-            title="Chuyển kho giữa 3 kho"
-            className="flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
-          </button>
-          <button
-            type="button"
-            onClick={() => setBatchTransferOpen(true)}
-            title="Chuyển kho hàng loạt nhiều đầu sách"
-            className="flex items-center gap-1 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển hàng loạt
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setActionMenu((m) => (m === 'OUT' ? null : 'OUT'))}
+              title="Chọn loại xuất kho"
+              className="flex items-center gap-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+            >
+              <MinusCircle className="w-3.5 h-3.5" /> Xuất kho
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {actionMenu === 'OUT' && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-60 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => { setActionMenu(null); openAction('DISPATCH'); }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
+                >
+                  <span className="font-bold">Bán lẻ / Quà tặng</span>
+                  <span className="block text-[10px] text-slate-400">Trừ kho khi bán tại quầy (Xuất bán)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActionMenu(null); setWholesaleModalOpen(true); }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
+                >
+                  <span className="font-bold">Cung ứng đối tác</span>
+                  <span className="block text-[10px] text-slate-400">Lập phiếu xuất kho cho đối tác</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setActionMenu((m) => (m === 'MOVE' ? null : 'MOVE'))}
+              title="Chọn cách di chuyển hàng giữa kho / soạn kệ"
+              className="flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {actionMenu === 'MOVE' && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => { setActionMenu(null); openAction('TRANSFER'); }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
+                >
+                  <span className="font-bold">1 phiếu chuyển kho</span>
+                  <span className="block text-[10px] text-slate-400">Chọn từng đầu sách chuyển giữa 2 kho</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActionMenu(null); setBatchTransferOpen(true); }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
+                >
+                  <span className="font-bold">Hàng loạt (nhiều đầu sách)</span>
+                  <span className="block text-[10px] text-slate-400">Chọn/xóa cả loạt, kiểm tra tồn trước khi chuyển</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActionMenu(null); setPickListOpen(true); }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
+                >
+                  <span className="font-bold">Soạn kệ (gom theo kệ)</span>
+                  <span className="block text-[10px] text-slate-400">Danh sách soạn sách gom hàng từ kho ra quầy</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => openAction('RECEIPT')}
@@ -550,25 +600,8 @@ export function StockOverviewMatrix({
           >
             <PlusCircle className="w-3.5 h-3.5" /> Nhập in
           </button>
-          <button
-            type="button"
-            onClick={() => openAction('DISPATCH')}
-            title="Xuất bán / Quà tặng"
-            className="flex items-center gap-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
-          >
-            <MinusCircle className="w-3.5 h-3.5" /> Xuất bán
-          </button>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-
-          <button
-            type="button"
-            onClick={() => setPickListOpen(true)}
-            title="Danh sách soạn sách gom hàng theo kệ"
-            className="flex items-center gap-1 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <PackageSearch className="w-3.5 h-3.5" /> Soạn Kệ
-          </button>
 
           <button
             type="button"
@@ -579,6 +612,9 @@ export function StockOverviewMatrix({
             <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly Sách Lỗi
           </button>
         </div>
+        {actionMenu && (
+          <div className="fixed inset-0 z-40" onClick={() => setActionMenu(null)} aria-hidden="true" />
+        )}
       </div>
 
       {/* 2.5 BANNER THÔNG BÁO TẠO KHO & CTA ĐIỀU CHUYỂN (#10-CTA) */}

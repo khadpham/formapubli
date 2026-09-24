@@ -9,18 +9,26 @@ export function PwaRegister() {
   const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
-    // 1. Đăng ký Service Worker
+    // 1. Đăng ký Service Worker. Nếu gắn listener 'load' trong useEffect mà sự
+    // kiện load đã xảy ra trước đó (phần lớn lần tải sau) thì listener không
+    // bao giờ chạy → SW không bao giờ cài → bản cũ của SW kéo dài mãi.
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+      const register = () => {
         navigator.serviceWorker
           .register('/sw.js')
           .then((registration) => {
+            registration.update().catch(() => {});
             console.log('formapubli OS: Service Worker đã kích hoạt với scope:', registration.scope);
           })
           .catch((error) => {
             console.error('formapubli OS: Lỗi đăng ký Service Worker:', error);
           });
-      });
+      };
+      if (document.readyState === 'complete') {
+        register();
+      } else {
+        window.addEventListener('load', register, { once: true });
+      }
     }
 
     // 2. Bắt sự kiện cài đặt PWA (beforeinstallprompt)
