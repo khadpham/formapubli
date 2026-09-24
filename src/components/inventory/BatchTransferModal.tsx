@@ -40,6 +40,7 @@ interface BatchTransferModalProps {
   books: BookItem[];
   warehouses: WarehouseItem[];
   onSuccess: () => void;
+  initialToWarehouseId?: string;
 }
 
 interface TransferLine {
@@ -57,15 +58,19 @@ export function BatchTransferModal({
   books,
   warehouses,
   onSuccess,
+  initialToWarehouseId,
 }: BatchTransferModalProps) {
   const [fromWarehouseId, setFromWarehouseId] = useState<string>(
     warehouses.find((w) => w.code === 'KHO_AU_CO')?.id || warehouses[0]?.id || 'wh-au-co'
   );
   const [toWarehouseId, setToWarehouseId] = useState<string>(
-    warehouses.find((w) => w.id !== fromWarehouseId)?.id || warehouses[1]?.id || ''
+    initialToWarehouseId || warehouses.find((w) => w.id !== fromWarehouseId)?.id || warehouses[1]?.id || ''
   );
   const [note, setNote] = useState<string>('Điều chuyển hàng loạt phục vụ sự kiện / hội chợ');
   const [lines, setLines] = useState<TransferLine[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkQtyInput, setBulkQtyInput] = useState<string>('');
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState<boolean>(false);
   const [searchBookTerm, setSearchBookTerm] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -74,9 +79,54 @@ export function BatchTransferModal({
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  const selectAllCheckboxRef = React.useRef<HTMLInputElement>(null);
+  const idempotencyKeyRef = React.useRef<string | null>(null);
+  const payloadFingerprintRef = React.useRef<string>('');
+  const validationRequestIdRef = React.useRef<number>(0);
+  const validationAbortControllerRef = React.useRef<AbortController | null>(null);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Vô hiệu hóa và hủy an toàn mọi request validation đang chạy (P1 & P2)
+  const invalidateValidation = () => {
+    if (validationAbortControllerRef.current) {
+      try {
+        validationAbortControllerRef.current.abort();
+      } catch {}
+      validationAbortControllerRef.current = null;
+    }
+    validationRequestIdRef.current++;
+    setIsValidating(false);
+    setValidationSuccess(null);
+  };
+
+  // Đồng bộ kho đích khi có initialToWarehouseId (#10-CTA)
+  useEffect(() => {
+    if (initialToWarehouseId) {
+      setToWarehouseId(initialToWarehouseId);
+      if (fromWarehouseId === initialToWarehouseId) {
+        const alt = warehouses.find((w) => w.id !== initialToWarehouseId);
+        if (alt) setFromWarehouseId(alt.id);
+      }
+      invalidateValidation();
+    }
+  }, [initialToWarehouseId, warehouses]);
+
+  // Reset state khi mở/đóng lại modal
+  useEffect(() => {
+    if (!isOpen) {
+      invalidateValidation();
+      setSelectedIds(new Set());
+      setBulkQtyInput('');
+      setConfirmDeleteAll(false);
+      setErrorMessage(null);
+      setSuccessInfo(null);
+      idempotencyKeyRef.current = null;
+      payloadFingerprintRef.current = '';
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,6 +136,36 @@ export function BatchTransferModal({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isSubmitting, isValidating, onClose]);
+
+  // Trạng thái chọn dòng & Master Checkbox
+  const isAllSelected = lines.length > 0 && selectedIds.size === lines.length;
+  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < lines.length;
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = isSomeSelected;
+    }
+  }, [isSomeSelected]);
+
+  const toggleSelectLine = (editionId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(editionId)) {
+        next.delete(editionId);
+      } else {
+        next.add(editionId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(lines.map((l) => l.editionId)));
+    }
+  };
 
   // Lấy tồn của sách tại kho nguồn
   const getFromStock = (bookId: string): number => {
@@ -127,20 +207,71 @@ export function BatchTransferModal({
       },
     ]);
     setSearchBookTerm('');
-    setValidationSuccess(null);
+    invalidateValidation();
     setErrorMessage(null);
   };
 
   const handleRemoveLine = (editionId: string) => {
     setLines((prev) => prev.filter((l) => l.editionId !== editionId));
-    setValidationSuccess(null);
+    setSelectedIds((prev) => {
+      if (!prev.has(editionId)) return prev;
+      const next = new Set(prev);
+      next.delete(editionId);
+      return next;
+    });
+    invalidateValidation();
+    setErrorMessage(null);
+  };
+
+  const handleRemoveSelected = () => {
+    if (selectedIds.size === 0) return;
+    setLines((prev) => prev.filter((l) => !selectedIds.has(l.editionId)));
+    setSelectedIds(new Set());
+    invalidateValidation();
+    setErrorMessage(null);
+  };
+
+  const handleRemoveAll = () => {
+    setLines([]);
+    setSelectedIds(new Set());
+    setConfirmDeleteAll(false);
+    invalidateValidation();
+    setErrorMessage(null);
   };
 
   const handleQuantityChange = (editionId: string, qty: number) => {
+    const validQty = Math.max(1, Math.floor(qty) || 1);
     setLines((prev) =>
-      prev.map((l) => (l.editionId === editionId ? { ...l, quantity: Math.max(1, qty), staleWarning: undefined } : l))
+      prev.map((l) => (l.editionId === editionId ? { ...l, quantity: validQty, staleWarning: undefined } : l))
     );
-    setValidationSuccess(null);
+    invalidateValidation();
+    setErrorMessage(null);
+  };
+
+  const handleApplyBulkQuantity = () => {
+    if (selectedIds.size === 0) {
+      setErrorMessage('Vui lòng chọn ít nhất một dòng trước khi áp dụng số lượng.');
+      return;
+    }
+    const trimmed = bulkQtyInput.trim();
+    if (!trimmed) {
+      setErrorMessage('Vui lòng nhập số lượng cần áp dụng.');
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+      setErrorMessage('Số lượng hàng loạt phải là số nguyên dương lớn hơn 0 (không nhận số âm, 0, thập phân).');
+      return;
+    }
+
+    setLines((prev) =>
+      prev.map((l) =>
+        selectedIds.has(l.editionId) ? { ...l, quantity: parsed, staleWarning: undefined } : l
+      )
+    );
+    setBulkQtyInput('');
+    invalidateValidation();
+    setErrorMessage(null);
   };
 
   // Thêm nhanh toàn bộ sách có tồn > 0 tại kho nguồn
@@ -161,7 +292,8 @@ export function BatchTransferModal({
       }
     }
     setLines((prev) => [...prev, ...toAdd]);
-    setValidationSuccess(null);
+    invalidateValidation();
+    setErrorMessage(null);
   };
 
   // 1. Kiểm tra tồn trước (Dry-Run TOCTOU Validation)
@@ -175,14 +307,25 @@ export function BatchTransferModal({
       return;
     }
 
+    // Hủy request cũ nếu đang chạy
+    if (validationAbortControllerRef.current) {
+      try {
+        validationAbortControllerRef.current.abort();
+      } catch {}
+    }
+    const controller = new AbortController();
+    validationAbortControllerRef.current = controller;
+
     setIsValidating(true);
     setErrorMessage(null);
     setValidationSuccess(null);
+    const reqId = ++validationRequestIdRef.current;
 
     try {
       const res = await fetch('/api/inventory/transfer-batch/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           fromWarehouseId,
           toWarehouseId,
@@ -191,6 +334,8 @@ export function BatchTransferModal({
       });
 
       const data = await res.json();
+      // Bỏ qua nếu có thao tác mới xảy ra trong lúc chờ mạng
+      if (reqId !== validationRequestIdRef.current) return;
 
       if (res.ok && data.ok) {
         setValidationSuccess(true);
@@ -220,30 +365,56 @@ export function BatchTransferModal({
         setErrorMessage(data.error || 'Lỗi kiểm tra tồn kho.');
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      if (reqId !== validationRequestIdRef.current) return;
       setErrorMessage('Lỗi mạng khi kiểm tra tồn kho: ' + err.message);
     } finally {
-      setIsValidating(false);
+      if (reqId === validationRequestIdRef.current) {
+        setIsValidating(false);
+        if (validationAbortControllerRef.current === controller) {
+          validationAbortControllerRef.current = null;
+        }
+      }
     }
   };
 
-  // 1-Chạm: Tự động hạ các dòng thiếu về tồn khả dụng tối đa
+  // 1-Chạm: Tự động hạ các dòng thiếu về tồn khả dụng tối đa, loại bỏ dòng có tồn = 0 (Spec #5)
   const handleCapToMax = () => {
-    setLines((prev) =>
-      prev
-        .map((l) => {
-          if (l.staleWarning && l.availableStock !== undefined) {
-            return {
-              ...l,
-              quantity: Math.max(1, l.availableStock),
-              staleWarning: undefined,
-            };
-          }
-          return l;
-        })
-        .filter((l) => l.quantity > 0)
-    );
-    setValidationSuccess(null);
-    setErrorMessage(null);
+    let zeroCount = 0;
+    const nextLines: TransferLine[] = [];
+    const removedIds = new Set<string>();
+
+    for (const l of lines) {
+      if (l.staleWarning && l.availableStock !== undefined) {
+        if (l.availableStock <= 0) {
+          zeroCount++;
+          removedIds.add(l.editionId);
+          continue;
+        }
+        nextLines.push({
+          ...l,
+          quantity: l.availableStock,
+          staleWarning: undefined,
+        });
+      } else {
+        nextLines.push(l);
+      }
+    }
+
+    setLines(nextLines);
+    if (removedIds.size > 0) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        removedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+    invalidateValidation();
+    if (zeroCount > 0) {
+      setErrorMessage(`Đã hạ số lượng về tồn tối đa và tự động loại bỏ ${zeroCount} đầu sách có tồn khả dụng bằng 0.`);
+    } else {
+      setErrorMessage(null);
+    }
   };
 
   // 2. Commit Chuyển Kho Hàng Loạt
@@ -256,11 +427,29 @@ export function BatchTransferModal({
       setErrorMessage('Kho xuất và kho nhập phải khác nhau.');
       return;
     }
+    if (validationSuccess !== true) {
+      setErrorMessage('Vui lòng bấm "Kiểm tra tồn kho" thành công trước khi xác nhận chuyển kho.');
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const idempotencyKey = `batch-transfer-${generateUUIDv7()}`;
+    const currentFingerprint = JSON.stringify({
+      from: fromWarehouseId,
+      to: toWarehouseId,
+      note: note.trim(),
+      items: lines.map((l) => ({ id: l.editionId, q: l.quantity })).sort((a, b) => a.id.localeCompare(b.id)),
+    });
+
+    let idempotencyKey: string;
+    if (payloadFingerprintRef.current === currentFingerprint && idempotencyKeyRef.current) {
+      idempotencyKey = idempotencyKeyRef.current;
+    } else {
+      idempotencyKey = `batch-transfer-${generateUUIDv7()}`;
+      idempotencyKeyRef.current = idempotencyKey;
+      payloadFingerprintRef.current = currentFingerprint;
+    }
 
     try {
       const res = await fetch('/api/inventory/transfer-batch', {
@@ -286,6 +475,7 @@ export function BatchTransferModal({
         });
       } else if (res.status === 409 && data.data?.staleItems) {
         // TOCTOU lúc commit
+        setValidationSuccess(false);
         const staleMap = new Map<string, number>();
         for (const item of data.data.staleItems) {
           staleMap.set(item.editionId, item.availableNow);
@@ -303,12 +493,12 @@ export function BatchTransferModal({
             return l;
           })
         );
-        setErrorMessage('Tồn kho nguồn đã biến động trong lúc thao tác. Đã đánh dấu đỏ dòng thiếu, vui lòng bấm "Hạ về tồn tối đa" rồi bấm chuyển lại.');
+        setErrorMessage('Tồn kho nguồn đã biến động trong lúc thao tác. Đã đánh dấu đỏ dòng thiếu, vui lòng bấm "Hạ về tồn tối đa" rồi kiểm tra lại.');
       } else {
         setErrorMessage(data.error || 'Lỗi khi thực hiện chuyển kho hàng loạt.');
       }
     } catch (err: any) {
-      setErrorMessage('Lỗi mạng khi gửi lệnh chuyển kho: ' + err.message);
+      setErrorMessage('Lỗi mạng khi gửi lệnh chuyển kho (dữ liệu được giữ nguyên để thử lại): ' + err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -385,7 +575,8 @@ export function BatchTransferModal({
                     value={fromWarehouseId}
                     onChange={(e) => {
                       setFromWarehouseId(e.target.value);
-                      setValidationSuccess(null);
+                      invalidateValidation();
+                      setErrorMessage(null);
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
@@ -402,7 +593,8 @@ export function BatchTransferModal({
                     value={toWarehouseId}
                     onChange={(e) => {
                       setToWarehouseId(e.target.value);
-                      setValidationSuccess(null);
+                      invalidateValidation();
+                      setErrorMessage(null);
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
@@ -479,13 +671,119 @@ export function BatchTransferModal({
                 </div>
               </div>
 
+              {/* Thanh thao tác hàng loạt (Bulk Actions Toolbar) */}
+              {lines.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-slate-700">
+                      Đã chọn: <strong className="text-indigo-600 font-mono text-sm">{selectedIds.size}</strong> / {lines.length} dòng
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSelectAll}
+                      disabled={isSubmitting}
+                      className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline disabled:opacity-50"
+                    >
+                      {isAllSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Áp dụng SL hàng loạt */}
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={bulkQtyInput}
+                        onChange={(e) => setBulkQtyInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleApplyBulkQuantity();
+                          }
+                        }}
+                        placeholder="SL mới..."
+                        disabled={isSubmitting || selectedIds.size === 0}
+                        className="w-20 px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100"
+                        title="Chỉ nhận số nguyên dương (> 0)"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyBulkQuantity}
+                        disabled={isSubmitting || selectedIds.size === 0}
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={selectedIds.size === 0 ? 'Chọn ít nhất 1 dòng để áp dụng' : `Áp dụng SL cho ${selectedIds.size} dòng`}
+                      >
+                        Áp dụng ({selectedIds.size})
+                      </button>
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-300 mx-1 hidden sm:block"></div>
+
+                    {/* Xóa dòng đã chọn */}
+                    <button
+                      type="button"
+                      onClick={handleRemoveSelected}
+                      disabled={isSubmitting || selectedIds.size === 0}
+                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Xóa ({selectedIds.size})
+                    </button>
+
+                    {/* Xóa tất cả có xác nhận */}
+                    {confirmDeleteAll ? (
+                      <div className="flex items-center gap-1 bg-rose-100/80 px-2 py-0.5 rounded-lg border border-rose-300">
+                        <span className="text-[11px] font-bold text-rose-800">Xóa hết {lines.length} dòng?</span>
+                        <button
+                          type="button"
+                          onClick={handleRemoveAll}
+                          disabled={isSubmitting}
+                          className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold shadow-xs transition"
+                        >
+                          Có
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteAll(false)}
+                          className="px-1.5 py-0.5 bg-white text-slate-700 hover:bg-slate-100 rounded text-[11px] font-semibold border border-slate-200 transition"
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteAll(true)}
+                        disabled={isSubmitting}
+                        className="px-2.5 py-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold transition disabled:opacity-50"
+                      >
+                        Xóa tất cả
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Bảng chi tiết các dòng sách đã chọn */}
               <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                 <div className="max-h-64 overflow-y-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-slate-100/80 sticky top-0 border-b border-slate-200 text-slate-600 font-bold">
                       <tr>
-                        <th className="px-3 py-2 text-left w-12">#</th>
+                        <th className="px-3 py-2 text-center w-10">
+                          <input
+                            type="checkbox"
+                            ref={selectAllCheckboxRef}
+                            checked={isAllSelected}
+                            onChange={handleSelectAll}
+                            disabled={isSubmitting || lines.length === 0}
+                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                            title={isAllSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                          />
+                        </th>
+                        <th className="px-2 py-2 text-left w-10">#</th>
                         <th className="px-3 py-2 text-left">Đầu Sách</th>
                         <th className="px-3 py-2 text-center w-28">Tồn Nguồn</th>
                         <th className="px-3 py-2 text-center w-32">Số Lượng Chuyển</th>
@@ -495,7 +793,7 @@ export function BatchTransferModal({
                     <tbody className="divide-y divide-slate-100">
                       {lines.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="px-3 py-8 text-center text-slate-400 italic">
+                          <td colSpan={6} className="px-3 py-8 text-center text-slate-400 italic">
                             Chưa có đầu sách nào. Tìm kiếm ở trên hoặc bấm &quot;Thêm nhanh toàn bộ sách có tồn&quot;.
                           </td>
                         </tr>
@@ -504,10 +802,23 @@ export function BatchTransferModal({
                           <tr
                             key={line.editionId}
                             className={`transition-colors ${
-                              line.staleWarning ? 'bg-rose-50/80' : 'hover:bg-slate-50/60'
+                              line.staleWarning
+                                ? 'bg-rose-50/80'
+                                : selectedIds.has(line.editionId)
+                                ? 'bg-indigo-50/40'
+                                : 'hover:bg-slate-50/60'
                             }`}
                           >
-                            <td className="px-3 py-2 font-mono text-slate-400 text-center">{idx + 1}</td>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(line.editionId)}
+                                onChange={() => toggleSelectLine(line.editionId)}
+                                disabled={isSubmitting}
+                                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                              />
+                            </td>
+                            <td className="px-2 py-2 font-mono text-slate-400 text-center">{idx + 1}</td>
                             <td className="px-3 py-2">
                               <span className="font-mono font-bold text-slate-800 mr-1.5">[{line.code}]</span>
                               <span className="font-medium text-slate-900">{line.title}</span>
@@ -524,6 +835,7 @@ export function BatchTransferModal({
                               <input
                                 type="number"
                                 min="1"
+                                disabled={isSubmitting}
                                 value={line.quantity}
                                 onChange={(e) =>
                                   handleQuantityChange(line.editionId, parseInt(e.target.value) || 1)
@@ -532,14 +844,16 @@ export function BatchTransferModal({
                                   line.staleWarning
                                     ? 'border-rose-400 bg-rose-50 text-rose-700 focus:ring-1 focus:ring-rose-500'
                                     : 'border-slate-300 bg-white focus:ring-1 focus:ring-indigo-500'
-                                }`}
+                                } disabled:opacity-50`}
                               />
                             </td>
                             <td className="px-3 py-2 text-center">
                               <button
                                 type="button"
                                 onClick={() => handleRemoveLine(line.editionId)}
-                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                disabled={isSubmitting}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                                title="Xóa dòng này"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -609,8 +923,13 @@ export function BatchTransferModal({
               <button
                 type="button"
                 onClick={handleSubmitBatch}
-                disabled={isSubmitting || isValidating || lines.length === 0}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                disabled={isSubmitting || isValidating || lines.length === 0 || validationSuccess !== true}
+                title={
+                  validationSuccess !== true
+                    ? 'Vui lòng bấm "Kiểm tra tồn kho" thành công trước khi chuyển'
+                    : 'Xác nhận chuyển kho'
+                }
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
                 Xác nhận chuyển kho

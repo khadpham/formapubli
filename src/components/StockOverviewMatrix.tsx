@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Store,
   Landmark,
+  Building2,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
@@ -99,6 +100,17 @@ export function StockOverviewMatrix({
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [bankManagerOpen, setBankManagerOpen] = useState(false);
+  const [createdWarehouseToast, setCreatedWarehouseToast] = useState<{
+    id: string;
+    name: string;
+    code: string;
+  } | null>(null);
+  const [presetTargetWarehouseId, setPresetTargetWarehouseId] = useState<string | undefined>(undefined);
+  const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(warehouses);
+
+  useEffect(() => {
+    setLocalWarehouses(warehouses);
+  }, [warehouses]);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS'>('MATRIX');
@@ -569,6 +581,50 @@ export function StockOverviewMatrix({
         </div>
       </div>
 
+      {/* 2.5 BANNER THÔNG BÁO TẠO KHO & CTA ĐIỀU CHUYỂN (#10-CTA) */}
+      {createdWarehouseToast && (
+        <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border border-emerald-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                Đã mở kho mới thành công: <span className="text-emerald-700 font-extrabold">{createdWarehouseToast.name}</span>
+                <span className="ml-2 font-mono text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                  {createdWarehouseToast.code}
+                </span>
+              </p>
+              <p className="text-xs text-slate-600">
+                Kho đã sẵn sàng hoạt động. Bạn có muốn chuyển hàng loạt sách vào kho này ngay bây giờ?
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setPresetTargetWarehouseId(createdWarehouseToast.id);
+                setBatchTransferOpen(true);
+                setCreatedWarehouseToast(null);
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowRightLeft className="w-4 h-4" />
+              Chuyển hàng vào kho này
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreatedWarehouseToast(null)}
+              className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50 transition-colors"
+              title="Đóng thông báo"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
 
       {/* Banner trạng thái Micro đang lắng nghe */}
       {isListening && (
@@ -840,17 +896,21 @@ export function StockOverviewMatrix({
       {/* Batch Transfer Modal */}
       <BatchTransferModal
         isOpen={batchTransferOpen}
-        onClose={() => setBatchTransferOpen(false)}
+        onClose={() => {
+          setBatchTransferOpen(false);
+          setPresetTargetWarehouseId(undefined);
+        }}
         books={initialBooks}
-        warehouses={warehouses}
+        warehouses={localWarehouses}
         onSuccess={handleRefresh}
+        initialToWarehouseId={presetTargetWarehouseId}
       />
 
       {/* Wholesale Dispatch Modal (PXK) */}
       <WholesaleDispatchModal
         isOpen={wholesaleModalOpen}
         onClose={() => setWholesaleModalOpen(false)}
-        warehouses={warehouses}
+        warehouses={localWarehouses}
         books={initialBooks}
         partners={partners}
         currentRole={currentRole}
@@ -862,7 +922,7 @@ export function StockOverviewMatrix({
         isOpen={pickListOpen}
         onClose={() => setPickListOpen(false)}
         books={initialBooks}
-        warehouses={warehouses}
+        warehouses={localWarehouses}
       />
 
       {/* RMA Ticket Modal */}
@@ -870,7 +930,7 @@ export function StockOverviewMatrix({
         isOpen={rmaModalOpen}
         onClose={() => setRmaModalOpen(false)}
         books={initialBooks}
-        warehouses={warehouses}
+        warehouses={localWarehouses}
         onSuccess={handleRefresh}
       />
 
@@ -878,7 +938,26 @@ export function StockOverviewMatrix({
       <CreateWarehouseModal
         isOpen={createWarehouseOpen}
         onClose={() => setCreateWarehouseOpen(false)}
-        onCreated={handleRefresh}
+        onCreated={(newWh) => {
+          if (newWh && newWh.id) {
+            setLocalWarehouses((prev) => {
+              if (prev.some((w) => w.id === newWh.id)) return prev;
+              return [
+                ...prev,
+                {
+                  id: newWh.id,
+                  name: newWh.name || 'Kho mới',
+                  code: newWh.code || 'MÃ_KHO',
+                },
+              ];
+            });
+            setCreatedWarehouseToast({
+              id: newWh.id,
+              name: newWh.name || 'Kho mới',
+              code: newWh.code || 'MÃ_KHO',
+            });
+          }
+        }}
       />
       {bankManagerOpen && (
         <WarehouseBankManager onClose={() => { setBankManagerOpen(false); handleRefresh(); }} />
