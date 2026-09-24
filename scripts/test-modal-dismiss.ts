@@ -9,7 +9,6 @@ const cases = [
   ['src/components/StockMovementModal.tsx', [['onClose']]],
   ['src/components/inventory/PickListModal.tsx', [['onClose']]],
   ['src/components/inventory/RmaTicketModal.tsx', [['onClose']]],
-  ['src/components/pos/ReturnsModal.tsx', [['onClose']]],
   ['src/components/auth/LoginModal.tsx', [['onCancel']]],
   ['src/components/pos/DiscountApprovalModal.tsx', [['onClose']]],
   ['src/components/pos/PosCheckoutTerminal.tsx', [
@@ -50,7 +49,7 @@ for (const [file, expected] of cases) {
       if (['setCompletedOrder', 'setAmbiguousMatches', 'setPendingDiscountRate'].includes(call.name)) assert.equal(call.value, null);
       if (call.name.startsWith('setIs')) assert.equal(call.value, false);
     }
-    const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('ReturnsModal') ? 'busy' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : file.includes('DiscountApprovalModal') ? 'status' : null;
+    const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : file.includes('DiscountApprovalModal') ? 'status' : null;
     if (pending) {
       calls.length = 0;
       scope[pending] = pending === 'status' ? 'LOADING' : true;

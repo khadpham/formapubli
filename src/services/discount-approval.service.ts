@@ -15,7 +15,19 @@ export interface ActorContext {
   fullName?: string;
 }
 
-const JWT_SECRET = process.env.AUTH_SECRET || 'formapubli-pos-discount-hmac-secret-2026';
+/**
+ * Secret ký QR-JWT duyệt chiết khấu. Fail-closed trên production/strict
+ * (đồng chuẩn getAuthSecret): thiếu AUTH_SECRET là từ chối thay vì dùng
+ * secret cứng mặc định — kẻ biết default không thể giả mạo QR duyệt giảm giá.
+ */
+function getDiscountSecret(): string {
+  const s = process.env.AUTH_SECRET;
+  if (s) return s;
+  if (process.env.AUTH_STRICT === 'true' || process.env.NODE_ENV === 'production') {
+    throw new Error('BẮT BUỘC cấu hình AUTH_SECRET trên production (ký QR duyệt chiết khấu).');
+  }
+  return 'formapubli-pos-discount-hmac-secret-2026';
+}
 
 function base64UrlEncode(data: string | Buffer): string {
   return Buffer.from(data)
@@ -73,7 +85,7 @@ export function signQrJwt(payload: Record<string, any>): string {
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64UrlEncode(JSON.stringify(payload));
   const signature = base64UrlEncode(
-    crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest()
+    crypto.createHmac('sha256', getDiscountSecret()).update(`${header}.${body}`).digest()
   );
   return `${header}.${body}.${signature}`;
 }
@@ -85,7 +97,7 @@ export function verifyQrJwt(token: string): Record<string, any> {
   }
   const [header, body, signature] = parts;
   const expectedSignature = base64UrlEncode(
-    crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest()
+    crypto.createHmac('sha256', getDiscountSecret()).update(`${header}.${body}`).digest()
   );
   if (
     !crypto.timingSafeEqual(

@@ -94,13 +94,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Ghi vết kiểm toán phiên hỏi đáp
+  // 4. Ghi vết kiểm toán phiên hỏi đáp — KHÔNG log nguyên văn câu hỏi
+  // (có thể chứa tên/SĐT/khách hàng = PII). Chỉ lưu độ dài để debug quota.
   await recordAuditLog({
     action: 'COPILOT_QUERY',
     actorRole: sessionPayload.role,
     actorId: sessionPayload.actorId,
     resource: 'api/ai/copilot',
-    details: question.slice(0, 500),
+    details: `q_len=${question.length}`,
     ipAddress: ip,
   });
 

@@ -162,10 +162,12 @@ export function InAppBarcodeScanner({
         return mainCam.deviceId;
       }
 
-      // ƯU TIÊN 2: Bất kỳ camera sau nào không có chữ 'macro'
+      // ƯU TIÊN 2: Bất kỳ camera sau nào không phải ống kính phụ.
+      // (KHÔNG loại 'wide': Apple gọi ống kính chính của iPhone là "Wide" —
+      // loại 'wide' sẽ vứt nhầm cam chính. Chỉ loại ultra/tele/depth/macro.)
       const nonMacroBack = candidateList.find((d) => {
         const l = d.label.toLowerCase();
-        return !l.includes('macro') && !l.includes('close-up');
+        return !l.includes('macro') && !l.includes('close-up') && !l.includes('ultra') && !l.includes('tele') && !l.includes('depth') && !l.includes('0.5');
       });
 
       if (nonMacroBack) {
@@ -416,6 +418,14 @@ export function InAppBarcodeScanner({
 
     const now = Date.now();
 
+    // HÃM PHANH 0: khóa hết hạn theo thời gian (BV-02b). Đổi sách nhanh ở hội
+    // chợ hiếm khi tạo đủ frame trống nên khóa kẹt ("lúc quét được lúc không"
+    // khi quét nhiều cuốn cùng ISBN). Quá 4s coi như thao tác mới, cho quét
+    // lại; giữ nguyên sách cũng chỉ +1 mỗi 4s nên không thể phình giỏ ồ ạt.
+    if (lockedCodeRef.current === cleanCode && now - lastScannedTimeRef.current > 4000) {
+      lockedCodeRef.current = null;
+    }
+
     // HÃM PHANH 1: Nếu mã này đang bị KHÓA (đang ở nguyên vị trí trong camera) -> Bỏ qua
     if (lockedCodeRef.current === cleanCode) {
       // Đang lia giữ nguyên mã đó trong tầm quét -> Không tăng số lượng vô tội vạ
@@ -498,10 +508,10 @@ export function InAppBarcodeScanner({
           } else {
             // LOST-TRACK LOGIC (BV-02):
             // Không tìm thấy mã vạch nào trong frame này.
-            // Nếu liên tiếp 4 frame (~800ms) không còn thấy mã vạch trong khung hình:
+            // Nếu liên tiếp 2 frame không còn thấy mã vạch trong khung hình:
             // Tự động MỞ KHÓA (Unlock) để cho phép quét cuốn sách tiếp theo (hoặc quét lại cuốn này nếu lia vào lại)
             framesWithoutBarcodeRef.current += 1;
-            if (framesWithoutBarcodeRef.current >= 4) {
+            if (framesWithoutBarcodeRef.current >= 2) {
               lockedCodeRef.current = null;
             }
           }

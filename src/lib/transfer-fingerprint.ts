@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hashString } from './export-hash';
 
 /**
  * Deterministic JSON stringify with sorted keys at all levels.
@@ -15,7 +15,7 @@ export function canonicalJson(obj: any): string {
 }
 
 export function canonicalHash(payload: unknown): string {
-  return createHash('sha256').update(canonicalJson(payload)).digest('hex');
+  return hashString(canonicalJson(payload));
 }
 
 export interface DispatchFingerprintInput {
