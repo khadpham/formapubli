@@ -2,10 +2,3 @@ name = "formapubli"
 compatibility_date = "2024-09-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
-
-[[d1_databases]]
-# LƯU Ý GO-LIVE: app đọc DATABASE_URL qua @libsql/client (Turso remote),
-# KHÔNG đọc binding DB này. Giữ block để khỏi lỗi Pages, không cần tạo D1 thật.
-binding = "DB"
-database_name = "formapubli-db"
-database_id = "local-d1-database"
