@@ -247,7 +247,10 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
                   placeholder="VD: NV1, KHO1..."
                   value={manualId}
                   disabled={isLocked}
-                  onChange={(e) => setManualId(e.target.value)}
+                  onChange={(e) => {
+                    setManualId(e.target.value);
+                    setShowPasscode(false);
+                  }}
                   className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"
                 />
               </div>
