@@ -111,7 +111,7 @@ export function PosCheckoutTerminal({
   // Danh mục thu gọn mặc định (scan-first trên mobile): chỉ hiện vài món đầu.
   // Desktop giữ full grid nguyên bản (không gian rộng) — chỉ mobile mới thu gọn.
   const [catalogExpanded, setCatalogExpanded] = useState(false);
-  const CATALOG_COLLAPSED_COUNT = 3;
+  const CATALOG_COLLAPSED_COUNT = 4; // 2x2 grid gọn gàng trên mobile (Ticket #11)
   // FAB quét chỉ hiện khi nút Quét to đã trôi khỏi viewport (IntersectionObserver)
   const scanButtonRef = useRef<HTMLButtonElement>(null);
   const [scanButtonVisible, setScanButtonVisible] = useState(true);
@@ -1204,16 +1204,18 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ */}
-          <button
-            type="button"
-            onClick={() => setIsSettlementModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
-            title="Báo cáo chốt ngày & Đối soát kiểm kê"
-          >
-            <CalendarCheck className="w-4 h-4" />
-            <span>Chốt Ngày</span>
-          </button>
+          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ (#3-UI button: chỉ Owner & Manager) */}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setIsSettlementModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
+              title="Báo cáo chốt ngày & Đối soát kiểm kê"
+            >
+              <CalendarCheck className="w-4 h-4" />
+              <span>Chốt Ngày</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1536,7 +1538,7 @@ export function PosCheckoutTerminal({
             )}
           </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 max-h-[560px] overflow-y-auto pr-1">
             {(catalogExpanded || !isMobileView ? filteredBooks : filteredBooks.slice(0, CATALOG_COLLAPSED_COUNT)).map((b) => {
               const currentStock = getBookStock(b);
 
@@ -1546,7 +1548,8 @@ export function PosCheckoutTerminal({
                 <div
                   key={b.id}
                   onClick={() => !isOutOfStock && handleAddToCart(b)}
-                  className={`p-3.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none ${
+                  title={b.title}
+                  className={`p-2.5 sm:p-3.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none min-h-[110px] ${
                     isOutOfStock
                       ? 'opacity-50 border-slate-200 cursor-not-allowed bg-slate-50/60'
                       : 'border-slate-200/80 hover:border-emerald-500 hover:shadow-md active:scale-[0.98]'
@@ -1554,11 +1557,11 @@ export function PosCheckoutTerminal({
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-mono font-black">
+                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-mono font-black truncate max-w-[65px]">
                         {b.code}
                       </span>
                       <span
-                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
                           currentStock > 10
                             ? 'bg-emerald-50 text-emerald-700'
                             : currentStock > 0
@@ -1569,21 +1572,29 @@ export function PosCheckoutTerminal({
                         Tồn: {currentStock}
                       </span>
                     </div>
-                    <h4 className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
+                    <h4
+                      title={b.title}
+                      className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug break-words"
+                    >
                       {b.title}
                     </h4>
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    <p
+                      title={b.author}
+                      className="text-[11px] text-slate-500 truncate mt-0.5"
+                    >
                       {b.author}
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-                    <span className="text-xs font-black text-emerald-700 font-mono">
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 gap-1">
+                    <span className="text-[11px] sm:text-xs font-black text-emerald-700 font-mono truncate">
                       {b.coverPrice.toLocaleString('vi-VN')} đ
                     </span>
                     <button
+                      type="button"
                       disabled={isOutOfStock}
-                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-colors"
+                      aria-label={`Thêm ${b.title} vào giỏ`}
+                      className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-colors shrink-0 min-h-[32px] sm:min-h-[36px]"
                     >
                       + Thêm
                     </button>
