@@ -95,6 +95,33 @@ interface PosCheckoutTerminalProps {
   onDraftApplied?: () => void;
 }
 
+/** F5 (#8): thu ngân xác nhận TAY đã nhận tiền chuyển khoản/QR trước khi chốt đơn. */
+function MoneyReceivedToggle({
+  id,
+  confirmed,
+  onToggle,
+}: {
+  id: string;
+  confirmed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      id={id}
+      aria-pressed={confirmed}
+      onClick={onToggle}
+      className={`mt-2 w-full py-2 rounded-xl text-xs font-extrabold border transition flex items-center justify-center gap-1.5 min-h-[40px] ${
+        confirmed
+          ? 'bg-emerald-600 text-white border-emerald-700'
+          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+      }`}
+    >
+      <ShieldCheck className="w-4 h-4" />
+      {confirmed ? 'Đã nhận tiền (bấm để bỏ xác nhận)' : 'Xác nhận đã nhận tiền'}
+    </button>
+  );
+}
 export function PosCheckoutTerminal({
   books,
   currentRole,
@@ -225,17 +252,50 @@ export function PosCheckoutTerminal({
   const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
   // A1-F / #1 UI: Freeze giỏ hàng khi chờ phê duyệt chiết khấu bảo mật
   const [isApprovalPending, setIsApprovalPending] = useState(false);
-  const isCartFrozen = isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
+  // requestId yêu cầu đang chờ (do modal tạo) — cần để gọi API CANCEL trước khi mở khóa
+  const [pendingApprovalRequestId, setPendingApprovalRequestId] = useState<string | null>(null);
+  const [isCancellingApproval, setIsCancellingApproval] = useState(false);
+  // F5 (#8): chuyển khoản/QR phải được thu ngân xác nhận TAY "Đã nhận tiền" trước khi chốt
+  const [isMoneyReceived, setIsMoneyReceived] = useState(false);
 
-  const handleCancelApproval = () => {
-    setIsApprovalPending(false);
-    setIsDiscountApprovalModalOpen(false);
-    setPendingDiscountRate(null);
-    setDiscountRate(0);
-    if (isGift) {
-      setIsGift(false);
+  // Đang chờ Quản lý duyệt (chặn cả chốt đơn) vs giỏ bị khóa để sửa: chờ duyệt HOẶC
+  // đã có phê duyệt gắn với giỏ này (sửa giỏ = phê duyệt hết hiệu lực → server 403).
+  const isApprovalPendingState =
+    isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
+  const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null;
+
+  // F1/F2: hủy yêu cầu duyệt TRÊN SERVER rồi mới mở khóa giỏ; lỗi thì GIỮ khóa.
+  const handleCancelApproval = async () => {
+    const requestId = approvedDiscountRequestId || pendingApprovalRequestId;
+    setIsCancellingApproval(true);
+    try {
+      if (requestId) {
+        const res = await fetch(`/api/pos/discount-approvals/${requestId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'CANCEL' }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message || json?.error || 'Không hủy được yêu cầu duyệt chiết khấu.');
+        }
+      }
+      // ponytail: nếu thu ngân hủy đúng lúc modal đang tạo yêu cầu (chưa có id) thì
+      // yêu cầu đó tự hết hạn sau 5 phút — không có rủi ro tiền, không thêm cơ chế chờ.
+      setIsApprovalPending(false);
+      setIsDiscountApprovalModalOpen(false);
+      setPendingDiscountRate(null);
+      setDiscountRate(0);
+      setApprovedDiscountRequestId(null);
+      setPendingApprovalRequestId(null);
+      setIsManagerOverride(false);
+      if (isGift) setIsGift(false);
+      setErrorMessage(null);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Không hủy được yêu cầu duyệt — giỏ vẫn tạm khóa.');
+    } finally {
+      setIsCancellingApproval(false);
     }
-    setErrorMessage(null);
   };
   // V4.1 S2.4: ô nhập CK lẻ (% nguyên)
   const [customDiscountInput, setCustomDiscountInput] = useState('');
@@ -856,6 +916,13 @@ export function PosCheckoutTerminal({
       setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
       return;
     }
+    // F5 (#8): chuyển khoản/QR chỉ chốt khi thu ngân đã xác nhận tay "Đã nhận tiền"
+    if (!isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && !isMoneyReceived) {
+      setErrorMessage(
+        'Vui lòng xác nhận "Đã nhận tiền" (đã kiểm tra tài khoản/QR của khách) trước khi chốt đơn chuyển khoản/QR.'
+      );
+      return;
+    }
 
     // 1.0: chốt chặn ATP lần cuối (giữ chỗ có thể tăng sau khi thêm giỏ).
     // Quản lý đã duyệt PIN được vượt (chịu trách nhiệm đối soát), server vẫn guard tồn vật lý.
@@ -945,6 +1012,7 @@ export function PosCheckoutTerminal({
 
         setIsMobileCheckoutSheetOpen(false);
         setCart([]);
+        setIsMoneyReceived(false);
         setNote('');
         setQrSnapshot(null);
         if (isGift) {
@@ -1021,6 +1089,7 @@ export function PosCheckoutTerminal({
       // Xóa giỏ hàng
       setIsMobileCheckoutSheetOpen(false);
       setCart([]);
+      setIsMoneyReceived(false);
       setNote('');
       setQrSnapshot(null);
       if (isGift) {
@@ -1676,12 +1745,14 @@ export function PosCheckoutTerminal({
                   <div>
                     <p className="text-xs font-bold">🔒 Giỏ hàng đang tạm khóa</p>
                     <p className="text-[11px] text-amber-700">
-                      Đang chờ Quản lý duyệt chiết khấu {pendingDiscountRate ? Math.round(pendingDiscountRate * 100) + '%' : ''}. Không thể sửa giỏ.
+                      {approvedDiscountRequestId
+                        ? `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
+                        : `Đang chờ Quản lý duyệt chiết khấu ${pendingDiscountRate ? Math.round(pendingDiscountRate * 100) + '%' : ''}. Không thể sửa giỏ.`}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {!isDiscountApprovalModalOpen && (
+                  {!isDiscountApprovalModalOpen && !approvedDiscountRequestId && (
                     <button
                       type="button"
                       onClick={() => setIsDiscountApprovalModalOpen(true)}
@@ -1693,11 +1764,16 @@ export function PosCheckoutTerminal({
                   <button
                     type="button"
                     id="btn-cancel-approval"
+                    disabled={isCancellingApproval}
                     onClick={handleCancelApproval}
-                    className="px-2.5 py-1 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-bold transition shadow-sm cursor-pointer"
-                    title="Hủy yêu cầu duyệt để mở khóa giỏ hàng"
+                    className="px-2.5 py-1 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={approvedDiscountRequestId ? 'Hủy phê duyệt để sửa giỏ hàng' : 'Hủy yêu cầu duyệt để mở khóa giỏ hàng'}
                   >
-                    Hủy duyệt để sửa giỏ
+                    {isCancellingApproval
+                      ? 'Đang hủy...'
+                      : approvedDiscountRequestId
+                      ? 'Sửa giỏ và hủy phê duyệt'
+                      : 'Hủy duyệt để sửa giỏ'}
                   </button>
                 </div>
               </div>
@@ -1705,7 +1781,7 @@ export function PosCheckoutTerminal({
 
             {/* Error Message */}
             {errorMessage && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+              <div id="pos-error-message" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
@@ -1957,7 +2033,10 @@ export function PosCheckoutTerminal({
                   <select
                     id="pos-payment-method-select"
                     value={paymentMethod === 'QR_CODE' ? 'BANK_TRANSFER' : paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as any)}
+                    onChange={(e) => {
+                      setPaymentMethod(e.target.value as any);
+                      setIsMoneyReceived(false);
+                    }}
                     className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                   >
                     <option value="CASH">Tiền mặt</option>
@@ -1972,6 +2051,11 @@ export function PosCheckoutTerminal({
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
                     onQr={setQrSnapshot}
+                  />
+                  <MoneyReceivedToggle
+                    id="btn-money-received"
+                    confirmed={isMoneyReceived}
+                    onToggle={() => setIsMoneyReceived((v) => !v)}
                   />
                 </div>
               )}
@@ -1998,8 +2082,10 @@ export function PosCheckoutTerminal({
             </div>
 
             <button
+              type="button"
+              id="btn-desktop-checkout"
               onClick={handleCheckout}
-              disabled={isSubmitting || cart.length === 0}
+              disabled={isSubmitting || isApprovalPendingState || cart.length === 0}
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
@@ -2486,9 +2572,11 @@ export function PosCheckoutTerminal({
           quantity: item.quantity,
           unitPrice: item.coverPrice,
         }))}
+        onRequestCreated={setPendingApprovalRequestId}
         onApproved={(data) => {
           setIsApprovalPending(false);
           setApprovedDiscountRequestId(data.requestId);
+          setPendingApprovalRequestId(null);
           setIsManagerOverride(true);
           setDiscountRate(data.rate);
           if (data.rate === 1) {
@@ -2563,7 +2651,12 @@ export function PosCheckoutTerminal({
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end lg:hidden animate-in fade-in duration-200">
           <div
             className="fixed inset-0"
-            onClick={() => !isSubmitting && setIsMobileCheckoutSheetOpen(false)}
+            onClick={(event) => {
+              // #7 / F1: bấm ra ngoài sheet để đóng (không đóng khi đang gửi đơn)
+              if (event.target === event.currentTarget && !isSubmitting) {
+                setIsMobileCheckoutSheetOpen(false);
+              }
+            }}
           />
           <div
             id="mobile-checkout-sheet"
@@ -2619,7 +2712,10 @@ export function PosCheckoutTerminal({
                 </label>
                 <select
                   value={paymentMethod === 'QR_CODE' ? 'BANK_TRANSFER' : paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
+                  onChange={(e) => {
+                    setPaymentMethod(e.target.value as any);
+                    setIsMoneyReceived(false);
+                  }}
                   className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                 >
                   <option value="CASH">Tiền mặt</option>
@@ -2634,6 +2730,11 @@ export function PosCheckoutTerminal({
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
                     onQr={setQrSnapshot}
+                  />
+                  <MoneyReceivedToggle
+                    id="btn-money-received-mobile"
+                    confirmed={isMoneyReceived}
+                    onToggle={() => setIsMoneyReceived((v) => !v)}
                   />
                 </div>
               )}
@@ -2662,7 +2763,7 @@ export function PosCheckoutTerminal({
               <button
                 type="button"
                 id="btn-confirm-mobile-checkout"
-                disabled={isSubmitting || isCartFrozen || cart.length === 0}
+                disabled={isSubmitting || isApprovalPendingState || cart.length === 0}
                 onClick={handleCheckout}
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-extrabold shadow-lg shadow-emerald-950/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >

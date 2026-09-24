@@ -3,18 +3,39 @@ import { createRoot } from 'react-dom/client';
 import { PosCheckoutTerminal } from '../src/components/pos/PosCheckoutTerminal';
 import { UserRole } from '../src/lib/roles';
 
-// Mock fetch
-window.fetch = (async (url: string) => {
+// Mock fetch — GHI LẠI mọi lời gọi để test contract (CANCEL API, chặn chốt đơn sớm)
+type FetchCall = { url: string; method: string; body?: string };
+const fetchCalls: FetchCall[] = [];
+(window as any).__fetchCalls = fetchCalls;
+let cancelApprovalFails = false;
+(window as any).__setCancelApprovalFails = (v: boolean) => {
+  cancelApprovalFails = v;
+};
+let drawerItems: any[] = [];
+(window as any).__setDrawerItems = (v: any[]) => {
+  drawerItems = v;
+};
+const CREATED_REQUEST = {
+  id: 'req-test-1',
+  shortCode: '4821',
+  qrToken: 'tok-1',
+  requestedDiscountRate: 1,
+  expiresAt: '2099-01-01T00:00:00.000Z',
+};
+
+window.fetch = (async (url: string, init?: any) => {
+  const method = `${init?.method || 'GET'}`.toUpperCase();
+  fetchCalls.push({
+    url: `${url}`,
+    method,
+    body: typeof init?.body === 'string' ? init.body : undefined,
+  });
+  const okData = (data: any) => ({ ok: true, json: async () => ({ success: true, data }) });
+
   if (url.includes('/api/warehouses')) {
-    return {
-      ok: true,
-      json: async () => ({
-        ok: true,
-        data: [
-          { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho Âu Cơ', warehouseType: 'RETAIL_OFFICE' }
-        ]
-      })
-    };
+    return okData([
+      { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho Âu Cơ', warehouseType: 'RETAIL_OFFICE' }
+    ]);
   }
   if (url.includes('/api/atp')) {
     return {
@@ -22,16 +43,39 @@ window.fetch = (async (url: string) => {
       json: async () => ({ ok: true, atp: {} })
     };
   }
-  if (url.includes('/api/pos/discount-approvals')) {
-    return {
-      ok: true,
-      json: async () => ({ ok: true, data: [] })
-    };
+  if (/\/api\/pos\/discount-approvals\/[^/?]+$/.test(url)) {
+    // POST .../[id]: APPROVE (modal OTP) hoặc CANCEL (nút "Hủy duyệt để sửa giỏ").
+    if (method === 'POST' && cancelApprovalFails) {
+      return {
+        ok: false,
+        json: async () => ({ success: false, message: 'Yêu cầu vừa được duyệt/tiêu thụ, vui lòng tải lại.' })
+      };
+    }
+    return method === 'POST'
+      ? okData({ id: 'req-test-1', status: 'APPROVED' })
+      : okData({ id: 'req-test-1', status: 'PENDING' });
   }
-  return {
-    ok: true,
-    json: async () => ({ ok: true, data: {} })
-  };
+  if (url.includes('/api/pos/discount-approvals')) {
+    return method === 'POST' ? okData(CREATED_REQUEST) : okData(drawerItems);
+  }
+  if (url.includes('/api/orders')) {
+    // Trả payload đơn hàng đúng shape như API thật (màn hình biên nhận cần finalAmount...).
+    return okData({
+      orderId: 'ord-test-1',
+      orderCode: 'ORD-TEST-0001',
+      warehouseId: 'wh-au-co',
+      customerName: 'Khách Test',
+      subtotal: 168000,
+      discountAmount: 0,
+      finalAmount: 168000,
+      fiscalScope: 'INTERNAL_MANAGEMENT',
+      itemsCount: 1,
+      totalQuantity: 1,
+      status: 'COMPLETED',
+      idempotencyKey: 'idem-test-1',
+    });
+  }
+  return okData({});
 }) as any;
 
 const sampleBooks = [
@@ -60,6 +104,31 @@ window.addEventListener('unhandledrejection', (e) => log('UNHANDLED REJECTION: '
 function findButton(text: string): HTMLButtonElement | null {
   const buttons = Array.from(document.querySelectorAll('button'));
   return buttons.find((b) => b.textContent?.includes(text)) || null;
+}
+
+async function waitFor(check: () => boolean, timeoutMs = 2000, label = 'condition') {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`Timeout chờ: ${label}`);
+}
+
+function setInputValue(el: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+  setter.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function setSelectValue(el: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
+  setter.call(el, value);
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function callsTo(fragment: string, method?: string) {
+  return fetchCalls.filter((c) => c.url.includes(fragment) && (!method || c.method === method));
 }
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: any }> {
@@ -236,13 +305,23 @@ async function runTestSuite() {
   if (!cancelApprovalBtn) {
     throw new Error('Test 9 Failed: Cannot find "#btn-cancel-approval" button to cancel approval!');
   }
+  const cancelCallsBefore = callsTo('/api/pos/discount-approvals/', 'POST').length;
   cancelApprovalBtn.click();
-  await new Promise((r) => setTimeout(r, 100));
+  await waitFor(() => !document.getElementById('pos-cart-frozen-banner'), 3000, 'bỏ khóa giỏ sau khi hủy duyệt');
 
-  if (document.getElementById('pos-cart-frozen-banner')) {
-    throw new Error('Test 9 Failed: Cart frozen banner must be removed after clicking cancel approval!');
+  const cancelCalls = callsTo('/api/pos/discount-approvals/', 'POST').slice(cancelCallsBefore);
+  if (cancelCalls.length !== 1) {
+    throw new Error(
+      `Test 9 Failed: Hủy duyệt phải gọi đúng 1 lần POST /api/pos/discount-approvals/{id} (CANCEL), thực tế ${cancelCalls.length}!`
+    );
   }
-  log('✓ [Test 9] PASS: Cart freeze locks cart during approval and unfreezes on cancel (A1-F / #1 UI)');
+  if (!`${cancelCalls[0].body}`.includes('"CANCEL"')) {
+    throw new Error(`Test 9 Failed: Body phải là {"action":"CANCEL"}, thực tế ${cancelCalls[0].body}`);
+  }
+  if (!cancelCalls[0].url.includes(CREATED_REQUEST.id)) {
+    throw new Error(`Test 9 Failed: CANCEL phải gửi đúng requestId ${CREATED_REQUEST.id}, thực tế ${cancelCalls[0].url}`);
+  }
+  log('✓ [Test 9] PASS: Freeze khi chờ duyệt + hủy duyệt gọi API CANCEL mới mở khóa giỏ (A1-F / #1 UI)');
 
   // 10. Test Mobile Floating Checkout Button opens Sheet (Bug #7)
   const floatingCheckoutBtn = document.getElementById('btn-open-mobile-checkout-sheet') as HTMLButtonElement | null;
@@ -274,12 +353,140 @@ async function runTestSuite() {
   }
   log('✓ [Test 10] PASS: Mobile floating checkout button opens sheet modal without auto-checkout (#7)');
 
+  // 11. CANCEL lỗi (409/timeout) -> giỏ VẪN khóa, không mở sớm (A1-F)
+  log('\n--- Test 11: CANCEL API lỗi -> giỏ giữ khóa ---');
+  (window as any).__setCancelApprovalFails(true);
+  const addBtn11 = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  if (!addBtn11) throw new Error('Test 11 Failed: Cannot find "+ Thêm" button!');
+  addBtn11.click();
+  await new Promise((r) => setTimeout(r, 120));
+  const giftBtn11 = findButton('100%');
+  if (!giftBtn11) throw new Error('Test 11 Failed: Cannot find gift 100% button!');
+  giftBtn11.click();
+  await waitFor(() => !!document.getElementById('btn-cancel-approval'), 2000, 'banner khóa giỏ');
+
+  (document.getElementById('btn-cancel-approval') as HTMLButtonElement).click();
+  await new Promise((r) => setTimeout(r, 300));
+  if (!document.getElementById('pos-cart-frozen-banner')) {
+    throw new Error('Test 11 Failed: CANCEL lỗi thì giỏ PHẢI còn khóa (không mở sớm)!');
+  }
+  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('tải lại')) {
+    throw new Error('Test 11 Failed: Phải hiển thị lỗi từ server khi hủy thất bại!');
+  }
+
+  (window as any).__setCancelApprovalFails(false);
+  (document.getElementById('btn-cancel-approval') as HTMLButtonElement).click();
+  await waitFor(() => !document.getElementById('pos-cart-frozen-banner'), 3000, 'mở khóa khi retry CANCEL thành công');
+  log('✓ [Test 11] PASS: CANCEL lỗi -> giữ khóa + báo lỗi; retry thành công mới mở khóa giỏ');
+
+  // 12. Đã được Quản lý duyệt -> giỏ VẪN khóa (giữ đúng phê duyệt) nhưng ĐƯỢC chốt đơn
+  log('\n--- Test 12: đã duyệt -> giỏ vẫn khóa, được phép chốt đơn ---');
+  const addBtn12 = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  if (!addBtn12) throw new Error('Test 12 Failed: Cannot find "+ Thêm" button!');
+  addBtn12.click();
+  await new Promise((r) => setTimeout(r, 120));
+  const giftBtn12 = findButton('100%');
+  if (!giftBtn12) throw new Error('Test 12 Failed: Cannot find gift 100% button!');
+  giftBtn12.click();
+  await waitFor(() => !!document.getElementById('pos-approval-otp-input'), 2000, 'form OTP của modal duyệt');
+
+  setInputValue(document.getElementById('pos-approval-otp-input') as HTMLInputElement, '4821');
+  const unlockBtn = findButton('Mở Khóa Đơn');
+  if (!unlockBtn) throw new Error('Test 12 Failed: Cannot find "Mở Khóa Đơn" button!');
+  unlockBtn.click();
+  await waitFor(
+    () => `${document.getElementById('pos-cart-frozen-banner')?.textContent || ''}`.includes('đã duyệt'),
+    3000,
+    'banner chuyển sang trạng thái đã duyệt'
+  );
+
+  const minus12 = document.querySelector('button[aria-label="Giảm số lượng"]') as HTMLButtonElement | null;
+  if (!minus12?.disabled) {
+    throw new Error('Test 12 Failed: Sau khi duyệt, sửa giỏ PHẢI vẫn bị khóa để giữ đúng phê duyệt!');
+  }
+  const checkout12 = document.getElementById('btn-desktop-checkout') as HTMLButtonElement | null;
+  if (!checkout12) throw new Error('Test 12 Failed: Cannot find desktop checkout button (#btn-desktop-checkout)!');
+  if (checkout12.disabled) {
+    throw new Error('Test 12 Failed: Sau khi duyệt, nút chốt đơn PHẢI bật lại (không chặn bán)!');
+  }
+  if (findButton('Mở lại mã')) {
+    throw new Error('Test 12 Failed: Đã duyệt thì KHÔNG được mời tạo yêu cầu duyệt mới ("Mở lại mã")!');
+  }
+  log('✓ [Test 12] PASS: Sau khi duyệt, giỏ vẫn khóa để giữ phê duyệt và nút chốt đơn được bật');
+
+  // 13. F5: Chuyển khoản/QR phải xác nhận TAY "Đã nhận tiền" trước khi gửi đơn
+  log('\n--- Test 13: chuyển khoản/QR cần xác nhận tay "Đã nhận tiền" ---');
+  (document.getElementById('btn-cancel-approval') as HTMLButtonElement | null)?.click();
+  await waitFor(() => !document.getElementById('pos-cart-frozen-banner'), 3000, 'mở khóa giỏ trước Test 13');
+
+  setSelectValue(document.getElementById('pos-payment-method-select') as HTMLSelectElement, 'BANK_TRANSFER');
+  await new Promise((r) => setTimeout(r, 120));
+
+  const ordersBefore = callsTo('/api/orders', 'POST').length;
+  const checkout13 = document.getElementById('btn-desktop-checkout') as HTMLButtonElement;
+  checkout13.click();
+  await new Promise((r) => setTimeout(r, 250));
+  if (callsTo('/api/orders', 'POST').length !== ordersBefore) {
+    throw new Error('Test 13 Failed: Chưa xác nhận "Đã nhận tiền" thì KHÔNG được gửi POST /api/orders!');
+  }
+  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('Đã nhận tiền')) {
+    throw new Error('Test 13 Failed: Phải báo yêu cầu xác nhận "Đã nhận tiền"!');
+  }
+
+  const moneyReceivedBtn = document.getElementById('btn-money-received') as HTMLButtonElement | null;
+  if (!moneyReceivedBtn) throw new Error('Test 13 Failed: Cannot find "#btn-money-received" toggle!');
+  moneyReceivedBtn.click();
+  await new Promise((r) => setTimeout(r, 100));
+
+  checkout13.click();
+  await waitFor(() => callsTo('/api/orders', 'POST').length > ordersBefore, 3000, 'gửi đơn sau khi xác nhận đã nhận tiền');
+  log('✓ [Test 13] PASS: Chuyển khoản/QR bắt buộc xác nhận tay "Đã nhận tiền" trước khi chốt đơn');
+
+  // 14. F4: Drawer Quản lý hiện cartSnapshot (giỏ đã khóa) của yêu cầu chờ duyệt
+  log('\n--- Test 14: drawer Quản lý hiện cartSnapshot ---');
+  (window as any).__setDrawerItems([
+    {
+      id: 'req-drawer-1',
+      orderCode: 'ORD-TEST-0001',
+      warehouseId: 'wh-au-co',
+      cashierId: 'staff-tn',
+      shortCode: '4821',
+      requestedDiscountRate: 0.25,
+      originalAmount: 168000,
+      discountAmount: 42000,
+      finalAmount: 126000,
+      status: 'PENDING',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      createdAt: '2026-09-25T00:00:00.000Z',
+      cartSnapshot: JSON.stringify([{ editionId: 'BOOK-01', quantity: 2, unitPrice: 168000 }]),
+    },
+  ]);
+  (window as any).__setRole('ROLE_MANAGER');
+  await new Promise((r) => setTimeout(r, 150));
+
+  const drawerOpenBtn = document.querySelector('button[title^="Mở bảng duyệt chiết khấu"]') as HTMLButtonElement | null;
+  if (!drawerOpenBtn) throw new Error('Test 14 Failed: Cannot find manager approval drawer button!');
+  drawerOpenBtn.click();
+  await waitFor(() => !!document.getElementById('btn-view-cart-req-drawer-1'), 4000, 'nút xem giỏ trong drawer');
+
+  (document.getElementById('btn-view-cart-req-drawer-1') as HTMLButtonElement).click();
+  await waitFor(
+    () => `${document.getElementById('drawer-cart-snapshot-req-drawer-1')?.textContent || ''}`.includes('BOOK-01'),
+    2000,
+    'snapshot giỏ hiển thị trong drawer'
+  );
+  const snapshotText = `${document.getElementById('drawer-cart-snapshot-req-drawer-1')?.textContent || ''}`;
+  if (!snapshotText.includes('× 2')) {
+    throw new Error(`Test 14 Failed: Snapshot phải hiện đúng số lượng đã khóa, thực tế "${snapshotText}"`);
+  }
+  log('✓ [Test 14] PASS: Drawer Quản lý hiện cartSnapshot của yêu cầu chờ duyệt');
+
   // Summary
   const summaryEl = document.createElement('div');
   summaryEl.id = 'test-summary';
-  summaryEl.textContent = 'ALL REAL POS COMPONENT TESTS PASSED (10/10)';
+  summaryEl.textContent = 'ALL REAL POS COMPONENT TESTS PASSED (14/14)';
   document.body.appendChild(summaryEl);
-  log('\n>>> SUCCESS: ALL REAL POS COMPONENT TESTS PASSED (10/10) <<<');
+  log('\n>>> SUCCESS: ALL REAL POS COMPONENT TESTS PASSED (14/14) <<<');
 }
 
 window.addEventListener('DOMContentLoaded', () => {

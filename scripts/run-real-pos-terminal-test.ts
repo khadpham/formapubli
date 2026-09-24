@@ -14,7 +14,7 @@ if (!fs.existsSync(reportDir)) {
 }
 
 console.log('1. Bundling REAL PosCheckoutTerminal component test with esbuild...');
-const esbuildCmd = `npx esbuild scripts/browser-pos-terminal-test.tsx --bundle --platform=browser --outfile="${bundlePath}" --define:process.env.NODE_ENV='"test"'`;
+const esbuildCmd = `npx esbuild scripts/browser-pos-terminal-test.tsx --bundle --platform=browser --jsx=automatic --outfile="${bundlePath}" --define:process.env.NODE_ENV='"test"'`;
 execSync(esbuildCmd, { stdio: 'inherit' });
 console.log('✓ Bundle generated:', bundlePath);
 

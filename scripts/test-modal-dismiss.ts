@@ -14,6 +14,7 @@ const cases = [
   ['src/components/pos/PosCheckoutTerminal.tsx', [
     ['setCompletedOrder'], ['setAmbiguousMatches'], ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],
+    ['setIsMobileCheckoutSheetOpen'], // #7: overlay Bottom Sheet thanh toán mobile
   ]],
 ] as const;
 let tested = 0;
@@ -21,12 +22,16 @@ for (const [file, expected] of cases) {
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const handlers: string[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isJsxOpeningElement(node)) {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
       const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
-      const className = attributes.find(attribute => attribute.name.getText(source) === 'className')?.initializer;
+      const className = attributes.find((attribute) => attribute.name.getText(source) === 'className')?.initializer;
       if (className && ts.isStringLiteral(className) && className.text.includes('fixed inset-0')) {
-        const click = attributes.find(attribute => attribute.name.getText(source) === 'onClick')?.initializer;
-        handlers.push(click && ts.isJsxExpression(click) ? click.expression?.getText(source) || 'undefined' : 'undefined');
+        const click = attributes.find((attribute) => attribute.name.getText(source) === 'onClick')?.initializer;
+        // Chỉ element CÓ handler mới là backdrop thật: vỏ wrapper (không onClick) bị bỏ qua,
+        // và overlay self-closing (vd. #7 mobile sheet) được tính vào ma trận.
+        if (click && ts.isJsxExpression(click) && click.expression) {
+          handlers.push(click.expression.getText(source));
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -35,7 +40,7 @@ for (const [file, expected] of cases) {
   assert.equal(handlers.length, expected.length, `${file}: cover each modal backdrop`);
   handlers.forEach((handler, index) => {
     const calls: Array<{ name: string; value: unknown }> = [];
-    const scope: Record<string, unknown> = { loading: false, submitting: false, busy: false, isSubmittingSession: false, isClosable: true, status: 'PENDING' };
+    const scope: Record<string, unknown> = { loading: false, submitting: false, busy: false, isSubmitting: false, isSubmittingSession: false, isClosable: true, status: 'PENDING', setShowPasscode: () => {} };
     for (const name of expected[index]) scope[name] = (value: unknown) => calls.push({ name, value });
     vm.createContext(scope);
     const js = ts.transpileModule(`const handle = ${handler}; handle;`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;

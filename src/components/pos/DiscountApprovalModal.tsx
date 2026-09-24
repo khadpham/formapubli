@@ -29,6 +29,8 @@ interface DiscountApprovalModalProps {
   requestedDiscountRate: number;
   originalAmount: number;
   items: CartItemSnapshot[];
+  /** F1: báo requestId ngay khi tạo yêu cầu để POS gọi được API CANCEL khi hủy. */
+  onRequestCreated?: (requestId: string) => void;
   onApproved: (data: { requestId: string; rate: number; method: string }) => void;
   onClose: () => void;
 }
@@ -40,6 +42,7 @@ export function DiscountApprovalModal({
   requestedDiscountRate,
   originalAmount,
   items,
+  onRequestCreated,
   onApproved,
   onClose,
 }: DiscountApprovalModalProps) {
@@ -119,6 +122,7 @@ export function DiscountApprovalModal({
         if (isMounted) {
           const req = json.data;
           setRequestId(req.id);
+          onRequestCreated?.(req.id);
           setShortCode(req.shortCode || orderCode.slice(-4).toUpperCase());
           setQrToken(req.qrToken || '');
           setExpiresAt(req.expiresAt);
@@ -144,7 +148,7 @@ export function DiscountApprovalModal({
       isMounted = false;
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [isOpen, orderCode, warehouseId, requestedDiscountRate, items]);
+  }, [isOpen, orderCode, warehouseId, requestedDiscountRate, items, onRequestCreated]);
 
   // 2. Render mã QR bằng BrowserQRCodeSvgWriter khi có qrToken
   useEffect(() => {
@@ -491,6 +495,7 @@ export function DiscountApprovalModal({
 
                   <div className="flex gap-2">
                     <input
+                      id="pos-approval-otp-input"
                       type="text"
                       maxLength={8}
                       autoFocus
