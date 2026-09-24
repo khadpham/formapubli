@@ -77,6 +77,9 @@ export function MasterAppShell({
   // (giữ nguyên giỏ/queue). Lỗi mạng/503 → im lặng thử lại kỳ sau.
   // Dọn timer khi unmount/đổi phiên. iPhone ngủ nền không đảm bảo timer —
   // mở app lại thì guard server từ chối thao tác ghi cho tới khi login mới.
+  // S-OFFLINE: heartbeat thành công đóng dấu thời gian để POS biết lease
+  // còn sống khi rớt mạng (client đối chiếu TTL 10 phút trước khi cho tạo
+  // đơn offline mới). Xem POS checkout fallbackToOffline.
   React.useEffect(() => {
     if (session?.role !== 'ROLE_CASHIER') return;
     let alive = true;
@@ -87,12 +90,19 @@ export function MasterAppShell({
         if (res.status === 401) {
           setSession(null);
           setShowLoginModal(true);
+        } else if (res.ok) {
+          try {
+            window.localStorage.setItem('formapubli.last_lease_ok', String(Date.now()));
+          } catch {
+            // private mode: bỏ qua, guard server vẫn là chốt cuối.
+          }
         }
       } catch {
         // Offline hoặc lỗi tạm thời: giữ phiên, thử lại kỳ sau.
       }
     };
     const timer = setInterval(beat, 5 * 60 * 1000);
+    void beat(); // Stamp ngay khi vào ca để offline gate có mốc, không chờ 5 phút.
     return () => {
       alive = false;
       clearInterval(timer);
