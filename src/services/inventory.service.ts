@@ -487,38 +487,87 @@ export class InventoryService {
         // Số PCK do server cấp, cùng commit/rollback với phiếu.
         const pckCode = await WarehouseService.getNextDocumentCode('PCK', tx);
 
-        const lines: Array<{ editionId: string; quantity: number; outLedgerId: string; inLedgerId: string }> = [];
-        let idx = 0;
-        for (const it of merged) {
-          const outResult = await this.recordMovement({
-            editionId: it.editionId,
-            warehouseId: fromWarehouseId.trim(),
-            eventType: 'TRANSFER_OUT',
-            quantityDelta: -it.quantity,
-            condition: 'NEW',
-            documentRef: pckCode,
-            actorId: effActor,
-            correlationId: batchKey,
-            note: `Chuyển kho hàng loạt tới [${toWarehouseId.trim()}] (${pckCode}). ${note}`.trim(),
-            idempotencyKey: `${batchKey}-out-${idx}`,
-            tx,
-          });
-          const inResult = await this.recordMovement({
-            editionId: it.editionId,
-            warehouseId: toWarehouseId.trim(),
-            eventType: 'TRANSFER_IN',
-            quantityDelta: it.quantity,
-            condition: 'NEW',
-            documentRef: pckCode,
-            actorId: effActor,
-            correlationId: batchKey,
-            note: `Tiếp nhận chuyển kho hàng loạt từ [${fromWarehouseId.trim()}] (${pckCode}). ${note}`.trim(),
-            idempotencyKey: `${batchKey}-in-${idx}`,
-            tx,
-          });
-          lines.push({ editionId: it.editionId, quantity: it.quantity, outLedgerId: outResult.ledgerId, inLedgerId: inResult.ledgerId });
-          idx++;
+        // GHI GOM LÔ: 4 query bất kể số dòng.
+        // Trước đây gọi recordMovement 2×/dòng (~5 query mỗi lần) → phiếu 5 dòng
+        // là 50 query, vượt trần subrequest Cloudflare Worker → 500.
+        const fromId = fromWarehouseId.trim();
+        const toId = toWarehouseId.trim();
+        const nowIso = new Date().toISOString();
+
+        // 1. Bảo đảm bucket tồn của cả 2 kho cho mọi dòng (1 query).
+        await tx
+          .insert(stockBalances)
+          .values(
+            merged.flatMap((it) => [
+              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
+            ])
+          )
+          .onConflictDoNothing({ target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition] });
+
+        // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
+        const ledgerRows = merged.flatMap((it) => ([
+          {
+            id: crypto.randomUUID(), editionId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
+            quantityDelta: -it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
+            correlationId: batchKey, effectiveAt: nowIso,
+            note: `Chuyển kho hàng loạt tới [${toId}] (${pckCode}). ${note}`.trim(),
+            idempotencyKey: `${batchKey}-out-${it.editionId}`,
+          },
+          {
+            id: crypto.randomUUID(), editionId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
+            quantityDelta: it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
+            correlationId: batchKey, effectiveAt: nowIso,
+            note: `Tiếp nhận chuyển kho hàng loạt từ [${fromId}] (${pckCode}). ${note}`.trim(),
+            idempotencyKey: `${batchKey}-in-${it.editionId}`,
+          },
+        ]));
+        await tx.insert(inventoryLedger).values(ledgerRows as any);
+
+        // 3. Trừ tồn nguồn bằng CASE + điều kiện chặn âm, kiểm đủ số dòng (1 query).
+        //    rowsAffected < số dòng ⇒ có dòng thiếu tồn ⇒ ném để rollback toàn phiếu.
+        const caseSql = (delta: (q: number) => number) =>
+          sql.join(merged.map((it) => sql`WHEN ${it.editionId} THEN ${delta(it.quantity)}`), sql.raw(' '));
+        const outResult: any = await tx.run(sql`
+          UPDATE stock_balances
+          SET physical_quantity = physical_quantity + CASE edition_id ${caseSql((q) => -q)} ELSE 0 END,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE warehouse_id = ${fromId} AND condition = 'NEW'
+            AND edition_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
+            AND physical_quantity + CASE edition_id ${caseSql((q) => -q)} ELSE 0 END >= 0
+        `);
+        if (outResult.rowsAffected !== merged.length) {
+          const { OrderService } = await import('./order.service');
+          const atpByEdition = await OrderService.getBatchATP(merged.map((m) => m.editionId), fromId, tx);
+          const staleItems: StaleItem[] = [];
+          for (const it of merged) {
+            const availableNow = atpByEdition.get(it.editionId) ?? 0;
+            if (availableNow < it.quantity) {
+              staleItems.push({ editionId: it.editionId, requested: it.quantity, availableNow });
+            }
+          }
+          throw AppError.toctouStale(
+            `Tồn kho nguồn không đủ cho ${staleItems.length}/${merged.length} dòng.`,
+            { staleItems: staleItems.length ? staleItems : undefined }
+          );
         }
+
+        // 4. Cộng tồn đích bằng CASE (1 query).
+        await tx.run(sql`
+          UPDATE stock_balances
+          SET physical_quantity = physical_quantity + CASE edition_id ${caseSql((q) => q)} ELSE 0 END,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE warehouse_id = ${toId} AND condition = 'NEW'
+            AND edition_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
+        `);
+
+        const ledgerByKey = new Map(ledgerRows.map((r: any) => [`${r.warehouseId}|${r.editionId}`, r.id]));
+        const lines = merged.map((it) => ({
+          editionId: it.editionId,
+          quantity: it.quantity,
+          outLedgerId: ledgerByKey.get(`${fromId}|${it.editionId}`)!,
+          inLedgerId: ledgerByKey.get(`${toId}|${it.editionId}`)!,
+        }));
 
         const response = {
           transferBatchId: batchKey,
