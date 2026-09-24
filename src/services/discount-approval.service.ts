@@ -512,6 +512,60 @@ export class DiscountApprovalService {
   }
 
   /**
+   * A1-F: hủy yêu cầu duyệt — nút "Sửa giỏ và hủy phê duyệt" phía UI gọi
+   * trước khi bỏ khóa giỏ. Chủ yêu cầu (cashier) hoặc Manager/Owner.
+   * Dùng lại SUPERSEDED (không thêm enum mới — UI đã hiểu "xin duyệt lại").
+   * Conditional UPDATE chỉ thắng khi còn PENDING/APPROVED: race
+   * cancel-vs-checkout chỉ một bên chuyển trạng thái được (checkout consume
+   * cũng là conditional từ APPROVED), bên thua nhận 409 để tải lại.
+   */
+  static async cancelRequest(params: {
+    requestId: string;
+    actorContext: ActorContext;
+    txOrDb?: any;
+  }) {
+    const { requestId, actorContext, txOrDb = db } = params;
+
+    const rows = await txOrDb
+      .select()
+      .from(discountApprovalRequests)
+      .where(eq(discountApprovalRequests.id, requestId))
+      .limit(1);
+    if (rows.length === 0) throw AppError.invalid('Không tìm thấy yêu cầu duyệt chiết khấu');
+    const request = rows[0];
+
+    const isPrivileged =
+      actorContext.role === 'ROLE_OWNER' || actorContext.role === 'ROLE_MANAGER';
+    if (!isPrivileged && `${request.cashierId}` !== `${actorContext.staffId}`) {
+      throw AppError.forbidden('Chỉ người tạo yêu cầu hoặc Quản lý được hủy yêu cầu duyệt.');
+    }
+    if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+      throw AppError.conflict(`Không thể hủy yêu cầu ở trạng thái ${request.status}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const res: any = await txOrDb
+      .update(discountApprovalRequests)
+      .set({
+        status: 'SUPERSEDED',
+        rejectedReason: `Hủy bởi ${actorContext.staffId}`,
+        version: sql`${discountApprovalRequests.version} + 1`,
+        updatedAt: nowIso,
+      })
+      .where(
+        and(
+          eq(discountApprovalRequests.id, requestId),
+          inArray(discountApprovalRequests.status, ['PENDING', 'APPROVED'])
+        )
+      );
+    if ((res?.rowsAffected ?? 0) !== 1) {
+      throw AppError.conflict('Yêu cầu vừa được duyệt/tiêu thụ, vui lòng tải lại.');
+    }
+
+    return { ...request, status: 'SUPERSEDED', updatedAt: nowIso };
+  }
+
+  /**
    * Tra cứu thông tin yêu cầu duyệt chiết khấu (kèm lazy expiration check).
    */
   static async getRequest(requestId: string, txOrDb: any = db) {
@@ -548,7 +602,7 @@ export class DiscountApprovalService {
    * Lấy danh sách các đơn đang chờ duyệt cho Quản lý / Dashboard.
    * Tuân thủ V4.1 §4.4: BẮT BUỘC lọc `status = 'PENDING' AND expires_at > CURRENT_TIMESTAMP`.
    */
-  static async listPending(warehouseId?: string, txOrDb: any = db) {
+  static async listPending(warehouseId?: string, cashierId?: string, txOrDb: any = db) {
     const conditions = [
       eq(discountApprovalRequests.status, 'PENDING'),
       gt(discountApprovalRequests.expiresAt, new Date().toISOString()),
@@ -556,6 +610,10 @@ export class DiscountApprovalService {
 
     if (warehouseId) {
       conditions.push(eq(discountApprovalRequests.warehouseId, warehouseId));
+    }
+    // A1.7: cashier chỉ thấy yêu cầu của chính mình, không thấy cả kho.
+    if (cashierId) {
+      conditions.push(eq(discountApprovalRequests.cashierId, cashierId));
     }
 
     const rows = await txOrDb
