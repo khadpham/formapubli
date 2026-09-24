@@ -63,7 +63,17 @@ LƯU Ý SỰ CỐ ĐÃ XẢY RA: thiếu `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` 
 
 ## 5. Còn lại (ai làm gì)
 
-### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main 5beb414, worker 9994dfb8)
+### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main a2481f8, worker c13e48db)
+- **#4 "Chuyển hàng loạt" 500 "Lỗi hệ thống"** — nguyên nhân thật do `wrangler tail`
+  bắt được: `Too many subrequests by single Worker invocation` (trần 50 subrequest
+  của Workers free plan). `checkBatchAvailability` gọi 1 query ATP/cuốn, và
+  `transferBatch` gọi `recordMovement` 2×/dòng (~5 query mỗi lần) = 10 query/dòng.
+  Đã sửa cả hai: `OrderService.getBatchATP` (2 query cố định) + ghi gom lô trong
+  `transferBatch` (4 query: đảm bảo bucket, insert ledger 2N dòng 1 lệnh, trừ tồn
+  nguồn bằng CASE + chặn âm + kiểm `rowsAffected`, cộng tồn đích bằng CASE).
+  **Giữ nguyên**: transaction, chặn xuất âm, idempotency, rollback, ledger 2N dòng.
+  Verify: test 16/16, 8 suite hồi quy xanh, **live prod 5/5** (commit 200, mã phiếu
+  thật `PCK-...`, hoàn tác dọn dẹp thành công).
 - **#2 login/logout 2 lần** — 3 nguyên nhân, đều đã sửa:
   1. route login tạo `sessionId` mới mỗi lần bấm → tự chặn 403 chính mình;
      nay tái dùng `sessionId` của cookie hợp lệ (đúng spec S-01 §4.4.1).
