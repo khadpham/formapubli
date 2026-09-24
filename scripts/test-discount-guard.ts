@@ -11,6 +11,7 @@ import { editions } from '../src/db/schema';
 import { POST } from '../src/app/api/orders/route';
 import { desc, eq } from 'drizzle-orm';
 import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
+import { POST as postLogin } from '../src/app/api/auth/login/route';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-discount-guard');
@@ -32,13 +33,9 @@ function baseBody(overrides: Record<string, any> = {}) {
 }
 
 async function postOrder(body: Record<string, any>, role: string, actor = 'test-cashier-guard') {
-  // P1b: route orders bắt buộc session cookie — ký session test thay cho header mock.
-  const token = await signSession({
-    role: role as any,
-    actorId: actor,
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + 3600 * 1000,
-  });
+  // S-01: session cashier phải có lease server (ký tay không còn qua guard) —
+  // login 1 lần mỗi role rồi tái dùng cookie cho cả suite.
+  const token = await leasedCookie(role);
   const req = new Request('http://localhost/api/orders', {
     method: 'POST',
     headers: {
@@ -53,6 +50,31 @@ async function postOrder(body: Record<string, any>, role: string, actor = 'test-
   const json = await res.json();
   return { status: res.status as number, json };
 }
+
+// Cache cookie theo role: login thật qua route để nhận lease (S-01).
+const leasedCookies: Record<string, string> = {};
+async function leasedCookie(role: string): Promise<string> {
+  if (!leasedCookies[role]) {
+    const staffId = role === 'ROLE_MANAGER' ? 'QL-01' : 'NV-01';
+    const passcode = role === 'ROLE_MANAGER' ? '8888' : '1234';
+    const r: any = await postLogin(
+      new Request('http://localhost/x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId, passcode }),
+      }) as any
+    );
+    if (r.status !== 200) throw new Error(`Không login được ${staffId} cho test (status=${r.status})`);
+    const setCookie = r.headers.get('set-cookie') || '';
+    const m = `${setCookie}`.match(/formapubli_session=([^;]+)/);
+    if (!m) throw new Error(`Login ${staffId} không trả cookie`);
+    leasedCookies[role] = m[1];
+  }
+  return leasedCookies[role];
+}
+
+// Giữ signSession import cho tương thích (không dùng trực tiếp nữa).
+void signSession;
 
 async function run() {
   console.log('🛡️ KIỂM THỬ SERVER-ENFORCE DISCOUNT HARD-CAP 20% (DB cách ly)');

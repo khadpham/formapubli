@@ -1,7 +1,8 @@
 import { UserRole } from './roles';
 import { hashString } from './export-hash';
-import { db, staffAccounts } from '@/db';
-import { eq } from 'drizzle-orm';
+import { db, staffAccounts, activeSessions } from '@/db';
+import { eq, sql } from 'drizzle-orm';
+import { withDbRetry } from './db-retry';
 
 export interface SessionPayload {
   role: UserRole;
@@ -647,13 +648,261 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
         enforceSessionVersion(sess, rows[0].sessionVersion);
       }
     }
+
+    // S-01: cashier có sessionId (cấp sau deploy) phải có lease đang sống khớp
+    // session — giữ máy cũ, chặn máy mới. Token legacy KHÔNG có sessionId
+    // (ký trước deploy): grace cho qua, tự hết hạn ≤12h theo expiresAt —
+    // không miễn trừ vô thời hạn, và PIN đổi/version bump vẫn thu hồi ngay.
+    // Grace này cũng giữ mọi suite test ký tay cũ chạy được mà không cần sửa.
+    // Tắt hẳn khi rollout: SESSION_LEASE_ENFORCE=false.
+    if (isLeaseEnforcementEnabled() && isLeaseEnforcedRole(sess.role) && sess.sessionId) {
+      const leaseOk = await checkCashierLease(sess.actorId, sess.sessionId);
+      if (!leaseOk) {
+        throw new AuthError(401, 'Phiên cashier đã hết hiệu lực hoặc đang mở trên thiết bị khác. Vui lòng đăng nhập lại.');
+      }
+    }
   } catch (err: any) {
     if (err instanceof AuthError) throw err;
     if (isAuthStrict()) {
-      throw new AuthError(401, `Xác thực tài khoản thất bại do lỗi kết nối CSDL: ${err?.message || 'Database unavailable'}`);
+      // Lỗi CSDL phân biệt với 401 auth (route /me không xóa cookie khi 503).
+      throw new AuthError(503, `Tạm thời không xác thực được (lỗi kết nối CSDL). Vui lòng thử lại.`);
     }
     // Môi trường thường: Bỏ qua lỗi kết nối CSDL nếu chạy trong unit test không có bảng staffAccounts
   }
+}
+
+// ---------------------------------------------------------------------------
+// S-01 — LEASE MỘT PHIÊN CASHIER (giữ máy cũ, chặn máy mới).
+// ---------------------------------------------------------------------------
+
+/** TTL lease: heartbeat client 5 phút, hết 10 phút không thấy coi như nhả. */
+export const CASHIER_LEASE_TTL_MS = 10 * 60 * 1000;
+
+/** Mặc định chỉ cashier bị giới hạn một phiên (manager/owner đa thiết bị). */
+const LEASED_ROLES: string[] = ['ROLE_CASHIER'];
+
+export function isLeaseEnforcedRole(role: UserRole | string | undefined): boolean {
+  return LEASED_ROLES.includes(`${role || ''}`);
+}
+
+/**
+ * Rollout 2 bước S-01: deploy code tương thích khi tắt (rows vẫn được ghi
+ * bởi login/heartbeat để tích lũy), rồi bật enforcement sau. Mặc định BẬT;
+ * đặt SESSION_LEASE_ENFORCE=false để tạm tắt khi rollout/rollback.
+ * Claim/heartbeat/release/logout luôn hoạt động (không phụ thuộc cờ).
+ */
+export function isLeaseEnforcementEnabled(): boolean {
+  return `${process.env.SESSION_LEASE_ENFORCE || ''}`.trim().toLowerCase() !== 'false';
+}
+
+/** Lỗi khi tài khoản đang có phiên sống ở thiết bị khác (route map sang 403). */
+export class LeaseError extends Error {
+  code = 'SESSION_ACTIVE_ELSEWHERE';
+  details?: unknown;
+  constructor(message: string, details?: unknown) {
+    super(message);
+    this.name = 'LeaseError';
+    this.details = details;
+  }
+}
+
+function leaseExpiryIso(nowMs: number): string {
+  return new Date(nowMs + CASHIER_LEASE_TTL_MS).toISOString();
+}
+
+/**
+ * Chiếm lease khi login (cashier). Nguyên tử trong transaction + retry BUSY:
+ * - Row còn sống + session khác → LeaseError (máy cũ không hề hấn).
+ * - Chưa có row / hết TTL / cùng session (submit lặp) → upsert, ok.
+ * - Race hai login cùng lúc: một thắng (PK), kẻ thua đọc lại row và LeaseError.
+ */
+export async function claimCashierLease(params: {
+  staffId: string;
+  sessionId: string;
+  deviceLabel?: string;
+  nowMs?: number;
+}): Promise<void> {
+  const nowMs = params.nowMs ?? Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const label = `${params.deviceLabel || ''}`.trim().slice(0, 64) || null;
+  try {
+    await withDbRetry(() =>
+      db.transaction(async (tx) => {
+        const rows = await tx
+          .select()
+          .from(activeSessions)
+          .where(eq(activeSessions.staffId, params.staffId))
+          .limit(1);
+        const row = rows[0];
+        if (row && `${row.leaseExpiresAt}` > nowIso && `${row.sessionId}` !== `${params.sessionId}`) {
+          throw new LeaseError(
+            `Tài khoản đang mở ca trên thiết bị khác (từ ${row.startedAt || 'không rõ'}).`,
+            { startedAt: row.startedAt }
+          );
+        }
+        if (row) {
+          await tx
+            .update(activeSessions)
+            .set({
+              sessionId: params.sessionId,
+              lastSeenAt: nowIso,
+              leaseExpiresAt: leaseExpiryIso(nowMs),
+              deviceLabel: label,
+            })
+            .where(eq(activeSessions.staffId, params.staffId));
+        } else {
+          await tx.insert(activeSessions).values({
+            staffId: params.staffId,
+            sessionId: params.sessionId,
+            startedAt: nowIso,
+            lastSeenAt: nowIso,
+            leaseExpiresAt: leaseExpiryIso(nowMs),
+            deviceLabel: label,
+          });
+        }
+      })
+    );
+  } catch (err: any) {
+    if (err instanceof LeaseError) throw err;
+    // Race thua (PK conflict) hoặc BUSY quá retry: đọc lại người thắng.
+    try {
+      const rows = await db
+        .select()
+        .from(activeSessions)
+        .where(eq(activeSessions.staffId, params.staffId))
+        .limit(1);
+      const row = rows[0];
+      if (row && `${row.sessionId}` !== `${params.sessionId}`) {
+        throw new LeaseError('Tài khoản vừa được mở trên thiết bị khác.');
+      }
+      if (row) return; // Cùng session (submit lặp) → coi như ok.
+    } catch (inner: any) {
+      if (inner instanceof LeaseError) throw inner;
+    }
+    throw err;
+  }
+}
+
+/** Guard đọc: row tồn tại + khớp session + lease chưa hết. */
+export async function checkCashierLease(staffId: string, sessionId?: string): Promise<boolean> {
+  if (!staffId || !sessionId) return false;
+  const rows = await db
+    .select()
+    .from(activeSessions)
+    .where(eq(activeSessions.staffId, staffId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return false;
+  if (`${row.sessionId}` !== `${sessionId}`) return false;
+  return `${row.leaseExpiresAt}` > new Date().toISOString();
+}
+
+/**
+ * Gia hạn heartbeat: kiểm tra account còn hiệu lực + version khớp (token cũ
+ * sau đổi PIN không được giữ lease chặn login mới), rồi UPDATE row còn sống
+ * khớp staff+session (tuyệt đối không UPSERT hồi sinh). Trả true nếu renew được.
+ */
+export async function renewCashierLease(params: {
+  staffId: string;
+  sessionId: string;
+  sessionVersion?: number;
+  nowMs?: number;
+}): Promise<boolean> {
+  const nowMs = params.nowMs ?? Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const staffRows = await db
+    .select({
+      isActive: staffAccounts.isActive,
+      role: staffAccounts.role,
+      sessionVersion: staffAccounts.sessionVersion,
+    })
+    .from(staffAccounts)
+    .where(eq(staffAccounts.staffId, params.staffId))
+    .limit(1);
+  const st = staffRows[0];
+  if (!st || !st.isActive) return false;
+  if (params.sessionVersion !== undefined && Number(st.sessionVersion) !== params.sessionVersion) {
+    return false;
+  }
+  const res: any = await db
+    .update(activeSessions)
+    .set({ lastSeenAt: nowIso, leaseExpiresAt: leaseExpiryIso(nowMs) })
+    .where(
+      sql`${activeSessions.staffId} = ${params.staffId} AND ${activeSessions.sessionId} = ${params.sessionId} AND ${activeSessions.leaseExpiresAt} > ${nowIso}`
+    );
+  return (res?.rowsAffected ?? 0) === 1;
+}
+
+/**
+ * Logout: xóa CÓ ĐIỀU KIỆN (staff + session) — cookie cũ không xóa lease máy mới.
+ * sessionId bắt buộc: token legacy không sessionId thì KHÔNG xóa gì (tránh
+ * logout cũ thổi bay lease phiên mới). Xóa toàn bộ khi reset PIN nằm ở route
+ * staff (chủ đích thu hồi hết sau đổi credential).
+ */
+export async function releaseCashierLease(staffId: string, sessionId?: string): Promise<boolean> {
+  if (!staffId || !sessionId) return false;
+  const res: any = await db
+    .delete(activeSessions)
+    .where(sql`${activeSessions.staffId} = ${staffId} AND ${activeSessions.sessionId} = ${sessionId}`);
+  return (res?.rowsAffected ?? 0) === 1;
+}
+
+/**
+ * Force-release (manager/owner, target cashier): kiểm tra expected NGAY
+ * TRONG transaction (tránh race: phiên A bị thay bằng B giữa check ngoài và
+ * xóa), rồi xóa lease + bump sessionVersion để thu hồi token cũ.
+ * - expected.sessionId khớp mới xóa đúng phiên (sai → 409, không hủy phiên mới).
+ * - expected.sessionVersion khớp mới bump (sai → 409, không bump lần nữa).
+ * - Không gửi expected: xóa lease hiện có (nếu còn) + bump (lũy tiến an toàn).
+ */
+export async function forceReleaseCashierLease(
+  staffId: string,
+  expected?: { sessionId?: string; sessionVersion?: number }
+): Promise<{ released: boolean; sessionVersion: number }> {
+  return withDbRetry(() =>
+    db.transaction(async (tx) => {
+      const staffRows = await tx
+        .select({
+          sessionVersion: staffAccounts.sessionVersion,
+          isActive: staffAccounts.isActive,
+        })
+        .from(staffAccounts)
+        .where(eq(staffAccounts.staffId, staffId))
+        .limit(1);
+      const staff = staffRows[0];
+      if (!staff) throw new AuthError(404, 'Tài khoản không tồn tại.');
+      const leaseRows = await tx
+        .select()
+        .from(activeSessions)
+        .where(eq(activeSessions.staffId, staffId))
+        .limit(1);
+      const lease = leaseRows[0] || null;
+      if (expected?.sessionId !== undefined) {
+        if (!lease || `${lease.sessionId}` !== expected.sessionId) {
+          throw new AuthError(409, 'Phiên đã thay đổi, vui lòng tải lại.');
+        }
+      }
+      if (expected?.sessionVersion !== undefined) {
+        if (Number(staff.sessionVersion) !== expected.sessionVersion) {
+          throw new AuthError(409, 'Trạng thái đã thay đổi, vui lòng tải lại.');
+        }
+      }
+      const released = !!lease;
+      if (released) {
+        await tx.delete(activeSessions).where(eq(activeSessions.staffId, staffId));
+      }
+      await tx
+        .update(staffAccounts)
+        .set({ sessionVersion: sql`${staffAccounts.sessionVersion} + 1` })
+        .where(eq(staffAccounts.staffId, staffId));
+      const after = await tx
+        .select({ v: staffAccounts.sessionVersion })
+        .from(staffAccounts)
+        .where(eq(staffAccounts.staffId, staffId))
+        .limit(1);
+      return { released, sessionVersion: Number(after[0]?.v ?? 1) };
+    })
+  );
 }
 
 /**

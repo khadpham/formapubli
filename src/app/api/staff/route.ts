@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, staffAccounts } from '@/db';
+import { db, staffAccounts, activeSessions } from '@/db';
 import { eq, asc } from 'drizzle-orm';
 import {
   requireSessionRole,
@@ -36,6 +36,8 @@ function validatePasscodeForRole(role: UserRole, raw: unknown): string {
 }
 
 // GET /api/staff — OWNER/MANAGER xem toàn bộ tài khoản (không bao giờ trả hash/salt).
+// S-01: kèm lease summary (sessionId/version/startedAt/leaseExpiresAt/device)
+// để UI force-release có expected fields. Chỉ manager/owner đúng scope thấy.
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
@@ -46,11 +48,28 @@ export async function GET(req: NextRequest) {
         role: staffAccounts.role,
         isActive: staffAccounts.isActive,
         createdAt: staffAccounts.createdAt,
+        sessionVersion: staffAccounts.sessionVersion,
       })
       .from(staffAccounts)
       .orderBy(asc(staffAccounts.staffId))
       .limit(200);
-    return NextResponse.json({ success: true, data: rows, actorId: session.actorId });
+    const leases = await db.select().from(activeSessions);
+    const leaseMap = new Map(leases.map((l: any) => [l.staffId, l]));
+    const data = rows.map((r: any) => {
+      const l: any = leaseMap.get(r.staffId);
+      return {
+        ...r,
+        lease: l
+          ? {
+              sessionId: l.sessionId,
+              startedAt: l.startedAt,
+              leaseExpiresAt: l.leaseExpiresAt,
+              deviceLabel: l.deviceLabel,
+            }
+          : null,
+      };
+    });
+    return NextResponse.json({ success: true, data, actorId: session.actorId });
   } catch (error: any) {
     return handleApiError(error);
   }

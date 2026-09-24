@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, staffAccounts } from '@/db';
+import { db, staffAccounts, activeSessions } from '@/db';
 import { eq } from 'drizzle-orm';
 import { requireSessionRole, hashStaffPasscodeV2 } from '@/lib/auth-session';
 import { UserRole } from '@/lib/roles';
@@ -84,6 +84,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
       // M2: reset passcode = thu hồi mọi session cũ của tài khoản này.
       patch.sessionVersion = (target.sessionVersion ?? 1) + 1;
       notes.push('reset passcode');
+      // S-01: xóa luôn mọi lease của staff để login mới bằng PIN mới không bị
+      // chặn oan tới 10 phút bởi lease phiên cũ (version bump đã thu hồi token
+      // cũ; khác logout thường chỉ xóa đúng session của mình).
+      await db.delete(activeSessions).where(eq(activeSessions.staffId, targetId)).catch(() => null);
     }
 
     if (body.isActive !== undefined) {

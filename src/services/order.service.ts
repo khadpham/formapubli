@@ -1,9 +1,10 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
+import { isLeaseEnforcedRole, isLeaseEnforcementEnabled } from '../lib/auth-session';
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
 
@@ -486,6 +487,33 @@ export class OrderService {
             throw AppError.conflict(
               'Phê duyệt chiết khấu đã được sử dụng hoặc hết hiệu lực. Vui lòng xin duyệt lại.'
             );
+          }
+        }
+
+        // B0c (S-01): kiểm tra lại lease cashier BẰNG CHÍNH tx hiện hành —
+        // đọc qua db global sẽ thấy snapshot khác, mất nguyên tử với ghi đơn.
+        // Chỉ enforce khi caller truyền sessionId (route luôn có từ session;
+        // caller nội bộ legacy thiếu sessionId thì bỏ qua) và khi cờ rollout
+        // SESSION_LEASE_ENFORCE bật.
+        {
+          const leaseRole = params.actorContext?.role;
+          const leaseSessionId = params.actorContext?.sessionId;
+          if (isLeaseEnforcementEnabled() && isLeaseEnforcedRole(leaseRole) && leaseSessionId) {
+            const leaseRows = await tx
+              .select()
+              .from(activeSessions)
+              .where(eq(activeSessions.staffId, params.actorContext!.staffId))
+              .limit(1);
+            const lease = leaseRows[0];
+            const live =
+              !!lease &&
+              `${lease.sessionId}` === `${leaseSessionId}` &&
+              `${lease.leaseExpiresAt}` > new Date().toISOString();
+            if (!live) {
+              throw AppError.forbidden(
+                'Phiên cashier đã hết hiệu lực hoặc đang mở trên thiết bị khác. Vui lòng đăng nhập lại.'
+              );
+            }
           }
         }
 

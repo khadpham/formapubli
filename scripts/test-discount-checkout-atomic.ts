@@ -234,6 +234,14 @@ async function run() {
     const after = await snapshot(db, schema);
     assert.deepEqual(after, mid, 'Replay không ghi thêm gì');
     console.log('✓ D07b');
+    // Nhả lease D07b để DP1a login lại không bị 403 oan (S-01 hygiene).
+    {
+      const { POST: logoutPOST } = await import('../src/app/api/auth/logout/route');
+      const mm = `${loginRes.headers.get('set-cookie') || ''}`.match(/formapubli_session=([^;]+)/);
+      const lr: any = new Request('http://localhost/api/auth/logout', { method: 'POST' });
+      lr.cookies = { get: (n: string) => (n === 'formapubli_session' && mm ? { value: mm[1] } : undefined) };
+      await logoutPOST(lr);
+    }
   }
 
   // DP1a (P1a): giữ tổng 25% đã duyệt, gắn unitDiscountRate 0.9 vào 1 dòng -> 403.

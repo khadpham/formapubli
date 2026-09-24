@@ -846,6 +846,32 @@ export function PosCheckoutTerminal({
 
     // Helper lưu ngoại tuyến vào IndexedDB
     const fallbackToOffline = async (reason?: string) => {
+      // S-01 (S-OFFLINE, quyết định đã chốt): cashier chỉ tạo đơn offline mới
+      // khi lease còn sống gần đây (heartbeat thành công trong 10 phút).
+      // FAIL-CLOSED: không đọc được stamp (private mode, storage lỗi) cũng
+      // CHẶN — trường hợp không xác định được lease thì không tạo đơn mới,
+      // trái với bản trước cho qua khi catch. Giỏ giữ nguyên, báo rõ để thu
+      // ngân đăng nhập lại khi có mạng. Server vẫn kiểm tra lại lease lúc
+      // sync nên đơn lọt vẫn bị chặn ở đó, không mất.
+      // (File này Wave 3 thuộc C; khối S-01 giữ nguyên khi C làm POS bundle.)
+      if (currentRole === 'ROLE_CASHIER') {
+        let leaseFresh = false;
+        try {
+          const lastOk = Number(window.localStorage.getItem('formapubli.last_lease_ok') || 0);
+          const now = Date.now();
+          // Từ chối cả stamp tương lai (đồng hồ thiết bị sai) — chỉ chấp nhận
+          // mốc trong quá khứ và trong TTL 10 phút.
+          leaseFresh = !!lastOk && lastOk <= now && now - lastOk <= 10 * 60 * 1000;
+        } catch {
+          leaseFresh = false;
+        }
+        if (!leaseFresh) {
+          setErrorMessage(
+            'Không xác minh được phiên (mất mạng lâu hoặc bộ nhớ bị chặn). Không tạo đơn ngoại tuyến mới — giỏ được giữ nguyên. Có mạng hãy đăng nhập lại rồi bán tiếp.'
+          );
+          return;
+        }
+      }
       try {
         const offlineOrderCode = `OFF-${dateStr}-${shortSuffix}`;
         const giftNote = isGift ? `[QUÀ TẶNG: ${giftReason.trim() || note.trim() || 'Tặng sách'}]${note ? ` ${note}` : ''}` : note;
