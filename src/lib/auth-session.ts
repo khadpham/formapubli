@@ -654,7 +654,8 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
     // (ký trước deploy): grace cho qua, tự hết hạn ≤12h theo expiresAt —
     // không miễn trừ vô thời hạn, và PIN đổi/version bump vẫn thu hồi ngay.
     // Grace này cũng giữ mọi suite test ký tay cũ chạy được mà không cần sửa.
-    if (isLeaseEnforcedRole(sess.role) && sess.sessionId) {
+    // Tắt hẳn khi rollout: SESSION_LEASE_ENFORCE=false.
+    if (isLeaseEnforcementEnabled() && isLeaseEnforcedRole(sess.role) && sess.sessionId) {
       const leaseOk = await checkCashierLease(sess.actorId, sess.sessionId);
       if (!leaseOk) {
         throw new AuthError(401, 'Phiên cashier đã hết hiệu lực hoặc đang mở trên thiết bị khác. Vui lòng đăng nhập lại.');
@@ -682,6 +683,16 @@ const LEASED_ROLES: string[] = ['ROLE_CASHIER'];
 
 export function isLeaseEnforcedRole(role: UserRole | string | undefined): boolean {
   return LEASED_ROLES.includes(`${role || ''}`);
+}
+
+/**
+ * Rollout 2 bước S-01: deploy code tương thích khi tắt (rows vẫn được ghi
+ * bởi login/heartbeat để tích lũy), rồi bật enforcement sau. Mặc định BẬT;
+ * đặt SESSION_LEASE_ENFORCE=false để tạm tắt khi rollout/rollback.
+ * Claim/heartbeat/release/logout luôn hoạt động (không phụ thuộc cờ).
+ */
+export function isLeaseEnforcementEnabled(): boolean {
+  return `${process.env.SESSION_LEASE_ENFORCE || ''}`.trim().toLowerCase() !== 'false';
 }
 
 /** Lỗi khi tài khoản đang có phiên sống ở thiết bị khác (route map sang 403). */

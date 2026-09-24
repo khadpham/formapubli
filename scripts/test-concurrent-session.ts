@@ -22,6 +22,12 @@ for (const s of ['', '-wal', '-shm', '-journal']) {
   try { fs.unlinkSync(DB_FILE + s); } catch { /* fresh */ }
 }
 
+async function snapshotOrders(db: any, schema: any) {
+  const orders = await db.select().from(schema.orders);
+  const ledger = await db.select().from(schema.inventoryLedger);
+  return { orders: orders.length, ledger: ledger.length };
+}
+
 async function run() {
   console.log('--- TEST S-01: CONCURRENT CASHIER SESSION ---');
   process.env.DATABASE_URL = 'file:' + DB_FILE.split(path.sep).join('/');
@@ -44,6 +50,13 @@ async function run() {
 
   await db.insert(schema.warehouses).values([
     { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho Au Co', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+  ]);
+  // S23 cần catalog tối thiểu (createOrder validate ấn bản trước khi tới B0c).
+  await db.insert(schema.works).values([
+    { id: 'work-h01', code: 'W-H01', title: 'Sach H01', author: 'TG' },
+  ]);
+  await db.insert(schema.editions).values([
+    { id: 'ed-h01', code: 'H01', workId: 'work-h01', title: 'Sach H01', isbn: '9780000000001', isbnLast4: '0001', coverPrice: 150000, isActive: true },
   ]);
   const mkStaff = async (staffId: string, role: string) => {
     await db.insert(schema.staffAccounts).values({
@@ -308,8 +321,39 @@ async function run() {
     console.log('✓ S22');
   }
 
+  // S23: đơn ghi khi lease đã chết giữa chừng -> FORBIDDEN, không ghi gì.
+  console.log('\n[S23] Order blocked when lease dies before commit');
+  {
+    await rawClient.execute({ sql: `DELETE FROM active_sessions WHERE staff_id = 'CASH-2'`, args: [] });
+    const a = await login('CASH-2', '1234', 'may-A');
+    const cookieA = cookieOf(a.setCookie);
+    const sessionA = (await meJson(cookieA)).json?.data?.sessionId;
+    assert.ok(sessionA, 'A phải có sessionId');
+    // Lease chết (TTL qua) nhưng token còn hạn -> guard/tx phải chặn ghi.
+    await rawClient.execute({ sql: `UPDATE active_sessions SET lease_expires_at = '2000-01-01T00:00:00.000Z' WHERE staff_id = 'CASH-2'`, args: [] });
+    const { OrderService } = await import('../src/services/order.service');
+    const before = await snapshotOrders(db, schema);
+    let forbidden = false;
+    try {
+      await OrderService.createOrder({
+        warehouseId: 'wh-au-co', channel: 'FAIR_EVENT',
+        discountRate: 0, paymentMethod: 'CASH',
+        cashierId: 'CASH-2',
+        actorContext: { staffId: 'CASH-2', role: 'ROLE_CASHIER', sessionId: sessionA },
+        idempotencyKey: 'idem-s23', items: [{ editionId: 'ed-h01', quantity: 1 }],
+      } as any);
+    } catch (err: any) {
+      forbidden = err?.code === 'FORBIDDEN';
+    }
+    assert.ok(forbidden, 'Ghi đơn khi lease chết phải FORBIDDEN');
+    const after = await snapshotOrders(db, schema);
+    assert.deepEqual(after, before, 'Không ghi gì khi bị chặn');
+    await post(logoutPOST, 'http://localhost/api/auth/logout', {}, cookieA).catch(() => {});
+    console.log('✓ S23');
+  }
+
   rawClient.close();
-  console.log('\n🎉 S-01: S01-S08 + S21 + S22 PASS!');
+  console.log('\n🎉 S-01: S01-S08 + S21 + S22 + S23 PASS!');
 }
 
 run().catch((err) => {

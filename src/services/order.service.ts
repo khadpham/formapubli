@@ -1,10 +1,10 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, activeSessions } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
 import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
-import { checkCashierLease, isLeaseEnforcedRole } from '../lib/auth-session';
+import { isLeaseEnforcedRole, isLeaseEnforcementEnabled } from '../lib/auth-session';
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
 
@@ -463,17 +463,27 @@ export class OrderService {
           };
         }
 
-        // B0c (S-01): kiểm tra lại lease cashier trong transaction — request có
-        // thể qua guard rồi chờ, bị force-release/TTL trước commit. Chỉ enforce
-        // khi caller truyền sessionId (route luôn có từ session; caller nội bộ
-        // legacy thiếu sessionId thì bỏ qua, sẽ migrate dần). MERGE NOTE: đặt
-        // cạnh B0b consume approval của branch #1-hotfix khi gộp nhánh.
+        // B0c (S-01): kiểm tra lại lease cashier BẰNG CHÍNH tx hiện hành —
+        // đọc qua db global sẽ thấy snapshot khác, mất nguyên tử với ghi đơn.
+        // Chỉ enforce khi caller truyền sessionId (route luôn có từ session;
+        // caller nội bộ legacy thiếu sessionId thì bỏ qua) và khi cờ rollout
+        // SESSION_LEASE_ENFORCE bật. MERGE NOTE: đặt cạnh B0b consume approval
+        // của branch #1-hotfix khi gộp nhánh.
         {
           const leaseRole = params.actorContext?.role;
           const leaseSessionId = params.actorContext?.sessionId;
-          if (isLeaseEnforcedRole(leaseRole) && leaseSessionId) {
-            const leaseOk = await checkCashierLease(params.actorContext!.staffId, leaseSessionId);
-            if (!leaseOk) {
+          if (isLeaseEnforcementEnabled() && isLeaseEnforcedRole(leaseRole) && leaseSessionId) {
+            const leaseRows = await tx
+              .select()
+              .from(activeSessions)
+              .where(eq(activeSessions.staffId, params.actorContext!.staffId))
+              .limit(1);
+            const lease = leaseRows[0];
+            const live =
+              !!lease &&
+              `${lease.sessionId}` === `${leaseSessionId}` &&
+              `${lease.leaseExpiresAt}` > new Date().toISOString();
+            if (!live) {
               throw AppError.forbidden(
                 'Phiên cashier đã hết hiệu lực hoặc đang mở trên thiết bị khác. Vui lòng đăng nhập lại.'
               );
