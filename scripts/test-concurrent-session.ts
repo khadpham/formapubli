@@ -352,8 +352,69 @@ async function run() {
     console.log('✓ S23');
   }
 
+  // S24: guard đã pass, lease bị thu hồi TRƯỚC khi tx commit -> B0c đọc
+  // lại trong tx và chặn (không dùng kết quả guard cũ). Mô phỏng xác định
+  // cho race "qua guard rồi chờ, bị force-release trước commit".
+  console.log('\n[S24] Revoke between guard-pass and tx-commit blocks write');
+  {
+    await rawClient.execute({ sql: `DELETE FROM active_sessions WHERE staff_id = 'CASH-1'`, args: [] });
+    const a = await login('CASH-1', '1234', 'may-A');
+    const cookieA = cookieOf(a.setCookie);
+    const sessionA = (await meJson(cookieA)).json?.data?.sessionId;
+    assert.ok(sessionA, 'A phải có sessionId');
+    assert.equal((await meJson(cookieA)).status, 200, 'Guard pass khi lease còn sống');
+    // Thu hồi lease SAU khi guard đã pass, TRƯỚC khi tx ghi đơn chạy.
+    await rawClient.execute({ sql: `DELETE FROM active_sessions WHERE staff_id = 'CASH-1'`, args: [] });
+    const { OrderService } = await import('../src/services/order.service');
+    const before = await snapshotOrders(db, schema);
+    let forbidden = false;
+    try {
+      await OrderService.createOrder({
+        warehouseId: 'wh-au-co', channel: 'FAIR_EVENT',
+        discountRate: 0, paymentMethod: 'CASH',
+        cashierId: 'CASH-1',
+        actorContext: { staffId: 'CASH-1', role: 'ROLE_CASHIER', sessionId: sessionA },
+        idempotencyKey: 'idem-s24', items: [{ editionId: 'ed-h01', quantity: 1 }],
+      } as any);
+    } catch (err: any) {
+      forbidden = err?.code === 'FORBIDDEN';
+    }
+    assert.ok(forbidden, 'B0c phải đọc lại trong tx và chặn FORBIDDEN');
+    const after = await snapshotOrders(db, schema);
+    assert.deepEqual(after, before, 'Không ghi gì khi bị chặn giữa chừng');
+    console.log('✓ S24');
+  }
+
+  // S25: cờ rollout + grace legacy.
+  // - Tắt cờ: guard bỏ qua lease hoàn toàn (bước 1 triển khai).
+  // - Bật cờ (mặc định): token CÓ sessionId nhưng không có lease row -> 401
+  //   (đây mới là enforcement thật); token legacy KHÔNG sessionId được grace
+  //   tới hết hạn tự nhiên (không miễn trừ vô thời hạn vì login mới luôn gắn
+  //   sessionId và token cũ chết theo expiresAt ≤24h).
+  console.log('\n[S25] Rollout flag gates enforcement');
+  {
+    const { signSession, SESSION_COOKIE_NAME } = await import('../src/lib/auth-session');
+    const bare = await signSession({
+      role: 'ROLE_CASHIER' as any, actorId: 'CASH-1',
+      issuedAt: Date.now(), expiresAt: Date.now() + 3600000,
+    });
+    const bareCookie = `${SESSION_COOKIE_NAME}=${bare}`;
+    const orphan = await signSession({
+      role: 'ROLE_CASHIER' as any, actorId: 'CASH-1', sessionId: 'sess-khong-ton-tai',
+      issuedAt: Date.now(), expiresAt: Date.now() + 3600000,
+    });
+    const orphanCookie = `${SESSION_COOKIE_NAME}=${orphan}`;
+    await rawClient.execute({ sql: `DELETE FROM active_sessions WHERE staff_id = 'CASH-1'`, args: [] });
+    process.env.SESSION_LEASE_ENFORCE = 'false';
+    assert.equal((await meJson(orphanCookie)).status, 200, 'Tắt cờ: bỏ qua lease');
+    delete process.env.SESSION_LEASE_ENFORCE;
+    assert.equal((await meJson(orphanCookie)).status, 401, 'Bật cờ: sessionId không lease bị chặn');
+    assert.equal((await meJson(bareCookie)).status, 200, 'Bật cờ: token legacy không sessionId được grace tới hết hạn');
+    console.log('✓ S25');
+  }
+
   rawClient.close();
-  console.log('\n🎉 S-01: S01-S08 + S21 + S22 + S23 PASS!');
+  console.log('\n🎉 S-01: S01-S08 + S21 + S22 + S23 + S24 + S25 PASS!');
 }
 
 run().catch((err) => {
