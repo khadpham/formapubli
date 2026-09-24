@@ -19,10 +19,10 @@
 - main = **`ab99d53`** (integrate/wave2) — deploy version **`ea44433f`**.
 - Gồm TOÀN BỘ: #1 (A1-H + A1-F), #3, #9, #5, #10, #11, #3-UI, **#7, #8**,
   S-01, config fixes, docs. Migration 0022 đã áp Turso.
-- **Rollout S-01 đang BƯỚC 1**: secret `SESSION_LEASE_ENFORCE=false`
-  (login trùng thiết bị ĐÃ chặn; guard token-cũ + B0c chờ flag).
-- BƯỚC 2 (còn lại): `npx wrangler secret put SESSION_LEASE_ENFORCE` = "true"
-  — chờ user chọn thời điểm (đêm, không ai bán).
+- **Rollout S-01 HOÀN TẤT (bước 2 đã bật 25/09 sáng)**: secret
+  `SESSION_LEASE_ENFORCE=true` — enforce gate 9/9 PASS (login/lease/heartbeat/
+  logout/đổi máy đều ổn). Ai giữ token cũ pre-lease sẽ bị guard đăng xuất đúng
+  1 lần, đăng nhập lại là xong.
 - Gate live 25/09 sáng: **20/20 PASS** (SSR, anon 401, login A 200, login B
   trùng 403 SESSION_ACTIVE_ELSEWHERE không cookie, máy A không văng,
   heartbeat 200, tạo yêu cầu duyệt, CANCEL→SUPERSEDED, CANCEL lần 2→409,
