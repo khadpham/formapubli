@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
@@ -807,26 +807,64 @@ export class OrderService {
    * Đơn PENDING không có bút toán ledger nên phải tính động từ order_items.
    * Hỗ trợ nhận `txOrDb` để thực thi đồng nhất trong cùng write transaction.
    */
-  static async getATP(editionId: string, warehouseId: string, txOrDb: any = db): Promise<number> {
-    const physical = await InventoryService.getBalance(editionId, warehouseId, 'NEW', txOrDb);
+  /**
+   * Batch ATP cho nhiều ấn bản — CÙNG semantics với getATP nhưng 2 query cố
+   * định thay vì 2N. Bắt buộc cho phiếu nhiều dòng trên Cloudflare Workers:
+   * gọi getATP từng cuốn vượt giới hạn subrequest → 500 "Too many subrequests".
+   */
+  static async getBatchATP(
+    editionIds: string[],
+    warehouseId: string,
+    txOrDb: any = db
+  ): Promise<Map<string, number>> {
+    const ids = [...new Set(editionIds.filter(Boolean))];
+    const out = new Map<string, number>();
+    if (ids.length === 0) return out;
     const wh = await WarehouseService.getWarehouse(warehouseId, txOrDb);
-    // ponytail: đọc thêm 1 row warehouses mỗi lần tính ATP; cache lại khi thành điểm nghẽn đo được.
-    if (wh?.warehouseType === 'FAIR_EVENT') return physical;
+    const balRows = await txOrDb
+      .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
+      .from(stockBalances)
+      .where(
+        and(
+          inArray(stockBalances.editionId, ids),
+          eq(stockBalances.warehouseId, warehouseId),
+          eq(stockBalances.condition, 'NEW')
+        )
+      );
+    const balMap = new Map<string, number>();
+    for (const r of balRows) balMap.set(`${r.editionId}`, Number(r.qty || 0));
+    // Kho hội chợ: ATP = physical, không trừ giữ chỗ online (giống getATP).
+    if (wh?.warehouseType === 'FAIR_EVENT') {
+      for (const id of ids) out.set(id, balMap.get(id) || 0);
+      return out;
+    }
     const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
-    const held = await txOrDb
-      .select({ qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+    const heldRows = await txOrDb
+      .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
         and(
-          eq(orderItems.editionId, editionId),
+          inArray(orderItems.editionId, ids),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
           gte(orders.createdAt, cutoff)
         )
-      );
-    const heldQty = Number(held[0]?.qty || 0);
-    return physical - heldQty;
+      )
+      .groupBy(orderItems.editionId);
+    const heldMap = new Map<string, number>();
+    for (const r of heldRows) heldMap.set(`${r.editionId}`, Number(r.qty || 0));
+    for (const id of ids) out.set(id, (balMap.get(id) || 0) - (heldMap.get(id) || 0));
+    return out;
+  }
+
+  /**
+   * ATP một ấn bản (đường lẻ) — uỷ quyền cho batch để chỉ có MỘT nơi định
+   * nghĩa semantics: fair = physical, còn lại trừ giữ chỗ PENDING còn hạn.
+   */
+  static async getATP(editionId: string, warehouseId: string, txOrDb: any = db): Promise<number> {
+    const batch = await this.getBatchATP([editionId], warehouseId, txOrDb);
+    return batch.get(editionId) ?? 0;
   }
 
   static isPendingExpired(createdAt: string | null): boolean {

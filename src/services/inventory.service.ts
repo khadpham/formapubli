@@ -587,9 +587,16 @@ export class InventoryService {
       throw AppError.invalid(`Ấn bản không tồn tại trong danh mục: ${unknown.join(', ')}.`);
     }
     const { OrderService } = await import('./order.service');
+    // Batch ATP: 2 query cố định cho cả phiếu. Trước đây gọi getATP từng
+    // dòng → 500 "Too many subrequests" trên Workers khi phiếu ~50+ dòng.
+    const atpByEdition = await OrderService.getBatchATP(
+      merged.map((m) => m.editionId),
+      fromWarehouseId.trim(),
+      txOrDb
+    );
     const staleItems: StaleItem[] = [];
     for (const it of merged) {
-      const atpNow = await OrderService.getATP(it.editionId, fromWarehouseId.trim(), txOrDb);
+      const atpNow = atpByEdition.get(it.editionId) ?? 0;
       if (atpNow < it.quantity) {
         staleItems.push({ editionId: it.editionId, requested: it.quantity, availableNow: atpNow });
       }
