@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     const renewed = await renewCashierLease({
       staffId: session.actorId,
       sessionId: session.sessionId,
+      sessionVersion: session.sessionVersion,
       nowMs: now,
     });
     if (!renewed) {

@@ -787,16 +787,32 @@ export async function checkCashierLease(staffId: string, sessionId?: string): Pr
 }
 
 /**
- * Gia hạn heartbeat: chỉ UPDATE row còn sống khớp staff+session (tuyệt đối
- * không UPSERT — không hồi sinh phiên hết hạn). Trả true nếu gia hạn được.
+ * Gia hạn heartbeat: kiểm tra account còn hiệu lực + version khớp (token cũ
+ * sau đổi PIN không được giữ lease chặn login mới), rồi UPDATE row còn sống
+ * khớp staff+session (tuyệt đối không UPSERT hồi sinh). Trả true nếu renew được.
  */
 export async function renewCashierLease(params: {
   staffId: string;
   sessionId: string;
+  sessionVersion?: number;
   nowMs?: number;
 }): Promise<boolean> {
   const nowMs = params.nowMs ?? Date.now();
   const nowIso = new Date(nowMs).toISOString();
+  const staffRows = await db
+    .select({
+      isActive: staffAccounts.isActive,
+      role: staffAccounts.role,
+      sessionVersion: staffAccounts.sessionVersion,
+    })
+    .from(staffAccounts)
+    .where(eq(staffAccounts.staffId, params.staffId))
+    .limit(1);
+  const st = staffRows[0];
+  if (!st || !st.isActive) return false;
+  if (params.sessionVersion !== undefined && Number(st.sessionVersion) !== params.sessionVersion) {
+    return false;
+  }
   const res: any = await db
     .update(activeSessions)
     .set({ lastSeenAt: nowIso, leaseExpiresAt: leaseExpiryIso(nowMs) })
@@ -806,7 +822,12 @@ export async function renewCashierLease(params: {
   return (res?.rowsAffected ?? 0) === 1;
 }
 
-/** Logout: xóa CÓ ĐIỀU KIỆN (staff + session) — cookie cũ không xóa lease máy mới. */
+/**
+ * Logout: xóa CÓ ĐIỀU KIỆN (staff + session) — cookie cũ không xóa lease máy mới.
+ * sessionId bắt buộc: token legacy không sessionId thì KHÔNG xóa gì (tránh
+ * logout cũ thổi bay lease phiên mới). Xóa toàn bộ khi reset PIN nằm ở route
+ * staff (chủ đích thu hồi hết sau đổi credential).
+ */
 export async function releaseCashierLease(staffId: string, sessionId?: string): Promise<boolean> {
   if (!staffId || !sessionId) return false;
   const res: any = await db
@@ -816,18 +837,46 @@ export async function releaseCashierLease(staffId: string, sessionId?: string): 
 }
 
 /**
- * Force-release (manager/owner, target cashier): xóa lease + bump
- * sessionVersion để thu hồi token cũ. Trả về version mới.
+ * Force-release (manager/owner, target cashier): kiểm tra expected NGAY
+ * TRONG transaction (tránh race: phiên A bị thay bằng B giữa check ngoài và
+ * xóa), rồi xóa lease + bump sessionVersion để thu hồi token cũ.
+ * - expected.sessionId khớp mới xóa đúng phiên (sai → 409, không hủy phiên mới).
+ * - expected.sessionVersion khớp mới bump (sai → 409, không bump lần nữa).
+ * - Không gửi expected: xóa lease hiện có (nếu còn) + bump (lũy tiến an toàn).
  */
-export async function forceReleaseCashierLease(staffId: string): Promise<{ released: boolean; sessionVersion: number }> {
+export async function forceReleaseCashierLease(
+  staffId: string,
+  expected?: { sessionId?: string; sessionVersion?: number }
+): Promise<{ released: boolean; sessionVersion: number }> {
   return withDbRetry(() =>
     db.transaction(async (tx) => {
-      const rows = await tx
+      const staffRows = await tx
+        .select({
+          sessionVersion: staffAccounts.sessionVersion,
+          isActive: staffAccounts.isActive,
+        })
+        .from(staffAccounts)
+        .where(eq(staffAccounts.staffId, staffId))
+        .limit(1);
+      const staff = staffRows[0];
+      if (!staff) throw new AuthError(404, 'Tài khoản không tồn tại.');
+      const leaseRows = await tx
         .select()
         .from(activeSessions)
         .where(eq(activeSessions.staffId, staffId))
         .limit(1);
-      const released = rows.length > 0;
+      const lease = leaseRows[0] || null;
+      if (expected?.sessionId !== undefined) {
+        if (!lease || `${lease.sessionId}` !== expected.sessionId) {
+          throw new AuthError(409, 'Phiên đã thay đổi, vui lòng tải lại.');
+        }
+      }
+      if (expected?.sessionVersion !== undefined) {
+        if (Number(staff.sessionVersion) !== expected.sessionVersion) {
+          throw new AuthError(409, 'Trạng thái đã thay đổi, vui lòng tải lại.');
+        }
+      }
+      const released = !!lease;
       if (released) {
         await tx.delete(activeSessions).where(eq(activeSessions.staffId, staffId));
       }
@@ -835,12 +884,12 @@ export async function forceReleaseCashierLease(staffId: string): Promise<{ relea
         .update(staffAccounts)
         .set({ sessionVersion: sql`${staffAccounts.sessionVersion} + 1` })
         .where(eq(staffAccounts.staffId, staffId));
-      const staff = await tx
+      const after = await tx
         .select({ v: staffAccounts.sessionVersion })
         .from(staffAccounts)
         .where(eq(staffAccounts.staffId, staffId))
         .limit(1);
-      return { released, sessionVersion: Number(staff[0]?.v ?? 1) };
+      return { released, sessionVersion: Number(after[0]?.v ?? 1) };
     })
   );
 }

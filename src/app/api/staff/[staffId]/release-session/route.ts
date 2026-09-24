@@ -83,6 +83,8 @@ export async function POST(req: NextRequest, { params }: { params: { staffId: st
     const lease = leaseRows[0];
     // Không còn lease: version đã đổi (ai đó release trước) hoặc đã có kiểm
     // soát khác → 409 để UI refresh, không bump version lần nữa.
+    // Không lease + version khớp → noop thành công (KHÔNG bump: thu hồi token
+    // legacy không-lease là việc của reset PIN, tránh kill nhầm phiên hợp lệ).
     if (!lease) {
       if (expectedVersion !== undefined && Number(target.sessionVersion) !== expectedVersion) {
         return NextResponse.json(
@@ -106,7 +108,10 @@ export async function POST(req: NextRequest, { params }: { params: { staffId: st
       );
     }
 
-    const result = await forceReleaseCashierLease(targetId);
+    const result = await forceReleaseCashierLease(targetId, {
+      sessionId: expectedSessionId,
+      sessionVersion: expectedVersion,
+    });
     await recordAuditLog({
       action: 'LOGOUT' as any,
       actorRole: session.role,

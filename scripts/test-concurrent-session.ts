@@ -257,8 +257,59 @@ async function run() {
     console.log('✓ S08');
   }
 
+  // S21: heartbeat sau khi đổi PIN/version -> 401, không giữ lease chặn login mới.
+  console.log('\n[S21] Heartbeat after version bump -> 401');
+  {
+    await rawClient.execute({ sql: `DELETE FROM active_sessions WHERE staff_id = 'CASH-1'`, args: [] });
+    const a = await login('CASH-1', '1234', 'may-A');
+    const cookieA = cookieOf(a.setCookie);
+    assert.equal(a.status, 200);
+    assert.equal(await heartbeat(cookieA), 200, 'Heartbeat khi version khớp phải 200');
+    // Giả lập đổi PIN (bump version) — token/heartbeat cũ phải chết.
+    await rawClient.execute({ sql: `UPDATE staff_accounts SET session_version = session_version + 1 WHERE staff_id = 'CASH-1'`, args: [] });
+    assert.equal(await heartbeat(cookieA), 401, 'Heartbeat sau đổi version phải 401');
+    assert.equal((await meJson(cookieA)).status, 401, 'Me sau đổi version phải 401');
+    const mgr = await login('MGR-1', '1234', 'may-M');
+    const mgrCookie = cookieOf(mgr.setCookie);
+    await post(logoutPOST, 'http://localhost/api/auth/logout', {}, mgrCookie).catch(() => {});
+    console.log('✓ S21');
+  }
+
+  // S22: reset PIN xóa lease -> login mới bằng PIN mới không bị chặn oan.
+  console.log('\n[S22] PIN reset clears lease for fresh login');
+  {
+    await rawClient.execute({ sql: `DELETE FROM active_sessions WHERE staff_id = 'CASH-2'`, args: [] });
+    const a = await login('CASH-2', '1234', 'may-A');
+    assert.equal(a.status, 200);
+    const mgr = await login('MGR-1', '1234', 'may-M');
+    const mgrCookie = cookieOf(mgr.setCookie);
+    const { PATCH: patchStaff } = await import('../src/app/api/staff/[staffId]/route');
+    const rp: any = await patchStaff(
+      new Request('http://localhost/api/staff/CASH-2', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: mgrCookie },
+        body: JSON.stringify({ passcode: '9999' }),
+      }) as any,
+      { params: { staffId: 'CASH-2' } } as any
+    );
+    assert.equal(rp.status, 200, 'Reset PIN phải 200');
+    const b = await login('CASH-2', '9999', 'may-B');
+    assert.equal(b.status, 200, 'Login PIN mới ngay sau reset phải 200 (không bị lease cũ chặn)');
+    await logout(cookieOf(b.setCookie));
+    // Khôi phục PIN 1234 để không ảnh hưởng thứ tự chạy khác (DB file riêng, nhưng gọn).
+    const rp2: any = await patchStaff(
+      new Request('http://localhost/api/staff/CASH-2', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: mgrCookie },
+        body: JSON.stringify({ passcode: '1234' }),
+      }) as any,
+      { params: { staffId: 'CASH-2' } } as any
+    );
+    assert.equal(rp2.status, 200);
+    await logout(mgrCookie);
+    console.log('✓ S22');
+  }
+
   rawClient.close();
-  console.log('\n🎉 S-01: S01-S08 PASS!');
+  console.log('\n🎉 S-01: S01-S08 + S21 + S22 PASS!');
 }
 
 run().catch((err) => {
