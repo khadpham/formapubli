@@ -1,5 +1,5 @@
-import { db, discountApprovalRequests, warehouses } from '../db';
-import { and, desc, eq, gt, or, sql } from 'drizzle-orm';
+import { db, discountApprovalRequests, editions, warehouses } from '../db';
+import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { hashString } from '../lib/export-hash';
 
@@ -7,6 +7,9 @@ export interface CartItemInput {
   editionId: string;
   quantity: number;
   unitPrice: number;
+  // P1a: mức giảm từng dòng tham gia hash (fallback = mức tổng đơn).
+  // Không bind là lọt gian lận: giữ nguyên tổng đã duyệt, gắn 90% vào 1 dòng.
+  unitDiscountRate?: number;
 }
 
 export interface ActorContext {
@@ -83,10 +86,12 @@ function randomHex(byteLength: number): string {
 }
 
 /**
- * Sinh mã băm SHA-256 giỏ hàng chuẩn hóa theo V4.1 §4.1:
+ * Sinh mã băm SHA-256 giỏ hàng chuẩn hóa theo V4.1 §4.1 + P1a:
  * - Sắp xếp ấn bản theo editionId tăng dần (deterministic)
  * - Ép giá và discountRate về số nguyên VND
  * - Khóa chặt theo warehouseId + orderCode để tránh đụng độ giữa các quầy/kho
+ * - P1a: token mỗi dòng gồm cả mức giảm dòng (fallback = mức tổng) —
+ *   không bind là lọt gian lận line-discount sau duyệt.
  */
 export function generateCanonicalCartHash(
   items: CartItemInput[],
@@ -95,15 +100,18 @@ export function generateCanonicalCartHash(
   orderCode: string
 ): string {
   const sorted = [...items].sort((a, b) => a.editionId.localeCompare(b.editionId));
-  const tokens = sorted.map(
-    (i) => `${i.editionId}:${i.quantity}:${Math.round(i.unitPrice)}`
-  );
+  const orderRateBp = Math.round(discountRate * 10000);
+  const tokens = sorted.map((i) => {
+    const lineRate = Number.isFinite(i.unitDiscountRate as number)
+      ? (i.unitDiscountRate as number)
+      : discountRate;
+    return `${i.editionId}:${i.quantity}:${Math.round(i.unitPrice)}:${Math.round(lineRate * 10000)}`;
+  });
   tokens.push(
     `wh:${warehouseId}`,
     `ord:${orderCode}`,
-    `rate:${Math.round(discountRate * 10000)}`
+    `rate:${orderRateBp}`
   );
-  // hashString = SHA-256 hex thuần TS (đồng nhất node createHash, edge-safe).
   return hashString(tokens.join('|'));
 }
 
@@ -173,7 +181,40 @@ export class DiscountApprovalService {
       throw AppError.invalid('Tỷ lệ chiết khấu yêu cầu không hợp lệ (phải từ > 0% đến 100%)');
     }
 
-    const originalAmount = items.reduce(
+    // A1-H: chuẩn hóa giá bìa từ DB (bỏ qua unitPrice client gửi — client có
+    // thể khai sai để lừa số tiền duyệt). Hash + số tiền duyệt tính trên giá
+    // chuẩn này; route checkout recompute y hệt để khớp.
+    const editionIds = Array.from(new Set(items.map((i) => `${i.editionId || ''}`.trim()).filter(Boolean)));
+    if (editionIds.length === 0) {
+      throw AppError.invalid('Giỏ hàng thiếu mã ấn bản hợp lệ.');
+    }
+    const coverRows = await txOrDb
+      .select({ id: editions.id, coverPrice: editions.coverPrice })
+      .from(editions)
+      .where(inArray(editions.id, editionIds));
+    const coverMap = new Map<string, number>();
+    for (const r of coverRows) coverMap.set(r.id, Number(r.coverPrice || 0));
+    const missing = editionIds.filter((id) => !coverMap.has(id));
+    if (missing.length > 0) {
+      throw AppError.invalid(`Ấn bản không tồn tại trong danh mục: ${missing.slice(0, 3).join(', ')}`);
+    }
+    const canonicalItems = items.map((item) => {
+      const lineRate = item.unitDiscountRate ?? requestedDiscountRate;
+      if (!Number.isFinite(lineRate) || lineRate < 0 || lineRate > 1) {
+        throw AppError.invalid(`Mức giảm dòng ${item.editionId} phải nằm trong khoảng 0 - 100%.`);
+      }
+      return {
+        editionId: `${item.editionId}`.trim(),
+        quantity: Math.floor(Number(item.quantity) || 0),
+        unitPrice: coverMap.get(`${item.editionId}`.trim()) || 0,
+        unitDiscountRate: lineRate,
+      };
+    });
+    if (canonicalItems.some((i) => i.quantity <= 0)) {
+      throw AppError.invalid('Số lượng mỗi dòng phải là số nguyên dương.');
+    }
+
+    const originalAmount = canonicalItems.reduce(
       (sum, item) => sum + item.quantity * Math.round(item.unitPrice),
       0
     );
@@ -181,7 +222,7 @@ export class DiscountApprovalService {
     const finalAmount = originalAmount - discountAmount;
 
     const cartHash = generateCanonicalCartHash(
-      items,
+      canonicalItems,
       requestedDiscountRate,
       warehouseId,
       orderCode
@@ -527,6 +568,60 @@ export class DiscountApprovalService {
       ...r,
       shortCode: extractShortCode(r.orderCode),
     }));
+  }
+
+  /**
+   * A1-H: xác minh phê duyệt khớp với giỏ checkout TRƯỚC khi tạo đơn.
+   * - Không tìm thấy / chưa APPROVED / hết hạn: INVALID (route cho rẽ sang
+   *   PIN quản lý như hành vi cũ — phê duyệt cũ không phải bằng chứng gian lận).
+   * - Đã APPROVED nhưng lệch kho / mức giảm / người xin / giỏ hàng: FORBIDDEN
+   *   cứng, route từ chối ngay không cho rẽ PIN (PIN không rửa được giỏ tráo).
+   * - Giỏ tính lại từ giá bìa DB (bỏ qua unitPrice client), dùng orderCode của
+   *   chính approval (checkout sinh mã khác — không đòi bằng mã).
+   */
+  static async assertValidForCheckout(params: {
+    requestId: string;
+    items: Array<{ editionId: string; quantity: number }>;
+    discountRate: number;
+    warehouseId: string;
+    actorId: string;
+  }): Promise<void> {
+    const appr = await this.getRequest(params.requestId);
+    if (!appr || appr.status !== 'APPROVED') {
+      throw AppError.invalid('Phê duyệt chiết khấu chưa hợp lệ hoặc đã hết hiệu lực.');
+    }
+    if (`${appr.warehouseId || ''}` !== `${params.warehouseId || ''}`) {
+      throw AppError.forbidden('Phê duyệt thuộc kho khác, không áp dụng cho đơn này.');
+    }
+    const rateCheckout = Number(params.discountRate) || 0;
+    if (Math.abs(Number(appr.requestedDiscountRate || 0) - rateCheckout) >= 0.0001) {
+      throw AppError.forbidden('Mức chiết khấu đã thay đổi sau khi duyệt. Vui lòng xin duyệt lại.');
+    }
+    if (`${appr.cashierId || ''}` !== `${params.actorId || ''}`) {
+      throw AppError.forbidden('Phê duyệt thuộc về thu ngân khác.');
+    }
+    const editionIds = Array.from(new Set(params.items.map((i) => `${i.editionId || ''}`.trim()).filter(Boolean)));
+    const coverRows =
+      editionIds.length > 0
+        ? await db
+            .select({ id: editions.id, coverPrice: editions.coverPrice })
+            .from(editions)
+            .where(inArray(editions.id, editionIds))
+        : [];
+    const coverMap = new Map<string, number>();
+    for (const r of coverRows) coverMap.set(r.id, Number(r.coverPrice || 0));
+    const canonical = params.items.map((i) => ({
+      editionId: `${i.editionId || ''}`.trim(),
+      quantity: Math.floor(Number(i.quantity) || 0),
+      unitPrice: coverMap.get(`${i.editionId || ''}`.trim()) || 0,
+      // P1a: giữ mức giảm dòng client gửi (fallback = mức tổng) để hash bao
+      // luôn gian lận line-discount; giá lấy từ DB nên không cần tin client.
+      unitDiscountRate: (i as CartItemInput).unitDiscountRate ?? rateCheckout,
+    }));
+    const expected = generateCanonicalCartHash(canonical, rateCheckout, params.warehouseId, appr.orderCode);
+    if (expected !== appr.cartHash) {
+      throw AppError.forbidden('Giỏ hàng đã thay đổi sau khi duyệt. Vui lòng xin duyệt lại.');
+    }
   }
 
   /**

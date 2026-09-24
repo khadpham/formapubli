@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
@@ -71,6 +71,11 @@ export interface CreateOrderParams {
   bundles?: Array<{ bundleId: string; quantity: number }>; // Combo/boxset (giá do management định, không cộng CK đơn)
   // M1 (contract §1): danh tính Lane A truyền tách khỏi payload client — thắng mọi cashierId client gửi
   actorContext?: ActorContext;
+  // A1-H: ID phê duyệt chiết khấu đã được route verify khớp (giỏ/mức/kho/người).
+  // Service tiêu thụ NGUYÊN TỬ trong cùng transaction tạo đơn (conditional
+  // APPROVED→CONSUMED, đòi đúng 1 row) — chống reuse/race. Bỏ qua trên đường
+  // replay idempotency (trả đơn cũ, không consume lại).
+  discountApprovalId?: string;
 }
 
 export interface OrderFingerprint {
@@ -460,6 +465,28 @@ export class OrderService {
             status: existing[0].status,
             isDuplicate: true,
           };
+        }
+
+        // B0b (A1-H): tiêu thụ phê duyệt chiết khấu NGUYÊN TỬ trong cùng
+        // transaction, SAU kiểm tra replay (replay trả đơn cũ, không consume
+        // lại), TRƯỚC khi ghi đơn. Conditional UPDATE đòi đúng 1 row còn
+        // APPROVED — hai request tranh nhau chỉ một thắng, còn lại rollback
+        // toàn bộ (không ghi đơn, không trừ kho).
+        if (params.discountApprovalId) {
+          const consumeRes: any = await tx
+            .update(discountApprovalRequests)
+            .set({ status: 'CONSUMED', updatedAt: new Date().toISOString() })
+            .where(
+              and(
+                eq(discountApprovalRequests.id, params.discountApprovalId),
+                eq(discountApprovalRequests.status, 'APPROVED')
+              )
+            );
+          if (consumeRes?.rowsAffected !== 1) {
+            throw AppError.conflict(
+              'Phê duyệt chiết khấu đã được sử dụng hoặc hết hiệu lực. Vui lòng xin duyệt lại.'
+            );
+          }
         }
 
         // B1. Xác thực phiên két bên trong Transaction

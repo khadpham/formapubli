@@ -6,6 +6,8 @@ import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
+import { db, orders } from '@/db';
+import { eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -187,6 +189,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // P1b: replay mất response — đơn đã ghi với key này thì đi thẳng tới
+    // createOrder (B0 trả đơn cũ / ném IDEMPOTENCY_CONFLICT nếu payload khác),
+    // BỎ QUA verify approval (approval đã CONSUMED bởi lần ghi đầu nên verify
+    // lại sẽ 403 oan). Không có key hoặc chưa có đơn → luồng verify thường.
+    let isReplay = false;
+    const replayKey = `${idempotencyKey || ''}`.trim();
+    if (replayKey) {
+      const existing = await db
+        .select({ id: orders.id })
+        .from(orders)
+        .where(eq(orders.idempotencyKey, replayKey))
+        .limit(1);
+      isReplay = existing.length > 0;
+    }
+
     // userRole đã trích xuất ở đầu hàm (dùng chung cho CONFIRM/CANCEL).
     // SERVER-ENFORCE DISCOUNT HARD-CAP:
     // Chặn cả chiết khấu tổng đơn LẪN chiết khấu từng dòng (line item),
@@ -241,18 +258,46 @@ export async function POST(req: NextRequest) {
     const exceedsHardCap = maxDiscountRate >= MAX_CASHIER_DISCOUNT_RATE;
     const isPrivilegedRole = userRole === 'ROLE_OWNER' || userRole === 'ROLE_MANAGER';
 
-    if (exceedsHardCap && !isPrivilegedRole) {
-      let isApprovalValid = false;
+    // A1-H: ID phê duyệt đã verify (khớp giỏ/mức/kho/người) để createOrder
+    // tiêu thụ nguyên tử trong transaction. Khai báo ngoài để dùng ở dưới.
+    // P1b: replay (đơn đã tồn tại với key) bỏ qua verify — approval đã bị
+    // consume bởi lần ghi đầu, verify lại sẽ 403 oan; createOrder tự trả đơn
+    // cũ hoặc ném IDEMPOTENCY_CONFLICT nếu payload khác.
+    let verifiedApprovalId: string | undefined;
+    if (!isReplay && exceedsHardCap && !isPrivilegedRole) {
+      // A1-H: verify đầy đủ khớp giỏ/mức/kho/người TRƯỚC khi tạo đơn.
+      // - Phê duyệt cũ/hết hiệu lực (INVALID): rẽ sang PIN quản lý như hành vi cũ.
+      // - Giỏ tráo sau duyệt (FORBIDDEN): từ chối cứng, không cho rẽ PIN.
+      // verifiedApprovalId đưa vào createOrder để tiêu thụ NGUYÊN TỬ trong tx.
       if (discountApprovalId) {
         try {
-          const appr = await DiscountApprovalService.getRequest(discountApprovalId);
-          if (appr && appr.status === 'APPROVED') {
-            isApprovalValid = true;
+          await DiscountApprovalService.assertValidForCheckout({
+            requestId: discountApprovalId,
+            items: pricedItems,
+            discountRate: Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
+            warehouseId,
+            actorId: actorHeader,
+          });
+          verifiedApprovalId = discountApprovalId;
+        } catch (err: any) {
+          if (err?.code === 'FORBIDDEN') {
+            await recordAuditLog({
+              action: 'MANAGER_DISCOUNT_DENIED',
+              actorRole: userRole,
+              actorId: actorHeader,
+              resource: '/api/orders',
+              details: `Từ chối đơn chiết khấu: ${err?.message || 'giỏ/kho/mức giảm không khớp phê duyệt'} (approval: ${discountApprovalId}).`,
+            });
+            return NextResponse.json(
+              { success: false, code: 'FORBIDDEN', error: err?.message || 'Phê duyệt không khớp đơn hàng.' },
+              { status: 403 }
+            );
           }
-        } catch {}
+          // INVALID (không tìm thấy/chưa duyệt/hết hạn): rẽ sang PIN bên dưới.
+        }
       }
 
-      if (!isApprovalValid) {
+      if (!verifiedApprovalId) {
         const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
         const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
         if (pinCheck.locked) {
@@ -341,25 +386,11 @@ export async function POST(req: NextRequest) {
       bundles: Array.isArray(bundles)
         ? bundles.map((b: any) => ({ bundleId: b.bundleId, quantity: parseInt(b.quantity ?? 0, 10) }))
         : undefined,
+      // A1-H: phê duyệt đã verify ở trên → service tiêu thụ NGUYÊN TỬ trong
+      // cùng transaction tạo đơn (fail → rollback, không ghi đơn/không trừ kho).
+      // Không còn consume sau create (bản cũ warn rồi success là lỗ hổng).
+      discountApprovalId: verifiedApprovalId,
     });
-
-    if (discountApprovalId) {
-      try {
-        await DiscountApprovalService.consumeApproval({
-          requestId: discountApprovalId,
-          currentItems: pricedItems.map((it: any) => ({
-            editionId: it.editionId,
-            quantity: it.quantity,
-            unitPrice: it.unitPrice || 0,
-          })),
-          discountRate: discountRate ?? 0,
-          warehouseId,
-          orderCode: result.orderCode,
-        });
-      } catch (err: any) {
-        console.warn('Không thể tiêu thụ discount approval:', err);
-      }
-    }
 
     await recordAuditLog({
       action: 'MUTATE_ORDER',

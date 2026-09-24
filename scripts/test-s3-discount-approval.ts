@@ -35,6 +35,17 @@ async function run() {
     { id: 'wh-quynh-mai', code: 'KHO_QUYNH_MAI', name: 'Kho Quỳnh Mai', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
 
+  // A1-H: createRequest chuẩn hóa giá bìa từ DB (bỏ qua unitPrice client) —
+  // fixture phải có catalog thật khớp giá test (ed-h01 150000, ed-h21 200000).
+  await db.insert(schema.works).values([
+    { id: 'work-h01', code: 'W-H01', title: 'Sach H01', author: 'Tac gia H01' },
+    { id: 'work-h21', code: 'W-H21', title: 'Sach H21', author: 'Tac gia H21' },
+  ]);
+  await db.insert(schema.editions).values([
+    { id: 'ed-h01', code: 'H01', workId: 'work-h01', title: 'Sach H01', isbn: '9780000000001', isbnLast4: '0001', coverPrice: 150000, isActive: true },
+    { id: 'ed-h21', code: 'H21', workId: 'work-h21', title: 'Sach H21', isbn: '9780000000002', isbnLast4: '0002', coverPrice: 200000, isActive: true },
+  ]);
+
   const MGR = { staffId: 'staff-la', role: 'ROLE_MANAGER', fullName: 'Lan Anh (Manager)' };
   const CASHIER = { staffId: 'staff-tn', role: 'ROLE_CASHIER', fullName: 'Thu Ngân 1' };
 
