@@ -189,3 +189,31 @@ Quy tắc: bug chặn bán/chặn két/chặn đồng bộ = P0 báo ngay; bug c
 8. **NV-01 mở két → NV-02 không xem/chốt được két NV-01** (403), Quản lý chốt hộ được.
 9. **Nhập sai PIN 5 lần → khóa 15 phút**, đúng PIN trong lúc khóa vẫn 403.
 10. **Nhập PIN quản lý sai ở modal duyệt CK → đơn chốt bị 403**, PIN đúng thì qua.
+
+## 10. Bản 25/09 — Một phiên cashier (S-01) + POS hardened (đã chạy prod)
+
+> Áp dụng ROLE_CASHIER trên prod `https://book.formaform.vn`.
+> Quy tắc: **máy đang bán KHÔNG BỊ VĂNG**; máy khác đăng nhập trùng tài khoản
+> sẽ bị chặn với thông báo "Tài khoản đang mở ca trên thiết bị khác".
+
+1. **Một phiên mỗi thu ngân:** NV-01 đang bán trên máy A → máy B đăng nhập
+   NV-01 → B nhận 403, A tiếp tục bán bình thường (không mất giỏ, không văng).
+2. **Đổi máy đúng cách:** trên máy A bấm **Đăng xuất** → máy khác đăng nhập
+   được ngay. Kill app đột ngột thì chờ tối đa **10 phút** lease tự hết.
+3. **Quét phiên từ xa (máy kẹt/mất):** Quản lý vào **Quản lý nhân viên →
+   Giải phóng phiên** (chỉ Manager/Owner) — máy cũ hết quyền ngay, máy mới
+   vào được. Không ảnh hưởng két/ca, giỏ nháp vẫn giữ nguyên trên máy cũ.
+4. **Offline:** mất mạng vẫn xem/sửa giỏ NHƯNG **không chốt được đơn offline
+   mới** khi phiên chưa được xác nhận gần đây (anti bán ảo); queue cũ không bị xóa.
+5. **Đổi PIN = hết phiên cũ** ở mọi máy (tự đăng xuất, đăng nhập lại).
+6. **Phê duyệt chiết khấu — giỏ bị khóa:** khi chờ duyệt hoặc ĐÃ ĐƯỢC DUYỆT,
+   giỏ khóa hoàn toàn (không thêm/sửa/xóa/scan). Muốn sửa giỏ: bấm
+   **"Sửa giỏ và hủy phê duyệt"** — hệ thống hủy phê duyệt TRÊN SERVER rồi
+   mới mở khóa (mất mạng khi hủy → giỏ vẫn khóa, không giả định hủy xong).
+   Quản lý duyệt: bấm **"Xem giỏ đã khóa"** để đối chiếu đúng giỏ lúc xin duyệt.
+7. **Chuyển khoản / QR (đã gộp 1 lựa chọn):** chọn "Chuyển khoản / QR" → hiện
+   thông tin TK + QR. Trước khi chốt đơn PHẢI bấm **"Xác nhận đã nhận tiền"**
+   (xác nhận tay của thu ngân — đã soi tài khoản/người chuyển). Đơn cũ định
+   dạng QR_CODE/BANK_TRANSFER đọc/báo cáo như trước.
+8. **Mobile:** nút **Thanh toán nổi** mở sheet thanh toán (không tự chốt đơn);
+   danh mục lưới 2 cột; đóng/mở sheet không mất giỏ.
