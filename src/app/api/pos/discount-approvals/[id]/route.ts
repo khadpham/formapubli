@@ -16,13 +16,18 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    await requireSessionRole(req, [
+    const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_CASHIER',
     ] as UserRole[]);
 
     const data = await DiscountApprovalService.getRequest(params.id);
+    // A1.7: cashier chỉ xem được yêu cầu của chính mình (chống soi giỏ/
+    // mức giảm của thu ngân khác qua id); manager/owner xem tất cả.
+    if (session.role === 'ROLE_CASHIER' && `${data.cashierId}` !== `${session.actorId}`) {
+      throw AppError.forbidden('Bạn chỉ được xem yêu cầu duyệt của chính mình.');
+    }
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return handleApiError(error);
@@ -47,11 +52,14 @@ export async function POST(
     const body = await req.json();
     const { action, method, shortCode, qrToken, emergencyCode, rejectedReason } = body;
 
-    // Thu ngân chỉ được phép gửi mã cấp phép (OTP) hoặc mã khẩn cấp từ Quản lý
+    // Thu ngân chỉ được: gửi mã cấp phép (OTP)/mã khẩn cấp, hoặc HỦY yêu cầu
+    // của chính mình (A1-F: nút "Sửa giỏ và hủy phê duyệt").
     if (session.role === 'ROLE_CASHIER') {
-      if (action !== 'APPROVE' || (method !== 'SHORTCODE_BOUND' && method !== 'OFFLINE_EMERGENCY')) {
+      const isOtpFlow =
+        action === 'APPROVE' && (method === 'SHORTCODE_BOUND' || method === 'OFFLINE_EMERGENCY');
+      if (action !== 'CANCEL' && !isOtpFlow) {
         throw AppError.forbidden(
-          'Thu ngân chỉ có thể mở khóa khi nhập đúng mã cấp phép (OTP 4 số) hoặc mã khẩn cấp từ Quản lý.'
+          'Thu ngân chỉ có thể mở khóa khi nhập đúng mã cấp phép (OTP 4 số), mã khẩn cấp, hoặc hủy yêu cầu của mình.'
         );
       }
     }
@@ -83,7 +91,21 @@ export async function POST(
       return NextResponse.json({ success: true, data });
     }
 
-    throw AppError.invalid(`Hành động '${action}' không được hỗ trợ (chỉ APPROVE hoặc REJECT)`);
+    // A1-F: cashier hủy yêu cầu của mình (hoặc manager/owner hủy hộ) trước
+    // khi sửa giỏ — server chuyển SUPERSEDED có điều kiện, UI mới bỏ khóa.
+    if (action === 'CANCEL') {
+      const data = await DiscountApprovalService.cancelRequest({
+        requestId: params.id,
+        actorContext: {
+          staffId: session.actorId,
+          role: session.role,
+          fullName: session.fullName,
+        },
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    throw AppError.invalid(`Hành động '${action}' không được hỗ trợ (chỉ APPROVE, REJECT hoặc CANCEL)`);
   } catch (error: any) {
     return handleApiError(error);
   }

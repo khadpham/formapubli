@@ -27,7 +27,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data });
     }
 
-    const data = await DiscountApprovalService.listPending(warehouseId);
+    // A1.7: cashier chỉ thấy yêu cầu PENDING của chính mình; manager/owner
+    // thấy toàn bộ (hoặc theo kho khi truyền warehouseId).
+    const data = await DiscountApprovalService.listPending(
+      warehouseId,
+      session.role === 'ROLE_CASHIER' ? session.actorId : undefined
+    );
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return handleApiError(error);
