@@ -15,15 +15,19 @@
     "test:setup": "npx tsx scripts/setup-test-db.ts",
     "test:discount-guard": "npx tsx scripts/test-discount-guard.ts",
     "test:isolated": "npx tsx scripts/run-isolated.ts",
-    "pages:build": "npx @cloudflare/next-on-pages"
+    "pages:build": "npx @cloudflare/next-on-pages",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload"
   },
   "dependencies": {
     "@libsql/client": "^0.10.0",
+    "@opennextjs/cloudflare": "^1.15.1",
     "@zxing/library": "0.21.3",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.33.0",
     "lucide-react": "^0.428.0",
-    "next": "14.2.5",
+    "next": "^14.2.35",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

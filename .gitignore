@@ -1,6 +1,7 @@
 # Dependencies & Build
 node_modules/
 .next/
+.open-next/
 out/
 dist/
 build/
@@ -9,6 +10,7 @@ tsconfig.tsbuildinfo
 
 # Environment Variables & Secrets
 .env
+.dev.vars
 .env.local
 .env.development.local
 .env.test.local

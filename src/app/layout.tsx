@@ -25,12 +25,6 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-// GO-LIVE CLOUDFLARE: toàn bộ app (pages + API routes) chạy Edge Runtime.
-// next-on-pages từ chối build nếu bất kỳ route non-static nào thiếu runtime
-// edge — đặt 1 lần ở root layout để khỏi rải 40 file route. node:crypto/
-// Buffer trong services chạy được nhờ compatibility_flags nodejs_compat.
-export const runtime = 'edge';
-
 export default function RootLayout({
   children,
 }: {
