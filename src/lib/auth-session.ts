@@ -605,12 +605,28 @@ function enforceSessionVersion(sess: SessionPayload, rowVersion: number | null |
  */
 export async function validateSessionAccount(sess: SessionPayload): Promise<void> {
   if (!sess || !sess.actorId) return;
+  // Thử lại đọc DB (tối đa 3 lần, backoff 300/800ms): kết nối Turso lạnh hoặc
+  // sụt nhất thời không được tính là phiên hết hạn. Hết 3 lần mới fail-closed
+  // như cũ — chống vòng lặp "đăng nhập xong bị văng ra bắt đăng nhập lại".
+  let rows: Array<typeof staffAccounts.$inferSelect> = [];
+  let dbOk = false;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, attempt === 1 ? 300 : 800));
+      rows = await db
+        .select()
+        .from(staffAccounts)
+        .where(eq(staffAccounts.staffId, sess.actorId))
+        .limit(1);
+      dbOk = true;
+      break;
+    } catch (err: any) {
+      lastErr = err;
+    }
+  }
   try {
-    const rows = await db
-      .select()
-      .from(staffAccounts)
-      .where(eq(staffAccounts.staffId, sess.actorId))
-      .limit(1);
+    if (!dbOk) throw lastErr || new Error('Database unavailable');
 
     if (isAuthStrict()) {
       if (rows.length === 0 || !rows[0].isActive) {

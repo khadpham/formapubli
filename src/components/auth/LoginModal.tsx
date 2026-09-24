@@ -19,6 +19,10 @@ interface AccountTile {
 
 const ROLE_ORDER: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
 
+// Vai trò ẩn khỏi màn hình chạm-chọn (vẫn đăng nhập được bằng nhập tay nếu cần).
+// Thủ kho + Kế toán thuế không dùng ở quầy hội chợ.
+const HIDDEN_PICKER_ROLES: UserRole[] = ['ROLE_WAREHOUSE', 'ROLE_TAX'];
+
 export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: LoginModalProps) {
   const [accounts, setAccounts] = useState<AccountTile[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -53,9 +57,12 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
         const res = await fetch('/api/auth/accounts', { cache: 'no-store' });
         const json = await res.json();
         if (alive && res.ok && json.success && Array.isArray(json.data)) {
-          setAccounts(json.data);
+          const visible = (json.data as AccountTile[]).filter(
+            (a) => !HIDDEN_PICKER_ROLES.includes(a.role)
+          );
+          setAccounts(visible);
           const firstCashier =
-            json.data.find((a: AccountTile) => a.role === 'ROLE_CASHIER') || json.data[0];
+            visible.find((a: AccountTile) => a.role === 'ROLE_CASHIER') || visible[0];
           if (firstCashier) setSelectedId(firstCashier.staffId);
         }
       } catch {
