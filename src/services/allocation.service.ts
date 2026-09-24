@@ -1,7 +1,6 @@
 import { db } from '../db';
 import { counterAllocations, editions, works, warehouses, stockBalances } from '../db/schema';
 import { eq, and, sql, desc, asc } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
 
 
 export interface CreateAllocationItem {
@@ -84,7 +83,7 @@ export class AllocationService {
         results.push(updated[0]);
       } else {
         // Thêm mới
-        const id = `alloc-${Date.now()}-${randomUUID().substring(0, 8)}`;
+        const id = `alloc-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`;
         const inserted = await db
           .insert(counterAllocations)
           .values({

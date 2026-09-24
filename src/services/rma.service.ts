@@ -2,7 +2,6 @@ import { db } from '../db';
 import { rmaTickets, editions, works, warehouses, orders } from '../db/schema';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
-import { randomUUID } from 'crypto';
 
 
 export type DefectReason =
@@ -62,7 +61,7 @@ export class RmaService {
       throw new Error('Số lượng sách lỗi/cách ly phải lớn hơn 0.');
     }
 
-    const ticketId = `RMA-${new Date().toISOString().substring(0, 10).replace(/-/g, '')}-${randomUUID().substring(0, 6).toUpperCase()}`;
+      const ticketId = `RMA-${new Date().toISOString().substring(0, 10).replace(/-/g, '')}-${crypto.randomUUID().substring(0, 6).toUpperCase()}`;
 
 
     // FIX-07: Bọc toàn bộ kiểm tra tồn + tạo phiếu RMA + 2 bút toán Thẻ Kho trong 1 transaction ACID

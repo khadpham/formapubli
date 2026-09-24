@@ -62,12 +62,30 @@ function hexToBuffer(hex: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+/** base64url UTF-8 thuần Web API (edge-safe, thay Buffer). */
+function base64UrlEncodeUtf8(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function base64UrlDecodeUtf8(input: string): string {
+  let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 /**
  * Ký tạo Session Token: base64Payload.hexSignature
+ * (base64url thuần Web API — edge-safe, không Buffer)
  */
 export async function signSession(payload: SessionPayload, secret = getAuthSecret()): Promise<string> {
   const jsonStr = JSON.stringify(payload);
-  const base64Payload = Buffer.from(jsonStr, 'utf-8').toString('base64url');
+  const base64Payload = base64UrlEncodeUtf8(jsonStr);
   const key = await getCryptoKey(secret);
   const enc = new TextEncoder();
   const signature = await crypto.subtle.sign('HMAC', key, enc.encode(base64Payload));
@@ -90,7 +108,7 @@ export async function verifySession(token: string, secret = getAuthSecret()): Pr
     const isValid = await crypto.subtle.verify('HMAC', key, sigBuffer, enc.encode(base64Payload));
     if (!isValid) return null;
 
-    const jsonStr = Buffer.from(base64Payload, 'base64url').toString('utf-8');
+    const jsonStr = base64UrlDecodeUtf8(base64Payload);
     const payload = JSON.parse(jsonStr) as SessionPayload;
 
     if (!payload.role || !payload.actorId || !payload.expiresAt) return null;

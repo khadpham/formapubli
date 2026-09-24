@@ -1,7 +1,7 @@
-import crypto from 'node:crypto';
 import { db, discountApprovalRequests, warehouses } from '../db';
 import { and, desc, eq, gt, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
+import { hashString } from '../lib/export-hash';
 
 export interface CartItemInput {
   editionId: string;
@@ -29,12 +29,18 @@ function getDiscountSecret(): string {
   return 'formapubli-pos-discount-hmac-secret-2026';
 }
 
-function base64UrlEncode(data: string | Buffer): string {
-  return Buffer.from(data)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+// Edge-safe base64url (không Buffer): Web API thuần, chạy Node/edge/workerd.
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)) as number[]);
+  }
+  return btoa(bin).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function base64UrlEncode(data: string): string {
+  return bytesToBase64Url(new TextEncoder().encode(data));
 }
 
 function base64UrlDecode(str: string): string {
@@ -42,7 +48,38 @@ function base64UrlDecode(str: string): string {
   while (base64.length % 4) {
     base64 += '=';
   }
-  return Buffer.from(base64, 'base64').toString('utf-8');
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+/** HMAC-SHA256 qua WebCrypto (edge-safe) — định dạng base64url giữ nguyên. */
+async function hmacBase64Url(message: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(message)));
+  return bytesToBase64Url(sig);
+}
+
+/** So sánh hằng thời gian (timing-safe) thuần TS — thay crypto.timingSafeEqual. */
+function constTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Hex ngẫu nhiên edge-safe — thay crypto.randomBytes(n).toString('hex'). */
+function randomHex(byteLength: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -66,7 +103,8 @@ export function generateCanonicalCartHash(
     `ord:${orderCode}`,
     `rate:${Math.round(discountRate * 10000)}`
   );
-  return crypto.createHash('sha256').update(tokens.join('|')).digest('hex');
+  // hashString = SHA-256 hex thuần TS (đồng nhất node createHash, edge-safe).
+  return hashString(tokens.join('|'));
 }
 
 /**
@@ -81,30 +119,21 @@ export function extractShortCode(orderCode: string): string {
  * Sinh mã QR-JWT có chữ ký HMAC-SHA256 theo V4.1 §4.2:
  * Payload: { reqId, nonce, cartHash, orderCode, warehouseId, rate, exp }
  */
-export function signQrJwt(payload: Record<string, any>): string {
+export async function signQrJwt(payload: Record<string, any>): Promise<string> {
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64UrlEncode(JSON.stringify(payload));
-  const signature = base64UrlEncode(
-    crypto.createHmac('sha256', getDiscountSecret()).update(`${header}.${body}`).digest()
-  );
+  const signature = await hmacBase64Url(`${header}.${body}`, getDiscountSecret());
   return `${header}.${body}.${signature}`;
 }
 
-export function verifyQrJwt(token: string): Record<string, any> {
+export async function verifyQrJwt(token: string): Promise<Record<string, any>> {
   const parts = token.split('.');
   if (parts.length !== 3) {
     throw AppError.invalid('Mã QR không hợp lệ (sai định dạng JWT)');
   }
   const [header, body, signature] = parts;
-  const expectedSignature = base64UrlEncode(
-    crypto.createHmac('sha256', getDiscountSecret()).update(`${header}.${body}`).digest()
-  );
-  if (
-    !crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    )
-  ) {
+  const expectedSignature = await hmacBase64Url(`${header}.${body}`, getDiscountSecret());
+  if (!constTimeEqual(signature, expectedSignature)) {
     throw AppError.invalid('Chữ ký mã QR không chính xác hoặc đã bị can thiệp');
   }
 
@@ -188,7 +217,7 @@ export class DiscountApprovalService {
         Math.abs(prev.requestedDiscountRate - requestedDiscountRate) < 0.0001
       ) {
         const shortCode = extractShortCode(orderCode);
-        const qrToken = signQrJwt({
+        const qrToken = await signQrJwt({
           reqId: prev.id,
           nonce: prev.nonce,
           cartHash: prev.cartHash,
@@ -216,11 +245,11 @@ export class DiscountApprovalService {
     }
 
     const id = crypto.randomUUID();
-    const nonce = crypto.randomBytes(8).toString('hex');
+    const nonce = randomHex(8);
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString(); // 5 phút TTL
     const shortCode = extractShortCode(orderCode);
 
-    const qrToken = signQrJwt({
+    const qrToken = await signQrJwt({
       reqId: id,
       nonce,
       cartHash,
@@ -331,7 +360,7 @@ export class DiscountApprovalService {
       if (!qrToken) {
         throw AppError.invalid('Thiếu mã QR token để xác thực');
       }
-      const payload = verifyQrJwt(qrToken);
+      const payload = await verifyQrJwt(qrToken);
       if (
         payload.reqId !== request.id ||
         payload.cartHash !== request.cartHash
