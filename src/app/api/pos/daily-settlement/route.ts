@@ -16,12 +16,12 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
+    // B1 (bug #3): báo cáo tổng ngày chỉ OWNER/MANAGER. Cashier xem ca của
+    // mình qua /api/cashbox (server ép actor); warehouse/tax 403 ở endpoint
+    // POS này. Ẩn nút UI thôi là không đủ — chặn ở server.
     await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
-      'ROLE_CASHIER',
-      'ROLE_WAREHOUSE',
-      'ROLE_TAX',
     ] as UserRole[]);
 
     const { searchParams } = new URL(req.url);
