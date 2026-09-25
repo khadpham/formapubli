@@ -116,24 +116,23 @@ export async function POST(req: NextRequest) {
       sessionId: session.sessionId,
     };
 
-    // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce kép route + service)
+    // Bước 1: duyệt / hủy đơn PENDING. Phân quyền + audit nằm trong service
+    // (Cashier chỉ xử lý đơn của chính mình; Owner/Manager mọi đơn).
     if (body.action === 'CONFIRM' || body.action === 'CANCEL') {
       if (userRole === 'ROLE_TAX') {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
       }
-      if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được duyệt/hủy đơn PENDING.' }, { status: 403 });
-      }
       const result = body.action === 'CONFIRM'
-        ? await OrderService.confirmOrder(body.orderId, userRole, actorHeader)
-        : await OrderService.cancelOrder(body.orderId, userRole, body.reason);
-      await recordAuditLog({
-        action: body.action === 'CONFIRM' ? 'ORDER_CONFIRMED' : 'ORDER_CANCELLED',
-        actorRole: userRole,
-        actorId: actorHeader,
-        resource: '/api/orders',
-        details: `${body.action === 'CONFIRM' ? 'Duyệt' : 'Hủy'} đơn online ${body.orderId}${body.reason ? ` (lý do: ${body.reason})` : ''}.`,
-      });
+        ? await OrderService.confirmOrder(
+            body.orderId,
+            userRole,
+            actorHeader,
+            actorContext,
+            body.paymentProofId && body.paymentProofCapturedAt
+              ? { id: body.paymentProofId, capturedAt: body.paymentProofCapturedAt }
+              : undefined
+          )
+        : await OrderService.cancelOrder(body.orderId, userRole, body.reason, actorContext);
       return NextResponse.json({ success: true, data: result });
     }
 

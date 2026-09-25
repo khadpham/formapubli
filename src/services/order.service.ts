@@ -86,6 +86,16 @@ export interface CreateOrderParams {
   }>;
 }
 
+/** Ảnh xác nhận chuyển khoản do client gửi (chốt quy trình, server không kiểm chứng ảnh). */
+export interface TransferPaymentProof {
+  id: string;
+  capturedAt: string;
+}
+
+function requiresPaymentProof(paymentMethod: string | null | undefined): boolean {
+  return paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE';
+}
+
 export interface OrderFingerprint {
   orderCode?: string;
   warehouseId: string;
@@ -948,14 +958,20 @@ export class OrderService {
     return Date.now() > expiry.getTime();
   }
 
-  /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần). Chỉ Manager/Owner. */
-  static async confirmOrder(orderId: string, actorRole: string, actorId = 'staff-admin', actorContext?: ActorContext) {
+  /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần).
+   *  Cashier chỉ duyệt được đơn của chính mình; Owner/Manager duyệt mọi đơn.
+   *  Đơn BANK_TRANSFER/QR_CODE bắt buộc có paymentProof (chốt quy trình, server
+   *  không kiểm chứng ảnh). */
+  static async confirmOrder(
+    orderId: string,
+    actorRole: string,
+    actorId = 'staff-admin',
+    actorContext?: ActorContext,
+    paymentProof?: TransferPaymentProof
+  ) {
     if (actorContext) {
       actorRole = actorContext.role;
       actorId = actorContext.staffId;
-    }
-    if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw AppError.forbidden('Chỉ Manager/Owner được duyệt đơn PENDING.');
     }
 
     return await withDbRetry(async () => {
@@ -966,6 +982,9 @@ export class OrderService {
         const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
         if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
         const ord = rows[0];
+
+        // 1b. Phân quyền ngay trong transaction (route không phải lớp bảo vệ duy nhất)
+        this.assertOrderActor(ord, actorRole, actorId, 'xác nhận');
 
         // 2. Nếu đã completed: kiểm tra xem có phải idempotent retry hợp lệ không
         if (ord.status === 'COMPLETED') {
@@ -990,6 +1009,11 @@ export class OrderService {
         // 3. Nếu trạng thái không phải pending: conflict
         if (ord.status !== 'PENDING_CONFIRMATION') {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
+        }
+
+        // 3b. Đơn chuyển khoản/QR bắt buộc có ảnh xác nhận đã lưu
+        if (requiresPaymentProof(ord.paymentMethod) && (!paymentProof?.id || !paymentProof?.capturedAt)) {
+          throw AppError.invalid('Phải lưu ảnh xác nhận trước khi xác nhận đơn chuyển khoản/QR.');
         }
 
         // 4. Nếu quá hạn thanh toán: commit cập nhật CANCELLED, sau đó ném lỗi ngoài tx
@@ -1068,6 +1092,19 @@ export class OrderService {
           throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi bởi tiến trình khác.');
         }
 
+        // 9. Audit nguyên tử cùng transaction (id xác định → retry không nhân bản)
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-order-confirm-${orderId}`,
+            action: 'ORDER_CONFIRMED',
+            actorRole,
+            actorId,
+            resource: '/api/orders',
+            details: `Xác nhận ${ord.orderCode}; proof=${paymentProof?.id || 'N/A'}; capturedAt=${paymentProof?.capturedAt || 'N/A'}`,
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+
         return { orderId, orderCode: ord.orderCode, status: 'COMPLETED' };
       });
 
@@ -1078,18 +1115,19 @@ export class OrderService {
     });
   }
 
-  /** Hủy đơn PENDING → CANCELLED (có điều kiện, chống race với confirm). Chỉ Manager/Owner. */
+  /** Hủy đơn PENDING → CANCELLED (có điều kiện, chống race với confirm).
+   *  Cashier chỉ hủy được đơn của chính mình; Owner/Manager hủy mọi đơn. */
   static async cancelOrder(orderId: string, actorRole: string, reason?: string, actorContext?: ActorContext) {
     if (actorContext) { actorRole = actorContext.role; }
-    if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw AppError.forbidden('Chỉ Manager/Owner được hủy đơn PENDING.');
-    }
+    const actorId = actorContext?.staffId;
 
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
         const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
         if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
         const ord = rows[0];
+
+        this.assertOrderActor(ord, actorRole, actorId, 'hủy');
 
         if (ord.status === 'CANCELLED') {
           return { orderId, status: 'CANCELLED', isIdempotent: true };
@@ -1110,9 +1148,35 @@ export class OrderService {
           throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi trong khi đang hủy.');
         }
 
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-order-cancel-${orderId}`,
+            action: 'ORDER_CANCELLED',
+            actorRole,
+            actorId: actorId || 'SYSTEM',
+            resource: '/api/orders',
+            details: `Hủy ${ord.orderCode}${reason ? ` (lý do: ${reason})` : ''}`,
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+
         return { orderId, status: 'CANCELLED' };
       });
     });
+  }
+
+  /** Owner/Manager xử lý mọi đơn; Cashier chỉ xử lý đơn có cashierId của chính mình. */
+  private static assertOrderActor(
+    ord: { cashierId: string | null },
+    actorRole: string,
+    actorId: string | undefined,
+    verb: string
+  ): void {
+    const isPrivileged = actorRole === 'ROLE_OWNER' || actorRole === 'ROLE_MANAGER';
+    const isOwnCashierOrder = actorRole === 'ROLE_CASHIER' && !!actorId && ord.cashierId === actorId;
+    if (!isPrivileged && !isOwnCashierOrder) {
+      throw AppError.forbidden(`Cashier chỉ được ${verb} đơn của chính mình.`);
+    }
   }
 
   /** Job dọn đơn PENDING quá hạn (payment_expires_at, fallback TTL 48h) → CANCELLED. */
@@ -1435,6 +1499,21 @@ export class CashboxService {
            isIdempotent: true,
          };
        }
+
+      // Còn đơn chuyển khoản/QR chờ xác nhận → chặn chốt ca (spec §10.3)
+      const pending = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.cashboxSessionId, sessionId),
+            eq(orders.status, 'PENDING_CONFIRMATION')
+          )
+        )
+        .limit(1);
+      if (pending.length > 0) {
+        throw AppError.conflict('Còn đơn chuyển khoản/QR đang chờ. Hãy xác nhận hoặc hủy trước khi chốt ca.');
+      }
 
       const stats = await this.calculateSessionStats(sessionId, tx);
       const expectedCash = session.openingCash + stats.totalCashSales;

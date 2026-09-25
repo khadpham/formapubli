@@ -31,7 +31,7 @@ async function run() {
   const [edA, edB, edC, edD] = roomy;
 
   let passed = 0;
-  const total = 8;
+  const total = 9;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -125,15 +125,35 @@ async function run() {
   try {
     await OrderService.confirmOrder(pend6.orderId, 'ROLE_CASHIER', 'cashier-1');
   } catch (e: any) {
-    if (/Manager\/Owner/.test(e.message)) roleBlocked++;
+    if (/chính mình/.test(e.message)) roleBlocked++;
   }
   try {
     await OrderService.cancelOrder(pend6.orderId, 'ROLE_CASHIER', 'tự hủy');
   } catch (e: any) {
-    if (/Manager\/Owner/.test(e.message)) roleBlocked++;
+    if (/chính mình/.test(e.message)) roleBlocked++;
   }
   await OrderService.cancelOrder(pend6.orderId, 'ROLE_MANAGER', 'dọn test');
-  ok('6. Cashier bị chặn duyệt/hủy', roleBlocked === 2);
+  ok('6. Cashier bị chặn duyệt/hủy đơn người khác', roleBlocked === 2);
+
+  // 6b. Cashier tự duyệt được đơn tại quầy (PENDING) của chính mình, có proof
+  // (schema không có channel RETAIL_POS; kênh bán tại quầy là RETAIL_OFFICE)
+  const pend6b = await OrderService.createOrder({
+    warehouseId: 'wh-au-co',
+    channel: 'RETAIL_OFFICE',
+    customerName: 'Khách Tự Duyệt',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: 'cashier-1',
+    confirmImmediately: false,
+    idempotencyKey: uniq('idem-pos-self'),
+    items: [{ editionId: edC, quantity: 1 }],
+  });
+  const selfProof = { id: 'proof-cashier-1', capturedAt: new Date().toISOString() };
+  const selfConfirmed = await OrderService.confirmOrder(pend6b.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  const selfRetry = await OrderService.confirmOrder(pend6b.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  ok(
+    '6b. Cashier tự duyệt được đơn của mình (retry idempotent)',
+    selfConfirmed.status === 'COMPLETED' && (selfRetry as any).isIdempotent === true
+  );
 
   // 7. Quá TTL: confirm tự hủy + cleanup dọn
   const oldTs = new Date(Date.now() - (PENDING_TTL_HOURS + 1) * 3600000).toISOString();
