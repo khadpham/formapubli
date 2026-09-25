@@ -2,7 +2,7 @@ import { db, orders, orderItems, editions, warehouses, partners, customers, cash
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
-import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, or, isNotNull, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
@@ -897,8 +897,14 @@ export class OrderService {
     // ponytail: đọc thêm 1 row warehouses mỗi lần tính ATP; cache lại khi thành điểm nghẽn đo được.
     if (wh?.warehouseType === 'FAIR_EVENT') return physical;
     const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
+    // Prefilter rộng (siêu tập) trong SQL; quyết định giữ chỗ cuối cùng do
+    // getPendingEffectiveExpiry (một quy tắc hạn duy nhất của hệ thống).
     const held = await txOrDb
-      .select({ qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+      .select({
+        quantity: orderItems.quantity,
+        createdAt: orders.createdAt,
+        paymentExpiresAt: orders.paymentExpiresAt,
+      })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
@@ -906,18 +912,40 @@ export class OrderService {
           eq(orderItems.editionId, editionId),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
-          gte(orders.createdAt, cutoff)
+          or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoff))
         )
       );
-    const heldQty = Number(held[0]?.qty || 0);
+    const now = Date.now();
+    let heldQty = 0;
+    for (const row of held) {
+      const expiry = this.getPendingEffectiveExpiry(row);
+      if (!expiry || expiry.getTime() <= now) continue;
+      heldQty += Number(row.quantity || 0);
+    }
     return physical - heldQty;
   }
 
-  static isPendingExpired(createdAt: string | null): boolean {
-    if (!createdAt) return false;
-    const t = new Date(createdAt).getTime();
-    if (Number.isNaN(t)) return false;
-    return Date.now() - t > PENDING_TTL_HOURS * 3600000;
+  /**
+   * Quy tắc hạn duy nhất cho đơn PENDING (contract §7.1):
+   * - có payment_expires_at (POS counter transfer 30 phút) → dùng giá trị đó;
+   * - đơn PENDING cũ không có → TTL PENDING_TTL_HOURS kể từ createdAt.
+   */
+  static getPendingEffectiveExpiry(order: {
+    createdAt: string | null;
+    paymentExpiresAt?: string | null;
+  }): Date | null {
+    if (!order.createdAt) return null;
+    if (order.paymentExpiresAt) {
+      const explicit = new Date(order.paymentExpiresAt);
+      return Number.isNaN(explicit.getTime()) ? null : explicit;
+    }
+    return new Date(new Date(order.createdAt).getTime() + PENDING_TTL_HOURS * 3600_000);
+  }
+
+  static isPendingExpired(order: { createdAt: string | null; paymentExpiresAt?: string | null }): boolean {
+    const expiry = this.getPendingEffectiveExpiry(order);
+    if (!expiry) return false;
+    return Date.now() > expiry.getTime();
   }
 
   /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần). Chỉ Manager/Owner. */
@@ -964,16 +992,16 @@ export class OrderService {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
         }
 
-        // 4. Nếu hết TTL: commit cập nhật CANCELLED, sau đó ném lỗi ngoài tx
-        if (this.isPendingExpired(ord.createdAt)) {
+        // 4. Nếu quá hạn thanh toán: commit cập nhật CANCELLED, sau đó ném lỗi ngoài tx
+        if (this.isPendingExpired(ord)) {
           await tx
             .update(orders)
             .set({
               status: 'CANCELLED',
-              note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]`,
+              note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá hạn giữ chỗ]`,
             })
             .where(eq(orders.id, orderId));
-          expiredError = AppError.conflict(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
+          expiredError = AppError.conflict('Đơn đã quá hạn giữ chỗ và tự động hủy.');
           return null;
         }
 
@@ -1087,16 +1115,23 @@ export class OrderService {
     });
   }
 
-  /** Job dọn đơn PENDING quá TTL → CANCELLED. Trả về số đơn đã dọn. */
+  /** Job dọn đơn PENDING quá hạn (payment_expires_at, fallback TTL 48h) → CANCELLED. */
   static async cleanupExpiredPending(): Promise<number> {
-    const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
-    const stale = await db.select().from(orders).where(
-      and(eq(orders.status, 'PENDING_CONFIRMATION'), lte(orders.createdAt, cutoff))
-    );
+    const stale = (
+      await db
+        .select({
+          id: orders.id,
+          note: orders.note,
+          createdAt: orders.createdAt,
+          paymentExpiresAt: orders.paymentExpiresAt,
+        })
+        .from(orders)
+        .where(eq(orders.status, 'PENDING_CONFIRMATION'))
+    ).filter((ord) => this.isPendingExpired(ord));
     for (const ord of stale) {
       await db.update(orders).set({
         status: 'CANCELLED',
-        note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]`,
+        note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá hạn giữ chỗ]`,
       }).where(eq(orders.id, ord.id));
     }
     return stale.length;

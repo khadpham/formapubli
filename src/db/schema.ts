@@ -217,6 +217,9 @@ export const orders = sqliteTable('orders', {
   idempotencyKey: text('idempotency_key').notNull().unique(),
   note: text('note'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  // 0022_pos_payment_expiry: hạn thanh toán cho đơn chuyển khoản/QR tại quầy.
+  // NULL = đơn PENDING cũ → dùng TTL 48h (PENDING_TTL_HOURS).
+  paymentExpiresAt: text('payment_expires_at'),
   // Bước 2 — SPX & COD (toàn bộ nullable, additive-only, slot 0012)
   carrier: text('carrier'), // SPX | null (chưa đẩy vận chuyển)
   trackingCode: text('tracking_code'), // Mã vận đơn SPX
