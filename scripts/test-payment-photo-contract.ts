@@ -232,4 +232,45 @@ assert.doesNotMatch(usePhotoRegion.slice(catchIndex), /setPreview\(null\)/, 'L�
 assert.match(usePhotoRegion, /setErrorMessage\('Lưu ảnh thất bại/, 'Lỗi lưu ảnh phải báo rõ cho thu ngân');
 assert.match(camera, /setPreview\(\{/, 'Preview được set khi chụp thành công');
 
+// --- Task 7: modal thanh toán chuyển khoản + gallery ảnh ----------------------
+const transferModal = readSource('src/components/pos/TransferPaymentModal.tsx');
+assert.match(transferModal, /TransferPaymentSession/, 'Modal dùng interface TransferPaymentSession');
+assert.match(transferModal, /remainingMs/, 'Modal có đồng hồ đếm ngược');
+assert.match(transferModal, /setInterval\(update, 1000\)/, 'Đếm ngược cập nhật mỗi giây');
+assert.match(transferModal, /new Date\(session\.expiresAt/, 'Đếm ngược suy ra từ expiresAt');
+assert.match(transferModal, /const expired = Boolean\(session(\?)?\.expiresAt\) && remainingMs === 0/, 'expired suy ra từ đếm ngược');
+assert.match(transferModal, /Chụp màn hình xác nhận/, 'Modal có nút chụp màn hình xác nhận');
+assert.match(transferModal, /Khách chuyển sau/, 'Modal có hành động Khách chuyển sau');
+assert.match(transferModal, /onClick=\{onCancel\}/, 'Modal có hành động hủy tường minh');
+assert.match(transferModal, /onClick=\{onClose\}/, 'Modal có hành động đóng (khách chuyển sau)');
+assert.match(transferModal, /onClick=\{onCapture\}/, 'Modal gọi onCapture');
+assert.match(transferModal, /onClick=\{onConfirm\}/, 'Modal gọi onConfirm');
+assert.match(transferModal, /qrSnapshot\.dataUrl/, 'Modal hiển thị QR từ snapshot');
+assert.match(transferModal, /useModalFocusTrap/, 'Modal dùng focus trap có sẵn');
+// Confirm và chụp bị khoá khi hết hạn / đang bận / chưa có ảnh.
+assert.match(
+  transferModal,
+  /disabled=\{expired \|\| busy \|\| !session\?\.paymentProof\}/,
+  'Nút xác nhận khoá khi hết hạn, đang bận, hoặc chưa có ảnh'
+);
+assert.match(
+  transferModal,
+  /disabled=\{expired \|\| busy\}/,
+  'Nút chụp khoá khi hết hạn hoặc đang bận'
+);
+
+const gallery = readSource('src/components/pos/PaymentPhotoGallery.tsx');
+assert.match(gallery, /listPaymentProofPhotos/, 'Gallery đọc ảnh từ IndexedDB');
+assert.match(gallery, /orderCode\.toLowerCase\(\)\.includes/, 'Gallery lọc theo mã đơn');
+assert.match(gallery, /b\.capturedAt\.localeCompare\(a\.capturedAt\)/, 'Gallery sắp xếp mới nhất trước');
+assert.match(gallery, /navigator\.share/, 'Gallery dùng Web Share API khi có');
+assert.match(gallery, /navigator\.canShare/, 'Gallery kiểm tra canShare trước khi share');
+assert.match(gallery, /new File\(/, 'Gallery đóng gói ảnh thành File để chia sẻ');
+assert.match(gallery, /URL\.createObjectURL/, 'Gallery có fallback tải ảnh xuống');
+assert.match(gallery, /anchor\.download/, 'Fallback tải ảnh dùng thuộc tính download');
+assert.match(gallery, /deletePaymentProofPhoto/, 'Gallery xóa ảnh thủ công');
+assert.match(gallery, /NEEDS_RECONCILIATION/, 'Gallery biết trạng thái cần đối soát');
+assert.match(gallery, /useModalFocusTrap/, 'Gallery dùng focus trap có sẵn');
+assert.doesNotMatch(gallery, /fetch\(|XMLHttpRequest|FormData/, 'Gallery không upload ảnh lên server');
+
 console.log('PASS: transfer payment photo contract.');
