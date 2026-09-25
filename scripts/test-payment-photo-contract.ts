@@ -117,4 +117,66 @@ assert.doesNotMatch(vietQr, /3600_000|24 \* 3600/, 'VietQrPay không tự đặt
 assert.match(vietQr, /Dữ liệu cache/, 'VietQrPay hiển thị nhãn dữ liệu cache');
 assert.match(vietQr, /onQrRef\.current\?\.\(null\)/, 'VietQrPay gọi onQr(null) khi không có tài khoản để xóa QR cũ');
 
+// --- Task 5: kho ảnh chứng minh + retention ---------------------------------
+import { normalizeOfflinePaymentState, prunePaymentProofPhotos, type PaymentProofPhoto } from '../src/lib/offline-db';
+
+const offlineDb = readSource('src/lib/offline-db.ts');
+assert.match(offlineDb, /const DB_VERSION = 2;/, 'IndexedDB phải nâng version 2 cho store ảnh');
+assert.match(offlineDb, /payment_proof_photos/, 'Store ảnh chứng minh phải nằm trong cùng DB');
+assert.match(offlineDb, /keyPath: 'id'/, 'Store ảnh định danh theo id');
+assert.match(offlineDb, /createIndex\('orderCode'/, 'Store ảnh có index theo mã đơn');
+for (const fn of ['savePaymentProofPhoto', 'listPaymentProofPhotos', 'deletePaymentProofPhoto', 'updateOfflineOrderPaymentState']) {
+  assert.match(offlineDb, new RegExp(`export async function ${fn}`), `offline-db phải xuất ${fn}`);
+}
+assert.match(offlineDb, /READY_TO_SYNC[\s\S]*PAID_PENDING_SYNC/, 'Auto-sync chỉ lấy READY_TO_SYNC và PAID_PENDING_SYNC');
+
+function fakePhoto(index: number, syncState: PaymentProofPhoto['syncState'], daysAgo = 0): PaymentProofPhoto {
+  return {
+    id: `photo-${index}`,
+    orderCode: `ORD-20260925-${String(index).padStart(4, '0')}`,
+    warehouseId: 'wh-au-co',
+    cashierId: 'cashier-pos-test',
+    amount: 100000,
+    paymentMethod: 'BANK_TRANSFER',
+    capturedAt: new Date(Date.now() - daysAgo * 86_400_000 - index * 1000).toISOString(),
+    blob: new Blob(['x'], { type: 'image/jpeg' }),
+    syncState,
+  };
+}
+
+// 105 ảnh thường (chỉ 100 ảnh mới nhất được giữ) + 5 ảnh cần đối soát.
+const normalPhotos = Array.from({ length: 105 }, (_, i) => fakePhoto(i, 'LOCAL_ONLY'));
+const reconciliationPhotos = Array.from({ length: 5 }, (_, i) => fakePhoto(200 + i, 'NEEDS_RECONCILIATION'));
+const kept = prunePaymentProofPhotos([...normalPhotos, ...reconciliationPhotos]);
+assert.equal(kept.length, 105, 'Giữ đúng 100 ảnh thường mới nhất + 5 ảnh cần đối soát');
+const keptNormal = kept.filter((p) => p.syncState !== 'NEEDS_RECONCILIATION');
+assert.equal(keptNormal.length, 100, 'Giữ đúng 100 ảnh thường');
+for (const p of reconciliationPhotos) {
+  assert(kept.some((k) => k.id === p.id), `Ảnh NEEDS_RECONCILIATION ${p.id} không bị prune tự động`);
+}
+// fakePhoto giảm capturedAt theo chỉ số: index nhỏ là ảnh mới hơn.
+// 105 ảnh thường → giữ index 0..99, cắt 5 ảnh cũ nhất (100..104).
+for (const p of normalPhotos.filter((item) => Number(item.id.slice('photo-'.length)) >= 100)) {
+  assert(!kept.some((k) => k.id === p.id), `Ảnh thường cũ ${p.id} bị cắt bởi giới hạn 100`);
+}
+assert(kept.some((k) => k.id === 'photo-99'), 'Ảnh thường thứ 100 mới nhất vẫn được giữ');
+assert(kept.some((k) => k.id === 'photo-0'), 'Ảnh thường mới nhất được giữ');
+
+const oldNormal = Array.from({ length: 3 }, (_, i) => fakePhoto(300 + i, 'LOCAL_ONLY', 45));
+const oldReconcile = fakePhoto(400, 'NEEDS_RECONCILIATION', 365);
+const afterAge = prunePaymentProofPhotos([...oldNormal, oldReconcile]);
+assert.equal(afterAge.length, 1, 'Ảnh thường quá 30 ngày bị xóa');
+assert.equal(afterAge[0].id, oldReconcile.id, 'Ảnh cần đối soát miễn xóa theo tuổi');
+
+assert.equal(
+  normalizeOfflinePaymentState({ paymentMethod: 'BANK_TRANSFER', moneyReceived: true } as any),
+  'PAID_PENDING_SYNC',
+  'Suy ra trạng thái từ moneyReceived khi record cũ chưa có paymentState'
+);
+assert.equal(
+  normalizeOfflinePaymentState({ paymentMethod: 'BANK_TRANSFER', moneyReceived: false } as any),
+  'AWAITING_PAYMENT',
+  'Chuyển khoản chưa thu tiền là AWAITING_PAYMENT'
+);
+
 console.log('PASS: transfer payment photo contract.');

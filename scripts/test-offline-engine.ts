@@ -1,5 +1,11 @@
 import { generateUUIDv7, extractTimestampFromUUIDv7 } from '../src/lib/uuidv7';
-import { getOfflineOrderRepairAction, OfflineOrder } from '../src/lib/offline-db';
+import {
+  applySyncErrorToOfflineOrder,
+  getOfflineOrderRepairAction,
+  normalizeOfflinePaymentState,
+  OfflineOrder,
+  OfflinePaymentState,
+} from '../src/lib/offline-db';
 import { OrderService } from '../src/services/order.service';
 import { db, orders, editions, warehouses } from '../src/db';
 import { eq } from 'drizzle-orm';
@@ -195,6 +201,59 @@ async function testOfflineEngine() {
       getOfflineOrderRepairAction({ ...blockedBase, discountRate: 1, isGift: true, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' }) === null,
     'Đơn offline bị chặn chỉ được sửa qua hành động tường minh, không tự mặc định nhận tiền',
     'Cashbox yêu cầu tái gán ca; transfer/QR yêu cầu xác nhận nhận tiền; gift đã miễn'
+  );
+
+  // Trạng thái thanh toán cục bộ: tiền mặt sẵn sàng sync, chuyển khoản/QR cần ảnh
+  // trước khi được coi là đã thu tiền.
+  const normalizeBase: OfflineOrder = {
+    ...blockedBase,
+    id: generateUUIDv7(),
+    orderCode: 'OFF-STATE',
+    idempotencyKey: 'idem-offline-state',
+    syncStatus: 'PENDING',
+  };
+  const states: Array<[string, OfflineOrder, OfflinePaymentState]> = [
+    ['Tiền mặt offline sẵn sàng đồng bộ', { ...normalizeBase, paymentMethod: 'CASH' }, 'READY_TO_SYNC'],
+    ['Chuyển khoản đã thu tiền → chờ sync', { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true }, 'PAID_PENDING_SYNC'],
+    ['QR chưa có ảnh xác nhận → cần đối soát', { ...normalizeBase, paymentMethod: 'QR_CODE' }, 'NEEDS_RECONCILIATION'],
+    [
+      'paymentState tường minh được giữ, moneyReceived false không nâng cấp sai',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: false, paymentState: 'AWAITING_PAYMENT' },
+      'AWAITING_PAYMENT',
+    ],
+    [
+      'Đơn hủy cục bộ giữ nguyên trạng thái',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true, paymentState: 'CANCELLED_LOCAL' },
+      'CANCELLED_LOCAL',
+    ],
+  ];
+  for (const [name, order, expected] of states) {
+    const actual = normalizeOfflinePaymentState(order as OfflineOrder);
+    assert(actual === expected, `Trạng thái thanh toán offline: ${name}`, `Kỳ vọng ${expected}, nhận ${actual}`);
+  }
+
+  // Xung đột ATP / idempotency / két đã đóng phải vào đối soát; lỗi mạng thì
+  // giữ nguyên để retry được, không kẹt đơn vào đối soát.
+  const reconcileBase: OfflineOrder = { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true };
+  for (const code of ['INSUFFICIENT_ATP', 'IDEMPOTENCY_CONFLICT', 'CASHBOX_SESSION_NOT_FOUND']) {
+    const actual = applySyncErrorToOfflineOrder(reconcileBase, code);
+    assert(
+      actual === 'NEEDS_RECONCILIATION',
+      `Lỗi sync ${code} chuyển đơn sang NEEDS_RECONCILIATION`,
+      `Nhận ${actual}`
+    );
+  }
+  const networkState = applySyncErrorToOfflineOrder(reconcileBase, 'NETWORK');
+  assert(
+    networkState === 'PAID_PENDING_SYNC',
+    'Lỗi mạng giữ nguyên trạng thái để thử lại được, không kẹt vào đối soát',
+    `Nhận ${networkState}`
+  );
+  const cashState = applySyncErrorToOfflineOrder({ ...normalizeBase, paymentMethod: 'CASH' }, 'INSUFFICIENT_ATP');
+  assert(
+    cashState === 'READY_TO_SYNC',
+    'Đơn tiền mặt không bị đổi trạng thái vì lỗi ATP của luồng chuyển khoản',
+    `Nhận ${cashState}`
   );
 
   // Dọn dẹp dữ liệu đơn test
