@@ -59,6 +59,17 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      // Gán kho: thu ngân chỉ được mở ca ở đúng kho được phân công.
+      if (session.assignedWarehouseId && `${session.assignedWarehouseId}` !== `${warehouseId}`) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'FORBIDDEN',
+            error: 'Bạn được phân công phụ trách một kho khác. Không thể mở ca tại kho này.',
+          },
+          { status: 403 }
+        );
+      }
 
       const result = await CashboxService.openSession({
         warehouseId,
