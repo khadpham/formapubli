@@ -161,6 +161,13 @@
       "when": 1790400000000,
       "tag": "0022_cashier_session_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0023_warehouse_qr_template_staff_assignment",
+      "breakpoints": true
     }
   ],
   "version": "7"

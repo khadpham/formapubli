@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, staffAccounts, activeSessions } from '@/db';
+import { db, staffAccounts, activeSessions, warehouses } from '@/db';
 import { eq } from 'drizzle-orm';
 import { requireSessionRole, hashStaffPasscodeV2 } from '@/lib/auth-session';
 import { UserRole } from '@/lib/roles';
@@ -95,6 +95,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
       if (isSelf && !next) throw AppError.invalid('Không được tự khóa chính mình.');
       patch.isActive = next;
       notes.push(next ? 'mở khóa' : 'khóa');
+    }
+
+    if (body.assignedWarehouseId !== undefined) {
+      const whId = `${body.assignedWarehouseId || ''}`.trim();
+      if (!whId) {
+        patch.assignedWarehouseId = null;
+        notes.push('bỏ gán kho');
+      } else {
+        const wh = await db.select().from(warehouses).where(eq(warehouses.id, whId)).limit(1);
+        if (!wh[0] || wh[0].isActive !== true) {
+          throw AppError.invalid('Kho được gán không tồn tại hoặc đã ngưng hoạt động.');
+        }
+        patch.assignedWarehouseId = whId;
+        notes.push(`gán kho [${wh[0].code}]`);
+      }
     }
 
     if (Object.keys(patch).length === 0) throw AppError.invalid('Không có gì để cập nhật.');

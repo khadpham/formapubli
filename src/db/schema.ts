@@ -66,6 +66,9 @@ export const warehouses = sqliteTable('warehouses', {
   // V4.1 S1: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT
   warehouseType: text('warehouse_type').default('PHYSICAL_MAIN').notNull(),
   defaultBankAccountId: text('default_bank_account_id').references(() => bankAccounts.id),
+  // Mẫu nội dung chuyển khoản QR riêng theo kho. Biến hỗ trợ: {SL} số lượng,
+  // {MA} mã đơn, {KHO} tên kho, {KH} mã kho. Quản lý tự sửa trong Quản Lý Kho.
+  qrTransferTemplate: text('qr_transfer_template'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -552,10 +555,13 @@ export const staffAccounts = sqliteTable('staff_accounts', {
   // M2 thu hồi session: bump mỗi lần reset passcode; token cũ lệch version -> 401.
   sessionVersion: integer('session_version').default(1).notNull(),
   isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  // Kho được phân công phụ trách (đặc biệt thu ngân hội chợ). Quản lý gán được.
+  assignedWarehouseId: text('assigned_warehouse_id').references(() => warehouses.id),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   roleIdx: index('idx_staff_role').on(table.role),
   activeIdx: index('idx_staff_active').on(table.isActive),
+  warehouseIdx: index('idx_staff_assigned_warehouse').on(table.assignedWarehouseId),
 }));
 
 // 28. Active Sessions (lease một phiên cashier — S-01: giữ máy cũ, chặn máy mới).

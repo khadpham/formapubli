@@ -445,7 +445,7 @@ export function StockOverviewMatrix({
         </div>
 
         {/* Tab & Action Buttons with Keyboard Shortcut Tooltips */}
-        <div className="flex items-center gap-2 flex-wrap relative">
+        <div className="flex items-center gap-2 flex-nowrap overflow-x-auto relative pb-1">
           <div className="bg-slate-100 p-1 rounded-lg flex text-xs font-semibold">
             <button
               type="button"

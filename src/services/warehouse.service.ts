@@ -76,7 +76,7 @@ export class WarehouseService {
    */
   static async updateWarehouse(
     warehouseId: string,
-    patch: { name?: string; address?: string | null; isSellableOnPos?: boolean; isActive?: boolean },
+    patch: { name?: string; address?: string | null; isSellableOnPos?: boolean; isActive?: boolean; qrTransferTemplate?: string | null },
     txOrDb: any = db
   ): Promise<WarehouseRow> {
     const wh = await this.getWarehouse(warehouseId, txOrDb);
@@ -88,6 +88,10 @@ export class WarehouseService {
       set.name = name;
     }
     if (patch.address !== undefined) set.address = patch.address?.trim() || null;
+    if (patch.qrTransferTemplate !== undefined) {
+      // Mẫu nội dung chuyển khoản: quản lý tự soạn, có thể chứa {SL}/{MA}/{KHO}/{KH}.
+      set.qrTransferTemplate = `${patch.qrTransferTemplate || ''}`.slice(0, 180) || null;
+    }
     if (patch.isSellableOnPos !== undefined) set.isSellableOnPos = patch.isSellableOnPos === true;
     if (patch.isActive !== undefined) set.isActive = patch.isActive === true;
     if (Object.keys(set).length === 0) throw AppError.invalid('Không có gì để cập nhật.');

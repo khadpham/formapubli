@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { X, Landmark, Plus, Pencil, Trash2, Power, PowerOff } from 'lucide-react';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
-type Warehouse = { id: string; code: string; name: string; address?: string | null; isActive?: boolean; isSellableOnPos?: boolean; defaultBankAccountId?: string | null };
+type Warehouse = { id: string; code: string; name: string; address?: string | null; isActive?: boolean; isSellableOnPos?: boolean; qrTransferTemplate?: string | null; defaultBankAccountId?: string | null };
 
 export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -17,6 +17,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editAddress, setEditAddress] = useState('');
+  const [editTemplate, setEditTemplate] = useState('');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -157,9 +158,27 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                     placeholder="Địa chỉ (không bắt buộc)"
                     className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                   />
+                  <div>
+                    <input
+                      value={editTemplate}
+                      onChange={(e) => setEditTemplate(e.target.value)}
+                      placeholder="Mẫu nội dung chuyển khoản (bỏ trống = dùng mã đơn)"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                      Mẫu riêng cho kho này. Biến dùng được: <b>{'{SL}'}</b> số lượng · <b>{'{MA}'}</b> mã đơn ·{' '}
+                      <b>{'{KHO}'}</b> tên kho · <b>{'{KH}'}</b> mã kho. Ví dụ: <code className="bg-slate-100 px-1 rounded">{`DH{SL} {KHO}`}</code>
+                    </p>
+                    {editTemplate && (
+                      <p className="text-[10px] text-emerald-700 mt-1">
+                        Xem trước (đơn 3 sản phẩm, mã DH00123):{' '}
+                        <b>{editTemplate.replace(/\{SL\}/g, '3').replace(/\{MA\}/g, 'DH00123').replace(/\{KHO\}/g, w.name).replace(/\{KH\}/g, w.code)}</b>
+                      </p>
+                    )}
+                  </div>
                   <div className="flex gap-1.5">
                     <button
-                      onClick={() => patchWarehouse(w.id, { name: editName, address: editAddress })}
+                      onClick={() => patchWarehouse(w.id, { name: editName, address: editAddress, qrTransferTemplate: editTemplate })}
                       disabled={savingId === w.id}
                       className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-[11px] disabled:opacity-50"
                     >
@@ -184,7 +203,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                   </div>
                   <button
                     title="Sửa tên / địa chỉ kho"
-                    onClick={() => { setEditingId(w.id); setEditName(w.name); setEditAddress(w.address || ''); }}
+                    onClick={() => { setEditingId(w.id); setEditName(w.name); setEditAddress(w.address || ''); setEditTemplate(w.qrTransferTemplate || ''); }}
                     className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600"
                   >
                     <Pencil className="w-3.5 h-3.5" />

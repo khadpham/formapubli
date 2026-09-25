@@ -45,8 +45,9 @@ export async function GET(req: NextRequest) {
       .select({
         staffId: staffAccounts.staffId,
         fullName: staffAccounts.fullName,
-        role: staffAccounts.role,
-        isActive: staffAccounts.isActive,
+      role: staffAccounts.role,
+      isActive: staffAccounts.isActive,
+      assignedWarehouseId: staffAccounts.assignedWarehouseId,
         createdAt: staffAccounts.createdAt,
         sessionVersion: staffAccounts.sessionVersion,
       })

@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
         warehouseType: w.warehouseType,
         isSellableOnPos: w.isSellableOnPos,
         isActive: w.isActive,
+        qrTransferTemplate: (w as any).qrTransferTemplate || null,
         defaultBankAccountId: (w as any).defaultBankAccountId || null,
       })),
     });

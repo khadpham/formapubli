@@ -9,6 +9,7 @@ interface StaffRow {
   fullName: string;
   role: UserRole;
   isActive: boolean;
+  assignedWarehouseId?: string | null;
   createdAt?: string;
   sessionVersion?: number;
   lease?: {
@@ -37,6 +38,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   const [resetPin, setResetPin] = useState('');
   const [editId, setEditId] = useState('');
   const [editName, setEditName] = useState('');
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; code: string; warehouseType?: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,6 +60,11 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
 
   useEffect(() => {
     load();
+    // Danh sách kho để gán phụ trách (thu ngân hội chợ / kho cố định).
+    fetch('/api/warehouses?all=true', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j) => { if (Array.isArray(j?.data)) setWarehouses(j.data); })
+      .catch(() => {});
   }, [load]);
 
   const mutate = async (staffId: string, body: Record<string, unknown>, confirmMsg: string) => {
@@ -216,6 +223,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                 <th className="px-3 py-2">Mã NV</th>
                 <th className="px-3 py-2">Tên</th>
                 <th className="px-3 py-2">Vai trò</th>
+                <th className="px-3 py-2">Kho phụ trách</th>
                 <th className="px-3 py-2">Trạng thái</th>
                 <th className="px-3 py-2 text-right">Thao tác</th>
               </tr>
@@ -255,6 +263,29 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                     ) : (
                       <span className="text-slate-500">{USER_ROLES[r.role]?.label || r.role}</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={r.assignedWarehouseId || ''}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        const wh = warehouses.find((w) => w.id === id);
+                        mutate(
+                          r.staffId,
+                          { assignedWarehouseId: id || null },
+                          id ? `Gán ${r.staffId} phụ trách kho [${wh?.name || id}]?` : `Bỏ gán kho cho ${r.staffId}?`
+                        );
+                      }}
+                      className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold outline-none max-w-[190px]"
+                      title="Gán nhân viên phụ trách kho nào (quản lý trở lên)"
+                    >
+                      <option value="">— Chưa gán —</option>
+                      {warehouses.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}{w.warehouseType === 'FAIR_EVENT' ? ' (hội chợ)' : ''}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-3 py-2">
                     {r.isActive ? (

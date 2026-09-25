@@ -37,6 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.address !== undefined ? { address: body.address } : {}),
       ...(body.isSellableOnPos !== undefined ? { isSellableOnPos: body.isSellableOnPos } : {}),
       ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+      ...(body.qrTransferTemplate !== undefined ? { qrTransferTemplate: body.qrTransferTemplate } : {}),
     });
 
     await recordAuditLog({

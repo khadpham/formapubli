@@ -10,17 +10,50 @@ export function VietQrPay({
   warehouseId,
   amount,
   initialContent,
+  itemCount = 0,
+  warehouseName = '',
+  warehouseCode = '',
   onQr,
 }: {
   warehouseId: string;
   amount: number;
   initialContent: string;
+  itemCount?: number;
+  warehouseName?: string;
+  warehouseCode?: string;
   onQr?: (snapshot: { dataUrl: string; payload: string; accountNo: string; content: string } | null) => void;
 }) {
   const [list, setList] = useState<BankAccount[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [content, setContent] = useState(initialContent);
-  const [qrUrl, setQrUrl] = useState('');
+  // Mẫu nội dung chuyển khoản RIÊNG THEO KHO (quản lý sửa ở Quản Lý Kho).
+  // Biến hỗ trợ: {SL} tổng số lượng, {MA} mã đơn, {KHO} tên kho, {KH} mã kho.
+  const [template, setTemplate] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!warehouseId) { setTemplate(null); return; }
+    fetch(`/api/warehouses?all=true`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        const w = (j?.data || []).find((x: any) => x.id === warehouseId);
+        setTemplate(w?.qrTransferTemplate || null);
+      })
+      .catch(() => { if (alive) setTemplate(null); });
+    return () => { alive = false; };
+  }, [warehouseId]);
+
+  useEffect(() => {
+    if (!template) { setContent(initialContent); return; }
+    setContent(
+      template
+        .replace(/\{SL\}/g, String(itemCount || 0))
+        .replace(/\{MA\}/g, initialContent || '')
+        .replace(/\{KHO\}/g, warehouseName || '')
+        .replace(/\{KH\}/g, warehouseCode || '')
+    );
+  }, [template, initialContent, itemCount, warehouseName, warehouseCode]);  const [qrUrl, setQrUrl] = useState('');
   const [payload, setPayload] = useState('');
   const reqRef = useRef(0);
   const onQrRef = useRef(onQr);

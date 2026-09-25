@@ -2076,6 +2076,9 @@ export function PosCheckoutTerminal({
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
+                    itemCount={cart.reduce((sum, l) => sum + l.quantity, 0)}
+                    warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
+                    warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
                     onQr={setQrSnapshot}
                   />
                   <MoneyReceivedToggle
@@ -2755,6 +2758,9 @@ export function PosCheckoutTerminal({
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
+                    itemCount={cart.reduce((sum, l) => sum + l.quantity, 0)}
+                    warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
+                    warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
                     onQr={setQrSnapshot}
                   />
                   <MoneyReceivedToggle
