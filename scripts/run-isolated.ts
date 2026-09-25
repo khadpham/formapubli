@@ -95,6 +95,9 @@ async function main() {
   }
 
   const onlyArg = args.find((a) => a.startsWith('--only='));
+  // --continue: suite lỗi (kể cả crash native) không dừng cả chuỗi, để còn suite
+  // phía sau vẫn chạy; cuối chuỗi liệt kê suite lỗi và exit code khác 0.
+  const keepGoing = args.includes('--continue');
   const suites = onlyArg
     ? ALL_SUITES.filter((s) =>
         onlyArg
@@ -120,6 +123,7 @@ async function main() {
   }
 
   let failed = 0;
+  const failedSuites: { suite: string; status: number | null }[] = [];
   for (const suite of suites) {
     console.log(`\n▶ Chạy suite cách ly: ${suite}`);
     const isWin = process.platform === 'win32';
@@ -153,8 +157,13 @@ async function main() {
       shell: false,
     });
     if (res.status !== 0) {
-      console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Dừng chuỗi.`);
       failed = res.status ?? 1;
+      if (keepGoing) {
+        failedSuites.push({ suite, status: res.status });
+        console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Tiếp tục (--continue).`);
+        continue;
+      }
+      console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Dừng chuỗi.`);
       break;
     }
   }
@@ -173,6 +182,10 @@ async function main() {
   }
   console.log('\n🔒 formapubli.db production nguyên vẹn 100% (mtime + size không đổi).');
 
+  if (failedSuites.length > 0) {
+    console.error(`\n❌ ${failedSuites.length}/${suites.length} SUITES THẤT BẠI:`);
+    for (const item of failedSuites) console.error(`   - ${item.suite} (exit ${item.status})`);
+  }
   if (failed !== 0) process.exit(failed);
   console.log(`\n🎉 TOÀN BỘ ${suites.length} SUITES CÁCH LY ĐẠT!`);
 }

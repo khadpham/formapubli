@@ -386,7 +386,7 @@ export async function updateOfflineOrderForRetry(
  */
 export async function savePaymentProofPhoto(photo: PaymentProofPhoto): Promise<void> {
   const db = await getDB();
-  const photos = await listPaymentProofPhotos();
+  const photos = await readAllPaymentProofPhotos();
   const kept = prunePaymentProofPhotos([...photos.filter((item) => item.id !== photo.id), photo]);
   for (const stale of photos) {
     if (!kept.some((item) => item.id === stale.id)) await deletePaymentProofPhoto(stale.id);
@@ -399,7 +399,24 @@ export async function savePaymentProofPhoto(photo: PaymentProofPhoto): Promise<v
   });
 }
 
-export async function listPaymentProofPhotos(): Promise<PaymentProofPhoto[]> {
+/**
+ * Phạm vi xem ảnh: ảnh chỉ thuộc kho đang chọn; thu ngân chỉ thấy ảnh của
+ * chính mình, Owner/Manager thấy cả kho. Lọc ở nguồn để máy thu ngân dùng
+ * chung không lộ ảnh chuyển khoản của kho/thu ngân khác.
+ */
+export interface PaymentProofScope {
+  warehouseId: string;
+  cashierId: string;
+  includeAllCashiers?: boolean;
+}
+
+export function isPhotoInScope(photo: PaymentProofPhoto, scope: PaymentProofScope): boolean {
+  if (photo.warehouseId !== scope.warehouseId) return false;
+  return Boolean(scope.includeAllCashiers) || photo.cashierId === scope.cashierId;
+}
+
+/** Đọc toàn bộ ảnh: dùng cho retention, KHÔNG dùng để hiển thị (xem listPaymentProofPhotos). */
+async function readAllPaymentProofPhotos(): Promise<PaymentProofPhoto[]> {
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PHOTO_STORE, 'readonly');
@@ -407,6 +424,11 @@ export async function listPaymentProofPhotos(): Promise<PaymentProofPhoto[]> {
     req.onsuccess = () => resolve((req.result || []) as PaymentProofPhoto[]);
     req.onerror = () => reject(req.error);
   });
+}
+
+export async function listPaymentProofPhotos(scope: PaymentProofScope): Promise<PaymentProofPhoto[]> {
+  const all = await readAllPaymentProofPhotos();
+  return all.filter((photo) => isPhotoInScope(photo, scope));
 }
 
 export async function deletePaymentProofPhoto(id: string): Promise<void> {

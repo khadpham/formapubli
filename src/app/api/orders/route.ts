@@ -18,6 +18,26 @@ export const dynamic = 'force-dynamic';
 // ---------------------------------------------------------------------------
 const MAX_CASHIER_DISCOUNT_RATE = 0.2;
 
+const PAYMENT_PROOF_MAX_LEN = 200;
+
+/**
+ * Kiểm tra ảnh xác nhận ở biên HTTP: cả hai trường hoặc cùng có, hoặc cùng thiếu.
+ * Giới hạn độ dài để client không phình audit_logs, và bắt buộc capturedAt là ngày hợp lệ.
+ */
+function paymentProofError(body: any): string | null {
+  const id = body?.paymentProofId;
+  const capturedAt = body?.paymentProofCapturedAt;
+  if (id === undefined && capturedAt === undefined) return null;
+  if (id === null || capturedAt === null) return 'Ảnh xác nhận thiếu id hoặc thời điểm chụp.';
+  if (typeof id !== 'string' || !id.trim() || id.length > PAYMENT_PROOF_MAX_LEN) {
+    return 'Mã ảnh xác nhận không hợp lệ.';
+  }
+  if (typeof capturedAt !== 'string' || !Number.isFinite(Date.parse(capturedAt))) {
+    return 'Thời điểm chụp ảnh không hợp lệ.';
+  }
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -121,6 +141,10 @@ export async function POST(req: NextRequest) {
     if (body.action === 'CONFIRM' || body.action === 'CANCEL') {
       if (userRole === 'ROLE_TAX') {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
+      }
+      const proofError = paymentProofError(body);
+      if (proofError) {
+        return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: proofError }, { status: 400 });
       }
       const result = body.action === 'CONFIRM'
         ? await OrderService.confirmOrder(
@@ -245,6 +269,10 @@ export async function POST(req: NextRequest) {
         { success: false, error: 'Thiếu ảnh xác nhận thanh toán cho đơn chuyển khoản/QR.' },
         { status: 403 }
       );
+    }
+    const createProofError = paymentProofError(body);
+    if (createProofError) {
+      return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: createProofError }, { status: 400 });
     }
     const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
       const v = it?.unitDiscountRate;

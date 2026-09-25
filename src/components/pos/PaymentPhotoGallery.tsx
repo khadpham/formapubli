@@ -8,6 +8,9 @@ import { deletePaymentProofPhoto, listPaymentProofPhotos, type PaymentProofPhoto
 
 export interface PaymentPhotoGalleryProps {
   isOpen: boolean;
+  warehouseId: string;
+  cashierId: string;
+  canViewAllCashiers: boolean;
   onClose: () => void;
 }
 
@@ -15,7 +18,13 @@ export interface PaymentPhotoGalleryProps {
  * Thư viện ảnh xác nhận thanh toán trên máy thu ngân.
  * Ảnh chỉ lưu cục bộ: chia sẻ qua Web Share hoặc tải xuống, không upload.
  */
-export function PaymentPhotoGallery({ isOpen, onClose }: PaymentPhotoGalleryProps) {
+export function PaymentPhotoGallery({
+  isOpen,
+  warehouseId,
+  cashierId,
+  canViewAllCashiers,
+  onClose,
+}: PaymentPhotoGalleryProps) {
   const [mounted, setMounted] = useState(false);
   const [photos, setPhotos] = useState<PaymentProofPhoto[]>([]);
   const [query, setQuery] = useState('');
@@ -29,12 +38,14 @@ export function PaymentPhotoGallery({ isOpen, onClose }: PaymentPhotoGalleryProp
 
   const load = useCallback(async () => {
     try {
-      setPhotos(await listPaymentProofPhotos());
+      setPhotos(
+        await listPaymentProofPhotos({ warehouseId, cashierId, includeAllCashiers: canViewAllCashiers })
+      );
       setErrorMessage(null);
     } catch {
       setErrorMessage('Không đọc được thư viện ảnh trên máy này.');
     }
-  }, []);
+  }, [warehouseId, cashierId, canViewAllCashiers]);
 
   useEffect(() => {
     if (!isOpen) return;

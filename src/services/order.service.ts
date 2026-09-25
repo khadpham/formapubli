@@ -1019,12 +1019,8 @@ export class OrderService {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
         }
 
-        // 3b. Đơn chuyển khoản/QR bắt buộc có ảnh xác nhận đã lưu
-        if (requiresPaymentProof(ord.paymentMethod) && (!paymentProof?.id || !paymentProof?.capturedAt)) {
-          throw AppError.invalid('Phải lưu ảnh xác nhận trước khi xác nhận đơn chuyển khoản/QR.');
-        }
-
-        // 4. Nếu quá hạn thanh toán: commit cập nhật CANCELLED, sau đó ném lỗi ngoài tx
+        // 3b. Quá hạn trước, proof sau: đơn hết hạn phải báo quá hạn và tự hủy
+        // ngay, không bị chặn bởi lỗi "thiếu ảnh" và không chờ cleanup job.
         if (this.isPendingExpired(ord)) {
           await tx
             .update(orders)
@@ -1035,6 +1031,11 @@ export class OrderService {
             .where(eq(orders.id, orderId));
           expiredError = AppError.conflict('Đơn đã quá hạn giữ chỗ và tự động hủy.');
           return null;
+        }
+
+        // 3c. Đơn chuyển khoản/QR bắt buộc có ảnh xác nhận đã lưu
+        if (requiresPaymentProof(ord.paymentMethod) && (!paymentProof?.id || !paymentProof?.capturedAt)) {
+          throw AppError.invalid('Phải lưu ảnh xác nhận trước khi xác nhận đơn chuyển khoản/QR.');
         }
 
          if (ord.cashboxSessionId) {

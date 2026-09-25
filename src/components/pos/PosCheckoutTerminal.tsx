@@ -295,8 +295,6 @@ export function PosCheckoutTerminal({
   const [pendingApprovalRequestId, setPendingApprovalRequestId] = useState<string | null>(null);
   const [isCancellingApproval, setIsCancellingApproval] = useState(false);
   const [approvalCancelError, setApprovalCancelError] = useState<string | null>(null);
-  // F5 (#8): chuyển khoản/QR phải được thu ngân xác nhận TAY "Đã nhận tiền" trước khi chốt
-  const [isMoneyReceived, setIsMoneyReceived] = useState(false);
   // Luồng chuyển khoản/QR theo đơn thật: tạo đơn PENDING → QR → chụp ảnh → xác nhận.
   const [transferSession, setTransferSession] = useState<TransferPaymentSession | null>(null);
   const [isTransferCameraOpen, setIsTransferCameraOpen] = useState(false);
@@ -410,10 +408,6 @@ export function PosCheckoutTerminal({
   // BV-03: chế độ Tặng sách 100% (doanh thu 0đ, vẫn trừ kho)
   const [isGift, setIsGift] = useState(false);
   const [giftReason, setGiftReason] = useState('Tặng sách / Quà tặng sự kiện');
-
-  useEffect(() => {
-    setIsMoneyReceived(false);
-  }, [cart, discountRate, selectedWarehouseId, isGift, paymentMethod]);
 
 
   // Micro giọng nói tiếng Việt đồng bộ
@@ -1311,7 +1305,6 @@ export function PosCheckoutTerminal({
        setIsScannerOpen(false);
        setAmbiguousMatches(null);
        setCart([]);
-      setIsMoneyReceived(false);
       setNote('');
       setQrSnapshot(null);
       setIsGift(false);
@@ -1356,7 +1349,7 @@ export function PosCheckoutTerminal({
            channel,
            discountRate: isGift ? 1 : discountRate,
            paymentMethod,
-           moneyReceived: isMoneyReceived,
+           moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
            cashierId,
            cashboxSessionId: activeSession?.id,
@@ -1531,7 +1524,7 @@ export function PosCheckoutTerminal({
            customerName,
            discountRate: isGift ? 1 : discountRate,
            paymentMethod,
-           moneyReceived: isMoneyReceived,
+           moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
           cashierId,
           cashboxSessionId: activeSession?.id,
@@ -2699,7 +2692,6 @@ export function PosCheckoutTerminal({
                     value={paymentMethod === 'QR_CODE' ? 'BANK_TRANSFER' : paymentMethod}
                     onChange={(e) => {
                       setPaymentMethod(e.target.value as any);
-                      setIsMoneyReceived(false);
                     }}
                     className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                   >
@@ -2815,7 +2807,13 @@ export function PosCheckoutTerminal({
       )}
 
       {isPhotoGalleryOpen && mounted && (
-        <PaymentPhotoGallery isOpen={isPhotoGalleryOpen} onClose={() => setIsPhotoGalleryOpen(false)} />
+        <PaymentPhotoGallery
+          isOpen={isPhotoGalleryOpen}
+          warehouseId={selectedWarehouseId}
+          cashierId={cashierActorId}
+          canViewAllCashiers={currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER'}
+          onClose={() => setIsPhotoGalleryOpen(false)}
+        />
       )}
 
       {/* Order Success Receipt Modal */}
@@ -3474,7 +3472,6 @@ export function PosCheckoutTerminal({
                   value={paymentMethod === 'QR_CODE' ? 'BANK_TRANSFER' : paymentMethod}
                   onChange={(e) => {
                     setPaymentMethod(e.target.value as any);
-                    setIsMoneyReceived(false);
                   }}
                   className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                 >

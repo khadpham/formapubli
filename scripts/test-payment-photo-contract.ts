@@ -39,6 +39,48 @@ import {
   writeBankAccountsCache,
 } from '../src/lib/bank-account-cache';
 
+const photoOf = (id: string, warehouseId: string, cashierId: string): PaymentProofPhoto => ({
+  id,
+  orderCode: `ORD-20260925-${id}`,
+  warehouseId,
+  cashierId,
+  amount: 150000,
+  paymentMethod: 'BANK_TRANSFER',
+  capturedAt: '2026-09-25T10:00:00.000Z',
+  blob: new Blob(['x'], { type: 'image/jpeg' }),
+  syncState: 'LOCAL_ONLY',
+});
+
+const mineAuCo = photoOf('p1', 'wh-au-co', 'cashier-1');
+const otherCashierAuCo = photoOf('p2', 'wh-au-co', 'cashier-2');
+const otherWarehouse = photoOf('p3', 'wh-quynh-mai', 'cashier-1');
+
+assert.equal(
+  isPhotoInScope(mineAuCo, { warehouseId: 'wh-au-co', cashierId: 'cashier-1' }),
+  true,
+  'Thu ngân thấy ảnh của chính mình'
+);
+assert.equal(
+  isPhotoInScope(otherCashierAuCo, { warehouseId: 'wh-au-co', cashierId: 'cashier-1' }),
+  false,
+  'Thu ngân KHÔNG thấy ảnh của thu ngân khác'
+);
+assert.equal(
+  isPhotoInScope(otherWarehouse, { warehouseId: 'wh-au-co', cashierId: 'cashier-1' }),
+  false,
+  'KHÔNG thấy ảnh của kho khác'
+);
+assert.equal(
+  isPhotoInScope(otherCashierAuCo, { warehouseId: 'wh-au-co', cashierId: 'cashier-1', includeAllCashiers: true }),
+  true,
+  'Owner/Manager thấy ảnh mọi thu ngân trong kho'
+);
+assert.equal(
+  isPhotoInScope(otherWarehouse, { warehouseId: 'wh-au-co', cashierId: 'cashier-1', includeAllCashiers: true }),
+  false,
+  'Kể cả Owner/Manager cũng KHÔNG thấy ảnh kho khác'
+);
+
 const account = {
   id: 'ba-1',
   label: 'VietinBank — Âu Cơ',
@@ -135,7 +177,7 @@ assert.match(vietQr, /Dữ liệu cache/, 'VietQrPay hiển thị nhãn dữ li�
 assert.match(vietQr, /onQrRef\.current\?\.\(null\)/, 'VietQrPay gọi onQr(null) khi không có tài khoản để xóa QR cũ');
 
 // --- Task 5: kho ảnh chứng minh + retention ---------------------------------
-import { normalizeOfflinePaymentState, prunePaymentProofPhotos, type PaymentProofPhoto } from '../src/lib/offline-db';
+import { isPhotoInScope, normalizeOfflinePaymentState, prunePaymentProofPhotos, type PaymentProofPhoto } from '../src/lib/offline-db';
 
 const offlineDb = readSource('src/lib/offline-db.ts');
 assert.match(offlineDb, /const DB_VERSION = 2;/, 'IndexedDB phải nâng version 2 cho store ảnh');
