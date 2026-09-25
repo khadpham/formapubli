@@ -154,8 +154,117 @@ async function run() {
   assert.equal(closedB.status, 'CLOSED');
   console.log('✓ Chốt ca bị chặn khi còn đơn PENDING, mở lại được sau khi xử lý');
 
-  raw.close();
   console.log('TRANSFER PAYMENT AUTHZ PASS');
+
+  // ---------------------------------------------------------------- Task 3 ---
+  const { POST: ordersPost } = await import('../src/app/api/orders/route');
+  const { signSession, SESSION_COOKIE_NAME } = await import('../src/lib/auth-session');
+
+  const cookieFor = async (actor: { staffId: string; role: string }) =>
+    `${SESSION_COOKIE_NAME}=${await signSession({
+      role: actor.role as any,
+      actorId: actor.staffId,
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 3600_000,
+    })}`;
+
+  let seq = 0;
+  const baseBody = (overrides: Record<string, any> = {}) => ({
+    warehouseId: 'wh-au-co',
+    channel: 'RETAIL_OFFICE',
+    customerName: `Khách chuyển khoản ${Date.now()}-${seq++}`,
+    paymentMethod: 'CASH',
+    fiscalScope: 'INTERNAL_MANAGEMENT',
+    cashboxSessionId: sessionA.session.id,
+    items: [{ editionId: 'ed-tp-1', quantity: 1 }],
+    ...overrides,
+  });
+  const postAs = async (body: Record<string, any>, actor: { staffId: string; role: string } = CASHIER_A) => {
+    const res: any = await ordersPost(
+      new Request('http://localhost/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: await cookieFor(actor) },
+        body: JSON.stringify(body),
+      }) as any
+    );
+    return { status: res.status as number, json: await res.json() };
+  };
+
+  // 3.1 Đơn chuyển khoản tại quầy tạo trước, không cần moneyReceived
+  const pendingRes = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false, moneyReceived: false }));
+  assert.equal(pendingRes.status, 200, `pending: ${JSON.stringify(pendingRes.json)}`);
+  const pendingData = pendingRes.json.data;
+  assert.equal(pendingData.status, 'PENDING_CONFIRMATION');
+
+  // 3.2 Hạn 30 phút do server đặt, không nhận từ client
+  const pendingRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, pendingData.orderId)))[0];
+  const expiresInMs = new Date(pendingRow.paymentExpiresAt as string).getTime() - Date.now();
+  assert.ok(
+    expiresInMs > 29 * 60_000 && expiresInMs <= 30 * 60_000,
+    `hạn counter transfer phải ~30 phút, thực tế ${expiresInMs}ms`
+  );
+  console.log('✓ Đơn chuyển khoản tạo trước, hạn 30 phút do server đặt');
+
+  // 3.3 Đồng bộ offline (digital tức thì) thiếu proof vẫn bị chặn
+  const noProofRes = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', moneyReceived: true }));
+  assert.equal(noProofRes.status, 403);
+
+  // 3.4 Đồng bộ offline đủ proof → COMPLETED + audit chốt quy trình
+  const offlineRes = await postAs(baseBody({
+    paymentMethod: 'BANK_TRANSFER',
+    moneyReceived: true,
+    paymentProofId: 'proof-offline-1',
+    paymentProofCapturedAt: new Date().toISOString(),
+  }));
+  assert.equal(offlineRes.status, 200, `offline: ${JSON.stringify(offlineRes.json)}`);
+  assert.equal(offlineRes.json.data.status, 'COMPLETED');
+  const offlineAudit = await db
+    .select()
+    .from(schema.auditLogs)
+    .where(eq(schema.auditLogs.id, `aud-order-${offlineRes.json.data.orderId}-transfer-payment-confirmation`));
+  assert.equal(offlineAudit.length, 1, 'phải ghi audit transfer-payment-confirmation');
+  assert.equal(offlineAudit[0].action, 'ORDER_CONFIRMED');
+  console.log('✓ Sync offline digital bắt buộc có proof + audit ORDER_CONFIRMED');
+
+  // 3.5 Tiền mặt không đổi
+  const cashRes = await postAs(baseBody({ paymentMethod: 'CASH' }));
+  assert.equal(cashRes.status, 200);
+  assert.equal(cashRes.json.data.status, 'COMPLETED');
+  console.log('✓ Đơn tiền mặt vẫn hoàn tất ngay, không đòi proof');
+
+  // 3.6 Cashier qua API: duyệt được đơn mình, không duyệt được đơn người khác
+  const selfConfirm = await postAs(
+    { action: 'CONFIRM', orderId: pendingData.orderId, paymentProofId: 'proof-route-1', paymentProofCapturedAt: new Date().toISOString() },
+    CASHIER_A
+  );
+  assert.equal(selfConfirm.status, 200, `self confirm: ${JSON.stringify(selfConfirm.json)}`);
+  assert.equal(selfConfirm.json.data.status, 'COMPLETED');
+
+  const otherRes = await postAs(
+    { action: 'CONFIRM', orderId: pendingData.orderId, paymentProofId: 'proof-route-2', paymentProofCapturedAt: new Date().toISOString() },
+    CASHIER_B
+  );
+  assert.equal(otherRes.status, 403, `cashier khác phải bị chặn: ${JSON.stringify(otherRes.json)}`);
+  console.log('✓ API chỉ cho cashier duyệt đơn của chính mình');
+
+  // 3.7 ATP giữ chỗ theo hạn riêng: hết 30 phút thì nhả ATP + job dọn hủy
+  const heldOrder = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const heldId = heldOrder.json.data.orderId;
+  const atpHeld = await OrderService.getATP('ed-tp-1', 'wh-au-co');
+  const physical = await (await import('../src/services/inventory.service')).InventoryService.getBalance('ed-tp-1', 'wh-au-co', 'NEW');
+  assert.equal(physical - atpHeld, 1, 'đơn PENDING còn hạn phải giữ 1 cuốn ATP');
+  await db
+    .update(schema.orders)
+    .set({ paymentExpiresAt: new Date(Date.now() - 60_000).toISOString() })
+    .where(eq(schema.orders.id, heldId));
+  const cleanedCount = await OrderService.cleanupExpiredPending();
+  const atpAfterCleanup = await OrderService.getATP('ed-tp-1', 'wh-au-co');
+  assert.equal(atpAfterCleanup, physical, 'đơn quá hạn phải nhả ATP');
+  assert.ok(cleanedCount >= 1);
+  console.log('✓ Đơn counter transfer hết hạn được dọn và giải phóng ATP');
+
+  raw.close();
+  console.log('TRANSFER PAYMENT API CONTRACT PASS');
 }
 
 run().catch((error) => {

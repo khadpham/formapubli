@@ -408,6 +408,12 @@ export class OrderService {
     }
 
     const isPending = confirmImmediately === false;
+    // POS counter transfer: PENDING hạn 30 phút (đơn PENDING khác giữ TTL 48h).
+    // Hạn do server đặt, không nhận từ client.
+    const isCounterTransfer = isPending && requiresPaymentProof(paymentMethod) && Boolean(params.cashboxSessionId);
+    const paymentExpiresAt = isCounterTransfer
+      ? new Date(Date.now() + 30 * 60_000).toISOString()
+      : null;
     if (isPending && params.discountApprovalId) {
       throw AppError.invalid('Đơn chờ xác nhận không được dùng approval chiết khấu.');
     }
@@ -639,6 +645,7 @@ export class OrderService {
           vatInvoiceRequired,
           vatInvoiceCode,
           status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
+          paymentExpiresAt,
           syncStatus: 'SYNCED',
           cashierId: effCashierId,
           cashboxSessionId: params.cashboxSessionId,

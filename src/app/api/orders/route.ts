@@ -230,9 +230,19 @@ export async function POST(req: NextRequest) {
       safeFiscalScope = 'INTERNAL_MANAGEMENT';
     }
     const effectivePaymentMethod = paymentMethod || 'CASH';
-    if (!giftFlag && (effectivePaymentMethod === 'BANK_TRANSFER' || effectivePaymentMethod === 'QR_CODE') && moneyReceived !== true) {
+    const isDigitalMethod = effectivePaymentMethod === 'BANK_TRANSFER' || effectivePaymentMethod === 'QR_CODE';
+    // Đơn chuyển khoản/QR tại quầy: tạo PENDING trước (confirmImmediately:false),
+    // không cần moneyReceived. Đồng bộ offline tức thì vẫn phải có proof.
+    const isImmediateDigital = isDigitalMethod && confirmImmediately !== false && !giftFlag;
+    if (isImmediateDigital && moneyReceived !== true) {
       return NextResponse.json(
         { success: false, error: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' },
+        { status: 403 }
+      );
+    }
+    if (isImmediateDigital && (!body.paymentProofId || !body.paymentProofCapturedAt)) {
+      return NextResponse.json(
+        { success: false, error: 'Thiếu ảnh xác nhận thanh toán cho đơn chuyển khoản/QR.' },
         { status: 403 }
       );
     }
@@ -357,6 +367,16 @@ export async function POST(req: NextRequest) {
             actorId: approvalAuditActorId,
             resource: '/api/orders',
             details: (committedOrderCode: string) => `Duyệt đơn Tặng 100% (GIFT) ${committedOrderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
+          }]
+        : []),
+      ...(isImmediateDigital
+        ? [{
+            id: 'transfer-payment-confirmation',
+            action: 'ORDER_CONFIRMED',
+            actorRole: userRole,
+            actorId: actorHeader,
+            resource: '/api/orders',
+            details: (committedOrderCode: string) => `Xác nhận offline ${committedOrderCode}; proof=${body.paymentProofId}; capturedAt=${body.paymentProofCapturedAt}.`,
           }]
         : []),
     ];
