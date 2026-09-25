@@ -35,6 +35,13 @@ const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE'
 // Bước 1: TTL giữ chỗ ATP cho đơn PENDING (giờ). Quá hạn coi như nhả chỗ.
 export const PENDING_TTL_HOURS = 48;
 
+// Trần số đơn chuyển khoản CHƯA THU TIỀN mà một thu ngân được giữ ATP tại một kho.
+// Lý do: mỗi đơn PENDING chuyển khoản giữ ATP 30' (quầy) hoặc 48h (web) mà không
+// thu được đồng nào; không có trần thì một thu ngân hoặc một client lỗi mở vô hạn
+// đơn là giữ chỗ hết kho. Trần đi theo (thu ngân, kho) — mức độ thiệt hại bị chặn
+// đúng ở giỏ hàng, và 409 buộc thu ngân phải thu tiền hoặc hủy đơn cũ.
+export const MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER = 5;
+
 // P2-10: đơn gõ bù tối đa 7 ngày tuổi; tương lai quá 5 phút dung sai đồng hồ là từ chối.
 export const BACKDATE_LIMIT_DAYS = 7;
 export const FUTURE_SKEW_MINUTES = 5;
@@ -92,8 +99,10 @@ export interface TransferPaymentProof {
   capturedAt: string;
 }
 
+const TRANSFER_PAYMENT_METHODS: OrderPaymentMethod[] = ['BANK_TRANSFER', 'QR_CODE'];
+
 function requiresPaymentProof(paymentMethod: string | null | undefined): boolean {
-  return paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE';
+  return TRANSFER_PAYMENT_METHODS.includes(paymentMethod as OrderPaymentMethod);
 }
 
 export interface OrderFingerprint {
@@ -596,6 +605,34 @@ export class OrderService {
           if (atp < qty) {
             throw AppError.atp(
               `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
+            );
+          }
+        }
+
+        // B2b. Trần giữ ATP (xem MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER): chỉ đơn
+        // chuyển khoản/QR chờ thanh toán mới giữ chỗ, Manager/Owner được miễn.
+        // Đếm ngay trong transaction để hai lần tạo song song không cùng lọt qua trần.
+        const creatorRole = params.actorContext?.role;
+        const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
+        if (isPending && requiresPaymentProof(paymentMethod) && !creatorIsPrivileged) {
+          const openHolds = (
+            await tx
+              .select({ createdAt: orders.createdAt, paymentExpiresAt: orders.paymentExpiresAt })
+              .from(orders)
+              .where(
+                and(
+                  eq(orders.status, 'PENDING_CONFIRMATION'),
+                  eq(orders.cashierId, effCashierId),
+                  eq(orders.warehouseId, warehouseId),
+                  inArray(orders.paymentMethod, TRANSFER_PAYMENT_METHODS)
+                )
+              )
+          ).filter((o) => !this.isPendingExpired(o));
+          if (openHolds.length >= MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER) {
+            throw AppError.conflict(
+              `Thu ngân đã có ${openHolds.length} đơn chuyển khoản chờ thanh toán tại kho này ` +
+                `(tối đa ${MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER}). ` +
+                `Vui lòng xác nhận hoặc hủy các đơn cũ trước khi tạo đơn mới.`
             );
           }
         }
@@ -1127,10 +1164,18 @@ export class OrderService {
   }
 
   /** Hủy đơn PENDING → CANCELLED (có điều kiện, chống race với confirm).
-   *  Cashier chỉ hủy được đơn của chính mình; Owner/Manager hủy mọi đơn. */
-  static async cancelOrder(orderId: string, actorRole: string, reason?: string, actorContext?: ActorContext) {
+   *  Cashier chỉ hủy được đơn của chính mình; Owner/Manager hủy mọi đơn.
+   *  `actorId` tường minh (nếu không dùng actorContext) để audit không bao giờ
+   *  ghi SYSTEM cho một quyết định của con người. */
+  static async cancelOrder(
+    orderId: string,
+    actorRole: string,
+    reason?: string,
+    actorContext?: ActorContext,
+    actorId?: string
+  ) {
     if (actorContext) { actorRole = actorContext.role; }
-    const actorId = actorContext?.staffId;
+    const resolvedActorId = actorContext?.staffId ?? actorId;
 
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
@@ -1138,7 +1183,7 @@ export class OrderService {
         if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
         const ord = rows[0];
 
-        this.assertOrderActor(ord, actorRole, actorId, 'hủy');
+        this.assertOrderActor(ord, actorRole, resolvedActorId, 'hủy');
 
         if (ord.status === 'CANCELLED') {
           return { orderId, status: 'CANCELLED', isIdempotent: true };
@@ -1178,7 +1223,11 @@ export class OrderService {
             id: `aud-order-cancel-${orderId}`,
             action: 'ORDER_CANCELLED',
             actorRole,
-            actorId: actorId || 'SYSTEM',
+            // Mọi hủy đơn ở đây đều do con người quyết định (đã qua assertOrderActor).
+            // Không có mã nhân viên thì ghi đúng vai trò đã khai, TUYỆT ĐỐI không ghi
+            // SYSTEM — SYSTEM chỉ dành cho các đường hủy tự động (cleanup/quá hạn),
+            // vốn không đi qua hàm này.
+            actorId: resolvedActorId || `unattributed:${actorRole}`,
             resource: '/api/orders',
             details: `Hủy ${ord.orderCode}${reason ? ` (lý do: ${reason})` : ''}`,
           })

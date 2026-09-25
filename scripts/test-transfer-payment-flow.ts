@@ -460,6 +460,209 @@ async function run() {
   await OrderService.cancelOrder(untrustedId, 'ROLE_MANAGER', 'dọn test', MANAGER);
   console.log('✓ Regression bảo mật: cleanup có điều kiện, TTL fallback, reason bị chặn, két đóng chặn hủy, actor lạc vai trò bị chặn');
 
+  // ------------------------------------------ Task 5: audit actor integrity ---
+  // Trước hết: đường hủy của hệ thống (cleanup / quá hạn) không được bịa ra audit
+  // con người, và cũng không được ghi SYSTEM cho một quyết định của người.
+  const sysCleanupRes = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
+  const sysCleanupId = sysCleanupRes.json.data.orderId;
+  await db
+    .update(schema.orders)
+    .set({ paymentExpiresAt: new Date(Date.now() - 60_000).toISOString() })
+    .where(eq(schema.orders.id, sysCleanupId));
+  await OrderService.cleanupExpiredPending();
+  const sysAudit = await db
+    .select()
+    .from(schema.auditLogs)
+    .where(eq(schema.auditLogs.id, `aud-order-cancel-${sysCleanupId}`));
+  assert.equal(sysAudit.length, 0, 'hủy bởi hệ thống không được sinh audit con người');
+
+  const sysExpiryRes = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const sysExpiryId = sysExpiryRes.json.data.orderId;
+  await db
+    .update(schema.orders)
+    .set({ paymentExpiresAt: new Date(Date.now() - 60_000).toISOString() })
+    .where(eq(schema.orders.id, sysExpiryId));
+  await assert.rejects(
+    () => OrderService.confirmOrder(sysExpiryId, 'ROLE_MANAGER', 'manager-1', MANAGER),
+    (error: any) => error?.code === 'STATE_CONFLICT'
+  );
+  const sysExpiryAudit = await db
+    .select()
+    .from(schema.auditLogs)
+    .where(eq(schema.auditLogs.id, `aud-order-cancel-${sysExpiryId}`));
+  assert.equal(sysExpiryAudit.length, 0, 'tự hủy vì quá hạn không được sinh audit con người');
+
+  const auditActorOf = async (orderId: string) => {
+    const rows = await db
+      .select()
+      .from(schema.auditLogs)
+      .where(eq(schema.auditLogs.id, `aud-order-cancel-${orderId}`));
+    return rows[0];
+  };
+
+  // A1. Hủy của cashier phải ghi đúng cashier đó (qua HTTP, session thật).
+  const a1Res = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const a1Id = a1Res.json.data.orderId;
+  const a1Cancel = await postAs({ action: 'CANCEL', orderId: a1Id, reason: 'khách đổi ý' }, CASHIER_A);
+  assert.equal(a1Cancel.status, 200, `cashier hủy đơn mình: ${JSON.stringify(a1Cancel.json)}`);
+  const a1Audit = await auditActorOf(a1Id);
+  assert.ok(a1Audit, 'hủy của cashier phải có audit');
+  assert.equal(a1Audit.actorId, CASHIER_A.staffId, 'audit phải ghi đúng cashier đã hủy');
+  assert.equal(a1Audit.actorRole, 'ROLE_CASHIER');
+
+  // A2. Hủy của manager phải ghi đúng manager đó.
+  const a2Res = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const a2Id = a2Res.json.data.orderId;
+  const a2Cancel = await postAs({ action: 'CANCEL', orderId: a2Id, reason: 'quản lý dọn đơn' }, MANAGER);
+  assert.equal(a2Cancel.status, 200, `manager hủy đơn: ${JSON.stringify(a2Cancel.json)}`);
+  const a2Audit = await auditActorOf(a2Id);
+  assert.ok(a2Audit, 'hủy của manager phải có audit');
+  assert.equal(a2Audit.actorId, MANAGER.staffId, 'audit phải ghi đúng manager đã hủy');
+  assert.equal(a2Audit.actorRole, 'ROLE_MANAGER');
+
+  // A3. Không resolve được con người nào (cashier không định danh) → fail loud,
+  //     tuyệt đối không ghi SYSTEM.
+  const a3Res = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const a3Id = a3Res.json.data.orderId;
+  await assert.rejects(
+    () => OrderService.cancelOrder(a3Id, 'ROLE_CASHIER', 'không rõ ai'),
+    (error: any) => error?.code === 'FORBIDDEN',
+    'hủy mà không resolve được actor phải ném lỗi'
+  );
+  assert.equal(await auditActorOf(a3Id), undefined, 'hủy lỗi không được để lại audit');
+  const a3Row = (await db.select().from(schema.orders).where(eq(schema.orders.id, a3Id)))[0];
+  assert.equal(a3Row.status, 'PENDING_CONFIRMATION', 'đơn phải còn nguyên PENDING');
+
+  // A4. Manager gọi service không kèm định danh (đường legacy/test) → audit vẫn
+  //     phải trung thực: nêu vai trò, KHÔNG ghi SYSTEM.
+  const a4Res = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const a4Id = a4Res.json.data.orderId;
+  await OrderService.cancelOrder(a4Id, 'ROLE_MANAGER', 'dọn test');
+  const a4Audit = await auditActorOf(a4Id);
+  assert.ok(a4Audit, 'hủy phải có audit');
+  assert.notEqual(a4Audit.actorId, 'SYSTEM', 'quyết định của người không được ghi SYSTEM');
+  assert.equal(a4Audit.actorRole, 'ROLE_MANAGER');
+  assert.ok(
+    !/^staff-admin$/.test(String(a4Audit.actorId)),
+    `không được mượn định danh giả: ${a4Audit.actorId}`
+  );
+  console.log('✓ Audit hủy: cashier ghi đúng cashier, manager ghi đúng manager, không ai thì không ghi SYSTEM');
+
+  // ---------------------------------------------- Task 5: ATP hostage cap ---
+  const CAP_WH = 'wh-cap';
+  const { MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER: MAX_HOLDS } = await import('../src/services/order.service');
+  assert.equal(typeof MAX_HOLDS, 'number', 'trần giữ chỗ phải là hằng số có tên');
+  await db.insert(schema.warehouses).values({
+    id: CAP_WH, code: 'KHO_CAP', name: 'Kho Cap', isActive: true,
+    isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN',
+  });
+  await db.insert(schema.editions).values({
+    id: 'ed-cap-1', code: 'CAP1', workId: 'work-tp', title: 'Sách cap 1',
+    isbn: '9786040002010', isbnLast4: '2010', coverPrice: 100000,
+  });
+  await db.insert(schema.stockBalances).values({
+    id: 'sb-cap-1', editionId: 'ed-cap-1', warehouseId: CAP_WH, condition: 'NEW', physicalQuantity: 500,
+  });
+  const capSession = await CashboxService.openSession({
+    warehouseId: CAP_WH, cashierId: CASHIER_A.staffId, openingCash: 0,
+  });
+  const capBody = (overrides: Record<string, any> = {}) => ({
+    warehouseId: CAP_WH,
+    channel: 'RETAIL_OFFICE',
+    customerName: `Cap ${Date.now()}-${seq++}`,
+    paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false,
+    cashboxSessionId: capSession.session.id,
+    items: [{ editionId: 'ed-cap-1', quantity: 1 }],
+    ...overrides,
+  });
+  const capIds: string[] = [];
+  for (let i = 0; i < MAX_HOLDS; i++) {
+    const r = await postAs(capBody());
+    assert.equal(r.status, 200, `đơn giữ chỗ ${i + 1}/${MAX_HOLDS}: ${JSON.stringify(r.json)}`);
+    assert.equal(r.json.data.status, 'PENDING_CONFIRMATION');
+    capIds.push(r.json.data.orderId);
+  }
+  // B1. Đơn thứ N+1 không trả tiền → 409 kèm thông báo hành động được
+  const overRes = await postAs(capBody());
+  assert.equal(overRes.status, 409, `đơn ${MAX_HOLDS + 1} phải bị chặn: ${JSON.stringify(overRes.json)}`);
+  assert.equal(overRes.json.code, 'STATE_CONFLICT');
+  assert.match(
+    String(overRes.json.error),
+    /đã có \d+ đơn chuyển khoản chờ thanh toán/,
+    'thông báo phải nêu rõ số đơn đang chờ'
+  );
+  assert.match(String(overRes.json.error), /xác nhận hoặc hủy/i, 'thông báo phải chỉ cách xử lý');
+  console.log(`✓ Trần ${MAX_HOLDS} đơn chuyển khoản chờ/thu ngân/kho: đơn ${MAX_HOLDS + 1} bị chặn 409`);
+
+  // B2. Xác nhận (đã trả tiền) hoặc hủy phải nhả chỗ ngay
+  const freed = await postAs({
+    action: 'CONFIRM', orderId: capIds[0],
+    paymentProofId: 'proof-cap-1', paymentProofCapturedAt: nowIso(),
+  });
+  assert.equal(freed.status, 200, `xác nhận nhả chỗ: ${JSON.stringify(freed.json)}`);
+  const afterConfirm = await postAs(capBody());
+  assert.equal(afterConfirm.status, 200, 'xác nhận 1 đơn phải nhả được 1 chỗ');
+  capIds.push(afterConfirm.json.data.orderId);
+
+  const cancelled = await postAs({ action: 'CANCEL', orderId: capIds[1], reason: 'khách bỏ' }, CASHIER_A);
+  assert.equal(cancelled.status, 200, `hủy nhả chỗ: ${JSON.stringify(cancelled.json)}`);
+  const afterCancel = await postAs(capBody());
+  assert.equal(afterCancel.status, 200, 'hủy 1 đơn phải nhả được 1 chỗ');
+  capIds.push(afterCancel.json.data.orderId);
+  assert.equal((await postAs(capBody())).status, 409, 'trần phải đóng lại sau khi đủ chỗ');
+  console.log('✓ Xác nhận / hủy nhả chỗ giữ ATP ngay lập tức');
+
+  // B3. Tiền mặt và quà tặng không bị trần này chi phối
+  const cashAtCap = await postAs(capBody({ paymentMethod: 'CASH', confirmImmediately: true }));
+  assert.equal(cashAtCap.status, 200, `tiền mặt khi đã đầy chỗ: ${JSON.stringify(cashAtCap.json)}`);
+  assert.equal(cashAtCap.json.data.status, 'COMPLETED');
+  const giftAtCap = await postAs(capBody({
+    paymentMethod: 'CASH', confirmImmediately: true, cashboxSessionId: undefined,
+    isGift: true, giftReason: 'tặng khách VIP', customerName: 'Khách tặng',
+  }), MANAGER);
+  assert.equal(giftAtCap.status, 200, `đơn tặng: ${JSON.stringify(giftAtCap.json)}`);
+  assert.equal(giftAtCap.json.data.status, 'COMPLETED');
+  const giftDiscount = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, giftAtCap.json.data.orderId)))[0];
+  assert.equal(giftDiscount.discountRate, 1, 'đơn tặng vẫn chiết khấu 100%');
+  assert.equal((await postAs(capBody())).status, 409, 'tiền mặt/tặng không được nuôi chỗ chuyển khoản');
+  console.log('✓ Tiền mặt và đơn tặng không bị trần giữ chỗ chuyển khoản chi phối');
+
+  // B4. Manager không bị trần này chi phối
+  const mgrRes = await postAs(capBody({ cashboxSessionId: undefined }), MANAGER);
+  assert.equal(mgrRes.status, 200, `manager tạo đơn chuyển khoản: ${JSON.stringify(mgrRes.json)}`);
+
+  // B5. Thu ngân khác / kho khác không dùng chung chỗ của nhau
+  const otherCashier = await postAs(
+    capBody({ cashboxSessionId: undefined, customerName: `B ${Date.now()}-${seq++}` }),
+    CASHIER_B
+  );
+  assert.equal(otherCashier.status, 200, `thu ngân khác vẫn tạo được: ${JSON.stringify(otherCashier.json)}`);
+  const otherWarehouse = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
+  assert.equal(otherWarehouse.status, 200, `kho khác vẫn tạo được: ${JSON.stringify(otherWarehouse.json)}`);
+  assert.equal((await postAs(capBody())).status, 409, 'chỗ của thu ngân khác/kho khác không được trừ vào của A');
+  console.log('✓ Trần tính riêng theo (thu ngân, kho)');
+
+  // B6. Đơn PENDING không phải chuyển khoản không bị tính vào trần
+  const codRes = await postAs(capBody({ paymentMethod: 'COD' }));
+  assert.equal(codRes.status, 200, `đơn COD không thuộc trần: ${JSON.stringify(codRes.json)}`);
+  assert.equal((await postAs(capBody())).status, 409, 'đơn COD không được chiếm chỗ chuyển khoản');
+
+  // B7. Đơn chờ đã quá hạn (cleanup chưa chạy) không nên giữ chỗ vĩnh viễn
+  for (const id of capIds.slice(-2)) {
+    await db
+      .update(schema.orders)
+      .set({ paymentExpiresAt: new Date(Date.now() - 60_000).toISOString() })
+      .where(eq(schema.orders.id, id));
+  }
+  const afterLapsed = await postAs(capBody());
+  assert.equal(afterLapsed.status, 200, 'đơn đã quá hạn không nên chiếm chỗ');
+  capIds.push(afterLapsed.json.data.orderId);
+  console.log('✓ Đơn chuyển khoản đã quá hạn không giữ chỗ vô thời hạn');
+
   raw.close();
   console.log('TRANSFER PAYMENT API CONTRACT PASS');
 }

@@ -176,7 +176,8 @@ export async function POST(req: NextRequest) {
             body.orderId,
             userRole,
             typeof body.reason === 'string' ? body.reason.trim() : undefined,
-            actorContext
+            actorContext,
+            actorHeader
           );
       return NextResponse.json({ success: true, data: result });
     }
