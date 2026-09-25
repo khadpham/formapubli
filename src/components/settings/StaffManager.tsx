@@ -345,7 +345,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                             </>
                           )}
                           <button
-                            title="Reset PIN"
+                            title="Đổi PIN"
                             onClick={() => { setResetId(r.staffId); setResetPin(''); }}
                             className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 cursor-pointer"
                           >

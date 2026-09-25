@@ -6,7 +6,7 @@ import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
-import { db, orders } from '@/db';
+import { db, orders, warehouses } from '@/db';
 import { eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
@@ -186,6 +186,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Thiếu kho xuất hàng (warehouseId) hoặc danh sách sản phẩm (items/bundles).' },
         { status: 400 }
+      );
+    }
+
+    // Ràng buộc gán kho: nhân viên được quản lý gán kho chỉ được bán ĐÚNG kho đó.
+    // Đây là chốt chặn ở SERVER — client có sửa payload cũng không lách được.
+    if (session.assignedWarehouseId && `${session.assignedWarehouseId}` !== `${warehouseId}`) {
+      const whName = await db
+        .select({ name: warehouses.name })
+        .from(warehouses)
+        .where(eq(warehouses.id, session.assignedWarehouseId as string))
+        .limit(1);
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'FORBIDDEN',
+          error: `Bạn được phân công phụ trách kho [${whName[0]?.name || session.assignedWarehouseId}]. Không thể xuất hàng từ kho khác; liên hệ quản lý nếu cần đổi kho.`,
+        },
+        { status: 403 }
       );
     }
 

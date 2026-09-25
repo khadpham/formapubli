@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db, stockBalances } from '@/db';
 import { WarehouseService } from '@/services/warehouse.service';
 import type { BankAccountRow } from '@/services/warehouse.service';
 import { requireSessionRole } from '@/lib/auth-session';
@@ -33,6 +34,17 @@ export async function GET(req: NextRequest) {
         ? await WarehouseService.listAll()
         : await WarehouseService.listSellable();
 
+    // Số lượng thật trong từng kho (1 query gộp) để quản lý thấy kho nào còn hàng.
+    const stockRows = getAll
+      ? await db
+          .select({ warehouseId: stockBalances.warehouseId, qty: stockBalances.physicalQuantity })
+          .from(stockBalances)
+      : [];
+    const stockMap = new Map<string, number>();
+    for (const r of stockRows) {
+      stockMap.set(`${r.warehouseId}`, (stockMap.get(`${r.warehouseId}`) || 0) + Number(r.qty || 0));
+    }
+
     return NextResponse.json({
       success: true,
       data: list.map((w) => ({
@@ -44,6 +56,7 @@ export async function GET(req: NextRequest) {
         isSellableOnPos: w.isSellableOnPos,
         isActive: w.isActive,
         qrTransferTemplate: (w as any).qrTransferTemplate || null,
+        stockQuantity: stockMap.get(w.id) || 0,
         defaultBankAccountId: (w as any).defaultBankAccountId || null,
       })),
     });

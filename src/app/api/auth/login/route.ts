@@ -367,6 +367,8 @@ export async function POST(req: NextRequest) {
       expiresAt,
       // M2: gắn version hiện tại — đổi passcode sau này làm token này hết hiệu lực.
       ...(staffRow ? { sessionVersion: staffRow.sessionVersion ?? 1 } : {}),
+      // Kho được gán: POS mở đúng kho này và không cho đổi (ràng buộc tại server).
+      ...(staffRow ? { assignedWarehouseId: (staffRow as any).assignedWarehouseId ?? null } : {}),
     });
 
     await recordAuditLog({
@@ -381,13 +383,14 @@ export async function POST(req: NextRequest) {
     // 4. Trả về response có gắn Set-Cookie (HttpOnly, SameSite=Lax, Max-Age=12h)
     const res = NextResponse.json({
       success: true,
-      data: {
-        staffId: actorId,
-        actorId,
-        role,
-        fullName,
-        sessionId,
-        expiresAt,
+        data: {
+          staffId: actorId,
+          actorId,
+          role,
+          fullName,
+          sessionId,
+          expiresAt,
+          assignedWarehouseId: (staffRow as any)?.assignedWarehouseId ?? null,
       },
     });
 

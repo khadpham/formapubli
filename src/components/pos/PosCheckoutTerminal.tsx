@@ -131,6 +131,32 @@ export function PosCheckoutTerminal({
 }: PosCheckoutTerminalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('wh-au-co');
+  // S-01/kho gán: quản lý gán kho cho nhân viên → POS mở đúng kho và KHÔNG cho đổi
+  // (server cũng chặn, đây là lớp thứ hai để UX rõ ràng).
+  const [lockedWarehouseId, setLockedWarehouseId] = useState<string | null>(null);
+  const [lockedWarehouseName, setLockedWarehouseName] = useState<string>('');
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const wid = j?.data?.assignedWarehouseId;
+        if (!alive || !wid) return;
+        setLockedWarehouseId(wid);
+        setSelectedWarehouseId(wid);
+        fetch(`/api/warehouses?all=true`, { cache: 'no-store' })
+          .then((r) => r.json())
+          .then((w) => {
+            if (!alive) return;
+            const found = (w?.data || []).find((x: any) => x.id === wid);
+            if (found) setLockedWarehouseName(found.name);
+          })
+          .catch(() => {});
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // V4.1 S2.1/S2.2/S2.3: kho bán + ATP nạp từ server (fallback cứng khi offline)
   const [sellableWarehouses, setSellableWarehouses] = useState<Array<{ id: string; code: string; name: string; warehouseType: string }>>([]);
   const [catalogAtp, setCatalogAtp] = useState<Record<string, { atp: number; soldToday: number }>>({});
@@ -1277,9 +1303,15 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Warehouse Selector */}
+          {/* Warehouse Selector — kho được gán thì khóa, không cho đổi */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500 shrink-0">Kho:</span>
+            {lockedWarehouseId ? (
+              <div className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-extrabold">
+                <span className="truncate max-w-[190px]">{lockedWarehouseName || lockedWarehouseId}</span>
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">Kho được gán</span>
+              </div>
+            ) : (
             <select
               value={selectedWarehouseId}
               onChange={(e) => {
@@ -1301,6 +1333,7 @@ export function PosCheckoutTerminal({
                 </option>
               ))}
             </select>
+            )}
           </div>
 
           {/* Quản lý Két tiền Ca làm việc (Cashbox Shift Management) */}

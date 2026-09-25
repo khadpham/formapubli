@@ -183,31 +183,32 @@ export function DailyFairSettlementModal({
       `}</style>
 
       <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden border border-slate-200 my-auto flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
-        {/* Header Modal */}
-        <div className="no-print bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
+        {/* Header Modal — xuống dòng trên mobile để tiêu đề không bị ép từng chữ */}
+        <div className="no-print bg-slate-900 text-white px-3 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 shrink-0 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
               <Receipt className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-extrabold text-base flex items-center gap-2">
+            <div className="min-w-0">
+              <h3 className="font-extrabold text-sm sm:text-base flex items-center gap-2 whitespace-nowrap">
                 Báo Cáo Chốt Ngày
               </h3>
-              <p className="text-xs text-slate-400">
-                Kho: <strong className="text-white">{activeWarehouseName}</strong> |
-                Ngày: <span className="font-mono text-amber-300">{selectedDate}</span>
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                Kho: <strong className="text-white">{activeWarehouseName}</strong>
+                <span className="hidden sm:inline"> | </span>
+                <span className="ml-1 sm:ml-0">Ngày: <span className="font-mono text-amber-300">{selectedDate}</span></span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             {warehouseList.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-700">
+              <div className="flex items-center gap-1.5 bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-700 flex-1 sm:flex-none min-w-0">
                 <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <select
                   value={currentWarehouseId}
                   onChange={(e) => setCurrentWarehouseId(e.target.value)}
-                  className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer max-w-[180px] truncate"
+                  className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer w-full min-w-0 truncate"
                   title="Chọn kho cần kết toán"
                 >
                   {warehouseList.map((w) => (
@@ -243,12 +244,12 @@ export function DailyFairSettlementModal({
           </div>
         </div>
 
-        {/* Tab Navigation (Ẩn khi in) */}
-        <div className="no-print px-6 pt-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
-          <div className="flex gap-2">
+        {/* Tab Navigation (ẩn khi in) — cuộn ngang gọn trên mobile, không tràn khung */}
+        <div className="no-print px-3 sm:px-6 pt-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
             <button
               onClick={() => setActiveTab('FINANCIALS')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'FINANCIALS'
                   ? 'border-indigo-600 text-indigo-700'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -259,7 +260,7 @@ export function DailyFairSettlementModal({
             </button>
             <button
               onClick={() => setActiveTab('STOCKTAKE')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'STOCKTAKE'
                   ? 'border-indigo-600 text-indigo-700'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -270,7 +271,7 @@ export function DailyFairSettlementModal({
             </button>
             <button
               onClick={() => setActiveTab('DISCOUNT')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
+              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'DISCOUNT'
                   ? 'border-indigo-600 text-indigo-700'
                   : 'border-transparent text-slate-500 hover:text-slate-800'

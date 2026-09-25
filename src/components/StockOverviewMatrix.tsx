@@ -19,6 +19,7 @@ import {
   Landmark,
   Building2,
   ChevronDown,
+  PackageSearch,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StockMovementModal } from './StockMovementModal';
@@ -51,6 +52,8 @@ interface MatrixBookItem {
   stockAuCo: number;
   stockQuynhMai: number;
   stockDuPhong: number;
+  /** Tồn theo warehouseId — động, gồm mọi kho kể cả kho hội chợ. */
+  stockByWarehouse?: Record<string, number>;
   totalStock: number;
 }
 
@@ -117,7 +120,7 @@ export function StockOverviewMatrix({
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS'>('MATRIX');
   // Ticket 3 MVP: tab kho kiểu Sheets — chỉ lọc hiển thị read-only, không đụng ledger.
-  const [warehouseTab, setWarehouseTab] = useState<'ALL' | 'wh-au-co' | 'wh-quynh-mai' | 'wh-du-phong'>('ALL');
+  const [warehouseTab, setWarehouseTab] = useState<string>('ALL');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
 
@@ -251,23 +254,33 @@ export function StockOverviewMatrix({
     setModalOpen(true);
   };
 
-  // Tổng tồn từng kho cho tab bar (tính từ matrix đã load, không query thêm).
+  // Tổng tồn TỪNG KHO cho tab bar (kể cả kho hội chợ) — tính từ matrix, không query thêm.
   const warehouseTotals = useMemo(() => {
-    return initialBooks.reduce(
-      (acc, b) => ({
-        auCo: acc.auCo + (b.stockAuCo || 0),
-        quynhMai: acc.quynhMai + (b.stockQuynhMai || 0),
-        duPhong: acc.duPhong + (b.stockDuPhong || 0),
-      }),
-      { auCo: 0, quynhMai: 0, duPhong: 0 }
-    );
+    const totals: Record<string, number> = {};
+    let all = 0;
+    for (const b of initialBooks) {
+      for (const [wid, qty] of Object.entries(b.stockByWarehouse || {})) {
+        totals[wid] = (totals[wid] || 0) + (Number(qty) || 0);
+        all += Number(qty) || 0;
+      }
+    }
+    return { totals, all };
   }, [initialBooks]);
 
-  const getWarehouseStock = (b: MatrixBookItem, tab: typeof warehouseTab) => {
-    if (tab === 'wh-au-co') return b.stockAuCo;
-    if (tab === 'wh-quynh-mai') return b.stockQuynhMai;
-    if (tab === 'wh-du-phong') return b.stockDuPhong;
-    return b.totalStock;
+  // Danh sách tab kho ĐỘNG: thêm kho mới là tự xuất hiện, không sửa code nữa.
+  const warehouseTabs = useMemo(() => {
+    const list = (warehouses || []).map((w) => ({
+      id: w.id,
+      label: w.name,
+      total: warehouseTotals.totals[w.id] || 0,
+    }));
+    return [{ id: 'ALL', label: `Tất cả ${list.length} kho`, total: warehouseTotals.all }, ...list];
+  }, [warehouses, warehouseTotals]);
+
+  const getWarehouseStock = (b: MatrixBookItem, tab: string) => {
+    if (tab === 'ALL') return b.totalStock;
+    // Động theo mọi kho (kể cả kho hội chợ) — không hardcode 3 kho nữa.
+    return b.stockByWarehouse?.[tab] ?? 0;
   };
 
   const handleRefresh = () => {
@@ -631,6 +644,14 @@ export function StockOverviewMatrix({
               >
                 <Landmark className="w-3.5 h-3.5" /> Quản lý kho & gán nhân sự
               </button>
+              <button
+                type="button"
+                onClick={() => setPickListOpen(true)}
+                title="Danh sách soạn sách gom hàng theo kệ"
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                <PackageSearch className="w-3.5 h-3.5" /> Soạn kệ
+              </button>
             </div>
           </div>
         </div>
@@ -730,14 +751,7 @@ export function StockOverviewMatrix({
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Ticket 3 MVP: Thanh tab kho kiểu Sheets — read-only, Transit/RMA để sprint sau */}
           <div className="flex items-center gap-1.5 px-3 pt-3 pb-2 overflow-x-auto border-b border-slate-100 bg-slate-50/60">
-            {(
-              [
-                { id: 'ALL', label: 'Tất cả 3 kho', total: warehouseTotals.auCo + warehouseTotals.quynhMai + warehouseTotals.duPhong },
-                { id: 'wh-au-co', label: 'Kho 1: Âu Cơ', total: warehouseTotals.auCo },
-                { id: 'wh-quynh-mai', label: 'Kho 2: Quỳnh Mai', total: warehouseTotals.quynhMai },
-                { id: 'wh-du-phong', label: 'Kho 3: Hội Chợ', total: warehouseTotals.duPhong },
-              ] as const
-            ).map((t) => (
+            {warehouseTabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -1019,4 +1033,4 @@ export function StockOverviewMatrix({
       )}
     </div>
   );
-}
+}

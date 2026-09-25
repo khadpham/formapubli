@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { X, Landmark, Plus, Pencil, Trash2, Power, PowerOff } from 'lucide-react';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
-type Warehouse = { id: string; code: string; name: string; address?: string | null; isActive?: boolean; isSellableOnPos?: boolean; qrTransferTemplate?: string | null; defaultBankAccountId?: string | null };
+type Warehouse = { id: string; code: string; name: string; address?: string | null; isActive?: boolean; isSellableOnPos?: boolean; warehouseType?: string; stockQuantity?: number; qrTransferTemplate?: string | null; defaultBankAccountId?: string | null };
 
 export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -199,7 +199,19 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                       {w.name}
                       {w.isActive === false && <span className="ml-1.5 text-[10px] font-bold text-amber-700">(đã ngưng)</span>}
                     </div>
-                    <div className="text-[10px] font-mono text-slate-400 truncate">{w.code}{w.address ? ` • ${w.address}` : ''}</div>
+                    <div className="text-[10px] font-mono text-slate-400 truncate">
+                      {w.code}{w.address ? ` • ${w.address}` : ''}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
+                        w.warehouseType === 'FAIR_EVENT' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {w.warehouseType === 'FAIR_EVENT' ? 'Hội chợ' : 'Cố định'}
+                      </span>
+                      <span className={`text-[10px] font-bold ${(w.stockQuantity || 0) > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                        Tồn: {(w.stockQuantity || 0).toLocaleString('vi-VN')} cuốn
+                      </span>
+                    </div>
                   </div>
                   <button
                     title="Sửa tên / địa chỉ kho"

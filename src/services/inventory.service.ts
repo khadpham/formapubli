@@ -711,31 +711,24 @@ export class InventoryService {
       whIdToCode.set(wh.id, wh.code);
     }
 
-    const balanceMap = new Map<string, { auCo: number; quynhMai: number; duPhong: number }>();
-
+    // Tồn theo TẤT CẢ kho (kể cả kho hội chợ), khóa theo warehouseId — trước đây
+    // chỉ đếm 3 mã kho cứng nên kho hội chợ không bao giờ hiện trong ma trận.
+    const balanceMap = new Map<string, Record<string, number>>();
     for (const bal of allBalances) {
-      const whCode = whIdToCode.get(bal.warehouseId);
-      if (!balanceMap.has(bal.editionId)) {
-        balanceMap.set(bal.editionId, { auCo: 0, quynhMai: 0, duPhong: 0 });
-      }
+      if (!balanceMap.has(bal.editionId)) balanceMap.set(bal.editionId, {});
       const record = balanceMap.get(bal.editionId)!;
-      if (whCode === 'KHO_AU_CO') {
-        record.auCo += bal.physicalQuantity;
-      } else if (whCode === 'KHO_QUYNH_MAI') {
-        record.quynhMai += bal.physicalQuantity;
-      } else if (whCode === 'KHO_DU_PHONG') {
-        record.duPhong += bal.physicalQuantity;
-      }
+      record[bal.warehouseId] = (record[bal.warehouseId] || 0) + Number(bal.physicalQuantity || 0);
     }
 
     return allEditions.map((ed) => {
-      const bal = balanceMap.get(ed.id) || { auCo: 0, quynhMai: 0, duPhong: 0 };
-      const totalStock = bal.auCo + bal.quynhMai + bal.duPhong;
+      const bal = balanceMap.get(ed.id) || {};
+      const totalStock = Object.values(bal).reduce((s, n) => s + n, 0);
       return {
         ...ed,
-        stockAuCo: bal.auCo,
-        stockQuynhMai: bal.quynhMai,
-        stockDuPhong: bal.duPhong,
+        stockAuCo: bal['wh-au-co'] || 0,
+        stockQuynhMai: bal['wh-quynh-mai'] || 0,
+        stockDuPhong: bal['wh-du-phong'] || 0,
+        stockByWarehouse: bal,
         totalStock,
       };
     });

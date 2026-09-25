@@ -14,6 +14,9 @@ export interface SessionPayload {
   // M2: version thu hồi — đổi passcode bump DB, token cũ lệch -> 401.
   // Token cấp trước khi có version (undefined) được ân hạn tới hết hạn tự nhiên.
   sessionVersion?: number;
+  // Kho được quản lý gán cho nhân viên. Ràng buộc: nhân viên chỉ được bán/điều
+  // chuyển trong đúng kho này (null = tự chọn kho như trước).
+  assignedWarehouseId?: string | null;
 }
 
 
