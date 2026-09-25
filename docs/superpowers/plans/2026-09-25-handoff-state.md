@@ -63,7 +63,21 @@ LƯU Ý SỰ CỐ ĐÃ XẢY RA: thiếu `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` 
 
 ## 5. Còn lại (ai làm gì)
 
-### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main a2481f8, worker c13e48db)
+### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main 804839a, worker 35c1ad4e)
+- **Kho hội chợ — quản lý đầy đủ** (migration 0023, đã áp Turso prod):
+  - `warehouses.qr_transfer_template`: **mẫu nội dung chuyển khoản QR riêng theo từng kho**,
+    hỗ trợ biến `{SL}` tổng số lượng · `{MA}` mã đơn · `{KHO}` tên kho · `{KH}` mã kho.
+    Sửa ở Quản Lý Kho (có xem trước). Áp dụng tại `VietQrPay` khi dựng QR.
+  - `staff_accounts.assigned_warehouse_id`: **gán nhân viên phụ trách kho** (thu ngân hội chợ),
+    chọn được ngay trong bảng Nhật sự. API chặn gán kho không tồn tại/đã ngưng.
+- **UI kho**: bảng điều khiển QUẢN LÝ KHO đầu tab (Mở kho mới · Quản lý kho & gán nhân sự),
+  nhãn "Ma trận N kho" tự đếm, 4 nút hành động nằm **một hàng** (không xuống dòng).
+- **Sửa 500 khi xóa kho**: kho đã bán hết còn dòng tồn = 0 làm khóa ngoại chặn xóa → nay dọn
+  dòng rỗng trước khi xóa. Có test chặn lại (24/24).
+- **Nhật ký hoạt động**: `/api/activity-log` + tab Cài đặt → Nhật Ký Hoạt Động (sổ cái lịch trình,
+  lưu lâu trong DB). Đã thêm ghi nhận cho thao tác **mở kho**.
+- **Chuông thông báo 5s** hai chiều tại `/api/notifications` (quản lý thấy hết; thu ngân thấy
+  việc của mình; người ngoài cuộc không thấy gì).
 - **#4 "Chuyển hàng loạt" 500 "Lỗi hệ thống"** — nguyên nhân thật do `wrangler tail`
   bắt được: `Too many subrequests by single Worker invocation` (trần 50 subrequest
   của Workers free plan). `checkBatchAvailability` gọi 1 query ATP/cuốn, và
