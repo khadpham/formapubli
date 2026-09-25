@@ -109,6 +109,23 @@ function readSource(relative: string): string {
   return fs.readFileSync(path.resolve(process.cwd(), relative), 'utf8');
 }
 
+/** assert.match/catch nhưng báo lỗi gọn (không dump cả file nguồn). */
+function expectMatch(source: string, pattern: RegExp, message: string): void {
+  try {
+    assert.match(source, pattern);
+  } catch {
+    throw new Error(message);
+  }
+}
+
+function expectNoMatch(source: string, pattern: RegExp, message: string): void {
+  try {
+    assert.doesNotMatch(source, pattern);
+  } catch {
+    throw new Error(message);
+  }
+}
+
 const vietQr = readSource('src/components/pos/VietQrPay.tsx');
 assert.match(vietQr, /readBankAccountsCache/, 'VietQrPay phải fallback sang cache tài khoản');
 assert.match(vietQr, /writeBankAccountsCache/, 'VietQrPay phải làm mới cache khi có mạng');
@@ -272,5 +289,107 @@ assert.match(gallery, /deletePaymentProofPhoto/, 'Gallery xóa ảnh thủ công
 assert.match(gallery, /NEEDS_RECONCILIATION/, 'Gallery biết trạng thái cần đối soát');
 assert.match(gallery, /useModalFocusTrap/, 'Gallery dùng focus trap có sẵn');
 assert.doesNotMatch(gallery, /fetch\(|XMLHttpRequest|FormData/, 'Gallery không upload ảnh lên server');
+
+// --- Task 8: điều phối POS cho luồng chuyển khoản/QR -------------------------
+const pos = readSource('src/components/pos/PosCheckoutTerminal.tsx');
+const posCode = stripComments(pos);
+
+// Nút thanh toán số đổi nhãn: tạo đơn trước, hiện QR sau.
+expectMatch(pos, /Tạo đơn & hiện QR/, 'Nút thanh toán số phải là "Tạo đơn & hiện QR"');
+expectNoMatch(
+  posCode,
+  /if \(!isGift && \(paymentMethod === 'BANK_TRANSFER' \|\| paymentMethod === 'QR_CODE'\) && !isMoneyReceived\)/,
+  'Bỏ chốt tiền trước khi tạo đơn số',
+);
+expectMatch(posCode, /confirmImmediately: false/, 'Đơn số gửi confirmImmediately: false');
+expectMatch(posCode, /action: 'CONFIRM'/, 'Xác nhận đơn số qua action CONFIRM');
+expectMatch(posCode, /paymentProofId/, 'Gửi paymentProofId khi xác nhận');
+expectMatch(posCode, /paymentProofCapturedAt/, 'Gửi paymentProofCapturedAt khi xác nhận');
+expectMatch(
+  posCode,
+  /initialContent=\{transferSession \? transferSession\.orderCode : activeOrderCode\}/,
+  'VietQrPay nhận mã đơn thật làm nội dung chuyển khoản',
+);
+expectMatch(posCode, /onQr=\{handleTransferQrSnapshot\}/, 'Giữ snapshot QR qua callback onQr hiện có');
+
+// MoneyReceivedToggle không được hiện cho thanh toán số.
+expectNoMatch(
+  posCode,
+  /<VietQrPay[\s\S]{0,900}?MoneyReceivedToggle/,
+  'Không render MoneyReceivedToggle cạnh VietQrPay',
+);
+expectNoMatch(posCode, /<MoneyReceivedToggle/, 'MoneyReceivedToggle không còn được render ở POS');
+
+// Trạng thái phiên chuyển khoản + overlay mới.
+for (const state of ['transferSession', 'isTransferCameraOpen', 'isPhotoGalleryOpen', 'isTransferSubmitting']) {
+  expectMatch(
+    pos,
+    new RegExp(`const \\[${state}, set${state[0].toUpperCase()}${state.slice(1)}\\] = useState`),
+    `POS có state ${state}`,
+  );
+}
+expectMatch(
+  posCode,
+  /const isPosOverlayOpen[\s\S]*isTransferCameraOpen[\s\S]*isPhotoGalleryOpen/,
+  'Overlay camera/gallery phải nằm trong isPosOverlayOpen',
+);
+expectMatch(
+  posCode,
+  /const isTransferOverlayOpen = Boolean\(transferSession\) \|\| isTransferCameraOpen \|\| isPhotoGalleryOpen/,
+  'POS có cờ overlay phiên chuyển khoản gồm cả 3 lớp',
+);
+// Chặn checkout và chặn scanner khi phiên chuyển khoản đang mở.
+expectMatch(
+  posCode,
+  /isSettlementModalOpen \|\|\s*\n\s*isTransferOverlayOpen\s*\n\s*\) return;/,
+  'handleCheckout bị chặn khi overlay phiên chuyển khoản đang mở',
+);
+expectMatch(
+  posCode,
+  /const openScanner = \(\) => \{\s*\n\s*if \(isTransferOverlayOpen\) return;/,
+  'openScanner bị chặn khi overlay phiên chuyển khoản đang mở',
+);
+
+// Camera mở trước, xác nhận sau, và không xác nhận được khi chưa có ảnh.
+expectMatch(pos, /<PaymentProofCamera/, 'POS render PaymentProofCamera');
+expectMatch(pos, /<TransferPaymentModal/, 'POS render TransferPaymentModal');
+expectMatch(pos, /<PaymentPhotoGallery/, 'POS render PaymentPhotoGallery');
+expectMatch(
+  posCode,
+  /if \(!session\.paymentProof\) \{[\s\S]{0,300}?return;/,
+  'Không gọi API xác nhận khi chưa có ảnh',
+);
+expectMatch(
+  posCode,
+  /const handleUseTransferPhoto = async \(photo: PaymentProofPhoto\) => \{\s*\n\s*await savePaymentProofPhoto\(photo\);/,
+  'Ảnh phải lưu thành công trước khi mở đường xác nhận',
+);
+
+// Đường offline: dùng lại phân loại lỗi sẵn có, tài khoản cache, và thông báo chờ đồng bộ.
+expectMatch(posCode, /fallbackToOffline/, 'Tái dùng fallbackToOffline cho đường offline');
+expectMatch(posCode, /readBankAccountsCache/, 'Đường offline cần tài khoản ngân hàng trong cache');
+expectMatch(posCode, /paymentState: !isGift && isDigitalPayment \? 'AWAITING_PAYMENT' : undefined/, 'Đơn offline khởi tạo ở AWAITING_PAYMENT');
+expectMatch(posCode, /attachOfflineOrderPaymentProof\(transferOfflineOrderId, \{[\s\S]{0,120}?id: photo\.id,[\s\S]{0,80}?capturedAt: photo\.capturedAt/, 'Sau khi lưu ảnh, đơn offline được gắn proof và sang PAID_PENDING_SYNC');
+expectMatch(pos, /đã ghi nhận, chờ đồng bộ/, 'Offline hiện thông báo đã ghi nhận, chờ đồng bộ');
+expectMatch(posCode, /applySyncErrorToOfflineOrder/, 'Xung đột sync dùng applySyncErrorToOfflineOrder');
+expectMatch(posCode, /updateOfflineOrderPaymentState\(order\.id, 'NEEDS_RECONCILIATION'\)/, 'Xung đột sync chuyển sang NEEDS_RECONCILIATION');
+// Sync offline phải gửi moneyReceived + cả hai trường proof.
+const syncStart = posCode.indexOf('moneyReceived: order.moneyReceived');
+assert.ok(syncStart > 0, 'Sync offline gửi moneyReceived của đơn');
+expectMatch(posCode.slice(syncStart, syncStart + 400), /paymentProofId/, 'Sync offline gửi kèm paymentProofId');
+expectMatch(posCode.slice(syncStart, syncStart + 400), /paymentProofCapturedAt/, 'Sync offline gửi kèm paymentProofCapturedAt');
+// Đơn cần đối soát không bị xóa khi sync lỗi.
+const syncErrorStart = posCode.indexOf("updateOfflineOrderStatus(order.id, 'FAILED'");
+assert.ok(syncErrorStart > 0, 'Sync lỗi ghi trạng thái FAILED');
+expectMatch(
+  posCode.slice(syncErrorStart, syncErrorStart + 500),
+  /updateOfflineOrderPaymentState|applySyncErrorToOfflineOrder/,
+  'Sync lỗi cập nhật trạng thái thanh toán',
+);
+expectNoMatch(
+  posCode.slice(syncErrorStart, syncErrorStart + 500),
+  /deletePaymentProofPhoto|removeOfflineOrder/,
+  'Xung đột không được xóa ảnh hay xóa đơn offline',
+);
 
 console.log('PASS: transfer payment photo contract.');

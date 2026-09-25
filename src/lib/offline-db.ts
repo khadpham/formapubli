@@ -42,6 +42,9 @@ export interface OfflineOrder {
   lastError?: string;
   /** Trạng thái thanh toán cục bộ (chỉ có trên record tạo từ luồng chuyển khoản/QR). */
   paymentState?: OfflinePaymentState;
+  /** Ảnh xác nhận đã gắn với đơn offline (chỉ dữ liệu vận hành, không upload). */
+  paymentProofId?: string;
+  paymentProofCapturedAt?: string;
 }
 
 /**
@@ -418,6 +421,30 @@ export async function deletePaymentProofPhoto(id: string): Promise<void> {
 
 /** Chuyển đơn offline sang trạng thái thanh toán kế tiếp (đã chụp ảnh, cần đối soát, hủy cục bộ). */
 export async function updateOfflineOrderPaymentState(id: string, state: OfflinePaymentState): Promise<void> {
+  return patchOfflineOrder(id, (order) => {
+    order.paymentState = state;
+  });
+}
+
+/**
+ * Ghi ảnh xác nhận vào đơn offline và đánh dấu đã thu tiền.
+ * Đồng thời bật `moneyReceived` để lần sync kế tiếp gửi đúng trạng thái —
+ * server dùng cặp `moneyReceived` + proof fields làm chốt quy trình.
+ */
+export async function attachOfflineOrderPaymentProof(
+  id: string,
+  proof: { id: string; capturedAt: string }
+): Promise<void> {
+  return patchOfflineOrder(id, (order) => {
+    order.moneyReceived = true;
+    order.paymentState = 'PAID_PENDING_SYNC';
+    (order as OfflineOrder & { paymentProofId?: string; paymentProofCapturedAt?: string }).paymentProofId = proof.id;
+    (order as OfflineOrder & { paymentProofId?: string; paymentProofCapturedAt?: string }).paymentProofCapturedAt =
+      proof.capturedAt;
+  });
+}
+
+async function patchOfflineOrder(id: string, apply: (order: OfflineOrder) => void): Promise<void> {
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -429,7 +456,7 @@ export async function updateOfflineOrderPaymentState(id: string, state: OfflineP
         resolve();
         return;
       }
-      order.paymentState = state;
+      apply(order);
       const putReq = store.put(order);
       putReq.onsuccess = () => resolve();
       putReq.onerror = () => reject(putReq.error);

@@ -40,10 +40,14 @@ import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { VietQrPay } from '@/components/pos/VietQrPay';
+import { PaymentProofCamera } from '@/components/pos/PaymentProofCamera';
+import { PaymentPhotoGallery } from '@/components/pos/PaymentPhotoGallery';
+import { TransferPaymentModal, type TransferPaymentSession } from '@/components/pos/TransferPaymentModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchActionShortcut } from '@/lib/keyboard';
+import { readBankAccountsCache } from '@/lib/bank-account-cache';
 import {
   saveOfflineOrder,
   getPendingOfflineOrders,
@@ -54,7 +58,13 @@ import {
     getPendingOrdersCount,
    getLegacyPendingOrdersCount,
    claimLegacyOfflineOrders,
+   savePaymentProofPhoto,
+   updateOfflineOrderPaymentState,
+   attachOfflineOrderPaymentProof,
+   applySyncErrorToOfflineOrder,
    OfflineOrder,
+   OfflinePaymentState,
+   PaymentProofPhoto,
 } from '@/lib/offline-db';
 import { UserRole } from '@/lib/roles';
 import { priceLine } from '@/lib/pricing';
@@ -118,32 +128,6 @@ function createOrderCode(): string {
   return `ORD-${date}-${suffix}`;
 }
 
-function MoneyReceivedToggle({
-  id,
-  confirmed,
-  onToggle,
-}: {
-  id: string;
-  confirmed: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      id={id}
-      aria-pressed={confirmed}
-      onClick={onToggle}
-      className={`mt-2 w-full py-2 rounded-xl text-xs font-extrabold border transition flex items-center justify-center gap-1.5 min-h-[40px] ${
-        confirmed
-          ? 'bg-emerald-600 text-white border-emerald-700'
-          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-      }`}
-    >
-      <ShieldCheck className="w-4 h-4" />
-      {confirmed ? 'Đã nhận tiền (bấm để bỏ xác nhận)' : 'Xác nhận đã nhận tiền'}
-    </button>
-  );
-}
 export function PosCheckoutTerminal({
   books,
   currentRole,
@@ -313,6 +297,21 @@ export function PosCheckoutTerminal({
   const [approvalCancelError, setApprovalCancelError] = useState<string | null>(null);
   // F5 (#8): chuyển khoản/QR phải được thu ngân xác nhận TAY "Đã nhận tiền" trước khi chốt
   const [isMoneyReceived, setIsMoneyReceived] = useState(false);
+  // Luồng chuyển khoản/QR theo đơn thật: tạo đơn PENDING → QR → chụp ảnh → xác nhận.
+  const [transferSession, setTransferSession] = useState<TransferPaymentSession | null>(null);
+  const [isTransferCameraOpen, setIsTransferCameraOpen] = useState(false);
+  const [isPhotoGalleryOpen, setIsPhotoGalleryOpen] = useState(false);
+  const [isTransferSubmitting, setIsTransferSubmitting] = useState(false);
+  const [transferBankSource, setTransferBankSource] = useState<'NETWORK' | 'CACHE' | 'NONE'>('NONE');
+  const [transferBankCachedAt, setTransferBankCachedAt] = useState<number | null>(null);
+  const [transferErrorMessage, setTransferErrorMessage] = useState<string | null>(null);
+  /** ID đơn offline đang mở phiên chuyển khoản (dùng để đổi trạng thái sau khi lưu ảnh). */
+  const [transferOfflineOrderId, setTransferOfflineOrderId] = useState<string | null>(null);
+  /**
+   * resetPostCheckoutState nằm trong handleCheckout; các handler phiên chuyển
+   * khoản cần gọi lại nó nên lưu qua ref thay vì nhân bản logic.
+   */
+  const postCheckoutResetRef = useRef<(() => void) | null>(null);
   const checkoutLockRef = useRef(false);
   const addToCartAbortRef = useRef<AbortController | null>(null);
   const parserImportAbortRef = useRef<AbortController | null>(null);
@@ -330,6 +329,7 @@ export function PosCheckoutTerminal({
     if (!isSubmitting) setIsMobileCheckoutSheetOpen(false);
   });
   const openScanner = () => {
+    if (isTransferOverlayOpen) return;
     setIsMobileCheckoutSheetOpen(false);
     setIsScannerOpen(true);
   };
@@ -340,10 +340,12 @@ export function PosCheckoutTerminal({
     isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
   const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null || checkoutLockRef.current;
   const isInteractionLocked = isCartFrozen || isParserImporting;
+  const isTransferOverlayOpen = Boolean(transferSession) || isTransferCameraOpen || isPhotoGalleryOpen;
   const isPosOverlayOpen =
     isParserOpen || isScannerOpen || isMobileCheckoutSheetOpen || Boolean(completedOrder) ||
     Boolean(ambiguousMatches) || isAddingToCart || isDiscountApprovalModalOpen || isManagerApprovalDrawerOpen ||
-    isOpenShiftModalOpen || isCloseShiftModalOpen || isSettlementModalOpen;
+    isOpenShiftModalOpen || isCloseShiftModalOpen || isSettlementModalOpen ||
+    isTransferCameraOpen || isPhotoGalleryOpen;
   const selectedWarehouseIdRef = useRef(selectedWarehouseId);
   const cartFrozenRef = useRef(isCartFrozen);
   useEffect(() => {
@@ -464,6 +466,9 @@ export function PosCheckoutTerminal({
               discountRate: order.discountRate,
                paymentMethod: order.paymentMethod,
                moneyReceived: order.moneyReceived,
+               // Ảnh xác nhận chỉ là dữ liệu vận hành; server không xác minh ảnh.
+               paymentProofId: order.paymentProofId,
+               paymentProofCapturedAt: order.paymentProofCapturedAt,
                 fiscalScope: order.fiscalScope,
                cashierId: order.cashierId,
                 cashboxSessionId: order.cashboxSessionId,
@@ -489,8 +494,18 @@ export function PosCheckoutTerminal({
                console.error('Lỗi khi đồng bộ đơn', order.orderCode, resData.error);
                const syncError = resData.error || 'Server từ chối đơn';
                await updateOfflineOrderStatus(order.id, 'FAILED', syncError);
-               const failedOrder = { ...order, lastError: syncError };
-               if (getOfflineOrderRepairAction(failedOrder)) reviewOrders.set(order.id, failedOrder);
+               // Xung đột ATP/idempotency/két → giữ đơn VÀ ảnh, chờ đối soát tay.
+               const nextPaymentState: OfflinePaymentState = applySyncErrorToOfflineOrder(
+                 order,
+                 String(resData.code || '')
+               );
+               if (nextPaymentState === 'NEEDS_RECONCILIATION') {
+                 await updateOfflineOrderPaymentState(order.id, 'NEEDS_RECONCILIATION');
+               }
+               const failedOrder = { ...order, lastError: syncError, paymentState: nextPaymentState };
+               if (nextPaymentState === 'NEEDS_RECONCILIATION' || getOfflineOrderRepairAction(failedOrder)) {
+                 reviewOrders.set(order.id, failedOrder);
+               }
                continue;
              }
          } catch (err) {
@@ -1198,6 +1213,17 @@ export function PosCheckoutTerminal({
   const discountAmount = useMemo(() => pricedCart.reduce((sum, line) => sum + line.discountAmount, 0), [pricedCart]);
   const finalAmount = useMemo(() => pricedCart.reduce((sum, line) => sum + line.finalAmount, 0), [pricedCart]);
   const totalCopies = cart.reduce((sum, item) => sum + item.quantity, 0);
+  // Nút chính đổi nhãn theo hình thức thanh toán: chuyển khoản/QR tạo đơn
+  // PENDING trước rồi mới hiện QR, nên không còn nhãn "khấu trừ kho" ngay.
+  const isDigitalCheckout = !isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE');
+  const checkoutButtonLabel = isGift
+    ? 'XÁC NHẬN TẶNG & TRỪ KHO'
+    : isDigitalCheckout
+      ? 'Tạo đơn & hiện QR'
+      : 'THANH TOÁN & KHẤU TRỪ KHO';
+  const mobileCheckoutButtonLabel = isDigitalCheckout
+    ? 'Tạo đơn & hiện QR'
+    : `Xác nhận Thanh toán (${finalAmount.toLocaleString('vi-VN')} đ)`;
   const approvalPricedCart = useMemo(
     () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
     [cart, discountRate, pendingDiscountRate]
@@ -1229,7 +1255,8 @@ export function PosCheckoutTerminal({
       isManagerApprovalDrawerOpen ||
       isOpenShiftModalOpen ||
       isCloseShiftModalOpen ||
-      isSettlementModalOpen
+      isSettlementModalOpen ||
+      isTransferOverlayOpen
     ) return;
     checkoutLockRef.current = true;
     addToCartAbortRef.current?.abort();
@@ -1248,15 +1275,8 @@ export function PosCheckoutTerminal({
       setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
       return;
     }
-    // F5 (#8): chuyển khoản/QR chỉ chốt khi thu ngân đã xác nhận tay "Đã nhận tiền"
-    if (!isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && !isMoneyReceived) {
-      checkoutLockRef.current = false;
-      setIsSubmitting(false);
-      setErrorMessage(
-        'Vui lòng xác nhận "Đã nhận tiền" (đã kiểm tra tài khoản/QR của khách) trước khi chốt đơn chuyển khoản/QR.'
-      );
-      return;
-    }
+    // Chuyển khoản/QR: KHÔNG chốt tiền trước. Tạo đơn PENDING trước, hiện QR theo
+    // mã đơn thật, thu ngân chụp ảnh rồi mới xác nhận (xem handleTransferCheckout).
 
     // 1.0: chốt chặn ATP lần cuối (giữ chỗ có thể tăng sau khi thêm giỏ).
     // Quản lý đã duyệt PIN được vượt (chịu trách nhiệm đối soát), server vẫn guard tồn vật lý.
@@ -1279,6 +1299,7 @@ export function PosCheckoutTerminal({
 
     setErrorMessage(null);
 
+    const isDigitalPayment = paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE';
     const orderUuid = generateUUIDv7();
     const channel = selectedWarehouseType === 'FAIR_EVENT' ? 'FAIR_EVENT' : 'RETAIL_OFFICE';
      const cashierId = cashierActorId;
@@ -1309,11 +1330,23 @@ export function PosCheckoutTerminal({
       setCustomDiscountInput('');
       setActiveOrderCode(createOrderCode());
     };
+    postCheckoutResetRef.current = resetPostCheckoutState;
 
     // Helper lưu ngoại tuyến vào IndexedDB
     const fallbackToOffline = async (reason?: string) => {
       try {
         const giftNote = isGift ? `[QUÀ TẶNG: ${giftReason.trim() || note.trim() || 'Tặng sách'}]${note ? ` ${note}` : ''}` : note;
+         // Chuyển khoản/QR offline: cần tài khoản nhận trong cache (tối đa 24h)
+         // để sinh QR. Không có cache hợp lệ → chặn, hướng dẫn dùng tiền mặt.
+         if (!isGift && isDigitalPayment) {
+           const cached = readBankAccountsCache(selectedWarehouseId);
+           if (!cached || cached.accounts.length === 0) {
+             setErrorMessage(
+               'Mất mạng và cache tài khoản nhận đã quá 24 giờ, không thể tạo QR. Vui lòng thu tiền mặt hoặc chờ có mạng.'
+             );
+             return;
+           }
+         }
          const offlineOrder: OfflineOrder = {
             id: orderUuid,
             orderCode,
@@ -1344,11 +1377,35 @@ export function PosCheckoutTerminal({
           totalQuantity: totalCopies,
           createdAt: orderTimestamp,
           syncStatus: 'PENDING',
+          // Đơn chuyển khoản/QR offline bắt đầu ở AWAITING_PAYMENT; chỉ chuyển
+          // PAID_PENDING_SYNC sau khi ảnh xác nhận lưu thành công.
+          paymentState: !isGift && isDigitalPayment ? 'AWAITING_PAYMENT' : undefined,
         };
 
         await saveOfflineOrder(offlineOrder);
       const count = await getPendingOrdersCount(cashierActorId);
         setPendingOfflineCount(count);
+
+        // Chuyển khoản/QR offline: KHÔNG in bill thành công. Mở phiên chuyển
+        // khoản để thu ngân chụp ảnh; chỉ khi lưu ảnh xong mới sang PAID_PENDING_SYNC.
+        if (!isGift && isDigitalPayment) {
+          setTransferErrorMessage(null);
+          setTransferOfflineOrderId(orderUuid);
+          setTransferSession({
+            mode: 'OFFLINE',
+            orderId: orderUuid,
+            orderCode,
+            idempotencyKey,
+            warehouseId: selectedWarehouseId,
+            amount: finalAmount,
+            paymentMethod,
+            createdAt: orderTimestamp,
+            qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: orderCode },
+          });
+          setSyncToast(`💾 Đơn ngoại tuyến [${orderCode}] đã ghi nhận, chờ đồng bộ. Chụp ảnh xác nhận để hoàn tất.`);
+          setTimeout(() => setSyncToast(null), 6000);
+          return;
+        }
 
         setCompletedOrder({
           id: orderUuid,
@@ -1391,6 +1448,71 @@ export function PosCheckoutTerminal({
       }
       checkoutLockRef.current = false;
       setIsSubmitting(false);
+      return;
+    }
+
+    // A2. Chuyển khoản/QR có mạng: tạo đơn PENDING trước (confirmImmediately:false),
+    // rồi mở modal QR. Thu ngân chụp ảnh và xác nhận ở handleConfirmTransfer.
+    if (!isGift && isDigitalPayment) {
+      try {
+        const response = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: orderUuid,
+            orderCode,
+            idempotencyKey,
+            createdAt: orderTimestamp,
+            warehouseId: selectedWarehouseId,
+            channel,
+            customerName,
+            discountRate,
+            paymentMethod,
+            moneyReceived: false,
+            fiscalScope,
+            cashierId,
+            cashboxSessionId: activeSession?.id,
+            managerPin: approvedPin || undefined,
+            discountApprovalId: approvedDiscountRequestId || undefined,
+            note,
+            confirmImmediately: false,
+            items: cart.map((item) => ({
+              editionId: item.editionId,
+              quantity: item.quantity,
+            })),
+          }),
+        });
+        const resData = await response.json();
+        if (!resData.success) throw new Error(resData.error || 'Lỗi tạo đơn hàng');
+        setTransferErrorMessage(null);
+        setTransferOfflineOrderId(null);
+        setTransferSession({
+          mode: 'ONLINE',
+          orderId: resData.data?.orderId || resData.data?.id || orderUuid,
+          orderCode: resData.data?.orderCode || orderCode,
+          idempotencyKey,
+          warehouseId: selectedWarehouseId,
+          amount: isGift ? 0 : finalAmount,
+          paymentMethod,
+          createdAt: orderTimestamp,
+          expiresAt: resData.data?.paymentExpiresAt || undefined,
+          qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: orderCode },
+        });
+      } catch (err: any) {
+        // Phân loại lỗi dùng lại đúng cách handleCheckout đang làm cho cash/gift.
+        if (err.name === 'TypeError' || err.message?.includes('fetch') || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          if (approvedDiscountRequestId) {
+            setErrorMessage('Mất kết nối khi gửi đơn có duyệt chiết khấu. Giữ nguyên giỏ và thử lại; không ghi đơn offline để tránh mất quyền duyệt.');
+          } else {
+            await fallbackToOffline('Mất kết nối mạng đột ngột!');
+          }
+        } else {
+          setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
+        }
+      } finally {
+        checkoutLockRef.current = false;
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -1470,6 +1592,126 @@ export function PosCheckoutTerminal({
       setIsSubmitting(false);
     }
   };
+
+  /** VietQrPay phát QR mới → giữ snapshot trong phiên chuyển khoản. */
+  const handleTransferQrSnapshot = (
+    snapshot: { dataUrl: string; payload: string; accountNo: string; content: string } | null
+  ) => {
+    setQrSnapshot(snapshot);
+    setTransferSession((current) =>
+      current && snapshot ? { ...current, qrSnapshot: snapshot } : current
+    );
+  };
+
+  const closeTransferSession = () => {
+    setTransferSession(null);
+    setTransferErrorMessage(null);
+    setTransferOfflineOrderId(null);
+  };
+
+  /**
+   * Lưu ảnh xác nhận cục bộ. Chỉ khi lưu thành công mới mở đường xác nhận.
+   * Lỗi lưu phải ném lên để camera giữ preview.
+   */
+  const handleUseTransferPhoto = async (photo: PaymentProofPhoto) => {
+    await savePaymentProofPhoto(photo);
+    setTransferSession((current) => (current ? { ...current, paymentProof: photo } : current));
+    // Offline: đơn local chuyển sang PAID_PENDING_SYNC và bật moneyReceived để
+    // lần sync kế tiếp gửi kèm cặp moneyReceived + proof như server yêu cầu.
+    if (transferOfflineOrderId) {
+      await attachOfflineOrderPaymentProof(transferOfflineOrderId, {
+        id: photo.id,
+        capturedAt: photo.capturedAt,
+      });
+    }
+  };
+
+  const handleConfirmTransfer = async () => {
+    const session = transferSession;
+    if (!session) return;
+    // Chốt chặn cuối: không có ảnh thì không bao giờ gọi API xác nhận.
+    if (!session.paymentProof) {
+      setTransferErrorMessage('Vui lòng chụp và lưu ảnh xác nhận trước khi xác nhận đơn.');
+      return;
+    }
+    setIsTransferSubmitting(true);
+    setTransferErrorMessage(null);
+    try {
+      if (session.mode === 'OFFLINE') {
+        // Offline: chỉ ghi nhận cục bộ, chờ sync. Không in bill thành công.
+        closeTransferSession();
+        setSyncToast(`💾 Đơn ${session.orderCode} đã ghi nhận, chờ đồng bộ khi có mạng.`);
+        setTimeout(() => setSyncToast(null), 6000);
+        fetchActiveCashboxSession();
+        if (onOrderCompleted) onOrderCompleted();
+        return;
+      }
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CONFIRM',
+          orderId: session.orderId,
+          paymentProofId: session.paymentProof.id,
+          paymentProofCapturedAt: session.paymentProof.capturedAt,
+        }),
+      });
+      const resData = await res.json();
+      if (!resData.success) {
+        setTransferErrorMessage(resData.error || 'Không xác nhận được đơn.');
+        return;
+      }
+      closeTransferSession();
+      setCompletedOrder({
+        ...resData.data,
+        orderCode: session.orderCode,
+        items: [...cart],
+        discountRate: isGift ? 1 : discountRate,
+        paymentMethod,
+        date: new Date().toLocaleString('vi-VN'),
+        isOffline: false,
+        isGift,
+        qrDataUrl: session.qrSnapshot.dataUrl || null,
+        qrAccountNo: session.qrSnapshot.accountNo || null,
+      });
+      postCheckoutResetRef.current?.();
+      fetchActiveCashboxSession();
+      if (onOrderCompleted) onOrderCompleted();
+    } catch (err: any) {
+      setTransferErrorMessage(err?.message || 'Mất kết nối khi xác nhận đơn. Giữ nguyên đơn và thử lại.');
+    } finally {
+      setIsTransferSubmitting(false);
+    }
+  };
+
+  const handleCancelTransfer = async () => {
+    const session = transferSession;
+    if (!session) return;
+    setIsTransferSubmitting(true);
+    setTransferErrorMessage(null);
+    try {
+      if (session.mode === 'OFFLINE') {
+        if (transferOfflineOrderId) {
+          await updateOfflineOrderPaymentState(transferOfflineOrderId, 'CANCELLED_LOCAL');
+          await removeOfflineOrder(transferOfflineOrderId);
+        }
+      } else if (session.orderId) {
+        await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'CANCEL', orderId: session.orderId, reason: 'Khách chuyển sau' }),
+        });
+      }
+      closeTransferSession();
+      postCheckoutResetRef.current?.();
+      fetchActiveCashboxSession();
+    } catch (err: any) {
+      setTransferErrorMessage(err?.message || 'Không hủy được đơn. Thử lại hoặc nhờ quản lý.');
+    } finally {
+      setIsTransferSubmitting(false);
+    }
+  };
+
 
   // Lắng nghe phím tắt toàn cục không xung đột cho màn hình POS:
   useEffect(() => {
@@ -2472,12 +2714,16 @@ export function PosCheckoutTerminal({
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
                     onQr={setQrSnapshot}
+                    onSource={setTransferBankSource}
+                    onCachedAt={setTransferBankCachedAt}
                   />
-                  <MoneyReceivedToggle
-                    id="btn-money-received"
-                    confirmed={isMoneyReceived}
-                    onToggle={() => setIsMoneyReceived((v) => !v)}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsPhotoGalleryOpen(true)}
+                    className="mt-2 w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                  >
+                    Ảnh thanh toán
+                  </button>
                 </div>
               )}
             </div>
@@ -2514,13 +2760,62 @@ export function PosCheckoutTerminal({
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>{isGift ? 'XÁC NHẬN TẶNG & TRỪ KHO' : 'THANH TOÁN & KHẤU TRỪ KHO'}</span>
+                  <span>{checkoutButtonLabel}</span>
                 </>
               )}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Luồng chuyển khoản/QR: QR theo mã đơn thật, modal phiên, camera, gallery */}
+      {isDigitalCheckout && (
+        <div className="mt-2">
+          <VietQrPay
+            warehouseId={selectedWarehouseId}
+            amount={finalAmount}
+            initialContent={transferSession ? transferSession.orderCode : activeOrderCode}
+            onQr={handleTransferQrSnapshot}
+            onSource={setTransferBankSource}
+            onCachedAt={setTransferBankCachedAt}
+          />
+        </div>
+      )}
+
+      {transferSession && mounted && (
+        <TransferPaymentModal
+          isOpen={Boolean(transferSession.qrSnapshot.dataUrl)}
+          session={transferSession}
+          busy={isTransferSubmitting}
+          cacheLabel={
+            transferBankSource === 'CACHE' && transferBankCachedAt
+              ? `Dữ liệu cache ${new Date(transferBankCachedAt).toLocaleString('vi-VN')}`
+              : null
+          }
+          onCapture={() => setIsTransferCameraOpen(true)}
+          onConfirm={handleConfirmTransfer}
+          onCancel={handleCancelTransfer}
+          onClose={closeTransferSession}
+          errorMessage={transferErrorMessage}
+        />
+      )}
+
+      {transferSession && mounted && (
+        <PaymentProofCamera
+          isOpen={isTransferCameraOpen}
+          orderCode={transferSession.orderCode}
+          warehouseId={transferSession.warehouseId}
+          cashierId={cashierActorId}
+          amount={transferSession.amount}
+          paymentMethod={transferSession.paymentMethod}
+          onClose={() => setIsTransferCameraOpen(false)}
+          onUsePhoto={handleUseTransferPhoto}
+        />
+      )}
+
+      {isPhotoGalleryOpen && mounted && (
+        <PaymentPhotoGallery isOpen={isPhotoGalleryOpen} onClose={() => setIsPhotoGalleryOpen(false)} />
+      )}
 
       {/* Order Success Receipt Modal */}
       {completedOrder && mounted && createPortal(
@@ -3194,12 +3489,16 @@ export function PosCheckoutTerminal({
                     amount={isGift ? 0 : finalAmount}
                     initialContent={activeOrderCode}
                     onQr={setQrSnapshot}
+                    onSource={setTransferBankSource}
+                    onCachedAt={setTransferBankCachedAt}
                   />
-                  <MoneyReceivedToggle
-                    id="btn-money-received-mobile"
-                    confirmed={isMoneyReceived}
-                    onToggle={() => setIsMoneyReceived((v) => !v)}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsPhotoGalleryOpen(true)}
+                    className="mt-2 w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                  >
+                    Ảnh thanh toán
+                  </button>
                 </div>
               )}
 
@@ -3236,7 +3535,7 @@ export function PosCheckoutTerminal({
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Xác nhận Thanh toán ({finalAmount.toLocaleString('vi-VN')} đ)</span>
+                    <span>{mobileCheckoutButtonLabel}</span>
                   </>
                 )}
               </button>
