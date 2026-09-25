@@ -144,7 +144,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
       onClick={(event) => {
         if (event.target === event.currentTarget && isClosable && !loading) {
           setShowPasscode(false);

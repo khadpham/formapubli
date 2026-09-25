@@ -308,7 +308,7 @@ export function WholesaleDispatchModal({
       >
         <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
           {/* Header Modal */}
-          <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
+          <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
                 <FileText className="w-5 h-5" />
@@ -493,7 +493,8 @@ export function WholesaleDispatchModal({
 
             {/* Bảng danh sách sách đã chọn */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto">
+              <table className="w-full text-xs min-w-[520px]">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
                     <th className="p-3 w-10 text-center">#</th>
@@ -555,6 +556,7 @@ export function WholesaleDispatchModal({
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {/* Tóm tắt tổng tiền */}

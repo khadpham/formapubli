@@ -2166,7 +2166,7 @@ export function PosCheckoutTerminal({
       {/* Order Success Receipt Modal */}
       {completedOrder && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget) setCompletedOrder(null); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
@@ -2303,7 +2303,7 @@ export function PosCheckoutTerminal({
       {/* Modal Xử Lý Trùng Mã Vạch ISBN (Disambiguation Modal) */}
       {ambiguousMatches && ambiguousMatches.length > 0 && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget) setAmbiguousMatches(null); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
@@ -2378,7 +2378,7 @@ export function PosCheckoutTerminal({
       {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
       {isParserOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget) setIsParserOpen(false); }}
         >
           <div className="max-w-lg w-full max-h-[92vh] overflow-y-auto">
@@ -2401,7 +2401,7 @@ export function PosCheckoutTerminal({
       {/* MODAL 1: MỞ CA KÉT TIỀN (Open Cashbox Shift Modal) */}
       {isOpenShiftModalOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsOpenShiftModalOpen(false); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
@@ -2488,7 +2488,7 @@ export function PosCheckoutTerminal({
       {/* MODAL 2: CHỐT CA & ĐỐI SOÁT KÉT TIỀN (Close Shift & Reconciliation Modal) */}
       {isCloseShiftModalOpen && activeSession && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsCloseShiftModalOpen(false); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">

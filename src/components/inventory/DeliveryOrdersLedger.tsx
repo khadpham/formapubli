@@ -404,7 +404,7 @@ export function DeliveryOrdersLedger({
       {/* Modal xác nhận Đảo bút toán hủy (Reversal) */}
       {reversalTargetOrder && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget && !isReversing) setReversalTargetOrder(null); }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-200">

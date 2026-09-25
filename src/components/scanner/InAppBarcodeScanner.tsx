@@ -550,7 +550,7 @@ export function InAppBarcodeScanner({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in"
+      className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in overflow-y-auto"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           stopCamera();
