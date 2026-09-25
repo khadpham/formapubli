@@ -1,10 +1,16 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Search, Share2, Trash2, X } from 'lucide-react';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
-import { deletePaymentProofPhoto, listPaymentProofPhotos, type PaymentProofPhoto } from '@/lib/offline-db';
+import {
+  deletePaymentProofPhoto,
+  isPhotoInScope,
+  listPaymentProofPhotos,
+  type PaymentProofPhoto,
+  type PaymentProofScope,
+} from '@/lib/offline-db';
 
 export interface PaymentPhotoGalleryProps {
   isOpen: boolean;
@@ -31,6 +37,15 @@ export function PaymentPhotoGallery({
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Bản sao object URL hiện tại để thu hồi được kể cả trong effect dọn dẹp. */
+  const previewUrlsRef = useRef<Record<string, string>>({});
+  previewUrlsRef.current = previewUrls;
+
+  /** Phạm vi xem hiện tại: lọc ở nguồn (offline-db) và dùng lại để chặn thao tác. */
+  const scope = useMemo<PaymentProofScope>(
+    () => ({ warehouseId, cashierId, includeAllCashiers: canViewAllCashiers }),
+    [warehouseId, cashierId, canViewAllCashiers]
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -38,35 +53,47 @@ export function PaymentPhotoGallery({
 
   const load = useCallback(async () => {
     try {
-      setPhotos(
-        await listPaymentProofPhotos({ warehouseId, cashierId, includeAllCashiers: canViewAllCashiers })
-      );
+      setPhotos(await listPaymentProofPhotos(scope));
       setErrorMessage(null);
     } catch {
       setErrorMessage('Không đọc được thư viện ảnh trên máy này.');
     }
-  }, [warehouseId, cashierId, canViewAllCashiers]);
+  }, [scope]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    load();
-  }, [isOpen, load]);
+  const revokePreviews = useCallback((urls: Record<string, string>) => {
+    Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
-  // Object URL cần thu hồi khi modal đóng để không rò bộ nhớ.
-  useEffect(() => {
-    if (isOpen) return;
+  /** Xoá sạch ảnh + object URL của phạm vi cũ, trước khi tải phạm vi mới. */
+  const resetGallery = useCallback(() => {
+    revokePreviews(previewUrlsRef.current);
+    setPhotos([]);
     setPreviewUrls({});
     setExpandedId(null);
-  }, [isOpen]);
+    setErrorMessage(null);
+  }, [revokePreviews]);
 
+  // Mở modal, đổi kho, đổi thu ngân hay đổi vai trò: luôn dọn phạm vi cũ TRƯỚC
+  // khi tải, để không ai kịp xem / chia sẻ / xoá ảnh ngoài phạm vi mới.
+  useEffect(() => {
+    if (!isOpen) {
+      resetGallery();
+      return;
+    }
+    resetGallery();
+    load();
+  }, [isOpen, load, resetGallery]);
+
+  // Thu hồi object URL khi component unmount (đóng modal giữ nguyên ảnh đang xem).
   useEffect(() => () => {
-    Object.values(previewUrls).forEach((url) => URL.revokeObjectURL(url));
-  }, [previewUrls]);
+    revokePreviews(previewUrlsRef.current);
+  }, [revokePreviews]);
 
   const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
   if (!isOpen || !mounted) return null;
 
   const visible = photos
+    .filter((photo) => isPhotoInScope(photo, scope))
     .filter((photo) => photo.orderCode.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
 
@@ -78,6 +105,7 @@ export function PaymentPhotoGallery({
   };
 
   const sharePhoto = async (photo: PaymentProofPhoto) => {
+    if (!isPhotoInScope(photo, scope)) return;
     const file = new File([photo.blob], `payment-${photo.orderCode}-${photo.capturedAt}.jpg`, { type: 'image/jpeg' });
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: `Thanh toán ${photo.orderCode}` });
@@ -92,9 +120,10 @@ export function PaymentPhotoGallery({
   };
 
   const removePhoto = async (photo: PaymentProofPhoto) => {
+    if (!isPhotoInScope(photo, scope)) return;
     if (photo.syncState === 'NEEDS_RECONCILIATION') return;
     if (!window.confirm(`Xóa ảnh xác nhận của đơn ${photo.orderCode}?`)) return;
-    await deletePaymentProofPhoto(photo.id);
+    await deletePaymentProofPhoto(photo.id, scope);
     await load();
   };
 

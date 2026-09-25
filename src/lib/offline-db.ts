@@ -431,7 +431,17 @@ export async function listPaymentProofPhotos(scope: PaymentProofScope): Promise<
   return all.filter((photo) => isPhotoInScope(photo, scope));
 }
 
-export async function deletePaymentProofPhoto(id: string): Promise<void> {
+/**
+ * Xoá ảnh. Khi `scope` được truyền (mọi thao tác của người dùng), ảnh nằm ngoài
+ * phạm vi kho/thu ngân hiện tại sẽ bị từ chối — không xoá, không ném lỗi.
+ * Retention gọi KHÔNG scope: đó là dọn bộ nhớ máy, được phép thấy mọi ảnh.
+ */
+export async function deletePaymentProofPhoto(id: string, scope?: PaymentProofScope): Promise<void> {
+  if (scope) {
+    const all = await readAllPaymentProofPhotos();
+    const photo = all.find((item) => item.id === id);
+    if (!photo || !isPhotoInScope(photo, scope)) return;
+  }
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PHOTO_STORE, 'readwrite');

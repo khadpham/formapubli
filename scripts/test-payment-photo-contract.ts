@@ -434,4 +434,118 @@ expectNoMatch(
   'Xung đột không được xóa ảnh hay xóa đơn offline',
 );
 
+// --- Phạm vi ảnh: scope bắt buộc ở MỌI call site, và POS chỉ nới cho Owner/Manager ---
+// 1. Gallery bắt buộc nhận scope, không có call site nào gọi listPaymentProofPhotos() rỗng.
+expectMatch(
+  gallery,
+  /warehouseId: string;\s*\n\s*cashierId: string;\s*\n\s*canViewAllCashiers: boolean;/,
+  'PaymentPhotoGallery bắt buộc nhận warehouseId + cashierId + canViewAllCashiers',
+);
+// scope phải mang đủ 3 trường, và mọi đường đọc/xóa/chia sẻ đều đi qua nó.
+expectMatch(
+  gallery,
+  /const scope = useMemo<PaymentProofScope>\(\s*\(\) => \(\{ warehouseId, cashierId, includeAllCashiers: canViewAllCashiers \}\)/,
+  'Gallery dựng scope đủ warehouseId + cashierId + includeAllCashiers',
+);
+expectMatch(
+  gallery,
+  /await listPaymentProofPhotos\(scope\)/,
+  'Gallery đọc ảnh bằng đúng scope hiện tại',
+);
+for (const guard of ['visible', 'sharePhoto', 'removePhoto']) {
+  expectMatch(
+    gallery,
+    new RegExp(`${guard}[\\s\\S]{0,400}?isPhotoInScope\\(photo, scope\\)`),
+    `${guard} phải chặn ảnh ngoài phạm vi bằng isPhotoInScope`
+  );
+}
+// 2. POS chỉ bật canViewAllCashiers cho ROLE_OWNER / ROLE_MANAGER.
+expectMatch(
+  pos,
+  /<PaymentPhotoGallery[\s\S]{0,300}?warehouseId=\{selectedWarehouseId\}[\s\S]{0,200}?cashierId=\{cashierActorId\}[\s\S]{0,200}?canViewAllCashiers=\{currentRole === 'ROLE_OWNER' \|\| currentRole === 'ROLE_MANAGER'\}/,
+  'POS truyền selectedWarehouseId + cashierActorId và chỉ nới phạm vi cho Owner/Manager',
+);
+expectNoMatch(
+  pos,
+  /canViewAllCashiers=\{true\}|canViewAllCashiers=\{isGift|canViewAllCashiers=\{isManager/i,
+  'Không được bật xem mọi thu ngân bằng hằng số hoặc biến không phải vai trò',
+);
+// 3. Quét toàn bộ src/: không call site nào của listPaymentProofPhotos bỏ trống scope.
+function sourceFiles(dir: string, acc: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) sourceFiles(full, acc);
+    else if (/\.tsx?$/.test(entry.name)) acc.push(full);
+  }
+  return acc;
+}
+for (const file of sourceFiles(path.resolve(process.cwd(), 'src'))) {
+  const code = fs.readFileSync(file, 'utf8');
+  assert.doesNotMatch(
+    code,
+    /listPaymentProofPhotos\(\s*\)/,
+    `${path.relative(process.cwd(), file)} gọi listPaymentProofPhotos() mà không truyền scope`
+  );
+}
+// 4. Regression đường retention: savePaymentProofPhoto phải đọc TOÀN BỘ ảnh
+//    (không dùng hàm đã lọc theo scope) — nếu không, mọi lần lưu ảnh sẽ ném lỗi/thiếu ảnh.
+const retentionStart = offlineDb.indexOf('export async function savePaymentProofPhoto');
+assert.ok(retentionStart > 0, 'offline-db có savePaymentProofPhoto');
+const retentionBody = stripComments(offlineDb.slice(retentionStart, offlineDb.indexOf('export interface PaymentProofScope', retentionStart)));
+expectMatch(retentionBody, /await readAllPaymentProofPhotos\(\)/, 'Retention đọc ảnh qua readAllPaymentProofPhotos');
+expectNoMatch(retentionBody, /listPaymentProofPhotos/, 'Retention KHÔNG được gọi hàm đã lọc theo scope');
+expectNoMatch(
+  stripComments(offlineDb),
+  /export (async )?function readAllPaymentProofPhotos/,
+  'readAllPaymentProofPhotos phải private — không được xuất để lọt ra ngoài phạm vi',
+);
+// 5. Xóa ảnh: deletePaymentProofPhoto phải nhận scope và tự chặn ở tầng dữ liệu;
+//    gallery luôn truyền scope, và retention gọi KHÔNG scope (được phép dọn ảnh cũ).
+expectMatch(
+  offlineDb,
+  /export async function deletePaymentProofPhoto\(id: string, scope\?: PaymentProofScope\)/,
+  'deletePaymentProofPhoto nhận scope tuỳ chọn để chặn xoá ảnh ngoài phạm vi',
+);
+expectMatch(
+  offlineDb,
+  /const photo = all\.find\(\(item\) => item\.id === id\);\s*\n\s*if \(!photo \|\| !isPhotoInScope\(photo, scope\)\) return;/,
+  'deletePaymentProofPhoto từ chối xoá ảnh ngoài phạm vi',
+);
+expectMatch(
+  gallery,
+  /await deletePaymentProofPhoto\(photo\.id, scope\)/,
+  'Gallery xoá ảnh kèm scope hiện tại',
+);
+expectMatch(
+  stripComments(offlineDb),
+  /if \(!kept\.some\(\(item\) => item\.id === stale\.id\)\) await deletePaymentProofPhoto\(stale\.id\);/,
+  'Retention vẫn xoá được ảnh cũ ngoài phạm vi (không truyền scope)',
+);
+// --- 6. Đổi phạm vi (đổi kho / đổi thu ngân / đổi vai trò) phải dọn ảnh cũ TRƯỚC khi
+//    tải ảnh mới, để không ai kịp xem / chia sẻ / xóa ảnh ngoài phạm vi hiện tại.
+const resetGalleryStart = gallery.indexOf('const resetGallery = ');
+assert.ok(resetGalleryStart > 0, 'Gallery có resetGallery() dọn trạng thái theo phạm vi');
+const resetGalleryBody = stripComments(gallery.slice(resetGalleryStart, gallery.indexOf('useEffect', resetGalleryStart)));
+for (const line of ['revokePreviews(', 'setPhotos([]);', 'setPreviewUrls({});', 'setExpandedId(null);']) {
+  expectMatch(resetGalleryBody, new RegExp(line.replace(/[(){}[\]]/g, '\\$&')), `resetGallery() phải gọi ${line}`);
+}
+expectMatch(
+  stripComments(gallery),
+  /useEffect\(\(\) => \{[\s\S]{0,200}?if \(!isOpen\) \{[\s\S]{0,120}?resetGallery\(\);[\s\S]{0,200}?return;[\s\S]{0,120}?\}[\s\S]{0,200}?resetGallery\(\);[\s\S]{0,120}?load\(\);/,
+  'Gallery resetGallery() trước rồi load() ở mọi lần mở modal / đổi phạm vi',
+);
+// Object URL phải được thu hồi đúng lúc, không thu hồi ảnh đang hiển thị.
+expectNoMatch(
+  stripComments(gallery),
+  /useEffect\(\(\) => \(\) => \{[\s\S]{0,160}?Object\.values\(previewUrls\)/,
+  'Không được thu hồi object URL theo mọi lần render (sẽ xoá luôn ảnh đang xem)',
+);
+
+// --- moneyReceived sau khi bỏ state chết -----------------------------------------
+expectNoMatch(posCode, /isMoneyReceived/, 'State isMoneyReceived đã bị gỡ phải không còn tham chiếu');
+expectMatch(
+  posCode,
+  /paymentMethod,\s*\n\s*moneyReceived: false,\s*\n\s*fiscalScope: isGift \? 'INTERNAL_MANAGEMENT' : fiscalScope/,
+  'Đường online tiền mặt/quà tặng gửi moneyReceived: false (bất biến so với state cũ luôn false)',
+);
 console.log('PASS: transfer payment photo contract.');
