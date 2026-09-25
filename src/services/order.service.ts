@@ -722,6 +722,7 @@ export class OrderService {
           finalAmount: calculatedFinalAmount,
           fiscalScope,
           status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
+          paymentExpiresAt,
           itemsCount: preparedItems.length,
           totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
           isDuplicate: false,

@@ -1640,6 +1640,7 @@ export function PosCheckoutTerminal({
       if (session.mode === 'OFFLINE') {
         // Offline: chỉ ghi nhận cục bộ, chờ sync. Không in bill thành công.
         closeTransferSession();
+        postCheckoutResetRef.current?.();
         setSyncToast(`💾 Đơn ${session.orderCode} đã ghi nhận, chờ đồng bộ khi có mạng.`);
         setTimeout(() => setSyncToast(null), 6000);
         fetchActiveCashboxSession();
