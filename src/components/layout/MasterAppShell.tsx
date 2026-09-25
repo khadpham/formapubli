@@ -13,6 +13,7 @@ import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { Menu, Shield, Sparkles, ShoppingCart, Boxes, Receipt, LayoutDashboard } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 import { matchNavShortcut, matchActionShortcut, getShortcutLabel } from '@/lib/keyboard';
 import { UserRole, USER_ROLES } from '@/lib/roles';
@@ -237,6 +238,9 @@ export function MasterAppShell({
               <Shield className="w-3.5 h-3.5" />
               <span>{roleConfig.label}</span>
             </div>
+
+            {/* Chuông thông báo thời gian thực (5s) — hai chiều thu ngân ↔ quản lý */}
+            {session && <NotificationBell onNavigate={setCurrentTab} />}
 
             {/* Connection Status */}
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full font-semibold">

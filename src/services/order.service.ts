@@ -817,7 +817,7 @@ export class OrderService {
     warehouseId: string,
     txOrDb: any = db
   ): Promise<Map<string, number>> {
-    const ids = [...new Set(editionIds.filter(Boolean))];
+    const ids = Array.from(new Set(editionIds.filter(Boolean)));
     const out = new Map<string, number>();
     if (ids.length === 0) return out;
     const wh = await WarehouseService.getWarehouse(warehouseId, txOrDb);

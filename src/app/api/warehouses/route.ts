@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { WarehouseService } from '@/services/warehouse.service';
 import type { BankAccountRow } from '@/services/warehouse.service';
 import { requireSessionRole } from '@/lib/auth-session';
+import { recordAuditLog } from '@/lib/rbac-guard';
 import { handleApiError } from '@/lib/api-response';
 import { AppError } from '@/services/app-error';
 import { UserRole } from '@/lib/roles';
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);
     const body = await req.json();
 
     if (body.defaultBankAccountId) {
@@ -81,6 +82,15 @@ export async function POST(req: NextRequest) {
     } else {
       out.defaultBankAccountId = null;
     }
+
+    // Nhật ký hoạt động: ai mở kho lúc nào, loại kho gì (xem ở /api/activity-log).
+    await recordAuditLog({
+      action: 'WAREHOUSE_CREATED' as any,
+      actorRole: session.role,
+      actorId: session.actorId,
+      resource: '/api/warehouses',
+      details: `Mở kho [${created.code}] ${created.name} (${created.warehouseType}).`,
+    });
 
     return NextResponse.json(
       {

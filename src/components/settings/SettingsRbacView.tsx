@@ -20,9 +20,11 @@ import {
   Save,
   Users,
   Landmark,
+  History as HistoryIcon,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { StaffManager } from './StaffManager';
+import { ActivityLogView } from './ActivityLogView';
 import { BankAccountsManager } from './BankAccountsManager';
 
 interface SettingsRbacViewProps {
@@ -32,7 +34,7 @@ interface SettingsRbacViewProps {
 export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   // Go-live: da xoa mo phong vai tro. Tab "Tai khoan nhan su" chi hien voi OWNER/MANAGER.
   const canManageStaff = sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER';
-  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'banks' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(
+  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'banks' | 'activity' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(
     canManageStaff ? 'staff' : 'shortcuts'
   );
 
@@ -247,6 +249,18 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
         )}
 
         <button
+          onClick={() => setActiveSubTab('activity')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            activeSubTab === 'activity'
+              ? 'bg-white text-indigo-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <HistoryIcon className="w-3.5 h-3.5" />
+          <span>Nhật Ký Hoạt Động</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('shortcuts')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
             activeSubTab === 'shortcuts'
@@ -316,6 +330,9 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       {activeSubTab === 'banks' && canManageStaff && (
         <BankAccountsManager sessionRole={sessionRole} />
       )}
+
+      {/* TAB: NHAT KY HOA DONG (so cai lich trinh) */}
+      {activeSubTab === 'activity' && <ActivityLogView />}
 
       {/* TAB: KEYBOARD SHORTCUTS */}
       {activeSubTab === 'shortcuts' && (
@@ -678,3 +695,4 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
     </div>
   );
 }
+

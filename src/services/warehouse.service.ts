@@ -137,6 +137,11 @@ export class WarehouseService {
       );
     }
 
+    // Dọn "bucket rỗng" (tồn = 0) trước khi xóa kho: stock_balances có khóa
+    // ngoại tới warehouses, giữ lại sẽ khiến DELETE ném lỗi FK (500) thay vì
+    // thông báo rõ ràng. Bucket tồn = 0 không mang dữ liệu nào.
+    await txOrDb.delete(stockBalances).where(eq(stockBalances.warehouseId, warehouseId));
+
     await txOrDb.delete(warehouses).where(eq(warehouses.id, warehouseId));
     return { id: wh.id, name: wh.name };
   }

@@ -125,6 +125,21 @@ async function run() {
   const del404 = await delReq(deleteWarehouse, 'wh-khong-co', { Cookie: mgr.cookie });
   ok('xóa kho không tồn tại = 404', del404.status === 404, `status=${del404.status}`);
 
+  console.log('\n[#6b] Kho RỖNG tồn nhưng còn dòng tồn bằng 0 (đã bán hết ở hội chợ)');
+  await db.insert(schema.warehouses).values({
+    id: 'wh-ux-zero', code: 'UX_0', name: 'Kho hội chợ đã bán hết', warehouseType: 'FAIR_EVENT', isActive: true, isSellableOnPos: true,
+  });
+  await db.insert(schema.stockBalances).values({
+    id: 'sb-zero', editionId: 'ed-ux', warehouseId: 'wh-ux-zero', condition: 'NEW', physicalQuantity: 0,
+  });
+  const delZero = await delReq(deleteWarehouse, 'wh-ux-zero', { Cookie: mgr.cookie });
+  ok('xóa kho tồn=0 (có bucket rỗng) = 200, KHÔNG lỗi FK 500', delZero.status === 200,
+    `status=${delZero.status} ${JSON.stringify(delZero.body).slice(0, 120)}`);
+  const zeroGone = await db.select().from(schema.warehouses).where(eq(schema.warehouses.id, 'wh-ux-zero'));
+  ok('kho đã bị xóa', zeroGone.length === 0);
+  const zeroBucket = await db.select().from(schema.stockBalances).where(eq(schema.stockBalances.warehouseId, 'wh-ux-zero'));
+  ok('dòng tồn rỗng cũng được dọn (không rác FK)', zeroBucket.length === 0, `còn ${zeroBucket.length}`);
+
   console.log('\n[#4] Nút "Kiểm tra tồn kho": route trả data.ok, UI phải đọc đúng chỗ');
   await db.insert(schema.warehouses).values({
     id: 'wh-ux-dest', code: 'UX_DICH', name: 'Kho đích UX', warehouseType: 'PHYSICAL_MAIN', isActive: true, isSellableOnPos: false,

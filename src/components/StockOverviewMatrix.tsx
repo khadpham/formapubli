@@ -456,7 +456,7 @@ export function StockOverviewMatrix({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Ma trận 3 Kho
+              Ma trận {(localWarehouses || warehouses || []).length} kho
             </button>
             <button
               type="button"
@@ -498,27 +498,6 @@ export function StockOverviewMatrix({
           </div>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-
-          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-            <button
-              type="button"
-              onClick={() => setCreateWarehouseOpen(true)}
-              title="Mở thêm kho hoặc gian hàng hội chợ mới"
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-            >
-              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho
-            </button>
-          )}
-          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-            <button
-              type="button"
-              onClick={() => setBankManagerOpen(true)}
-              title="Gán tài khoản nhận VietQR mặc định cho từng kho"
-              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-            >
-              <Landmark className="w-3.5 h-3.5" /> TK Nhận Tiền
-            </button>
-          )}
 
           <div className="relative">
             <button
@@ -616,6 +595,46 @@ export function StockOverviewMatrix({
           <div className="fixed inset-0 z-40" onClick={() => setActionMenu(null)} aria-hidden="true" />
         )}
       </div>
+
+      {/* BẢNG ĐIỀU KHIỂN KHO — điểm vào rõ ràng cho mọi việc quản lý kho (kể cả hội chợ) */}
+      {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+        <div className="rounded-2xl border-2 border-indigo-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm font-extrabold text-slate-900">
+                  QUẢN LÝ KHO
+                  <span className="ml-2 px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[11px] font-extrabold">
+                    {(localWarehouses || warehouses || []).length} kho
+                  </span>
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Mở/Xóa kho · Gán thu ngân cho kho hội chợ · Gán tài khoản nhận tiền QR · Mẫu nội dung chuyển khoản
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCreateWarehouseOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                <Store className="w-3.5 h-3.5" /> Mở kho mới
+              </button>
+              <button
+                type="button"
+                onClick={() => setBankManagerOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                <Landmark className="w-3.5 h-3.5" /> Quản lý kho & gán nhân sự
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2.5 BANNER THÔNG BÁO TẠO KHO & CTA ĐIỀU CHUYỂN (#10-CTA) */}
       {createdWarehouseToast && (
