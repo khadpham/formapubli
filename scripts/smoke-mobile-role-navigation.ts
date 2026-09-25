@@ -184,8 +184,10 @@ assert.match(pos, /const nextCart = snapshot\.cart\.map/);
 assert.match(pos, /parserImportSucceededRef\.current = true/);
 assert.doesNotMatch(pos, /handleAddToCart\(book, it\.quantity, controller\)/);
 assert.match(pos, /pendingDiscountRate !== null \? approvalDiscountAmount : discountAmount/);
-assert.match(pos, /setIsMoneyReceived\(false\);[\s\S]*\[cart, discountRate, selectedWarehouseId, isGift, paymentMethod\]/);
-assert.match(pos, /\[cart, discountRate, selectedWarehouseId, isGift, paymentMethod\]/);
+// Đã bỏ toggle "Đã nhận tiền" cho chuyển khoản/QR: thay bằng phiên chuyển khoản
+// phải đóng lại và dọn trạng thái sau khi chốt, không còn state cầm tay.
+assert.match(pos, /setTransferSession\(null\)/);
+assert.match(pos, /postCheckoutResetRef\.current\?\.\(\)/);
 assert.match(pos, /const approvalPricedCart = useMemo/);
 assert.match(pos, /aria-labelledby="pos-receipt-dialog-title"/);
 assert.match(pos, /idem-\$\{activeOrderCode\}/);
@@ -282,7 +284,10 @@ const offlineDb = fs.readFileSync(offlineDbPath, 'utf8');
 assert.match(offlineDb, /cashboxSessionId\?: string/);
 assert.match(offlineDb, /discountApprovalId\?: string/);
 assert.match(offlineDb, /moneyReceived\?: boolean/);
-assert.match(pos, /moneyReceived: isMoneyReceived/);
+// moneyReceived giờ là hằng số false khi tạo đơn (tiền mặt/quà tặng không có toggle),
+// và đồng bộ offline phải chuyển tiếp giá trị của đơn.
+assert.match(pos, /moneyReceived: false/);
+assert.match(pos, /moneyReceived: order\.moneyReceived/);
 assert.match(offlineDb, /getPendingOfflineOrders\(cashierId\?: string\)/);
 assert.match(offlineDb, /claimLegacyOfflineOrders/);
 assert.match(pos, /legacyOfflineCount > 0 && actorId/);
