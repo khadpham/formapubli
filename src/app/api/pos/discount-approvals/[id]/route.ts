@@ -16,13 +16,16 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    await requireSessionRole(req, [
+    const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_CASHIER',
     ] as UserRole[]);
 
     const data = await DiscountApprovalService.getRequest(params.id);
+    if (session.role === 'ROLE_CASHIER' && data.cashierId !== session.actorId) {
+      return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Không được xem yêu cầu của thu ngân khác.' }, { status: 403 });
+    }
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return handleApiError(error);
@@ -31,7 +34,7 @@ export async function GET(
 
 /**
  * POST /api/pos/discount-approvals/[id]
- * - Quản lý phê duyệt (APPROVE) hoặc từ chối (REJECT).
+ * - Quản lý phê duyệt (APPROVE), từ chối (REJECT) hoặc thu ngân hủy yêu cầu của mình (CANCEL).
  */
 export async function POST(
   req: NextRequest,
@@ -48,19 +51,30 @@ export async function POST(
     const { action, method, shortCode, qrToken, emergencyCode, rejectedReason } = body;
 
     // Thu ngân chỉ được phép gửi mã cấp phép (OTP) hoặc mã khẩn cấp từ Quản lý
-    if (session.role === 'ROLE_CASHIER') {
-      if (action !== 'APPROVE' || (method !== 'SHORTCODE_BOUND' && method !== 'OFFLINE_EMERGENCY')) {
-        throw AppError.forbidden(
-          'Thu ngân chỉ có thể mở khóa khi nhập đúng mã cấp phép (OTP 4 số) hoặc mã khẩn cấp từ Quản lý.'
-        );
-      }
+    if (session.role === 'ROLE_CASHIER' && action === 'APPROVE') {
+      throw AppError.forbidden('Chỉ Quản lý hoặc Chủ quầy mới có quyền phê duyệt chiết khấu.');
+    }
+    if (session.role === 'ROLE_CASHIER' && action !== 'CANCEL') {
+      throw AppError.forbidden('Thu ngân chỉ có thể hủy yêu cầu duyệt của mình.');
     }
 
     const actorContext = {
       staffId: session.actorId,
-      role: session.role === 'ROLE_CASHIER' ? 'ROLE_MANAGER' : session.role,
-      fullName: session.role === 'ROLE_CASHIER' ? `Quản lý (cấp OTP cho ${session.actorId})` : session.fullName,
+      role: session.role,
+      fullName: session.fullName,
     };
+
+    if (action === 'CANCEL') {
+      const data = await DiscountApprovalService.cancelRequest({
+        requestId: params.id,
+        actorContext: {
+          staffId: session.actorId,
+          role: session.role,
+          fullName: session.fullName,
+        },
+      });
+      return NextResponse.json({ success: true, data });
+    }
 
     if (action === 'APPROVE') {
       const data = await DiscountApprovalService.approveRequest({
@@ -83,7 +97,7 @@ export async function POST(
       return NextResponse.json({ success: true, data });
     }
 
-    throw AppError.invalid(`Hành động '${action}' không được hỗ trợ (chỉ APPROVE hoặc REJECT)`);
+    throw AppError.invalid(`Hành động '${action}' không được hỗ trợ (chỉ APPROVE, REJECT hoặc CANCEL)`);
   } catch (error: any) {
     return handleApiError(error);
   }

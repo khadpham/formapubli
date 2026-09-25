@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { setupTestDb, TEST_DB_FILE } from './setup-test-db';
 
 const ALL_SUITES = [
+  'scripts/smoke-mobile-role-navigation.ts',
   'scripts/test-discount-guard.ts',
   'scripts/test-p0-verification.ts',
   'scripts/test-inventory.ts',
@@ -52,6 +53,7 @@ const ALL_SUITES = [
   'scripts/test-auth-gateway.ts',
   'scripts/test-auth-rbac.ts',
   'scripts/test-phase0-laneA.ts',
+  'scripts/test-cp2-concurrency-probes.ts',
   'scripts/test-cp3-transfer-concurrency.ts',
   'scripts/test-cp3-migrations.ts',
   'scripts/test-cp3-return-concurrency.ts',

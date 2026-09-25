@@ -6,6 +6,8 @@ import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
+import { db, staffAccounts } from '@/db';
+import { eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -174,20 +176,20 @@ export async function POST(req: NextRequest) {
       allowOverdraft,
       managerPin,
       managerApprovalCode,
-      discountApprovalId,
-      isGift,
+       discountApprovalId,
+       moneyReceived,
+       isGift,
       giftReason,
       confirmImmediately,
     } = body;
 
-    if (!warehouseId || ((!items || !Array.isArray(items) || items.length === 0) && (!bundles || !Array.isArray(bundles) || bundles.length === 0))) {
-      return NextResponse.json(
-        { success: false, error: 'Thiếu kho xuất hàng (warehouseId) hoặc danh sách sản phẩm (items/bundles).' },
-        { status: 400 }
-      );
-    }
-
-    // userRole đã trích xuất ở đầu hàm (dùng chung cho CONFIRM/CANCEL).
+     if (!warehouseId || ((!items || !Array.isArray(items) || items.length === 0) && (!bundles || !Array.isArray(bundles) || bundles.length === 0))) {
+       return NextResponse.json(
+         { success: false, error: 'Thiếu kho xuất hàng (warehouseId) hoặc danh sách sản phẩm (items/bundles).' },
+         { status: 400 }
+       );
+     }
+     // userRole đã trích xuất ở đầu hàm (dùng chung cho CONFIRM/CANCEL).
     // SERVER-ENFORCE DISCOUNT HARD-CAP:
     // Chặn cả chiết khấu tổng đơn LẪN chiết khấu từng dòng (line item),
     // vì OrderService cho phép unitDiscountRate kế thừa discountRate tổng.
@@ -228,28 +230,47 @@ export async function POST(req: NextRequest) {
       }
       safeFiscalScope = 'INTERNAL_MANAGEMENT';
     }
+    const effectivePaymentMethod = paymentMethod || 'CASH';
+    if (!giftFlag && (effectivePaymentMethod === 'BANK_TRANSFER' || effectivePaymentMethod === 'QR_CODE') && moneyReceived !== true) {
+      return NextResponse.json(
+        { success: false, error: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' },
+        { status: 403 }
+      );
+    }
     const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
       const v = it?.unitDiscountRate;
       const parsed =
         v !== undefined && v !== null && `${v}` !== '' ? parseFloat(v) : parsedOrderDiscount;
       return Number.isFinite(parsed) ? parsed : 0;
     });
-    const maxDiscountRate = Math.max(
-      Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
-      ...effectiveItemDiscounts
-    );
+    const maxDiscountRate = giftFlag
+      ? 1
+      : Math.max(
+          Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
+          ...effectiveItemDiscounts
+        );
     const exceedsHardCap = maxDiscountRate >= MAX_CASHIER_DISCOUNT_RATE;
     const isPrivilegedRole = userRole === 'ROLE_OWNER' || userRole === 'ROLE_MANAGER';
+    let approvalIdForOrder = discountApprovalId;
+    let approvalSource = isPrivilegedRole ? userRole : 'MANAGER_PIN';
+    let approvalApproverId: string | null = null;
 
     if (exceedsHardCap && !isPrivilegedRole) {
       let isApprovalValid = false;
       if (discountApprovalId) {
         try {
-          const appr = await DiscountApprovalService.getRequest(discountApprovalId);
-          if (appr && appr.status === 'APPROVED') {
-            isApprovalValid = true;
-          }
-        } catch {}
+           const appr = await DiscountApprovalService.getRequest(discountApprovalId);
+            if (appr && (appr.status === 'APPROVED' || appr.status === 'CONSUMED') && (userRole !== 'ROLE_CASHIER' || appr.cashierId === actorHeader)) {
+              isApprovalValid = true;
+              approvalIdForOrder = discountApprovalId;
+              approvalSource = appr.approvedBy || 'APPROVAL_REQUEST';
+              approvalApproverId = appr.approvedBy || null;
+           } else if (userRole === 'ROLE_CASHIER') {
+             approvalIdForOrder = undefined;
+           }
+         } catch {
+           if (userRole === 'ROLE_CASHIER') approvalIdForOrder = undefined;
+         }
       }
 
       if (!isApprovalValid) {
@@ -265,15 +286,16 @@ export async function POST(req: NextRequest) {
           await recordAuditLog({
             action: 'MANAGER_DISCOUNT_DENIED',
             actorRole: userRole,
-            actorId: cashierId || userRole,
+            actorId: actorHeader,
             resource: '/api/orders',
-            details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${cashierId || userRole}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
+            details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${actorHeader}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
           });
           return NextResponse.json(
             { success: false, error: 'Chiết khấu từ 20% trở lên bắt buộc có mã PIN hoặc phê duyệt của Quản lý.' },
             { status: 403 }
           );
         }
+        approvalSource = 'SYSTEM_MANAGER_PIN';
       }
     }
 
@@ -306,6 +328,40 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    let approvalApproverRole: UserRole = userRole;
+    if (approvalApproverId) {
+      const approverRows = await db
+        .select({ role: staffAccounts.role })
+        .from(staffAccounts)
+        .where(eq(staffAccounts.staffId, approvalApproverId))
+        .limit(1);
+      approvalApproverRole = (approverRows[0]?.role as UserRole) || 'ROLE_MANAGER';
+    }
+    const approvalAuditActorId = approvalApproverId || (approvalSource === 'SYSTEM_MANAGER_PIN' ? 'SYSTEM_MANAGER_PIN' : actorHeader);
+    const approvalAuditRole = approvalSource === 'SYSTEM_MANAGER_PIN' ? 'ROLE_MANAGER' : approvalApproverRole;
+    const requiredAudit = [
+      ...(exceedsHardCap
+        ? [{
+            id: 'discount-approval',
+            action: 'MANAGER_DISCOUNT_APPROVED',
+            actorRole: approvalAuditRole,
+            actorId: approvalAuditActorId,
+            resource: '/api/orders',
+            details: (committedOrderCode: string) => `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${committedOrderCode} (cashier: ${actorHeader}, phê duyệt bởi: ${approvalSource}).`,
+          }]
+        : []),
+      ...(giftFlag
+        ? [{
+            id: 'gift-approval',
+            action: 'MANAGER_DISCOUNT_APPROVED',
+            actorRole: approvalAuditRole,
+            actorId: approvalAuditActorId,
+            resource: '/api/orders',
+            details: (committedOrderCode: string) => `Duyệt đơn Tặng 100% (GIFT) ${committedOrderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
+          }]
+        : []),
+    ];
+
     const result = await OrderService.createOrder({
       id,
       orderCode,
@@ -325,6 +381,7 @@ export async function POST(req: NextRequest) {
       cashierId: actorHeader,
       actorContext,
       cashboxSessionId,
+      discountApprovalId: approvalIdForOrder,
       note,
       // Bước 1: web/social truyền confirmImmediately:false → đơn PENDING giữ chỗ ATP
       confirmImmediately: confirmImmediately !== undefined ? Boolean(confirmImmediately) : true,
@@ -335,6 +392,7 @@ export async function POST(req: NextRequest) {
 
       isGift: giftFlag,
       giftReason: giftFlag ? `${giftReason ?? note ?? ''}`.trim() : undefined,
+      requiredAudit,
       items: giftFlag
         ? pricedItems.map((it: any) => ({ ...it, unitDiscountRate: 1 }))
         : pricedItems,
@@ -343,25 +401,8 @@ export async function POST(req: NextRequest) {
         : undefined,
     });
 
-    if (discountApprovalId) {
-      try {
-        await DiscountApprovalService.consumeApproval({
-          requestId: discountApprovalId,
-          currentItems: pricedItems.map((it: any) => ({
-            editionId: it.editionId,
-            quantity: it.quantity,
-            unitPrice: it.unitPrice || 0,
-          })),
-          discountRate: discountRate ?? 0,
-          warehouseId,
-          orderCode: result.orderCode,
-        });
-      } catch (err: any) {
-        console.warn('Không thể tiêu thụ discount approval:', err);
-      }
-    }
-
     await recordAuditLog({
+      id: `aud-order-${result.orderId}-mutate`,
       action: 'MUTATE_ORDER',
       actorRole: userRole,
       actorId: actorHeader,
@@ -369,28 +410,7 @@ export async function POST(req: NextRequest) {
       details: `Tạo đơn hàng ${result.orderCode} (${safeFiscalScope}) - Thực thu: ${result.finalAmount}`,
     });
 
-    // Ghi vết phê duyệt chiết khấu vượt trần (tuyệt đối không lưu mã PIN).
-    if (exceedsHardCap) {
-      await recordAuditLog({
-        action: 'MANAGER_DISCOUNT_APPROVED',
-        actorRole: userRole,
-        actorId: actorHeader,
-        resource: '/api/orders',
-        details: `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${result.orderCode} (cashier: ${actorHeader}, phê duyệt bởi: ${userRole}).`,
-      });
-    }
 
-    // BV-03: vết kiểm toán riêng cho đơn quà tặng (doanh thu 0đ, vẫn trừ kho).
-    // Tái dùng MANAGER_DISCOUNT_APPROVED để không phình enum audit (giữ nguyên rbac-guard).
-    if (giftFlag) {
-      await recordAuditLog({
-        action: 'MANAGER_DISCOUNT_APPROVED',
-        actorRole: userRole,
-        actorId: actorHeader,
-        resource: '/api/orders',
-        details: `Duyệt đơn Tặng 100% (GIFT) ${result.orderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
-      });
-    }
 
     return NextResponse.json({
       success: true,

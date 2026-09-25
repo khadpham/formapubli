@@ -24,11 +24,17 @@ export async function GET(req: NextRequest) {
 
     if (id) {
       const data = await DiscountApprovalService.getRequest(id);
+      if (session.role === 'ROLE_CASHIER' && data.cashierId !== session.actorId) {
+        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Không được xem yêu cầu của thu ngân khác.' }, { status: 403 });
+      }
       return NextResponse.json({ success: true, data });
     }
 
     const data = await DiscountApprovalService.listPending(warehouseId);
-    return NextResponse.json({ success: true, data });
+    const visibleData = session.role === 'ROLE_CASHIER'
+      ? data.filter((request: { cashierId: string }) => request.cashierId === session.actorId)
+      : data;
+    return NextResponse.json({ success: true, data: visibleData });
   } catch (error: any) {
     return handleApiError(error);
   }

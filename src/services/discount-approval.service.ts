@@ -1,7 +1,8 @@
-import { db, discountApprovalRequests, warehouses } from '../db';
-import { and, desc, eq, gt, or, sql } from 'drizzle-orm';
+import { db, discountApprovalRequests, warehouses, editions } from '../db';
+import { and, desc, eq, gt, inArray, lte, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { hashString } from '../lib/export-hash';
+import { priceLine } from '../lib/pricing';
 
 export interface CartItemInput {
   editionId: string;
@@ -13,6 +14,12 @@ export interface ActorContext {
   staffId: string;
   role: string;
   fullName?: string;
+}
+
+function assertTransitionApplied(result: any, message: string) {
+  if (result?.rowsAffected !== 1) {
+    throw AppError.conflict(message);
+  }
 }
 
 /**
@@ -156,7 +163,10 @@ export class DiscountApprovalService {
     requestedDiscountRate: number;
     actorContext: ActorContext;
     txOrDb?: any;
-  }) {
+  }): Promise<any> {
+    if (!params.txOrDb) {
+      return db.transaction((tx) => this.createRequest({ ...params, txOrDb: tx }));
+    }
     const {
       orderCode,
       warehouseId,
@@ -173,15 +183,29 @@ export class DiscountApprovalService {
       throw AppError.invalid('Tỷ lệ chiết khấu yêu cầu không hợp lệ (phải từ > 0% đến 100%)');
     }
 
-    const originalAmount = items.reduce(
-      (sum, item) => sum + item.quantity * Math.round(item.unitPrice),
-      0
+    const editionIds = Array.from(new Set(items.map((item) => item.editionId)));
+    const editionRows = await txOrDb
+      .select({ id: editions.id, coverPrice: editions.coverPrice })
+      .from(editions)
+      .where(inArray(editions.id, editionIds));
+    const editionPriceMap = new Map<string, number>(
+      editionRows.map((edition: { id: string; coverPrice: number }) => [edition.id, Number(edition.coverPrice)])
     );
-    const discountAmount = Math.round(originalAmount * requestedDiscountRate);
-    const finalAmount = originalAmount - discountAmount;
+    if (editionPriceMap.size !== editionIds.length) {
+      throw AppError.invalid('Giỏ hàng chứa ấn bản không tồn tại trong danh mục.');
+    }
+    const trustedItems = items.map((item) => ({
+      ...item,
+      unitPrice: editionPriceMap.get(item.editionId) || 0,
+    }));
+
+    const pricedLines = trustedItems.map((item) => priceLine(item.unitPrice, requestedDiscountRate, item.quantity));
+    const originalAmount = pricedLines.reduce((sum, line) => sum + line.subtotal, 0);
+    const finalAmount = pricedLines.reduce((sum, line) => sum + line.finalAmount, 0);
+    const discountAmount = originalAmount - finalAmount;
 
     const cartHash = generateCanonicalCartHash(
-      items,
+      trustedItems,
       requestedDiscountRate,
       warehouseId,
       orderCode
@@ -197,6 +221,8 @@ export class DiscountApprovalService {
       .where(
         and(
           eq(discountApprovalRequests.orderCode, orderCode),
+          eq(discountApprovalRequests.warehouseId, warehouseId),
+          eq(discountApprovalRequests.cashierId, cashierId),
           or(
             eq(discountApprovalRequests.status, 'PENDING'),
             eq(discountApprovalRequests.status, 'APPROVED')
@@ -234,14 +260,24 @@ export class DiscountApprovalService {
       }
 
       // Nếu giỏ hàng thay đổi hoặc discount rate thay đổi -> vô hiệu hóa đơn cũ (SUPERSEDED)
-      await txOrDb
+      const supersedeResult = await txOrDb
         .update(discountApprovalRequests)
         .set({
           status: 'SUPERSEDED',
           updatedAt: nowIso,
           version: sql`${discountApprovalRequests.version} + 1`,
         })
-        .where(eq(discountApprovalRequests.id, prev.id));
+        .where(
+          and(
+            eq(discountApprovalRequests.id, prev.id),
+            eq(discountApprovalRequests.version, prev.version),
+            or(
+              eq(discountApprovalRequests.status, 'PENDING'),
+              eq(discountApprovalRequests.status, 'APPROVED')
+            )
+          )
+        );
+      assertTransitionApplied(supersedeResult, 'Yêu cầu duyệt đã thay đổi trạng thái, vui lòng tạo lại.');
     }
 
     const id = crypto.randomUUID();
@@ -265,7 +301,7 @@ export class DiscountApprovalService {
       warehouseId,
       cashierId,
       cartHash,
-      cartSnapshot: JSON.stringify(items),
+      cartSnapshot: JSON.stringify(trustedItems),
       requestedDiscountRate,
       originalAmount,
       discountAmount,
@@ -314,6 +350,10 @@ export class DiscountApprovalService {
       txOrDb = db,
     } = params;
 
+    if (!['ONE_TOUCH', 'QR_JWT', 'SHORTCODE_BOUND', 'OFFLINE_EMERGENCY'].includes(method as string)) {
+      throw AppError.invalid('Phương thức phê duyệt không hợp lệ.');
+    }
+
     if (
       actorContext.role !== 'ROLE_OWNER' &&
       actorContext.role !== 'ROLE_MANAGER'
@@ -331,6 +371,10 @@ export class DiscountApprovalService {
       throw AppError.invalid('Không tìm thấy yêu cầu duyệt chiết khấu');
     }
 
+    if (rows[0].cashierId === actorContext.staffId) {
+      throw AppError.forbidden('Không thể tự phê duyệt yêu cầu của mình.');
+    }
+
     const request = rows[0];
 
     // Lazy expiration check
@@ -338,7 +382,13 @@ export class DiscountApprovalService {
       await txOrDb
         .update(discountApprovalRequests)
         .set({ status: 'EXPIRED', updatedAt: new Date().toISOString() })
-        .where(eq(discountApprovalRequests.id, requestId));
+        .where(
+          and(
+            eq(discountApprovalRequests.id, requestId),
+            eq(discountApprovalRequests.status, 'PENDING'),
+            lte(discountApprovalRequests.expiresAt, new Date().toISOString())
+          )
+        );
       throw AppError.conflict('Yêu cầu duyệt chiết khấu đã hết hạn 5 phút (EXPIRED)');
     }
 
@@ -393,10 +443,13 @@ export class DiscountApprovalService {
       .where(
         and(
           eq(discountApprovalRequests.id, requestId),
-          eq(discountApprovalRequests.version, request.version),
-          eq(discountApprovalRequests.status, 'PENDING')
+           eq(discountApprovalRequests.version, request.version),
+           eq(discountApprovalRequests.status, 'PENDING'),
+           gt(discountApprovalRequests.expiresAt, nowIso)
         )
-      );
+       );
+
+    assertTransitionApplied(result, 'Yêu cầu duyệt đã thay đổi trạng thái, vui lòng thử lại.');
 
     return {
       ...request,
@@ -436,7 +489,15 @@ export class DiscountApprovalService {
       throw AppError.invalid('Không tìm thấy yêu cầu duyệt chiết khấu');
     }
 
+    if (rows[0].cashierId === actorContext.staffId) {
+      throw AppError.forbidden('Không thể tự từ chối yêu cầu của mình.');
+    }
+
     const request = rows[0];
+    if (new Date(request.expiresAt).getTime() <= Date.now()) {
+      await this.getRequest(requestId, txOrDb);
+      throw AppError.conflict('Yêu cầu duyệt chiết khấu đã hết hạn 5 phút (EXPIRED)');
+    }
     if (request.status !== 'PENDING') {
       throw AppError.conflict(
         `Không thể từ chối yêu cầu ở trạng thái ${request.status}`
@@ -444,7 +505,7 @@ export class DiscountApprovalService {
     }
 
     const nowIso = new Date().toISOString();
-    await txOrDb
+    const result = await txOrDb
       .update(discountApprovalRequests)
       .set({
         status: 'REJECTED',
@@ -456,15 +517,91 @@ export class DiscountApprovalService {
       .where(
         and(
           eq(discountApprovalRequests.id, requestId),
-          eq(discountApprovalRequests.status, 'PENDING')
+           eq(discountApprovalRequests.version, request.version),
+           eq(discountApprovalRequests.status, 'PENDING'),
+           gt(discountApprovalRequests.expiresAt, nowIso)
         )
       );
+    assertTransitionApplied(result, 'Yêu cầu duyệt đã thay đổi trạng thái, vui lòng thử lại.');
 
     return {
       ...request,
       status: 'REJECTED',
       approvedBy: actorContext.staffId,
       rejectedReason,
+      version: request.version + 1,
+      updatedAt: nowIso,
+    };
+  }
+
+  static async cancelRequest(params: {
+    requestId: string;
+    actorContext: ActorContext;
+    txOrDb?: any;
+  }) {
+    const { requestId, actorContext, txOrDb = db } = params;
+    const rows = await txOrDb
+      .select()
+      .from(discountApprovalRequests)
+      .where(eq(discountApprovalRequests.id, requestId))
+      .limit(1);
+
+    if (rows.length === 0) {
+      throw AppError.invalid('Không tìm thấy yêu cầu duyệt chiết khấu');
+    }
+
+    const request = rows[0];
+    if (
+      actorContext.role !== 'ROLE_OWNER' &&
+      actorContext.role !== 'ROLE_MANAGER' &&
+      actorContext.role !== 'ROLE_CASHIER'
+    ) {
+      throw AppError.forbidden('Không có quyền hủy yêu cầu duyệt chiết khấu');
+    }
+    if (actorContext.role === 'ROLE_CASHIER' && request.cashierId !== actorContext.staffId) {
+      throw AppError.forbidden('Thu ngân chỉ có thể hủy yêu cầu của mình');
+    }
+    if (
+      (request.status === 'PENDING' || request.status === 'APPROVED') &&
+      new Date(request.expiresAt).getTime() <= Date.now()
+    ) {
+      return this.getRequest(requestId, txOrDb);
+    }
+    if (request.status === 'CONSUMED') {
+      throw AppError.conflict('Yêu cầu duyệt đã được sử dụng cho đơn hàng, không thể hủy.');
+    }
+    if (request.status === 'REJECTED' || request.status === 'EXPIRED' || request.status === 'SUPERSEDED') {
+      return request;
+    }
+    if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+      throw AppError.conflict(`Không thể hủy yêu cầu ở trạng thái ${request.status}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const result = await txOrDb
+      .update(discountApprovalRequests)
+      .set({
+        status: 'SUPERSEDED',
+        rejectedReason: 'Yêu cầu đã bị hủy bởi người tạo hoặc quản lý',
+        version: sql`${discountApprovalRequests.version} + 1`,
+        updatedAt: nowIso,
+      })
+      .where(
+        and(
+          eq(discountApprovalRequests.id, requestId),
+          eq(discountApprovalRequests.version, request.version),
+          or(
+            eq(discountApprovalRequests.status, 'PENDING'),
+            eq(discountApprovalRequests.status, 'APPROVED')
+          )
+        )
+      );
+    assertTransitionApplied(result, 'Yêu cầu duyệt đã thay đổi trạng thái, vui lòng thử lại.');
+
+    return {
+      ...request,
+      status: 'SUPERSEDED',
+      rejectedReason: 'Yêu cầu đã bị hủy bởi người tạo hoặc quản lý',
       version: request.version + 1,
       updatedAt: nowIso,
     };
@@ -495,7 +632,16 @@ export class DiscountApprovalService {
       await txOrDb
         .update(discountApprovalRequests)
         .set({ status: 'EXPIRED', updatedAt: nowIso })
-        .where(eq(discountApprovalRequests.id, req.id));
+        .where(
+          and(
+            eq(discountApprovalRequests.id, req.id),
+            or(
+              eq(discountApprovalRequests.status, 'PENDING'),
+              eq(discountApprovalRequests.status, 'APPROVED')
+            ),
+            lte(discountApprovalRequests.expiresAt, nowIso)
+          )
+        );
       req.status = 'EXPIRED';
       req.updatedAt = nowIso;
     }
@@ -539,18 +685,30 @@ export class DiscountApprovalService {
     discountRate: number;
     warehouseId: string;
     orderCode: string;
+    cashierId?: string;
+    originalAmount?: number;
+    discountAmount?: number;
+    finalAmount?: number;
     txOrDb?: any;
   }) {
     const {
       requestId,
       currentItems,
       discountRate,
-      warehouseId,
-      orderCode,
+       warehouseId,
+       orderCode,
+       cashierId,
+       originalAmount,
+      discountAmount,
+      finalAmount,
       txOrDb = db,
     } = params;
 
     const request = await this.getRequest(requestId, txOrDb);
+
+    if (cashierId && request.cashierId !== cashierId) {
+      throw AppError.forbidden('Yêu cầu duyệt không thuộc thu ngân hiện tại.');
+    }
 
     if (request.status === 'CONSUMED') {
       throw AppError.conflict('Yêu cầu chiết khấu này đã được sử dụng');
@@ -574,9 +732,16 @@ export class DiscountApprovalService {
         'Giỏ hàng đã bị thay đổi sau khi được duyệt chiết khấu. Vui lòng xin duyệt lại.'
       );
     }
+    if (
+      (originalAmount !== undefined && Math.abs(request.originalAmount - originalAmount) > 0.01) ||
+      (discountAmount !== undefined && Math.abs(request.discountAmount - discountAmount) > 0.01) ||
+      (finalAmount !== undefined && Math.abs(request.finalAmount - finalAmount) > 0.01)
+    ) {
+      throw AppError.conflict('Tổng tiền của giỏ không khớp yêu cầu đã được duyệt.');
+    }
 
     const nowIso = new Date().toISOString();
-    await txOrDb
+    const result = await txOrDb
       .update(discountApprovalRequests)
       .set({
         status: 'CONSUMED',
@@ -585,10 +750,13 @@ export class DiscountApprovalService {
       })
       .where(
         and(
-          eq(discountApprovalRequests.id, requestId),
-          eq(discountApprovalRequests.status, 'APPROVED')
+           eq(discountApprovalRequests.id, requestId),
+           eq(discountApprovalRequests.version, request.version),
+           eq(discountApprovalRequests.status, 'APPROVED'),
+           gt(discountApprovalRequests.expiresAt, nowIso)
         )
       );
+    assertTransitionApplied(result, 'Yêu cầu duyệt đã thay đổi trạng thái, vui lòng thử lại.');
 
     return {
       ...request,

@@ -15,6 +15,8 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { BrowserQRCodeSvgWriter } from '@zxing/library';
+import { UserRole } from '@/lib/roles';
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 
 export interface CartItemSnapshot {
   editionId: string;
@@ -24,27 +26,39 @@ export interface CartItemSnapshot {
 
 interface DiscountApprovalModalProps {
   isOpen: boolean;
+  currentRole: UserRole;
   orderCode: string;
   warehouseId: string;
   requestedDiscountRate: number;
   originalAmount: number;
+  discountAmount?: number;
+  finalAmount?: number;
   items: CartItemSnapshot[];
   /** F1: báo requestId ngay khi tạo yêu cầu để POS gọi được API CANCEL khi hủy. */
   onRequestCreated?: (requestId: string) => void;
   onApproved: (data: { requestId: string; rate: number; method: string }) => void;
+  onTerminal?: (status: 'REJECTED' | 'EXPIRED', requestId: string | null) => void;
   onClose: () => void;
+  onCancel?: () => void;
+  cancelError?: string | null;
 }
 
 export function DiscountApprovalModal({
   isOpen,
+  currentRole,
   orderCode,
   warehouseId,
   requestedDiscountRate,
   originalAmount,
+  discountAmount: providedDiscountAmount,
+  finalAmount: providedFinalAmount,
   items,
   onRequestCreated,
   onApproved,
+  onTerminal,
   onClose,
+  onCancel,
+  cancelError,
 }: DiscountApprovalModalProps) {
   const [requestId, setRequestId] = useState<string | null>(null);
   const [shortCode, setShortCode] = useState<string>('');
@@ -66,12 +80,34 @@ export function DiscountApprovalModal({
 
   const qrContainerRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const approvalTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const requestGenerationRef = useRef(0);
 
-  const discountAmount = Math.round(originalAmount * requestedDiscountRate);
-  const finalAmount = originalAmount - discountAmount;
+  const discountAmount = providedDiscountAmount ?? Math.round(originalAmount * requestedDiscountRate);
+  const finalAmount = providedFinalAmount ?? (originalAmount - discountAmount);
   const isGift = requestedDiscountRate === 1.0;
 
   const [mounted, setMounted] = useState(false);
+  const itemsKey = JSON.stringify(items);
+  const onRequestCreatedRef = useRef(onRequestCreated);
+  const onApprovedRef = useRef(onApproved);
+  const onTerminalRef = useRef(onTerminal);
+  const onCloseRef = useRef(onClose);
+  const onCancelRef = useRef(onCancel);
+  const dismiss = () => {
+    if (status === 'LOADING' || status === 'APPROVED') return;
+    (onCancelRef.current ?? onCloseRef.current)();
+  };
+  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, dismiss);
+
+  useEffect(() => {
+    onRequestCreatedRef.current = onRequestCreated;
+    onApprovedRef.current = onApproved;
+    onTerminalRef.current = onTerminal;
+    onCloseRef.current = onClose;
+    onCancelRef.current = onCancel;
+  }, [onRequestCreated, onApproved, onTerminal, onClose, onCancel]);
 
   useEffect(() => {
     setMounted(true);
@@ -80,49 +116,60 @@ export function DiscountApprovalModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && status !== 'LOADING') onClose();
+      if (e.key === 'Escape' && status !== 'LOADING' && status !== 'APPROVED') dismiss();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, status, onClose]);
+  }, [isOpen, status, dismiss]);
 
   // 1. Tạo yêu cầu duyệt khi mở modal
   useEffect(() => {
-    if (!isOpen) {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+     if (!isOpen) {
+       requestAbortRef.current?.abort();
+       requestAbortRef.current = null;
+       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
       return;
     }
 
-    let isMounted = true;
-    setStatus('LOADING');
+     let isMounted = true;
+     const generation = ++requestGenerationRef.current;
+     setStatus('LOADING');
     setErrorMessage(null);
     setRejectedReason(null);
-    setManagerOtpInput('');
-    setOtpError(null);
-    setEmergencyCodeInput('');
-    setEmergencyError(null);
+     setManagerOtpInput('');
+     setOtpError(null);
+     setEmergencyCodeInput('');
+     setEmergencyError(null);
+     setIsVerifyingOtp(false);
+     setIsSubmittingEmergency(false);
+     const requestController = new AbortController();
+     requestAbortRef.current = requestController;
+     const requestTimeout = window.setTimeout(() => requestController.abort(), 15000);
 
-    async function initRequest() {
+     async function initRequest() {
       try {
         const res = await fetch('/api/pos/discount-approvals', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+           headers: { 'Content-Type': 'application/json' },
+           signal: requestController.signal,
+           body: JSON.stringify({
             orderCode,
             warehouseId,
             items,
             requestedDiscountRate,
           }),
         });
-        const json = await res.json();
-        if (!res.ok || !json.success) {
+       const json = await res.json();
+       if (generation !== requestGenerationRef.current) return;
+       if (!res.ok || !json.success) {
           throw new Error(json.message || 'Không thể tạo yêu cầu duyệt chiết khấu');
         }
 
-        if (isMounted) {
+         if (isMounted && generation === requestGenerationRef.current) {
           const req = json.data;
           setRequestId(req.id);
-          onRequestCreated?.(req.id);
+          onRequestCreatedRef.current?.(req.id);
           setShortCode(req.shortCode || orderCode.slice(-4).toUpperCase());
           setQrToken(req.qrToken || '');
           setExpiresAt(req.expiresAt);
@@ -134,21 +181,29 @@ export function DiscountApprovalModal({
           );
           setSecondsRemaining(diffSec);
         }
-      } catch (err: any) {
-        if (isMounted) {
-          setStatus('ERROR');
-          setErrorMessage(err.message || 'Lỗi kết nối máy chủ');
-        }
-      }
-    }
+       } catch (err: any) {
+         if (isMounted && generation === requestGenerationRef.current) {
+           setStatus('ERROR');
+           setErrorMessage(err.message || 'Lỗi kết nối máy chủ');
+         }
+       } finally {
+         window.clearTimeout(requestTimeout);
+         if (requestAbortRef.current === requestController) requestAbortRef.current = null;
+       }
+     }
 
     initRequest();
 
-    return () => {
-      isMounted = false;
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+     return () => {
+       isMounted = false;
+       if (requestGenerationRef.current === generation) requestGenerationRef.current += 1;
+       requestController.abort();
+       window.clearTimeout(requestTimeout);
+       if (requestAbortRef.current === requestController) requestAbortRef.current = null;
+       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
     };
-  }, [isOpen, orderCode, warehouseId, requestedDiscountRate, items, onRequestCreated]);
+  }, [isOpen, orderCode, warehouseId, requestedDiscountRate, itemsKey]);
 
   // 2. Render mã QR bằng BrowserQRCodeSvgWriter khi có qrToken
   useEffect(() => {
@@ -177,47 +232,57 @@ export function DiscountApprovalModal({
         Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
       );
       setSecondsRemaining(remaining);
-      if (remaining <= 0) {
-        setStatus('EXPIRED');
-        clearInterval(timer);
+       if (remaining <= 0) {
+         setStatus('EXPIRED');
+          onTerminalRef.current?.('EXPIRED', requestId);
+         clearInterval(timer);
       }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [expiresAt, status]);
+  }, [expiresAt, status, requestId]);
 
   // 4. Polling trạng thái mỗi 2.5s
   useEffect(() => {
-    if (!requestId || status !== 'PENDING') {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      return;
-    }
+     if (!requestId || status !== 'PENDING') {
+       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+       return;
+     }
+     const generation = requestGenerationRef.current;
 
-    pollIntervalRef.current = setInterval(async () => {
+     pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/pos/discount-approvals/${requestId}`);
+         const res = await fetch(`/api/pos/discount-approvals/${requestId}`);
+        if (generation !== requestGenerationRef.current) return;
         if (!res.ok) return;
-        const json = await res.json();
-        if (json.success && json.data) {
+         const json = await res.json();
+         if (generation !== requestGenerationRef.current) return;
+         if (json.success && json.data) {
           const req = json.data;
           if (req.status === 'APPROVED') {
             setStatus('APPROVED');
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setTimeout(() => {
-              onApproved({
+             if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
+             approvalTimerRef.current = setTimeout(() => {
+               if (generation !== requestGenerationRef.current) return;
+               onApprovedRef.current({
                 requestId: req.id,
                 rate: req.requestedDiscountRate,
                 method: req.approvalMethod || 'ONE_TOUCH',
               });
-              onClose();
+              onCloseRef.current();
             }, 1200);
-          } else if (req.status === 'REJECTED') {
-            setStatus('REJECTED');
-            setRejectedReason(req.rejectedReason || 'Quản lý từ chối chiết khấu');
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          } else if (req.status === 'EXPIRED') {
-            setStatus('EXPIRED');
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            } else if (req.status === 'REJECTED' || req.status === 'SUPERSEDED' || req.status === 'CONSUMED') {
+              if (generation !== requestGenerationRef.current) return;
+              setStatus('REJECTED');
+              setRejectedReason(req.rejectedReason || (req.status === 'CONSUMED' ? 'Yêu cầu đã được sử dụng cho đơn khác.' : 'Yêu cầu đã bị thay thế.'));
+              onTerminalRef.current?.('REJECTED', req.id);
+             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            } else if (req.status === 'EXPIRED') {
+              if (generation !== requestGenerationRef.current) return;
+              setStatus('EXPIRED');
+              onTerminalRef.current?.('EXPIRED', req.id);
+             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           }
         }
       } catch {
@@ -228,12 +293,13 @@ export function DiscountApprovalModal({
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [requestId, status, onApproved, onClose]);
+  }, [requestId, status]);
 
   // 5. Xử lý nhập mã cấp phép / OTP từ Quản lý (Đảo chiều luồng OTP)
   const handleVerifyManagerOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!requestId) return;
+    const generation = requestGenerationRef.current;
     const code = managerOtpInput.trim().toUpperCase();
     if (!code) {
       setOtpError('Vui lòng nhập mã cấp phép / OTP từ Quản lý.');
@@ -253,30 +319,34 @@ export function DiscountApprovalModal({
         }),
       });
 
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Mã cấp phép không chính xác hoặc đã hết hạn.');
+       const json = await res.json();
+       if (generation !== requestGenerationRef.current) return;
+       if (!res.ok || !json.success) {
+         throw new Error(json.message || 'Mã cấp phép không chính xác hoặc đã hết hạn.');
       }
 
       setStatus('APPROVED');
-      setTimeout(() => {
-        onApproved({
+      if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
+       approvalTimerRef.current = setTimeout(() => {
+         if (generation !== requestGenerationRef.current) return;
+         onApprovedRef.current({
           requestId,
           rate: requestedDiscountRate,
           method: 'SHORTCODE_BOUND',
         });
-        onClose();
+        onCloseRef.current();
       }, 1000);
-    } catch (err: any) {
-      setOtpError(err.message || 'Mã cấp phép không hợp lệ.');
-    } finally {
-      setIsVerifyingOtp(false);
+     } catch (err: any) {
+       if (generation === requestGenerationRef.current) setOtpError(err.message || 'Mã cấp phép không hợp lệ.');
+     } finally {
+       if (generation === requestGenerationRef.current) setIsVerifyingOtp(false);
     }
   };
 
   // 6. Xử lý nhập mã khẩn cấp (Offline Emergency)
   const handleApplyEmergencyCode = async () => {
     if (!requestId) return;
+    const generation = requestGenerationRef.current;
     const code = emergencyCodeInput.trim();
     if (!code) {
       setEmergencyError('Vui lòng nhập mã khẩn cấp từ Quản lý');
@@ -299,23 +369,26 @@ export function DiscountApprovalModal({
           emergencyCode: code,
         }),
       });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Mã khẩn cấp không hợp lệ');
+       const json = await res.json();
+       if (generation !== requestGenerationRef.current) return;
+       if (!res.ok || !json.success) {
+         throw new Error(json.message || 'Mã khẩn cấp không hợp lệ');
       }
       setStatus('APPROVED');
-      setTimeout(() => {
-        onApproved({
+      if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
+       approvalTimerRef.current = setTimeout(() => {
+         if (generation !== requestGenerationRef.current) return;
+         onApprovedRef.current({
           requestId,
           rate: requestedDiscountRate,
           method: 'OFFLINE_EMERGENCY',
         });
-        onClose();
+        onCloseRef.current();
       }, 1000);
-    } catch (err: any) {
-      setEmergencyError(err.message || 'Không thể xác thực mã khẩn cấp');
-    } finally {
-      setIsSubmittingEmergency(false);
+     } catch (err: any) {
+       if (generation === requestGenerationRef.current) setEmergencyError(err.message || 'Không thể xác thực mã khẩn cấp');
+     } finally {
+       if (generation === requestGenerationRef.current) setIsSubmittingEmergency(false);
     }
   };
 
@@ -327,9 +400,13 @@ export function DiscountApprovalModal({
 
   return createPortal(
     <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="discount-approval-title"
       className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
       onClick={(e) => {
-        if (e.target === e.currentTarget && status !== 'LOADING') onClose();
+         if (e.target === e.currentTarget && status !== 'LOADING' && status !== 'APPROVED') (onCancel ?? onClose)();
       }}
     >
       <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 space-y-4">
@@ -340,7 +417,7 @@ export function DiscountApprovalModal({
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base text-slate-900">
+              <h3 id="discount-approval-title" className="font-extrabold text-base text-slate-900">
                 {isGift ? 'Duyệt Tặng Sách 100%' : 'Duyệt Chiết Khấu Quản Lý'}
               </h3>
               <p className="text-[11px] text-slate-400">
@@ -348,8 +425,11 @@ export function DiscountApprovalModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
+           <button
+              type="button"
+              aria-label="Đóng yêu cầu duyệt"
+               disabled={status === 'LOADING' || status === 'APPROVED'}
+              onClick={dismiss}
             className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition"
           >
             <X className="w-5 h-5" />
@@ -382,6 +462,12 @@ export function DiscountApprovalModal({
           </div>
         </div>
 
+        {cancelError && (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+            {cancelError}
+          </div>
+        )}
+
         {/* Trạng thái LOADING */}
         {status === 'LOADING' && (
           <div className="py-8 flex flex-col items-center justify-center space-y-3">
@@ -396,7 +482,7 @@ export function DiscountApprovalModal({
             <XCircle className="w-8 h-8 text-rose-500 mx-auto" />
             <p className="text-xs text-rose-700 font-semibold">{errorMessage}</p>
             <button
-              onClick={onClose}
+              onClick={dismiss}
               className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl"
             >
               Đóng
@@ -411,7 +497,7 @@ export function DiscountApprovalModal({
             <h4 className="font-extrabold text-sm text-rose-800">Quản lý Đã Từ Chối</h4>
             <p className="text-xs text-rose-700 font-medium">Lý do: &ldquo;{rejectedReason}&rdquo;</p>
             <button
-              onClick={onClose}
+              onClick={dismiss}
               className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition"
             >
               Đã hiểu & Quay lại quầy
@@ -439,7 +525,7 @@ export function DiscountApprovalModal({
               Quản lý chưa kịp duyệt trước khi hết hạn. Bạn có thể gửi lại yêu cầu.
             </p>
             <button
-              onClick={onClose}
+              onClick={dismiss}
               className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition"
             >
               Đóng & Gửi lại nếu cần
@@ -450,6 +536,14 @@ export function DiscountApprovalModal({
         {/* Trạng thái PENDING: Tab Online vs Offline */}
         {status === 'PENDING' && (
           <div className="space-y-4">
+            {currentRole === 'ROLE_CASHIER' ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-amber-900">
+                <Clock className="mx-auto h-8 w-8 text-amber-600" />
+                <p className="mt-2 text-sm font-extrabold">Đang chờ Quản lý phê duyệt</p>
+                <p className="mt-1 text-xs">Chỉ Quản lý hoặc Chủ quầy mới có thể duyệt yêu cầu này.</p>
+              </div>
+            ) : (
+              <>
             {/* Tabs chọn cách duyệt */}
             <div className="flex bg-slate-100 p-1 rounded-xl">
               <button
@@ -614,12 +708,14 @@ export function DiscountApprovalModal({
             <div className="pt-1 flex gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={dismiss}
                 className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
               >
                 Hủy Yêu Cầu &amp; Đóng
               </button>
             </div>
+              </>
+            )}
           </div>
         )}
       </div>

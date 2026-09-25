@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { createBarcodeDecoder, type BarcodeDecoder } from '@/lib/barcode-decoder';
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import {
   Camera,
   X,
@@ -66,6 +67,7 @@ export function InAppBarcodeScanner({
   zoomLevelRef.current = zoomLevel;
 
   const [mounted, setMounted] = useState(false);
+  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -550,6 +552,10 @@ export function InAppBarcodeScanner({
 
   return createPortal(
     <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="barcode-scanner-title"
       className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
@@ -566,7 +572,7 @@ export function InAppBarcodeScanner({
               <ScanLine className="w-4 h-4 animate-pulse" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white">
+              <h3 id="barcode-scanner-title" className="font-extrabold text-sm text-white">
                 Quét Mã Vạch Camera
               </h3>
               <p className="text-[11px] text-slate-400">
@@ -576,12 +582,14 @@ export function InAppBarcodeScanner({
               </p>
             </div>
           </div>
-          <button
-            onClick={() => {
-              stopCamera();
-              onClose();
-            }}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+           <button
+             type="button"
+             aria-label="Đóng máy quét mã vạch"
+             onClick={() => {
+               stopCamera();
+               onClose();
+             }}
+             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
           >
             <X className="w-5 h-5" />
           </button>

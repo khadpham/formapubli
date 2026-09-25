@@ -1,4 +1,5 @@
 import { generateUUIDv7, extractTimestampFromUUIDv7 } from '../src/lib/uuidv7';
+import { getOfflineOrderRepairAction, OfflineOrder } from '../src/lib/offline-db';
 import { OrderService } from '../src/services/order.service';
 import { db, orders, editions, warehouses } from '../src/db';
 import { eq } from 'drizzle-orm';
@@ -166,6 +167,34 @@ async function testOfflineEngine() {
     salesSummary.totalOrders > 0 && salesSummary.totalRevenue > 0,
     'Báo cáo doanh số Sổ kép tính toán toàn vẹn dòng tiền thực tế & thuế',
     `Tổng doanh thu: ${salesSummary.totalRevenue.toLocaleString('vi-VN')} đ | Nội bộ: ${salesSummary.internalManagement.revenue.toLocaleString('vi-VN')} đ | Thuế VAT: ${salesSummary.officialTax.revenue.toLocaleString('vi-VN')} đ`
+  );
+
+  const blockedBase: OfflineOrder = {
+    id: offlineUuid,
+    orderCode: 'OFF-BLOCKED',
+    idempotencyKey: 'idem-offline-blocked',
+    warehouseId: sampleWarehouse.id,
+    customerName: 'Khách offline',
+    channel: 'RETAIL_OFFICE',
+    discountRate: 0,
+    paymentMethod: 'BANK_TRANSFER',
+    fiscalScope: 'INTERNAL_MANAGEMENT',
+    cashierId: 'NV-OFFLINE',
+    items: [{ editionId: sampleEdition.id, code: sampleEdition.code, title: sampleEdition.title || '', quantity: 1, unitCoverPrice: sampleEdition.coverPrice || 0 }],
+    subtotal: sampleEdition.coverPrice || 0,
+    discountAmount: 0,
+    finalAmount: sampleEdition.coverPrice || 0,
+    totalQuantity: 1,
+    createdAt: new Date().toISOString(),
+    syncStatus: 'FAILED',
+  };
+  assert(
+    getOfflineOrderRepairAction({ ...blockedBase, lastError: 'Phiên két ca đã đóng' }) === 'REASSIGN_CASHBOX' &&
+      getOfflineOrderRepairAction({ ...blockedBase, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' }) === 'CONFIRM_MONEY_RECEIVED' &&
+      getOfflineOrderRepairAction({ ...blockedBase, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.', moneyReceived: true }) === null &&
+      getOfflineOrderRepairAction({ ...blockedBase, discountRate: 1, isGift: true, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' }) === null,
+    'Đơn offline bị chặn chỉ được sửa qua hành động tường minh, không tự mặc định nhận tiền',
+    'Cashbox yêu cầu tái gán ca; transfer/QR yêu cầu xác nhận nhận tiền; gift đã miễn'
   );
 
   // Dọn dẹp dữ liệu đơn test

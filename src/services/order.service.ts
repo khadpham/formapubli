@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, auditLogs } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
@@ -6,6 +6,9 @@ import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
+import { DiscountApprovalService } from './discount-approval.service';
+import { generateUUIDv7 } from '../lib/uuidv7';
+import { priceLine } from '../lib/pricing';
 
 export interface OrderItemInput {
   editionId: string;
@@ -53,6 +56,7 @@ export interface CreateOrderParams {
   vatInvoiceCode?: string;
   cashierId?: string;
   cashboxSessionId?: string;
+  discountApprovalId?: string;
   idempotencyKey?: string;
   note?: string;
   // Bước 1: confirmImmediately=false → đơn PENDING (giữ chỗ ATP, chưa trừ kho).
@@ -71,9 +75,19 @@ export interface CreateOrderParams {
   bundles?: Array<{ bundleId: string; quantity: number }>; // Combo/boxset (giá do management định, không cộng CK đơn)
   // M1 (contract §1): danh tính Lane A truyền tách khỏi payload client — thắng mọi cashierId client gửi
   actorContext?: ActorContext;
+  requiredAudit?: Array<{
+    id: string;
+    action: string;
+    actorRole: string;
+    actorId: string;
+    resource: string;
+    details: string | ((orderCode: string) => string);
+    ipAddress?: string;
+  }>;
 }
 
 export interface OrderFingerprint {
+  orderCode?: string;
   warehouseId: string;
   channel: string;
   paymentMethod: string;
@@ -136,6 +150,68 @@ export class OrderService {
     if (!VALID_PAYMENTS.includes(paymentMethod)) {
       throw AppError.invalid(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
     }
+    if (params.idempotencyKey) {
+      const existingPre = await withDbRetry(async () => {
+        return await db
+          .select()
+          .from(orders)
+          .where(eq(orders.idempotencyKey, params.idempotencyKey!))
+          .limit(1);
+      });
+      if (existingPre.length > 0) {
+        await this.assertSameOrderContent(
+          existingPre[0].id,
+           {
+             orderCode: params.orderCode,
+             warehouseId,
+             channel,
+             paymentMethod,
+             fiscalScope,
+             discountRate,
+             cashboxSessionId: params.cashboxSessionId,
+             effCashierId,
+             customerId: params.customerId,
+             partnerId,
+             customerName,
+             isGift: Boolean((params as any).isGift),
+             giftReason: (params as any).giftReason,
+             items: items || [],
+             bundles: params.bundles || [],
+           },
+           db
+         );
+         if (params.discountApprovalId) {
+          const approval = await DiscountApprovalService.getRequest(params.discountApprovalId);
+          if (
+            approval.status !== 'CONSUMED' ||
+            approval.orderCode !== existingPre[0].orderCode ||
+            approval.warehouseId !== existingPre[0].warehouseId ||
+            approval.cashierId !== effCashierId
+          ) {
+            throw AppError.idempotency('Approval không khớp với order đã commit.');
+          }
+        }
+        const existingLines = await db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existingPre[0].id));
+        return {
+          orderId: existingPre[0].id,
+          orderCode: existingPre[0].orderCode,
+          warehouseId: existingPre[0].warehouseId,
+          customerName: existingPre[0].customerName,
+          subtotal: existingPre[0].subtotal,
+          discountAmount: existingPre[0].discountAmount,
+          finalAmount: existingPre[0].finalAmount,
+          fiscalScope: existingPre[0].fiscalScope,
+          itemsCount: existingLines.length,
+          totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          status: existingPre[0].status,
+          isDuplicate: true,
+        };
+      }
+    }
+
     // V4.1 S1.2: chặn bán từ kho ảo/ký gửi/ngưng bán ngay từ cổng vào (đọc DB, không hardcode).
     const sellRow = await WarehouseService.assertSellable(warehouseId);
     // V4.1 S1.2 (lock Q5): đơn giữ chỗ online (PENDING) chỉ được giữ ở kho chính —
@@ -256,18 +332,19 @@ export class OrderService {
       if (existingPre.length > 0) {
         await this.assertSameOrderContent(
           existingPre[0].id,
-          {
-            warehouseId,
-            channel,
-            paymentMethod,
-            fiscalScope,
-            discountRate,
-            cashboxSessionId: params.cashboxSessionId,
-            effCashierId,
-            customerId: params.customerId,
-            partnerId,
-            customerName,
-            isGift,
+           {
+             orderCode: params.orderCode,
+             warehouseId,
+             channel,
+             paymentMethod,
+             fiscalScope,
+             discountRate,
+             cashboxSessionId: params.cashboxSessionId,
+             effCashierId,
+             customerId: params.customerId,
+             partnerId,
+             customerName,
+             isGift,
             giftReason: params.giftReason,
             items: looseItems,
             bundles: bundleOrders,
@@ -321,6 +398,12 @@ export class OrderService {
     }
 
     const isPending = confirmImmediately === false;
+    if (isPending && params.discountApprovalId) {
+      throw AppError.invalid('Đơn chờ xác nhận không được dùng approval chiết khấu.');
+    }
+    if (params.discountApprovalId && bundleOrders.length > 0) {
+      throw AppError.invalid('Approval chiết khấu chỉ áp dụng cho đơn sách lẻ, không dùng với combo.');
+    }
 
     // 1. Chuẩn bị danh sách kiểm tra nhu cầu theo edition (lẻ + linh kiện combo)
     const stockCheckItems = [...looseItems, ...bundleLines];
@@ -359,20 +442,19 @@ export class OrderService {
         if (!edition) throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
         const coverPrice = edition.coverPrice || 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
-        const unitSellingPrice = Math.round(coverPrice * (1 - itemDiscountRate));
-        const lineTotal = item.quantity * unitSellingPrice;
+        const priced = priceLine(coverPrice, itemDiscountRate, item.quantity);
 
-        calculatedSubtotal += item.quantity * coverPrice;
-        calculatedFinalAmount += lineTotal;
+        calculatedSubtotal += priced.subtotal;
+        calculatedFinalAmount += priced.finalAmount;
 
         return {
-          id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          id: `oi-${generateUUIDv7()}`,
           editionId: item.editionId,
           quantity: item.quantity,
-          unitCoverPrice: coverPrice,
+          unitCoverPrice: priced.coverPrice,
           unitDiscountRate: itemDiscountRate,
-          unitSellingPrice,
-          totalAmount: lineTotal,
+          unitSellingPrice: priced.unitSellingPrice,
+          totalAmount: priced.finalAmount,
           bundleId: undefined as string | undefined,
           bundleQty: undefined as number | undefined,
         };
@@ -383,7 +465,7 @@ export class OrderService {
         calculatedFinalAmount += line.totalAmount;
 
         return {
-          id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+           id: `oi-${generateUUIDv7()}`,
           editionId: line.editionId,
           quantity: line.quantity,
           unitCoverPrice: line.unitCoverPrice,
@@ -400,9 +482,8 @@ export class OrderService {
 
     // 4. Sinh mã đơn hàng và Idempotency Key cố định (giữ nguyên khi retry)
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderCode = params.orderCode || `ORD-${dateStr}-${randomSuffix}`;
-    const orderId = params.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const orderCode = params.orderCode || `ORD-${dateStr}-${generateUUIDv7().replace(/-/g, '').slice(-16).toUpperCase()}`;
+    const orderId = params.id || `ord-${generateUUIDv7()}`;
     const idempotencyKey = params.idempotencyKey || `idem-order-${orderId}`;
     const createdAt = params.createdAt || new Date().toISOString();
     const giftTag = isGift ? `[QUÀ TẶNG: ${giftReason || (note || '').trim() || 'Tặng sách / Quà tặng sự kiện'}]` : '';
@@ -422,10 +503,11 @@ export class OrderService {
         if (existing.length > 0) {
           await this.assertSameOrderContent(
             existing[0].id,
-            {
-              warehouseId,
-              channel,
-              paymentMethod,
+             {
+               orderCode: params.orderCode,
+               warehouseId,
+               channel,
+               paymentMethod,
               fiscalScope,
               discountRate,
               cashboxSessionId: params.cashboxSessionId,
@@ -438,10 +520,21 @@ export class OrderService {
               items: looseItems,
               bundles: bundleOrders,
             },
-            tx
-          );
+             tx
+           );
+           if (params.discountApprovalId) {
+             const approval = await DiscountApprovalService.getRequest(params.discountApprovalId, tx);
+             if (
+               approval.status !== 'CONSUMED' ||
+               approval.orderCode !== existing[0].orderCode ||
+               approval.warehouseId !== existing[0].warehouseId ||
+               approval.cashierId !== effCashierId
+             ) {
+               throw AppError.idempotency('Approval không khớp với order đã commit.');
+             }
+           }
 
-          const existingLines = await tx
+           const existingLines = await tx
             .select()
             .from(orderItems)
             .where(eq(orderItems.orderId, existing[0].id));
@@ -492,6 +585,32 @@ export class OrderService {
         }
 
         // B3: Tạo bản ghi Master đơn hàng bên trong Transaction
+        if (params.discountApprovalId) {
+          const hasUnexpectedLineDiscount = preparedItems.some(
+            (item) => Math.abs((item.unitDiscountRate ?? discountRate) - discountRate) > 0.0001
+          );
+          if (hasUnexpectedLineDiscount) {
+            throw AppError.conflict('Mức chiết khấu từng dòng không khớp yêu cầu đã được duyệt.');
+          }
+          await DiscountApprovalService.consumeApproval({
+            requestId: params.discountApprovalId,
+            currentItems: preparedItems
+              .filter((item) => !item.bundleId)
+              .map((item) => ({
+                editionId: item.editionId,
+                quantity: item.quantity,
+                unitPrice: item.unitCoverPrice,
+              })),
+            discountRate,
+            warehouseId,
+            orderCode,
+            cashierId: effCashierId,
+            originalAmount: calculatedSubtotal,
+            discountAmount: calculatedDiscountAmount,
+            finalAmount: calculatedFinalAmount,
+            txOrDb: tx,
+          });
+        }
         await tx.insert(orders).values({
           id: orderId,
           orderCode,
@@ -559,10 +678,24 @@ export class OrderService {
             idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
             tx,
           });
-          lineIdx++;
-        }
+           lineIdx++;
+         }
 
-        return {
+         if (params.requiredAudit?.length) {
+           await tx.insert(auditLogs).values(
+             params.requiredAudit.map((audit) => ({
+               id: `aud-order-${orderId}-${audit.id}`,
+               action: audit.action,
+               actorRole: audit.actorRole,
+               actorId: audit.actorId,
+               resource: audit.resource,
+               details: typeof audit.details === 'function' ? audit.details(orderCode) : audit.details,
+               ipAddress: audit.ipAddress,
+             }))
+           );
+         }
+
+         return {
           orderId,
           orderCode,
           warehouseId,
@@ -592,6 +725,12 @@ export class OrderService {
   ): Promise<void> {
     const ord = (await txOrDb.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
     if (!ord) return;
+
+    if (want.orderCode && ord.orderCode !== want.orderCode) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có mã đơn khác (${want.orderCode} vs ${ord.orderCode}).`
+      );
+    }
 
     if (ord.warehouseId !== want.warehouseId) {
       throw AppError.idempotency(
@@ -838,7 +977,19 @@ export class OrderService {
           return null;
         }
 
-        // 5. Đọc order items trong transaction
+         if (ord.cashboxSessionId) {
+           const sessionRows = await tx
+             .select()
+             .from(cashboxSessions)
+             .where(eq(cashboxSessions.id, ord.cashboxSessionId))
+             .limit(1);
+           const cashbox = sessionRows[0];
+           if (!cashbox || cashbox.status !== 'OPEN' || cashbox.warehouseId !== ord.warehouseId) {
+             throw AppError.conflict('Két ca đã đóng, không thể duyệt đơn chờ.');
+           }
+         }
+
+         // 5. Đọc order items trong transaction
         const lines = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 
         // 6. Gộp nhu cầu theo edition & kiểm tra tồn trong transaction
@@ -1053,12 +1204,21 @@ export interface OpenCashboxParams {
   cashierId: string;
   openingCash: number;
   notes?: string;
+  audit?: {
+    actorRole: string;
+    actorId: string;
+    details: string;
+  };
 }
 
 export interface CloseCashboxParams {
   sessionId: string;
   closingCashActual: number;
   notes?: string;
+  audit?: {
+    actorRole: string;
+    actorId: string;
+  };
 }
 
 export class CashboxService {
@@ -1068,63 +1228,77 @@ export class CashboxService {
    */
   static async openSession(params: OpenCashboxParams) {
     const { warehouseId, cashierId, openingCash = 0, notes } = params;
+    if (!Number.isFinite(openingCash) || openingCash < 0) throw AppError.invalid('Tiền đầu ca không hợp lệ.');
 
-    const existingOpen = await db
-      .select()
-      .from(cashboxSessions)
-      .where(
-        and(
-          eq(cashboxSessions.cashierId, cashierId),
-          eq(cashboxSessions.status, 'OPEN')
+    return withDbRetry(() => db.transaction(async (tx) => {
+      const existingOpen = await tx
+        .select()
+        .from(cashboxSessions)
+        .where(
+          and(
+            eq(cashboxSessions.cashierId, cashierId),
+            eq(cashboxSessions.warehouseId, warehouseId),
+            eq(cashboxSessions.status, 'OPEN')
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (existingOpen.length > 0) {
-      return {
-        session: existingOpen[0],
-        isExisting: true,
+      if (existingOpen.length > 0) {
+        return {
+          session: existingOpen[0],
+          isExisting: true,
+        };
+      }
+
+      const sessionId = `cbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newSession = {
+        id: sessionId,
+        warehouseId,
+        cashierId,
+        openingCash: Math.max(0, openingCash),
+        status: 'OPEN' as const,
+        notes: notes || null,
+        openedAt: new Date().toISOString(),
+        totalCashSales: 0,
+        totalTransferSales: 0,
+        totalOrdersCount: 0,
       };
-    }
 
-    const sessionId = `cbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-    const newSession = {
-      id: sessionId,
-      warehouseId,
-      cashierId,
-      openingCash: Math.max(0, openingCash),
-      status: 'OPEN' as const,
-      notes: notes || null,
-      openedAt: new Date().toISOString(),
-      totalCashSales: 0,
-      totalTransferSales: 0,
-      totalOrdersCount: 0,
-    };
-
-    await withDbRetry(async () => {
-      await db.insert(cashboxSessions).values(newSession);
-    });
-
-    return {
-      session: newSession,
-      isExisting: false,
-    };
+       await tx.insert(cashboxSessions).values(newSession);
+       if (params.audit) {
+         await tx
+           .insert(auditLogs)
+           .values({
+             id: `aud-cashbox-open-${sessionId}`,
+             action: 'MUTATE_ORDER',
+             actorRole: params.audit.actorRole,
+             actorId: params.audit.actorId,
+             resource: '/api/cashbox',
+             details: params.audit.details.slice(0, 500),
+             ipAddress: 'local',
+           })
+           .onConflictDoNothing({ target: auditLogs.id });
+       }
+       return {
+         session: newSession,
+         isExisting: false,
+       };
+     }));
   }
 
   /**
    * Lấy phiên két tiền hiện tại đang hoạt động của thu ngân.
    */
-  static async getActiveSession(cashierId: string) {
+  static async getActiveSession(cashierId: string, warehouseId?: string) {
+    const conditions = [
+      eq(cashboxSessions.cashierId, cashierId),
+      eq(cashboxSessions.status, 'OPEN'),
+    ];
+    if (warehouseId) conditions.push(eq(cashboxSessions.warehouseId, warehouseId));
     const sessions = await db
       .select()
       .from(cashboxSessions)
-      .where(
-        and(
-          eq(cashboxSessions.cashierId, cashierId),
-          eq(cashboxSessions.status, 'OPEN')
-        )
-      )
+      .where(and(...conditions))
       .limit(1);
 
     if (sessions.length === 0) return null;
@@ -1142,14 +1316,19 @@ export class CashboxService {
   /**
    * Tính toán doanh thu tiền mặt, chuyển khoản và số đơn hàng thuộc phiên làm việc.
    */
-  static async calculateSessionStats(sessionId: string) {
-    const sessionOrders = await db
+  static async calculateSessionStats(sessionId: string, txOrDb: any = db) {
+    const sessionOrders = await txOrDb
       .select({
         finalAmount: orders.finalAmount,
         paymentMethod: orders.paymentMethod,
       })
       .from(orders)
-      .where(eq(orders.cashboxSessionId, sessionId));
+      .where(
+        and(
+          eq(orders.cashboxSessionId, sessionId),
+          eq(orders.status, 'COMPLETED')
+        )
+      );
 
     let totalCashSales = 0;
     let totalTransferSales = 0;
@@ -1165,7 +1344,7 @@ export class CashboxService {
 
     // FIX-09: trừ tiền hoàn (phiếu COMPLETED cùng ca) khỏi két — chốt ca khỏi lệch.
     // Chỉ tính hoàn tiền mặt: hoàn chuyển khoản đối soát ngân hàng riêng (SETTLE_COD pattern).
-    const refunds = await db
+    const refunds = await txOrDb
       .select({ refundAmount: returnOrders.refundAmount })
       .from(returnOrders)
       .where(and(eq(returnOrders.cashboxSessionId, sessionId), eq(returnOrders.status, 'COMPLETED')));
@@ -1186,30 +1365,47 @@ export class CashboxService {
    */
   static async closeSession(params: CloseCashboxParams) {
     const { sessionId, closingCashActual, notes } = params;
+    if (!Number.isFinite(closingCashActual) || closingCashActual < 0) throw AppError.invalid('Tiền thực đếm không hợp lệ.');
 
-    const existing = await db
-      .select()
-      .from(cashboxSessions)
-      .where(eq(cashboxSessions.id, sessionId))
-      .limit(1);
+    return withDbRetry(() => db.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(cashboxSessions)
+        .where(eq(cashboxSessions.id, sessionId))
+        .limit(1);
 
-    if (existing.length === 0) {
-      throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
-    }
+      if (existing.length === 0) {
+        throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
+      }
 
-    const session = existing[0];
-    if (session.status === 'CLOSED') {
-      throw AppError.invalid(`Phiên két tiền ${sessionId} đã được đóng trước đó.`);
-    }
+       const session = existing[0];
+       if (session.status === 'CLOSED') {
+         if (session.closingCashActual !== closingCashActual) {
+           throw AppError.idempotency('Phiên két tiền đã đóng với số tiền thực đếm khác.');
+         }
+         return {
+           sessionId,
+           cashierId: session.cashierId,
+           warehouseId: session.warehouseId,
+           openingCash: session.openingCash,
+           closingCashActual: session.closingCashActual ?? 0,
+           expectedCash: session.expectedCash ?? 0,
+           cashDiscrepancy: session.cashDiscrepancy ?? 0,
+           totalCashSales: session.totalCashSales ?? 0,
+           totalTransferSales: session.totalTransferSales ?? 0,
+           totalOrdersCount: session.totalOrdersCount ?? 0,
+           openedAt: session.openedAt,
+           closedAt: session.closedAt,
+           status: 'CLOSED' as const,
+           isIdempotent: true,
+         };
+       }
 
-    const stats = await this.calculateSessionStats(sessionId);
-    const expectedCash = session.openingCash + stats.totalCashSales;
-    const cashDiscrepancy = closingCashActual - expectedCash;
-
-    const closedAt = new Date().toISOString();
-
-    await withDbRetry(async () => {
-      await db
+      const stats = await this.calculateSessionStats(sessionId, tx);
+      const expectedCash = session.openingCash + stats.totalCashSales;
+      const cashDiscrepancy = closingCashActual - expectedCash;
+      const closedAt = new Date().toISOString();
+      const updateResult = await tx
         .update(cashboxSessions)
         .set({
           closingCashActual,
@@ -1222,24 +1418,46 @@ export class CashboxService {
           notes: notes ? `${session.notes ? session.notes + ' | ' : ''}${notes}` : session.notes,
           closedAt,
         })
-        .where(eq(cashboxSessions.id, sessionId));
-    });
+        .where(
+          and(
+            eq(cashboxSessions.id, sessionId),
+            eq(cashboxSessions.status, 'OPEN')
+          )
+        );
+      if (updateResult.rowsAffected !== 1) {
+        throw AppError.conflict('Phiên két tiền đã được đóng bởi thao tác khác.');
+      }
+      if (params.audit) {
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-cashbox-close-${sessionId}`,
+            action: 'MUTATE_ORDER',
+            actorRole: params.audit.actorRole,
+            actorId: params.audit.actorId,
+            resource: '/api/cashbox',
+            details: `Chốt ca két tiền ${sessionId}: Thực đếm ${closingCashActual} đ, Kỳ vọng ${expectedCash} đ, Lệch: ${cashDiscrepancy} đ`.slice(0, 500),
+            ipAddress: 'local',
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+      }
 
-    return {
-      sessionId,
-      cashierId: session.cashierId,
-      warehouseId: session.warehouseId,
-      openingCash: session.openingCash,
-      closingCashActual,
-      expectedCash,
-      cashDiscrepancy,
-      totalCashSales: stats.totalCashSales,
-      totalTransferSales: stats.totalTransferSales,
-      totalOrdersCount: stats.totalOrdersCount,
-      openedAt: session.openedAt,
-      closedAt,
-      status: 'CLOSED',
-    };
+      return {
+        sessionId,
+        cashierId: session.cashierId,
+        warehouseId: session.warehouseId,
+        openingCash: session.openingCash,
+        closingCashActual,
+        expectedCash,
+        cashDiscrepancy,
+        totalCashSales: stats.totalCashSales,
+        totalTransferSales: stats.totalTransferSales,
+        totalOrdersCount: stats.totalOrdersCount,
+        openedAt: session.openedAt,
+        closedAt,
+         status: 'CLOSED',
+       };
+     }));
   }
 
   /**

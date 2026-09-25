@@ -61,7 +61,7 @@ async function run() {
   const testEditionId = seeded[0].id;
   guardEditionId = testEditionId;
   let passed = 0;
-  const total = 10;
+  const total = 11;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -117,6 +117,12 @@ async function run() {
     'ROLE_CASHIER'
   );
   ok('Line-item 40% + PIN 8888 được duyệt', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+
+  r = await postOrder(
+    baseBody({ isGift: true, discountRate: 0.1, giftReason: 'Quà tặng sự kiện' }),
+    'ROLE_CASHIER'
+  );
+  ok('Gift spoof discount 10% vẫn bị chặn nếu thiếu duyệt', r.status === 403, `status=${r.status}`);
 
   // 8. Manager 40% không PIN -> cho qua (miễn trừ theo vai trò).
   r = await postOrder(baseBody({ discountRate: 0.4 }), 'ROLE_MANAGER', 'test-manager-guard');

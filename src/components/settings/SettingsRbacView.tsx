@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Settings,
-  Keyboard,
   Sun,
   Moon,
   Monitor,
@@ -11,17 +10,13 @@ import {
   VolumeX,
   Printer,
   Globe,
-  Bell,
   CheckCircle2,
   Check,
-  RotateCcw,
-  Sparkles,
-  Command,
   Save,
   Users,
   Landmark,
 } from 'lucide-react';
-import { UserRole } from '@/lib/roles';
+import { UserRole, getSettingsAccess } from '@/lib/roles';
 import { StaffManager } from './StaffManager';
 import { BankAccountsManager } from './BankAccountsManager';
 
@@ -29,34 +24,30 @@ interface SettingsRbacViewProps {
   sessionRole?: UserRole;
 }
 
-export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
-  // Go-live: da xoa mo phong vai tro. Tab "Tai khoan nhan su" chi hien voi OWNER/MANAGER.
-  const canManageStaff = sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER';
-  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'banks' | 'shortcuts' | 'appearance' | 'language' | 'sound' | 'printer'>(
-    canManageStaff ? 'staff' : 'shortcuts'
-  );
+type SettingsTab = 'staff' | 'banks' | 'appearance' | 'language' | 'sound' | 'printer';
 
-  // Session den tre (login sau mount): mo tab staff khi vua du quyen, khong cuop tab nguoi dung.
+export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
+  const { canManageAccounts, canManageBanks, canManagePrinter } = getSettingsAccess(sessionRole);
+  const [activeSubTab, setActiveSubTab] = useState<SettingsTab>(canManageAccounts ? 'staff' : 'appearance');
+
   useEffect(() => {
-    if (canManageStaff) {
-      setActiveSubTab((prev) => (prev === 'shortcuts' ? 'staff' : prev));
-    } else {
-      setActiveSubTab((prev) => (prev === 'staff' || prev === 'banks' ? 'shortcuts' : prev));
-    }
-  }, [canManageStaff]);
+    setActiveSubTab((prev) => {
+      if (prev === 'staff' && !canManageAccounts) return 'appearance';
+      if (prev === 'banks' && !canManageBanks) return 'appearance';
+      if (prev === 'printer' && !canManagePrinter) return 'appearance';
+      return prev;
+    });
+  }, [canManageAccounts, canManageBanks, canManagePrinter]);
 
   // Cấu hình lưu trữ cục bộ (Settings State)
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('light');
   const [tableDensity, setTableDensity] = useState<'comfortable' | 'compact'>('comfortable');
-  const [enableShortcuts, setEnableShortcuts] = useState(true);
   const [enableSound, setEnableSound] = useState(true);
   const [language, setLanguage] = useState<'vi' | 'en'>('vi');
   const [printerPaper, setPrinterPaper] = useState<'K80' | 'K57'>('K80');
   const [autoPrintOnCheckout, setAutoPrintOnCheckout] = useState(false);
-  const [lowStockAlertThreshold, setLowStockAlertThreshold] = useState(15);
   const [receiptFooterText, setReceiptFooterText] = useState('Cảm ơn quý độc giả đã đồng hành cùng formapubli!');
   const [savedNotification, setSavedNotification] = useState(false);
-  const [lastKeyPressed, setLastKeyPressed] = useState<string | null>(null);
 
   // Load preferences from localStorage on mount
   useEffect(() => {
@@ -64,15 +55,13 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       const saved = localStorage.getItem('formapubli_settings');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.themeMode) setThemeMode(parsed.themeMode);
-        if (parsed.tableDensity) setTableDensity(parsed.tableDensity);
-        if (parsed.enableShortcuts !== undefined) setEnableShortcuts(parsed.enableShortcuts);
-        if (parsed.enableSound !== undefined) setEnableSound(parsed.enableSound);
-        if (parsed.language) setLanguage(parsed.language);
-        if (parsed.printerPaper) setPrinterPaper(parsed.printerPaper);
-        if (parsed.autoPrintOnCheckout !== undefined) setAutoPrintOnCheckout(parsed.autoPrintOnCheckout);
-        if (parsed.lowStockAlertThreshold) setLowStockAlertThreshold(parsed.lowStockAlertThreshold);
-        if (parsed.receiptFooterText) setReceiptFooterText(parsed.receiptFooterText);
+        if (parsed.themeMode && ['light', 'dark', 'system'].includes(parsed.themeMode)) setThemeMode(parsed.themeMode);
+        if (parsed.tableDensity && ['comfortable', 'compact'].includes(parsed.tableDensity)) setTableDensity(parsed.tableDensity);
+        if (typeof parsed.enableSound === 'boolean') setEnableSound(parsed.enableSound);
+        if (parsed.language && ['vi', 'en'].includes(parsed.language)) setLanguage(parsed.language);
+        if (parsed.printerPaper && ['K80', 'K57'].includes(parsed.printerPaper)) setPrinterPaper(parsed.printerPaper);
+        if (typeof parsed.autoPrintOnCheckout === 'boolean') setAutoPrintOnCheckout(parsed.autoPrintOnCheckout);
+        if (typeof parsed.receiptFooterText === 'string' && parsed.receiptFooterText.length <= 200) setReceiptFooterText(parsed.receiptFooterText);
       }
     } catch (e) {
       console.error(e);
@@ -85,12 +74,10 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       const data = {
         themeMode,
         tableDensity,
-        enableShortcuts,
         enableSound,
         language,
         printerPaper,
         autoPrintOnCheckout,
-        lowStockAlertThreshold,
         receiptFooterText,
       };
       localStorage.setItem('formapubli_settings', JSON.stringify(data));
@@ -126,65 +113,6 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
     }
   };
 
-  // Keyboard shortcut tester listener
-  useEffect(() => {
-    const handleTestKey = (e: KeyboardEvent) => {
-      let keyStr = '';
-      if (e.ctrlKey) keyStr += 'Ctrl + ';
-      if (e.altKey) keyStr += 'Alt + ';
-      if (e.shiftKey) keyStr += 'Shift + ';
-      keyStr += e.key.toUpperCase();
-      setLastKeyPressed(keyStr);
-    };
-    window.addEventListener('keydown', handleTestKey);
-    return () => window.removeEventListener('keydown', handleTestKey);
-  }, []);
-
-  const shortcutList = [
-    {
-      key: '/',
-      scope: 'Toàn hệ thống & POS',
-      action: 'Nhảy nhanh vào thanh tìm kiếm sách (không cần dùng chuột)',
-      safety: 'Tự động bỏ qua khi đang gõ trong ô nhập liệu khác',
-    },
-    {
-      key: 'Esc',
-      scope: 'Toàn hệ thống',
-      action: 'Xóa nhanh từ khóa tìm kiếm / Đóng các cửa sổ popup modal',
-      safety: 'Chuẩn UX phổ quát của mọi trình duyệt',
-    },
-    {
-      key: 'Alt + Shift + V',
-      scope: 'POS & Kho hàng',
-      action: 'Bật / Tắt Microphone nhận diện giọng nói tiếng Việt tức thì',
-      safety: 'Không xung đột với phím tắt tab trình duyệt',
-    },
-    {
-      key: 'Ctrl + Enter',
-      scope: 'Quầy POS & Form kho',
-      action: 'Thanh toán & Khấu trừ kho tức thì (hoặc Ghi sổ cái bất biến)',
-      safety: 'Bảo vệ xác nhận trước khi thực thi',
-    },
-    {
-      key: 'Alt + Shift + T',
-      scope: 'Kho hàng',
-      action: 'Mở nhanh Phiếu Chuyển Kho (Âu Cơ <-> Quỳnh Mai <-> Hội Chợ)',
-      safety: 'Không bị Chrome/Edge chặn (thay thế cho Ctrl+T)',
-    },
-    {
-      key: 'Alt + Shift + R',
-      scope: 'Kho hàng',
-      action: 'Mở nhanh Phiếu Nhập In từ Nhà in',
-      safety: 'Không xung đột F5 Reload (thay thế cho Ctrl+R)',
-    },
-    {
-      key: 'Alt + Shift + X',
-      scope: 'Kho hàng',
-      action: 'Mở nhanh Phiếu Xuất Bán / Điều chuyển',
-      safety: 'Không xung đột Bookmark (thay thế cho Ctrl+D)',
-    },
-  ];
-
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -195,13 +123,13 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
             Cài Đặt Hệ Thống & Vai Trò
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Tùy biến phím tắt, giao diện hiển thị, thông báo và máy in nhiệt. Mục phân quyền nhân sự chỉ dành cho Chủ sở hữu / Quản lý.
+             Tùy biến ngôn ngữ, giao diện và âm thanh. Thu ngân và quản lý được thêm máy in; quản lý thêm tài khoản và ngân hàng.
           </p>
         </div>
 
         <button
           onClick={handleSaveSettings}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95"
+          className="flex min-h-11 items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95"
         >
           <Save className="w-4 h-4" />
           <span>Lưu Cấu Hình</span>
@@ -210,190 +138,83 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
 
       {/* Save Success Banner */}
       {savedNotification && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 flex items-center gap-2 font-bold animate-in fade-in">
+        <div role="status" aria-live="polite" className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 flex items-center gap-2 font-bold animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           <span>Đã lưu thành công các thiết lập tùy biến vào trình duyệt!</span>
         </div>
       )}
 
-      {/* Settings Navigation Tabs */}
-      <div className="flex items-center gap-1.5 p-1.5 bg-slate-200/80 rounded-2xl overflow-x-auto">
-        {canManageStaff && (
-          <button
-            onClick={() => setActiveSubTab('staff')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-              activeSubTab === 'staff'
-                ? 'bg-white text-indigo-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Tài Khoản Nhân Sự</span>
-          </button>
-        )}
+      <div className="grid gap-4 md:grid-cols-[18rem_minmax(0,1fr)] md:items-start">
+        <nav className="space-y-3" aria-label="Nhóm cài đặt">
+          <div className="space-y-1.5">
+            <p className="px-3 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Cá nhân & Thiết bị</p>
+            {[
+              { id: 'appearance' as SettingsTab, label: 'Giao Diện', icon: Sun },
+              { id: 'sound' as SettingsTab, label: 'Âm Thanh', icon: Volume2 },
+              { id: 'language' as SettingsTab, label: 'Ngôn Ngữ', icon: Globe },
+              ...(canManagePrinter ? [{ id: 'printer' as SettingsTab, label: 'Máy In Nhiệt', icon: Printer }] : []),
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = activeSubTab === item.id;
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  onClick={() => setActiveSubTab(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
+                    isActive ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
 
-        {canManageStaff && (
-          <button
-            onClick={() => setActiveSubTab('banks')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-              activeSubTab === 'banks'
-                ? 'bg-white text-indigo-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Landmark className="w-3.5 h-3.5" />
-            <span>Tài Khoản Ngân Hàng</span>
-          </button>
-        )}
+          {(canManageAccounts || canManageBanks) && (
+            <div className="space-y-1.5">
+              <p className="px-3 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Quản trị</p>
+              {canManageAccounts && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('staff')}
+                  aria-current={activeSubTab === 'staff' ? 'page' : undefined}
+                  className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
+                    activeSubTab === 'staff' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Tài Khoản Nhân Sự
+                </button>
+              )}
+              {canManageBanks && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('banks')}
+                  aria-current={activeSubTab === 'banks' ? 'page' : undefined}
+                  className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
+                    activeSubTab === 'banks' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Landmark className="w-4 h-4" />
+                  Tài Khoản Ngân Hàng
+                </button>
+              )}
+            </div>
+          )}
+        </nav>
 
-        <button
-          onClick={() => setActiveSubTab('shortcuts')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-            activeSubTab === 'shortcuts'
-              ? 'bg-white text-indigo-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Keyboard className="w-3.5 h-3.5" />
-          <span>Phím Tắt</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('appearance')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-            activeSubTab === 'appearance'
-              ? 'bg-white text-indigo-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Sun className="w-3.5 h-3.5" />
-          <span>Giao Diện & Mật Độ</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('sound')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-            activeSubTab === 'sound'
-              ? 'bg-white text-indigo-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Volume2 className="w-3.5 h-3.5" />
-          <span>Âm Thanh</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('printer')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-            activeSubTab === 'printer'
-              ? 'bg-white text-indigo-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Printer className="w-3.5 h-3.5" />
-          <span>Máy In Nhiệt</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('language')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-            activeSubTab === 'language'
-              ? 'bg-white text-indigo-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Globe className="w-3.5 h-3.5" />
-          <span>Ngôn Ngữ</span>
-        </button>
-      </div>
-
+        <div className="min-w-0">
       {/* TAB: TAI KHOAN NHAN SU */}
-      {activeSubTab === 'staff' && canManageStaff && (
+      {activeSubTab === 'staff' && canManageAccounts && (
         <StaffManager canManagePrivileged={sessionRole === 'ROLE_OWNER'} />
       )}
 
       {/* TAB: TAI KHOAN NGAN HANG */}
-      {activeSubTab === 'banks' && canManageStaff && (
+      {activeSubTab === 'banks' && canManageBanks && (
         <BankAccountsManager sessionRole={sessionRole} />
-      )}
-
-      {/* TAB: KEYBOARD SHORTCUTS */}
-      {activeSubTab === 'shortcuts' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                  <Keyboard className="w-4 h-4 text-emerald-600" />
-                  Danh Mục Phím Tắt Hệ Thống
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Tối ưu 100% cho thao tác bán hàng hội chợ và nhập xuất kho không cần đụng chuột
-                </p>
-              </div>
-
-              {/* Shortcut Enable Switch */}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableShortcuts}
-                  onChange={(e) => setEnableShortcuts(e.target.checked)}
-                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="text-xs font-bold text-slate-700">Kích hoạt phím tắt</span>
-              </label>
-            </div>
-
-            {/* Interactive Key Tester Box */}
-            <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-slate-400 font-bold block">
-                  Khu Vực Kiểm Thử Phím Tắt (Keypress Tester)
-                </span>
-                <span className="text-xs text-slate-300">
-                  Thử bấm bất kỳ phím nào trên bàn phím của bạn:
-                </span>
-              </div>
-              <div className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 font-mono font-black text-sm text-emerald-400 min-w-[120px] text-center">
-                {lastKeyPressed || 'Chưa bấm phím'}
-              </div>
-            </div>
-
-            {/* Table of Shortcuts */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
-                  <tr>
-                    <th className="p-3 w-40">Phím Tắt</th>
-                    <th className="p-3 w-36">Phạm Vi</th>
-                    <th className="p-3">Hành Động Thực Thi</th>
-                    <th className="p-3 w-64">Cơ Chế An Toàn</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {shortcutList.map((sc) => (
-                    <tr key={sc.key} className="hover:bg-slate-50/70">
-                      <td className="p-3">
-                        <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded-lg font-mono font-black text-xs text-slate-900 shadow-sm inline-block">
-                          {sc.key}
-                        </kbd>
-                      </td>
-                      <td className="p-3 font-semibold text-slate-700">
-                        {sc.scope}
-                      </td>
-                      <td className="p-3 font-medium text-slate-900">
-                        {sc.action}
-                      </td>
-                      <td className="p-3 text-slate-500 text-[11px]">
-                        {sc.safety}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* TAB 3: THEME & DENSITY */}
@@ -427,6 +248,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                     <button
                       key={t.id}
                       type="button"
+                      aria-pressed={isSelected}
                       onClick={() => setThemeMode(t.id as any)}
                       className={`p-3 rounded-xl border flex flex-col items-center gap-2 font-bold text-xs transition-all ${
                         isSelected
@@ -450,6 +272,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
+                  aria-pressed={tableDensity === 'comfortable'}
                   onClick={() => setTableDensity('comfortable')}
                   className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 font-bold text-xs transition-all ${
                     tableDensity === 'comfortable'
@@ -462,6 +285,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                 </button>
                 <button
                   type="button"
+                  aria-pressed={tableDensity === 'compact'}
                   onClick={() => setTableDensity('compact')}
                   className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 font-bold text-xs transition-all ${
                     tableDensity === 'compact'
@@ -499,11 +323,12 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               </div>
               <button
                 type="button"
+                aria-pressed={enableSound}
                 onClick={() => {
                   setEnableSound(!enableSound);
                   if (!enableSound) playSuccessTone();
                 }}
-                className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors ${
+                 className={`min-h-11 min-w-11 p-2 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors ${
                   enableSound
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'bg-slate-200 text-slate-600'
@@ -514,28 +339,10 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               </button>
             </div>
 
-            <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div>
-                <p className="text-xs font-bold text-slate-900">Ngưỡng cảnh báo sách sắp hết hàng</p>
-                <p className="text-[11px] text-slate-500">Hiển thị cảnh báo đỏ khi tồn kho dưới ngưỡng này</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={lowStockAlertThreshold}
-                  onChange={(e) => setLowStockAlertThreshold(parseInt(e.target.value, 10) || 15)}
-                  className="w-20 px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-center outline-none"
-                />
-                <span className="text-xs text-slate-500 font-bold">cuốn</span>
-              </div>
-            </div>
-
             <button
               type="button"
               onClick={playSuccessTone}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-2"
+              className="min-h-11 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-2"
             >
               <Volume2 className="w-4 h-4 text-emerald-600" />
               <span>Bấm Nghe Thử Âm Thanh Phản Hồi</span>
@@ -545,7 +352,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       )}
 
       {/* TAB 5: THERMAL PRINTER */}
-      {activeSubTab === 'printer' && (
+      {activeSubTab === 'printer' && canManagePrinter && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5">
           <div>
             <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
@@ -564,6 +371,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
+                  aria-pressed={printerPaper === 'K80'}
                   onClick={() => setPrinterPaper('K80')}
                   className={`p-3 rounded-xl border flex flex-col items-center gap-1 font-bold text-xs ${
                     printerPaper === 'K80'
@@ -576,6 +384,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                 </button>
                 <button
                   type="button"
+                  aria-pressed={printerPaper === 'K57'}
                   onClick={() => setPrinterPaper('K57')}
                   className={`p-3 rounded-xl border flex flex-col items-center gap-1 font-bold text-xs ${
                     printerPaper === 'K57'
@@ -595,20 +404,25 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                 <p className="text-xs font-bold text-slate-900">Tự động bật hộp thoại in bill</p>
                 <p className="text-[11px] text-slate-500">Mở lệnh in ngay sau khi nhấn thanh toán thành công</p>
               </div>
-              <input
-                type="checkbox"
-                checked={autoPrintOnCheckout}
-                onChange={(e) => setAutoPrintOnCheckout(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
-              />
+              <label className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl hover:bg-white">
+                <input
+                  type="checkbox"
+                  aria-label="Tự động bật hộp thoại in bill"
+                  checked={autoPrintOnCheckout}
+                  onChange={(e) => setAutoPrintOnCheckout(e.target.checked)}
+                  className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
+                />
+              </label>
             </div>
 
             {/* Receipt Footer Message */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700 block">Lời cảm ơn in chân trang:</label>
-              <input
-                type="text"
-                value={receiptFooterText}
+               <input
+                  type="text"
+                  maxLength={200}
+                  aria-label="Lời cảm ơn in chân trang"
+                 value={receiptFooterText}
                 onChange={(e) => setReceiptFooterText(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -633,8 +447,9 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           <div className="space-y-4 max-w-xl">
             <div className="grid grid-cols-2 gap-3">
               <button
-                type="button"
-                onClick={() => setLanguage('vi')}
+                  type="button"
+                  aria-pressed={language === 'vi'}
+                  onClick={() => setLanguage('vi')}
                 className={`p-3.5 rounded-xl border flex items-center justify-between font-bold text-xs ${
                   language === 'vi'
                     ? 'border-purple-600 bg-purple-50 text-purple-900 shadow-sm'
@@ -645,8 +460,9 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                 {language === 'vi' && <Check className="w-4 h-4 text-purple-600" />}
               </button>
               <button
-                type="button"
-                onClick={() => setLanguage('en')}
+                  type="button"
+                  aria-pressed={language === 'en'}
+                  onClick={() => setLanguage('en')}
                 className={`p-3.5 rounded-xl border flex items-center justify-between font-bold text-xs ${
                   language === 'en'
                     ? 'border-purple-600 bg-purple-50 text-purple-900 shadow-sm'
@@ -675,6 +491,8 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

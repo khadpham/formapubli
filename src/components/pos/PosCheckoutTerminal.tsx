@@ -48,10 +48,17 @@ import {
   saveOfflineOrder,
   getPendingOfflineOrders,
   removeOfflineOrder,
-  getPendingOrdersCount,
-  OfflineOrder,
+   updateOfflineOrderStatus,
+   updateOfflineOrderForRetry,
+   getOfflineOrderRepairAction,
+    getPendingOrdersCount,
+   getLegacyPendingOrdersCount,
+   claimLegacyOfflineOrders,
+   OfflineOrder,
 } from '@/lib/offline-db';
 import { UserRole } from '@/lib/roles';
+import { priceLine } from '@/lib/pricing';
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { printThermalReceipt, PaperPreset } from '@/lib/thermalReceipt';
 
 interface BookItem {
@@ -79,9 +86,18 @@ interface CartItem {
   atpAvailable?: number | null;
 }
 
+interface ParserImportSnapshot {
+  cart: CartItem[];
+  customerName: string;
+  note: string;
+}
+
 interface PosCheckoutTerminalProps {
   books: BookItem[];
   currentRole: UserRole;
+  actorId?: string;
+  isShellInteractionBlocked?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   onOrderCompleted?: () => void;
   /** Don nhap tu Copilot (prepare_sale_draft) — op vao gio 1 lan duy nhat. */
   externalDraft?: {
@@ -96,6 +112,12 @@ interface PosCheckoutTerminalProps {
 }
 
 /** F5 (#8): thu ngân xác nhận TAY đã nhận tiền chuyển khoản/QR trước khi chốt đơn. */
+function createOrderCode(): string {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const suffix = generateUUIDv7().replace(/-/g, '').slice(-16).toUpperCase();
+  return `ORD-${date}-${suffix}`;
+}
+
 function MoneyReceivedToggle({
   id,
   confirmed,
@@ -125,10 +147,14 @@ function MoneyReceivedToggle({
 export function PosCheckoutTerminal({
   books,
   currentRole,
+  actorId,
+  isShellInteractionBlocked = false,
+  onBusyChange,
   onOrderCompleted,
   externalDraft,
   onDraftApplied,
 }: PosCheckoutTerminalProps) {
+  const cashierActorId = actorId || `UNSCOPED-${currentRole}`;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('wh-au-co');
   // V4.1 S2.1/S2.2/S2.3: kho bán + ATP nạp từ server (fallback cứng khi offline)
@@ -215,16 +241,23 @@ export function PosCheckoutTerminal({
   const [qrSnapshot, setQrSnapshot] = useState<{ dataUrl: string; payload: string; accountNo: string; content: string } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [paperPreset, setPaperPreset] = useState<PaperPreset>('K80');
+  const [autoPrintOnCheckout, setAutoPrintOnCheckout] = useState(false);
+  const [receiptFooterText, setReceiptFooterText] = useState('Cảm ơn quý độc giả đã đồng hành cùng formapubli!');
+  const autoPrintedOrderCodes = useRef<Set<string>>(new Set());
   // 1.1: modal dán chat FB/Zalo
   const [isParserOpen, setIsParserOpen] = useState(false);
+  const [isParserImporting, setIsParserImporting] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
   const [ambiguousMatches, setAmbiguousMatches] = useState<BookItem[] | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(0);
+  const [legacyOfflineCount, setLegacyOfflineCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const syncLockRef = useRef(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [offlineReviewOrders, setOfflineReviewOrders] = useState<OfflineOrder[]>([]);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
-  const [paperPreset, setPaperPreset] = useState<PaperPreset>('K80');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const magnetInputRef = useRef<HTMLInputElement>(null);
@@ -234,8 +267,30 @@ export function PosCheckoutTerminal({
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('formapubli_settings') || '{}');
+      if (saved.printerPaper === 'K80' || saved.printerPaper === 'K57') setPaperPreset(saved.printerPaper);
+      if (typeof saved.autoPrintOnCheckout === 'boolean') setAutoPrintOnCheckout(saved.autoPrintOnCheckout);
+      if (typeof saved.receiptFooterText === 'string' && saved.receiptFooterText.length <= 200) setReceiptFooterText(saved.receiptFooterText);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!completedOrder || !autoPrintOnCheckout) return;
+    const orderCode = String(completedOrder.orderCode || completedOrder.id || '');
+    if (!orderCode || autoPrintedOrderCodes.current.has(orderCode)) return;
+    const timer = window.setTimeout(() => {
+      if (autoPrintedOrderCodes.current.has(orderCode)) return;
+      printThermalReceipt(completedOrder, paperPreset, currentRole, receiptFooterText);
+      autoPrintedOrderCodes.current.add(orderCode);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [completedOrder, autoPrintOnCheckout, paperPreset, currentRole, receiptFooterText]);
+
   // QUẢN LÝ KÉT TIỀN CA THU NGÂN (Cashbox Session)
   const [activeSession, setActiveSession] = useState<any | null>(null);
+  const cashboxRequestRef = useRef(0);
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
   const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
   const [openingCashInput, setOpeningCashInput] = useState('0');
@@ -255,18 +310,71 @@ export function PosCheckoutTerminal({
   // requestId yêu cầu đang chờ (do modal tạo) — cần để gọi API CANCEL trước khi mở khóa
   const [pendingApprovalRequestId, setPendingApprovalRequestId] = useState<string | null>(null);
   const [isCancellingApproval, setIsCancellingApproval] = useState(false);
+  const [approvalCancelError, setApprovalCancelError] = useState<string | null>(null);
   // F5 (#8): chuyển khoản/QR phải được thu ngân xác nhận TAY "Đã nhận tiền" trước khi chốt
   const [isMoneyReceived, setIsMoneyReceived] = useState(false);
+  const checkoutLockRef = useRef(false);
+  const addToCartAbortRef = useRef<AbortController | null>(null);
+  const parserImportAbortRef = useRef<AbortController | null>(null);
+  const parserImportLockRef = useRef(false);
+  const parserImportFailedRef = useRef(false);
+  const parserImportSucceededRef = useRef(false);
+  const pendingAddToCartCountRef = useRef(0);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
+  const parserModalRef = useModalFocusTrap<HTMLDivElement>(isParserOpen && mounted, () => {
+    parserImportAbortRef.current?.abort();
+    setIsParserOpen(false);
+  });
+  const receiptModalRef = useModalFocusTrap<HTMLDivElement>(Boolean(completedOrder && mounted), () => setCompletedOrder(null));
+  const mobileCheckoutModalRef = useModalFocusTrap<HTMLDivElement>(isMobileCheckoutSheetOpen && mounted, () => {
+    if (!isSubmitting) setIsMobileCheckoutSheetOpen(false);
+  });
+  const openScanner = () => {
+    setIsMobileCheckoutSheetOpen(false);
+    setIsScannerOpen(true);
+  };
 
   // Đang chờ Quản lý duyệt (chặn cả chốt đơn) vs giỏ bị khóa để sửa: chờ duyệt HOẶC
   // đã có phê duyệt gắn với giỏ này (sửa giỏ = phê duyệt hết hiệu lực → server 403).
   const isApprovalPendingState =
     isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
-  const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null;
+  const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null || checkoutLockRef.current;
+  const isInteractionLocked = isCartFrozen || isParserImporting;
+  const isPosOverlayOpen =
+    isParserOpen || isScannerOpen || isMobileCheckoutSheetOpen || Boolean(completedOrder) ||
+    Boolean(ambiguousMatches) || isAddingToCart || isDiscountApprovalModalOpen || isManagerApprovalDrawerOpen ||
+    isOpenShiftModalOpen || isCloseShiftModalOpen || isSettlementModalOpen;
+  const selectedWarehouseIdRef = useRef(selectedWarehouseId);
+  const cartFrozenRef = useRef(isCartFrozen);
+  useEffect(() => {
+    selectedWarehouseIdRef.current = selectedWarehouseId;
+  }, [selectedWarehouseId]);
+  useEffect(() => {
+    cartFrozenRef.current = isCartFrozen;
+  }, [isCartFrozen]);
+  useEffect(() => {
+    onBusyChange?.(isSubmitting || isInteractionLocked || isPosOverlayOpen);
+    return () => onBusyChange?.(false);
+  }, [isInteractionLocked, isPosOverlayOpen, isSubmitting, onBusyChange]);
+
+  const clearApprovalState = (closeModal = true) => {
+    setIsApprovalPending(false);
+    if (closeModal) setIsDiscountApprovalModalOpen(false);
+    setPendingDiscountRate(null);
+    setPendingApprovalRequestId(null);
+    setApprovedDiscountRequestId(null);
+    setApprovedPin(null);
+    setIsManagerOverride(false);
+    setDiscountRate(0);
+    setIsGift(false);
+    setApprovalCancelError(null);
+  };
 
   // F1/F2: hủy yêu cầu duyệt TRÊN SERVER rồi mới mở khóa giỏ; lỗi thì GIỮ khóa.
   const handleCancelApproval = async () => {
+    if (checkoutLockRef.current || isSubmitting || isCancellingApproval) return;
     const requestId = approvedDiscountRequestId || pendingApprovalRequestId;
+    setApprovalCancelError(null);
     setIsCancellingApproval(true);
     try {
       if (requestId) {
@@ -282,17 +390,11 @@ export function PosCheckoutTerminal({
       }
       // ponytail: nếu thu ngân hủy đúng lúc modal đang tạo yêu cầu (chưa có id) thì
       // yêu cầu đó tự hết hạn sau 5 phút — không có rủi ro tiền, không thêm cơ chế chờ.
-      setIsApprovalPending(false);
-      setIsDiscountApprovalModalOpen(false);
-      setPendingDiscountRate(null);
-      setDiscountRate(0);
-      setApprovedDiscountRequestId(null);
-      setPendingApprovalRequestId(null);
-      setIsManagerOverride(false);
-      if (isGift) setIsGift(false);
-      setErrorMessage(null);
+       clearApprovalState();
+       setErrorMessage(null);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Không hủy được yêu cầu duyệt — giỏ vẫn tạm khóa.');
+      setApprovalCancelError(err?.message || 'Không hủy được yêu cầu duyệt — giữ nguyên trạng thái.');
+      setErrorMessage('Không hủy được yêu cầu duyệt — giữ nguyên trạng thái.');
     } finally {
       setIsCancellingApproval(false);
     }
@@ -302,14 +404,14 @@ export function PosCheckoutTerminal({
   const [isManagerOverride, setIsManagerOverride] = useState(false);
   const [approvedPin, setApprovedPin] = useState<string | null>(null);
   // Mã đơn hiện tại (sinh sẵn để đồng bộ với ShortCode duyệt chiết khấu)
-  const [activeOrderCode, setActiveOrderCode] = useState<string>(() => {
-    const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const r = Math.floor(1000 + Math.random() * 9000);
-    return `ORD-${d}-${r}`;
-  });
+  const [activeOrderCode, setActiveOrderCode] = useState<string>(() => createOrderCode());
   // BV-03: chế độ Tặng sách 100% (doanh thu 0đ, vẫn trừ kho)
   const [isGift, setIsGift] = useState(false);
   const [giftReason, setGiftReason] = useState('Tặng sách / Quà tặng sự kiện');
+
+  useEffect(() => {
+    setIsMoneyReceived(false);
+  }, [cart, discountRate, selectedWarehouseId, isGift, paymentMethod]);
 
 
   // Micro giọng nói tiếng Việt đồng bộ
@@ -327,19 +429,28 @@ export function PosCheckoutTerminal({
 
   // Xử lý đồng bộ các đơn hàng ngoại tuyến lên máy chủ
   const syncPendingOrders = async () => {
-    if (isSyncing) return;
+    if (!actorId?.trim() || syncLockRef.current) return;
+    syncLockRef.current = true;
     setIsSyncing(true);
     try {
-      const pending = await getPendingOfflineOrders();
-      if (pending.length === 0) {
-        setPendingOfflineCount(0);
-        setIsSyncing(false);
-        return;
-      }
-      let successCount = 0;
-      for (const order of pending) {
-        try {
-          const res = await fetch('/api/orders', {
+       const pending = await getPendingOfflineOrders(cashierActorId);
+       setLegacyOfflineCount(await getLegacyPendingOrdersCount());
+         if (pending.length === 0) {
+           setPendingOfflineCount(0);
+           setOfflineReviewOrders([]);
+           setIsSyncing(false);
+         return;
+       }
+        let successCount = 0;
+        const reviewOrders = new Map<string, OfflineOrder>();
+        for (const order of pending) {
+          try {
+            const repairAction = getOfflineOrderRepairAction(order);
+            if (repairAction) {
+              reviewOrders.set(order.id, order);
+              continue;
+            }
+           const res = await fetch('/api/orders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -351,10 +462,13 @@ export function PosCheckoutTerminal({
               channel: order.channel,
               customerName: order.customerName,
               discountRate: order.discountRate,
-              paymentMethod: order.paymentMethod,
-              fiscalScope: order.fiscalScope,
-              cashierId: order.cashierId,
-              note: order.note,
+               paymentMethod: order.paymentMethod,
+               moneyReceived: order.moneyReceived,
+                fiscalScope: order.fiscalScope,
+               cashierId: order.cashierId,
+                cashboxSessionId: order.cashboxSessionId,
+               discountApprovalId: order.discountApprovalId,
+               note: order.note,
               isOfflineSync: true,
               allowOverdraft: true,
               isGift: (order as any).isGift || order.discountRate === 1,
@@ -371,18 +485,27 @@ export function PosCheckoutTerminal({
           if (resData.success) {
             await removeOfflineOrder(order.id);
             successCount++;
-          } else {
-            console.error('Lỗi khi đồng bộ đơn', order.orderCode, resData.error);
-            break;
-          }
-        } catch (err) {
-          console.error('Mạng gián đoạn trong khi sync:', err);
-          break;
-        }
+             } else {
+               console.error('Lỗi khi đồng bộ đơn', order.orderCode, resData.error);
+               const syncError = resData.error || 'Server từ chối đơn';
+               await updateOfflineOrderStatus(order.id, 'FAILED', syncError);
+               const failedOrder = { ...order, lastError: syncError };
+               if (getOfflineOrderRepairAction(failedOrder)) reviewOrders.set(order.id, failedOrder);
+               continue;
+             }
+         } catch (err) {
+           console.error('Mạng gián đoạn trong khi sync:', err);
+           await updateOfflineOrderStatus(order.id, 'FAILED', 'Mạng gián đoạn trong khi sync');
+           continue;
+         }
       }
-      const remaining = await getPendingOrdersCount();
-      setPendingOfflineCount(remaining);
-      if (successCount > 0) {
+       const remaining = await getPendingOrdersCount(cashierActorId);
+       setPendingOfflineCount(remaining);
+        const nextReviewOrders = Array.from(reviewOrders.values());
+        setOfflineReviewOrders(nextReviewOrders);
+        if (nextReviewOrders.length > 0) {
+          setSyncToast(`⚠️ ${nextReviewOrders.length} đơn cần xác nhận lại trước khi đồng bộ.`);
+        } else if (successCount > 0) {
         setSyncToast(`🎉 Đã đồng bộ thành công ${successCount} đơn hàng ngoại tuyến lên máy chủ!`);
         setTimeout(() => setSyncToast(null), 4000);
         if (onOrderCompleted) onOrderCompleted();
@@ -390,9 +513,59 @@ export function PosCheckoutTerminal({
     } catch (err: any) {
       console.error('Lỗi đồng bộ:', err);
     } finally {
+      syncLockRef.current = false;
       setIsSyncing(false);
     }
   };
+
+  const handleRepairOfflineOrder = async (order: OfflineOrder) => {
+    const action = getOfflineOrderRepairAction(order);
+    if (!action) return;
+    try {
+      if (action === 'REASSIGN_CASHBOX') {
+        if (!activeSession || activeSession.warehouseId !== order.warehouseId) {
+          setErrorMessage('Mở ca mới đúng kho trước khi gán lại đơn vào két.');
+          return;
+        }
+        if (activeSession.cashierId !== order.cashierId) {
+          setErrorMessage('Ca đang mở không thuộc thu ngân của đơn cũ.');
+          return;
+        }
+        if (!window.confirm(`Gán đơn ${order.orderCode} vào ca két mới ${activeSession.id}?`)) return;
+        await updateOfflineOrderForRetry(order.id, { cashboxSessionId: activeSession.id });
+      } else {
+        if (!window.confirm(`Xác nhận đã nhận đủ ${order.finalAmount.toLocaleString('vi-VN')} đ cho đơn ${order.orderCode}?`)) return;
+        await updateOfflineOrderForRetry(order.id, { moneyReceived: true });
+      }
+      setOfflineReviewOrders((current) => current.filter((item) => item.id !== order.id));
+      setSyncToast(`Đã cập nhật đơn ${order.orderCode}; đang đồng bộ lại.`);
+      await syncPendingOrders();
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Không thể cập nhật đơn ngoại tuyến.');
+    }
+  };
+
+  const handleClaimLegacyOrders = async () => {
+    if (!actorId?.trim()) {
+      setErrorMessage('Không có phiên đăng nhập để nhận đơn ngoại tuyến cũ.');
+      return;
+    }
+    if (currentRole !== 'ROLE_MANAGER' && currentRole !== 'ROLE_OWNER') return;
+    if (!window.confirm(`Nhận ${legacyOfflineCount} đơn ngoại tuyến cũ chưa có danh tính thu ngân? Thao tác này sẽ ghi chúng vào tài khoản của bạn.`)) return;
+    try {
+      const claimed = await claimLegacyOfflineOrders(cashierActorId);
+      setSyncToast(`Đã nhận ${claimed} đơn ngoại tuyến cũ vào tài khoản của bạn.`);
+      setTimeout(() => setSyncToast(null), 4000);
+      await syncPendingOrders();
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Không thể nhận đơn ngoại tuyến cũ.');
+    }
+  };
+
+  const syncPendingOrdersRef = useRef(syncPendingOrders);
+  useEffect(() => {
+    syncPendingOrdersRef.current = syncPendingOrders;
+  }, [syncPendingOrders]);
 
   // Lắng nghe sự kiện Online/Offline của mạng và đếm đơn chờ sync
   useEffect(() => {
@@ -401,15 +574,19 @@ export function PosCheckoutTerminal({
     setIsOnline(navigator.onLine);
 
     const checkCount = async () => {
-      const count = await getPendingOrdersCount();
+      const [count, legacyCount] = await Promise.all([
+        getPendingOrdersCount(cashierActorId),
+        getLegacyPendingOrdersCount(),
+      ]);
       setPendingOfflineCount(count);
+      setLegacyOfflineCount(legacyCount);
     };
     checkCount();
 
     const handleOnline = () => {
       setIsOnline(true);
       setSyncToast('🟢 Đã có kết nối mạng trở lại! Đang tự động đồng bộ đơn hàng...');
-      syncPendingOrders();
+      syncPendingOrdersRef.current();
     };
 
     const handleOffline = () => {
@@ -425,27 +602,28 @@ export function PosCheckoutTerminal({
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [cashierActorId]);
 
   // Tải thông tin ca két tiền hiện tại của thu ngân
   const fetchActiveCashboxSession = async () => {
+    const requestId = ++cashboxRequestRef.current;
     try {
-      const cashierId = `User-${currentRole}`;
-      const res = await fetch(`/api/cashbox?cashierId=${encodeURIComponent(cashierId)}`);
+       const res = await fetch(`/api/cashbox?cashierId=${encodeURIComponent(cashierActorId)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
       const data = await res.json();
-      if (data.success && data.data) {
+      if (requestId !== cashboxRequestRef.current) return;
+      if (data.success && data.data && data.data.warehouseId === selectedWarehouseId) {
         setActiveSession(data.data);
       } else {
         setActiveSession(null);
       }
     } catch (err) {
-      console.warn('Chưa thể tải phiên két tiền:', err);
+      if (requestId === cashboxRequestRef.current) console.warn('Chưa thể tải phiên két tiền:', err);
     }
   };
 
   useEffect(() => {
     fetchActiveCashboxSession();
-  }, [currentRole, selectedWarehouseId]);
+  }, [cashierActorId, selectedWarehouseId]);
 
   // V4.1 S2.1: nạp kho bán động 1 lần khi mở quầy (thay hardcode 3 kho)
   useEffect(() => {
@@ -493,6 +671,11 @@ export function PosCheckoutTerminal({
 
   // Mở ca làm việc mới
   const handleOpenShift = async () => {
+    if (!actorId?.trim()) {
+      setErrorMessage('Không có phiên đăng nhập để mở ca.');
+      return;
+    }
+    const operationRequestId = ++cashboxRequestRef.current;
     setIsSubmittingSession(true);
     setErrorMessage(null);
     try {
@@ -501,30 +684,36 @@ export function PosCheckoutTerminal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'OPEN',
-          warehouseId: selectedWarehouseId,
-          cashierId: `User-${currentRole}`,
+           warehouseId: selectedWarehouseId,
+           cashierId: cashierActorId,
           openingCash: parseFloat(openingCashInput) || 0,
-          notes: shiftNoteInput.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      setActiveSession(data.data);
+           notes: shiftNoteInput.trim() || undefined,
+         }),
+       });
+       const data = await res.json();
+       if (operationRequestId !== cashboxRequestRef.current) return;
+       if (!data.success) throw new Error(data.error);
+       if (data.data?.warehouseId !== selectedWarehouseId) throw new Error('Két ca không thuộc kho đang chọn.');
+       setActiveSession(data.data);
       setIsOpenShiftModalOpen(false);
       setOpeningCashInput('0');
       setShiftNoteInput('');
       setSyncToast(`🟢 Đã mở ca két tiền thành công! Vốn đầu ca: ${(data.data.openingCash || 0).toLocaleString('vi-VN')} đ`);
       setTimeout(() => setSyncToast(null), 4000);
-    } catch (err: any) {
-      setErrorMessage('Lỗi mở ca két tiền: ' + err.message);
-    } finally {
-      setIsSubmittingSession(false);
-    }
-  };
+     } catch (err: any) {
+       if (operationRequestId === cashboxRequestRef.current) {
+         setActiveSession(null);
+         setErrorMessage('Lỗi mở ca két tiền: ' + err.message);
+       }
+     } finally {
+       if (operationRequestId === cashboxRequestRef.current) setIsSubmittingSession(false);
+     }
+   };
 
   // Chốt ca và kiểm kê két tiền
   const handleCloseShift = async () => {
     if (!activeSession) return;
+    const operationRequestId = ++cashboxRequestRef.current;
     setIsSubmittingSession(true);
     setErrorMessage(null);
     try {
@@ -539,11 +728,12 @@ export function PosCheckoutTerminal({
           action: 'CLOSE',
           sessionId: activeSession.id,
           closingCashActual: closingVal,
-          notes: shiftNoteInput.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+           notes: shiftNoteInput.trim() || undefined,
+         }),
+       });
+       const data = await res.json();
+       if (operationRequestId !== cashboxRequestRef.current) return;
+       if (!data.success) throw new Error(data.error);
       const disc = data.data.cashDiscrepancy || 0;
       const discText = disc === 0 ? 'Khớp tuyệt đối 100%' : disc > 0 ? `Thừa +${disc.toLocaleString('vi-VN')} đ` : `Thiếu ${disc.toLocaleString('vi-VN')} đ`;
       setSyncToast(`🏁 Đã chốt ca làm việc! Kết quả két tiền: ${discText}`);
@@ -552,16 +742,19 @@ export function PosCheckoutTerminal({
       setIsCloseShiftModalOpen(false);
       setClosingCashActualInput('');
       setShiftNoteInput('');
-    } catch (err: any) {
-      setErrorMessage('Lỗi chốt ca: ' + err.message);
+     } catch (err: any) {
+       if (operationRequestId === cashboxRequestRef.current) {
+         setActiveSession(null);
+         setErrorMessage('Lỗi chốt ca: ' + err.message);
+       }
     } finally {
-      setIsSubmittingSession(false);
+       if (operationRequestId === cashboxRequestRef.current) setIsSubmittingSession(false);
     }
   };
 
   // V4.1 S2.4: áp dụng CK lẻ từ ô nhập — chỉ CK thường (không phải tặng 100%)
   const applyCustomDiscount = () => {
-    if (isCartFrozen) {
+    if (isInteractionLocked) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
       return;
     }
@@ -579,7 +772,7 @@ export function PosCheckoutTerminal({
     setCustomDiscountInput('');
   };
   const handleRequestDiscount = (rate: number) => {
-    if (isCartFrozen) {
+    if (isInteractionLocked || pendingAddToCartCountRef.current > 0) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
       return;
     }
@@ -589,9 +782,12 @@ export function PosCheckoutTerminal({
       setErrorMessage('Chiết khấu phải nằm trong khoảng 0 - 100%.');
       return;
     }
+    addToCartAbortRef.current?.abort();
+    addToCartAbortRef.current = null;
     const isRestrictedCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride;
     if (isRestrictedCashier && rate >= 0.2) {
       setPendingDiscountRate(rate);
+      setApprovalCancelError(null);
       setIsApprovalPending(true);
       setIsDiscountApprovalModalOpen(true);
       return;
@@ -605,7 +801,7 @@ export function PosCheckoutTerminal({
 
   // BV-03: bật/tắt chế độ Tặng 100% (tái dùng luồng duyệt chiết khấu bảo mật)
   const handleToggleGift = () => {
-    if (isCartFrozen) {
+    if (isInteractionLocked || pendingAddToCartCountRef.current > 0) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
       return;
     }
@@ -671,7 +867,7 @@ export function PosCheckoutTerminal({
       });
       setTimeout(() => setScanToast(null), 3000);
     } else if (matchedBooks.length > 1) {
-      // Bật Modal chọn ấn bản khi phát hiện trùng ISBN (ví dụ H21 Bìa tím vs H36 Tái bản bìa trắng)
+      setIsScannerOpen(false);
       setAmbiguousMatches(matchedBooks);
     } else {
       setErrorMessage(`Không tìm thấy ấn bản nào trong danh mục có mã ISBN: ${scannedCode}`);
@@ -720,6 +916,7 @@ export function PosCheckoutTerminal({
     const availableStock = getBookStock(book);
 
     if (availableStock <= 0) {
+      if (parserImportLockRef.current) parserImportFailedRef.current = true;
       setErrorMessage(`Sách [${book.code}] ${book.title} hiện đã hết hàng tại kho được chọn!`);
       return;
     }
@@ -728,6 +925,7 @@ export function PosCheckoutTerminal({
     const atp = atpOverride === undefined || atpOverride === null ? null : Math.max(0, Math.floor(atpOverride));
     const effectiveLimit = atp === null ? availableStock : Math.min(availableStock, atp);
     if (effectiveLimit <= 0) {
+      if (parserImportLockRef.current) parserImportFailedRef.current = true;
       setErrorMessage(`Sách [${book.code}] ${book.title} đã bị giữ hết cho đơn online — tồn khả dụng tại quầy: 0 cuốn!`);
       return;
     }
@@ -737,8 +935,9 @@ export function PosCheckoutTerminal({
       if (existing) {
         const curAtp = atp !== null ? atp : existing.atpAvailable ?? null;
         const limit = curAtp === null ? availableStock : Math.min(availableStock, curAtp);
-        if (existing.quantity >= limit) {
-          setErrorMessage(
+         if (existing.quantity >= limit) {
+           if (parserImportLockRef.current) parserImportFailedRef.current = true;
+           setErrorMessage(
             curAtp !== null && curAtp < availableStock
               ? `Sách giữ chỗ online! Giỏ (${existing.quantity}) đã đạt tồn khả dụng (${limit}, vật lý ${availableStock})!`
               : `Số lượng trong giỏ (${existing.quantity}) đã đạt mức tồn kho tối đa (${limit})!`
@@ -767,27 +966,44 @@ export function PosCheckoutTerminal({
   };
 
   // 1.0: bọc tra ATP trước khi thêm — cảnh báo hổ phách khi có giữ chỗ, rớt mạng thì bán theo tồn vật lý
-  const handleAddToCart = async (book: BookItem, times = 1) => {
-    if (isCartFrozen) {
+  const handleAddToCart = async (book: BookItem, times = 1, importController?: AbortController) => {
+    const isParserCall = Boolean(importController);
+    if ((!isParserCall && isInteractionLocked) || cartFrozenRef.current || checkoutLockRef.current) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu. Hãy hủy yêu cầu duyệt nếu muốn thêm sách.');
       return;
     }
-    let atp: number | null = null;
+    const warehouseId = selectedWarehouseId;
+    const controller = importController ?? new AbortController();
+    pendingAddToCartCountRef.current += 1;
+    setIsAddingToCart(true);
+    addToCartAbortRef.current = controller;
     try {
-      const res = await fetch(`/api/atp?editionId=${encodeURIComponent(book.id)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
-      const json = await res.json();
-      if (json.success) {
-        atp = Math.max(0, Math.floor(json.data.atp));
-        if (json.data.held > 0) {
-          setSyncToast(`⚠️ [${book.code}] có ${json.data.held} cuốn đang giữ chỗ online — khả dụng tại quầy: ${atp} cuốn.`);
-          setTimeout(() => setSyncToast(null), 4000);
+      let atp: number | null = null;
+      try {
+        const res = await fetch(`/api/atp?editionId=${encodeURIComponent(book.id)}&warehouseId=${encodeURIComponent(warehouseId)}`, { signal: controller.signal });
+        const json = await res.json();
+        if (controller.signal.aborted || cartFrozenRef.current || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+        if (json.success) {
+          atp = Math.max(0, Math.floor(json.data.atp));
+          if (json.data.held > 0) {
+            setSyncToast(`⚠️ [${book.code}] có ${json.data.held} cuốn đang giữ chỗ online — khả dụng tại quầy: ${atp} cuốn.`);
+            setTimeout(() => setSyncToast(null), 4000);
+          }
         }
+      } catch {
+        if (controller.signal.aborted || cartFrozenRef.current || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
       }
-    } catch {
-      // Offline/không tra được ATP: giữ hành vi cũ (tồn vật lý), server là guard cuối
+      if (controller.signal.aborted || cartFrozenRef.current || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+      const n = Math.max(1, Math.min(999, Math.floor(times) || 1));
+      for (let i = 0; i < n; i++) {
+        if (controller.signal.aborted || cartFrozenRef.current || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+        addToCart(book, atp);
+      }
+    } finally {
+      if (addToCartAbortRef.current === controller) addToCartAbortRef.current = null;
+      pendingAddToCartCountRef.current = Math.max(0, pendingAddToCartCountRef.current - 1);
+      if (pendingAddToCartCountRef.current === 0) setIsAddingToCart(false);
     }
-    const n = Math.max(1, Math.min(999, Math.floor(times) || 1));
-    for (let i = 0; i < n; i++) addToCart(book, atp);
   };
 
   // 1.1: nạp đơn parser vào giỏ POS (tên/SĐT/địa chỉ → form, sách → giỏ qua guard ATP)
@@ -798,23 +1014,102 @@ export function PosCheckoutTerminal({
     items: Array<{ editionId: string; quantity: number }>;
     note: string;
   }) => {
-    setCustomerName(payload.customerName);
-    setNote((prev) => {
-      const bits = [
-        prev.trim(),
+    if (isInteractionLocked || pendingAddToCartCountRef.current > 0 || parserImportLockRef.current) return;
+    const warehouseId = selectedWarehouseId;
+    const controller = new AbortController();
+    const snapshot: ParserImportSnapshot = { cart, customerName, note };
+    const nextCart = snapshot.cart.map((item) => ({ ...item }));
+    parserImportLockRef.current = true;
+    parserImportAbortRef.current = controller;
+    parserImportFailedRef.current = false;
+    parserImportSucceededRef.current = false;
+    setIsParserImporting(true);
+    try {
+      for (const it of payload.items) {
+        if (controller.signal.aborted || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+        const book = books.find((b) => b.id === it.editionId);
+        if (!book) {
+          parserImportFailedRef.current = true;
+          setErrorMessage(`Không tìm thấy ấn bản ${it.editionId} trong danh mục.`);
+          return;
+        }
+
+        let atp: number | null = null;
+        try {
+          const res = await fetch(`/api/atp?editionId=${encodeURIComponent(book.id)}&warehouseId=${encodeURIComponent(warehouseId)}`, { signal: controller.signal });
+          const json = await res.json();
+          if (controller.signal.aborted || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+          if (json.success) atp = Math.max(0, Math.floor(json.data.atp));
+        } catch {
+          if (controller.signal.aborted || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+        }
+
+        if (controller.signal.aborted || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+        const availableStock = getBookStock(book);
+        const effectiveLimit = atp === null ? availableStock : Math.min(availableStock, atp);
+        const quantity = Math.max(1, Math.min(999, Math.floor(it.quantity) || 1));
+        const existingIndex = nextCart.findIndex((item) => item.editionId === book.id);
+        const existing = existingIndex >= 0 ? nextCart[existingIndex] : null;
+        const nextQuantity = (existing?.quantity || 0) + quantity;
+        if (effectiveLimit <= 0 || nextQuantity > effectiveLimit) {
+          parserImportFailedRef.current = true;
+          setErrorMessage(
+            effectiveLimit <= 0
+              ? `Sách [${book.code}] không còn tồn khả dụng tại kho đang chọn.`
+              : `Giỏ sách [${book.code}] vượt tồn khả dụng (${nextQuantity} > ${effectiveLimit}).`
+          );
+          return;
+        }
+        if (existing) {
+          nextCart[existingIndex] = { ...existing, quantity: nextQuantity, atpAvailable: atp ?? existing.atpAvailable ?? null };
+        } else {
+          nextCart.push({
+            editionId: book.id,
+            code: book.code,
+            title: book.title,
+            coverPrice: book.coverPrice,
+            quantity,
+            stockAvailable: availableStock,
+            atpAvailable: atp,
+          });
+        }
+      }
+      if (controller.signal.aborted || parserImportFailedRef.current || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
+      const mergedNote = [
+        snapshot.note.trim(),
         payload.phone ? `SĐT: ${payload.phone}` : '',
         payload.address ? `ĐC: ${payload.address}` : '',
         payload.note,
-      ].filter((s) => s && s.trim());
-      return bits.join(' | ');
-    });
-    for (const it of payload.items) {
-      const book = books.find((b) => b.id === it.editionId);
-      if (book) await handleAddToCart(book, it.quantity);
+      ].filter((part) => part && part.trim()).join(' | ');
+      setCart(nextCart);
+      setCustomerName(payload.customerName);
+      setNote(mergedNote);
+      setIsParserOpen(false);
+      searchInputRef.current?.focus();
+      parserImportSucceededRef.current = true;
+    } finally {
+      if (!parserImportSucceededRef.current) {
+        setCart(snapshot.cart);
+        setCustomerName(snapshot.customerName);
+        setNote(snapshot.note);
+      }
+      if (parserImportAbortRef.current === controller) {
+        parserImportAbortRef.current = null;
+        parserImportLockRef.current = false;
+        setIsParserImporting(false);
+      }
     }
-    setIsParserOpen(false);
-    searchInputRef.current?.focus();
   };
+
+  const handleCloseParser = React.useCallback(() => {
+    parserImportAbortRef.current?.abort();
+    setIsParserOpen(false);
+  }, []);
+
+  const handleParserOrderRef = useRef(handleParserOrder);
+  useEffect(() => {
+    handleParserOrderRef.current = handleParserOrder;
+  }, [handleParserOrder]);
 
   // Don nhap tu Copilot: op vao gio 1 lan theo nonce, qua guard ATP/ton nhu don tay.
   // Danh dau nonce DONG BO ngay dau effect (ke ca StrictMode dev double-effect
@@ -835,7 +1130,7 @@ export function PosCheckoutTerminal({
     }
     (async () => {
       try {
-        await handleParserOrder({
+        await handleParserOrderRef.current({
           customerName: typeof draft.customerName === 'string' && draft.customerName.trim() ? draft.customerName.trim() : 'Khách lẻ vãng lai',
           phone: typeof draft.phone === 'string' ? draft.phone : undefined,
           address: typeof draft.address === 'string' ? draft.address : undefined,
@@ -843,19 +1138,20 @@ export function PosCheckoutTerminal({
           note: typeof draft.note === 'string' && draft.note ? draft.note : '[COPILOT DRAFT]',
         });
         appliedDraftNonce.current = draft.nonce;
-        setSyncToast('Đã ốp đơn nháp từ Copilot vào giỏ — kiểm tra lại rồi bấm Thanh toán (Ctrl+Enter).');
-        setTimeout(() => setSyncToast(null), 4000);
+        if (parserImportSucceededRef.current) {
+          setSyncToast('Đã ốp đơn nháp từ Copilot vào giỏ — kiểm tra lại rồi bấm Thanh toán (Ctrl+Enter).');
+          setTimeout(() => setSyncToast(null), 4000);
+        }
       } catch (err: any) {
         setErrorMessage('Ốp đơn nháp thất bại: ' + (err?.message || 'lỗi không xác định'));
       } finally {
         onDraftApplied?.();
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalDraft]);
+  }, [externalDraft, onDraftApplied]);
 
   const updateQuantity = (editionId: string, delta: number) => {
-    if (isCartFrozen) {
+    if (isInteractionLocked || pendingAddToCartCountRef.current > 0) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu. Hãy hủy yêu cầu duyệt nếu muốn chỉnh số lượng.');
       return;
     }
@@ -886,7 +1182,7 @@ export function PosCheckoutTerminal({
   };
 
   const removeFromCart = (editionId: string) => {
-    if (isCartFrozen) {
+    if (isInteractionLocked || pendingAddToCartCountRef.current > 0) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu. Hãy hủy yêu cầu duyệt nếu muốn xóa sách.');
       return;
     }
@@ -894,30 +1190,68 @@ export function PosCheckoutTerminal({
   };
 
   // Tính toán số liệu giỏ hàng
-  const subtotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.quantity * item.coverPrice, 0);
-  }, [cart]);
-
-  const discountAmount = useMemo(() => {
-    return Math.round(subtotal * discountRate);
-  }, [subtotal, discountRate]);
-
-  const finalAmount = subtotal - discountAmount;
+  const pricedCart = useMemo(
+    () => cart.map((item) => priceLine(item.coverPrice, discountRate, item.quantity)),
+    [cart, discountRate]
+  );
+  const subtotal = useMemo(() => pricedCart.reduce((sum, line) => sum + line.subtotal, 0), [pricedCart]);
+  const discountAmount = useMemo(() => pricedCart.reduce((sum, line) => sum + line.discountAmount, 0), [pricedCart]);
+  const finalAmount = useMemo(() => pricedCart.reduce((sum, line) => sum + line.finalAmount, 0), [pricedCart]);
   const totalCopies = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const approvalPricedCart = useMemo(
+    () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
+    [cart, discountRate, pendingDiscountRate]
+  );
+  const approvalDiscountAmount = useMemo(
+    () => approvalPricedCart.reduce((sum, line) => sum + line.discountAmount, 0),
+    [approvalPricedCart]
+  );
+  const approvalFinalAmount = useMemo(
+    () => approvalPricedCart.reduce((sum, line) => sum + line.finalAmount, 0),
+    [approvalPricedCart]
+  );
 
   // Xử lý nộp đơn bán hàng (Offline-First: Lưu IndexedDB khi mất mạng, Sync khi có mạng)
   const handleCheckout = async () => {
+    if (!actorId?.trim()) {
+      setErrorMessage('Không có phiên đăng nhập hợp lệ để ghi đơn.');
+      return;
+    }
+    if (
+      checkoutLockRef.current ||
+      parserImportLockRef.current ||
+      pendingAddToCartCountRef.current > 0 ||
+      isParserOpen ||
+      isScannerOpen ||
+      Boolean(completedOrder) ||
+      Boolean(ambiguousMatches) ||
+      isDiscountApprovalModalOpen ||
+      isManagerApprovalDrawerOpen ||
+      isOpenShiftModalOpen ||
+      isCloseShiftModalOpen ||
+      isSettlementModalOpen
+    ) return;
+    checkoutLockRef.current = true;
+    addToCartAbortRef.current?.abort();
+    addToCartAbortRef.current = null;
+    setIsSubmitting(true);
     if (cart.length === 0) {
+      checkoutLockRef.current = false;
+      setIsSubmitting(false);
       setErrorMessage('Giỏ hàng trống! Vui lòng chọn ít nhất 1 cuốn sách.');
       return;
     }
     // BV-03: đơn tặng bắt buộc có lý do
     if (isGift && !giftReason.trim() && !note.trim()) {
+      checkoutLockRef.current = false;
+      setIsSubmitting(false);
       setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
       return;
     }
     // F5 (#8): chuyển khoản/QR chỉ chốt khi thu ngân đã xác nhận tay "Đã nhận tiền"
     if (!isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && !isMoneyReceived) {
+      checkoutLockRef.current = false;
+      setIsSubmitting(false);
       setErrorMessage(
         'Vui lòng xác nhận "Đã nhận tiền" (đã kiểm tra tài khoản/QR của khách) trước khi chốt đơn chuyển khoản/QR.'
       );
@@ -931,6 +1265,8 @@ export function PosCheckoutTerminal({
         const res = await fetch(`/api/atp?editionId=${encodeURIComponent(item.editionId)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
         const json = await res.json();
         if (json.success && item.quantity > json.data.atp && !isManagerOverride) {
+          checkoutLockRef.current = false;
+          setIsSubmitting(false);
           setErrorMessage(
             `Sách [${item.code}] vượt tồn khả dụng (${item.quantity} > ${json.data.atp}, có ${json.data.held} cuốn giữ chỗ online). Cần Quản lý duyệt PIN để vượt.`
           );
@@ -941,34 +1277,58 @@ export function PosCheckoutTerminal({
       // Không tra được ATP (mất mạng) → cho qua, server + offline-queue là guard cuối
     }
 
-    setIsSubmitting(true);
     setErrorMessage(null);
 
     const orderUuid = generateUUIDv7();
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const shortSuffix = orderUuid.slice(-5).toUpperCase();
     const channel = selectedWarehouseType === 'FAIR_EVENT' ? 'FAIR_EVENT' : 'RETAIL_OFFICE';
-    const cashierId = `User-${currentRole}`;
-    const orderTimestamp = new Date().toISOString();
-    const idempotencyKey = `idem-${orderUuid}`;
+     const cashierId = cashierActorId;
+     const orderTimestamp = new Date().toISOString();
+     const idempotencyKey = `idem-${activeOrderCode}`;
+    const orderCode = activeOrderCode;
+    const resetPostCheckoutState = () => {
+       setIsMobileCheckoutSheetOpen(false);
+       setIsScannerOpen(false);
+       setAmbiguousMatches(null);
+       setCart([]);
+      setIsMoneyReceived(false);
+      setNote('');
+      setQrSnapshot(null);
+      setIsGift(false);
+      setDiscountRate(0);
+      setIsApprovalPending(false);
+      setIsDiscountApprovalModalOpen(false);
+      setPendingDiscountRate(null);
+      setPendingApprovalRequestId(null);
+      setApprovedDiscountRequestId(null);
+      setApprovedPin(null);
+      setIsManagerOverride(false);
+      setCustomerName('Khách lẻ vãng lai');
+      setFiscalScope('INTERNAL_MANAGEMENT');
+      setPaymentMethod('CASH');
+      setGiftReason('');
+      setCustomDiscountInput('');
+      setActiveOrderCode(createOrderCode());
+    };
 
     // Helper lưu ngoại tuyến vào IndexedDB
     const fallbackToOffline = async (reason?: string) => {
       try {
-        const offlineOrderCode = `OFF-${dateStr}-${shortSuffix}`;
         const giftNote = isGift ? `[QUÀ TẶNG: ${giftReason.trim() || note.trim() || 'Tặng sách'}]${note ? ` ${note}` : ''}` : note;
-        const offlineOrder: OfflineOrder = {
-          id: orderUuid,
-          orderCode: offlineOrderCode,
-          idempotencyKey,
-          warehouseId: selectedWarehouseId,
-          customerName,
-          channel,
-          discountRate: isGift ? 1 : discountRate,
-          paymentMethod,
-          fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
-          cashierId,
-          note: giftNote,
+         const offlineOrder: OfflineOrder = {
+            id: orderUuid,
+            orderCode,
+            idempotencyKey,
+           warehouseId: selectedWarehouseId,
+           customerName,
+           channel,
+           discountRate: isGift ? 1 : discountRate,
+           paymentMethod,
+           moneyReceived: isMoneyReceived,
+           fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
+           cashierId,
+           cashboxSessionId: activeSession?.id,
+           discountApprovalId: approvedDiscountRequestId || undefined,
+           note: giftNote,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
           items: cart.map((c) => ({
@@ -987,12 +1347,12 @@ export function PosCheckoutTerminal({
         };
 
         await saveOfflineOrder(offlineOrder);
-        const count = await getPendingOrdersCount();
+      const count = await getPendingOrdersCount(cashierActorId);
         setPendingOfflineCount(count);
 
         setCompletedOrder({
           id: orderUuid,
-          orderCode: offlineOrderCode,
+           orderCode,
           warehouseId: selectedWarehouseId,
           customerName,
           fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
@@ -1010,19 +1370,11 @@ export function PosCheckoutTerminal({
           qrAccountNo: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.accountNo || null : null,
         });
 
-        setIsMobileCheckoutSheetOpen(false);
-        setCart([]);
-        setIsMoneyReceived(false);
-        setNote('');
-        setQrSnapshot(null);
-        if (isGift) {
-          setIsGift(false);
-          setDiscountRate(0);
-        }
+        resetPostCheckoutState();
         setSyncToast(
           reason
             ? `⚠️ ${reason} Đơn đã lưu ngoại tuyến an toàn vào máy (IndexedDB).`
-            : `💾 Đã ghi nhận đơn ngoại tuyến [${offlineOrderCode}]. Hệ thống sẽ tự động đồng bộ khi có mạng!`
+            : `💾 Đã ghi nhận đơn ngoại tuyến [${orderCode}]. Hệ thống sẽ tự động đồng bộ khi có mạng!`
         );
         setTimeout(() => setSyncToast(null), 6000);
       } catch (err: any) {
@@ -1032,28 +1384,33 @@ export function PosCheckoutTerminal({
 
     // A. Nếu trình duyệt đang rớt mạng: Lưu vào IndexedDB ngay lập tức
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await fallbackToOffline();
+      if (approvedDiscountRequestId) {
+        setErrorMessage('Đơn đã có duyệt chiết khấu cần mạng để kiểm tra hạn và giao dịch an toàn. Giữ nguyên giỏ, hãy thử lại khi kết nối ổn định.');
+      } else {
+        await fallbackToOffline();
+      }
+      checkoutLockRef.current = false;
       setIsSubmitting(false);
       return;
     }
 
     // B. Nếu có mạng: Thử gửi lên Máy chủ qua REST API
     try {
-      const orderCode = `ORD-${dateStr}-${shortSuffix}`;
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: orderUuid,
-          orderCode,
-          idempotencyKey,
-          createdAt: orderTimestamp,
-          warehouseId: selectedWarehouseId,
-          channel,
-          customerName,
-          discountRate: isGift ? 1 : discountRate,
-          paymentMethod,
-          fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
+         body: JSON.stringify({
+           id: orderUuid,
+           orderCode,
+           idempotencyKey,
+           createdAt: orderTimestamp,
+           warehouseId: selectedWarehouseId,
+           channel,
+           customerName,
+           discountRate: isGift ? 1 : discountRate,
+           paymentMethod,
+           moneyReceived: isMoneyReceived,
+           fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
           cashierId,
           cashboxSessionId: activeSession?.id,
           managerPin: approvedPin || undefined,
@@ -1086,40 +1443,37 @@ export function PosCheckoutTerminal({
         qrAccountNo: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.accountNo || null : null,
       });
 
-      // Xóa giỏ hàng
-      setIsMobileCheckoutSheetOpen(false);
-      setCart([]);
-      setIsMoneyReceived(false);
-      setNote('');
-      setQrSnapshot(null);
-      if (isGift) {
-        setIsGift(false);
-        setDiscountRate(0);
-      }
-      setApprovedPin(null);
-      setApprovedDiscountRequestId(null);
-      setIsManagerOverride(false);
-      // Sinh mã đơn mới cho lượt khách kế tiếp
-      const nextDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const nextRand = Math.floor(1000 + Math.random() * 9000);
-      setActiveOrderCode(`ORD-${nextDate}-${nextRand}`);
+      resetPostCheckoutState();
       fetchActiveCashboxSession();
       if (onOrderCompleted) onOrderCompleted();
 
     } catch (err: any) {
       // Nếu rớt mạng bất ngờ giữa chừng hoặc fetch thất bại
-      if (err.name === 'TypeError' || err.message?.includes('fetch') || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-        await fallbackToOffline('Mất kết nối mạng đột ngột!');
-      } else {
-        setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
-      }
+       if (err.name === 'TypeError' || err.message?.includes('fetch') || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+         if (approvedDiscountRequestId) {
+           setErrorMessage('Mất kết nối khi gửi đơn có duyệt chiết khấu. Giữ nguyên giỏ và thử lại; không ghi đơn offline để tránh mất quyền duyệt.');
+         } else {
+           await fallbackToOffline('Mất kết nối mạng đột ngột!');
+         }
+        } else {
+          if (/phiên két ca đã|két ca/i.test(err.message || '')) {
+            setActiveSession(null);
+            fetchActiveCashboxSession();
+          }
+          if (approvedDiscountRequestId && /duyệt|approval|hết hạn|EXPIRED|đã được sử dụng|CONSUMED|STATE_CONFLICT/i.test(err.message || '')) {
+            clearApprovalState();
+          }
+          setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
+        }
     } finally {
+      checkoutLockRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   // Lắng nghe phím tắt toàn cục không xung đột cho màn hình POS:
   useEffect(() => {
+    if (isShellInteractionBlocked) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const targetTag = (e.target as HTMLElement)?.tagName;
       const isTypingInInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
@@ -1136,13 +1490,17 @@ export function PosCheckoutTerminal({
       if (e.key === 'Escape') {
         if (completedOrder) {
           setCompletedOrder(null);
-        } else if (ambiguousMatches) {
-          setAmbiguousMatches(null);
-        } else if (isParserOpen) {
-          setIsParserOpen(false);
-        } else if (isOpenShiftModalOpen) {
-          setIsOpenShiftModalOpen(false);
-        } else if (isCloseShiftModalOpen) {
+         } else if (ambiguousMatches) {
+           setAmbiguousMatches(null);
+          } else if (isScannerOpen) {
+           setIsScannerOpen(false);
+          } else if (isParserOpen) {
+           handleCloseParser();
+         } else if (isMobileCheckoutSheetOpen && !isSubmitting) {
+           setIsMobileCheckoutSheetOpen(false);
+          } else if (isOpenShiftModalOpen && !isSubmittingSession) {
+           setIsOpenShiftModalOpen(false);
+         } else if (isCloseShiftModalOpen && !isSubmittingSession) {
           setIsCloseShiftModalOpen(false);
         } else if (searchQuery) {
           setSearchQuery('');
@@ -1150,6 +1508,21 @@ export function PosCheckoutTerminal({
         } else if (isTypingInInput) {
           (e.target as HTMLElement)?.blur();
         }
+        return;
+      }
+
+      if (
+         isParserOpen ||
+         isScannerOpen ||
+         isMobileCheckoutSheetOpen ||
+         Boolean(completedOrder) ||
+         Boolean(ambiguousMatches) ||
+         isDiscountApprovalModalOpen ||
+        isManagerApprovalDrawerOpen ||
+        isOpenShiftModalOpen ||
+        isCloseShiftModalOpen ||
+        isSettlementModalOpen
+      ) {
         return;
       }
 
@@ -1163,8 +1536,8 @@ export function PosCheckoutTerminal({
       // 4. Tổ hợp Alt + Shift + C (Mac: Option+Shift+C / Cmd+Shift+C) -> Bật/Tắt Súng Quét Mã Vạch Camera
       if (matchActionShortcut(e, 'KeyC', { shift: true })) {
         e.preventDefault();
-        setIsScannerOpen((prev) => !prev);
-        return;
+         openScanner();
+         return;
       }
 
       // 1.1: Tổ hợp Alt + Shift + P (Mac: Option+Shift+P / Cmd+Shift+P) -> Mở modal Dán Chat Khách
@@ -1177,35 +1550,21 @@ export function PosCheckoutTerminal({
       // 5. Tổ hợp Ctrl + Enter (hoặc Cmd + Enter) -> Thanh toán & Khấu trừ kho
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
-        handleCheckout();
+        if (!isSubmitting && !isApprovalPendingState && !isParserImporting && !isAddingToCart && !checkoutLockRef.current) handleCheckout();
         return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen, isParserOpen, ambiguousMatches, isOpenShiftModalOpen, isCloseShiftModalOpen]);
+  }, [isShellInteractionBlocked, handleCheckout, handleCloseParser, isSubmitting, isSubmittingSession, isApprovalPendingState, isParserImporting, isAddingToCart, isParserOpen, isMobileCheckoutSheetOpen, isDiscountApprovalModalOpen, isManagerApprovalDrawerOpen, isOpenShiftModalOpen, isCloseShiftModalOpen, isSettlementModalOpen, cart, selectedWarehouseId, customerName, discountRate, paymentMethod, fiscalScope, completedOrder, searchQuery, isListening, toggleListening, isScannerOpen, ambiguousMatches]);
 
   // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT hoặc ĐANG BẬT MICRO GIỌNG NÓI)
   const showMagnetBar = isScrolledPast && (searchQuery.trim().length > 0 || isInputFocused || isListening);
 
   return (
     <div className="space-y-6">
-      {/* Top Header Controls */}
-      <div className="bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
-        {/* Tiêu đề: chỉ desktop — mobile giấu để dành chỗ cho thao tác thu ngân */}
-        <div className="hidden md:block">
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-emerald-600" />
-            Quầy Thu Ngân POS
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Phím tắt <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">/</kbd> tìm sách | <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">Ctrl+Enter</kbd> thanh toán & trừ kho
-          </p>
-        </div>
-
-        {/* Mobile slim: kho + két tóm tắt 1 dòng, sticky thay top bar (bấm để mở full setup đầu/ca-cuối ca) */}
-        <div className="md:hidden sticky top-0 z-30 -mx-3 px-3 pt-2 pb-1 bg-slate-50/95 backdrop-blur-md">
+      <div className="md:hidden sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] z-30 -mx-3 px-3 pt-2 pb-1 bg-slate-50/95 backdrop-blur-md">
         <button
           type="button"
           onClick={() => setShiftPanelExpanded((v) => !v)}
@@ -1218,6 +1577,19 @@ export function PosCheckoutTerminal({
           </span>
           {shiftPanelExpanded ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
         </button>
+      </div>
+
+      {/* Top Header Controls */}
+      <div className="bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+        {/* Tiêu đề: chỉ desktop — mobile giấu để dành chỗ cho thao tác thu ngân */}
+        <div className="hidden md:block">
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <ShoppingCart className="w-5 h-5 text-emerald-600" />
+            Quầy Thu Ngân POS
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Phím tắt <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">/</kbd> tìm sách | <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">Ctrl+Enter</kbd> thanh toán & trừ kho
+          </p>
         </div>
 
         {/* Network Status & Warehouse Selector */}
@@ -1249,6 +1621,18 @@ export function PosCheckoutTerminal({
                 <span>{isSyncing ? 'Đang sync...' : `${pendingOfflineCount} đơn chờ`}</span>
               </button>
             )}
+            {legacyOfflineCount > 0 && actorId && (currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') && (
+              <button
+                type="button"
+                onClick={handleClaimLegacyOrders}
+                disabled={isSyncing || !isOnline}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
+                title="Nhận đơn ngoại tuyến cũ chưa có danh tính thu ngân"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Nhận {legacyOfflineCount} đơn cũ</span>
+              </button>
+            )}
           </div>
 
           {/* Warehouse Selector */}
@@ -1256,8 +1640,15 @@ export function PosCheckoutTerminal({
             <span className="text-xs font-bold text-slate-500 shrink-0">Kho:</span>
             <select
               value={selectedWarehouseId}
-              onChange={(e) => {
-                setSelectedWarehouseId(e.target.value);
+                disabled={isSubmitting || isInteractionLocked || pendingAddToCartCountRef.current > 0}
+                    onChange={(e) => {
+                      if (isSubmitting || isInteractionLocked || pendingAddToCartCountRef.current > 0) return;
+                      cashboxRequestRef.current += 1;
+                      setIsSubmittingSession(false);
+                      setActiveSession(null);
+                     addToCartAbortRef.current?.abort();
+                     addToCartAbortRef.current = null;
+                    setSelectedWarehouseId(e.target.value);
                 setCart([]); // Reset giỏ khi đổi kho để đảm bảo tồn kho
               }}
               className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer min-h-[40px]"
@@ -1344,6 +1735,32 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
+      {offlineReviewOrders.length > 0 && (
+        <div role="alert" className="p-3 bg-amber-50 border border-amber-300 rounded-2xl text-xs text-amber-950 shadow-sm space-y-2">
+          <div className="font-extrabold">Đơn ngoại tuyến cần xác nhận lại</div>
+          {offlineReviewOrders.map((order) => {
+            const action = getOfflineOrderRepairAction(order);
+            const needsCashbox = action === 'REASSIGN_CASHBOX';
+            return (
+              <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200 pt-2">
+                <div className="min-w-0">
+                  <div className="font-bold truncate">{order.orderCode}</div>
+                  <div className="text-amber-800 truncate">{order.lastError}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRepairOfflineOrder(order)}
+                  disabled={isSyncing || (needsCashbox && (!activeSession || activeSession.warehouseId !== order.warehouseId || activeSession.cashierId !== order.cashierId))}
+                  className="rounded-lg bg-amber-700 px-3 py-2 font-bold text-white disabled:opacity-50"
+                >
+                  {needsCashbox ? 'Gán vào ca mới' : 'Xác nhận đã nhận tiền'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR CHO POS) */}
       {showMagnetBar && (
         <div
@@ -1393,7 +1810,7 @@ export function PosCheckoutTerminal({
           {/* Nút Quét Barcode Trên Magnet Bar */}
           <button
             type="button"
-            onClick={() => setIsScannerOpen(true)}
+            onClick={openScanner}
             className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
             title="Bật Súng Quét Mã Vạch Camera 0 Đồng (Alt + Shift + C)"
           >
@@ -1481,7 +1898,7 @@ export function PosCheckoutTerminal({
               {/* Nút Quét Barcode Bằng Camera 0 Đồng */}
               <button
                 type="button"
-                onClick={() => setIsScannerOpen(true)}
+                onClick={openScanner}
                 className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
                 title="Bật Súng Quét Mã Vạch Camera 0 Đồng (Alt + Shift + C)"
               >
@@ -1621,7 +2038,7 @@ export function PosCheckoutTerminal({
           <button
             ref={scanButtonRef}
             type="button"
-            onClick={() => setIsScannerOpen(true)}
+            onClick={openScanner}
             className="md:hidden w-full min-h-[48px] px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white text-sm font-extrabold shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
           >
             <Camera className="w-5 h-5" />
@@ -1728,8 +2145,8 @@ export function PosCheckoutTerminal({
               {cart.length > 0 && (
                 <button
                   type="button"
-                  disabled={isCartFrozen}
-                  onClick={() => !isCartFrozen && setCart([])}
+                   disabled={isInteractionLocked || pendingAddToCartCountRef.current > 0}
+                    onClick={() => !isInteractionLocked && pendingAddToCartCountRef.current === 0 && setCart([])}
                   className="text-xs text-rose-600 hover:text-rose-800 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Xóa giỏ
@@ -1755,8 +2172,9 @@ export function PosCheckoutTerminal({
                   {!isDiscountApprovalModalOpen && !approvedDiscountRequestId && (
                     <button
                       type="button"
+                      disabled={isSubmitting || checkoutLockRef.current}
                       onClick={() => setIsDiscountApprovalModalOpen(true)}
-                      className="px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 text-xs font-bold transition shadow-sm cursor-pointer"
+                      className="px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Mở lại mã
                     </button>
@@ -1764,7 +2182,7 @@ export function PosCheckoutTerminal({
                   <button
                     type="button"
                     id="btn-cancel-approval"
-                    disabled={isCancellingApproval}
+                    disabled={isCancellingApproval || isSubmitting || checkoutLockRef.current}
                     onClick={handleCancelApproval}
                     className="px-2.5 py-1 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     title={approvedDiscountRequestId ? 'Hủy phê duyệt để sửa giỏ hàng' : 'Hủy yêu cầu duyệt để mở khóa giỏ hàng'}
@@ -1825,7 +2243,7 @@ export function PosCheckoutTerminal({
                       <div className="flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden">
                         <button
                           type="button"
-                          disabled={isCartFrozen}
+                          disabled={isInteractionLocked}
                           aria-label="Giảm số lượng"
                           onClick={() => updateQuantity(item.editionId, -1)}
                           className="p-1 hover:bg-slate-100 text-slate-600 min-h-[32px] min-w-[32px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1837,7 +2255,7 @@ export function PosCheckoutTerminal({
                         </span>
                         <button
                           type="button"
-                          disabled={isCartFrozen}
+                          disabled={isInteractionLocked}
                           aria-label="Tăng số lượng"
                           onClick={() => updateQuantity(item.editionId, 1)}
                           className="p-1 hover:bg-slate-100 text-slate-600 min-h-[32px] min-w-[32px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1848,7 +2266,7 @@ export function PosCheckoutTerminal({
 
                       <button
                         type="button"
-                        disabled={isCartFrozen}
+                        disabled={isInteractionLocked}
                         aria-label="Xóa khỏi giỏ"
                         onClick={() => removeFromCart(item.editionId)}
                         className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1927,7 +2345,7 @@ export function PosCheckoutTerminal({
                       <button
                         key={pct}
                         type="button"
-                        disabled={isCartFrozen}
+                        disabled={isInteractionLocked}
                         onClick={() => handleRequestDiscount(rate)}
                         className={`py-1.5 rounded-lg text-xs font-bold font-mono transition-colors flex items-center justify-center gap-1 ${
                           isActive
@@ -1948,7 +2366,7 @@ export function PosCheckoutTerminal({
                   {/* Nut tang 100% gon nhe — tai dung luong PIN quan ly nhu cu */}
                   <button
                     type="button"
-                    disabled={isCartFrozen}
+                    disabled={isInteractionLocked}
                     onClick={handleToggleGift}
                     className={`py-1.5 rounded-lg text-xs font-extrabold font-mono transition active:scale-[0.99] ${
                       isGift
@@ -1969,19 +2387,22 @@ export function PosCheckoutTerminal({
                     min="0"
                     max="100"
                     step="1"
-                    disabled={isCartFrozen}
+                    disabled={isInteractionLocked}
                     inputMode="numeric"
                     value={customDiscountInput}
                     onChange={(e) => setCustomDiscountInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') applyCustomDiscount();
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      applyCustomDiscount();
                     }}
                     placeholder="CK lẻ %"
                     className="w-24 px-2 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono font-bold text-center outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
-                    disabled={isCartFrozen}
+                    disabled={isInteractionLocked}
                     onClick={applyCustomDiscount}
                     className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -2085,7 +2506,7 @@ export function PosCheckoutTerminal({
               type="button"
               id="btn-desktop-checkout"
               onClick={handleCheckout}
-              disabled={isSubmitting || isApprovalPendingState || cart.length === 0}
+              disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
@@ -2104,6 +2525,10 @@ export function PosCheckoutTerminal({
       {/* Order Success Receipt Modal */}
       {completedOrder && mounted && createPortal(
         <div
+          ref={receiptModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pos-receipt-dialog-title"
           className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={(event) => { if (event.target === event.currentTarget) setCompletedOrder(null); }}
         >
@@ -2111,11 +2536,13 @@ export function PosCheckoutTerminal({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-base">
                 <CheckCircle2 className="w-6 h-6" />
-                <span>{completedOrder.isGift ? 'Đã Tặng Sách Thành Công! 🎁' : completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến!' : 'Bán Hàng Thành Công!'}</span>
+                <span id="pos-receipt-dialog-title">{completedOrder.isGift ? 'Đã Tặng Sách Thành Công! 🎁' : completedOrder.isOffline ? 'Đã Lưu Ngoại Tuyến!' : 'Bán Hàng Thành Công!'}</span>
               </div>
-              <button
-                onClick={() => setCompletedOrder(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+               <button
+                 type="button"
+                 aria-label="Đóng hóa đơn"
+                 onClick={() => setCompletedOrder(null)}
+                 className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2193,6 +2620,7 @@ export function PosCheckoutTerminal({
               <div className="inline-flex rounded-lg bg-slate-200 p-0.5 text-xs font-semibold">
                 <button
                   type="button"
+                  aria-pressed={paperPreset === 'K80'}
                   onClick={() => setPaperPreset('K80')}
                   className={`px-3 py-1 rounded-md transition-all ${
                     paperPreset === 'K80'
@@ -2204,6 +2632,7 @@ export function PosCheckoutTerminal({
                 </button>
                 <button
                   type="button"
+                  aria-pressed={paperPreset === 'K57'}
                   onClick={() => setPaperPreset('K57')}
                   className={`px-3 py-1 rounded-md transition-all ${
                     paperPreset === 'K57'
@@ -2219,7 +2648,7 @@ export function PosCheckoutTerminal({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => printThermalReceipt(completedOrder, paperPreset, currentRole)}
+                onClick={() => printThermalReceipt(completedOrder, paperPreset, currentRole, receiptFooterText)}
                 className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -2316,8 +2745,12 @@ export function PosCheckoutTerminal({
       {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
       {isParserOpen && mounted && createPortal(
         <div
+          ref={parserModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Nạp đơn từ chat khách"
           className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={(event) => { if (event.target === event.currentTarget) setIsParserOpen(false); }}
+          onClick={(event) => { if (event.target === event.currentTarget) handleCloseParser(); }}
         >
           <div className="max-w-lg w-full max-h-[92vh] overflow-y-auto">
             <SmartOrderParser
@@ -2326,7 +2759,7 @@ export function PosCheckoutTerminal({
             />
             <button
               type="button"
-              onClick={() => setIsParserOpen(false)}
+               onClick={handleCloseParser}
               className="mt-2 w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
             >
               Đóng
@@ -2348,9 +2781,12 @@ export function PosCheckoutTerminal({
                 <Banknote className="w-5 h-5" />
                 <h3 className="font-extrabold text-base text-slate-900">Mở Phiên Két Tiền Ca Mới</h3>
               </div>
-              <button
-                onClick={() => setIsOpenShiftModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+               <button
+                 type="button"
+                 aria-label="Đóng mở ca"
+                 disabled={isSubmittingSession}
+                 onClick={() => { if (!isSubmittingSession) setIsOpenShiftModalOpen(false); }}
+                 className="text-slate-400 hover:text-slate-600 p-1 rounded-lg disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2402,10 +2838,11 @@ export function PosCheckoutTerminal({
             </div>
 
             <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsOpenShiftModalOpen(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+               <button
+                 type="button"
+                 disabled={isSubmittingSession}
+                 onClick={() => { if (!isSubmittingSession) setIsOpenShiftModalOpen(false); }}
+                 className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition disabled:opacity-50"
               >
                 Hủy
               </button>
@@ -2435,9 +2872,12 @@ export function PosCheckoutTerminal({
                 <Receipt className="w-5 h-5" />
                 <h3 className="font-extrabold text-base text-slate-900">Kiểm Kê & Chốt Ca Két Tiền</h3>
               </div>
-              <button
-                onClick={() => setIsCloseShiftModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+               <button
+                 type="button"
+                 aria-label="Đóng chốt ca"
+                 disabled={isSubmittingSession}
+                 onClick={() => { if (!isSubmittingSession) setIsCloseShiftModalOpen(false); }}
+                 className="text-slate-400 hover:text-slate-600 p-1 rounded-lg disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2517,10 +2957,11 @@ export function PosCheckoutTerminal({
 
 
             <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsCloseShiftModalOpen(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+               <button
+                 type="button"
+                 disabled={isSubmittingSession}
+                 onClick={() => { if (!isSubmittingSession) setIsCloseShiftModalOpen(false); }}
+                 className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition disabled:opacity-50"
               >
                 Quay Lại
               </button>
@@ -2563,17 +3004,21 @@ export function PosCheckoutTerminal({
       {/* MODAL 3: DUYỆT CHIẾT KHẤU BẢO MẬT (Discount Approval Modal - QR & ShortCode) */}
       <DiscountApprovalModal
         isOpen={isDiscountApprovalModalOpen}
+        currentRole={currentRole}
         orderCode={activeOrderCode}
         warehouseId={selectedWarehouseId}
-        requestedDiscountRate={pendingDiscountRate || 0}
-        originalAmount={subtotal}
-        items={cart.map((item) => ({
+         requestedDiscountRate={pendingDiscountRate || 0}
+         originalAmount={subtotal}
+         discountAmount={pendingDiscountRate !== null ? approvalDiscountAmount : discountAmount}
+         finalAmount={pendingDiscountRate !== null ? approvalFinalAmount : finalAmount}
+         items={cart.map((item) => ({
           editionId: item.editionId,
           quantity: item.quantity,
           unitPrice: item.coverPrice,
         }))}
         onRequestCreated={setPendingApprovalRequestId}
         onApproved={(data) => {
+          if (!pendingApprovalRequestId || pendingApprovalRequestId !== data.requestId) return;
           setIsApprovalPending(false);
           setApprovedDiscountRequestId(data.requestId);
           setPendingApprovalRequestId(null);
@@ -2588,12 +3033,18 @@ export function PosCheckoutTerminal({
           setSyncToast(
             `✅ Quản lý đã duyệt chiết khấu ${Math.round(data.rate * 100)}% (${data.method === 'ONE_TOUCH' ? '1-Chạm' : data.method === 'SHORTCODE_BOUND' ? 'Mã 4 số' : data.method === 'OFFLINE_EMERGENCY' ? 'Mã Khẩn Cấp' : 'QR Scan'})!`
           );
-          setTimeout(() => setSyncToast(null), 4000);
-        }}
-        onClose={() => {
-          setIsDiscountApprovalModalOpen(false);
-        }}
-      />
+           setTimeout(() => setSyncToast(null), 4000);
+         }}
+         onTerminal={(_status, requestId) => {
+           if (requestId && pendingApprovalRequestId && pendingApprovalRequestId !== requestId) return;
+            clearApprovalState();
+         }}
+         onClose={() => {
+           setIsDiscountApprovalModalOpen(false);
+         }}
+         onCancel={handleCancelApproval}
+         cancelError={approvalCancelError}
+       />
 
       {/* DRAWER DUYỆT CHIẾT KHẤU QUẢN LÝ (Chỉ hiển thị cho Manager / Owner) */}
       {(currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') && (
@@ -2615,11 +3066,11 @@ export function PosCheckoutTerminal({
 
       {/* Thanh thanh toán nhanh nổi trên Mobile (Pixel 11, iPhone, điện thoại hẹp) */}
       {cart.length > 0 && (
-        <div id="cart-checkout-bar" className="lg:hidden fixed bottom-16 inset-x-3 z-30 animate-slide-up">
+        <div id="cart-checkout-bar" className="lg:hidden fixed bottom-[max(1rem,env(safe-area-inset-bottom))] inset-x-3 z-30 animate-slide-up">
           <div className="bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-700/80 flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={() => setIsScannerOpen(true)}
+              onClick={openScanner}
               title="Quét mã thêm vào giỏ"
               className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 active:scale-95 transition-all flex items-center justify-center shrink-0"
             >
@@ -2647,8 +3098,14 @@ export function PosCheckoutTerminal({
       )}
 
       {/* MODAL 5: MOBILE CHECKOUT BOTTOM SHEET (Bug #7) */}
-      {isMobileCheckoutSheetOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end lg:hidden animate-in fade-in duration-200">
+      {isMobileCheckoutSheetOpen && mounted && createPortal(
+        <div
+          ref={mobileCheckoutModalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mobile-checkout-title"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end lg:hidden animate-in fade-in duration-200"
+        >
           <div
             className="fixed inset-0"
             onClick={(event) => {
@@ -2669,7 +3126,7 @@ export function PosCheckoutTerminal({
                   <ShoppingCart className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-extrabold text-slate-900">Chi tiết Đơn hàng & Thanh toán</h3>
+                  <h3 id="mobile-checkout-title" className="text-xs font-extrabold text-slate-900">Chi tiết Đơn hàng & Thanh toán</h3>
                   <p className="text-[10px] text-slate-500 font-medium">
                     {totalCopies} cuốn • Giảm {Math.round(discountRate * 100)}%
                   </p>
@@ -2677,8 +3134,9 @@ export function PosCheckoutTerminal({
               </div>
               <button
                 type="button"
-                id="close-mobile-checkout-sheet"
-                disabled={isSubmitting}
+                 id="close-mobile-checkout-sheet"
+                 aria-label="Đóng thanh toán"
+                 disabled={isSubmitting}
                 onClick={() => setIsMobileCheckoutSheetOpen(false)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition"
               >
@@ -2688,6 +3146,12 @@ export function PosCheckoutTerminal({
 
             {/* Sheet Body (scrollable) */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {errorMessage && (
+                <div id="mobile-pos-error-message" role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
               {/* Cart Items Summary */}
               <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
                 {cart.map((item) => (
@@ -2759,11 +3223,11 @@ export function PosCheckoutTerminal({
             </div>
 
             {/* Sheet Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-200">
+            <div className="px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-slate-50 border-t border-slate-200">
               <button
                 type="button"
                 id="btn-confirm-mobile-checkout"
-                disabled={isSubmitting || isApprovalPendingState || cart.length === 0}
+                disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
                 onClick={handleCheckout}
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-extrabold shadow-lg shadow-emerald-950/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -2778,7 +3242,8 @@ export function PosCheckoutTerminal({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Nút quét nổi mobile: chỉ hiện khi giỏ trống VÀ nút Quét to đã trôi khỏi
@@ -2786,7 +3251,7 @@ export function PosCheckoutTerminal({
       {cart.length === 0 && !scanButtonVisible && (
         <button
           type="button"
-          onClick={() => setIsScannerOpen(true)}
+          onClick={openScanner}
           title="Quét mã thêm vào giỏ"
           className="lg:hidden fixed bottom-24 left-4 z-40 w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 flex items-center justify-center active:scale-95 transition-all"
         >

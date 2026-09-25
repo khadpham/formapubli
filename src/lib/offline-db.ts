@@ -21,11 +21,14 @@ export interface OfflineOrder {
   channel: string;
   discountRate: number;
   paymentMethod: string;
+  moneyReceived?: boolean;
   fiscalScope: 'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX';
   vatRate?: number;
   vatInvoiceRequired?: boolean;
   vatInvoiceCode?: string;
   cashierId: string;
+  cashboxSessionId?: string;
+  discountApprovalId?: string;
   note?: string;
   isGift?: boolean; // BV-03: đơn tặng offline (sync lên server với discount 1.0)
   giftReason?: string;
@@ -37,6 +40,18 @@ export interface OfflineOrder {
   createdAt: string;
   syncStatus: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
   lastError?: string;
+}
+
+export type OfflineOrderRepairAction = 'REASSIGN_CASHBOX' | 'CONFIRM_MONEY_RECEIVED';
+
+export function getOfflineOrderRepairAction(order: OfflineOrder): OfflineOrderRepairAction | null {
+  if (/Phiên két ca/i.test(order.lastError || '')) return 'REASSIGN_CASHBOX';
+  const isDigitalPayment = order.paymentMethod === 'BANK_TRANSFER' || order.paymentMethod === 'QR_CODE';
+  const isGift = Boolean(order.isGift) || order.discountRate === 1;
+  if (!isGift && isDigitalPayment && order.moneyReceived !== true && /Phải xác nhận đã nhận tiền/i.test(order.lastError || '')) {
+    return 'CONFIRM_MONEY_RECEIVED';
+  }
+  return null;
 }
 
 const DB_NAME = 'formapubli_offline_db';
@@ -86,7 +101,7 @@ export async function saveOfflineOrder(order: OfflineOrder): Promise<void> {
  * Lấy danh sách toàn bộ đơn hàng đang chờ đồng bộ (PENDING hoặc FAILED)
  * Được sắp xếp tự nhiên theo thời gian nhờ khóa UUID v7
  */
-export async function getPendingOfflineOrders(): Promise<OfflineOrder[]> {
+export async function getPendingOfflineOrders(cashierId?: string): Promise<OfflineOrder[]> {
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -95,12 +110,15 @@ export async function getPendingOfflineOrders(): Promise<OfflineOrder[]> {
 
     req.onsuccess = () => {
       const allOrders: OfflineOrder[] = req.result || [];
-      const pending = allOrders.filter(
+       const pending = allOrders.filter(
         (o) => o.syncStatus === 'PENDING' || o.syncStatus === 'FAILED'
       );
-      // Sắp xếp tự nhiên theo thời gian phát sinh
-      pending.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      resolve(pending);
+       const scoped = cashierId
+        ? pending.filter((order) => order.cashierId === cashierId)
+        : pending;
+       // Sắp xếp tự nhiên theo thời gian phát sinh
+       scoped.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+       resolve(scoped);
     };
     req.onerror = () => reject(req.error);
   });
@@ -109,13 +127,48 @@ export async function getPendingOfflineOrders(): Promise<OfflineOrder[]> {
 /**
  * Đếm số lượng đơn hàng ngoại tuyến đang chờ đồng bộ
  */
-export async function getPendingOrdersCount(): Promise<number> {
+export async function getPendingOrdersCount(cashierId?: string): Promise<number> {
   try {
-    const pending = await getPendingOfflineOrders();
+    const pending = await getPendingOfflineOrders(cashierId);
     return pending.length;
   } catch {
     return 0;
   }
+}
+
+export async function getLegacyPendingOrdersCount(): Promise<number> {
+  try {
+    const pending = await getPendingOfflineOrders();
+    return pending.filter((order) => /^User-ROLE_/i.test(order.cashierId)).length;
+  } catch {
+    return 0;
+  }
+}
+
+export async function claimLegacyOfflineOrders(actorId: string): Promise<number> {
+  if (!actorId.trim() || /^UNSCOPED-/i.test(actorId)) throw new Error('Actor ID không hợp lệ');
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.getAll();
+    let claimed = 0;
+    getReq.onsuccess = () => {
+      for (const order of (getReq.result || []) as OfflineOrder[]) {
+        if (
+          (order.syncStatus === 'PENDING' || order.syncStatus === 'FAILED') &&
+          /^User-ROLE_/i.test(order.cashierId)
+        ) {
+          order.cashierId = actorId;
+          claimed++;
+          store.put(order);
+        }
+      }
+    };
+    tx.oncomplete = () => resolve(claimed);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
 }
 
 /**
@@ -155,6 +208,33 @@ export async function updateOfflineOrderStatus(
       }
       order.syncStatus = status;
       if (errorMsg) order.lastError = errorMsg;
+      const putReq = store.put(order);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function updateOfflineOrderForRetry(
+  id: string,
+  patch: { cashboxSessionId?: string; moneyReceived?: true }
+): Promise<void> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const order = getReq.result as OfflineOrder | undefined;
+      if (!order) {
+        resolve();
+        return;
+      }
+      if (patch.cashboxSessionId !== undefined) order.cashboxSessionId = patch.cashboxSessionId;
+      if (patch.moneyReceived === true) order.moneyReceived = true;
+      order.syncStatus = 'PENDING';
+      delete order.lastError;
       const putReq = store.put(order);
       putReq.onsuccess = () => resolve();
       putReq.onerror = () => reject(putReq.error);

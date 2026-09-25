@@ -26,6 +26,7 @@ interface AppSidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   isMobileOpen: boolean;
+  isNavigationDisabled?: boolean;
   onCloseMobile: () => void;
   onOpenCopilot?: () => void;
   onLogout?: () => void;
@@ -38,12 +39,84 @@ export function AppSidebar({
   isCollapsed,
   onToggleCollapse,
   isMobileOpen,
+  isNavigationDisabled = false,
   onCloseMobile,
   onOpenCopilot,
   onLogout,
 }: AppSidebarProps) {
   const roleConfig = USER_ROLES[currentRole];
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+  const [isMobileViewport, setIsMobileViewport] = React.useState<boolean | null>(null);
+  const sidebarRef = React.useRef<HTMLElement>(null);
+  const restoreFocusRef = React.useRef<HTMLElement | null>(null);
+  const onCloseMobileRef = React.useRef(onCloseMobile);
+
+  React.useEffect(() => {
+    onCloseMobileRef.current = onCloseMobile;
+  }, [onCloseMobile]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      setIsMobileViewport(false);
+      return;
+    }
+    const media = window.matchMedia('(max-width: 1023px)');
+    const sync = () => setIsMobileViewport(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  React.useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const shouldBeInert = isMobileViewport === null || (isMobileViewport && !isMobileOpen);
+    if (shouldBeInert) sidebar.setAttribute('inert', '');
+    else sidebar.removeAttribute('inert');
+    return () => {
+      if (shouldBeInert) sidebar.removeAttribute('inert');
+    };
+  }, [isMobileViewport, isMobileOpen]);
+
+  React.useEffect(() => {
+    if (!isMobileViewport || !isMobileOpen) return;
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    const mainContent = document.getElementById('app-main-content');
+    mainContent?.setAttribute('inert', '');
+    mainContent?.setAttribute('aria-hidden', 'true');
+    const focusableSelector = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const getFocusable = () => Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(focusableSelector) || []);
+    getFocusable()[0]?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseMobileRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      mainContent?.removeAttribute('inert');
+      mainContent?.removeAttribute('aria-hidden');
+      restoreFocusRef.current?.focus();
+    };
+  }, [isMobileOpen, isMobileViewport]);
 
   const navItems = [
     {
@@ -104,25 +177,33 @@ export function AppSidebar({
     },
   ];
 
-  const visibleNavItems = navItems.filter((item) =>
-    roleConfig.allowedNavItems.includes(item.id)
-  );
+  const visibleNavItems = roleConfig.allowedNavItems.flatMap((id) => {
+    const item = navItems.find((candidate) => candidate.id === id);
+    return item ? [item] : [];
+  });
 
   return (
     <>
       {/* Mobile Backdrop Overlay */}
       {isMobileOpen && (
-        <div
+        <button
+          type="button"
           onClick={onCloseMobile}
           className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden transition-opacity"
+          aria-label="Đóng menu"
         />
       )}
 
       {/* Sidebar Container */}
       <aside
+        ref={sidebarRef}
+        role={isMobileViewport ? 'dialog' : undefined}
+        aria-modal={isMobileViewport && isMobileOpen ? true : undefined}
+        aria-label="Menu điều hướng"
+         aria-hidden={isMobileViewport === null || (isMobileViewport && !isMobileOpen) ? true : undefined}
         className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-slate-900 text-slate-100 border-r border-slate-800 transition-all duration-300 ease-in-out ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${isCollapsed ? 'w-20' : 'w-72'}`}
+        } ${isCollapsed ? 'w-20' : 'w-72'} pt-[env(safe-area-inset-top)]`}
       >
         {/* Header Branding */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800">
@@ -142,8 +223,10 @@ export function AppSidebar({
 
           {/* Close on Mobile */}
           <button
+            type="button"
             onClick={onCloseMobile}
             className="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Đóng menu"
           >
             <X className="w-5 h-5" />
           </button>
@@ -184,41 +267,60 @@ export function AppSidebar({
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
+            const isFirstVisibleItem = item.id === visibleNavItems[0]?.id;
+            const isFirstManagementItem = item.id === 'partners';
+            let mobileGroup: string | null = null;
+            if (isFirstVisibleItem && item.id === 'dashboard') mobileGroup = 'Vận Hành';
+            if (isFirstVisibleItem && item.id === 'pos') mobileGroup = 'POS';
+            if (isFirstVisibleItem && item.id === 'inventory') mobileGroup = 'Kho';
+            if (isFirstVisibleItem && item.id === 'sales') mobileGroup = 'Bán hàng';
+            if (isFirstManagementItem) mobileGroup = 'Quản Trị';
+            if (item.id === 'settings') mobileGroup = 'Chung';
 
             return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  onSelectTab(item.id);
-                  onCloseMobile();
-                }}
-                title={isCollapsed ? `${item.label} (${item.shortcut})` : undefined}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-medium text-sm transition-all duration-200 min-h-[48px] ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-                } ${isCollapsed ? 'justify-center px-0' : ''}`}
-              >
-                <Icon
-                  className={`w-5 h-5 shrink-0 ${
-                    isActive ? 'text-white' : item.color
-                  }`}
-                />
-                {!isCollapsed && (
-                  <div className="flex items-center justify-between flex-1 truncate gap-2">
-                    <span className="truncate">{item.label}</span>
-                    <span
-                      className={`text-[9px] px-2 py-0.5 rounded font-mono font-medium hidden sm:inline ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-800 text-slate-400 border border-slate-700/60'
-                      }`}
-                    >
-                      {item.shortcut}
-                    </span>
-                  </div>
+              <React.Fragment key={item.id}>
+                {mobileGroup && (
+                  <p className="lg:hidden px-3 pt-3 pb-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">
+                    {mobileGroup}
+                  </p>
                 )}
-              </button>
+                <button
+                  type="button"
+                  disabled={isNavigationDisabled}
+                  onClick={() => {
+                    if (isNavigationDisabled) return;
+                    onSelectTab(item.id);
+                    onCloseMobile();
+                  }}
+                  title={isCollapsed ? `${item.label} (${item.shortcut})` : undefined}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-medium text-sm transition-all duration-200 min-h-[48px] ${
+                    isActive
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                  } ${isCollapsed ? 'justify-center px-0' : ''} ${isNavigationDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <Icon
+                    className={`w-5 h-5 shrink-0 ${
+                      isActive ? 'text-white' : item.color
+                    }`}
+                  />
+                  {!isCollapsed && (
+                    <div className="flex items-center justify-between flex-1 truncate gap-2">
+                      <span className="truncate">{item.label}</span>
+                      <span
+                        className={`text-[9px] px-2 py-0.5 rounded font-mono font-medium hidden sm:inline ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700/60'
+                        }`}
+                      >
+                        {item.shortcut}
+                      </span>
+                    </div>
+                  )}
+                </button>
+              </React.Fragment>
             );
           })}
 
@@ -226,7 +328,10 @@ export function AppSidebar({
           {canUseCopilot && onOpenCopilot && (
             <div className="pt-2 border-t border-slate-800/80">
               <button
+                type="button"
+                disabled={isNavigationDisabled}
                 onClick={() => {
+                  if (isNavigationDisabled) return;
                   onOpenCopilot();
                   onCloseMobile();
                 }}
@@ -250,7 +355,7 @@ export function AppSidebar({
         </nav>
 
         {/* Footer info & Collapse button */}
-        <div className="p-3 border-t border-slate-800 flex flex-col gap-2">
+        <div className="p-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-800 flex flex-col gap-2">
           {!isCollapsed && (
             <div className="flex items-center justify-between px-2 text-[11px] text-slate-400">
               <span className="flex items-center gap-1.5">
@@ -277,7 +382,12 @@ export function AppSidebar({
 
           {onLogout && (
             <button
-              onClick={onLogout}
+              type="button"
+              disabled={isNavigationDisabled}
+              onClick={() => {
+                if (isNavigationDisabled) return;
+                onLogout?.();
+              }}
               title="Đăng xuất ca làm việc"
               className={`flex items-center gap-2 w-full py-2 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-slate-800 text-xs font-semibold transition-colors ${
                 isCollapsed ? 'justify-center px-0' : 'px-3'
