@@ -263,6 +263,203 @@ async function run() {
   assert.ok(cleanedCount >= 1);
   console.log('✓ Đơn counter transfer hết hạn được dọn và giải phóng ATP');
 
+  // ------------------------------------------------- Task 4: HTTP proof guard ---
+  const nowIso = () => new Date().toISOString();
+  const longProofId = 'p'.repeat(201);
+  const assertInvalidInput = (res: { status: number; json: any }, label: string) => {
+    assert.equal(
+      res.status,
+      400,
+      `${label}: phải 400 INVALID_INPUT, thực tế ${res.status} ${JSON.stringify(res.json)}`
+    );
+    assert.equal(res.json?.code, 'INVALID_INPUT', `${label}: phải trả code INVALID_INPUT`);
+  };
+
+  const guardOrder = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
+  assert.equal(guardOrder.status, 200);
+  const guardId = guardOrder.json.data.orderId;
+
+  // 4.1 paymentProofId > 200 ký tự → 400
+  await assertInvalidInput(
+    await postAs({ action: 'CONFIRM', orderId: guardId, paymentProofId: longProofId, paymentProofCapturedAt: nowIso() }),
+    'CONFIRM proof id quá dài'
+  );
+  // 4.2 capturedAt không phải ngày → 400
+  await assertInvalidInput(
+    await postAs({ action: 'CONFIRM', orderId: guardId, paymentProofId: 'proof-ok', paymentProofCapturedAt: 'không-phải-ngày' }),
+    'CONFIRM capturedAt không parse được'
+  );
+  // 4.3 chỉ gửi một trong hai trường → 400
+  await assertInvalidInput(
+    await postAs({ action: 'CONFIRM', orderId: guardId, paymentProofId: 'proof-ok' }),
+    'CONFIRM thiếu capturedAt'
+  );
+  await assertInvalidInput(
+    await postAs({ action: 'CONFIRM', orderId: guardId, paymentProofCapturedAt: nowIso() }),
+    'CONFIRM thiếu proofId'
+  );
+  // 4.4 capturedAt khổng lồ → 400 (bảo vệ audit_logs.details khỏi phình vô hạn)
+  await assertInvalidInput(
+    await postAs({ action: 'CONFIRM', orderId: guardId, paymentProofId: 'proof-ok', paymentProofCapturedAt: 'x'.repeat(50000) }),
+    'CONFIRM capturedAt khổng lồ'
+  );
+  // 4.5 create digital tức thì chỉ gửi MỘT trong hai trường → 400 (không phải 403)
+  await assertInvalidInput(
+    await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', moneyReceived: true, paymentProofId: 'proof-one-sided' })),
+    'create thiếu capturedAt'
+  );
+  await assertInvalidInput(
+    await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', moneyReceived: true, paymentProofCapturedAt: nowIso() })),
+    'create thiếu proofId'
+  );
+  // 4.6 create digital tức thì proof id quá dài → 400
+  await assertInvalidInput(
+    await postAs(baseBody({
+      paymentMethod: 'BANK_TRANSFER', moneyReceived: true,
+      paymentProofId: longProofId, paymentProofCapturedAt: nowIso(),
+    })),
+    'create proof id quá dài'
+  );
+  // 4.7 pair hợp lệ vẫn được chấp nhận trên action CONFIRM
+  const guardConfirm = await postAs({
+    action: 'CONFIRM', orderId: guardId,
+    paymentProofId: 'proof-valid-1', paymentProofCapturedAt: nowIso(),
+  });
+  assert.equal(guardConfirm.status, 200, `pair hợp lệ phải được nhận: ${JSON.stringify(guardConfirm.json)}`);
+  assert.equal(guardConfirm.json.data.status, 'COMPLETED');
+  // 4.8 pair hợp lệ vẫn được chấp nhận trên create digital tức thì
+  const guardCreate = await postAs(baseBody({
+    paymentMethod: 'QR_CODE', moneyReceived: true,
+    paymentProofId: 'proof-valid-2', paymentProofCapturedAt: nowIso(),
+  }));
+  assert.equal(guardCreate.status, 200, `create pair hợp lệ phải được nhận: ${JSON.stringify(guardCreate.json)}`);
+  assert.equal(guardCreate.json.data.status, 'COMPLETED');
+  // 4.9 id > 200 ký tự nhưng capturedAt hợp lệ: đơn vẫn PENDING (không side-effect)
+  const guardRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, guardId)))[0];
+  assert.equal(guardRow.status, 'COMPLETED', 'đơn đã duyệt ở 4.7');
+  console.log('✓ Biên HTTP: proof id/capturedAt lỗi → 400, pair hợp lệ vẫn nhận (CONFIRM + create tức thì)');
+
+  // ------------------------------------------- Task 4: thứ tự quá hạn/proof ---
+  // 4.10 Đơn PENDING chuyển khoản đã quá hạn: báo conflict + CANCELLED ngay,
+  //      kể cả khi KHÔNG gửi paymentProof (quá hạn phải thắng lỗi thiếu ảnh).
+  const expiredRes = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
+  const expiredId = expiredRes.json.data.orderId;
+  await db
+    .update(schema.orders)
+    .set({ paymentExpiresAt: new Date(Date.now() - 60_000).toISOString() })
+    .where(eq(schema.orders.id, expiredId));
+  await assert.rejects(
+    () => OrderService.confirmOrder(expiredId, 'ROLE_CASHIER', CASHIER_A.staffId, CASHIER_A),
+    (error: any) => error?.code === 'STATE_CONFLICT',
+    'đơn quá hạn phải trả STATE_CONFLICT chứ không phải INVALID_INPUT thiếu ảnh'
+  );
+  const expiredRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, expiredId)))[0];
+  assert.equal(expiredRow.status, 'CANCELLED', 'đơn quá hạn phải bị hủy ngay, không chờ cleanup job');
+  assert.ok(String(expiredRow.note).includes('quá hạn giữ chỗ'));
+
+  // 4.11 Đơn PENDING chưa quá hạn, không proof → vẫn bị chặn bằng lỗi thiếu ảnh
+  const freshRes = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
+  const freshId = freshRes.json.data.orderId;
+  await assert.rejects(
+    () => OrderService.confirmOrder(freshId, 'ROLE_CASHIER', CASHIER_A.staffId, CASHIER_A),
+    (error: any) => error?.code === 'INVALID_INPUT' && /ảnh xác nhận/i.test(error?.message || '')
+  );
+  const freshRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, freshId)))[0];
+  assert.equal(freshRow.status, 'PENDING_CONFIRMATION', 'đơn chưa quá hạn phải giữ nguyên PENDING');
+  console.log('✓ Thứ tự confirmOrder: quá hạn thắng lỗi thiếu ảnh, đơn còn hạn vẫn đòi ảnh');
+
+  // -------------------------------------------- Task 4: security regression ---
+  // S1. cleanupExpiredPending: SELECT nằm ngoài transaction nên UPDATE phải khoá
+  //     có điều kiện status — nếu không, một confirmOrder chạy xen giữa sẽ bị ghi
+  //     đè CANCELLED sau khi kho đã xuất. Cửa sổ TOCTOU nằm giữa hai await trên
+  //     client libsql không đồng bộ, không test được deterministically trong 1
+  //     process; sửa bằng `WHERE status='PENDING_CONFIRMATION'` + đếm rowsAffected
+  //     thật (cùng mẫu đã dùng ở confirmOrder/cancelOrder).
+  //     Quan sát được: job chỉ tính những đơn nó thực sự hủy.
+
+  // S2. payment_expires_at hỏng → fallback TTL 48h, không để đơn PENDING treo vĩnh viễn.
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400_000).toISOString();
+  assert.equal(
+    OrderService.getPendingEffectiveExpiry({ createdAt: threeDaysAgo, paymentExpiresAt: 'không-phải-ngày' })?.toISOString(),
+    new Date(new Date(threeDaysAgo).getTime() + 48 * 3600_000).toISOString(),
+    'payment_expires_at hỏng phải fallback về TTL 48h'
+  );
+  assert.equal(OrderService.isPendingExpired({ createdAt: threeDaysAgo, paymentExpiresAt: 'hỏng' }), true);
+  assert.equal(OrderService.isPendingExpired({ createdAt: new Date().toISOString(), paymentExpiresAt: 'hỏng' }), false);
+  const corruptRes = await postAs(baseBody({
+    paymentMethod: 'BANK_TRANSFER', confirmImmediately: false, createdAt: threeDaysAgo,
+  }));
+  const corruptId = corruptRes.json.data.orderId;
+  await db
+    .update(schema.orders)
+    .set({ paymentExpiresAt: 'hỏng' })
+    .where(eq(schema.orders.id, corruptId));
+  const cleanedCorrupt = await OrderService.cleanupExpiredPending();
+  const corruptRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, corruptId)))[0];
+  assert.equal(corruptRow.status, 'CANCELLED', 'đơn PENDING có payment_expires_at hỏng vẫn phải được dọn');
+  assert.ok(cleanedCorrupt >= 1);
+
+  // S3. reason hủy do client gửi: không được phình vô hạn vào orders.note/audit_logs.
+  const reasonRes = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const reasonId = reasonRes.json.data.orderId;
+  const longReason = await postAs({ action: 'CANCEL', orderId: reasonId, reason: 'r'.repeat(2000) }, CASHIER_A);
+  assert.equal(longReason.status, 400, `reason hủy quá dài phải 400: ${JSON.stringify(longReason.json)}`);
+  const okReason = await postAs({ action: 'CANCEL', orderId: reasonId, reason: 'khách đổi ý' }, CASHIER_A);
+  assert.equal(okReason.status, 200, `reason hợp lệ phải hủy được: ${JSON.stringify(okReason.json)}`);
+  const reasonRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, reasonId)))[0];
+  assert.ok(!(String(reasonRow.note).includes('rrrr')), 'note không được chứa reason bị cắt/tràn');
+  assert.ok(String(reasonRow.note).includes('khách đổi ý'));
+
+  // S4. cancelOrder phải kiểm tra két ca giống confirmOrder (đóng ca = không xử lý đơn chờ).
+  const closedRes = await postAs(baseBody({ paymentMethod: 'QR_CODE', confirmImmediately: false }));
+  const closedId = closedRes.json.data.orderId;
+  await db
+    .update(schema.cashboxSessions)
+    .set({ status: 'CLOSED' })
+    .where(eq(schema.cashboxSessions.id, sessionA.session.id));
+  await assert.rejects(
+    () => OrderService.cancelOrder(closedId, 'ROLE_CASHIER', 'đóng ca rồi', CASHIER_A),
+    (error: any) => error?.code === 'STATE_CONFLICT',
+    'hủy đơn thuộc két đã đóng phải bị chặn'
+  );
+  await db
+    .update(schema.cashboxSessions)
+    .set({ status: 'OPEN' })
+    .where(eq(schema.cashboxSessions.id, sessionA.session.id));
+  const reopenCancel = await OrderService.cancelOrder(closedId, 'ROLE_CASHIER', 'mở lại ca', CASHIER_A);
+  assert.equal(reopenCancel.status, 'CANCELLED');
+
+  // S5. Actor lạc vai trò (không phải Owner/Manager/Cashier) không duyệt/hủy được.
+  const untrustedRes = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
+  const untrustedId = untrustedRes.json.data.orderId;
+  for (const badRole of ['ROLE_WAREHOUSE', 'ROLE_TAX']) {
+    const res = await postAs(
+      { action: 'CONFIRM', orderId: untrustedId, paymentProofId: 'proof-x', paymentProofCapturedAt: nowIso() },
+      { staffId: 'staff-1', role: badRole }
+    );
+    assert.equal(res.status, 403, `${badRole} không được duyệt đơn: ${JSON.stringify(res.json)}`);
+  }
+  await assert.rejects(
+    () => OrderService.confirmOrder(untrustedId, 'ROLE_WAREHOUSE', 'warehouse-1', undefined, proof),
+    (error: any) => error?.code === 'FORBIDDEN',
+    'service chặn ROLE_WAREHOUSE dù route đã chặn'
+  );
+  await assert.rejects(
+    () => OrderService.cancelOrder(untrustedId, 'ROLE_WAREHOUSE', 'x', undefined),
+    (error: any) => error?.code === 'FORBIDDEN',
+    'service chặn ROLE_WAREHOUSE ở cancel'
+  );
+  // Không actorContext + vai trò cashier → actorId mặc định staff-admin, không được vượt
+  await assert.rejects(
+    () => OrderService.confirmOrder(untrustedId, 'ROLE_CASHIER', undefined, undefined, proof),
+    (error: any) => error?.code === 'FORBIDDEN',
+    'cashier không có định danh không được duyệt đơn người khác'
+  );
+  const untrustedRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, untrustedId)))[0];
+  assert.equal(untrustedRow.status, 'PENDING_CONFIRMATION');
+  await OrderService.cancelOrder(untrustedId, 'ROLE_MANAGER', 'dọn test', MANAGER);
+  console.log('✓ Regression bảo mật: cleanup có điều kiện, TTL fallback, reason bị chặn, két đóng chặn hủy, actor lạc vai trò bị chặn');
+
   raw.close();
   console.log('TRANSFER PAYMENT API CONTRACT PASS');
 }

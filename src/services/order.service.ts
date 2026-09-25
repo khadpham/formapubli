@@ -955,7 +955,9 @@ export class OrderService {
     if (!order.createdAt) return null;
     if (order.paymentExpiresAt) {
       const explicit = new Date(order.paymentExpiresAt);
-      return Number.isNaN(explicit.getTime()) ? null : explicit;
+      // payment_expires_at hỏng (dữ liệu cũ/sửa tay) → rơi về TTL 48h, không để đơn
+      // PENDING treo vĩnh viễn và không nhả ATP.
+      if (!Number.isNaN(explicit.getTime())) return explicit;
     }
     return new Date(new Date(order.createdAt).getTime() + PENDING_TTL_HOURS * 3600_000);
   }
@@ -1145,6 +1147,19 @@ export class OrderService {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
         }
 
+        // Đóng ca = không được xử lý đơn chờ thuộc két (đồng bộ với confirmOrder).
+        if (ord.cashboxSessionId) {
+          const sessionRows = await tx
+            .select()
+            .from(cashboxSessions)
+            .where(eq(cashboxSessions.id, ord.cashboxSessionId))
+            .limit(1);
+          const cashbox = sessionRows[0];
+          if (!cashbox || cashbox.status !== 'OPEN' || cashbox.warehouseId !== ord.warehouseId) {
+            throw AppError.conflict('Két ca đã đóng, không thể hủy đơn chờ.');
+          }
+        }
+
         const noteUpdate = reason ? `${ord.note ? ord.note + ' | ' : ''}[HỦY: ${reason}]` : ord.note;
         const updateRes: any = await tx.run(sql`
           UPDATE orders
@@ -1201,13 +1216,19 @@ export class OrderService {
         .from(orders)
         .where(eq(orders.status, 'PENDING_CONFIRMATION'))
     ).filter((ord) => this.isPendingExpired(ord));
+    let cleaned = 0;
     for (const ord of stale) {
-      await db.update(orders).set({
-        status: 'CANCELLED',
-        note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá hạn giữ chỗ]`,
-      }).where(eq(orders.id, ord.id));
+      // SELECT nằm ngoài transaction: phải khoá có điều kiện status, nếu không một
+      // confirmOrder chạy xen giữa sẽ bị ghi đè CANCELLED sau khi kho đã xuất.
+      const note = `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá hạn giữ chỗ]`;
+      const res: any = await db.run(sql`
+        UPDATE orders
+        SET status = 'CANCELLED', note = ${note}
+        WHERE id = ${ord.id} AND status = 'PENDING_CONFIRMATION'
+      `);
+      if (res.rowsAffected === 1) cleaned++;
     }
-    return stale.length;
+    return cleaned;
   }
 
   /**

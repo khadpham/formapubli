@@ -19,6 +19,7 @@ export const dynamic = 'force-dynamic';
 const MAX_CASHIER_DISCOUNT_RATE = 0.2;
 
 const PAYMENT_PROOF_MAX_LEN = 200;
+const CANCEL_REASON_MAX_LEN = 500;
 
 /**
  * Kiểm tra ảnh xác nhận ở biên HTTP: cả hai trường hoặc cùng có, hoặc cùng thiếu.
@@ -28,12 +29,21 @@ function paymentProofError(body: any): string | null {
   const id = body?.paymentProofId;
   const capturedAt = body?.paymentProofCapturedAt;
   if (id === undefined && capturedAt === undefined) return null;
-  if (id === null || capturedAt === null) return 'Ảnh xác nhận thiếu id hoặc thời điểm chụp.';
+  if (id == null || capturedAt == null) return 'Ảnh xác nhận thiếu id hoặc thời điểm chụp.';
   if (typeof id !== 'string' || !id.trim() || id.length > PAYMENT_PROOF_MAX_LEN) {
     return 'Mã ảnh xác nhận không hợp lệ.';
   }
-  if (typeof capturedAt !== 'string' || !Number.isFinite(Date.parse(capturedAt))) {
+  if (typeof capturedAt !== 'string' || !capturedAt.trim() || capturedAt.length > PAYMENT_PROOF_MAX_LEN || !Number.isFinite(Date.parse(capturedAt))) {
     return 'Thời điểm chụp ảnh không hợp lệ.';
+  }
+  return null;
+}
+
+/** Lý do hủy là text tự do: chỉ nhận chuỗi, cắt khoảng trắng, giới hạn độ dài. */
+function cancelReasonError(reason: any): string | null {
+  if (reason === undefined || reason === null || reason === '') return null;
+  if (typeof reason !== 'string' || reason.trim().length > CANCEL_REASON_MAX_LEN) {
+    return 'Lý do hủy đơn không hợp lệ.';
   }
   return null;
 }
@@ -146,6 +156,12 @@ export async function POST(req: NextRequest) {
       if (proofError) {
         return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: proofError }, { status: 400 });
       }
+      // Lý do hủy là input tự do của client, nay đã mở cho ROLE_CASHIER: chặn độ dài
+      // để orders.note / audit_logs.details không bị phình vô hạn.
+      const reasonError = cancelReasonError(body.reason);
+      if (reasonError) {
+        return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: reasonError }, { status: 400 });
+      }
       const result = body.action === 'CONFIRM'
         ? await OrderService.confirmOrder(
             body.orderId,
@@ -156,7 +172,12 @@ export async function POST(req: NextRequest) {
               ? { id: body.paymentProofId, capturedAt: body.paymentProofCapturedAt }
               : undefined
           )
-        : await OrderService.cancelOrder(body.orderId, userRole, body.reason, actorContext);
+        : await OrderService.cancelOrder(
+            body.orderId,
+            userRole,
+            typeof body.reason === 'string' ? body.reason.trim() : undefined,
+            actorContext
+          );
       return NextResponse.json({ success: true, data: result });
     }
 
@@ -258,6 +279,12 @@ export async function POST(req: NextRequest) {
     // Đơn chuyển khoản/QR tại quầy: tạo PENDING trước (confirmImmediately:false),
     // không cần moneyReceived. Đồng bộ offline tức thì vẫn phải có proof.
     const isImmediateDigital = isDigitalMethod && confirmImmediately !== false && !giftFlag;
+    // Validate input TRƯỚC các cổng nghiệp vụ: cùng một payload lỗi phải luôn trả 400,
+    // không được rơi vào 403 của cổng "thiếu ảnh" (client không phân biệt được lỗi dữ liệu).
+    const createProofError = paymentProofError(body);
+    if (createProofError) {
+      return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: createProofError }, { status: 400 });
+    }
     if (isImmediateDigital && moneyReceived !== true) {
       return NextResponse.json(
         { success: false, error: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' },
@@ -269,10 +296,6 @@ export async function POST(req: NextRequest) {
         { success: false, error: 'Thiếu ảnh xác nhận thanh toán cho đơn chuyển khoản/QR.' },
         { status: 403 }
       );
-    }
-    const createProofError = paymentProofError(body);
-    if (createProofError) {
-      return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: createProofError }, { status: 400 });
     }
     const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
       const v = it?.unitDiscountRate;
