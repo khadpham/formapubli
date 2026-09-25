@@ -179,4 +179,57 @@ assert.equal(
   'Chuyển khoản chưa thu tiền là AWAITING_PAYMENT'
 );
 
+// --- Task 6: camera chụp ảnh chứng minh --------------------------------------
+const camera = readSource('src/components/pos/PaymentProofCamera.tsx');
+assert.match(camera, /getUserMedia/, 'Camera dùng getUserMedia');
+assert.match(camera, /facingMode/, 'Camera có chọn trước/sau');
+assert.match(camera, /'environment'/, 'Camera sau là mặc định');
+assert.match(camera, /playsInline/, 'Video phải playsInline');
+assert.match(camera, /muted/, 'Video phải muted');
+assert.match(camera, /canvas\.toBlob/, 'Chụp ảnh qua canvas.toBlob');
+assert.match(camera, /'image\/jpeg'/, 'Ảnh xuất JPEG');
+assert.match(camera, /0\.8/, 'JPEG quality 0.8');
+assert.match(camera, /1280/, 'Cạnh dài tối đa 1280px');
+assert.match(camera, /track\.stop\(\)/, 'Phải dừng toàn bộ media track');
+assert.match(camera, /useModalFocusTrap/, 'Camera dùng focus trap có sẵn');
+assert.match(camera, /max-w-lg/, 'Dialog camera giới hạn max-w-lg');
+assert.match(camera, /Chụp lại/, 'Có nút Chụp lại');
+assert.match(camera, /Dùng ảnh này/, 'Có nút Dùng ảnh này');
+assert.match(camera, /role="dialog"/, 'Camera là dialog');
+assert.doesNotMatch(camera, /createBarcodeDecoder|OCR|tesseract|bank-?api/i, 'Camera không OCR và không gọi API ngân hàng');
+
+// Review Focus 1: camera bị từ chối / không có thiết bị → đóng, tuyệt đối không gọi onUsePhoto.
+// Bỏ comment trước khi kiểm tra: chỉ assert trên mã thực thi, không trên chú thích.
+const stripComments = (code: string) => code.replace(/\/\/[^\n\r]*/g, '');
+const deniedStart = camera.indexOf("'NotAllowedError'");
+const deniedEnd = camera.indexOf('}, [isOpen');
+const deniedBranch = stripComments(
+  deniedStart >= 0 ? camera.slice(deniedStart, deniedEnd > deniedStart ? deniedEnd : camera.length) : ''
+);
+assert.ok(deniedBranch.length > 0, 'Camera có nhánh xử lý NotAllowedError');
+assert.match(deniedBranch, /NotFoundError/, 'Camera xử lý cả NotFoundError');
+assert.match(deniedBranch, /onClose\(\)/, 'Nhánh lỗi quyền/thiết bị gọi onClose');
+assert.doesNotMatch(deniedBranch, /onUsePhoto/, 'Nhánh lỗi quyền/thiết bị tuyệt đối không gọi onUsePhoto');
+// Camera từ chối không được báo "đã lưu ảnh" — không được setPreview rỗng giả.
+assert.doesNotMatch(deniedBranch, /setPreview\(/, 'Nhánh lỗi không tạo preview giả');
+
+// Review Focus 2: lưu ảnh lỗi thì giữ preview, không đóng.
+const usePhotoStart = camera.indexOf('const usePhoto = async');
+const usePhotoEnd = camera.indexOf('return createPortal', usePhotoStart);
+const usePhotoRegion = stripComments(
+  camera.slice(usePhotoStart > 0 ? usePhotoStart : 0, usePhotoEnd > usePhotoStart ? usePhotoEnd : camera.length)
+);
+assert.ok(usePhotoStart > 0, 'Camera có hàm usePhoto');
+assert.match(usePhotoRegion, /await onUsePhoto\(/, 'Camera await onUsePhoto trước khi đóng');
+const tryIndex = usePhotoRegion.lastIndexOf('try {');
+const catchIndex = usePhotoRegion.indexOf('} catch');
+const useIndex = usePhotoRegion.indexOf('await onUsePhoto(');
+const closeIndex = usePhotoRegion.indexOf('onClose();');
+assert.ok(tryIndex >= 0 && catchIndex > tryIndex, 'onUsePhoto phải nằm trong try/catch');
+assert.ok(useIndex > tryIndex && useIndex < catchIndex, 'await onUsePhoto nằm trong try');
+assert.ok(closeIndex > useIndex && closeIndex < catchIndex, 'onClose chạy sau khi lưu thành công, trong try');
+assert.doesNotMatch(usePhotoRegion.slice(catchIndex), /setPreview\(null\)/, 'Lỗi lưu không được xóa preview');
+assert.match(usePhotoRegion, /setErrorMessage\('Lưu ảnh thất bại/, 'Lỗi lưu ảnh phải báo rõ cho thu ngân');
+assert.match(camera, /setPreview\(\{/, 'Preview được set khi chụp thành công');
+
 console.log('PASS: transfer payment photo contract.');
