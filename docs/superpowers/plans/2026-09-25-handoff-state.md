@@ -63,7 +63,20 @@ LƯU Ý SỰ CỐ ĐÃ XẢY RA: thiếu `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` 
 
 ## 5. Còn lại (ai làm gì)
 
-### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main 804839a, worker 35c1ad4e)
+### ĐÃ SỬA + ĐÃ DEPLOY (25/09, main e8e67b8, worker 97ca60cc)
+- **Ma trận kho ĐỘNG** (bạn báo "mới đổi text, code chính chưa đổi" — đúng):
+  `InventoryService.getStockMatrix` trước chỉ đếm 3 mã kho cứng nên **kho hội chợ không
+  bao giờ có số liệu**. Nay trả `stockByWarehouse` (map theo warehouseId) và UI dựng
+  tab từ danh sách kho thật — mở kho mới là tự hiện, không sửa code nữa.
+- **Gán kho CÓ ràng buộc thật**: login + `/api/auth/me` trả `assignedWarehouseId`;
+  POS mở đúng kho và **khóa** (thay dropdown bằng nhãn "Kho được gán"); **server chặn
+  403** khi nhân viên cố xuất hàng từ kho khác (đã verify trên prod).
+- **Modal di động**: header "Báo Cáo Chốt Ngày" xuống dòng trên mobile (trước bị ép từng
+  chữ), tab strip cuộn ngang gọn thay vì tràn khung.
+- **Nút Soạn kệ** chuyển lên Bảng điều khiển kho (trước nằm cuối thanh cuộn ngang,
+  không thấy trên điện thoại).
+- Bỏ text tiếng Anh còn sót: "Executive View" → "Tổng quan điều hành", "Reset PIN" → "Đổi PIN".
+- API kho trả `stockQuantity` tổng tồn thật + nhãn loại kho (Hội chợ / Cố định) trong modal.
 - **Kho hội chợ — quản lý đầy đủ** (migration 0023, đã áp Turso prod):
   - `warehouses.qr_transfer_template`: **mẫu nội dung chuyển khoản QR riêng theo từng kho**,
     hỗ trợ biến `{SL}` tổng số lượng · `{MA}` mã đơn · `{KHO}` tên kho · `{KH}` mã kho.
