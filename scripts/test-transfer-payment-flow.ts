@@ -550,8 +550,8 @@ async function run() {
 
   // ---------------------------------------------- Task 5: ATP hostage cap ---
   const CAP_WH = 'wh-cap';
-  const { MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER: MAX_HOLDS } = await import('../src/services/order.service');
-  assert.equal(typeof MAX_HOLDS, 'number', 'trần giữ chỗ phải là hằng số có tên');
+  const { MAX_PENDING_HOLD_UNITS_PER_CASHIER: CAP_UNITS } = await import('../src/services/order.service');
+  assert.equal(typeof CAP_UNITS, 'number', 'trần giữ chỗ phải là hằng số có tên');
   await db.insert(schema.warehouses).values({
     id: CAP_WH, code: 'KHO_CAP', name: 'Kho Cap', isActive: true,
     isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN',
@@ -577,43 +577,64 @@ async function run() {
     ...overrides,
   });
   const capIds: string[] = [];
-  for (let i = 0; i < MAX_HOLDS; i++) {
+  // B1. Trần đo SỐ LƯỢNG giữ chỗ, không đo số dòng đơn: lấp tới đúng trần bằng
+  //     các đơn 1 cuốn, đơn kế tiếp (vượt trần) phải bị chặn 409.
+  for (let i = 0; i < CAP_UNITS; i++) {
     const r = await postAs(capBody());
-    assert.equal(r.status, 200, `đơn giữ chỗ ${i + 1}/${MAX_HOLDS}: ${JSON.stringify(r.json)}`);
+    assert.equal(r.status, 200, `đơn giữ chỗ ${i + 1}/${CAP_UNITS}: ${JSON.stringify(r.json)}`);
     assert.equal(r.json.data.status, 'PENDING_CONFIRMATION');
     capIds.push(r.json.data.orderId);
   }
-  // B1. Đơn thứ N+1 không trả tiền → 409 kèm thông báo hành động được
   const overRes = await postAs(capBody());
-  assert.equal(overRes.status, 409, `đơn ${MAX_HOLDS + 1} phải bị chặn: ${JSON.stringify(overRes.json)}`);
+  assert.equal(overRes.status, 409, `đơn vượt trần ${CAP_UNITS} cuốn phải bị chặn: ${JSON.stringify(overRes.json)}`);
   assert.equal(overRes.json.code, 'STATE_CONFLICT');
   assert.match(
     String(overRes.json.error),
-    /đã có \d+ đơn chuyển khoản chờ thanh toán/,
-    'thông báo phải nêu rõ số đơn đang chờ'
+    new RegExp(`${CAP_UNITS}`),
+    'thông báo phải nêu rõ mức trần tính theo số lượng'
   );
   assert.match(String(overRes.json.error), /xác nhận hoặc hủy/i, 'thông báo phải chỉ cách xử lý');
-  console.log(`✓ Trần ${MAX_HOLDS} đơn chuyển khoản chờ/thu ngân/kho: đơn ${MAX_HOLDS + 1} bị chặn 409`);
+  console.log(`✓ Trần ${CAP_UNITS} cuốn giữ chỗ chưa thu tiền/thu ngân/kho: vượt trần bị chặn 409`);
+
+  // B1b. Một đơn quá khổng bị từ chối dù mới chỉ có 0 chỗ trước đó (trước đây trần
+  //      đếm DÒNG nên 1 đơn 500 cuốn vẫn lọt).
+  const hugeRes = await postAs(capBody({ items: [{ editionId: 'ed-cap-1', quantity: CAP_UNITS + 1 }] }));
+  assert.equal(hugeRes.status, 409, `một đơn ${CAP_UNITS + 1} cuốn phải bị chặn: ${JSON.stringify(hugeRes.json)}`);
+  // B1c. Giải phóng hết rồi thì một đơn đúng bằng trần vẫn tạo được.
+  for (const id of capIds) {
+    await postAs({ action: 'CANCEL', orderId: id, reason: 'dọn cap' }, CASHIER_A);
+  }
+  const exactCap = await postAs(capBody({ items: [{ editionId: 'ed-cap-1', quantity: CAP_UNITS }] }));
+  assert.equal(exactCap.status, 200, `đơn đúng bằng trần phải tạo được: ${JSON.stringify(exactCap.json)}`);
+  assert.equal((await postAs(capBody())).status, 409, 'đã đầy trần bằng 1 đơn thì đơn kế tiếp vẫn bị chặn');
+  await postAs({ action: 'CANCEL', orderId: exactCap.json.data.orderId, reason: 'dọn cap' }, CASHIER_A);
+  capIds.length = 0;
+  console.log('✓ Một đơn vượt trần bị chặn; một đơn đúng bằng trần vẫn tạo được');
 
   // B2. Xác nhận (đã trả tiền) hoặc hủy phải nhả chỗ ngay
+  for (let i = 0; i < CAP_UNITS; i++) {
+    const r = await postAs(capBody());
+    assert.equal(r.status, 200, `lấp lại ${i + 1}/${CAP_UNITS}: ${JSON.stringify(r.json)}`);
+    capIds.push(r.json.data.orderId);
+  }
   const freed = await postAs({
     action: 'CONFIRM', orderId: capIds[0],
     paymentProofId: 'proof-cap-1', paymentProofCapturedAt: nowIso(),
   });
   assert.equal(freed.status, 200, `xác nhận nhả chỗ: ${JSON.stringify(freed.json)}`);
   const afterConfirm = await postAs(capBody());
-  assert.equal(afterConfirm.status, 200, 'xác nhận 1 đơn phải nhả được 1 chỗ');
+  assert.equal(afterConfirm.status, 200, 'xác nhận 1 cuốn phải nhả được 1 cuốn chỗ');
   capIds.push(afterConfirm.json.data.orderId);
 
   const cancelled = await postAs({ action: 'CANCEL', orderId: capIds[1], reason: 'khách bỏ' }, CASHIER_A);
   assert.equal(cancelled.status, 200, `hủy nhả chỗ: ${JSON.stringify(cancelled.json)}`);
   const afterCancel = await postAs(capBody());
-  assert.equal(afterCancel.status, 200, 'hủy 1 đơn phải nhả được 1 chỗ');
+  assert.equal(afterCancel.status, 200, 'hủy 1 cuốn phải nhả được 1 cuốn chỗ');
   capIds.push(afterCancel.json.data.orderId);
   assert.equal((await postAs(capBody())).status, 409, 'trần phải đóng lại sau khi đủ chỗ');
   console.log('✓ Xác nhận / hủy nhả chỗ giữ ATP ngay lập tức');
 
-  // B3. Tiền mặt và quà tặng không bị trần này chi phối
+  // B3. Tiền mặt và quà tặng thanh toán ngay không bị trần này chi phối
   const cashAtCap = await postAs(capBody({ paymentMethod: 'CASH', confirmImmediately: true }));
   assert.equal(cashAtCap.status, 200, `tiền mặt khi đã đầy chỗ: ${JSON.stringify(cashAtCap.json)}`);
   assert.equal(cashAtCap.json.data.status, 'COMPLETED');
@@ -628,8 +649,8 @@ async function run() {
     .from(schema.orders)
     .where(eq(schema.orders.id, giftAtCap.json.data.orderId)))[0];
   assert.equal(giftDiscount.discountRate, 1, 'đơn tặng vẫn chiết khấu 100%');
-  assert.equal((await postAs(capBody())).status, 409, 'tiền mặt/tặng không được nuôi chỗ chuyển khoản');
-  console.log('✓ Tiền mặt và đơn tặng không bị trần giữ chỗ chuyển khoản chi phối');
+  assert.equal((await postAs(capBody())).status, 409, 'tiền mặt/tặng thanh toán ngay không được nuôi chỗ');
+  console.log('✓ Tiền mặt và đơn tặng thanh toán ngay không bị trần giữ chỗ chi phối');
 
   // B4. Manager không bị trần này chi phối
   const mgrRes = await postAs(capBody({ cashboxSessionId: undefined }), MANAGER);
@@ -646,10 +667,14 @@ async function run() {
   assert.equal((await postAs(capBody())).status, 409, 'chỗ của thu ngân khác/kho khác không được trừ vào của A');
   console.log('✓ Trần tính riêng theo (thu ngân, kho)');
 
-  // B6. Đơn PENDING không phải chuyển khoản không bị tính vào trần
+  // B6. Đơn PENDING CHƯA THU TIỀN của MỌI phương thức (kể cả COD/CASH) đều tính
+  //     vào trần — trước đây chỉ chuyển khoản/QR mới bị trần nên client độc hại
+  //     né trần bằng cách khai COD và giữ ATP 48h.
   const codRes = await postAs(capBody({ paymentMethod: 'COD' }));
-  assert.equal(codRes.status, 200, `đơn COD không thuộc trần: ${JSON.stringify(codRes.json)}`);
-  assert.equal((await postAs(capBody())).status, 409, 'đơn COD không được chiếm chỗ chuyển khoản');
+  assert.equal(codRes.status, 409, `đơn COD chờ phải bị trần khi đã đầy chỗ: ${JSON.stringify(codRes.json)}`);
+  const cashPending = await postAs(capBody({ paymentMethod: 'CASH' }));
+  assert.equal(cashPending.status, 409, `đơn tiền mặt chờ cũng phải bị trần: ${JSON.stringify(cashPending.json)}`);
+  console.log('✓ Đơn PENDING chưa thu tiền mọi phương thức đều bị trần số lượng');
 
   // B7. Đơn chờ đã quá hạn (cleanup chưa chạy) không nên giữ chỗ vĩnh viễn
   for (const id of capIds.slice(-2)) {
@@ -662,6 +687,43 @@ async function run() {
   assert.equal(afterLapsed.status, 200, 'đơn đã quá hạn không nên chiếm chỗ');
   capIds.push(afterLapsed.json.data.orderId);
   console.log('✓ Đơn chuyển khoản đã quá hạn không giữ chỗ vô thời hạn');
+
+  // B8. Cửa sổ 30 phút do KÊNH quyết định, client không tự chọn được 48h.
+  const counterNoSession = await postAs(
+    capBody({ cashboxSessionId: undefined, customerName: `B8 ${Date.now()}-${seq++}` })
+  );
+  assert.equal(counterNoSession.status, 200, `đơn quầy không két: ${JSON.stringify(counterNoSession.json)}`);
+  const counterRow = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, counterNoSession.json.data.orderId)))[0];
+  const counterMs = new Date(counterRow.paymentExpiresAt as string).getTime() - Date.now();
+  assert.ok(
+    counterMs > 29 * 60_000 && counterMs <= 30 * 60_000,
+    `đơn RETAIL_OFFICE không gửi cashboxSessionId vẫn phải hạn ~30 phút, thực tế ${counterMs}ms`
+  );
+  const webOrder = await OrderService.createOrder({
+    warehouseId: CAP_WH,
+    channel: 'RETAIL_ONLINE_WEB',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: 'webhook-flow',
+    confirmImmediately: false,
+    idempotencyKey: `idem-flow-b8-web-${Date.now()}`,
+    items: [{ editionId: 'ed-cap-1', quantity: 1 }],
+  });
+  const webRow = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, (webOrder as any).orderId)))[0];
+  assert.equal(webRow.paymentExpiresAt, null, 'đơn web vẫn dùng TTL 48h, không đặt hạn 30 phút');
+  assert.equal(
+    OrderService.getPendingEffectiveExpiry({ createdAt: webRow.createdAt, paymentExpiresAt: webRow.paymentExpiresAt })!.getTime() -
+      new Date(webRow.createdAt as string).getTime(),
+    48 * 3600_000,
+    'đơn web phải giữ TTL 48h như cũ'
+  );
+  console.log('✓ Cửa sổ 30 phút theo kênh RETAIL_OFFICE; web/social giữ TTL 48h');
+
 
   raw.close();
   console.log('TRANSFER PAYMENT API CONTRACT PASS');

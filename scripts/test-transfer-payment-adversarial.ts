@@ -55,13 +55,14 @@ async function run() {
   const { eq } = await import('drizzle-orm');
   const schema = await import('../src/db/schema');
   const db = drizzle(raw);
-  const { OrderService, CashboxService, MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER: MAX_HOLDS } =
+  const { OrderService, CashboxService, MAX_PENDING_HOLD_UNITS_PER_CASHIER: CAP_UNITS } =
     await import('../src/services/order.service');
   const { InventoryService } = await import('../src/services/inventory.service');
   const { POST: ordersPost } = await import('../src/app/api/orders/route');
   const { signSession, SESSION_COOKIE_NAME } = await import('../src/lib/auth-session');
 
   const WH = 'wh-adv';
+  const WH3 = 'wh-adv-3';
   const CASHIER = { staffId: 'cashier-adv', role: 'ROLE_CASHIER' as const, fullName: 'Thu Ngân ADV' };
   const MANAGER = { staffId: 'manager-adv', role: 'ROLE_MANAGER' as const, fullName: 'Quản Lý ADV' };
   const proof = () => ({ id: `proof-${Math.random().toString(36).slice(2)}`, capturedAt: new Date().toISOString() });
@@ -69,6 +70,7 @@ async function run() {
   await db.insert(schema.warehouses).values([
     { id: WH, code: 'KHO_ADV', name: 'Kho ADV', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
     { id: 'wh-adv-2', code: 'KHO_ADV2', name: 'Kho ADV 2', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
+    { id: WH3, code: 'KHO_ADV3', name: 'Kho ADV 3', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   await db.insert(schema.works).values({ id: 'work-adv', code: 'WORK-ADV', title: 'Sách ADV', author: 'Test' });
   await db.insert(schema.editions).values([
@@ -80,6 +82,7 @@ async function run() {
     { id: 'sb-adv-2', editionId: 'ed-adv-2', warehouseId: WH, condition: 'NEW', physicalQuantity: 100 },
     { id: 'sb-adv-2-w2', editionId: 'ed-adv-2', warehouseId: 'wh-adv-2', condition: 'NEW', physicalQuantity: 100 },
     { id: 'sb-adv-1-w2', editionId: 'ed-adv-1', warehouseId: 'wh-adv-2', condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-adv-1-w3', editionId: 'ed-adv-1', warehouseId: WH3, condition: 'NEW', physicalQuantity: 100 },
   ]);
   const session = await CashboxService.openSession({ warehouseId: WH, cashierId: CASHIER.staffId, openingCash: 0 });
 
@@ -327,67 +330,138 @@ async function run() {
   // ============================== B1..B4: BẰNG CHỨNG (chưa sửa) ================
   console.log('\nB1-B4. BẰNG CHỨNG trần giữ ATP (chưa sửa — cần quyết định sản phẩm)');
 
-  // B1. PENDING không phải chuyển khoản (CASH/COD) vẫn giữ ATP, không bị trần.
+  // B1. Đơn PENDING CHƯA THU TIỀN mọi phương thức (kể cả CASH/COD) đều bị trần
+  //     SỐ LƯỢNG giữ chỗ — trước fix: 8 đơn CASH/COD, 0 lần 409, ATP giữ 48h.
   const b1Before = await OrderService.getATP('ed-adv-1', WH);
   const b1Ids: string[] = [];
-  let b1Statuses: number[] = [];
-  for (let i = 0; i < MAX_HOLDS + 3; i++) {
-    const r = await OrderService.createOrder({
-      warehouseId: WH,
-      channel: 'RETAIL_ONLINE_WEB',
-      paymentMethod: i % 2 === 0 ? 'CASH' : 'COD',
-      cashierId: 'webhook-adv',
-      confirmImmediately: false,
-      idempotencyKey: `idem-adv-b1-${i}`,
-      items: [{ editionId: 'ed-adv-1', quantity: 1 }],
-    });
-    b1Ids.push(r.orderId);
-    b1Statuses.push(200);
+  let b1RefusedCode = '';
+  for (let i = 0; i < CAP_UNITS + 5 && !b1RefusedCode; i++) {
+    try {
+      const r = await OrderService.createOrder({
+        warehouseId: WH,
+        channel: 'RETAIL_ONLINE_WEB',
+        paymentMethod: i % 2 === 0 ? 'CASH' : 'COD',
+        cashierId: 'webhook-adv',
+        confirmImmediately: false,
+        idempotencyKey: `idem-adv-b1-${i}`,
+        items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+      });
+      b1Ids.push(r.orderId);
+    } catch (e: any) {
+      b1RefusedCode = e?.code || e?.message;
+    }
   }
   const b1After = await OrderService.getATP('ed-adv-1', WH);
   check(
-    `B1 PENDING CASH/COD KHÔNG bị trần ${MAX_HOLDS}: tạo được ${b1Ids.length} đơn, ATP giảm ${b1Before - b1After}`,
-    b1Ids.length === MAX_HOLDS + 3 && b1After === b1Before - (MAX_HOLDS + 3),
+    `B1 PENDING CASH/COD cũng bị trần ${CAP_UNITS} cuốn: tạo được ${b1Ids.length} đơn (${b1Ids.length} cuốn giữ chỗ), đơn kế tiếp bị chặn ${b1RefusedCode}`,
+    b1Ids.length === CAP_UNITS && b1RefusedCode === 'STATE_CONFLICT' && b1After === b1Before - CAP_UNITS,
     `ATP ${b1Before}→${b1After}`
   );
+  // Đơn CASH tức thì (checkout tiền mặt) KHÔNG bị trần này chi phối.
+  const b1CashImmediate = await OrderService.createOrder({
+    warehouseId: WH,
+    channel: 'RETAIL_OFFICE',
+    paymentMethod: 'CASH',
+    cashierId: 'webhook-adv',
+    confirmImmediately: true,
+    idempotencyKey: 'idem-adv-b1-cash-immediate',
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  check(
+    'B1 checkout tiền mặt tức thì vẫn COMPLETED, không bị trần giữ chỗ chặn',
+    (b1CashImmediate as any).status === 'COMPLETED'
+  );
+  // Đơn tiền mặt tức thì đã trừ 1 cuốn thật; mọi chỗ giữ phải được trả lại.
   for (const id of b1Ids) {
     await OrderService.cancelOrder(id, 'ROLE_MANAGER', 'dọn B1', MANAGER);
   }
+  check(
+    'B1 hủy hết đơn giữ chỗ thì ATP trả lại nguyên vẹn (trừ đúng 1 cuốn bán tiền mặt tức thì)',
+    (await OrderService.getATP('ed-adv-1', WH)) === b1Before - 1,
+    `ATP=${await OrderService.getATP('ed-adv-1', WH)} (kỳ vọng ${b1Before - 1})`
+  );
 
-  // B2. Trần đếm SỐ ĐƠN, không giới hạn SỐ LƯỢNG giữ chỗ.
-  const b2Before = await OrderService.getATP('ed-adv-1', WH);
-  const b2Qty = b2Before; // giữ đúng toàn bộ tồn khả dụng
-  let b2Held = 0;
-  for (let i = 0; i < MAX_HOLDS; i++) {
-    const r = await OrderService.createOrder({
-      warehouseId: WH,
+  // B2. Một đơn quá khổng bị từ chối — trần đo SỐ LƯỢNG, không đo số dòng.
+  //     Trước fix: 1 đơn 500 cuốn vẫn lọt (chỉ có trần 5 DÒNG).
+  let b2BigCode = '';
+  try {
+    await OrderService.createOrder({
+      warehouseId: WH3,
       channel: 'RETAIL_OFFICE',
       paymentMethod: 'BANK_TRANSFER',
       cashierId: CASHIER.staffId,
       actorContext: CASHIER,
       confirmImmediately: false,
-      idempotencyKey: `idem-adv-b2-${i}`,
+      idempotencyKey: 'idem-adv-b2-too-big',
+      items: [{ editionId: 'ed-adv-1', quantity: CAP_UNITS + 1 }],
+    });
+  } catch (e: any) {
+    b2BigCode = e?.code || e?.message;
+  }
+  check(
+    `B2.1 một đơn ${CAP_UNITS + 1} cuốn bị từ chối (trước fix lọt vì chỉ đếm dòng)`,
+    b2BigCode === 'STATE_CONFLICT',
+    `kết quả=${b2BigCode}`
+  );
+  const b2Exact = await OrderService.createOrder({
+    warehouseId: WH3,
+    channel: 'RETAIL_OFFICE',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: CASHIER.staffId,
+    actorContext: CASHIER,
+    confirmImmediately: false,
+    idempotencyKey: 'idem-adv-b2-exact',
+    items: [{ editionId: 'ed-adv-1', quantity: CAP_UNITS }],
+  });
+  check(
+    `B2.2 một đơn đúng bằng trần (${CAP_UNITS} cuốn) vẫn tạo được`,
+    (b2Exact as any).status === 'PENDING_CONFIRMATION'
+  );
+  let b2NextCode = '';
+  try {
+    await OrderService.createOrder({
+      warehouseId: WH3,
+      channel: 'RETAIL_OFFICE',
+      paymentMethod: 'QR_CODE',
+      cashierId: CASHIER.staffId,
+      actorContext: CASHIER,
+      confirmImmediately: false,
+      idempotencyKey: 'idem-adv-b2-next',
       items: [{ editionId: 'ed-adv-1', quantity: 1 }],
     });
-    b2Held++;
-    void r;
+  } catch (e: any) {
+    b2NextCode = e?.code || e?.message;
   }
-  const b2After = await OrderService.getATP('ed-adv-1', WH);
-  check(
-    `B2 trần ${MAX_HOLDS} đơn KHÔNG giới hạn số lượng: ${MAX_HOLDS} đơn × 1 cuốn chỉ giữ ${b2Before - b2After} cuốn (mỗi đơn có thể giữ cả kho)`,
-    b2Before - b2After === MAX_HOLDS,
-    `ATP ${b2Before}→${b2After}`
-  );
-  for (let i = 0; i < MAX_HOLDS; i++) {
-    const rows = await db
-      .select()
-      .from(schema.orders)
-      .where(eq(schema.orders.idempotencyKey, `idem-adv-b2-${i}`));
-    await OrderService.cancelOrder(rows[0].id, 'ROLE_MANAGER', 'dọn B2', MANAGER);
-  }
-  void b2Qty;
+  check('B2.3 đã đầy trần thì mọi đơn PENDING kế tiếp bị chặn', b2NextCode === 'STATE_CONFLICT', `${b2NextCode}`);
+  await OrderService.cancelOrder(b2Exact.orderId, 'ROLE_MANAGER', 'dọn B2', MANAGER);
+  const b2After = await OrderService.createOrder({
+    warehouseId: WH3,
+    channel: 'RETAIL_OFFICE',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: CASHIER.staffId,
+    actorContext: CASHIER,
+    confirmImmediately: false,
+    idempotencyKey: 'idem-adv-b2-freed',
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  check('B2.4 hủy 1 đơn giải phóng đúng số lượng đã giữ', (b2After as any).status === 'PENDING_CONFIRMATION');
+  await OrderService.cancelOrder(b2After.orderId, 'ROLE_MANAGER', 'dọn B2', MANAGER);
 
-  // B3. Cửa sổ 30 phút phụ thuộc cashboxSessionId do client gửi.
+  // B2b. Manager/Owner vẫn miễn trần.
+  const b2bManager = await OrderService.createOrder({
+    warehouseId: WH3,
+    channel: 'RETAIL_ONLINE_WEB',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: MANAGER.staffId,
+    actorContext: MANAGER,
+    confirmImmediately: false,
+    idempotencyKey: 'idem-adv-b2b-manager',
+    items: [{ editionId: 'ed-adv-1', quantity: CAP_UNITS + 5 }],
+  });
+  check('B2b Manager miễn trần giữ chỗ', (b2bManager as any).status === 'PENDING_CONFIRMATION');
+  await OrderService.cancelOrder(b2bManager.orderId, 'ROLE_MANAGER', 'dọn B2b', MANAGER);
+
+  // B3. Cửa sổ 30 phút phải do KÊNH quyết định, không phải do client tùy chọn.
   const withSession = await postAs({
     warehouseId: WH,
     channel: 'RETAIL_OFFICE',
@@ -405,31 +479,138 @@ async function run() {
     confirmImmediately: false,
     items: [{ editionId: 'ed-adv-1', quantity: 1 }],
   });
+  const onlineWeb = await postAs({
+    warehouseId: WH,
+    channel: 'RETAIL_ONLINE_WEB',
+    customerName: 'B3 web',
+    paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false,
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  const onlineSocial = await postAs({
+    warehouseId: WH,
+    channel: 'RETAIL_ONLINE_SOCIAL',
+    customerName: 'B3 social',
+    paymentMethod: 'QR_CODE',
+    confirmImmediately: false,
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
   const rowWith = await orderRow(withSession.json.data.orderId);
   const rowNo = await orderRow(noSession.json.data.orderId);
+  const rowWeb = await orderRow(onlineWeb.json.data.orderId);
+  const rowSocial = await orderRow(onlineSocial.json.data.orderId);
   const withMs = new Date(rowWith.paymentExpiresAt as string).getTime() - Date.now();
+  const noMs = new Date(rowNo.paymentExpiresAt as string).getTime() - Date.now();
+  const ttlOf = (row: any) =>
+    OrderService.getPendingEffectiveExpiry({ createdAt: row.createdAt, paymentExpiresAt: row.paymentExpiresAt })!.getTime() -
+    new Date(row.createdAt as string).getTime();
   check(
-    'B3 có cashboxSessionId → hạn ~30 phút',
+    'B3.1 đơn quầy CÓ két → hạn ~30 phút',
     withMs > 29 * 60_000 && withMs <= 30 * 60_000,
     `còn ${Math.round(withMs / 60000)} phút`
   );
   check(
-    'B3 BỎ cashboxSessionId → không hạn, ATP bị giữ tới 48h (client tự chọn cửa sổ thanh toán)',
-    rowNo.paymentExpiresAt === null &&
-      OrderService.getPendingEffectiveExpiry({ createdAt: rowNo.createdAt, paymentExpiresAt: null })!.getTime() -
-        new Date(rowNo.createdAt as string).getTime() ===
-        48 * 3600_000,
-    `paymentExpiresAt=${rowNo.paymentExpiresAt}`
+    'B3.2 đơn quầy BỎ cashboxSessionId → VẪN hạn ~30 phút (client không tự chọn được cửa sổ 48h)',
+    noMs > 29 * 60_000 && noMs <= 30 * 60_000,
+    `còn ${Math.round(noMs / 60000)} phút, paymentExpiresAt=${rowNo.paymentExpiresAt}`
   );
-  await OrderService.cancelOrder(rowWith.id, 'ROLE_MANAGER', 'dọn B3', MANAGER);
-  await OrderService.cancelOrder(rowNo.id, 'ROLE_MANAGER', 'dọn B3', MANAGER);
+  check(
+    'B3.3 đơn web/social vẫn dùng TTL 48h (không đổi hành vi cũ)',
+    rowWeb.paymentExpiresAt === null && ttlOf(rowWeb) === 48 * 3600_000 &&
+      rowSocial.paymentExpiresAt === null && ttlOf(rowSocial) === 48 * 3600_000,
+    `web=${rowWeb.paymentExpiresAt} social=${rowSocial.paymentExpiresAt}`
+  );
+  // B3.4 Đơn quầy KHÔNG gắn phiên két không được duyệt: không có ca mở để ghi
+  //      nhận tiền chuyển khoản/QR (trước đây bỏ qua hẳn vì guard chỉ chạy khi
+  //      cashboxSessionId có mặt — cashboxSessionId lại do client gửi).
+  const withSessionOrder = await postAs({
+    warehouseId: WH,
+    channel: 'RETAIL_OFFICE',
+    customerName: 'B3 có két 2',
+    paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false,
+    cashboxSessionId: session.session.id,
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  const noSession2 = await postAs({
+    warehouseId: WH,
+    channel: 'RETAIL_OFFICE',
+    customerName: 'B3 không két 2',
+    paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false,
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  const confirmAsCashier = async (id: string) => {
+    try {
+      await OrderService.confirmOrder(id, 'ROLE_CASHIER', CASHIER.staffId, CASHIER, proof());
+      return 'ALLOWED';
+    } catch (e: any) {
+      return e?.code || e?.message;
+    }
+  };
+  await db
+    .update(schema.cashboxSessions)
+    .set({ status: 'CLOSED' })
+    .where(eq(schema.cashboxSessions.id, session.session.id));
+  const closedSessionCode = await confirmAsCashier(withSessionOrder.json.data.orderId);
+  await db
+    .update(schema.cashboxSessions)
+    .set({ status: 'OPEN' })
+    .where(eq(schema.cashboxSessions.id, session.session.id));
+  check(
+    'B3.4 đơn quầy gắn phiên két đã đóng vẫn bị chặn (két ca đã đóng)',
+    closedSessionCode === 'STATE_CONFLICT',
+    `kết quả=${closedSessionCode}`
+  );
+  const noSessionCode = await confirmAsCashier(noSession2.json.data.orderId);
+  check(
+    'B3.4b đơn quầy không gắn phiên két trong khi ca đang mở thì không được duyệt (lách guard két)',
+    noSessionCode === 'STATE_CONFLICT',
+    `kết quả=${noSessionCode}`
+  );
+  // B3.5 LỖ HỔNG CÒN LẠI (đã biết, báo cáo): thu ngân KHÔNG mở ca thì đơn quầy
+  // không gắn két vẫn duyệt được — đúng hành vi cũ mà test-online-orders case 6b
+  // khoá lại, nên không tự ý siết (xem báo cáo điều phối viên).
+  const NO_SHIFT = { staffId: 'cashier-no-shift', role: 'ROLE_CASHIER' as const, fullName: 'Thu Ngân Không Ca' };
+  const noShiftOrder = await OrderService.createOrder({
+    warehouseId: WH3,
+    channel: 'RETAIL_OFFICE',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: NO_SHIFT.staffId,
+    actorContext: NO_SHIFT,
+    confirmImmediately: false,
+    idempotencyKey: 'idem-adv-b35-no-shift',
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  let noShiftCode = '';
+  try {
+    await OrderService.confirmOrder(noShiftOrder.orderId, 'ROLE_CASHIER', NO_SHIFT.staffId, NO_SHIFT, proof());
+    noShiftCode = 'ALLOWED';
+  } catch (e: any) {
+    noShiftCode = e?.code || e?.message;
+  }
+  check(
+    'B3.5 lỗ hổng còn lại: thu ngân KHÔNG mở ca vẫn duyệt được đơn quầy không két (giữ hành vi cũ theo test-online-orders 6b)',
+    noShiftCode === 'ALLOWED',
+    `kết quả=${noShiftCode}`
+  );
+  for (const row of [
+    rowWith,
+    rowNo,
+    rowWeb,
+    rowSocial,
+    await orderRow(withSessionOrder.json.data.orderId),
+    await orderRow(noSession2.json.data.orderId),
+  ]) {
+    await OrderService.cancelOrder(row.id, 'ROLE_MANAGER', 'dọn B3', MANAGER);
+  }
 
   // B4. warehouseId do client gửi, không có ràng buộc thu ngân↔kho: trần nhân lên
-  //     theo số kho (và cùng một thu ngân tạo được đơn ở kho mình không có ca).
+  //     theo số kho (giờ bị chặn bởi trần SỐ LƯỢNG nên mức nhân bị giới hạn).
   const b4Ids: string[] = [];
   const b4AtpBefore = [await OrderService.getATP('ed-adv-1', WH), await OrderService.getATP('ed-adv-1', 'wh-adv-2')];
   for (const wh of [WH, 'wh-adv-2']) {
-    for (let i = 0; i < MAX_HOLDS; i++) {
+    for (let i = 0; i < CAP_UNITS; i++) {
       const r = await postAs({
         warehouseId: wh,
         channel: 'RETAIL_OFFICE',
@@ -439,7 +620,7 @@ async function run() {
         items: [{ editionId: 'ed-adv-1', quantity: 1 }],
       });
       check(
-        `B4 đơn ${b4Ids.length + 1}/${2 * MAX_HOLDS} tại kho ${wh} được tạo`,
+        `B4 đơn ${b4Ids.length + 1}/${2 * CAP_UNITS} tại kho ${wh} được tạo`,
         r.status === 200,
         JSON.stringify(r.json).slice(0, 160)
       );
@@ -448,10 +629,10 @@ async function run() {
   }
   const b4AtpAfter = [await OrderService.getATP('ed-adv-1', WH), await OrderService.getATP('ed-adv-1', 'wh-adv-2')];
   check(
-    'B4 cùng một thu ngân giữ được 2×MAX_HOLDS chỗ bằng cách chia kho (không có ràng buộc thu ngân↔kho)',
-    b4Ids.length === 2 * MAX_HOLDS &&
-      b4AtpBefore[0] - b4AtpAfter[0] === MAX_HOLDS &&
-      b4AtpBefore[1] - b4AtpAfter[1] === MAX_HOLDS,
+    `B4 không có ràng buộc thu ngân↔kho: cùng một thu ngân giữ được ${2 * CAP_UNITS} cuốn bằng cách chia 2 kho (gấp đôi trần, nhưng vẫn bị chặn ở mức ${CAP_UNITS}/kho)`,
+    b4Ids.length === 2 * CAP_UNITS &&
+      b4AtpBefore[0] - b4AtpAfter[0] === CAP_UNITS &&
+      b4AtpBefore[1] - b4AtpAfter[1] === CAP_UNITS,
     `ATP kho1 ${b4AtpBefore[0]}→${b4AtpAfter[0]}, kho2 ${b4AtpBefore[1]}→${b4AtpAfter[1]}`
   );
   for (const id of b4Ids) {
@@ -468,6 +649,7 @@ async function run() {
     paymentMethod: 'BANK_TRANSFER',
     cashierId: CASHIER.staffId,
     actorContext: CASHIER,
+    cashboxSessionId: session.session.id,
     confirmImmediately: false,
     idempotencyKey: 'idem-adv-b5-a',
     items: [{ editionId: 'ed-adv-2', quantity: 1 }],

@@ -35,12 +35,13 @@ const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE'
 // Bước 1: TTL giữ chỗ ATP cho đơn PENDING (giờ). Quá hạn coi như nhả chỗ.
 export const PENDING_TTL_HOURS = 48;
 
-// Trần số đơn chuyển khoản CHƯA THU TIỀN mà một thu ngân được giữ ATP tại một kho.
-// Lý do: mỗi đơn PENDING chuyển khoản giữ ATP 30' (quầy) hoặc 48h (web) mà không
-// thu được đồng nào; không có trần thì một thu ngân hoặc một client lỗi mở vô hạn
-// đơn là giữ chỗ hết kho. Trần đi theo (thu ngân, kho) — mức độ thiệt hại bị chặn
-// đúng ở giỏ hàng, và 409 buộc thu ngân phải thu tiền hoặc hủy đơn cũ.
-export const MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER = 5;
+// Trần SỐ LƯỢNG sách một thu ngân được giữ chỗ ATP bằng đơn PENDING_CONFIRMATION
+// chưa thu tiền, tính theo (thu ngân, kho) — mọi phương thức thanh toán.
+// Lý do: đơn PENDING giữ ATP mà không thu được đồng nào; nếu trần đo SỐ DÒNG
+// đơn thì một client độc hại chỉ cần vài đơn (mỗi đơn số lượng tùy ý, khai
+// paymentMethod CASH/COD để né trần chuyển khoản) là giữ hết kho. Đo số lượng
+// thì trần trúng đúng tài nguyên bị giữ. Manager/Owner miễn trần.
+export const MAX_PENDING_HOLD_UNITS_PER_CASHIER = 20;
 
 // P2-10: đơn gõ bù tối đa 7 ngày tuổi; tương lai quá 5 phút dung sai đồng hồ là từ chối.
 export const BACKDATE_LIMIT_DAYS = 7;
@@ -103,6 +104,15 @@ const TRANSFER_PAYMENT_METHODS: OrderPaymentMethod[] = ['BANK_TRANSFER', 'QR_COD
 
 function requiresPaymentProof(paymentMethod: string | null | undefined): boolean {
   return TRANSFER_PAYMENT_METHODS.includes(paymentMethod as OrderPaymentMethod);
+}
+
+/**
+ * Đơn bán tại quầy = kênh RETAIL_OFFICE. Cửa sổ thanh toán 30 phút và yêu cầu có ca
+ * két phải bám vào KÊNH, không bám vào cashboxSessionId — vì cashboxSessionId do
+ * client gửi: bỏ đi là rơi về TTL 48h và lách được cửa sổ ngắn.
+ */
+function isCounterChannel(channel: string | null | undefined): boolean {
+  return channel === 'RETAIL_OFFICE';
 }
 
 export interface OrderFingerprint {
@@ -422,8 +432,9 @@ export class OrderService {
 
     const isPending = confirmImmediately === false;
     // POS counter transfer: PENDING hạn 30 phút (đơn PENDING khác giữ TTL 48h).
-    // Hạn do server đặt, không nhận từ client.
-    const isCounterTransfer = isPending && requiresPaymentProof(paymentMethod) && Boolean(params.cashboxSessionId);
+    // Hạn do server đặt, không nhận từ client; "đơn quầy" xác định bằng KÊNH
+    // (RETAIL_OFFICE) chứ không phải cashboxSessionId do client gửi.
+    const isCounterTransfer = isPending && requiresPaymentProof(paymentMethod) && isCounterChannel(channel);
     const paymentExpiresAt = isCounterTransfer
       ? new Date(Date.now() + 30 * 60_000).toISOString()
       : null;
@@ -614,29 +625,39 @@ export class OrderService {
           }
         }
 
-        // B2b. Trần giữ ATP (xem MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER): chỉ đơn
-        // chuyển khoản/QR chờ thanh toán mới giữ chỗ, Manager/Owner được miễn.
-        // Đếm ngay trong transaction để hai lần tạo song song không cùng lọt qua trần.
+        // B2b. Trần giữ ATP (xem MAX_PENDING_HOLD_UNITS_PER_CASHIER): đo SỐ LƯỢNG
+        // đang bị giữ chỗ, mọi phương thức thanh toán, theo (thu ngân, kho).
+        // Manager/Owner miễn. Tính ngay trong transaction để hai lần tạo song song
+        // không cùng lọt qua trần. Đơn đã quá hạn không tính (cùng quy tắc hạn
+        // dùng ở ATP và job dọn).
         const creatorRole = params.actorContext?.role;
         const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
-        if (isPending && requiresPaymentProof(paymentMethod) && !creatorIsPrivileged) {
-          const openHolds = (
-            await tx
-              .select({ createdAt: orders.createdAt, paymentExpiresAt: orders.paymentExpiresAt })
-              .from(orders)
-              .where(
-                and(
-                  eq(orders.status, 'PENDING_CONFIRMATION'),
-                  eq(orders.cashierId, effCashierId),
-                  eq(orders.warehouseId, warehouseId),
-                  inArray(orders.paymentMethod, TRANSFER_PAYMENT_METHODS)
-                )
+        if (isPending && !creatorIsPrivileged) {
+          const openHoldLines = await tx
+            .select({
+              quantity: orderItems.quantity,
+              createdAt: orders.createdAt,
+              paymentExpiresAt: orders.paymentExpiresAt,
+            })
+            .from(orderItems)
+            .innerJoin(orders, eq(orderItems.orderId, orders.id))
+            .where(
+              and(
+                eq(orders.status, 'PENDING_CONFIRMATION'),
+                eq(orders.cashierId, effCashierId),
+                eq(orders.warehouseId, warehouseId)
               )
-          ).filter((o) => !this.isPendingExpired(o));
-          if (openHolds.length >= MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER) {
+            );
+          let heldUnits = 0;
+          for (const line of openHoldLines) {
+            if (this.isPendingExpired(line)) continue;
+            heldUnits += Number(line.quantity || 0);
+          }
+          const newUnits = Array.from(needTotal.values()).reduce((sum, qty) => sum + qty, 0);
+          if (heldUnits + newUnits > MAX_PENDING_HOLD_UNITS_PER_CASHIER) {
             throw AppError.conflict(
-              `Thu ngân đã có ${openHolds.length} đơn chuyển khoản chờ thanh toán tại kho này ` +
-                `(tối đa ${MAX_PENDING_TRANSFER_HOLDS_PER_CASHIER}). ` +
+              `Thu ngân đang giữ chỗ ${heldUnits} cuốn chờ tại kho này; đơn mới cần thêm ${newUnits} cuốn ` +
+                `vượt trần ${MAX_PENDING_HOLD_UNITS_PER_CASHIER} cuốn chờ. ` +
                 `Vui lòng xác nhận hoặc hủy các đơn cũ trước khi tạo đơn mới.`
             );
           }
@@ -1113,6 +1134,26 @@ export class OrderService {
            const cashbox = sessionRows[0];
            if (!cashbox || cashbox.status !== 'OPEN' || cashbox.warehouseId !== ord.warehouseId) {
              throw AppError.conflict('Két ca đã đóng, không thể duyệt đơn chờ.');
+           }
+         } else if (isCounterChannel(ord.channel)) {
+           // Đơn quầy không gắn phiên két, trong khi thu ngân ĐANG mở ca ở đúng
+           // kho này: đơn bắt buộc phải gắn vào ca đó. Bỏ trống là lách guard
+           // két (cashboxSessionId do client gửi) — chặn ở đây.
+           // Lưu ý: thu ngân không mở ca thì giữ nguyên hành vi cũ (cho duyệt),
+           // vì test-online-orders case 6b khoá đúng hành vi đó.
+           const openShift = await tx
+             .select({ id: cashboxSessions.id })
+             .from(cashboxSessions)
+             .where(
+               and(
+                 eq(cashboxSessions.cashierId, resolvedActorId),
+                 eq(cashboxSessions.warehouseId, ord.warehouseId),
+                 eq(cashboxSessions.status, 'OPEN')
+               )
+             )
+             .limit(1);
+           if (openShift.length > 0) {
+             throw AppError.conflict('Đơn tại quầy phải gắn phiên két ca đang mở, không thể duyệt.');
            }
          }
 
