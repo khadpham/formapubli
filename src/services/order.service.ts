@@ -119,6 +119,8 @@ export interface OrderFingerprint {
   customerName?: string | null;
   isGift?: boolean;
   giftReason?: string | null;
+  /** Ngữ nghĩa hoàn tất của request: false = tạo đơn PENDING giữ chỗ, true = chốt. */
+  confirmImmediately?: boolean;
   items?: OrderItemInput[];
   bundles?: Array<{ bundleId: string; quantity: number }>;
 }
@@ -194,6 +196,7 @@ export class OrderService {
              customerName,
              isGift: Boolean((params as any).isGift),
              giftReason: (params as any).giftReason,
+             confirmImmediately,
              items: items || [],
              bundles: params.bundles || [],
            },
@@ -365,6 +368,7 @@ export class OrderService {
              customerName,
              isGift,
             giftReason: params.giftReason,
+            confirmImmediately,
             items: looseItems,
             bundles: bundleOrders,
           },
@@ -542,6 +546,7 @@ export class OrderService {
               customerName,
               isGift,
               giftReason: params.giftReason,
+              confirmImmediately,
               items: looseItems,
               bundles: bundleOrders,
             },
@@ -799,6 +804,19 @@ export class OrderService {
       );
     }
 
+    // Ngữ nghĩa hoàn tất là một phần của fingerprint: replay key của đơn PENDING
+    // với confirmImmediately mặc định (true) là payload của sync offline — nếu
+    // im lặng trả lại đơn PENDING, client tưởng đã bán, xoá bản ghi offline và
+    // không có bút toán kho nào. Phải báo xung đột để client giữ đơn + ảnh ở
+    // NEEDS_RECONCILIATION. Chiều ngược lại (key của đơn đã COMPLETED) vẫn trả
+    // bản ghi cũ: đơn đã chốt thì trả về là đúng.
+    if (want.confirmImmediately !== false && ord.status === 'PENDING_CONFIRMATION') {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} đang chờ xác nhận (PENDING_CONFIRMATION), ` +
+          `nhưng request lại yêu cầu chốt đơn ngay. Dùng action=CONFIRM để hoàn tất đơn đang chờ.`
+      );
+    }
+
     if (ord.paymentMethod !== want.paymentMethod) {
       throw AppError.idempotency(
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có phương thức thanh toán khác (${ord.paymentMethod} vs ${want.paymentMethod}).`
@@ -1008,11 +1026,16 @@ export class OrderService {
   /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần).
    *  Cashier chỉ duyệt được đơn của chính mình; Owner/Manager duyệt mọi đơn.
    *  Đơn BANK_TRANSFER/QR_CODE bắt buộc có paymentProof (chốt quy trình, server
-   *  không kiểm chứng ảnh). */
+   *  không kiểm chứng ảnh).
+   *  `actorId` TUYỆT ĐỐI không có giá trị mặc định: mọi duyệt đơn đều là quyết định
+   *  của con người nên phải truy ra được người đó (session/actorContext). Không có
+   *  định danh thì fail loud — không bao giờ ghi 'staff-admin' (vừa là actor giả
+   *  trong audit + bút toán kho, vừa trùng cashierId mặc định của đơn legacy và
+   *  biến thành điều kiện vượt phân quyền của một caller không định danh). */
   static async confirmOrder(
     orderId: string,
     actorRole: string,
-    actorId = 'staff-admin',
+    actorId?: string,
     actorContext?: ActorContext,
     paymentProof?: TransferPaymentProof
   ) {
@@ -1020,6 +1043,10 @@ export class OrderService {
       actorRole = actorContext.role;
       actorId = actorContext.staffId;
     }
+    if (!actorId) {
+      throw AppError.forbidden('Thiếu định danh người duyệt đơn: không thể ghi nhận đơn dưới danh tính giả.');
+    }
+    const resolvedActorId: string = actorId;
 
     return await withDbRetry(async () => {
       let expiredError: Error | null = null;
@@ -1031,7 +1058,7 @@ export class OrderService {
         const ord = rows[0];
 
         // 1b. Phân quyền ngay trong transaction (route không phải lớp bảo vệ duy nhất)
-        this.assertOrderActor(ord, actorRole, actorId, 'xác nhận');
+        this.assertOrderActor(ord, actorRole, resolvedActorId, 'xác nhận');
 
         // 2. Nếu đã completed: kiểm tra xem có phải idempotent retry hợp lệ không
         if (ord.status === 'COMPLETED') {
@@ -1121,7 +1148,7 @@ export class OrderService {
             condition: 'NEW',
             documentRef: ord.orderCode,
             note: `Duyệt đơn online ${ord.orderCode} (${ord.channel})`,
-            actorId,
+            actorId: resolvedActorId,
             correlationId: orderId,
             idempotencyKey: `idem-confirm-${orderId}-${idx}-${ln.editionId}`,
             tx,
@@ -1147,7 +1174,7 @@ export class OrderService {
             id: `aud-order-confirm-${orderId}`,
             action: 'ORDER_CONFIRMED',
             actorRole,
-            actorId,
+            actorId: resolvedActorId,
             resource: '/api/orders',
             details: `Xác nhận ${ord.orderCode}; proof=${paymentProof?.id || 'N/A'}; capturedAt=${paymentProof?.capturedAt || 'N/A'}`,
           })
