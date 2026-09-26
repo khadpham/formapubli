@@ -81,11 +81,38 @@ export interface PaymentProofPhoto {
 export const PAYMENT_PHOTO_MAX_AGE_MS = 30 * 86_400_000;
 export const PAYMENT_PHOTO_MAX_COUNT = 100;
 
-/** Mã lỗi server buộc đơn chuyển khoản/QR vào đối soát thay vì retry mãi. */
-const RECONCILIATION_ERROR_CODES = new Set([
+/**
+ * Mã lỗi của `POST /api/orders` mà đơn chuyển khoản/QR KHÔNG THỂ tự retry.
+ *
+ * Mỗi mã ở đây đều là mã server thật sự phát ra (xem statusMap trong
+ * `handleApiError`) và đều là lỗi VĨNH VIỄN với payload hiện tại: gửi lại y
+ * hệt sẽ cho cùng kết quả. Với đơn đã thu tiền + đã có ảnh, điều đó nghĩa là
+ * retry mãi chỉ làm đơn biến mất khỏi màn hình — nên phải đưa sang đối soát
+ * để người có quyền quyết định, giữ cả bản ghi lẫn ảnh.
+ *
+ * - `INSUFFICIENT_ATP` (409): tồn đã bị bán/giữ chỗ mất.
+ * - `IDEMPOTENCY_CONFLICT` (409): key đã gắn với đơn khác (vd. replay key của
+ *   một đơn PENDING bằng payload sync offline).
+ * - `STATE_CONFLICT` (409): trạng thái thực tế không cho phép — gồm quy tắc
+ *   mới: đơn tại quầy phải có ca két OPEN nên thu ngân chưa mở ca sẽ bị chặn
+ *   khi sync lại đơn gom offline.
+ * - `INVALID_INPUT` (400): ca két không tồn tại/đã đóng khi tạo đơn, thiếu cặp
+ *   proof, chiết khấu sai — sửa payload không giúp, phải có người xử lý.
+ * - `FORBIDDEN` (403): cashier không có quyền tạo/xác nhận đơn này.
+ *
+ * Cố ý KHÔNG có `RATE_LIMITED` (429), `INTERNAL_ERROR` (500), `AUTH_REQUIRED`
+ * (401) và các mã 409 của miền khác: đó là lỗi tạm thời, thử lại sau là đúng,
+ * và đơn vẫn nằm trong `getPendingOfflineOrders` nên cashier vẫn thấy badge
+ * đang chờ. `CASHBOX_SESSION_NOT_FOUND` đã bị gỡ: không mã nào trong statusMap
+ * mang tên đó, nên nó là mã bịa — ca két hỏng thật sự đến dưới dạng
+ * `STATE_CONFLICT` (đơn chờ) hoặc `INVALID_INPUT` (tạo đơn).
+ */
+export const RECONCILIATION_ERROR_CODES: ReadonlySet<string> = new Set([
   'INSUFFICIENT_ATP',
   'IDEMPOTENCY_CONFLICT',
-  'CASHBOX_SESSION_NOT_FOUND',
+  'STATE_CONFLICT',
+  'INVALID_INPUT',
+  'FORBIDDEN',
 ]);
 
 const OFFLINE_PAYMENT_STATES: readonly OfflinePaymentState[] = [

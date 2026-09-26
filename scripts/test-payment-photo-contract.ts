@@ -977,5 +977,50 @@ assert.ok(
   'Toast thành công phải nằm SAU chặn !repaired'
 );
 
+// --- D1. Mã lỗi server mà client theo dõi phải là mã server THẬT SỰ phát ra --
+// Mọi mã trong RECONCILIATION_ERROR_CODES phải nằm trong statusMap của
+// handleApiError, nếu không đó là code chết: ca két hỏng thật sự vẫn rơi vào
+// nhánh FAILED chung chung và đơn đã thu tiền mất dấu vết.
+const statusMapBlock = readSource('src/lib/api-response.ts');
+// String.match với /g trả về TOÀN BỆNH khớp chứ không trả nhóm bắt, nên phải exec.
+const serverCodes = new Set<string>();
+const codeRe = /^\s*([A-Z_]+):\s*\d+,/gm;
+let codeMatch: RegExpExecArray | null;
+while ((codeMatch = codeRe.exec(statusMapBlock)) !== null) serverCodes.add(codeMatch[1]);
+expectMatch(offlineDb, /export const RECONCILIATION_ERROR_CODES/, 'RECONCILIATION_ERROR_CODES phải xuất ra để test kiểm chứng');
+for (const code of ['INSUFFICIENT_ATP', 'IDEMPOTENCY_CONFLICT', 'STATE_CONFLICT', 'INVALID_INPUT', 'FORBIDDEN']) {
+  assert.ok(
+    serverCodes.has(code),
+    `handleApiError thực sự phát ra mã ${code} (client theo dõi mã có thật)`
+  );
+}
+expectMatch(
+  offlineDb,
+  /'STATE_CONFLICT'/,
+  'RECONCILIATION_ERROR_CODES phải chứa STATE_CONFLICT (quy tắc ca két của đơn tại quầy)'
+);
+expectNoMatch(
+  offlineDb,
+  /'CASHBOX_SESSION_NOT_FOUND'/,
+  'Không theo dõi mã CASHBOX_SESSION_NOT_FOUND: server không có mã này trong statusMap'
+);
+// Mọi mã trong set phải là mã server thật (bắt mã bịa mới trong tương lai).
+const reconSetBlock = offlineDb.slice(
+  offlineDb.indexOf('RECONCILIATION_ERROR_CODES'),
+  offlineDb.indexOf('const OFFLINE_PAYMENT_STATES')
+);
+for (const m of reconSetBlock.match(/'([A-Z_]+)'/g) || []) {
+  assert.ok(
+    serverCodes.has(m.replace(/'/g, '')),
+    `Mã ${m} trong RECONCILIATION_ERROR_CODES phải là mã server thật sự phát ra`
+  );
+}
+// Sync phải giữ ảnh khi đơn vào đối soát, và bỏ qua đơn tiền mặt.
+expectMatch(
+  posCode,
+  /markPaymentProofPhotoSyncState\(order\.paymentProofId, 'NEEDS_RECONCILIATION'\)/,
+  'Đơn vào đối soát phải giữ ảnh (kể cả khi nguyên nhân là STATE_CONFLICT)'
+);
+
 console.log('ADVERSARIAL-A: state machine + reconciliation');
 console.log('PASS: transfer payment photo contract.');

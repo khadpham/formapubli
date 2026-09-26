@@ -7,6 +7,7 @@ import {
   needsManualReview,
   normalizeOfflinePaymentState,
   paymentStateAfterManualRepair,
+  RECONCILIATION_ERROR_CODES,
   OfflineOrder,
   OfflinePaymentState,
 } from '../src/lib/offline-db';
@@ -236,14 +237,24 @@ async function testOfflineEngine() {
     assert(actual === expected, `Trạng thái thanh toán offline: ${name}`, `Kỳ vọng ${expected}, nhận ${actual}`);
   }
 
-  // Xung đột ATP / idempotency / két đã đóng phải vào đối soát; lỗi mạng thì
+  // Xung đột ATP / idempotency / ca két phải vào đối soát; lỗi mạng thì
   // giữ nguyên để retry được, không kẹt đơn vào đối soát.
+  // (CASHBOX_SESSION_NOT_FOUND đã bị gỡ khỏi danh sách: server không có mã đó —
+  //  ca két hỏng thật sự đến dưới dạng STATE_CONFLICT hoặc INVALID_INPUT.)
   const reconcileBase: OfflineOrder = { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true };
-  for (const code of ['INSUFFICIENT_ATP', 'IDEMPOTENCY_CONFLICT', 'CASHBOX_SESSION_NOT_FOUND']) {
+  for (const code of ['INSUFFICIENT_ATP', 'IDEMPOTENCY_CONFLICT', 'STATE_CONFLICT', 'INVALID_INPUT', 'FORBIDDEN']) {
     const actual = applySyncErrorToOfflineOrder(reconcileBase, code);
     assert(
       actual === 'NEEDS_RECONCILIATION',
       `Lỗi sync ${code} chuyển đơn sang NEEDS_RECONCILIATION`,
+      `Nhận ${actual}`
+    );
+  }
+  for (const code of ['RATE_LIMITED', 'INTERNAL_ERROR', 'AUTH_REQUIRED', 'TRANSFER_TOCTOU_ATP_STALE', 'OVER_RETURN_LIMIT', '']) {
+    const actual = applySyncErrorToOfflineOrder(reconcileBase, code);
+    assert(
+      actual === 'PAID_PENDING_SYNC',
+      `Lỗi tạm thời ${code || '(không mã)'} giữ PAID_PENDING_SYNC để thử lại được`,
       `Nhận ${actual}`
     );
   }
@@ -364,6 +375,99 @@ async function testOfflineEngine() {
       paymentState: 'NEEDS_RECONCILIATION',
     }) === 'READY_TO_SYNC',
     'Đơn quà tặng (discountRate 1) sửa xong phải là READY_TO_SYNC'
+  );
+
+  // ==========================================================================
+  // N1d + AUDIT: mọi mã lỗi của POST /api/orders phải rơi vào trạng thái mà
+  // cashier thực sự xử lý được — không biến mất, không retry vô hạn.
+  //
+  // Server bắt buộc đơn tại quầy phải có ca két OPEN, nên đơn chuyển khoản gom
+  // offline rồi sync lúc thu ngân chưa mở ca sẽ nhận 409 STATE_CONFLICT.
+  // Trước đây STATE_CONFLICT không nằm trong RECONCILIATION_ERROR_CODES nên đơn
+  // rơi vào FAILED chung chung: mất ảnh, mất đối soát, mất dấu vết đã thu tiền.
+  // ==========================================================================
+  const paidDigital: OfflineOrder = {
+    ...reconcileBase,
+    paymentMethod: 'BANK_TRANSFER',
+    moneyReceived: true,
+    paymentState: 'PAID_PENDING_SYNC',
+    paymentProofId: 'proof-n1d-1',
+  };
+
+  // N1d: 409 STATE_CONFLICT từ quy tắc ca két.
+  assert(
+    applySyncErrorToOfflineOrder(paidDigital, 'STATE_CONFLICT') === 'NEEDS_RECONCILIATION',
+    'N1d: 409 STATE_CONFLICT (chưa mở ca két) → NEEDS_RECONCILIATION, không rơi vào FAILED chung chung'
+  );
+  assert(
+    needsManualReview({
+      ...paidDigital,
+      paymentState: applySyncErrorToOfflineOrder(paidDigital, 'STATE_CONFLICT') as OfflinePaymentState,
+    }),
+    'N1d: đơn kẹt vì ca két phải hiện ra panel rà soát cho người xử lý'
+  );
+  assert(
+    !AUTO_SYNCABLE_PAYMENT_STATES.includes(
+      applySyncErrorToOfflineOrder(paidDigital, 'STATE_CONFLICT') as OfflinePaymentState
+    ),
+    'N1d: đơn kẹt vì ca két không bị auto-sync lại mãi (giữ nguyên để người quyết định)'
+  );
+
+  // Bảng đầy đủ: mọi mã lỗi của orders API trên create/sync, và trạng thái
+  // client phải rơi vào. Đơn số (tiền mặt/quà tặng) không bị ảnh hưởng.
+  const ORDERS_API_SYNC_CODES: Array<[string, boolean]> = [
+    // [mã lỗi, có phải lỗi vĩnh viễn cần người xử lý không]
+    ['INSUFFICIENT_ATP', true],
+    ['IDEMPOTENCY_CONFLICT', true],
+    ['STATE_CONFLICT', true],
+    ['INVALID_INPUT', true],
+    ['FORBIDDEN', true],
+    ['RATE_LIMITED', false],
+    ['INTERNAL_ERROR', false],
+    ['AUTH_REQUIRED', false],
+    ['TRANSFER_TOCTOU_ATP_STALE', false],
+    ['OVER_RETURN_LIMIT', false],
+    ['', false],
+    ['SOMETHING_NEW_FROM_SERVER', false],
+  ];
+  for (const [code, permanent] of ORDERS_API_SYNC_CODES) {
+    const state = applySyncErrorToOfflineOrder(paidDigital, code);
+    if (permanent) {
+      assert(
+        state === 'NEEDS_RECONCILIATION',
+        `Mã lỗi vĩnh viễn ${code || '(rỗng)'} → NEEDS_RECONCILIATION (không retry mãi, không biến mất)`,
+        `Nhận ${state}`
+      );
+    } else {
+      assert(
+        state === 'PAID_PENDING_SYNC',
+        `Mã lỗi tạm thời ${code || '(rỗng)'} → giữ PAID_PENDING_SYNC để thử lại được`,
+        `Nhận ${state}`
+      );
+    }
+    // Đơn tiền mặt phải giữ nguyên READY_TO_SYNC với MỌI mã lỗi.
+    const cashState = applySyncErrorToOfflineOrder(
+      { ...reconcileBase, paymentMethod: 'CASH', moneyReceived: false },
+      code
+    );
+    assert(
+      cashState === 'READY_TO_SYNC',
+      `Đơn tiền mặt không bị kéo theo bởi mã lỗi ${code || '(rỗng)'} của luồng chuyển khoản`,
+      `Nhận ${cashState}`
+    );
+  }
+
+  // Mã lỗi của server mà client theo dõi phải là mã server thật sự phát ra.
+  // Trước đây set theo 'CASHBOX_SESSION_NOT_FOUND' — không mã nào trong
+  // statusMap của handleApiError mang tên đó, nên nhánh đó là code chết và ca
+  // két thật sự hỏng lại rơi vào nhánh FAILED chung chung.
+  assert(
+    !RECONCILIATION_ERROR_CODES.has('CASHBOX_SESSION_NOT_FOUND'),
+    'Bỏ mã bịa CASHBOX_SESSION_NOT_FOUND: server không bao giờ phát ra mã này'
+  );
+  assert(
+    RECONCILIATION_ERROR_CODES.has('STATE_CONFLICT'),
+    'RECONCILIATION_ERROR_CODES phải có STATE_CONFLICT'
   );
 
   // --- Cửa sổ 30 phút: hết hạn là quyết định của server, client chỉ chặn sớm ---
