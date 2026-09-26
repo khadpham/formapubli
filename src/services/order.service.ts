@@ -631,9 +631,10 @@ export class OrderService {
         // im lặng ta muốn diệt.
         const creatorRole = params.actorContext?.role;
         const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
+        let openShiftRows: Array<{ id: string; openedAt: string | null }> = [];
         if (isPending && isCounterChannel(channel) && !creatorIsPrivileged) {
-          const openShift = await tx
-            .select({ id: cashboxSessions.id })
+          openShiftRows = await tx
+            .select({ id: cashboxSessions.id, openedAt: cashboxSessions.openedAt })
             .from(cashboxSessions)
             .where(
               and(
@@ -643,14 +644,45 @@ export class OrderService {
               )
             )
             .limit(1);
-          if (openShift.length === 0) {
+          if (openShiftRows.length === 0) {
             throw AppError.conflict(
               `Đơn tại quầy cần ca két đang mở tại kho ${warehouseId} nhưng thu ngân chưa mở ca. ` +
                 `Vui lòng mở ca két trước khi tạo đơn chờ thanh toán.`
             );
           }
           if (!resolvedCashboxSessionId) {
-            resolvedCashboxSessionId = openShift[0].id;
+            resolvedCashboxSessionId = openShiftRows[0].id;
+          }
+        }
+
+        // B2c. Ca quá giờ chốt ngày thì POS tạm ngưng bán cho ca đó. Chốt ở
+        // SERVER (không chỉ ở UI) vì đây là chốt chặn tiền mặt. Ca mở sau
+        // nửa đêm thuộc ngày mới nên không bị chặn. Dùng lại row đã tải ở
+        // B2a; đơn tức thì chỉ thêm 1 câu đọc theo index (cashier,kho,status).
+        // ponytail: trần hiện tại = 1 câu đọc có index mỗi đơn quầy tức thì.
+        // Nếu sau này thấy nóng, nâng lên cache theo (cashier, kho) đã đóng
+        // bằng cách bắn bus/event khi AUTO_CLOSE/CLOSE chạy — không cache ở
+        // đây vì cache hỏng = bán được sau giờ.
+        if (isCounterChannel(channel) && !creatorIsPrivileged) {
+          const guardShift: Array<{ openedAt: string | null }> = openShiftRows.length > 0
+            ? [openShiftRows[0]]
+            : await tx
+                .select({ openedAt: cashboxSessions.openedAt })
+                .from(cashboxSessions)
+                .where(
+                  and(
+                    eq(cashboxSessions.cashierId, effCashierId),
+                    eq(cashboxSessions.warehouseId, warehouseId),
+                    eq(cashboxSessions.status, 'OPEN')
+                  )
+                )
+                .limit(1);
+          if (guardShift.length > 0 && guardShift[0].openedAt) {
+            CashboxService.assertShiftWithinBusinessDay({
+              openedAt: guardShift[0].openedAt,
+              warehouseId,
+              cashierId: effCashierId,
+            });
           }
         }
 
@@ -1493,6 +1525,131 @@ export interface CloseCashboxParams {
   };
 }
 
+export interface AutoCloseCashboxParams {
+  sessionId: string;
+  actorRole: string;
+  actorId: string;
+  notes?: string;
+  reason?: string;
+}
+
+// ============================================================================
+// CHỐT CA QUÁ GIỜ (auto-close shift) — bảo vệ "không ca nào bị bỏ quên qua ngày"
+// ----------------------------------------------------------------------------
+// Ràng buộc toàn vẹn: KHÔNG BAO GIỜ bịa số tiền thực đếm. closeSession tính
+// cashDiscrepancy = closingCashActual - expectedCash; nếu tự động chốt bằng
+// closingCashActual = expectedCash thì hệ thống khẳng định một con người đã
+// đếm két — đúng thứ ta không được phép nói. Mọi chốt tự động ghi
+// closingCashActual = NULL, cashDiscrepancy = NULL và đánh dấu UNVERIFIED.
+// ============================================================================
+
+/** Giờ chốt ngày (múi giờ máy chủ) mặc định: 23:59. */
+export const BUSINESS_DAY_CUTOFF_HHMM = '23:59';
+
+const CUTOFF_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function parseCutoff(raw: unknown): { h: number; m: number } | null {
+  if (typeof raw !== 'string') return null;
+  const m = CUTOFF_RE.exec(raw.trim());
+  return m ? { h: Number(m[1]), m: Number(m[2]) } : null;
+}
+
+/**
+ * Ngưỡng chốt ca cho một kho.
+ *
+ * FALLBACK ĐÃ GHI RÕ: bảng `warehouses` KHÔNG có cột giờ mở/đóng nên không thể
+ * đọc ngưỡng riêng từ dữ liệu kho mà không thêm migration. Nguồn duy nhất cho
+ * ngưỡng riêng từng kho (không đụng schema) là biến môi trường
+ * CASHBOX_CUTOFF_BY_WAREHOUSE='{"<warehouseId>":"HH:MM"}'; sau đó tới
+ * CASHBOX_BUSINESS_DAY_CUTOFF cho toàn hệ thống; cuối cùng lùi về hằng số
+ * BUSINESS_DAY_CUTOFF_HHMM (23:59).
+ */
+export function resolveBusinessDayCutoff(
+  warehouseId?: string | null,
+  override?: string | null
+): { cutoff: string; source: 'OVERRIDE' | 'WAREHOUSE_ENV' | 'GLOBAL_ENV' | 'DEFAULT' } {
+  const asOverride = parseCutoff(override);
+  if (asOverride) return { cutoff: `${pad2(asOverride.h)}:${pad2(asOverride.m)}`, source: 'OVERRIDE' };
+
+  if (warehouseId) {
+    let map: Record<string, string> = {};
+    try {
+      map = JSON.parse(process.env.CASHBOX_CUTOFF_BY_WAREHOUSE || '{}') || {};
+    } catch {
+      map = {};
+    }
+    const perWarehouse = parseCutoff(map[warehouseId]);
+    if (perWarehouse) return { cutoff: `${pad2(perWarehouse.h)}:${pad2(perWarehouse.m)}`, source: 'WAREHOUSE_ENV' };
+  }
+
+  const global = parseCutoff(process.env.CASHBOX_BUSINESS_DAY_CUTOFF);
+  if (global) return { cutoff: `${pad2(global.h)}:${pad2(global.m)}`, source: 'GLOBAL_ENV' };
+
+  return { cutoff: BUSINESS_DAY_CUTOFF_HHMM, source: 'DEFAULT' };
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** Ngày (YYYY-MM-DD) theo giờ máy chủ — "ngày nghiệp vụ" của một ca. */
+export function businessDateOf(instant: Date): string {
+  return `${instant.getFullYear()}-${pad2(instant.getMonth() + 1)}-${pad2(instant.getDate())}`;
+}
+
+function cutoffInstantOf(businessDate: string, cutoff: string): Date {
+  const [y, mo, d] = businessDate.split('-').map(Number);
+  const p = parseCutoff(cutoff)!;
+  return new Date(y, mo - 1, d, p.h, p.m, 0, 0);
+}
+
+/**
+ * Đồng hồ dùng cho kiểm tra chốt ca. CASHBOX_TEST_NOW chỉ dùng cho test tự
+ * động (đồng hồ thật ở mọi lần chạy thật) — để case "quá giờ" không phụ thuộc
+ * giờ thật lúc chạy suite.
+ */
+function businessDayNow(): Date {
+  const override = process.env.CASHBOX_TEST_NOW;
+  const d = override ? new Date(override) : new Date();
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+export interface ShiftCutoffEvaluation {
+  businessDate: string;
+  cutoff: string;
+  cutoffSource: 'OVERRIDE' | 'WAREHOUSE_ENV' | 'GLOBAL_ENV' | 'DEFAULT';
+  cutoffAt: string;
+  openedAt: string;
+  elapsedMinutes: number;
+  overdue: boolean;
+}
+
+/**
+ * Ca quá giờ khi ĐÃ QUA mốc chốt ngày của chính ngày nghiệp vụ mà ca mở.
+ * Nhờ vậy ca mở SAU NỬA ĐÊM (bán đêm, mở 00:10) thuộc ngày mới nên chưa quá
+ * giờ — ca đêm hợp lệ không bị chặn.
+ */
+export function evaluateShiftCutoff(
+  openedAt: string | Date,
+  opts: { warehouseId?: string | null; now?: Date; cutoff?: string | null } = {}
+): ShiftCutoffEvaluation {
+  const now = opts.now || businessDayNow();
+  const { cutoff, source } = resolveBusinessDayCutoff(opts.warehouseId, opts.cutoff);
+  const opened = openedAt instanceof Date ? openedAt : new Date(openedAt);
+  const businessDate = businessDateOf(opened);
+  const cutoffAt = cutoffInstantOf(businessDate, cutoff);
+  const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - opened.getTime()) / 60_000));
+  return {
+    businessDate,
+    cutoff,
+    cutoffSource: source,
+    cutoffAt: cutoffAt.toISOString(),
+    openedAt: (openedAt instanceof Date ? openedAt : opened).toISOString(),
+    elapsedMinutes,
+    overdue: now.getTime() > cutoffAt.getTime(),
+  };
+}
+
 export class CashboxService {
   /**
    * Mở ca làm việc mới cho thu ngân (Open Shift / Cashbox Session).
@@ -1745,6 +1902,248 @@ export class CashboxService {
          status: 'CLOSED',
        };
      }));
+  }
+
+  /**
+   * KIỂM TRA CHỐT CA QUÁ GIỜ (read-only).
+   *
+   * Rẻ + idempotent + KHÔNG ghi gì: một câu đọc theo index status của
+   * cashbox_sessions, rồi chỉ tính thống kê ca cho các ca thực sự quá giờ
+   * (thường 0-1 ca/kho/ngày). Nhờ vậy POS gọi được mỗi lần mở app.
+   */
+  static async getStaleOpenShiftCheck(
+    params: {
+      warehouseId?: string | null;
+      cashierId?: string | null;
+      now?: Date;
+      cutoff?: string | null;
+    } = {},
+    txOrDb: any = db
+  ) {
+    const now = params.now || businessDayNow();
+    const conditions = [eq(cashboxSessions.status, 'OPEN')];
+    if (params.warehouseId) conditions.push(eq(cashboxSessions.warehouseId, params.warehouseId));
+    if (params.cashierId) conditions.push(eq(cashboxSessions.cashierId, params.cashierId));
+
+    const openSessions = await txOrDb
+      .select()
+      .from(cashboxSessions)
+      .where(and(...conditions));
+
+    const shifts: any[] = [];
+    for (const s of openSessions) {
+      const evaluation = evaluateShiftCutoff(s.openedAt, {
+        warehouseId: s.warehouseId,
+        now,
+        cutoff: params.cutoff,
+      });
+      if (!evaluation.overdue) continue;
+
+      const stats = await this.calculateSessionStats(s.id, txOrDb);
+      const amountNeedingClosure = (s.openingCash || 0) + stats.totalCashSales;
+      const wh = await txOrDb
+        .select({ code: warehouses.code, name: warehouses.name })
+        .from(warehouses)
+        .where(eq(warehouses.id, s.warehouseId))
+        .limit(1);
+      shifts.push({
+        sessionId: s.id,
+        warehouseId: s.warehouseId,
+        warehouseCode: wh[0]?.code || null,
+        warehouseName: wh[0]?.name || null,
+        cashierId: s.cashierId,
+        openedAt: s.openedAt,
+        businessDate: evaluation.businessDate,
+        cutoff: evaluation.cutoff,
+        cutoffAt: evaluation.cutoffAt,
+        elapsedMinutes: evaluation.elapsedMinutes,
+        amountNeedingClosure,
+        expectedCash: amountNeedingClosure,
+        action: 'CLOSE_SHIFT' as const,
+        actionBy: 'CASHIER' as const,
+        autoCloseAction: 'AUTO_CLOSE' as const,
+        autoCloseActionBy: 'MANAGER' as const,
+        message:
+          `Ca két ${s.id} của thu ngân ${s.cashierId} tại kho ${s.warehouseId} mở từ ${s.openedAt} ` +
+          `đã quá giờ chốt ngày (${evaluation.cutoff} ngày ${evaluation.businessDate}). ` +
+          `Thu ngân cần đếm tiền thực tế và chốt ca. Nếu không thể, quản lý chốt tự động: ` +
+          `tiền mặt sẽ KHÔNG được đếm nên chênh lệch KHÔNG xác minh.`,
+      });
+    }
+
+    const resolvedCutoff = resolveBusinessDayCutoff(params.warehouseId, params.cutoff);
+    return {
+      serverTime: now.toISOString(),
+      cutoff: resolvedCutoff.cutoff,
+      cutoffSource: resolvedCutoff.source,
+      count: shifts.length,
+      salesBlocked: shifts.length > 0,
+      shifts,
+    };
+  }
+
+  /**
+   * CHỐT CA TỰ ĐỘNG — chỉ gọi được bởi quản lý.
+   *
+   * KHÔNG bịa tiền thực đếm: closingCashActual = NULL, cashDiscrepancy = NULL,
+   * discrepancyVerified = false. Audit riêng (AUTO_CLOSE_SHIFT, actor SYSTEM)
+   * nên không bao giờ nhập nhầm với chốt tay của con người.
+   */
+  static async autoCloseSession(params: AutoCloseCashboxParams, txOrDb?: any) {
+    if (txOrDb) return withDbRetry(() => this.applyAutoClose(txOrDb, params));
+    return withDbRetry(() => db.transaction((tx) => this.applyAutoClose(tx, params)));
+  }
+
+  private static async applyAutoClose(tx: any, params: AutoCloseCashboxParams) {
+    const { sessionId, notes, reason } = params;
+    const AUDIT_ID = `aud-cashbox-auto-close-${sessionId}`;
+    const AUTO_NOTE = 'AUTO_CLOSE_UNVERIFIED_CASH';
+
+    return (async () => {
+      const existing = await tx
+        .select()
+        .from(cashboxSessions)
+        .where(eq(cashboxSessions.id, sessionId))
+        .limit(1);
+      if (existing.length === 0) {
+        throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
+      }
+      const session = existing[0];
+
+      // Đã chốt tự động trước đó → replay, không ghi thêm.
+      if (session.status === 'CLOSED') {
+        const priorAudit = await tx
+          .select({ id: auditLogs.id })
+          .from(auditLogs)
+          .where(eq(auditLogs.id, AUDIT_ID))
+          .limit(1);
+        if (priorAudit.length === 0) {
+          throw AppError.conflict('Phiên két tiền đã được chốt tay bởi con người, không thể chốt tự động ghi đè.');
+        }
+        return {
+          sessionId,
+          cashierId: session.cashierId,
+          warehouseId: session.warehouseId,
+          openingCash: session.openingCash,
+          closingCashActual: null,
+          expectedCash: session.expectedCash ?? 0,
+          cashDiscrepancy: null,
+          discrepancyVerified: false,
+          totalCashSales: session.totalCashSales ?? 0,
+          totalTransferSales: session.totalTransferSales ?? 0,
+          totalOrdersCount: session.totalOrdersCount ?? 0,
+          openedAt: session.openedAt,
+          closedAt: session.closedAt,
+          status: 'CLOSED' as const,
+          closeType: 'AUTO' as const,
+          isIdempotent: true,
+        };
+      }
+
+      // Giữ nguyên guard của chốt tay: còn đơn chờ thì không đụng (không bỏ rơi đơn).
+      const pending = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.cashboxSessionId, sessionId),
+            eq(orders.status, 'PENDING_CONFIRMATION')
+          )
+        )
+        .limit(1);
+      if (pending.length > 0) {
+        throw AppError.conflict('Còn đơn chuyển khoản/QR đang chờ. Hãy xác nhận hoặc hủy trước khi chốt ca.');
+      }
+
+      const stats = await this.calculateSessionStats(sessionId, tx);
+      const expectedCash = session.openingCash + stats.totalCashSales;
+      const closedAt = new Date().toISOString();
+      const noteText = [
+        AUTO_NOTE,
+        reason ? `Lý do: ${reason}` : null,
+        notes || null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      const updateResult = await tx
+        .update(cashboxSessions)
+        .set({
+          closingCashActual: null, // KHÔNG có số đếm — KHÔNG được bịa
+          expectedCash,
+          cashDiscrepancy: null, // lệch chưa kiểm chứng
+          totalCashSales: stats.totalCashSales,
+          totalTransferSales: stats.totalTransferSales,
+          totalOrdersCount: stats.totalOrdersCount,
+          status: 'CLOSED',
+          notes: session.notes ? `${session.notes} | ${noteText}` : noteText,
+          closedAt,
+        })
+        .where(and(eq(cashboxSessions.id, sessionId), eq(cashboxSessions.status, 'OPEN')));
+      if (updateResult.rowsAffected !== 1) {
+        throw AppError.conflict('Phiên két tiền đã được đóng bởi thao tác khác.');
+      }
+
+      await tx
+        .insert(auditLogs)
+        .values({
+          id: AUDIT_ID,
+          action: 'AUTO_CLOSE_SHIFT',
+          actorRole: 'SYSTEM',
+          actorId: 'SYSTEM',
+          resource: '/api/cashbox',
+          details:
+            `HỆ THỐNG chốt ca két tự động ${sessionId} (thủ phát: ${params.actorRole} ${params.actorId}). ` +
+            `KHÔNG đếm tiền mặt (closingCashActual = NULL) nên chênh lệch KHÔNG xác minh. ` +
+            `Kỳ vọng hệ thống: ${expectedCash} đ.`.slice(0, 500),
+          ipAddress: 'local',
+        })
+        .onConflictDoNothing({ target: auditLogs.id });
+
+      return {
+        sessionId,
+        cashierId: session.cashierId,
+        warehouseId: session.warehouseId,
+        openingCash: session.openingCash,
+        closingCashActual: null,
+        expectedCash,
+        cashDiscrepancy: null,
+        discrepancyVerified: false,
+        totalCashSales: stats.totalCashSales,
+        totalTransferSales: stats.totalTransferSales,
+        totalOrdersCount: stats.totalOrdersCount,
+        openedAt: session.openedAt,
+        closedAt,
+        status: 'CLOSED' as const,
+        closeType: 'AUTO' as const,
+        isIdempotent: false,
+      };
+    })();
+  }
+
+  /**
+   * Chặn bán tại quầy khi ca của thu ngân đã quá giờ chốt ngày.
+   * Hàm thuần: không đọc DB (dùng session row đã tải sẵn) để không làm nặng
+   * đường nóng tạo đơn.
+   */
+  static assertShiftWithinBusinessDay(params: {
+    openedAt: string;
+    warehouseId: string;
+    cashierId: string;
+    now?: Date;
+    cutoff?: string | null;
+  }) {
+    const evaluation = evaluateShiftCutoff(params.openedAt, {
+      warehouseId: params.warehouseId,
+      now: params.now,
+      cutoff: params.cutoff,
+    });
+    if (!evaluation.overdue) return evaluation;
+    throw AppError.conflict(
+      `Đã quá giờ chốt ngày ${evaluation.cutoff} ngày ${evaluation.businessDate}: ca két của thu ngân ` +
+        `${params.cashierId} tại kho ${params.warehouseId} vẫn chưa chốt, POS tạm ngưng tạo đơn cho ca này. ` +
+        `Vui lòng đếm tiền thực tế trong két và chốt ca (Đóng ca) trước khi bán tiếp.`
+    );
   }
 
   /**

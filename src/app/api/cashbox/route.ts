@@ -17,6 +17,30 @@ export async function GET(req: NextRequest) {
     const cashierId =
       session.role === 'ROLE_CASHIER' ? session.actorId : searchParams.get('cashierId');
 
+    // CHECK CHỐT CA QUÁ GIỜ — rẻ, chỉ đọc, idempotent, KHÔNG ghi gì.
+    // POS gọi mỗi lần mở app: GET /api/cashbox?check=stale-shifts&warehouseId=...
+    // Câu hỏi: ca nào còn mở quá giờ chốt ngày, cần ai làm gì.
+    //
+    // TRIỂN KHAI (repo KHÔNG có cron/scheduler/instrumentation — không tự bịa):
+    //   1) POS: gọi endpoint này mỗi lần mở app (và sau mỗi lần đóng app /
+    //      quay lại foreground) cho từng kho bán tại quầy.
+    //   2) Hằng ngày SAU cutoff, một cron/job của hạ tầng gọi, mỗi kho 1 lần:
+    //        GET  /api/cashbox?check=stale-shifts&warehouseId=<id>   (để cảnh báo/kiểm tra)
+    //        POST /api/cashbox  {action:'AUTO_CLOSE', sessionId}    (chỉ khi thật sự cần)
+    //        POST /api/pos/daily-settlement {warehouseId, date, autoCloseOpenShifts:true}
+    //      → chốt ngày idempotent, tự chốt các ca quá giờ (tiền mặt KHÔNG đếm,
+    //        chênh lệch KHÔNG xác minh), từ chối nếu còn đơn chờ thanh toán.
+    //   Job KHÔNG cần chạy đúng phút: endpoint tự tính quá giờ theo cutoff của
+    //   từng kho, chạy muộn vẫn đúng.
+    if (searchParams.get('check') === 'stale-shifts') {
+      const data = await CashboxService.getStaleOpenShiftCheck({
+        warehouseId,
+        cashierId: cashierId || undefined,
+        cutoff: searchParams.get('cutoff') || undefined,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
     if (cashierId) {
       // Lấy phiên két tiền hiện đang mở của thu ngân
        const activeSession = await CashboxService.getActiveSession(cashierId, warehouseId);
@@ -102,6 +126,31 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (action === 'AUTO_CLOSE') {
+      // Chỉ quản lý được chốt tự động. KHÔNG yêu cầu closingCashActual: nếu bắt
+      // buộc nhập số tiền thì người dùng sẽ bịa ra một con số để qua chỗ này.
+      if (userRole === 'ROLE_CASHIER') {
+        return NextResponse.json(
+          { success: false, code: 'FORBIDDEN', error: 'Chỉ quản lý mới được chốt ca tự động. Bạn cần đếm tiền thực tế và chốt ca của chính mình.' },
+          { status: 403 }
+        );
+      }
+      if (!sessionId) {
+        return NextResponse.json(
+          { success: false, error: 'Thiếu mã phiên (sessionId).' },
+          { status: 400 }
+        );
+      }
+      const result = await CashboxService.autoCloseSession({
+        sessionId,
+        notes,
+        reason: typeof body.reason === 'string' ? body.reason : undefined,
+        actorRole: userRole,
+        actorId: session.actorId,
+      });
+      return NextResponse.json({ success: true, data: result });
+    }
+
     if (action === 'CLOSE') {
       if (!sessionId || closingCashActual === undefined) {
         return NextResponse.json(
@@ -147,7 +196,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: false, error: `Hành động không hợp lệ: ${action}. Chỉ chấp nhận 'OPEN' hoặc 'CLOSE'.` },
+      { success: false, error: `Hành động không hợp lệ: ${action}. Chỉ chấp nhận 'OPEN', 'CLOSE' hoặc 'AUTO_CLOSE'.` },
       { status: 400 }
     );
   } catch (error: any) {

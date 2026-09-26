@@ -10,8 +10,12 @@ import {
   editions,
   works,
   warehouses,
+  auditLogs,
+  idempotencyKeys,
 } from '../db';
 import { AppError } from './app-error';
+import { CashboxService, businessDateOf, evaluateShiftCutoff } from './order.service';
+import { withDbRetry } from '../lib/db-retry';
 
 export interface DailySettlementFilter {
   date?: string; // YYYY-MM-DD
@@ -306,5 +310,208 @@ export class DailySettlementService {
       topSellers,
       inventoryReconciliation,
     };
+  }
+
+  /** Khoá duy nhất của bản ghi chốt ngày: đúng 1 lần / ngày / kho. */
+  static dayCloseKey(warehouseId: string, date: string): string {
+    return `day-close:${warehouseId}:${date}`;
+  }
+
+  /** Đọc bản ghi chốt ngày đã có (null nếu ngày đó chưa chốt). */
+  static async getDayCloseRecord(warehouseId: string, date: string, txOrDb: any = db) {
+    return (await DailySettlementService.readDayClose(warehouseId, date, txOrDb))?.res ?? null;
+  }
+
+  private static async readDayClose(warehouseId: string, date: string, txOrDb: any) {
+    const rows = await txOrDb
+      .select()
+      .from(idempotencyKeys)
+      .where(eq(idempotencyKeys.key, DailySettlementService.dayCloseKey(warehouseId, date)))
+      .limit(1);
+    if (rows.length === 0) return null;
+    try {
+      return JSON.parse(rows[0].responseJson || 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * CHỐT NGÀY — đánh dấu ngày nghiệp vụ đã quyết toán, đúng 1 lần / ngày / kho.
+   *
+   * - Idempotent: gọi lại y hệt trả về đúng bản ghi cũ (isDuplicate), không
+   *   ghi thêm bản ghi/audit. Gọi lại với nội dung khác → từ chối, vì một ngày
+   *   không thể có hai bản chốt khác nhau.
+   * - Không bịa tiền: ca nào không ai đếm thì closingCashActual = NULL và bản
+   *   ghi ghi rõ cashVerification = 'UNVERIFIED'.
+   * - Không bỏ rơi đơn: đơn chờ thanh toán chặn chốt ngày; đơn tạo offline
+   *   chưa đồng bộ được liệt kê trong unsettledOrders chứ không bị giấu đi.
+   */
+  static async closeDay(
+    params: {
+      warehouseId: string;
+      date?: string;
+      actorRole: string;
+      actorId: string;
+      notes?: string;
+      autoCloseOpenShifts?: boolean;
+    },
+    txOrDb: any = db
+  ) {
+    const warehouseId = params.warehouseId;
+    if (!warehouseId) throw AppError.invalid('Thiếu kho (warehouseId).');
+    const date = params.date || new Date().toISOString().slice(0, 10);
+    const key = DailySettlementService.dayCloseKey(warehouseId, date);
+    const fingerprint = JSON.stringify({
+      warehouseId,
+      date,
+      autoCloseOpenShifts: !!params.autoCloseOpenShifts,
+      notes: params.notes || null,
+    });
+
+    const prior = await DailySettlementService.readDayClose(warehouseId, date, txOrDb);
+    if (prior) {
+      if (prior.fp === fingerprint) return { ...prior.res, isDuplicate: true as const };
+      throw AppError.idempotency(
+        `Ngày ${date} tại kho ${warehouseId} đã chốt rồi (bản ghi ${key}). Không thể chốt lại với nội dung khác.`
+      );
+    }
+
+    return withDbRetry(() =>
+      db.transaction(async (tx) => {
+        // Đọc lại trong transaction: đua hai lần chốt ngày thì chỉ một lần thắng.
+        const raced = await tx.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, key)).limit(1);
+        if (raced.length > 0) {
+          let env: any = null;
+          try { env = JSON.parse(raced[0].responseJson || 'null'); } catch { env = null; }
+          if (env?.fp === fingerprint && env?.res) return { ...env.res, isDuplicate: true as const };
+          throw AppError.idempotency(
+            `Ngày ${date} tại kho ${warehouseId} đã chốt rồi (bản ghi ${key}). Không thể chốt lại với nội dung khác.`
+          );
+        }
+
+        const openSessions = await tx
+          .select()
+          .from(cashboxSessions)
+          .where(and(eq(cashboxSessions.warehouseId, warehouseId), eq(cashboxSessions.status, 'OPEN')));
+
+        // Chỉ các ca thuộc ngày nghiệp vụ <= ngày đang chốt mới liên quan.
+        const relevant: any[] = openSessions.filter(
+          (s: any) => s.openedAt && businessDateOf(new Date(s.openedAt)) <= date
+        );
+        const autoClosedSessions: string[] = [];
+        for (const s of relevant) {
+          if (!params.autoCloseOpenShifts) break;
+          const evaluation = evaluateShiftCutoff(s.openedAt as string, { warehouseId: s.warehouseId });
+          if (!evaluation.overdue) continue;
+          await CashboxService.autoCloseSession(
+            {
+              sessionId: s.id,
+              actorRole: params.actorRole,
+              actorId: params.actorId,
+              reason: `Chốt ngày ${date} tự động cho ca quá giờ.`,
+            },
+            tx
+          );
+          autoClosedSessions.push(s.id);
+        }
+
+        const stillOpen = await tx
+          .select({ id: cashboxSessions.id, openedAt: cashboxSessions.openedAt })
+          .from(cashboxSessions)
+          .where(and(eq(cashboxSessions.warehouseId, warehouseId), eq(cashboxSessions.status, 'OPEN')));
+        const blocking = stillOpen.filter((s: any) => s.openedAt && businessDateOf(new Date(s.openedAt)) <= date);
+        if (blocking.length > 0) {
+          throw AppError.conflict(
+            `Chưa thể chốt ngày ${date} tại kho ${warehouseId}: còn ${blocking.length} ca két chưa chốt ` +
+              `(${blocking.map((b: any) => b.id).join(', ')}). Vui lòng chốt ca trước khi chốt ngày.`
+          );
+        }
+
+        const pendingOrders = await tx
+          .select({ id: orders.id, orderCode: orders.orderCode })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.warehouseId, warehouseId),
+              eq(orders.status, 'PENDING_CONFIRMATION'),
+              like(orders.createdAt, `${date}%`)
+            )
+          );
+        if (pendingOrders.length > 0) {
+          throw AppError.conflict(
+            `Chưa thể chốt ngày ${date}: còn ${pendingOrders.length} đơn chờ thanh toán ` +
+              `(${pendingOrders.map((o: any) => o.orderCode).join(', ')}). Hãy xác nhận hoặc hủy trước.`
+          );
+        }
+
+        const report = await DailySettlementService.getDailyFairSettlement({ warehouseId, date }, tx);
+        const unverifiedSessions = report.cashboxReconciliation.sessions
+          .filter((s: any) => s.closingCashActual === null)
+          .map((s: any) => s.id);
+        const cashVerification = unverifiedSessions.length > 0 ? 'UNVERIFIED' : 'VERIFIED';
+
+        const unsettledOrders = await tx
+          .select({ id: orders.id, orderCode: orders.orderCode, status: orders.status, syncStatus: orders.syncStatus })
+          .from(orders)
+          .where(and(eq(orders.warehouseId, warehouseId), like(orders.createdAt, `${date}%`)));
+
+        const record = {
+          dayCloseKey: key,
+          reportDate: date,
+          warehouseId,
+          closedAt: new Date().toISOString(),
+          closedBy: `${params.actorRole} ${params.actorId}`,
+          netSales: report.financials.netSales,
+          totalOrdersCount: report.financials.totalOrdersCount,
+          cashVariance: report.cashboxReconciliation.cashVariance,
+          cashVerification,
+          unverifiedSessions,
+          autoClosedSessions,
+          notes: params.notes || null,
+          unsettledOrders: unsettledOrders
+            .filter((o: any) => o.status !== 'COMPLETED' || o.syncStatus === 'PENDING_SYNC')
+            .map((o: any) => ({
+              id: o.id,
+              orderCode: o.orderCode,
+              status: o.status,
+              syncStatus: o.syncStatus,
+              reason: o.status === 'PENDING_CONFIRMATION' ? 'CHO_THANH_TOAN' : 'CHUA_DONG_BO',
+            })),
+        };
+
+        await tx
+          .insert(idempotencyKeys)
+          .values({
+            key,
+            scope: 'day-close',
+            responseJson: JSON.stringify({ fp: fingerprint, res: record }),
+          });
+
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-day-close-${warehouseId}-${date}`,
+            action: 'SETTLE_DAY',
+            actorRole: params.actorRole,
+            actorId: params.actorId,
+            resource: '/api/pos/daily-settlement',
+            details:
+              `Chốt ngày ${date} tại kho ${warehouseId}: doanh thu thuần ${record.netSales} đ, ` +
+              `${record.totalOrdersCount} đơn. Kiểm kê tiền mặt: ${cashVerification}` +
+              (unverifiedSessions.length > 0
+                ? ` — các ca ${unverifiedSessions.join(', ')} KHÔNG có số tiền thực đếm nên chênh lệch KHÔNG xác minh.`
+                : '.') +
+              (record.unsettledOrders.length > 0
+                ? ` Đơn chưa quyết toán (không bị bỏ rơi): ${record.unsettledOrders.map((o: any) => o.orderCode).join(', ')}.`
+                : '')
+                .slice(0, 500),
+            ipAddress: 'local',
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+
+        return { ...record, isDuplicate: false as const };
+      })
+    );
   }
 }
