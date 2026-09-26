@@ -12,7 +12,7 @@ import {
   OfflinePaymentState,
 } from '../src/lib/offline-db';
 import { OrderService } from '../src/services/order.service';
-import { db, orders, editions, warehouses } from '../src/db';
+import { db, orders, editions, warehouses, cashboxSessions } from '../src/db';
 import { eq } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
 
@@ -493,7 +493,33 @@ async function testOfflineEngine() {
   // nào. Nay server trả 409 IDEMPOTENCY_CONFLICT. Phải chứng minh client ánh xạ
   // đúng mã đó thành NEEDS_RECONCILIATION (không xoá, không coi là sync xong)
   // và chiều ngược lại (đơn đã COMPLETED) vẫn trả bản ghi cũ để xoá hợp lệ.
+  //
+  // Fixture bám sát luồng thật: đơn tại quầy (RETAIL_OFFICE) chỉ được tạo ở
+  // trạng thái PENDING khi thu ngân đang mở ca két tại đúng kho đó. Fixture cũ
+  // tạo đơn PENDING mà không có phiên két nên chết ngay với STATE_CONFLICT,
+  // khiến cả suite chết lúc dọn dữ liệu. Ở đây ta mở phiên két thật rồi gắn
+  // vào đơn, và assert là phiên đó thực sự được ghi lên bản ghi — để fixture tự
+  // tài liệu hoá một luồng khả thi thay vì một luồng đã chết.
   // ==========================================================================
+  const posCashboxId = `cbs-offline-engine-${generateUUIDv7().slice(-8)}`;
+  await db.insert(cashboxSessions).values({
+    id: posCashboxId,
+    warehouseId: sampleWarehouse.id,
+    cashierId: 'cashier-pos-test',
+    openingCash: 0,
+    status: 'OPEN',
+  });
+  const posCashboxRow = await db
+    .select()
+    .from(cashboxSessions)
+    .where(eq(cashboxSessions.id, posCashboxId))
+    .limit(1);
+  assert(
+    posCashboxRow.length === 1 && posCashboxRow[0].status === 'OPEN',
+    'Fixture: mở được ca két OPEN cho cashier-pos-test tại kho của đơn tại quầy',
+    `session=${posCashboxId} status=${posCashboxRow[0]?.status}`
+  );
+
   const pendingUuid = generateUUIDv7();
   const pendingKey = `idem-pending-${pendingUuid}`;
   const pendingCode = `OFF-PENDING-${pendingUuid.slice(9, 17)}`;
@@ -509,9 +535,16 @@ async function testOfflineEngine() {
     paymentMethod: 'BANK_TRANSFER',
     fiscalScope: 'INTERNAL_MANAGEMENT',
     cashierId: 'cashier-pos-test',
+    cashboxSessionId: posCashboxId,
     confirmImmediately: false,
     items: [{ editionId: sampleEdition.id, quantity: 1 }],
   });
+  const pendingRow = await db.select().from(orders).where(eq(orders.id, pendingUuid)).limit(1);
+  assert(
+    pendingRow[0]?.cashboxSessionId === posCashboxId,
+    'Fixture: đơn PENDING tại quầy gắn đúng ca két đang mở (luồng tạo được trong thực tế)',
+    `cashboxSessionId=${pendingRow[0]?.cashboxSessionId}`
+  );
   assert(
     madePending.status === 'PENDING_CONFIRMATION',
     'Đơn chuyển khoản tạo ở trạng thái PENDING (giữ chỗ ATP)',
@@ -520,6 +553,8 @@ async function testOfflineEngine() {
 
   // Replay đúng key đó bằng payload sync offline (không confirmImmediately) —
   // đây chính là tình huống POS gặp khi mạng chết giữa chừng rồi sync lại.
+  // Cố ý dùng CÙNG cashboxSessionId: fingerprint chỉ khác nhau ở
+  // confirmImmediately, nên nếu quy tắc chặn replay bị gỡ thì test này phải đỏ.
   let conflictCode = '';
   let conflictMessage = '';
   let conflicted = false;
@@ -536,6 +571,7 @@ async function testOfflineEngine() {
       paymentMethod: 'BANK_TRANSFER',
       fiscalScope: 'INTERNAL_MANAGEMENT',
       cashierId: 'cashier-pos-test',
+      cashboxSessionId: posCashboxId,
       items: [{ editionId: sampleEdition.id, quantity: 1 }],
     });
   } catch (err: any) {
@@ -593,6 +629,7 @@ async function testOfflineEngine() {
     paymentMethod: 'BANK_TRANSFER',
     fiscalScope: 'INTERNAL_MANAGEMENT',
     cashierId: 'cashier-pos-test',
+    cashboxSessionId: posCashboxId,
     confirmImmediately: true,
     items: [{ editionId: sampleEdition.id, quantity: 1 }],
   });
@@ -613,6 +650,7 @@ async function testOfflineEngine() {
     paymentMethod: 'BANK_TRANSFER',
     fiscalScope: 'INTERNAL_MANAGEMENT',
     cashierId: 'cashier-pos-test',
+    cashboxSessionId: posCashboxId,
     confirmImmediately: true,
     items: [{ editionId: sampleEdition.id, quantity: 1 }],
   });
@@ -623,6 +661,7 @@ async function testOfflineEngine() {
   );
   await db.delete(orders).where(eq(orders.id, pendingUuid));
   await db.delete(orders).where(eq(orders.id, completedUuid));
+  await db.delete(cashboxSessions).where(eq(cashboxSessions.id, posCashboxId));
 
   await db.delete(orders).where(eq(orders.id, offlineUuid));
 
