@@ -1,3 +1,5 @@
+import { isPaymentWindowExpired } from './offline-db';
+
 /**
  * CACHE TÀI KHOẢN NGÂN HÀNG THEO KHO (offline QR).
  *
@@ -85,5 +87,116 @@ export function writeBankAccountsCache(value: CachedBankAccounts): void {
     localStorage.setItem(cacheKey(value.warehouseId), JSON.stringify(value));
   } catch {
     // localStorage bị chặn (private mode, hết quota) → offline QR chỉ dùng được khi còn mạng.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PHIÊN CHUYỂN KHOẢN SỐNG SÓT QUA REFRESH
+//
+// `transferSession` của POS nằm trong React state nên refresh trình duyệt làm
+// mất nó, trong khi đơn PENDING trên server vẫn giữ ATP 30 phút và đơn offline
+// vẫn nằm trong IndexedDB. Cashier quay lại thấy màn hình trống, tưởng đơn
+// chưa tạo, và bấm "Tạo đơn & hiện QR" lần nữa → hai đơn PENDING cho cùng một
+// giỏ hàng. Cache lại phiên để modal mở lại đúng đơn cũ.
+//
+// Ảnh xác nhận KHÔNG nằm trong cache: blob không JSON hoá được. Phiên khôi
+// phục luôn `paymentProof: null` và POS nạp lại ảnh từ IndexedDB theo
+// `paymentProofId` — không bao giờ coi là đã có ảnh khi chưa thấy ảnh thật.
+// ---------------------------------------------------------------------------
+
+const SESSION_KEY_PREFIX = 'formapubli.transferSession.';
+
+export interface CachedTransferSession {
+  mode: 'ONLINE' | 'OFFLINE';
+  orderId?: string;
+  orderCode: string;
+  idempotencyKey: string;
+  warehouseId: string;
+  amount: number;
+  paymentMethod: 'BANK_TRANSFER' | 'QR_CODE';
+  createdAt: string;
+  expiresAt?: string;
+  qrSnapshot: { dataUrl: string; payload: string; accountNo: string; content: string };
+  /** Id ảnh trong IndexedDB (nếu đã chụp). Ảnh luôn phải nạp lại, không tin cache. */
+  paymentProofId?: string;
+  /**
+   * Luôn `null` sau khi đọc lại: cache không chứa blob nên không được phép coi
+   * là "đã có ảnh". POS nạp `paymentProofId` từ IndexedDB rồi mới gán vào phiên.
+   */
+  paymentProof: null;
+}
+
+function sessionKey(warehouseId: string): string {
+  return `${SESSION_KEY_PREFIX}${warehouseId}`;
+}
+
+function isCachedTransferSession(value: unknown, warehouseId: string): value is CachedTransferSession {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Record<string, unknown>;
+  return (
+    session.warehouseId === warehouseId &&
+    (session.mode === 'ONLINE' || session.mode === 'OFFLINE') &&
+    typeof session.orderCode === 'string' &&
+    (session.paymentMethod === 'BANK_TRANSFER' || session.paymentMethod === 'QR_CODE') &&
+    typeof session.createdAt === 'string' &&
+    typeof (session.qrSnapshot as { dataUrl?: unknown } | undefined)?.dataUrl === 'string'
+  );
+}
+
+/** Đọc phiên chuyển khoản đang dang dở của một kho; hỏng hoặc sai kho thì null. */
+export function readTransferSessionCache(warehouseId: string): CachedTransferSession | null {
+  if (!warehouseId) return null;
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(sessionKey(warehouseId));
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isCachedTransferSession(parsed, warehouseId)) return null;
+    // Đơn offline không có expiresAt: chỉ khoá phiên online đã quá cửa sổ 30 phút.
+    if (isPaymentWindowExpired(parsed.expiresAt)) {
+      writeTransferSessionCache(null, warehouseId);
+      return null;
+    }
+    return { ...parsed, paymentProof: null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ghi (hoặc xoá khi `value` null) phiên chuyển khoản của một kho.
+ *
+ * Khi xoá, `warehouseId` là BẮT BUỘC: không có `value` để suy ra kho, mà phiên
+ * được lưu theo từng kho nên không thể đoán. Thiếu kho → no-op, không ném lỗi.
+ */
+export function writeTransferSessionCache(
+  value: {
+    mode: 'ONLINE' | 'OFFLINE';
+    orderId?: string;
+    orderCode: string;
+    idempotencyKey: string;
+    warehouseId: string;
+    amount: number;
+    paymentMethod: 'BANK_TRANSFER' | 'QR_CODE';
+    createdAt: string;
+    expiresAt?: string;
+    qrSnapshot: { dataUrl: string; payload: string; accountNo: string; content: string };
+    paymentProofId?: string;
+  } | null,
+  warehouseId = value?.warehouseId
+): void {
+  if (!warehouseId) return;
+  try {
+    if (!value) {
+      localStorage.removeItem(sessionKey(warehouseId));
+      return;
+    }
+    localStorage.setItem(sessionKey(warehouseId), JSON.stringify({ ...value, paymentProof: null }));
+  } catch {
+    // localStorage bị chặn → phiên không sống sót refresh, nhưng không được làm hỏng luồng.
   }
 }

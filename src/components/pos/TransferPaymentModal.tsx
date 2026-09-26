@@ -17,7 +17,7 @@ export interface TransferPaymentSession {
   createdAt: string;
   expiresAt?: string;
   qrSnapshot: { dataUrl: string; payload: string; accountNo: string; content: string };
-  paymentProof?: PaymentProofPhoto;
+  paymentProof?: PaymentProofPhoto | null;
 }
 
 export interface TransferPaymentModalProps {
@@ -55,13 +55,25 @@ export function TransferPaymentModal({
     setMounted(true);
   }, []);
 
-  // Đếm ngược thuần client, không ghi hạn lên server.
+  // Đếm ngược thuần client, không ghi hạn lên server. `setInterval` bị throttle
+  // khi tab chạy nền (điện thoại bị khoá màn hình, cashier đổi app), nên phải
+  // tính lại khi tab quay lại foreground — nếu không cashier thấy đồng hồ đứng
+  // ở "còn 20 phút" trên một đơn đã hết hạn từ lâu và bấm Xác nhận.
   useEffect(() => {
     if (!session?.expiresAt) return;
     const update = () => setRemainingMs(Math.max(0, new Date(session.expiresAt!).getTime() - Date.now()));
     update();
     const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') update();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
   }, [session?.expiresAt]);
 
   const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted && !busy, onClose);

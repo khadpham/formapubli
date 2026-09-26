@@ -177,7 +177,20 @@ assert.match(vietQr, /Dữ liệu cache/, 'VietQrPay hiển thị nhãn dữ li�
 assert.match(vietQr, /onQrRef\.current\?\.\(null\)/, 'VietQrPay gọi onQr(null) khi không có tài khoản để xóa QR cũ');
 
 // --- Task 5: kho ảnh chứng minh + retention ---------------------------------
-import { isPhotoInScope, normalizeOfflinePaymentState, prunePaymentProofPhotos, type PaymentProofPhoto } from '../src/lib/offline-db';
+import {
+  applySyncErrorToOfflineOrder,
+  isPaymentWindowExpired,
+  isPhotoInScope,
+  needsManualReview,
+  normalizeOfflinePaymentState,
+  prunePaymentProofPhotos,
+  type OfflineOrder,
+  type PaymentProofPhoto,
+} from '../src/lib/offline-db';
+import {
+  readTransferSessionCache,
+  writeTransferSessionCache,
+} from '../src/lib/bank-account-cache';
 
 const offlineDb = readSource('src/lib/offline-db.ts');
 assert.match(offlineDb, /const DB_VERSION = 2;/, 'IndexedDB phải nâng version 2 cho store ảnh');
@@ -548,4 +561,262 @@ expectMatch(
   /paymentMethod,\s*\n\s*moneyReceived: false,\s*\n\s*fiscalScope: isGift \? 'INTERNAL_MANAGEMENT' : fiscalScope/,
   'Đường online tiền mặt/quà tặng gửi moneyReceived: false (bất biến so với state cũ luôn false)',
 );
+// ============================================================================
+// ADVERSARIAL ROUND 2 — săn lỗi trạng thái, đối soát offline và hỏng camera.
+// Mỗi khẳng định dưới đây FAIL trên 9da1d50..HEAD trước khi sửa.
+// ============================================================================
+
+// --- A1. Đơn AWAITING_PAYMENT / NEEDS_RECONCILIATION phải nhìn thấy được -----
+// getOfflineOrdersForReview tồn tại nhưng không nơi nào gọi: đơn đã đi vào
+// NEEDS_RECONCILIATION ở phiên trước bị loại khỏi getPendingOfflineOrders nên
+// không bao giờ vào panel rà soát -> vô hình vĩnh viễn, không ai đối soát.
+assert.equal(
+  typeof needsManualReview,
+  'function',
+  'offline-db phải xuất needsManualReview() để lọc đơn cần thủ công'
+);
+const reviewBase = {
+  id: 'off-review-1',
+  orderCode: 'OFF-REVIEW',
+  idempotencyKey: 'idem-off-review',
+  warehouseId: 'wh-au-co',
+  customerName: 'Khách offline',
+  channel: 'RETAIL_OFFICE',
+  discountRate: 0,
+  paymentMethod: 'BANK_TRANSFER',
+  fiscalScope: 'INTERNAL_MANAGEMENT',
+  cashierId: 'cashier-pos-test',
+  items: [],
+  subtotal: 0,
+  discountAmount: 0,
+  finalAmount: 0,
+  totalQuantity: 0,
+  createdAt: '2026-09-25T10:00:00.000Z',
+  syncStatus: 'FAILED',
+} as unknown as OfflineOrder;
+assert.equal(
+  needsManualReview({ ...reviewBase, paymentState: 'NEEDS_RECONCILIATION' }),
+  true,
+  'Đơn NEEDS_RECONCILIATION phải hiện ra cho thu ngân đối soát'
+);
+assert.equal(
+  needsManualReview({ ...reviewBase, moneyReceived: false, paymentState: 'AWAITING_PAYMENT' }),
+  true,
+  'Đơn AWAITING_PAYMENT (khách bỏ đi) phải hiện ra, không bị bỏ quên'
+);
+assert.equal(
+  needsManualReview({ ...reviewBase, paymentState: 'CANCELLED_LOCAL' }),
+  false,
+  'Đơn đã hủy cục bộ không cần hiện ra rà soát'
+);
+assert.equal(
+  needsManualReview({ ...reviewBase, paymentMethod: 'CASH', lastError: 'Phiên két ca đã đóng' }),
+  true,
+  'Đơn tiền mặt bị chặn két vẫn phải hiện ra rà soát'
+);
+expectMatch(
+  posCode,
+  /getOfflineOrdersForReview\(/,
+  'POS phải gọi getOfflineOrdersForReview() để đơn cần đối soát không bị vô hình'
+);
+expectMatch(posCode, /needsManualReview\(/, 'POS lọc panel rà soát bằng needsManualReview()');
+// Panel rà soát không được hiện nút sửa cho đơn không có hành động sửa: bấm vào
+// handleRepairOfflineOrder sẽ return ngay, cashier bấm hoài không được gì.
+expectMatch(
+  pos,
+  /\{action \? \([\s\S]{0,700}?handleRepairOfflineOrder\(order\)[\s\S]{0,700}?Cần quản lý đối soát/,
+  'Đơn không có hành động sửa được phải hiện hướng dẫn, không phải nút bấm-không-được'
+);
+
+// --- A2. Xác nhận 2 lần: chốt bằng ref, không chỉ bằng state ------------------
+// setIsTransferSubmitting(true) là state bất đồng bộ: hai cú tap trong cùng
+// tick đều đọc transferSession cũ và cùng gửi POST CONFIRM.
+expectMatch(posCode, /const transferLockRef = useRef\(false\)/, 'POS phải có transferLockRef chống double-submit');
+const confirmStart = posCode.indexOf('const handleConfirmTransfer = async');
+const confirmEnd = posCode.indexOf('const handleCancelTransfer', confirmStart);
+assert.ok(confirmStart > 0 && confirmEnd > confirmStart, 'POS có handleConfirmTransfer');
+const confirmBody = stripComments(posCode.slice(confirmStart, confirmEnd));
+expectMatch(
+  confirmBody,
+  /if \(transferLockRef\.current\) return;[\s\S]{0,900}?transferLockRef\.current = true;/,
+  'handleConfirmTransfer phải khoá bằng ref trước khi gọi API'
+);
+expectMatch(
+  confirmBody,
+  /finally \{[\s\S]{0,200}?transferLockRef\.current = false;/,
+  'handleConfirmTransfer phải mở khoá ref ở finally'
+);
+
+// --- A3. Cửa sổ 30 phút: server là chủ, client chỉ để hiển thị -------------
+assert.equal(typeof isPaymentWindowExpired, 'function', 'offline-db phải xuất isPaymentWindowExpired()');
+const expiryNow = Date.parse('2026-09-25T10:00:00.000Z');
+assert.equal(isPaymentWindowExpired('2026-09-25T10:30:00.000Z', expiryNow), false, 'Còn 30 phút thì chưa hết hạn');
+assert.equal(isPaymentWindowExpired('2026-09-25T10:00:00.000Z', expiryNow), true, 'Đúng mốc hạn thì đã hết hạn');
+assert.equal(isPaymentWindowExpired('2026-09-25T09:59:59.000Z', expiryNow), true, 'Quá mốc hạn thì đã hết hạn');
+assert.equal(isPaymentWindowExpired(undefined, expiryNow), false, 'Không có hạn thì không chặn');
+// Tab bị throttle khi background: đếm ngược phải tính lại khi quay lại tab,
+// nếu không cashier thấy đồng hồ đứng và bấm Xác nhận trên đơn đã hết hạn.
+expectMatch(transferModal, /visibilitychange/, 'Modal phải tính lại đồng hồ khi tab quay lại foreground');
+expectMatch(confirmBody, /isPaymentWindowExpired\(/, 'handleConfirmTransfer phải tự chặn khi phiên đã hết hạn, không chỉ dựa vào disabled');
+expectMatch(
+  confirmBody,
+  /isPaymentWindowExpired[\s\S]{0,240}?return;/,
+  'handleConfirmTransfer chặn sớm khi hết hạn'
+);
+
+// --- A4. Refresh giữa phiên: phiên chuyển khoản phải sống sót ---------------
+// Browser refresh làm mất transferSession nhưng đơn offline vẫn nằm trong
+// IndexedDB và đơn PENDING trên server vẫn giữ ATP 30 phút.
+assert.equal(typeof writeTransferSessionCache, 'function', 'Phải có writeTransferSessionCache() để phiên sống sót qua refresh');
+writeTransferSessionCache({
+  mode: 'ONLINE',
+  orderId: 'srv-order-1',
+  orderCode: 'ORD-20260925-ABC',
+  idempotencyKey: 'idem-ORD-20260925-ABC',
+  warehouseId: 'wh-au-co',
+  amount: 150000,
+  paymentMethod: 'BANK_TRANSFER',
+  createdAt: '2026-09-25T10:00:00.000Z',
+  expiresAt: new Date(Date.now() + 20 * 60_000).toISOString(),
+  qrSnapshot: { dataUrl: 'data:image/png;base64,AAA', payload: 'p', accountNo: '123', content: 'ORD-20260925-ABC' },
+});
+const restored = readTransferSessionCache('wh-au-co');
+assert.ok(restored, 'Phiên chuyển khoản phải đọc lại được sau refresh');
+assert.equal(restored?.orderId, 'srv-order-1', 'Khôi phục đúng orderId');
+assert.equal(restored?.paymentProof, null, 'Phiên khôi phục KHÔNG được tự coi là đã có ảnh');
+assert.match(JSON.stringify(restored), /"paymentProof":null/, 'Ảnh phải được đánh dấu chưa có, không nối bằng object rỗng');
+assert.equal(readTransferSessionCache('wh-kho-khac'), null, 'Phiên không lọc sang kho khác');
+writeTransferSessionCache(null, 'wh-au-co');
+assert.equal(readTransferSessionCache('wh-au-co'), null, 'Xoá cache phiên hoạt động');
+// Phiên đã quá cửa sổ 30 phút không được hồi sinh: cashier sẽ thấy modal trên
+// một đơn server đã tự huỷ, và nút Xác nhận sẽ bị chặn vĩnh viễn.
+writeTransferSessionCache({
+  mode: 'ONLINE',
+  orderId: 'srv-order-expired',
+  orderCode: 'ORD-20260925-OLD',
+  idempotencyKey: 'idem-ORD-20260925-OLD',
+  warehouseId: 'wh-au-co',
+  amount: 150000,
+  paymentMethod: 'BANK_TRANSFER',
+  createdAt: '2026-09-25T10:00:00.000Z',
+  expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  qrSnapshot: { dataUrl: 'data:image/png;base64,AAA', payload: 'p', accountNo: '123', content: 'ORD-20260925-OLD' },
+});
+assert.equal(readTransferSessionCache('wh-au-co'), null, 'Phiên đã hết hạn không được khôi phục');
+// Cache hỏng / sai kho không được ném lỗi.
+localStorage.setItem('formapubli.transferSession.wh-au-co', '{not json');
+assert.equal(readTransferSessionCache('wh-au-co'), null, 'Cache phiên hỏng bị từ chối');
+localStorage.removeItem('formapubli.transferSession.wh-au-co');
+// Khôi phục phải nạp lại ảnh từ IndexedDB, không nhét blob rỗng.
+assert.match(offlineDb, /export async function getPaymentProofPhoto\(/, 'Có đường nạp lại ảnh theo id');
+expectMatch(posCode, /readTransferSessionCache\(/, 'POS phải khôi phục phiên chuyển khoản khi mount');
+expectMatch(posCode, /getPaymentProofPhoto\(/, 'POS phải nạp lại blob ảnh từ IndexedDB sau khi khôi phục phiên');
+// Phiên phải được ghi ngay khi mới tạo (trước khi chụp ảnh), không chỉ sau khi
+// chụp: refresh giữa chừng là lúc cashier dễ bấy F5 nhất.
+expectMatch(
+  posCode,
+  /useEffect\(\(\) => \{[\s\S]{0,120}?if \(!transferSession\) return;[\s\S]{0,600}?writeTransferSessionCache\(/,
+  'POS ghi cache phiên ngay khi phiên tồn tại, không đợi tới lúc chụp ảnh'
+);
+
+// --- A5. syncState của ảnh phải được tiến, không đứng ở LOCAL_ONLY ----------
+// retention miễn xoá ảnh NEEDS_RECONCILIATION và gallery chặn xoá ảnh đó —
+// nhưng không nơi nào ghi state lên ảnh, nên cả hai đều là code chết.
+assert.match(offlineDb, /export async function markPaymentProofPhotoSyncState\(/, 'Phải có markPaymentProofPhotoSyncState() để tiến trạng thái ảnh');
+const syncSuccess = posCode.indexOf('if (resData.success) {');
+assert.ok(syncSuccess > 0, 'POS có nhánh sync thành công');
+const syncSuccessBlock = stripComments(
+  posCode.slice(syncSuccess, posCode.indexOf('updateOfflineOrderStatus', syncSuccess))
+);
+expectMatch(syncSuccessBlock, /markPaymentProofPhotoSyncState\([^)]*'ORDER_SYNCED'/, 'Sync thành công phải đánh dấu ảnh ORDER_SYNCED');
+expectMatch(
+  posCode,
+  /markPaymentProofPhotoSyncState\([^)]*'NEEDS_RECONCILIATION'/,
+  'Đơn vào đối soát phải đánh dấu ảnh NEEDS_RECONCILIATION để retention miễn xoá'
+);
+
+// --- A6. Camera: lỗi quyền phải còn lại để cashier đọc được -----------------
+// setErrorMessage() rồi onClose() ngay -> modal unmount, thông báo biến mất,
+// cashier thấy camera tự biến mất mà không biết vì sao.
+const advDeniedStart = camera.indexOf("'NotAllowedError'");
+assert.ok(advDeniedStart > 0, 'Camera có nhánh NotAllowedError');
+const advDeniedBody = stripComments(camera.slice(advDeniedStart, camera.indexOf('}, [isOpen')));
+expectNoMatch(
+  advDeniedBody,
+  /setErrorMessage\([\s\S]{0,400}?onClose\(\);/,
+  'Camera không được set lỗi rồi đóng ngay (thông báo bị unmount mất)'
+);
+expectMatch(pos, /onCameraError=/, 'Lỗi camera phải được nâng lên POS để hiện trong modal chuyển khoản');
+// Nút X trên camera không khoá khi đang lưu, còn focus trap thì có.
+const cameraHeaderClose = stripComments(camera.slice(0, camera.indexOf('{preview ?')));
+expectMatch(
+  cameraHeaderClose,
+  /onClick=\{onClose\}[\s\S]{0,200}?disabled=\{isSaving\}/,
+  'Nút đóng camera phải khoá khi đang lưu ảnh, đồng bộ với focus trap'
+);
+
+// --- A7. Object URL của ảnh đã xoá phải được thu hồi -------------------------
+expectMatch(
+  stripComments(gallery),
+  /removePhoto[\s\S]{0,600}?URL\.revokeObjectURL\(/,
+  'Xoá ảnh phải thu hồi object URL tương ứng'
+);
+// Tải xuống: revoke ngay sau click() có thể hủy download ở một số trình duyệt.
+const shareStart = gallery.indexOf('const sharePhoto');
+const shareBody = stripComments(gallery.slice(shareStart, gallery.indexOf('const removePhoto')));
+assert.ok(shareStart > 0, 'Gallery có sharePhoto');
+expectNoMatch(
+  shareBody,
+  /anchor\.click\(\);[\s\S]{0,80}?URL\.revokeObjectURL\(url\);/,
+  'Không được revoke object URL ngay sau anchor.click() (huỷ download)'
+);
+
+// --- A8. CASH và GIFT: bỏ toggle tay không được đổi hành vi -----------------
+// Bằng chứng: toggle cũ chỉ render trong nhánh BANK_TRANSFER/QR_CODE và bị
+// force-reset theo cart/paymentMethod, nên với CASH/GIFT nó luôn false.
+expectNoMatch(posCode, /isMoneyReceived|MoneyReceivedToggle/, 'Toggle tay phải bị gỡ hoàn toàn');
+expectMatch(
+  posCode,
+  /paymentMethod,\s*\n\s*moneyReceived: false,\s*\n\s*fiscalScope: isGift \? 'INTERNAL_MANAGEMENT' : fiscalScope/,
+  'Đường online CASH/GIFT vẫn gửi moneyReceived: false như trước'
+);
+expectMatch(
+  posCode,
+  /paymentState: !isGift && isDigitalPayment \? 'AWAITING_PAYMENT' : undefined/,
+  'Đơn offline CASH/GIFT không gắn paymentState (vẫn READY_TO_SYNC như cũ)'
+);
+assert.equal(
+  normalizeOfflinePaymentState({ ...reviewBase, paymentMethod: 'CASH' }),
+  'READY_TO_SYNC',
+  'Đơn offline tiền mặt vẫn tự đồng bộ, không bị kẹt vì paymentState mới'
+);
+assert.equal(
+  normalizeOfflinePaymentState({ ...reviewBase, paymentMethod: 'BANK_TRANSFER', discountRate: 1 } as OfflineOrder),
+  'READY_TO_SYNC',
+  'Đơn quà tặng (discountRate 1) không bị kẹt ở trạng thái chuyển khoản'
+);
+assert.equal(
+  applySyncErrorToOfflineOrder({ ...reviewBase, paymentMethod: 'CASH' }, 'INSUFFICIENT_ATP'),
+  'READY_TO_SYNC',
+  'Lỗi ATP của luồng chuyển khoản không được kéo đơn tiền mặt vào đối soát'
+);
+// Đường offline CASH: vẫn in bill ngay (không mở phiên chuyển khoản).
+// Slice TRƯỚC khi strip, và dùng mốc ASCII ổn định (comment tiếng Việt dễ lệch encoding).
+const offlineCashBlock = stripComments(
+  pos.slice(pos.indexOf('const fallbackToOffline'), pos.indexOf('await fallbackToOffline();'))
+);
+// Nhánh này (khác nhánh chặn cache ở trên) là điểm rẽ duy nhất giữa "mở phiên
+// chuyển khoản" và "in bill": CASH/gift rơi xuống dưới phải tới setCompletedOrder.
+expectMatch(
+  offlineCashBlock,
+  /if \(!isGift && isDigitalPayment\) \{\s*setTransferErrorMessage\(null\);[\s\S]{0,1400}?\n\s*return;/,
+  'Đường offline chỉ mở phiên chuyển khoản cho BANK_TRANSFER/QR_CODE, CASH vẫn đi tiếp in bill'
+);
+expectMatch(
+  offlineCashBlock,
+  /setCompletedOrder\(\{[\s\S]{0,900}?isOffline: true/,
+  'Đơn offline tiền mặt vẫn tạo bill như cũ'
+);
+
+console.log('ADVERSARIAL-A: state machine + reconciliation');
 console.log('PASS: transfer payment photo contract.');

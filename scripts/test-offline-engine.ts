@@ -2,6 +2,8 @@ import { generateUUIDv7, extractTimestampFromUUIDv7 } from '../src/lib/uuidv7';
 import {
   applySyncErrorToOfflineOrder,
   getOfflineOrderRepairAction,
+  isPaymentWindowExpired,
+  needsManualReview,
   normalizeOfflinePaymentState,
   OfflineOrder,
   OfflinePaymentState,
@@ -256,7 +258,74 @@ async function testOfflineEngine() {
     `Nhận ${cashState}`
   );
 
-  // Dọn dẹp dữ liệu đơn test
+  // --- Rà soát đối soát: đơn kẹt phải nhìn thấy, và không ai được tự dán nhãn ---
+  // getPendingOfflineOrders chỉ trả về READY_TO_SYNC/PAID_PENDING_SYNC. Đơn đã
+  // kẹt ở AWAITING_PAYMENT (khách bỏ đi giữa chừng) hoặc NEEDS_RECONCILIATION
+  // (xung đột ATP/idempotency/két) không bao giờ đi qua đường tự động, nên bề mặt
+  // rà soát phải lấy chúng từ getOfflineOrdersForReview chứ không lọc bằng
+  // danh sách pending — nếu không chúng vô hình vĩnh viễn trên máy cashier.
+  const stuck: Array<[string, OfflineOrder, boolean]> = [
+    [
+      'Đơn chờ khách chuyển (AWAITING_PAYMENT) phải hiện ra rà soát',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: false, paymentState: 'AWAITING_PAYMENT' },
+      true,
+    ],
+    [
+      'Đơn xung đột ATP (NEEDS_RECONCILIATION) phải hiện ra rà soát',
+      { ...reconcileBase, paymentState: 'NEEDS_RECONCILIATION' },
+      true,
+    ],
+    [
+      'Đơn chuyển khoản đã thu tiền chờ sync không cần rà soát thủ công',
+      { ...reconcileBase, paymentState: 'PAID_PENDING_SYNC' },
+      false,
+    ],
+    [
+      'Đơn tiền mặt sẵn sàng không cần rà soát thủ công',
+      { ...normalizeBase, paymentMethod: 'CASH' },
+      false,
+    ],
+    [
+      'Đơn quà tặng chuyển khoản KHÔNG bị kẹt (discountRate 1 nghĩa là không thu tiền)',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', discountRate: 1, moneyReceived: false },
+      false,
+    ],
+    [
+      'Đơn quà tặng có isGift=true cũng không bị kẹt',
+      { ...normalizeBase, paymentMethod: 'QR_CODE', isGift: true, moneyReceived: false },
+      false,
+    ],
+  ];
+  for (const [name, order, expected] of stuck) {
+    const actual = needsManualReview(order as OfflineOrder);
+    assert(actual === expected, name, `Kỳ vọng ${expected}, nhận ${actual}`);
+  }
+  assert(
+    needsManualReview({ ...normalizeBase, paymentMethod: 'BANK_TRANSFER', isGift: true, discountRate: 1 } as OfflineOrder) === false,
+    'Đơn quà tặng không bao giờ rơi vào hàng đối soát dù hình thức là chuyển khoản',
+    'isGift và discountRate 1 đều được miễn'
+  );
+  // Đơn đã huỷ cục bộ thì không rà soát nữa, nhưng cũng không được coi là hợp lệ.
+  assert(
+    normalizeOfflinePaymentState({ ...reconcileBase, paymentState: 'CANCELLED_LOCAL' }) === 'CANCELLED_LOCAL' &&
+      needsManualReview({ ...reconcileBase, paymentState: 'CANCELLED_LOCAL' }) === false,
+    'Đơn huỷ cục bộ: giữ trạng thái huỷ và không mở vô ích hàng rà soát'
+  );
+
+  // --- Cửa sổ 30 phút: hết hạn là quyết định của server, client chỉ chặn sớm ---
+  const windowNow = Date.parse('2026-09-25T10:00:00.000Z');
+  assert(
+    isPaymentWindowExpired('2026-09-25T10:30:00.000Z', windowNow) === false &&
+      isPaymentWindowExpired('2026-09-25T10:00:00.000Z', windowNow) === true &&
+      isPaymentWindowExpired('2026-09-25T09:59:59.000Z', windowNow) === true,
+    'isPaymentWindowExpired chặn đúng mốc 30 phút, không nới trước 1 phút',
+    `Còn hạn=${isPaymentWindowExpired('2026-09-25T10:30:00.000Z', windowNow)}`
+  );
+  assert(
+    isPaymentWindowExpired(undefined, windowNow) === false && isPaymentWindowExpired('không-phải-ngày', windowNow) === false,
+    'Thiếu hạn hoặc hạn hỏng thì không khoá nhầm cashier (server vẫn là chủ quyết định)'
+  );
+
   await db.delete(orders).where(eq(orders.id, offlineUuid));
 
   console.log('\n=======================================================');

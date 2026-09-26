@@ -111,12 +111,14 @@ export function PaymentPhotoGallery({
       await navigator.share({ files: [file], title: `Thanh toán ${photo.orderCode}` });
       return;
     }
+    // Revoke phải trễ: Safari/Firefox huỷ download nếu URL bị thu hồi ngay
+    // sau click() trước khi trình duyệt đọc blob.
     const url = URL.createObjectURL(photo.blob);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = file.name;
     anchor.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   const removePhoto = async (photo: PaymentProofPhoto) => {
@@ -124,6 +126,19 @@ export function PaymentPhotoGallery({
     if (photo.syncState === 'NEEDS_RECONCILIATION') return;
     if (!window.confirm(`Xóa ảnh xác nhận của đơn ${photo.orderCode}?`)) return;
     await deletePaymentProofPhoto(photo.id, scope);
+    // Thu hồi object URL của ảnh vừa xoá, nếu không blob của nó vẫn bị giữ
+    // trong RAM tới khi đóng modal (mỗi lần xoá là một object URL rò rỉ).
+    const staleUrl = previewUrlsRef.current[photo.id];
+    if (staleUrl) {
+      URL.revokeObjectURL(staleUrl);
+      setPreviewUrls((current) => {
+        if (!(photo.id in current)) return current;
+        const next = { ...current };
+        delete next[photo.id];
+        return next;
+      });
+      setExpandedId((current) => (current === photo.id ? null : current));
+    }
     await load();
   };
 

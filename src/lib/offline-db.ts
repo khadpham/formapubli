@@ -113,6 +113,11 @@ export function normalizeOfflinePaymentState(order: OfflineOrder): OfflinePaymen
   const existing = order.paymentState;
   if (existing && OFFLINE_PAYMENT_STATES.includes(existing)) return existing;
   if (!isDigitalPaymentMethod(order.paymentMethod)) return 'READY_TO_SYNC';
+  // Đơn quà tặng (discountRate 1) không thu tiền: không khoá vào AWAITING_PAYMENT
+  // vì sẽ không bao giờ được auto-sync. POS cũng không gắn paymentState cho quà
+  // tặng, nên nếu thiếu nhánh này, một đơn tặng chọn BANK_TRANSFER/QR_CODE sẽ
+  // kẹt vĩnh viễn trong máy cashier mà không ai thấy.
+  if (order.isGift === true || order.discountRate === 1) return 'READY_TO_SYNC';
   if (order.paymentMethod === 'QR_CODE' && order.moneyReceived !== true) return 'NEEDS_RECONCILIATION';
   return order.moneyReceived === true ? 'PAID_PENDING_SYNC' : 'AWAITING_PAYMENT';
 }
@@ -153,6 +158,32 @@ export function getOfflineOrderRepairAction(order: OfflineOrder): OfflineOrderRe
     return 'CONFIRM_MONEY_RECEIVED';
   }
   return null;
+}
+
+/**
+ * Đơn nào phải hiện ra cho thu ngân xử lý tay.
+ *
+ * `getPendingOfflineOrders` chỉ trả về READY_TO_SYNC / PAID_PENDING_SYNC, nên
+ * đơn đã kẹt ở AWAITING_PAYMENT (khách bỏ đi) hoặc NEEDS_RECONCILIATION (xung
+ * đột ATP/idempotency/két) sẽ không bao giờ đi qua đường tự động. Nếu bề mặt
+ * rà soát cũng lọc bằng danh sách đó, các đơn này biến mất vĩnh viễn khỏi máy
+ * cashier và không ai đối soát được. Hàm này là nguồn sự thật cho cả hai.
+ */
+export function needsManualReview(order: OfflineOrder): boolean {
+  const state = normalizeOfflinePaymentState(order);
+  if (state === 'NEEDS_RECONCILIATION' || state === 'AWAITING_PAYMENT') return true;
+  return getOfflineOrderRepairAction(order) !== null;
+}
+
+/**
+ * Cửa sổ 30 phút là quyết định của server (`payment_expires_at`); client chỉ
+ * dùng hàm này để hiển thị và chặn sớm. `confirmOrder` vẫn là chủ quyết định.
+ */
+export function isPaymentWindowExpired(expiresAt: string | undefined, now = Date.now()): boolean {
+  if (!expiresAt) return false;
+  const deadline = Date.parse(expiresAt);
+  if (!Number.isFinite(deadline)) return false;
+  return now >= deadline;
 }
 
 const DB_NAME = 'formapubli_offline_db';
@@ -429,6 +460,51 @@ async function readAllPaymentProofPhotos(): Promise<PaymentProofPhoto[]> {
 export async function listPaymentProofPhotos(scope: PaymentProofScope): Promise<PaymentProofPhoto[]> {
   const all = await readAllPaymentProofPhotos();
   return all.filter((photo) => isPhotoInScope(photo, scope));
+}
+
+/** Nạp lại một ảnh theo id (dùng khi khôi phục phiên chuyển khoản sau refresh). */
+export async function getPaymentProofPhoto(id: string): Promise<PaymentProofPhoto | null> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, 'readonly');
+    const req = tx.objectStore(PHOTO_STORE).get(id);
+    req.onsuccess = () => resolve((req.result as PaymentProofPhoto | undefined) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Tiến trạng thái đồng bộ của ảnh.
+ *
+ * Không có hàm này thì ảnh kẹt ở LOCAL_ONLY mãi mãi: retention chỉ miễn xoá
+ * ảnh NEEDS_RECONCILIATION và gallery chỉ chặn xoá ảnh đó — cả hai đều là code
+ * chết. Ảnh của đơn đã vào đối soát phải được giữ lại cho tới khi người có
+ * quyền xử lý xong.
+ */
+export async function markPaymentProofPhotoSyncState(
+  id: string | undefined,
+  syncState: PaymentProofSyncState
+): Promise<void> {
+  if (!id) return;
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, 'readwrite');
+    const store = tx.objectStore(PHOTO_STORE);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const photo = getReq.result as PaymentProofPhoto | undefined;
+      // Ảnh đã bị retention xoá giữa lúc: không phải lỗi, chỉ không còn gì để tiến.
+      if (!photo) {
+        resolve();
+        return;
+      }
+      photo.syncState = syncState;
+      const putReq = store.put(photo);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
 }
 
 /**

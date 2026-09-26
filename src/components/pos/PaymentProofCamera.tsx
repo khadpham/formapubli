@@ -16,6 +16,8 @@ export interface PaymentProofCameraProps {
   paymentMethod: 'BANK_TRANSFER' | 'QR_CODE';
   onClose: () => void;
   onUsePhoto: (photo: PaymentProofPhoto) => Promise<void>;
+  /** Lỗi quyền/thiết bị: nâng lên cha để còn đọc được sau khi modal đóng. */
+  onCameraError?: (message: string) => void;
 }
 
 interface CapturedPhoto {
@@ -44,6 +46,7 @@ export function PaymentProofCamera({
   paymentMethod,
   onClose,
   onUsePhoto,
+  onCameraError,
 }: PaymentProofCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -97,8 +100,10 @@ export function PaymentProofCamera({
         if (!alive || generation !== generationRef.current) return;
         const name = (err as { name?: string })?.name;
         if (name === 'NotAllowedError' || name === 'NotFoundError') {
-          // Review Focus 1: không camera / bị từ chối → đóng modal, KHÔNG gọi onUsePhoto.
-          setErrorMessage(
+          // Review Focus 1: không camera / bị từ chối → KHÔNG gọi onUsePhoto.
+          // Lỗi phải nâng lên POS: setErrorMessage ở đây rồi đóng modal sẽ bị
+          // unmount xoá mất, cashier chỉ thấy camera biến mất không rõ lý do.
+          onCameraError?.(
             name === 'NotAllowedError'
               ? 'Quyền camera bị từ chối. Hãy cấp quyền trong trình duyệt rồi chụp lại, hoặc nhờ quản lý hỗ trợ.'
               : 'Không tìm thấy camera trên thiết bị này. Hãy dùng thiết bị khác hoặc thu tiền mặt.'
@@ -191,7 +196,8 @@ export function PaymentProofCamera({
             type="button"
             aria-label="Đóng camera"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+            disabled={isSaving}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>

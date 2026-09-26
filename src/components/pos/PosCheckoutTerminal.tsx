@@ -47,10 +47,15 @@ import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchActionShortcut } from '@/lib/keyboard';
-import { readBankAccountsCache } from '@/lib/bank-account-cache';
+import { readBankAccountsCache, readTransferSessionCache, writeTransferSessionCache } from '@/lib/bank-account-cache';
 import {
   saveOfflineOrder,
   getPendingOfflineOrders,
+  getOfflineOrdersForReview,
+  needsManualReview,
+  getPaymentProofPhoto,
+  markPaymentProofPhotoSyncState,
+  isPaymentWindowExpired,
   removeOfflineOrder,
    updateOfflineOrderStatus,
    updateOfflineOrderForRetry,
@@ -251,6 +256,53 @@ export function PosCheckoutTerminal({
     setMounted(true);
   }, []);
 
+  /**
+   * Khôi phục phiên chuyển khoản dang dở sau khi refresh trình duyệt.
+   *
+   * Không có bước này, cashier quay lại thấy màn hình trống và bấm "Tạo đơn &
+   * hiện QR" lần nữa, tạo PENDING thứ hai cho cùng giỏ hàng trong khi đơn cũ
+   * vẫn giữ ATP. Ảnh xác nhận được nạp lại từ IndexedDB theo id; nếu ảnh đã mất
+   * thì phiên mở với `paymentProof: null` — nút Xác nhận vẫn khoá, không có đường
+   * nào coi là đã chụp ảnh khi thực tế chưa có.
+   */
+  useEffect(() => {
+    if (!selectedWarehouseId) return;
+    let alive = true;
+    (async () => {
+      const cached = readTransferSessionCache(selectedWarehouseId);
+      if (!cached || !alive) return;
+      let paymentProof: PaymentProofPhoto | null = null;
+      if (cached.paymentProofId) {
+        try {
+          paymentProof = await getPaymentProofPhoto(cached.paymentProofId);
+        } catch {
+          paymentProof = null;
+        }
+      }
+      if (!alive) return;
+      setTransferSession({
+        mode: cached.mode,
+        orderId: cached.orderId,
+        orderCode: cached.orderCode,
+        idempotencyKey: cached.idempotencyKey,
+        warehouseId: cached.warehouseId,
+        amount: cached.amount,
+        paymentMethod: cached.paymentMethod,
+        createdAt: cached.createdAt,
+        expiresAt: cached.expiresAt,
+        qrSnapshot: cached.qrSnapshot,
+        paymentProof,
+      });
+      setTransferOfflineOrderId(cached.mode === 'OFFLINE' ? cached.orderId ?? null : null);
+      setTransferErrorMessage(
+        'Phiên thanh toán đang dở đã được khôi phục. Kiểm tra lại với khách trước khi xác nhận.'
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [selectedWarehouseId]);
+
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('formapubli_settings') || '{}');
@@ -311,6 +363,40 @@ export function PosCheckoutTerminal({
    */
   const postCheckoutResetRef = useRef<(() => void) | null>(null);
   const checkoutLockRef = useRef(false);
+  /**
+   * Khoá bằng ref chứ không bằng `isTransferSubmitting`: state cập nhật bất đồng
+   * bộ, nên hai cú tap liên tiếp (điện thoại, ngón tay nhanh) cùng đọc được
+   * `transferSession` cũ và cùng gửi POST CONFIRM — server chỉ chặn được cú
+   * thứ hai sau khi đơn đã COMPLETED, còn đơn offline thì không có server nào
+   * để chặn cả hai.
+   */
+  const transferLockRef = useRef(false);
+
+  /**
+   * Ghi phiên chuyển khoản xuống cache mỗi khi nó đổi — kể cả lúc mới tạo, trước
+   * khi cashier kịp chụp ảnh. Nếu chỉ ghi sau khi chụp, refresh đúng giữa chừng
+   * (khách đã chuyển xong, cashier chưa mở camera) lại mất phiên.
+   * Ảnh không nằm trong cache: chỉ lưu id, POS nạp lại blob từ IndexedDB.
+   */
+  useEffect(() => {
+    if (!transferSession) return;
+    writeTransferSessionCache(
+      {
+        mode: transferSession.mode,
+        orderId: transferSession.orderId,
+        orderCode: transferSession.orderCode,
+        idempotencyKey: transferSession.idempotencyKey,
+        warehouseId: transferSession.warehouseId,
+        amount: transferSession.amount,
+        paymentMethod: transferSession.paymentMethod,
+        createdAt: transferSession.createdAt,
+        expiresAt: transferSession.expiresAt,
+        qrSnapshot: transferSession.qrSnapshot,
+        paymentProofId: transferSession.paymentProof?.id,
+      },
+      transferSession.warehouseId
+    );
+  }, [transferSession]);
   const addToCartAbortRef = useRef<AbortController | null>(null);
   const parserImportAbortRef = useRef<AbortController | null>(null);
   const parserImportLockRef = useRef(false);
@@ -431,14 +517,21 @@ export function PosCheckoutTerminal({
     try {
        const pending = await getPendingOfflineOrders(cashierActorId);
        setLegacyOfflineCount(await getLegacyPendingOrdersCount());
+       // Đơn kẹt từ phiên trước (AWAITING_PAYMENT / NEEDS_RECONCILIATION) không nằm trong `pending`: nạp riêng qua getOfflineOrdersForReview, nếu không chúng biến mất khỏi máy cashier vĩnh viễn và không ai đối soát được.
+       const reviewOrders = new Map<string, OfflineOrder>();
+       for (const order of await getOfflineOrdersForReview(cashierActorId)) {
+         if (needsManualReview(order)) reviewOrders.set(order.id, order);
+       }
          if (pending.length === 0) {
            setPendingOfflineCount(0);
-           setOfflineReviewOrders([]);
+           setOfflineReviewOrders(Array.from(reviewOrders.values()));
+           if (reviewOrders.size > 0) {
+             setSyncToast(`⚠️ ${reviewOrders.size} đơn cần xác nhận lại trước khi đồng bộ.`);
+           }
            setIsSyncing(false);
          return;
        }
         let successCount = 0;
-        const reviewOrders = new Map<string, OfflineOrder>();
         for (const order of pending) {
           try {
             const repairAction = getOfflineOrderRepairAction(order);
@@ -482,6 +575,7 @@ export function PosCheckoutTerminal({
           });
           const resData = await res.json();
           if (resData.success) {
+            await markPaymentProofPhotoSyncState(order.paymentProofId, 'ORDER_SYNCED');
             await removeOfflineOrder(order.id);
             successCount++;
              } else {
@@ -495,6 +589,7 @@ export function PosCheckoutTerminal({
                );
                if (nextPaymentState === 'NEEDS_RECONCILIATION') {
                  await updateOfflineOrderPaymentState(order.id, 'NEEDS_RECONCILIATION');
+                 await markPaymentProofPhotoSyncState(order.paymentProofId, 'NEEDS_RECONCILIATION');
                }
                const failedOrder = { ...order, lastError: syncError, paymentState: nextPaymentState };
                if (nextPaymentState === 'NEEDS_RECONCILIATION' || getOfflineOrderRepairAction(failedOrder)) {
@@ -1600,6 +1695,9 @@ export function PosCheckoutTerminal({
     setTransferSession(null);
     setTransferErrorMessage(null);
     setTransferOfflineOrderId(null);
+    // Dọn cache phiên: đơn đã xong (xác nhận/huỷ) thì không được hồi sinh
+    // sau refresh. Ghi theo kho hiện tại vì session đã bị xoá khỏi state.
+    writeTransferSessionCache(null, selectedWarehouseIdRef.current);
   };
 
   /**
@@ -1620,6 +1718,7 @@ export function PosCheckoutTerminal({
   };
 
   const handleConfirmTransfer = async () => {
+    if (transferLockRef.current) return;
     const session = transferSession;
     if (!session) return;
     // Chốt chặn cuối: không có ảnh thì không bao giờ gọi API xác nhận.
@@ -1627,6 +1726,13 @@ export function PosCheckoutTerminal({
       setTransferErrorMessage('Vui lòng chụp và lưu ảnh xác nhận trước khi xác nhận đơn.');
       return;
     }
+    // Đồng hồ trên modal bị throttle khi tab nền, nên `disabled` không đáng tin:
+    // tự kiểm lại bằng đồng hồ thật trước khi gửi. Server vẫn là chủ quyết định.
+    if (isPaymentWindowExpired(session.expiresAt)) {
+      setTransferErrorMessage('Đơn đã hết hạn giữ chỗ. Hãy tạo đơn mới hoặc liên hệ quản lý.');
+      return;
+    }
+    transferLockRef.current = true;
     setIsTransferSubmitting(true);
     setTransferErrorMessage(null);
     try {
@@ -1674,20 +1780,32 @@ export function PosCheckoutTerminal({
     } catch (err: any) {
       setTransferErrorMessage(err?.message || 'Mất kết nối khi xác nhận đơn. Giữ nguyên đơn và thử lại.');
     } finally {
+      transferLockRef.current = false;
       setIsTransferSubmitting(false);
     }
   };
 
   const handleCancelTransfer = async () => {
+    if (transferLockRef.current) return;
     const session = transferSession;
     if (!session) return;
+    transferLockRef.current = true;
     setIsTransferSubmitting(true);
     setTransferErrorMessage(null);
     try {
       if (session.mode === 'OFFLINE') {
         if (transferOfflineOrderId) {
-          await updateOfflineOrderPaymentState(transferOfflineOrderId, 'CANCELLED_LOCAL');
-          await removeOfflineOrder(transferOfflineOrderId);
+          if (session.paymentProof) {
+            // Đã chụp ảnh = đã có bằng chứng khách đã chuyển. Xoá đơn ở đây sẽ
+            // xoá luôn bằng chứng và đơn, cashier thu tiền xong rồi mất dấu vết.
+            // Giữ đơn ở NEEDS_RECONCILIATION cho người có quyền xử lý, ảnh cũng
+            // được miễn retention.
+            await updateOfflineOrderPaymentState(transferOfflineOrderId, 'NEEDS_RECONCILIATION');
+            await markPaymentProofPhotoSyncState(session.paymentProof.id, 'NEEDS_RECONCILIATION');
+          } else {
+            await updateOfflineOrderPaymentState(transferOfflineOrderId, 'CANCELLED_LOCAL');
+            await removeOfflineOrder(transferOfflineOrderId);
+          }
         }
       } else if (session.orderId) {
         await fetch('/api/orders', {
@@ -1702,6 +1820,7 @@ export function PosCheckoutTerminal({
     } catch (err: any) {
       setTransferErrorMessage(err?.message || 'Không hủy được đơn. Thử lại hoặc nhờ quản lý.');
     } finally {
+      transferLockRef.current = false;
       setIsTransferSubmitting(false);
     }
   };
@@ -1977,20 +2096,30 @@ export function PosCheckoutTerminal({
           {offlineReviewOrders.map((order) => {
             const action = getOfflineOrderRepairAction(order);
             const needsCashbox = action === 'REASSIGN_CASHBOX';
+            // Không có hành động sửa tự động (đơn AWAITING_PAYMENT, hoặc xung đột
+            // ATP/idempotency): không được hiện nút "Xác nhận đã nhận tiền" vì
+            // bấm vào sẽ không làm gì — cashier bấm hoài, mất niềm tin vào cảnh báo.
+            // Thay bằng hướng dẫn cụ thể để họ biết cần gọi ai.
             return (
               <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200 pt-2">
                 <div className="min-w-0">
                   <div className="font-bold truncate">{order.orderCode}</div>
-                  <div className="text-amber-800 truncate">{order.lastError}</div>
+                  <div className="text-amber-800 truncate">{order.lastError || 'Chờ khách chuyển hoặc chờ đối soát tay'}</div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRepairOfflineOrder(order)}
-                  disabled={isSyncing || (needsCashbox && (!activeSession || activeSession.warehouseId !== order.warehouseId || activeSession.cashierId !== order.cashierId))}
-                  className="rounded-lg bg-amber-700 px-3 py-2 font-bold text-white disabled:opacity-50"
-                >
-                  {needsCashbox ? 'Gán vào ca mới' : 'Xác nhận đã nhận tiền'}
-                </button>
+                {action ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRepairOfflineOrder(order)}
+                    disabled={isSyncing || (needsCashbox && (!activeSession || activeSession.warehouseId !== order.warehouseId || activeSession.cashierId !== order.cashierId))}
+                    className="rounded-lg bg-amber-700 px-3 py-2 font-bold text-white disabled:opacity-50"
+                  >
+                    {needsCashbox ? 'Gán vào ca mới' : 'Xác nhận đã nhận tiền'}
+                  </button>
+                ) : (
+                  <span className="rounded-lg bg-amber-100 px-3 py-2 font-bold text-amber-900">
+                    Cần quản lý đối soát
+                  </span>
+                )}
               </div>
             );
           })}
@@ -2802,6 +2931,7 @@ export function PosCheckoutTerminal({
           amount={transferSession.amount}
           paymentMethod={transferSession.paymentMethod}
           onClose={() => setIsTransferCameraOpen(false)}
+          onCameraError={setTransferErrorMessage}
           onUsePhoto={handleUseTransferPhoto}
         />
       )}
