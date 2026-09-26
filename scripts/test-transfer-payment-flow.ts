@@ -656,12 +656,27 @@ async function run() {
   const mgrRes = await postAs(capBody({ cashboxSessionId: undefined }), MANAGER);
   assert.equal(mgrRes.status, 200, `manager tạo đơn chuyển khoản: ${JSON.stringify(mgrRes.json)}`);
 
-  // B5. Thu ngân khác / kho khác không dùng chung chỗ của nhau
+  // B5. Thu ngân khác / kho khác không dùng chung chỗ của nhau. Đơn quầy chờ bắt
+  // buộc có ca két đang mở của chính thu ngân tại đúng kho, nên B phải mở ca thật
+  // ở wh-cap (nếu không, case này chỉ chứng minh lỗ hổng chứ không phải dòng sản
+  // phẩm thật).
+  const capSessionB = await CashboxService.openSession({
+    warehouseId: CAP_WH, cashierId: CASHIER_B.staffId, openingCash: 0,
+  });
   const otherCashier = await postAs(
-    capBody({ cashboxSessionId: undefined, customerName: `B ${Date.now()}-${seq++}` }),
+    capBody({ cashboxSessionId: capSessionB.session.id, customerName: `B ${Date.now()}-${seq++}` }),
     CASHIER_B
   );
   assert.equal(otherCashier.status, 200, `thu ngân khác vẫn tạo được: ${JSON.stringify(otherCashier.json)}`);
+  const otherCashierRow = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, otherCashier.json.data.orderId)))[0];
+  assert.equal(
+    otherCashierRow.cashboxSessionId,
+    capSessionB.session.id,
+    'đơn của thu ngân B phải gắn đúng phiên két của B (không phải ca của A)'
+  );
   const otherWarehouse = await postAs(baseBody({ paymentMethod: 'BANK_TRANSFER', confirmImmediately: false }));
   assert.equal(otherWarehouse.status, 200, `kho khác vẫn tạo được: ${JSON.stringify(otherWarehouse.json)}`);
   assert.equal((await postAs(capBody())).status, 409, 'chỗ của thu ngân khác/kho khác không được trừ vào của A');

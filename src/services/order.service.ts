@@ -430,6 +430,10 @@ export class OrderService {
       }
     }
 
+    // Phiên két ghi trên đơn: client gửi thì dùng, không gửi thì (đơn quầy chờ,
+    // có ca mở) server tự gắn vào ca đang mở — xem khối B2a trong transaction.
+    let resolvedCashboxSessionId = params.cashboxSessionId ?? null;
+
     const isPending = confirmImmediately === false;
     // POS counter transfer: PENDING hạn 30 phút (đơn PENDING khác giữ TTL 48h).
     // Hạn do server đặt, không nhận từ client; "đơn quầy" xác định bằng KÊNH
@@ -615,6 +619,41 @@ export class OrderService {
           }
         }
 
+        // B2a. Đơn quầy CHỜ (mọi phương thức trừ thanh toán tức thì) bắt buộc phải
+        // có ca két đang mở của chính thu ngân tại đúng kho này. Nếu không, đơn vừa
+        // tạo sẽ không bao giờ duyệt được (confirmOrder cũng chặn) — thu ngân thấy
+        // QR, thu tiền, rồi đơn kẹt giữ ATP tới 30 phút. Chặn ngay lúc tạo để lỗi
+        // có hành động được: mở ca két. Owner/Manager miễn (giữ phạm vi quản lý);
+        // bán tiền mặt / quà tặng / đơn chốt ngay không đi qua đây (không phải PENDING).
+        // Client bỏ trống cashboxSessionId thì gắn vào ca đang mở của chính thu ngân
+        // (openSession giữ tối đa 1 ca OPEN cho mỗi (thu ngân, kho) nên không mơ hồ):
+        // nếu không gắn, đơn sẽ tồn tại mà không bao giờ xác nhận được — đúng cái bẫy
+        // im lặng ta muốn diệt.
+        const creatorRole = params.actorContext?.role;
+        const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
+        if (isPending && isCounterChannel(channel) && !creatorIsPrivileged) {
+          const openShift = await tx
+            .select({ id: cashboxSessions.id })
+            .from(cashboxSessions)
+            .where(
+              and(
+                eq(cashboxSessions.cashierId, effCashierId),
+                eq(cashboxSessions.warehouseId, warehouseId),
+                eq(cashboxSessions.status, 'OPEN')
+              )
+            )
+            .limit(1);
+          if (openShift.length === 0) {
+            throw AppError.conflict(
+              `Đơn tại quầy cần ca két đang mở tại kho ${warehouseId} nhưng thu ngân chưa mở ca. ` +
+                `Vui lòng mở ca két trước khi tạo đơn chờ thanh toán.`
+            );
+          }
+          if (!resolvedCashboxSessionId) {
+            resolvedCashboxSessionId = openShift[0].id;
+          }
+        }
+
         // B2. Tính toán & Kiểm tra ATP nguyên tử bên trong Transaction
         for (const [editionId, qty] of Array.from(needTotal.entries())) {
           const atp = await this.getATP(editionId, warehouseId, tx);
@@ -630,8 +669,6 @@ export class OrderService {
         // Manager/Owner miễn. Tính ngay trong transaction để hai lần tạo song song
         // không cùng lọt qua trần. Đơn đã quá hạn không tính (cùng quy tắc hạn
         // dùng ở ATP và job dọn).
-        const creatorRole = params.actorContext?.role;
-        const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
         if (isPending && !creatorIsPrivileged) {
           const openHoldLines = await tx
             .select({
@@ -711,7 +748,7 @@ export class OrderService {
           paymentExpiresAt,
           syncStatus: 'SYNCED',
           cashierId: effCashierId,
-          cashboxSessionId: params.cashboxSessionId,
+          cashboxSessionId: resolvedCashboxSessionId,
           idempotencyKey,
           note: mergedNote,
           createdAt,

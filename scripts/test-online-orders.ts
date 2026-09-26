@@ -135,36 +135,41 @@ async function run() {
   await OrderService.cancelOrder(pend6.orderId, 'ROLE_MANAGER', 'dọn test');
   ok('6. Cashier bị chặn duyệt/hủy đơn người khác', roleBlocked === 2);
 
-  // 6b. Đơn tại quầy KHÔNG gắn phiên két thì không được duyệt: nếu cho phép, doanh
-  // thu không vào két nào và đối soát tiền mặt lệch. (Trước đây case này khóa hành
-  // vi ngược lại — đó là lỗ hổng, không phải hành vi hợp lệ.)
+  // 6b. Đơn tại quầy CHỜ của thu ngân chưa mở ca két bị từ chối NGAY LÚC TẠO,
+  // kèm thông báo chỉ cách sửa (mở ca). Nếu cho tạo, đơn sẽ tồn tại mà không bao
+  // giờ xác nhận được (confirmOrder chặn đơn quầy không gắn phiên két) — thu ngân
+  // thấy QR, thu tiền, rồi đơn kẹt giữ ATP tới 30 phút. Không được để lại dòng
+  // đơn nào và không được giữ ATP (bẫy im lặng).
   // (schema không có channel RETAIL_POS; kênh bán tại quầy là RETAIL_OFFICE)
-  const pend6b = await OrderService.createOrder({
-    warehouseId: 'wh-au-co',
-    channel: 'RETAIL_OFFICE',
-    customerName: 'Khách Không Mở Két',
-    paymentMethod: 'BANK_TRANSFER',
-    cashierId: 'cashier-1',
-    confirmImmediately: false,
-    idempotencyKey: uniq('idem-pos-noshift'),
-    items: [{ editionId: edC, quantity: 1 }],
-  });
   const selfProof = { id: 'proof-cashier-1', capturedAt: new Date().toISOString() };
+  const key6b = uniq('idem-pos-noshift');
+  const atpBefore6b = await OrderService.getATP(edC, 'wh-au-co');
   let noShiftBlocked = 0;
+  let noShiftMessage = '';
+  let noShiftCode = '';
   try {
-    await OrderService.confirmOrder(pend6b.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+    await OrderService.createOrder({
+      warehouseId: 'wh-au-co',
+      channel: 'RETAIL_OFFICE',
+      customerName: 'Khách Không Mở Két',
+      paymentMethod: 'BANK_TRANSFER',
+      cashierId: 'cashier-1',
+      confirmImmediately: false,
+      idempotencyKey: key6b,
+      items: [{ editionId: edC, quantity: 1 }],
+    });
   } catch (e: any) {
-    if (/két|phiên két|chưa mở ca/i.test(e.message)) noShiftBlocked++;
+    noShiftMessage = String(e?.message || '');
+    noShiftCode = String(e?.code || '');
+    if (noShiftCode === 'STATE_CONFLICT' && /mở ca/i.test(noShiftMessage)) noShiftBlocked++;
   }
-  const pend6bRow = await db.select().from(orders).where(eq(orders.id, pend6b.orderId)).limit(1);
+  const pend6bRow = await db.select().from(orders).where(eq(orders.idempotencyKey, key6b)).limit(1);
+  const atpAfter6b = await OrderService.getATP(edC, 'wh-au-co');
   ok(
-    '6b. Đơn quầy không gắn phiên két thì bị chặn duyệt (không lách được két ca)',
-    noShiftBlocked === 1 && pend6bRow[0]?.status === 'PENDING_CONFIRMATION'
+    '6b. Đơn quầy của thu ngân chưa mở ca bị từ chối lúc tạo; không còn dòng đơn, ATP không bị giữ (không có bẫy im lặng)',
+    noShiftBlocked === 1 && pend6bRow.length === 0 && atpAfter6b === atpBefore6b,
+    `code=${noShiftCode} rows=${pend6bRow.length} atp ${atpBefore6b}→${atpAfter6b} msg=${noShiftMessage.slice(0, 80)}`
   );
-  // Dọn chỗ giữ ATP: run-isolated chạy các suite trên CÙNG một DB, đơn PENDING còn
-  // sót lại sẽ làm các suite sau (probe C) gặp ATP = 0. Hủy được là nhờ guard
-  // mới: đơn quầy không két vẫn hủy được để không bị kẹt.
-  await OrderService.cancelOrder(pend6b.orderId, 'ROLE_CASHIER', 'dọn case 6b', undefined, 'cashier-1');
 
   // 6c. Có phiên két đang mở ở đúng kho: cashier tự duyệt được đơn của chính mình,
   // và retry là idempotent (chỉ trừ kho đúng một lần).
