@@ -56,6 +56,8 @@ import {
   getPaymentProofPhoto,
   markPaymentProofPhotoSyncState,
   isPaymentWindowExpired,
+  cancelOfflineOrderLocally,
+  isOfflineTransferReadyToConfirm,
   removeOfflineOrder,
    updateOfflineOrderStatus,
    updateOfflineOrderForRetry,
@@ -625,6 +627,7 @@ export function PosCheckoutTerminal({
   const handleRepairOfflineOrder = async (order: OfflineOrder) => {
     const action = getOfflineOrderRepairAction(order);
     if (!action) return;
+    let repaired = false;
     try {
       if (action === 'REASSIGN_CASHBOX') {
         if (!activeSession || activeSession.warehouseId !== order.warehouseId) {
@@ -636,10 +639,17 @@ export function PosCheckoutTerminal({
           return;
         }
         if (!window.confirm(`Gán đơn ${order.orderCode} vào ca két mới ${activeSession.id}?`)) return;
-        await updateOfflineOrderForRetry(order.id, { cashboxSessionId: activeSession.id });
+        repaired = await updateOfflineOrderForRetry(order.id, { cashboxSessionId: activeSession.id });
       } else {
         if (!window.confirm(`Xác nhận đã nhận đủ ${order.finalAmount.toLocaleString('vi-VN')} đ cho đơn ${order.orderCode}?`)) return;
-        await updateOfflineOrderForRetry(order.id, { moneyReceived: true });
+        repaired = await updateOfflineOrderForRetry(order.id, { moneyReceived: true });
+      }
+      // Record không tồn tại thì không được báo "đã cập nhật": cashier sẽ tưởng
+      // đơn đã được sửa và bỏ qua nó, trong khi máy vốn không có đơn đó.
+      if (!repaired) {
+        setErrorMessage(`Không tìm thấy đơn ${order.orderCode} trên máy này để cập nhật.`);
+        setOfflineReviewOrders((current) => current.filter((item) => item.id !== order.id));
+        return;
       }
       setOfflineReviewOrders((current) => current.filter((item) => item.id !== order.id));
       setSyncToast(`Đã cập nhật đơn ${order.orderCode}; đang đồng bộ lại.`);
@@ -1706,15 +1716,20 @@ export function PosCheckoutTerminal({
    */
   const handleUseTransferPhoto = async (photo: PaymentProofPhoto) => {
     await savePaymentProofPhoto(photo);
-    setTransferSession((current) => (current ? { ...current, paymentProof: photo } : current));
     // Offline: đơn local chuyển sang PAID_PENDING_SYNC và bật moneyReceived để
     // lần sync kế tiếp gửi kèm cặp moneyReceived + proof như server yêu cầu.
+    //
+    // PHẢI gắn ảnh vào đơn TRƯỚC khi mở đường xác nhận. Nếu set paymentProof vào
+    // session trước, attach ném lỗi thì camera báo lỗi nhưng session đã có ảnh:
+    // cashier đóng camera rồi bấm Xác nhận, thấy toast thành công, giỏ bị xoá —
+    // trong khi đơn vẫn AWAITING_PAYMENT, không bao giờ tự sync, dù tiền đã thu.
     if (transferOfflineOrderId) {
       await attachOfflineOrderPaymentProof(transferOfflineOrderId, {
         id: photo.id,
         capturedAt: photo.capturedAt,
       });
     }
+    setTransferSession((current) => (current ? { ...current, paymentProof: photo } : current));
   };
 
   const handleConfirmTransfer = async () => {
@@ -1737,6 +1752,17 @@ export function PosCheckoutTerminal({
     setTransferErrorMessage(null);
     try {
       if (session.mode === 'OFFLINE') {
+        // Xác minh đơn local thật sự đã ở PAID_PENDING_SYNC (có ảnh + đã thu
+        // tiền) TRƯỚC khi báo thành công và xoá giỏ. Bỏ qua bước này thì một
+        // phiên mà attach ảnh đã hỏng vẫn hiện toast "đã ghi nhận": cashier tin
+        // là xong, còn đơn kẹt AWAITING_PAYMENT nên không bao giờ được sync.
+        const ready = await isOfflineTransferReadyToConfirm(transferOfflineOrderId ?? '');
+        if (!ready) {
+          setTransferErrorMessage(
+            'Đơn ngoại tuyến chưa được ghi nhận thanh toán trên máy này. Giữ nguyên giỏ, chụp lại ảnh xác nhận hoặc nhờ quản lý.'
+          );
+          return;
+        }
         // Offline: chỉ ghi nhận cục bộ, chờ sync. Không in bill thành công.
         closeTransferSession();
         postCheckoutResetRef.current?.();
@@ -1795,24 +1821,43 @@ export function PosCheckoutTerminal({
     try {
       if (session.mode === 'OFFLINE') {
         if (transferOfflineOrderId) {
+          // Hàm này tự xác nhận việc ghi/xoá có thật sự xảy ra. Gọi
+          // updateOfflineOrderPaymentState + removeOfflineOrder rồi coi là xong
+          // là sai: cả hai resolve im lặng khi record không tồn tại, và nếu xoá
+          // hỏng thì đơn quay lại trạng thái chờ — không ai thấy, không ai sửa.
+          const cancelled = await cancelOfflineOrderLocally(
+            transferOfflineOrderId,
+            Boolean(session.paymentProof)
+          );
+          if (!cancelled) {
+            setTransferErrorMessage(
+              'Không tìm thấy đơn ngoại tuyến trên máy này để huỷ. Kiểm tra lại hoặc nhờ quản lý.'
+            );
+            return;
+          }
+          // Đơn đã có ảnh thì được giữ lại ở NEEDS_RECONCILIATION: ảnh phải được
+          // miễn retention cho tới khi người có quyền đối soát xong.
           if (session.paymentProof) {
-            // Đã chụp ảnh = đã có bằng chứng khách đã chuyển. Xoá đơn ở đây sẽ
-            // xoá luôn bằng chứng và đơn, cashier thu tiền xong rồi mất dấu vết.
-            // Giữ đơn ở NEEDS_RECONCILIATION cho người có quyền xử lý, ảnh cũng
-            // được miễn retention.
-            await updateOfflineOrderPaymentState(transferOfflineOrderId, 'NEEDS_RECONCILIATION');
             await markPaymentProofPhotoSyncState(session.paymentProof.id, 'NEEDS_RECONCILIATION');
-          } else {
-            await updateOfflineOrderPaymentState(transferOfflineOrderId, 'CANCELLED_LOCAL');
-            await removeOfflineOrder(transferOfflineOrderId);
           }
         }
       } else if (session.orderId) {
-        await fetch('/api/orders', {
+        const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'CANCEL', orderId: session.orderId, reason: 'Khách chuyển sau' }),
         });
+        // F6: phải đọc response trước khi dọn state. 409 từ cashbox guard, 403
+        // phân quyền, 400 input, 500 lỗi server — tất cả đều để nguyên đơn PENDING
+        // trên server (còn giữ ATP tới 48h). Bỏ qua bước này thì cashier thấy
+        // "đã huỷ" và giỏ bị xoá, còn tồn kho vẫn bị giữ chỗ.
+        const cancelData = await res.json().catch(() => null);
+        if (!res.ok || !cancelData?.success) {
+          setTransferErrorMessage(
+            cancelData?.error || `Không huỷ được đơn (HTTP ${res.status}). Đơn vẫn còn trên máy chủ.`
+          );
+          return;
+        }
       }
       closeTransferSession();
       postCheckoutResetRef.current?.();

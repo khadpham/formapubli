@@ -97,7 +97,7 @@ const OFFLINE_PAYMENT_STATES: readonly OfflinePaymentState[] = [
 ];
 
 /** Chỉ hai trạng thái này được phép tự động sync; còn lại phải xem thủ công. */
-const AUTO_SYNCABLE_PAYMENT_STATES: readonly OfflinePaymentState[] = ['READY_TO_SYNC', 'PAID_PENDING_SYNC'];
+export const AUTO_SYNCABLE_PAYMENT_STATES: readonly OfflinePaymentState[] = ['READY_TO_SYNC', 'PAID_PENDING_SYNC'];
 
 function isDigitalPaymentMethod(paymentMethod: string | undefined): boolean {
   return paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE';
@@ -384,10 +384,37 @@ export async function updateOfflineOrderStatus(
   });
 }
 
+/**
+ * Trạng thái thanh toán sau khi thu ngân xử lý thủ công một đơn bị kẹt.
+ *
+ * `updateOfflineOrderForRetry` ghi `moneyReceived`/ca két rồi đặt lại
+ * `syncStatus: 'PENDING'`, nhưng nếu giữ nguyên `paymentState` là
+ * NEEDS_RECONCILIATION thì đơn vẫn bị `getPendingOfflineOrders` loại — POS báo
+ * "đã cập nhật, đang đồng bộ lại" rồi không bao giờ đồng bộ được, và mọi lần
+ * sync sau lại loại nó một lần nữa. Sửa xong thì phải thực sự sync được.
+ *
+ * CANCELLED_LOCAL là trạng thái kết, không quay lại.
+ */
+export function paymentStateAfterManualRepair(order: OfflineOrder): OfflinePaymentState {
+  const state = normalizeOfflinePaymentState(order);
+  if (state === 'CANCELLED_LOCAL') return 'CANCELLED_LOCAL';
+  if (state !== 'NEEDS_RECONCILIATION' && state !== 'AWAITING_PAYMENT') return state;
+  // Tiền mặt và quà tặng không thu tiền nên không cần ảnh: luôn READY_TO_SYNC,
+  // kể cả khi hình thức ghi là chuyển khoản và cờ moneyReceived bị bẩn.
+  const isDigital = order.paymentMethod === 'BANK_TRANSFER' || order.paymentMethod === 'QR_CODE';
+  const isGift = order.isGift === true || order.discountRate === 1;
+  if (!isDigital || isGift) return 'READY_TO_SYNC';
+  return order.moneyReceived === true ? 'PAID_PENDING_SYNC' : 'READY_TO_SYNC';
+}
+
+/**
+ * Chuẩn bị lại một đơn offline bị kẹt để sync. Trả về `false` nếu record không
+ * tồn tại — để bề mặt rà soát không báo "đã cập nhật" cho một đơn không có thật.
+ */
 export async function updateOfflineOrderForRetry(
   id: string,
   patch: { cashboxSessionId?: string; moneyReceived?: true }
-): Promise<void> {
+): Promise<boolean> {
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -396,15 +423,17 @@ export async function updateOfflineOrderForRetry(
     getReq.onsuccess = () => {
       const order = getReq.result as OfflineOrder | undefined;
       if (!order) {
-        resolve();
+        resolve(false);
         return;
       }
       if (patch.cashboxSessionId !== undefined) order.cashboxSessionId = patch.cashboxSessionId;
       if (patch.moneyReceived === true) order.moneyReceived = true;
       order.syncStatus = 'PENDING';
       delete order.lastError;
+      // Sửa xong thì phải thực sự nằm trong đường tự động sync.
+      order.paymentState = paymentStateAfterManualRepair(order);
       const putReq = store.put(order);
-      putReq.onsuccess = () => resolve();
+      putReq.onsuccess = () => resolve(true);
       putReq.onerror = () => reject(putReq.error);
     };
     getReq.onerror = () => reject(getReq.error);
@@ -549,6 +578,83 @@ export async function attachOfflineOrderPaymentProof(
     (order as OfflineOrder & { paymentProofId?: string; paymentProofCapturedAt?: string }).paymentProofId = proof.id;
     (order as OfflineOrder & { paymentProofId?: string; paymentProofCapturedAt?: string }).paymentProofCapturedAt =
       proof.capturedAt;
+  });
+}
+
+/**
+ * Huỷ một đơn offline và TRẢ VỀ kết quả thật.
+ *
+ * `patchOfflineOrder` và `removeOfflineOrder` đều resolve im lặng khi không thấy
+ * record, nên gọi chúng rồi coi là "đã huỷ xong" là sai: POS sẽ báo thành công và
+ * xoá giỏ trong khi đơn vẫn còn nguyên trên máy (và nếu là đơn đã thu tiền thì
+ * còn giữ ATP ở server). Hàm này chỉ trả `true` khi record thực sự tồn tại và
+ * thực sự bị ghi/xoá.
+ *
+ * @param hasPaymentProof đơn đã có ảnh xác nhận thì KHÔNG xoá: giữ ở
+ *   NEEDS_RECONCILIATION cùng ảnh, vì tiền đã thu và cần người có quyền xử lý.
+ */
+export async function cancelOfflineOrderLocally(id: string, hasPaymentProof: boolean): Promise<boolean> {
+  if (!id) return false;
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const order = getReq.result as OfflineOrder | undefined;
+      // Không có record: không có gì để huỷ, và cũng không được báo thành công.
+      if (!order) {
+        resolve(false);
+        return;
+      }
+      if (hasPaymentProof) {
+        // Đã có bằng chứng khách đã chuyển: giữ đơn + ảnh cho đối soát.
+        order.paymentState = 'NEEDS_RECONCILIATION';
+        const putReq = store.put(order);
+        putReq.onsuccess = () => resolve(true);
+        putReq.onerror = () => reject(putReq.error);
+        return;
+      }
+      order.paymentState = 'CANCELLED_LOCAL';
+      const putReq = store.put(order);
+      putReq.onerror = () => reject(putReq.error);
+      putReq.onsuccess = () => {
+        // Xoá sau khi đã ghi CANCELLED_LOCAL: nếu xoá hỏng, đơn vẫn ở trạng thái
+        // huỷ rõ ràng thay vì quay lại AWAITING_PAYMENT và bị bỏ quên.
+        const delReq = store.delete(id);
+        delReq.onsuccess = () => resolve(true);
+        delReq.onerror = () => reject(delReq.error);
+      };
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+/**
+ * Đơn offline đã sẵn sàng chốt chưa: có ảnh xác nhận, đã thu tiền và đã ở
+ * PAID_PENDING_SYNC (nên sẽ thực sự được auto-sync khi có mạng).
+ *
+ * POS dùng hàm này trước khi báo "đã ghi nhận" cho đường offline. Nếu bỏ qua,
+ * một phiên mà `attachOfflineOrderPaymentProof` đã hỏng vẫn bị coi là thành
+ * công: cashier thấy toast, giỏ bị xoá, còn đơn thì kẹt AWAITING_PAYMENT —
+ * không bao giờ tự sync, dù tiền đã thu.
+ */
+export async function isOfflineTransferReadyToConfirm(id: string): Promise<boolean> {
+  if (!id) return false;
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(id);
+    req.onsuccess = () => {
+      const order = req.result as OfflineOrder | undefined;
+      if (!order) {
+        resolve(false);
+        return;
+      }
+      const hasProof = Boolean(order.paymentProofId && order.paymentProofCapturedAt);
+      resolve(hasProof && normalizeOfflinePaymentState(order) === 'PAID_PENDING_SYNC');
+    };
+    req.onerror = () => reject(req.error);
   });
 }
 

@@ -818,5 +818,164 @@ expectMatch(
   'Đơn offline tiền mặt vẫn tạo bill như cũ'
 );
 
+// ============================================================================
+// ADVERSARIAL ROUND 3 — "reset without checking success".
+//
+// Lớp lỗi: giỏ hàng bị xoá, phiên bị đóng, bản ghi offline bị xoá hoặc toast
+// thành công hiện lên TRƯỚC khi biết thao tác thật sự thành công. Cashier tin
+// là xong, dữ liệu thì còn nằm trên server.
+// ============================================================================
+
+const cancelStart = posCode.indexOf('const handleCancelTransfer = async');
+const cancelEnd = posCode.indexOf('const handleCheckout', cancelStart) > cancelStart
+  ? posCode.indexOf('const handleCheckout', cancelStart)
+  : posCode.length;
+assert.ok(cancelStart > 0, 'POS có handleCancelTransfer');
+const cancelBody = stripComments(posCode.slice(cancelStart, cancelEnd));
+
+// --- B1. Huỷ ONLINE: bắt buộc kiểm tra response trước khi dọn state ---------
+expectMatch(
+  cancelBody,
+  /const cancelData = await res\.json\(\)[\s\S]{0,300}?if \(!res\.ok \|\| !cancelData\?\.success\)/,
+  'Huỷ online phải kiểm tra res.ok và success, không chỉ await fetch'
+);
+expectMatch(
+  cancelBody,
+  /if \(!res\.ok \|\| !cancelData\?\.success\) \{[\s\S]{0,300}?setTransferErrorMessage\([\s\S]{0,300}?return;/,
+  'Huỷ thất bại phải báo lỗi server và dừng, không return im lặng'
+);
+// Giỏ và phiên chỉ được dọn ở đường thành công, sau khi đã kiểm.
+const cancelResetIdx = cancelBody.indexOf('closeTransferSession();');
+const cancelGuardIdx = cancelBody.indexOf('if (!res.ok || !cancelData?.success)');
+assert.ok(
+  cancelResetIdx > 0 && cancelGuardIdx > 0 && cancelGuardIdx < cancelResetIdx,
+  'closeTransferSession() phải nằm SAU chặn kiểm response, không trước'
+);
+const cancelResetBlock = stripComments(cancelBody.slice(cancelResetIdx, cancelResetIdx + 260));
+expectMatch(
+  cancelResetBlock,
+  /postCheckoutResetRef\.current\?\.\(\)/,
+  'Xác nhận thứ tự: đóng phiên rồi mới xoá giỏ'
+);
+expectNoMatch(
+  cancelBody.slice(0, cancelGuardIdx),
+  /closeTransferSession\(\)|postCheckoutResetRef\.current\?\.\(\)/,
+  'Trước khi kiểm response không được đóng phiên hay xoá giỏ'
+);
+// Thông báo lỗi phải lấy từ server trước, rồi mới tới câu dự phòng kèm HTTP status
+// (để cashier biết đơn vẫn còn trên máy chủ chứ không mất tiền).
+expectMatch(cancelBody, /cancelData\?\.error \|\| /, 'Huỷ thất bại phải hiện lỗi server cho cashier');
+expectMatch(cancelBody, /res\.status/, 'Câu dự phòng khi server không trả JSON phải nêu HTTP status');
+
+// --- B2. Huỷ OFFLINE: chỉ đánh CANCELLED_LOCAL sau khi thao tác thật sự xong --
+// patchOfflineOrder/removeOfflineOrder đều resolve im lặng khi không thấy
+// record, nên "thành công" phải được xác nhận bằng chính record đó.
+expectMatch(
+  cancelBody,
+  /const cancelled = await cancelOfflineOrderLocally\(/,
+  'Huỷ offline phải đi qua một hàm trả về kết quả thật, không gọi removeOfflineOrder im lặng'
+);
+expectMatch(
+  cancelBody,
+  /if \(!cancelled\) \{[\s\S]{0,300}?setTransferErrorMessage\([\s\S]{0,200}?return;/,
+  'Huỷ offline thất bại phải báo lỗi và giữ nguyên giỏ + phiên'
+);
+expectNoMatch(
+  cancelBody,
+  /removeOfflineOrder\(/,
+  'handleCancelTransfer không tự xoá bản ghi: xoá phải do hàm có xác nhận kết quả'
+);
+assert.match(
+  offlineDb,
+  /export async function cancelOfflineOrderLocally\(/,
+  'offline-db phải có cancelOfflineOrderLocally() xác nhận việc huỷ thực sự xảy ra'
+);
+
+// --- B3. Ảnh lưu xong nhưng gắn vào đơn offline hỏng: KHÔNG mở nút Xác nhận -
+// handleUseTransferPhoto set paymentProof vào session TRƯỚC khi
+// attachOfflineOrderPaymentProof ném lỗi. Camera báo lỗi nhưng session đã có
+// ảnh → cashier bấm Xác nhận, thấy toast thành công, giỏ bị xoá, trong khi đơn
+// offline vẫn AWAITING_PAYMENT (không bao giờ tự sync) dù tiền đã thu.
+const usePhotoStart2 = posCode.indexOf('const handleUseTransferPhoto = async');
+const usePhotoEnd2 = posCode.indexOf('const handleConfirmTransfer', usePhotoStart2);
+assert.ok(usePhotoStart2 > 0, 'POS có handleUseTransferPhoto');
+const usePhotoBody2 = stripComments(posCode.slice(usePhotoStart2, usePhotoEnd2));
+const attachIdx2 = usePhotoBody2.indexOf('await attachOfflineOrderPaymentProof(');
+const proofSetIdx2 = usePhotoBody2.indexOf('paymentProof: photo');
+assert.ok(attachIdx2 > 0 && proofSetIdx2 > 0, 'handleUseTransferPhoto gọi attach và set paymentProof');
+assert.ok(
+  proofSetIdx2 > attachIdx2,
+  'paymentProof chỉ được set vào session SAU khi attachOfflineOrderPaymentProof thành công'
+);
+
+// --- B4. Xác nhận OFFLINE: phải kiểm đơn thật sự PAID_PENDING_SYNC -----------
+// Nhánh offline báo "đã ghi nhận" và xoá giỏ mà không hề xác minh đơn local đã
+// sang PAID_PENDING_SYNC. Nếu attach lúc trước hỏng, cashier vẫn thấy thành công.
+const confirmBodyB = stripComments(
+  posCode.slice(posCode.indexOf('const handleConfirmTransfer = async'), cancelStart)
+);
+expectMatch(
+  confirmBodyB,
+  /isOfflineTransferReadyToConfirm\(/,
+  'Xác nhận offline phải xác minh đơn local thật sự sẵn sàng trước khi báo thành công'
+);
+expectMatch(
+  confirmBodyB,
+  /if \(session\.mode === 'OFFLINE'\) \{[\s\S]{0,900}?if \(!ready\) \{[\s\S]{0,300}?setTransferErrorMessage\([\s\S]{0,200}?return;/,
+  'Xác nhận offline thất bại phải báo lỗi và giữ giỏ, không toast thành công'
+);
+const offlineConfirmReset = confirmBodyB.indexOf('postCheckoutResetRef.current?.()');
+const offlineReadyIdx = confirmBodyB.indexOf('isOfflineTransferReadyToConfirm(');
+assert.ok(
+  offlineReadyIdx > 0 && offlineConfirmReset > offlineReadyIdx,
+  'Nhánh offline phải xác minh đơn TRƯỚC khi xoá giỏ và báo thành công'
+);
+assert.match(
+  offlineDb,
+  /export async function isOfflineTransferReadyToConfirm\(/,
+  'offline-db phải có isOfflineTransferReadyToConfirm() đọc trạng thái thật của đơn'
+);
+
+// --- B5. Sửa thủ công phải đưa đơn THẬT SỰ trở lại đường tự động sync ------
+// updateOfflineOrderForRetry ghi ca két / moneyReceived rồi đặt syncStatus
+// PENDING, nhưng nếu giữ nguyên paymentState = NEEDS_RECONCILIATION thì
+// getPendingOfflineOrders vẫn loại đơn đó. POS báo "đã cập nhật, đang đồng bộ
+// lại" rồi không bao giờ đồng bộ được — thông báo thành công sai.
+assert.match(
+  offlineDb,
+  /export function paymentStateAfterManualRepair\(/,
+  'offline-db phải có paymentStateAfterManualRepair() để tính trạng thái sau khi sửa'
+);
+assert.match(
+  offlineDb,
+  /order\.paymentState = paymentStateAfterManualRepair\(order\);/,
+  'updateOfflineOrderForRetry phải tính lại paymentState, không giữ nguyên NEEDS_RECONCILIATION'
+);
+// repair phải báo kết quả thật, không "thành công" cho một record không tồn tại
+assert.match(
+  offlineDb,
+  /export async function updateOfflineOrderForRetry\([\s\S]{0,120}?\): Promise<boolean>/,
+  'updateOfflineOrderForRetry phải trả về boolean thay vì void im lặng'
+);
+const repairStart = posCode.indexOf('const handleRepairOfflineOrder');
+const repairEnd = posCode.indexOf('const handleClaimLegacyOrders', repairStart);
+assert.ok(repairStart > 0 && repairEnd > repairStart, 'POS có handleRepairOfflineOrder');
+const repairBody = stripComments(posCode.slice(repairStart, repairEnd));
+expectMatch(
+  repairBody,
+  /repaired = await updateOfflineOrderForRetry\(/,
+  'POS phải nhận kết quả thật của updateOfflineOrderForRetry'
+);
+expectMatch(
+  repairBody,
+  /if \(!repaired\) \{[\s\S]{0,300}?setErrorMessage\([\s\S]{0,200}?return;/,
+  'Sửa thất bại phải báo lỗi, không toast "đã cập nhật" cho đơn không tồn tại'
+);
+const repairToastIdx = repairBody.indexOf('đang đồng bộ lại');
+assert.ok(
+  repairToastIdx > 0 && repairToastIdx > repairBody.indexOf('if (!repaired)'),
+  'Toast thành công phải nằm SAU chặn !repaired'
+);
+
 console.log('ADVERSARIAL-A: state machine + reconciliation');
 console.log('PASS: transfer payment photo contract.');
