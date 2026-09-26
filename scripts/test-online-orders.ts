@@ -1,11 +1,11 @@
 /**
  * Bước 1 — Kiểm thử Đơn Online PENDING + ATP Soft Reserve (DB cách ly).
  * Chạy: npx tsx scripts/run-isolated.ts --only=test-online-orders
- * 8 cases: tạo pending / ATP giữ chỗ / chặn bán lẹm / confirm trừ kho /
+ * 10 cases: tạo pending / ATP giữ chỗ / chặn bán lẹm / confirm trừ kho /
  * cancel nhả chỗ / cashier bị chặn / TTL tự hủy / summary loại pending.
  */
 import { db, orders, inventoryLedger } from '../src/db';
-import { editions } from '../src/db/schema';
+import { cashboxSessions, editions } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { OrderService, PENDING_TTL_HOURS } from '../src/services/order.service';
 import { InventoryService } from '../src/services/inventory.service';
@@ -31,7 +31,7 @@ async function run() {
   const [edA, edB, edC, edD] = roomy;
 
   let passed = 0;
-  const total = 9;
+  const total = 10;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -135,23 +135,58 @@ async function run() {
   await OrderService.cancelOrder(pend6.orderId, 'ROLE_MANAGER', 'dọn test');
   ok('6. Cashier bị chặn duyệt/hủy đơn người khác', roleBlocked === 2);
 
-  // 6b. Cashier tự duyệt được đơn tại quầy (PENDING) của chính mình, có proof
+  // 6b. Đơn tại quầy KHÔNG gắn phiên két thì không được duyệt: nếu cho phép, doanh
+  // thu không vào két nào và đối soát tiền mặt lệch. (Trước đây case này khóa hành
+  // vi ngược lại — đó là lỗ hổng, không phải hành vi hợp lệ.)
   // (schema không có channel RETAIL_POS; kênh bán tại quầy là RETAIL_OFFICE)
   const pend6b = await OrderService.createOrder({
+    warehouseId: 'wh-au-co',
+    channel: 'RETAIL_OFFICE',
+    customerName: 'Khách Không Mở Két',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: 'cashier-1',
+    confirmImmediately: false,
+    idempotencyKey: uniq('idem-pos-noshift'),
+    items: [{ editionId: edC, quantity: 1 }],
+  });
+  const selfProof = { id: 'proof-cashier-1', capturedAt: new Date().toISOString() };
+  let noShiftBlocked = 0;
+  try {
+    await OrderService.confirmOrder(pend6b.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  } catch (e: any) {
+    if (/két|phiên két|chưa mở ca/i.test(e.message)) noShiftBlocked++;
+  }
+  const pend6bRow = await db.select().from(orders).where(eq(orders.id, pend6b.orderId)).limit(1);
+  ok(
+    '6b. Đơn quầy không gắn phiên két thì bị chặn duyệt (không lách được két ca)',
+    noShiftBlocked === 1 && pend6bRow[0]?.status === 'PENDING_CONFIRMATION'
+  );
+
+  // 6c. Có phiên két đang mở ở đúng kho: cashier tự duyệt được đơn của chính mình,
+  // và retry là idempotent (chỉ trừ kho đúng một lần).
+  const sessionId6c = uniq('cbs-online-6c');
+  await db.insert(cashboxSessions).values({
+    id: sessionId6c,
+    warehouseId: 'wh-au-co',
+    cashierId: 'cashier-1',
+    openingCash: 500000,
+    status: 'OPEN',
+  });
+  const pend6c = await OrderService.createOrder({
     warehouseId: 'wh-au-co',
     channel: 'RETAIL_OFFICE',
     customerName: 'Khách Tự Duyệt',
     paymentMethod: 'BANK_TRANSFER',
     cashierId: 'cashier-1',
+    cashboxSessionId: sessionId6c,
     confirmImmediately: false,
     idempotencyKey: uniq('idem-pos-self'),
     items: [{ editionId: edC, quantity: 1 }],
   });
-  const selfProof = { id: 'proof-cashier-1', capturedAt: new Date().toISOString() };
-  const selfConfirmed = await OrderService.confirmOrder(pend6b.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
-  const selfRetry = await OrderService.confirmOrder(pend6b.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  const selfConfirmed = await OrderService.confirmOrder(pend6c.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  const selfRetry = await OrderService.confirmOrder(pend6c.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
   ok(
-    '6b. Cashier tự duyệt được đơn của mình (retry idempotent)',
+    '6c. Cashier tự duyệt được đơn của mình khi đã mở két (retry idempotent)',
     selfConfirmed.status === 'COMPLETED' && (selfRetry as any).isIdempotent === true
   );
 
