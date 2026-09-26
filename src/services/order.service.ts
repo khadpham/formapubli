@@ -1136,25 +1136,12 @@ export class OrderService {
              throw AppError.conflict('Két ca đã đóng, không thể duyệt đơn chờ.');
            }
          } else if (isCounterChannel(ord.channel)) {
-           // Đơn quầy không gắn phiên két, trong khi thu ngân ĐANG mở ca ở đúng
-           // kho này: đơn bắt buộc phải gắn vào ca đó. Bỏ trống là lách guard
-           // két (cashboxSessionId do client gửi) — chặn ở đây.
-           // Lưu ý: thu ngân không mở ca thì giữ nguyên hành vi cũ (cho duyệt),
-           // vì test-online-orders case 6b khoá đúng hành vi đó.
-           const openShift = await tx
-             .select({ id: cashboxSessions.id })
-             .from(cashboxSessions)
-             .where(
-               and(
-                 eq(cashboxSessions.cashierId, resolvedActorId),
-                 eq(cashboxSessions.warehouseId, ord.warehouseId),
-                 eq(cashboxSessions.status, 'OPEN')
-               )
-             )
-             .limit(1);
-           if (openShift.length > 0) {
-             throw AppError.conflict('Đơn tại quầy phải gắn phiên két ca đang mở, không thể duyệt.');
-           }
+           // Đơn quầy mà không gắn phiên két: KHÔNG được duyệt. cashboxSessionId do
+           // client gửi nên bỏ trống là lách toàn bộ guard két — tiền chuyển khoản/QR
+           // thu được sẽ không nằm trong két nào và đối soát tiền mặt lệch. Đơn quầy
+           // phải mở ca két trước rồi mới bán được; hủy thì vẫn cho phép để không
+           // kẹt vĩnh viễn (xem cancelOrder — hủy không ghi doanh thu vào két nào).
+           throw AppError.conflict('Đơn tại quầy chưa gắn phiên két ca đang mở, không thể duyệt.');
          }
 
          // 5. Đọc order items trong transaction
@@ -1261,6 +1248,8 @@ export class OrderService {
         }
 
         // Đóng ca = không được xử lý đơn chờ thuộc két (đồng bộ với confirmOrder).
+        // Đơn quầy KHÔNG gắn két thì vẫn hủy được: hủy không ghi doanh thu vào
+        // két nào mà chỉ nhả chỗ giữ ATP — từ chối hủy sẽ kẹt vĩnh viễn đơn.
         if (ord.cashboxSessionId) {
           const sessionRows = await tx
             .select()

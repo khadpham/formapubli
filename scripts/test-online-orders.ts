@@ -161,6 +161,10 @@ async function run() {
     '6b. Đơn quầy không gắn phiên két thì bị chặn duyệt (không lách được két ca)',
     noShiftBlocked === 1 && pend6bRow[0]?.status === 'PENDING_CONFIRMATION'
   );
+  // Dọn chỗ giữ ATP: run-isolated chạy các suite trên CÙNG một DB, đơn PENDING còn
+  // sót lại sẽ làm các suite sau (probe C) gặp ATP = 0. Hủy được là nhờ guard
+  // mới: đơn quầy không két vẫn hủy được để không bị kẹt.
+  await OrderService.cancelOrder(pend6b.orderId, 'ROLE_CASHIER', 'dọn case 6b', undefined, 'cashier-1');
 
   // 6c. Có phiên két đang mở ở đúng kho: cashier tự duyệt được đơn của chính mình,
   // và retry là idempotent (chỉ trừ kho đúng một lần).

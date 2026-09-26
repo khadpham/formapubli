@@ -568,9 +568,10 @@ async function run() {
     noSessionCode === 'STATE_CONFLICT',
     `kết quả=${noSessionCode}`
   );
-  // B3.5 LỖ HỔNG CÒN LẠI (đã biết, báo cáo): thu ngân KHÔNG mở ca thì đơn quầy
-  // không gắn két vẫn duyệt được — đúng hành vi cũ mà test-online-orders case 6b
-  // khoá lại, nên không tự ý siết (xem báo cáo điều phối viên).
+  // B3.5 LỖ HỔNG ĐÃ ĐÓNG: thu ngân KHÔNG mở ca cũng không được duyệt đơn quầy
+  // không gắn phiên két. Trước đây guard chỉ chạy khi ca đang MỞ, nên thu ngân
+  // không mở ca bán được và doanh thu không nằm trong két nào (case 6b cũ của
+  // test-online-orders khoá nhầm hành vi này; nay đã viết lại thành 6b/6c).
   const NO_SHIFT = { staffId: 'cashier-no-shift', role: 'ROLE_CASHIER' as const, fullName: 'Thu Ngân Không Ca' };
   const noShiftOrder = await OrderService.createOrder({
     warehouseId: WH3,
@@ -590,9 +591,96 @@ async function run() {
     noShiftCode = e?.code || e?.message;
   }
   check(
-    'B3.5 lỗ hổng còn lại: thu ngân KHÔNG mở ca vẫn duyệt được đơn quầy không két (giữ hành vi cũ theo test-online-orders 6b)',
-    noShiftCode === 'ALLOWED',
+    'B3.5 lỗ hổng ĐÃ ĐÓNG: thu ngân KHÔNG mở ca cũng không duyệt được đơn quầy không két',
+    noShiftCode === 'STATE_CONFLICT',
     `kết quả=${noShiftCode}`
+  );
+  check(
+    'B3.5b đơn bị từ chối vẫn PENDING, không trừ kho (không có doanh thu mồ côi)',
+    (await orderRow(noShiftOrder.orderId)).status === 'PENDING_CONFIRMATION' &&
+      (await ledgerOf(noShiftOrder.orderId)).length === 0
+  );
+  // B3.6 Nhưng phải HỦY được, nếu không đơn bị kẹt vĩnh viễn giữ ATP. Hủy không
+  // ghi dấu doanh thu vào két nào nên vẫn được phép kể cả khi không có ca.
+  let noShiftCancelCode = '';
+  try {
+    const res = await OrderService.cancelOrder(
+      noShiftOrder.orderId,
+      'ROLE_CASHIER',
+      'khách bỏ, không mở ca',
+      NO_SHIFT
+    );
+    noShiftCancelCode = res.status === 'CANCELLED' ? 'CANCELLED' : res.status;
+  } catch (e: any) {
+    noShiftCancelCode = e?.code || e?.message;
+  }
+  check(
+    'B3.6 đơn quầy không két VẪN hủy được để không bị kẹt giữ ATP',
+    noShiftCancelCode === 'CANCELLED' &&
+      (await OrderService.getATP('ed-adv-1', WH3)) === 100,
+    `kết quả=${noShiftCancelCode} ATP=${await OrderService.getATP('ed-adv-1', WH3)}`
+  );
+  // B3.7 Manager/Owner vẫn xử lý được đơn của người khác (không bị guard két chặn
+  //         quyền quản lý), nhưng đơn quầy không két thì vẫn phải qua cùng guard.
+  let mgrNoShiftCode = '';
+  const mgrNoShiftOrder = await OrderService.createOrder({
+    warehouseId: WH3,
+    channel: 'RETAIL_OFFICE',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: NO_SHIFT.staffId,
+    actorContext: NO_SHIFT,
+    confirmImmediately: false,
+    idempotencyKey: 'idem-adv-b37-mgr-no-shift',
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  try {
+    await OrderService.confirmOrder(
+      mgrNoShiftOrder.orderId,
+      'ROLE_MANAGER',
+      MANAGER.staffId,
+      MANAGER,
+      proof()
+    );
+    mgrNoShiftCode = 'ALLOWED';
+  } catch (e: any) {
+    mgrNoShiftCode = e?.code || e?.message;
+  }
+  check(
+    'B3.7 Manager cũng không duyệt được đơn quầy không két (không ngoại lệ theo vai trò)',
+    mgrNoShiftCode === 'STATE_CONFLICT',
+    `kết quả=${mgrNoShiftCode}`
+  );
+  const mgrCancelRes = await OrderService.cancelOrder(
+    mgrNoShiftOrder.orderId,
+    'ROLE_MANAGER',
+    'dọn B3.7',
+    MANAGER
+  );
+  check(
+    'B3.7b Manager vẫn hủy được đơn của người khác (quyền quản lý giữ nguyên)',
+    mgrCancelRes.status === 'CANCELLED'
+  );
+  // B3.8 Web/social không bị guard két chi phối: vẫn xác nhận được khi không két.
+  const webNoSession = await OrderService.createOrder({
+    warehouseId: WH3,
+    channel: 'RETAIL_ONLINE_WEB',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: NO_SHIFT.staffId,
+    actorContext: NO_SHIFT,
+    confirmImmediately: false,
+    idempotencyKey: 'idem-adv-b38-web',
+    items: [{ editionId: 'ed-adv-1', quantity: 1 }],
+  });
+  const webConfirmed = await OrderService.confirmOrder(
+    webNoSession.orderId,
+    'ROLE_CASHIER',
+    NO_SHIFT.staffId,
+    NO_SHIFT,
+    proof()
+  );
+  check(
+    'B3.8 đơn web/social không gắn két vẫn duyệt được (guard chỉ cho đơn quầy)',
+    webConfirmed.status === 'COMPLETED'
   );
   for (const row of [
     rowWith,
