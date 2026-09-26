@@ -21,6 +21,13 @@ const shell = fs.readFileSync(
   path.resolve(process.cwd(), 'src/components/layout/MasterAppShell.tsx'),
   'utf8'
 );
+const batch = fs.readFileSync(
+  path.resolve(process.cwd(), 'src/components/inventory/BatchTransferModal.tsx'),
+  'utf8'
+);
+const portalPath = path.resolve(process.cwd(), 'src/components/PortalToBody.tsx');
+const portalExists = fs.existsSync(portalPath);
+const portal = portalExists ? fs.readFileSync(portalPath, 'utf8') : '';
 
 const checks: string[] = [];
 const expect = (cond: unknown, msg: string) => {
@@ -87,25 +94,26 @@ for (const block of buttonBlocks) {
   );
 }
 
-// 3. The dropdown renders in a portal on document.body, closes on outside
+// 3. The dropdown renders through the SHARED portal helper, closes on outside
 //    click and Escape, and stays inside the viewport at 320px.
-expect(/import \{ createPortal \} from 'react-dom'/.test(matrix), 'StockOverviewMatrix import createPortal');
-expect(/isTabMenuOpen && mounted && createPortal\(/.test(matrix), 'Dropdown tab render qua createPortal');
-const tabPortalIdx = matrix.indexOf('isTabMenuOpen && mounted && createPortal(');
 expect(
-  tabPortalIdx > 0 && matrix.indexOf('document.body', tabPortalIdx) - tabPortalIdx < 3000,
-  'Dropdown tab được portal vào document.body'
+  /import \{ PortalToBody \} from '\.\/PortalToBody'/.test(matrix),
+  'StockOverviewMatrix dùng helper portal dùng chung'
 );
-expect(/role="listbox"/.test(matrix), 'Dropdown tab có role="listbox"');
-expect(/aria-selected=\{tab\.id === activeTab\}/.test(matrix), 'Mỗi tab công bố aria-selected');
-expect(/aria-haspopup="listbox"/.test(matrix), 'Nút trigger khai báo aria-haspopup="listbox"');
-expect(/aria-expanded=\{isTabMenuOpen\}/.test(matrix), 'Nút trigger khai báo aria-expanded');
+expect(
+  /\{isTabMenuOpen && mounted && \(/.test(matrix) && /<PortalToBody className="fixed z-\[80\]">/.test(matrix),
+  'Dropdown tab render qua PortalToBody'
+);
+expect(
+  /\{showMagnetBar && mounted && \(/.test(matrix),
+  'Thanh tìm kiếm nam châm render qua PortalToBody'
+);
 expect(
   /document\.addEventListener\('mousedown', handleOutsidePointer\)/.test(matrix),
   'Đóng dropdown khi bấm ra ngoài'
 );
 expect(
-  /e\.key === 'Escape'[\s\S]{0,300}?setIsTabMenuOpen\(false\)/.test(matrix),
+  /case 'Escape':[\s\S]{0,300}?setIsTabMenuOpen\(false\)/.test(matrix),
   'Đóng dropdown bằng phím Escape'
 );
 for (const shortcut of [
@@ -116,10 +124,6 @@ for (const shortcut of [
 ]) {
   expect(matrix.includes(shortcut), `Giữ nguyên phím tắt ${shortcut}`);
 }
-expect(
-  /showMagnetBar && mounted && createPortal\(/.test(matrix),
-  'Thanh tìm kiếm nam châm (overlay fixed) render qua portal'
-);
 expect(
   /w-\[min\(20rem,calc\(100vw-1\.5rem\)\)\]/.test(matrix),
   'Dropdown tab giới hạn bề rộng theo viewport (vừa được ở 320px)'
@@ -149,6 +153,107 @@ expect(/fixed \$\{fabBottom\} right-4/.test(shell), 'FAB Copilot vẫn fixed gó
 expect(
   /mainBottomPadding = 'pb-28 lg:pb-8'/.test(shell),
   'Main vẫn chừa padding-bottom cho FAB'
+);
+
+// ---------------------------------------------------------------------------
+// 5. SHARED PORTAL HELPER — one pattern, reused by every floating surface.
+//    A popup is only ever as safe as its weakest ancestor. Rather than
+//    hand-rolling `createPortal` a third time, there is ONE helper.
+// ---------------------------------------------------------------------------
+expect(portalExists, 'Tồn tại helper dùng chung src/components/PortalToBody.tsx');
+if (portalExists) {
+  expect(
+    /import \{ createPortal \} from 'react-dom'/.test(portal),
+    'Helper dùng createPortal từ react-dom'
+  );
+  expect(
+    /createPortal\([\s\S]*?document\.body\s*\)/.test(portal),
+    'Helper mount vào document.body (không ancestor nào cắt được)'
+  );
+  expect(/typeof document === 'undefined'/.test(portal), 'Helper an toàn SSR (typeof document)');
+  expect(/useState\(false\)/.test(portal) && /useEffect/.test(portal), 'Helper có mounted gate');
+}
+for (const [name, src] of [
+  ['StockOverviewMatrix', matrix],
+  ['BatchTransferModal', batch],
+] as const) {
+  expect(
+    /from '@\/components\/PortalToBody'|from '\.\.\/PortalToBody'|from '\.\/PortalToBody'/.test(src),
+    `${name} dùng helper portal dùng chung, không tự gọi createPortal`
+  );
+  expect(
+    !/createPortal\([\s\S]{0,4000}?document\.body\)/.test(src),
+    `${name} không còn tự gọi createPortal(...document.body) — đã hợp nhất về 1 pattern`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 6. BatchTransferModal book picker — the confirmed clipped popup.
+//    It was `absolute z-20` living inside a `overflow-hidden` modal card whose
+//    own body is `overflow-y-auto`. Two independent clipping ancestors: the
+//    suggestion list was cut off on any screen, and unreachable.
+// ---------------------------------------------------------------------------
+expect(
+  !/className="absolute z-20 left-0 right-0 mt-1/.test(batch),
+  'Picker sách của BatchTransferModal không còn absolute z-20 trong modal overflow-hidden'
+);
+expect(
+  /filteredBooksToAdd\.length > 0/.test(batch) && /PortalToBody/.test(batch),
+  'Gợi ý sách render qua PortalToBody (thoát khỏi modal overflow-hidden)'
+);
+expect(
+  /max-h-\[min\(20rem,calc\(100vh-2rem\)\)\]/.test(batch),
+  'Dropdown gợi ý sách tự giới hạn chiều cao theo viewport (không tràn màn hình)'
+);
+expect(
+  /whitespace-nowrap/.test(batch),
+  'Dòng gợi ý sách mang whitespace-nowrap (tên sách không xuống dòng từng âm tiết)'
+);
+expect(
+  /onMouseDown=\{\(e\) => e\.preventDefault\(\)\}/.test(batch) ||
+    /document\.addEventListener\('mousedown'/.test(batch),
+  'Dropdown gợi ý sách đóng khi bấm ra ngoài, không nuốt mất focus ô tìm kiếm'
+);
+
+// ---------------------------------------------------------------------------
+// 7. KEYBOARD NAVIGATION in the tab dropdown listbox.
+//    Previously Enter/Escape existed but there was no way to MOVE between
+//    options, so the listbox was mouse-only for its four entries.
+// ---------------------------------------------------------------------------
+expect(/aria-activedescendant/.test(matrix), 'Listbox tab công bố aria-activedescendant');
+expect(/role="option"/.test(matrix), 'Mỗi dòng tab có role="option"');
+expect(/role="listbox"/.test(matrix), 'Dropdown tab có role="listbox"');
+expect(/aria-selected=\{tab\.id === activeTab\}/.test(matrix), 'Mỗi tab công bố aria-selected');
+expect(/aria-haspopup="listbox"/.test(matrix), 'Nút trigger khai báo aria-haspopup="listbox"');
+expect(/aria-expanded=\{isTabMenuOpen\}/.test(matrix), 'Nút trigger khai báo aria-expanded');
+const navKeys = [
+  ["case 'ArrowDown':", 'ArrowDown chuyển xuống option kế tiếp'],
+  ["case 'ArrowUp':", 'ArrowUp chuyển lên option trước'],
+  ["case 'Home':", 'Home nhảy về option đầu'],
+  ["case 'End':", 'End nhảy tới option cuối'],
+  ["case 'Enter':", 'Enter chọn option đang focus'],
+] as const;
+for (const [code, msg] of navKeys) {
+  expect(matrix.includes(code), `Bàn phím: ${msg}`);
+}
+// Di chuyển có vòng lặp (wrap) ở hai đầu danh sách.
+expect(
+  /i >= lastIndex \? 0 : i \+ 1/.test(matrix) && /i <= 0 \? lastIndex : i - 1/.test(matrix),
+  'ArrowDown/ArrowUp quay vòng ở đầu/cuối danh sách'
+);
+expect(
+  /activeTabIndex/.test(matrix) && /setActiveTabIndex/.test(matrix),
+  'Có state activeTabIndex điều hướng bằng bàn phím'
+);
+expect(
+  /scrollIntoView|scrollIntoViewIfNeeded/.test(matrix) ||
+    /ref=\{\(el\) =>/.test(matrix),
+  'Option đang focus được cuộn vào khung nhìn'
+);
+// Arrow keys must not scroll the page away while navigating the listbox.
+expect(
+  /preventDefault\(\)/.test(matrix),
+  'Phím điều hướng được preventDefault (không cuộn trang khi bấm mũi tên)'
 );
 
 console.log('\nMobile Kho UI contract - PASS');

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { PortalToBody } from '../PortalToBody';
 import {
   X,
   ArrowRightLeft,
@@ -78,6 +79,13 @@ export function BatchTransferModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
   const [mounted, setMounted] = useState(false);
+  // Gợi ý sách: trước đây là `absolute z-20` nằm trong modal card `overflow-hidden`
+  // (và body của modal là `overflow-y-auto`) nên bị CẮT mất phần dưới ở mọi kích
+  // thước màn hình. Nay nó nằm trên document.body nên không tổ tiên nào cắt được.
+  const [isSuggestOpen, setIsSuggestOpen] = useState(false);
+  const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0, openUp: false });
+  const bookSearchRef = useRef<HTMLInputElement>(null);
+  const suggestRef = useRef<HTMLDivElement>(null);
 
   const selectAllCheckboxRef = React.useRef<HTMLInputElement>(null);
   const idempotencyKeyRef = React.useRef<string | null>(null);
@@ -192,6 +200,58 @@ export function BatchTransferModal({
       )
       .slice(0, 8);
   }, [books, searchBookTerm, lines]);
+
+  // neo gợi ý sách dưới ô tìm kiếm, clamp trong khung nhìn, và mở lên trên nếu
+  // không đủ chỗ bên dưới (tránh bị khuất sau mép dưới màn hình).
+  const positionSuggest = useCallback(() => {
+    const el = bookSearchRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const width = Math.min(rect.width, Math.max(160, window.innerWidth - 24));
+    const left = Math.min(
+      Math.max(8, rect.left),
+      Math.max(8, window.innerWidth - width - 8)
+    );
+    const maxHeight = Math.min(320, Math.max(120, window.innerHeight - 32));
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const openUp = spaceBelow < Math.min(maxHeight, 8 * 56) && rect.top > spaceBelow;
+    const top = openUp
+      ? Math.max(8, rect.top - Math.min(maxHeight, 8 * 56) - 6)
+      : rect.bottom + 6;
+    setSuggestPos({ top, left, width, openUp });
+  }, []);
+
+  // Đóng gợi ý khi bấm ra ngoài, khi bấm Escape, hoặc khi cuộn/resize làm neo lệch.
+  useEffect(() => {
+    if (!isSuggestOpen) return;
+    positionSuggest();
+    const handleOutsidePointer = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (suggestRef.current?.contains(t) || bookSearchRef.current?.contains(t)) return;
+      setIsSuggestOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setIsSuggestOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsidePointer);
+    document.addEventListener('keydown', handleKey);
+    window.addEventListener('resize', positionSuggest);
+    window.addEventListener('scroll', positionSuggest, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsidePointer);
+      document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('resize', positionSuggest);
+      window.removeEventListener('scroll', positionSuggest, true);
+    };
+  }, [isSuggestOpen, positionSuggest]);
+
+  // Không có kết quả thì không mở gợi ý (tránh khung rỗng vô nghĩa).
+  useEffect(() => {
+    if (filteredBooksToAdd.length === 0) setIsSuggestOpen(false);
+  }, [filteredBooksToAdd.length]);
 
   const handleAddLine = (book: BookItem) => {
     const stock = getFromStock(book.id);
@@ -637,39 +697,73 @@ export function BatchTransferModal({
                 <div className="relative">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
+                    ref={bookSearchRef}
                     type="text"
+                    onFocus={() => filteredBooksToAdd.length > 0 && setIsSuggestOpen(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setIsSuggestOpen(false);
+                      // Enter chọn dòng đầu tiên, nhưng KHÔNG được nuốt phím khi
+                      // chưa có gợi ý nào mở.
+                      if (e.key === 'Enter' && isSuggestOpen && filteredBooksToAdd[0]) {
+                        e.preventDefault();
+                        handleAddLine(filteredBooksToAdd[0]);
+                        setIsSuggestOpen(false);
+                      }
+                    }}
                     value={searchBookTerm}
                     onChange={(e) => setSearchBookTerm(e.target.value)}
                     placeholder="Gõ tên sách, SKU hoặc 4 số cuối ISBN để thêm vào phiếu..."
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
 
-                  {/* Dropdown gợi ý */}
-                  {filteredBooksToAdd.length > 0 && (
-                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden divide-y divide-slate-100">
-                      {filteredBooksToAdd.map((book) => {
-                        const stock = getFromStock(book.id);
-                        return (
-                          <button
-                            key={book.id}
-                            type="button"
-                            onClick={() => handleAddLine(book)}
-                            className="w-full px-3 py-2 text-left hover:bg-indigo-50/60 flex items-center justify-between text-xs transition-colors"
-                          >
-                            <div>
-                              <span className="font-mono font-bold text-indigo-600 mr-2">[{book.code}]</span>
-                              <span className="font-medium text-slate-900">{book.title}</span>
-                            </div>
-                            <span className="font-mono text-[11px] text-slate-500">
-                              Tồn nguồn: <strong className="text-slate-800">{stock}</strong>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               </div>
+
+              {/* Gợi ý sách — render NGOÀI modal, trên document.body.
+                  Trước đây nó là `absolute z-20` nằm trong modal card
+                  `overflow-hidden` + body `overflow-y-auto`, nên danh sách bị cắt
+                  mất phần dưới và không cuộn tới được. */}
+              {isSuggestOpen && filteredBooksToAdd.length > 0 && (
+                <PortalToBody
+                  className="fixed z-[95]"
+                  style={{ top: suggestPos.top, left: suggestPos.left, width: suggestPos.width }}
+                >
+                  <div
+                    ref={suggestRef}
+                    role="listbox"
+                    aria-label="Gợi ý sách có thể thêm vào phiếu"
+                    className="max-h-[min(20rem,calc(100vh-2rem))] overflow-y-auto overscroll-contain bg-white border border-slate-200 rounded-xl shadow-2xl divide-y divide-slate-100"
+                  >
+                    {filteredBooksToAdd.map((book) => {
+                      const stock = getFromStock(book.id);
+                      return (
+                        <button
+                          key={book.id}
+                          type="button"
+                          role="option"
+                          aria-selected={false}
+                          // Giữ focus ở ô tìm kiếm khi bấm để người dùng gõ tiếp
+                          // được ngay, thay vì mất focus về body.
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            handleAddLine(book);
+                            setIsSuggestOpen(false);
+                          }}
+                          className="w-full px-3 py-2 text-left hover:bg-indigo-50/60 flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer whitespace-nowrap"
+                        >
+                          <span className="min-w-0 truncate">
+                            <span className="font-mono font-bold text-indigo-600 mr-2">[{book.code}]</span>
+                            <span className="font-medium text-slate-900">{book.title}</span>
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500 shrink-0 whitespace-nowrap">
+                            Tồn nguồn: <strong className="text-slate-800">{stock}</strong>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PortalToBody>
+              )}
 
               {/* Thanh thao tác hàng loạt (Bulk Actions Toolbar) */}
               {lines.length > 0 && (

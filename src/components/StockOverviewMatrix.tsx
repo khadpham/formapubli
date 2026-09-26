@@ -25,7 +25,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
 import { PickListModal } from './inventory/PickListModal';
@@ -130,6 +130,9 @@ export function StockOverviewMatrix({
   const [mounted, setMounted] = useState(false);
   const [isTabMenuOpen, setIsTabMenuOpen] = useState(false);
   const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0, openUp: false });
+  // Option đang được bàn phím chỉ tới (mô hình aria-activedescendant: focus thật
+  // vẫn nằm trên trigger nên không mất vị trí focus sau khi menu đóng).
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
   const tabTriggerRef = useRef<HTMLButtonElement>(null);
   const tabMenuRef = useRef<HTMLDivElement>(null);
 
@@ -173,10 +176,44 @@ export function StockOverviewMatrix({
       setIsTabMenuOpen(false);
     };
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        setIsTabMenuOpen(false);
-        tabTriggerRef.current?.focus();
+      const lastIndex = TAB_ITEMS.length - 1;
+      // Chặn phím mũi tên/Home/End khiến trang bị cuộn khỏi màn hình trong lúc
+      // người dùng đang duyệt danh sách.
+      switch (e.key) {
+        case 'Escape':
+          e.preventDefault();
+          e.stopPropagation();
+          setIsTabMenuOpen(false);
+          tabTriggerRef.current?.focus();
+          return;
+        case 'ArrowDown':
+          e.preventDefault();
+          setActiveTabIndex((i) => (i >= lastIndex ? 0 : i + 1));
+          return;
+        case 'ArrowUp':
+          e.preventDefault();
+          setActiveTabIndex((i) => (i <= 0 ? lastIndex : i - 1));
+          return;
+        case 'Home':
+          e.preventDefault();
+          setActiveTabIndex(0);
+          return;
+        case 'End':
+          e.preventDefault();
+          setActiveTabIndex(lastIndex);
+          return;
+        case 'Enter':
+        case ' ': {
+          e.preventDefault();
+          const picked = TAB_ITEMS[activeTabIndex];
+          if (picked) {
+            setActiveTab(picked.id);
+            setIsTabMenuOpen(false);
+            tabTriggerRef.current?.focus();
+          }
+          return;
+        }
+        default:
       }
     };
     document.addEventListener('mousedown', handleOutsidePointer);
@@ -189,7 +226,21 @@ export function StockOverviewMatrix({
       window.removeEventListener('resize', positionTabMenu);
       window.removeEventListener('scroll', positionTabMenu, true);
     };
-  }, [isTabMenuOpen, positionTabMenu]);
+  }, [isTabMenuOpen, positionTabMenu, activeTabIndex]);
+
+  // Giữ option đang chỉ tới nằm trong khung nhìn khi menu cuộn dài.
+  useEffect(() => {
+    if (!isTabMenuOpen) return;
+    const id = `kho-tab-option-${TAB_ITEMS[activeTabIndex]?.id}`;
+    if (!id) return;
+    document.getElementById(id)?.scrollIntoView({ block: 'nearest' });
+  }, [activeTabIndex, isTabMenuOpen]);
+
+  const selectTab = (id: MainTabId) => {
+    setActiveTab(id);
+    setIsTabMenuOpen(false);
+    tabTriggerRef.current?.focus();
+  };
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const magnetInputRef = useRef<HTMLInputElement>(null);
@@ -362,85 +413,86 @@ export function StockOverviewMatrix({
     <div className="space-y-6">
       {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN — render qua portal trên
           document.body để không tổ tiên nào (overflow:hidden / transform) cắt mất nó. */}
-      {showMagnetBar && mounted && createPortal(
-        <div
-          className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
-            isListening
-              ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
-              : 'bg-white/95 border-indigo-200'
-          }`}
-        >
-          <Search
-            className={`w-5 h-5 shrink-0 transition-colors ${
-              isListening ? 'text-rose-600 animate-pulse' : 'text-indigo-600'
-            }`}
-          />
-          <input
-            ref={magnetInputRef}
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={
+      {showMagnetBar && mounted && (
+        <PortalToBody>
+          <div
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
               isListening
-                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
-                : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
-            }
-            value={searchTerm ?? ''}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onFocus={() => setIsInputFocused(true)}
-            onBlur={() => setIsInputFocused(false)}
-            style={{ color: '#1e293b' }}
-            className={`flex-1 min-w-0 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
-              isListening
-                ? 'text-rose-950 font-semibold placeholder:text-rose-600'
-                : 'text-slate-800 placeholder:text-slate-400'
+                ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
+                : 'bg-white/95 border-indigo-200'
             }`}
-          />
+            >
+            <Search
+              className={`w-5 h-5 shrink-0 transition-colors ${
+                isListening ? 'text-rose-600 animate-pulse' : 'text-indigo-600'
+              }`}
+            />
+            <input
+              ref={magnetInputRef}
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={
+                isListening
+                  ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                  : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+              }
+              value={searchTerm ?? ''}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              style={{ color: '#1e293b' }}
+              className={`flex-1 min-w-0 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
+                isListening
+                  ? 'text-rose-950 font-semibold placeholder:text-rose-600'
+                  : 'text-slate-800 placeholder:text-slate-400'
+              }`}
+            />
 
-          <span
-            className={`text-xs font-mono px-2.5 py-1 rounded-full shrink-0 font-bold border transition-colors ${
-              isListening
-                ? 'bg-rose-200/80 text-rose-800 border-rose-300'
-                : 'bg-indigo-50 text-indigo-600 border-indigo-100'
-            }`}
-          >
-            {isListening ? '🎙️ Đang nghe' : `${filteredBooks.length} sách`}
-          </span>
+            <span
+              className={`text-xs font-mono px-2.5 py-1 rounded-full shrink-0 font-bold border transition-colors ${
+                isListening
+                  ? 'bg-rose-200/80 text-rose-800 border-rose-300'
+                  : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+              }`}
+            >
+              {isListening ? '🎙️ Đang nghe' : `${filteredBooks.length} sách`}
+            </span>
 
-          {searchTerm && (
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0 transition-colors"
+                title="Xóa tìm kiếm"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Magnet Voice Search Button */}
             <button
               type="button"
-              onClick={() => setSearchTerm('')}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0 transition-colors"
-              title="Xóa tìm kiếm"
+              onClick={toggleListening}
+              title={
+                isListening
+                  ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                  : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
+              }
+              className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[36px] min-w-[36px] cursor-pointer ${
+                isListening
+                  ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
+                  : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+              }`}
             >
-              <X className="w-4 h-4" />
+              {isListening ? (
+                <MicOff className="w-4 h-4 text-white animate-bounce" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
             </button>
-          )}
-
-          {/* Magnet Voice Search Button */}
-          <button
-            type="button"
-            onClick={toggleListening}
-            title={
-              isListening
-                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
-                : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
-            }
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[36px] min-w-[36px] cursor-pointer ${
-              isListening
-                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
-                : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-            }`}
-          >
-            {isListening ? (
-              <MicOff className="w-4 h-4 text-white animate-bounce" />
-            ) : (
-              <Mic className="w-4 h-4" />
-            )}
-          </button>
-        </div>,
-        document.body
+          </div>
+        </PortalToBody>
       )}
 
       {/* 2. THANH CÔNG CỤ BAN ĐẦU (IN-FLOW TOOLBAR) */}
@@ -528,12 +580,28 @@ export function StockOverviewMatrix({
             aria-expanded={isTabMenuOpen}
             aria-controls="kho-main-tab-listbox"
             onClick={() => {
-              setIsTabMenuOpen((v) => !v);
-              if (!isTabMenuOpen) positionTabMenu();
+              if (isTabMenuOpen) {
+                setIsTabMenuOpen(false);
+                return;
+              }
+              // Mở đúng tại tab đang chọn để Enter ngay sau đó là lựa chọn hợp lý.
+              const currentIndex = Math.max(
+                0,
+                TAB_ITEMS.findIndex((t) => t.id === activeTab)
+              );
+              setActiveTabIndex(currentIndex);
+              setIsTabMenuOpen(true);
+              positionTabMenu();
             }}
             onKeyDown={(e) => {
+              if (isTabMenuOpen) return; // menu đang mở: handler document đảm nhiệm
               if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
+                const currentIndex = Math.max(
+                  0,
+                  TAB_ITEMS.findIndex((t) => t.id === activeTab)
+                );
+                setActiveTabIndex(currentIndex);
                 setIsTabMenuOpen(true);
               }
             }}
@@ -639,44 +707,54 @@ export function StockOverviewMatrix({
 
         {/* 2.4 MENU TAB — portal trên document.body + clamp trong viewport.
             Nhãn dài "Sổ Cái Bất Biến (n)" chỉ xuất hiện ở đây, trong 1 menu riêng,
-            nên trên điện thoại không còn dải pill inline bị bóp/tràn. */}
-        {isTabMenuOpen && mounted && createPortal(
-          <div
-            ref={tabMenuRef}
-            id="kho-main-tab-listbox"
-            role="listbox"
-            aria-label="Chọn màn kho hàng"
-            style={{ top: tabMenuPos.top, left: tabMenuPos.left }}
-            className="fixed z-[80] w-[min(20rem,calc(100vw-1.5rem))] max-h-[70vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl"
-          >
-            {TAB_ITEMS.map((tab) => {
-              const isActive = tab.id === activeTab;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="option"
-                  aria-selected={tab.id === activeTab}
-                  title={tab.title}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setIsTabMenuOpen(false);
-                    tabTriggerRef.current?.focus();
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                    isActive
-                      ? 'bg-indigo-50 text-indigo-800'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <tab.Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
-                  <span className="flex-1 min-w-0 whitespace-nowrap">{tab.label}</span>
-                  {isActive && <Check className="w-4 h-4 shrink-0 text-indigo-600" />}
-                </button>
-              );
-            })}
-          </div>,
-          document.body
+            nên trên điện thoại không còn dải pill inline bị bóp/tràn.
+            Điều hướng bàn phím: ArrowUp/Down di chuyển, Home/End nhảy đầu/cuối,
+            Enter chọn, Escape đóng. Focus thật giữ trên trigger (mô hình
+            aria-activedescendant) để không mất vị trí focus sau khi menu đóng. */}
+        {isTabMenuOpen && mounted && (
+          <PortalToBody className="fixed z-[80]">
+            <div
+              ref={tabMenuRef}
+              id="kho-main-tab-listbox"
+              role="listbox"
+              aria-label="Chọn màn kho hàng"
+              aria-activedescendant={`kho-tab-option-${TAB_ITEMS[activeTabIndex]?.id ?? 'MATRIX'}`}
+              tabIndex={-1}
+              style={{ top: tabMenuPos.top, left: tabMenuPos.left }}
+              className="w-[min(20rem,calc(100vw-1.5rem))] max-h-[70vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+            >
+              {TAB_ITEMS.map((tab, index) => {
+                const isActive = tab.id === activeTab;
+                const isFocused = index === activeTabIndex;
+                return (
+                  <button
+                    key={tab.id}
+                    id={`kho-tab-option-${tab.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={tab.id === activeTab}
+                    // Dùng chung chỉ báo "đang được bàn phím chỉ tới" (không phải
+                    // đã chọn) để người dùng screen reader biết con trỏ đang ở đâu.
+                    data-focused={isFocused ? 'true' : undefined}
+                    title={tab.title}
+                    onMouseEnter={() => setActiveTabIndex(index)}
+                    onClick={() => {
+                      selectTab(tab.id);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-indigo-50 text-indigo-800'
+                        : 'text-slate-700 hover:bg-slate-100'
+                    } ${isFocused ? 'ring-2 ring-inset ring-indigo-300' : ''}`}
+                  >
+                    <tab.Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                    <span className="flex-1 min-w-0 whitespace-nowrap">{tab.label}</span>
+                    {isActive && <Check className="w-4 h-4 shrink-0 text-indigo-600" />}
+                  </button>
+                );
+              })}
+            </div>
+          </PortalToBody>
         )}
       </div>
 
@@ -1068,4 +1146,4 @@ export function StockOverviewMatrix({
       )}
     </div>
   );
-}
+}
