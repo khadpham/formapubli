@@ -15,6 +15,7 @@ import {
 } from '../db';
 import { AppError } from './app-error';
 import { CashboxService, businessDateOf, evaluateShiftCutoff } from './order.service';
+import { parseDbTimestamp } from '../lib/db-timestamp';
 import { withDbRetry } from '../lib/db-retry';
 
 export interface DailySettlementFilter {
@@ -396,13 +397,15 @@ export class DailySettlementService {
           .where(and(eq(cashboxSessions.warehouseId, warehouseId), eq(cashboxSessions.status, 'OPEN')));
 
         // Chỉ các ca thuộc ngày nghiệp vụ <= ngày đang chốt mới liên quan.
+        // opened_at đọc qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP là UTC
+        // không múi giờ, đọc bằng new Date() lệch 7 tiếng ở GMT+7.
         const relevant: any[] = openSessions.filter(
-          (s: any) => s.openedAt && businessDateOf(new Date(s.openedAt)) <= date
+          (s: any) => s.openedAt && businessDateOf(parseDbTimestamp(s.openedAt)!) <= date
         );
         const autoClosedSessions: string[] = [];
         for (const s of relevant) {
           if (!params.autoCloseOpenShifts) break;
-          const evaluation = evaluateShiftCutoff(s.openedAt as string, { warehouseId: s.warehouseId });
+          const evaluation = evaluateShiftCutoff(s.openedAt, { warehouseId: s.warehouseId });
           if (!evaluation.overdue) continue;
           await CashboxService.autoCloseSession(
             {
@@ -420,7 +423,13 @@ export class DailySettlementService {
           .select({ id: cashboxSessions.id, openedAt: cashboxSessions.openedAt })
           .from(cashboxSessions)
           .where(and(eq(cashboxSessions.warehouseId, warehouseId), eq(cashboxSessions.status, 'OPEN')));
-        const blocking = stillOpen.filter((s: any) => s.openedAt && businessDateOf(new Date(s.openedAt)) <= date);
+        // opened_at hỏng → KHÔNG giấu: coi như chặn chốt ngày để người có mặt
+        // xử lý, thay vì đóng ngày khi chưa biết ca đó thuộc ngày nào.
+        const blocking = stillOpen.filter((s: any) => {
+          const opened = parseDbTimestamp(s.openedAt);
+          if (opened === null) return true;
+          return businessDateOf(opened) <= date;
+        });
         if (blocking.length > 0) {
           throw AppError.conflict(
             `Chưa thể chốt ngày ${date} tại kho ${warehouseId}: còn ${blocking.length} ca két chưa chốt ` +

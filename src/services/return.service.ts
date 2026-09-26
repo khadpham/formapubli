@@ -4,6 +4,7 @@ import { OrderService } from './order.service';
 import { WarehouseService } from './warehouse.service';
 import { eq, and, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
+import { parseDbTimestamp } from '../lib/db-timestamp';
 import { canonicalHash } from '../lib/transfer-fingerprint';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
@@ -51,9 +52,12 @@ export interface CreateReturnParams {
 
 function daysSince(iso: string | null): number {
   if (!iso) return 0;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return 0;
-  return (Date.now() - t) / 86400000;
+  // created_at của đơn có thể do SQLite CURRENT_TIMESTAMP ghi (UTC, không múi
+  // giờ). Đọc bằng new Date() sẽ lệch 7 tiếng ở GMT+7 → đơn bị coi là cũ
+  // sớm hơn thật và khách bị từ chối hoàn tiền oan. parseDbTimestamp đọc UTC.
+  const parsed = parseDbTimestamp(iso);
+  if (!parsed) return 0;
+  return (Date.now() - parsed.getTime()) / 86400000;
 }
 
 /** true khi lỗi là vi phạm UNIQUE (race cùng key -> replay/CONFLICT, không lọt raw). */

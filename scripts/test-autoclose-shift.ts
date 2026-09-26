@@ -93,6 +93,7 @@ async function run() {
     { id: 'sb-auto-1', editionId: 'ed-auto-1', warehouseId: 'wh-auto', physicalQuantity: 100, condition: 'NEW' },
     { id: 'sb-auto-2', editionId: 'ed-auto-2', warehouseId: 'wh-auto', physicalQuantity: 100, condition: 'NEW' },
     { id: 'sb-auto-3', editionId: 'ed-auto-1', warehouseId: 'wh-auto-2', physicalQuantity: 100, condition: 'NEW' },
+    { id: 'sb-auto-4', editionId: 'ed-auto-1', warehouseId: 'wh-auto-3', physicalQuantity: 100, condition: 'NEW' },
   ]);
 
   // Ca quá giờ của thu ngân A tại wh-auto (mở 2 ngày trước, cutoff wh-auto = 00:05)
@@ -475,6 +476,112 @@ async function run() {
   check('bản ghi chốt ngày ghi rõ tiền mặt KHÔNG xác minh + phiên chốt tự động', () => {
     assert.strictEqual((dayRecord as any).cashVerification, 'UNVERIFIED');
     assert.ok((dayRecord as any).unverifiedSessions.includes('cbs-auto-stale'));
+  });
+
+  // ==================================================== T. MÚI GIỜ (UTC vs local)
+  // SQLite CURRENT_TIMESTAMP ghi "YYYY-MM-DD HH:MM:SS" theo UTC KHÔNG kèm múi
+  // giờ. Node đọc chuỗi đó là GIỜ ĐỊA PHƯƠNG → ở GMT+7 một ca vừa mở bị
+  // già thêm 7 tiếng và bị coi là quá giờ, chặn cả POS. Mọi khẳng định dưới
+  // đây so SỐ (ms), không so chuỗi định dạng, để không "đúng nhầm" ở GMT+7.
+  console.log('\n[T] Múi giờ: timestamp DB (UTC, không múi giờ) không được đọc như local');
+  const realNow = new Date();
+  // Đồng hồ thật cho phần này: case "mở ca ngay lúc này" phải dùng giờ thật.
+  delete process.env.CASHBOX_TEST_NOW;
+
+  const { parseDbTimestamp } = await import('../src/lib/db-timestamp');
+
+  // Đúng thứ SQLite CURRENT_TIMESTAMP sẽ ghi: UTC, "YYYY-MM-DD HH:MM:SS", không múi giờ.
+  const sqliteNaive = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ');
+  const justOpened = sqliteNaive(realNow);
+
+  check('parseDbTimestamp đọc timestamp DB là UTC (đúng số ms), không phải local', () => {
+    const parsed = parseDbTimestamp(justOpened);
+    assert.ok(parsed, 'phải parse được');
+    // Số ms phải khớp thời điểm thật, lệch tối đa 1s cho độ trễ giữa lúc ghi và lúc đọc.
+    assert.ok(
+      Math.abs(parsed.getTime() - realNow.getTime()) < 1000,
+      `lệch ${parsed.getTime() - realNow.getTime()} ms (GMT+7 sẽ lệch ~-25200000 ms)`
+    );
+  });
+  check('timestamp DB hỏng / rỗng → null (không ném, không bịa Date)', () => {
+    assert.strictEqual(parseDbTimestamp(null), null);
+    assert.strictEqual(parseDbTimestamp(''), null);
+    assert.strictEqual(parseDbTimestamp('khong-phai-ngay'), null);
+  });
+  check('chuỗi ĐÃ có múi giờ (ISO Z) thì giữ nguyên — không dịch thêm 7 tiếng', () => {
+    const isoZ = realNow.toISOString();
+    assert.strictEqual(parseDbTimestamp(isoZ)!.getTime(), Date.parse(isoZ));
+  });
+
+  const evalJustOpened = evaluateShiftCutoff(justOpened, { warehouseId: 'wh-auto-3', now: realNow });
+  check('ca vừa mở (giờ thật) KHÔNG bị coi là quá giờ', () => {
+    assert.strictEqual(evalJustOpened.overdue, false);
+    assert.ok(evalJustOpened.elapsedMinutes <= 1, `elapsedMinutes=${evalJustOpened.elapsedMinutes}`);
+    // SQLite chỉ ghi tới giây → so với thời điểm thật đã cắt ms, lệch tối đa 999ms.
+    const truncatedToSecond = Math.floor(realNow.getTime() / 1000) * 1000;
+    assert.ok(
+      Math.abs(Date.parse(evalJustOpened.openedAt) - truncatedToSecond) < 1000,
+      `lệch ${Date.parse(evalJustOpened.openedAt) - truncatedToSecond} ms so với giây đã cắt`
+    );
+  });
+
+  const yday = new Date(realNow.getTime() - 86400_000);
+  const evalBeforeCutoff = evaluateShiftCutoff(sqliteNaive(yday), { warehouseId: 'wh-auto', now: realNow });
+  check('ca mở ở kỳ trước, ĐÃ QUA mốc chốt ngày → quá giờ', () => {
+    assert.strictEqual(evalBeforeCutoff.overdue, true);
+    assert.ok(evalBeforeCutoff.elapsedMinutes >= 23 * 60, `elapsedMinutes=${evalBeforeCutoff.elapsedMinutes}`);
+  });
+
+  // Ca đêm: mở SAU NỖA ĐÊM giờ địa phương → thuộc ngày hôm nay, chưa quá giờ.
+  const afterMidnight = new Date(realNow);
+  afterMidnight.setHours(0, 10, 0, 0);
+  const evalOvernight = evaluateShiftCutoff(sqliteNaive(afterMidnight), {
+    warehouseId: 'wh-auto-3',
+    now: realNow,
+  });
+  check('ca mở SAU NỬA ĐÊM giờ địa phương vẫn nằm trong ngày nghiệp vụ (không bị chặn)', () => {
+    assert.strictEqual(evalOvernight.overdue, false);
+    // Ngày nghiệp vụ phải là HÔM NAY theo giờ máy chủ, không phải hôm qua.
+    const localToday = `${realNow.getFullYear()}-${String(realNow.getMonth() + 1).padStart(2, '0')}-${String(realNow.getDate()).padStart(2, '0')}`;
+    assert.strictEqual(evalOvernight.businessDate, localToday);
+    assert.ok(Math.abs(Date.parse(evalOvernight.openedAt) - afterMidnight.getTime()) < 1000);
+  });
+
+  // Hẹn gặp thật: phiên mà DB tự đóng dấu thời gian (CURRENT_TIMESTAMP) rồi bán
+  // ngay. Đây chính là case 6c của test-online-orders từng vỡ.
+  await db.insert(schema.cashboxSessions).values({
+    id: 'cbs-tz-live',
+    warehouseId: 'wh-auto-3',
+    cashierId: 'cashier-f',
+    openingCash: 100000,
+    status: 'OPEN',
+    // KHÔNG truyền openedAt → để SQLite tự ghi CURRENT_TIMESTAMP (UTC, không múi giờ)
+  });
+  const liveRows = await db.select().from(schema.cashboxSessions).where(eqId('cbs-tz-live'));
+  const liveOpenedRaw = liveRows[0].openedAt as string;
+  check('phiên mới mở có opened_at kiểu SQLite: UTC, không kèm múi giờ', () => {
+    assert.match(liveOpenedRaw, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, `opened_at=${liveOpenedRaw}`);
+    // Số ms đọc đúng phải bám sát giờ thật, không lệch 7 tiếng.
+    const parsed = parseDbTimestamp(liveOpenedRaw)!;
+    assert.ok(Math.abs(parsed.getTime() - realNow.getTime()) < 120_000, `lệch ${parsed.getTime() - realNow.getTime()} ms`);
+  });
+  const liveOrder = await (async () => {
+    try {
+      return await OrderService.createOrder({
+        id: 'ord-tz-1', idempotencyKey: 'idem-tz-1', warehouseId: 'wh-auto-3', channel: 'RETAIL_OFFICE',
+        cashierId: 'cashier-f', paymentMethod: 'CASH',
+        items: [{ editionId: 'ed-auto-1', quantity: 1 }],
+        actorContext: { role: 'ROLE_CASHIER', actorId: 'cashier-f' },
+      } as any);
+    } catch (e: any) {
+      failures++;
+      console.error(`  ✗ ca mở bằng SQLite CURRENT_TIMESTAMP rồi bán ngay KHÔNG bị chặn — ${e?.message}`);
+      return null;
+    }
+  })();
+  check('ca mở bằng SQLite CURRENT_TIMESTAMP rồi bán ngay KHÔNG bị chặn (case 6c)', () => {
+    assert.ok(liveOrder, 'đơn phải tạo được');
+    assert.strictEqual(liveOrder!.status, 'COMPLETED');
   });
 
   console.log(`\n${failures === 0 ? '🎉 AUTOCLOSE SHIFT: 100% PASS' : `❌ AUTOCLOSE SHIFT: ${failures} check FAIL`}`);

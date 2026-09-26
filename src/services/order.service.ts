@@ -8,6 +8,7 @@ import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
 import { DiscountApprovalService } from './discount-approval.service';
 import { generateUUIDv7 } from '../lib/uuidv7';
+import { parseDbTimestamp } from '../lib/db-timestamp';
 import { priceLine } from '../lib/pricing';
 
 export interface OrderItemInput {
@@ -1059,7 +1060,14 @@ export class OrderService {
     const wh = await WarehouseService.getWarehouse(warehouseId, txOrDb);
     // ponytail: đọc thêm 1 row warehouses mỗi lần tính ATP; cache lại khi thành điểm nghẽn đo được.
     if (wh?.warehouseType === 'FAIR_EVENT') return physical;
-    const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
+    // Prefilter rộng (siêu tập) trong SQL; quyết định giữ chỗ cuối cùng do
+    // getPendingEffectiveExpiry (một quy tắc hạn duy nhất của hệ thống).
+    // CHỈ so NGÀY UTC ('YYYY-MM-DD'), không so timestamp đầy đủ: created_at
+    // trong DB lẫn thứ tự "YYYY-MM-DD HH:MM:SS" (SQLite) lẫn ISO "...T...Z"
+    // (app) — so chuỗi giữa hai họ này là vô nghĩa (' ' < 'T') và âm thầm
+    // loại mất đơn do DB ghi, tức là nhả ATP oan. Ngày là tiền tố chung nên
+    // luôn siêu tập, không bao giờ loại nhầm.
+    const cutoffDate = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString().slice(0, 10);
     // Prefilter rộng (siêu tập) trong SQL; quyết định giữ chỗ cuối cùng do
     // getPendingEffectiveExpiry (một quy tắc hạn duy nhất của hệ thống).
     const held = await txOrDb
@@ -1075,7 +1083,7 @@ export class OrderService {
           eq(orderItems.editionId, editionId),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
-          or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoff))
+          or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoffDate))
         )
       );
     const now = Date.now();
@@ -1099,12 +1107,17 @@ export class OrderService {
   }): Date | null {
     if (!order.createdAt) return null;
     if (order.paymentExpiresAt) {
-      const explicit = new Date(order.paymentExpiresAt);
+      const explicit = parseDbTimestamp(order.paymentExpiresAt);
       // payment_expires_at hỏng (dữ liệu cũ/sửa tay) → rơi về TTL 48h, không để đơn
       // PENDING treo vĩnh viễn và không nhả ATP.
-      if (!Number.isNaN(explicit.getTime())) return explicit;
+      if (explicit) return explicit;
     }
-    return new Date(new Date(order.createdAt).getTime() + PENDING_TTL_HOURS * 3600_000);
+    // created_at phải đọc theo UTC: SQLite CURRENT_TIMESTAMP ghi UTC không múi
+    // giờ, đọc bằng new Date() lệch 7 tiếng ở GMT+7 → đơn bị coi là hết hạn sớm
+    // và ATP bị nhả oan.
+    const created = parseDbTimestamp(order.createdAt);
+    if (!created) return null;
+    return new Date(created.getTime() + PENDING_TTL_HOURS * 3600_000);
   }
 
   static isPendingExpired(order: { createdAt: string | null; paymentExpiresAt?: string | null }): boolean {
@@ -1620,6 +1633,8 @@ export interface ShiftCutoffEvaluation {
   cutoffSource: 'OVERRIDE' | 'WAREHOUSE_ENV' | 'GLOBAL_ENV' | 'DEFAULT';
   cutoffAt: string;
   openedAt: string;
+  /** false = opened_at hỏng/không đọc được → KHÔNG chặn bán (không đoán bừa). */
+  openedAtValid: boolean;
   elapsedMinutes: number;
   overdue: boolean;
 }
@@ -1628,14 +1643,35 @@ export interface ShiftCutoffEvaluation {
  * Ca quá giờ khi ĐÃ QUA mốc chốt ngày của chính ngày nghiệp vụ mà ca mở.
  * Nhờ vậy ca mở SAU NỬA ĐÊM (bán đêm, mở 00:10) thuộc ngày mới nên chưa quá
  * giờ — ca đêm hợp lệ không bị chặn.
+ *
+ * opened_at phải đi qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP ghi UTC
+ * không kèm múi giờ, đọc bằng `new Date()` sẽ lệch +7 tiếng ở GMT+7 và chặn
+ * nhầm ngay ca vừa mở.
  */
 export function evaluateShiftCutoff(
-  openedAt: string | Date,
+  openedAt: string | Date | null | undefined,
   opts: { warehouseId?: string | null; now?: Date; cutoff?: string | null } = {}
 ): ShiftCutoffEvaluation {
   const now = opts.now || businessDayNow();
   const { cutoff, source } = resolveBusinessDayCutoff(opts.warehouseId, opts.cutoff);
-  const opened = openedAt instanceof Date ? openedAt : new Date(openedAt);
+  const opened = openedAt instanceof Date ? openedAt : parseDbTimestamp(openedAt);
+
+  if (opened === null) {
+    // opened_at hỏng (dữ liệu cũ/sửa tay): KHÔNG chặn bán — một chốt chặn sai
+    // chặn cả POS. Đồng thời cờ openedAtValid=false để báo cáo/cảnh báo thấy.
+    const today = businessDateOf(now);
+    return {
+      businessDate: today,
+      cutoff,
+      cutoffSource: source,
+      cutoffAt: cutoffInstantOf(today, cutoff).toISOString(),
+      openedAt: '',
+      openedAtValid: false,
+      elapsedMinutes: 0,
+      overdue: false,
+    };
+  }
+
   const businessDate = businessDateOf(opened);
   const cutoffAt = cutoffInstantOf(businessDate, cutoff);
   const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - opened.getTime()) / 60_000));
@@ -1644,7 +1680,8 @@ export function evaluateShiftCutoff(
     cutoff,
     cutoffSource: source,
     cutoffAt: cutoffAt.toISOString(),
-    openedAt: (openedAt instanceof Date ? openedAt : opened).toISOString(),
+    openedAt: opened.toISOString(),
+    openedAtValid: true,
     elapsedMinutes,
     overdue: now.getTime() > cutoffAt.getTime(),
   };
@@ -1952,7 +1989,11 @@ export class CashboxService {
         warehouseCode: wh[0]?.code || null,
         warehouseName: wh[0]?.name || null,
         cashierId: s.cashierId,
-        openedAt: s.openedAt,
+        // openedAt = ISO chuẩn có Z (mọi client parse đúng); openedAtRaw = giá trị
+        // nguyên trong DB để đối chiếu. TUYỆT ĐỐI không đưa thẳng chuỗi DB ra
+        // API cho client tự parse — đó là chính là lỗi múi giờ này.
+        openedAt: evaluation.openedAt,
+        openedAtRaw: s.openedAt,
         businessDate: evaluation.businessDate,
         cutoff: evaluation.cutoff,
         cutoffAt: evaluation.cutoffAt,
@@ -1964,7 +2005,7 @@ export class CashboxService {
         autoCloseAction: 'AUTO_CLOSE' as const,
         autoCloseActionBy: 'MANAGER' as const,
         message:
-          `Ca két ${s.id} của thu ngân ${s.cashierId} tại kho ${s.warehouseId} mở từ ${s.openedAt} ` +
+          `Ca két ${s.id} của thu ngân ${s.cashierId} tại kho ${s.warehouseId} mở từ ${evaluation.openedAt} ` +
           `đã quá giờ chốt ngày (${evaluation.cutoff} ngày ${evaluation.businessDate}). ` +
           `Thu ngân cần đếm tiền thực tế và chốt ca. Nếu không thể, quản lý chốt tự động: ` +
           `tiền mặt sẽ KHÔNG được đếm nên chênh lệch KHÔNG xác minh.`,
