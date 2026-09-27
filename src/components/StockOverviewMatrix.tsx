@@ -711,8 +711,17 @@ export function StockOverviewMatrix({
             Điều hướng bàn phím: ArrowUp/Down di chuyển, Home/End nhảy đầu/cuối,
             Enter chọn, Escape đóng. Focus thật giữ trên trigger (mô hình
             aria-activedescendant) để không mất vị trí focus sau khi menu đóng. */}
+        {/* FIX: `fixed` + toạ độ đo đạc phải nằm trên CÙNG một phần tử. Trước đây
+            `fixed z-[80]` nằm trên wrapper của portal còn `top`/`left` đo được nằm
+            trên div con — div con không có position nên CSS bỏ qua top/left, còn
+            wrapper fixed không có top/left thì rơi về vị trí tĩnh (con cuối của
+            body, nằm dưới viewport). Menu hiện ra nhưng ngoài màn hình: bấm chip
+            "Ma trận" không thấy gì. Giống hệt shape đang chạy ở BatchTransferModal. */}
         {isTabMenuOpen && mounted && (
-          <PortalToBody className="fixed z-[80]">
+          <PortalToBody
+            className="fixed z-[80]"
+            style={{ top: tabMenuPos.top, left: tabMenuPos.left }}
+          >
             <div
               ref={tabMenuRef}
               id="kho-main-tab-listbox"
@@ -720,7 +729,6 @@ export function StockOverviewMatrix({
               aria-label="Chọn màn kho hàng"
               aria-activedescendant={`kho-tab-option-${TAB_ITEMS[activeTabIndex]?.id ?? 'MATRIX'}`}
               tabIndex={-1}
-              style={{ top: tabMenuPos.top, left: tabMenuPos.left }}
               className="w-[min(20rem,calc(100vw-1.5rem))] max-h-[70vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl"
             >
               {TAB_ITEMS.map((tab, index) => {

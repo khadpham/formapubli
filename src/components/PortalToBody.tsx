@@ -22,8 +22,18 @@
  *     </PortalToBody>
  *   )}
  *
- * `className`/`style` on the wrapper are forwarded so callers can pin it with
- * `fixed` + measured coordinates; the wrapper itself is inert.
+ * `className`/`style` on the wrapper are forwarded. THE RULE, learned the hard
+ * way: the element that carries the measured `top`/`left` MUST also be the
+ * positioned element (`fixed`/`absolute`). They used to be split — `fixed
+ * z-[80]` on the wrapper, `top`/`left` on a static child — and the tab menu
+ * rendered off screen with no error at all. A `position: fixed` wrapper with no
+ * `top`/`left` falls back to its STATIC position, which for the last child of
+ * `document.body` is far below the viewport; a static child ignores `top`/`left`
+ * outright. scripts/test-mobile-kho-ui.ts asserts this for every call site.
+ *
+ * Both working shapes are fine, as long as they agree:
+ *   A) wrapper carries both:  <PortalToBody className="fixed z-95" style={{top,left}}>
+ *   B) child carries both:    <PortalToBody><div className="fixed top-4 left-1/2">
  */
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';

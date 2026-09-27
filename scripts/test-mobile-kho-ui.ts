@@ -100,9 +100,15 @@ expect(
   /import \{ PortalToBody \} from '\.\/PortalToBody'/.test(matrix),
   'StockOverviewMatrix dùng helper portal dùng chung'
 );
+// Shape-agnostic: the dropdown renders through the portal AND the wrapper is the
+// positioned element. Pinned to the old one-line form it would have LOCKED IN the
+// bug (fixed on the wrapper, measured top/left on the static child).
 expect(
-  /\{isTabMenuOpen && mounted && \(/.test(matrix) && /<PortalToBody className="fixed z-\[80\]">/.test(matrix),
-  'Dropdown tab render qua PortalToBody'
+  /\{isTabMenuOpen && mounted && \(/.test(matrix) &&
+    /<PortalToBody[\s\S]{0,200}?className="fixed z-\[80\]"[\s\S]{0,200}?style=\{\{ top: tabMenuPos\.top, left: tabMenuPos\.left \}\}/.test(
+      matrix
+    ),
+  'Dropdown tab render qua PortalToBody, wrapper vừa fixed vừa mang toạ độ đo đạc'
 );
 expect(
   /\{showMagnetBar && mounted && \(/.test(matrix),
@@ -254,6 +260,105 @@ expect(
 expect(
   /preventDefault\(\)/.test(matrix),
   'Phím điều hướng được preventDefault (không cuộn trang khi bấm mũi tên)'
+);
+
+// ---------------------------------------------------------------------------
+// 8. REGRESSION — the tab menu rendered OFF SCREEN while this whole file stayed
+//    GREEN. Root cause: <PortalToBody className="fixed z-[80]"> puts `fixed` on
+//    the portal WRAPPER, but the measured `top`/`left` lived on the INNER div,
+//    which had no position class at all. A position:fixed wrapper with no
+//    top/left falls back to its STATIC position (last child of body = far
+//    below the fold), and the static inner div ignores top/left outright.
+//    Net effect on a phone: click the "Ma trận" chip, nothing visibly happens.
+//
+//    This audit is SOURCE-level and applies to EVERY PortalToBody call site in
+//    src, not just the one that broke: whenever a usage supplies measured
+//    `top` and `left` (style object or Tailwind top-/left- classes), that SAME
+//    element must also carry a position (fixed/absolute, class or style). The
+//    mismatch is silent — no console error, no red test — so it has to be
+//    asserted mechanically or it comes back.
+// ---------------------------------------------------------------------------
+// A Tailwind `top-4` class alone does NOT create a positioned element; only
+// fixed/absolute/sticky (or an explicit `position:` style) does.
+const POSITION_CLASS = /(^|[\s"'`])(fixed|absolute|sticky)([\s"'`]|$)/;
+const hasPosition = (tag: string) =>
+  POSITION_CLASS.test(tag) || /position:\s*'(fixed|absolute|sticky)'/.test(tag);
+// Measured coordinates: style object `top:`+`left:`, or Tailwind `top-`+`left-`.
+const hasCoords = (tag: string) => {
+  const styleCoords =
+    /style=\{\{[\s\S]*?\btop\s*:/.test(tag) && /style=\{\{[\s\S]*?\bleft\s*:/.test(tag);
+  const classCoords =
+    /className=/.test(tag) &&
+    /(^|[\s"'`])top-/.test(tag) &&
+    (/(^|[\s"'`])left-/.test(tag) || /(^|[\s"'`])inset-x-/.test(tag));
+  return Boolean(styleCoords || classCoords);
+};
+
+/** Read one JSX opening tag starting at `i` (which must point at `<`). */
+const readTag = (src: string, i: number): { tag: string; end: number } | null => {
+  if (src[i] !== '<') return null;
+  let depth = 0;
+  let quote: string | null = null;
+  for (let j = i; j < src.length; j++) {
+    const c = src[j];
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    else if (c === '{' || c === '[' || c === '(') depth++;
+    else if (c === '}' || c === ']' || c === ')') depth--;
+    else if (c === '>' && depth === 0) return { tag: src.slice(i, j + 1), end: j + 1 };
+  }
+  return null;
+};
+
+const walkSrc = (dir: string, out: string[] = []): string[] => {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      walkSrc(full, out);
+    } else if (/\.tsx?$/.test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+};
+
+const srcRoot = path.resolve(process.cwd(), 'src');
+const portalUsages: string[] = [];
+for (const file of walkSrc(srcRoot)) {
+  if (path.basename(file) === 'PortalToBody.tsx') continue; // the helper itself
+  const src = fs.readFileSync(file, 'utf8');
+  const rel = path.relative(process.cwd(), file);
+  let idx = src.indexOf('<PortalToBody');
+  while (idx !== -1) {
+    const line = src.slice(0, idx).split('\n').length;
+    const wrapper = readTag(src, idx);
+    if (wrapper) {
+      // The first element INSIDE the portal is the child that may or may not
+      // be the positioned one. Both must agree about position + coordinates.
+      const childIdx = wrapper.end + (src.slice(wrapper.end).match(/^\s*/) as RegExpMatchArray)[0].length;
+      const child = readTag(src, childIdx);
+      for (const [role, tag] of [
+        ['wrapper', wrapper.tag],
+        ['child', child?.tag ?? ''],
+      ] as const) {
+        if (!tag || !hasCoords(tag)) continue;
+        expect(
+          hasPosition(tag),
+          `${rel}:${line} PortalToBody ${role} mang top+left nhưng thiếu position (fixed/absolute) — menu sẽ rơi về vị trí static và nằm ngoài màn hình`
+        );
+        portalUsages.push(`${rel}:${line} (${role})`);
+      }
+    }
+    idx = src.indexOf('<PortalToBody', idx + 1);
+  }
+}
+expect(
+  portalUsages.length >= 3,
+  `Audit tìm thấy ${portalUsages.length} usage PortalToBody có toạ độ đo đạc (wrapper hoặc child)`
 );
 
 console.log('\nMobile Kho UI contract - PASS');
