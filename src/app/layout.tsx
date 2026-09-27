@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: 'formapubli — ERP Quản Trị Kho Vận & Xuất Bản',
   description: 'Hệ điều hành quản trị xuất bản, vòng đời ISBN và sổ cái kho bất biến formapubli.',
   manifest: '/manifest.json',
+  // Trình duyệt yêu cầu `mobile-web-app-capable`; `apple-mobile-web-app-capable` là
+  // bản legacy và bị cảnh báo deprecated. Khai cả hai để iOS vẫn nhận.
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

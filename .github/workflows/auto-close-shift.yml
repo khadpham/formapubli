@@ -1,0 +1,56 @@
+name: Chốt ca & chốt ngày tự động
+
+# SAFEGUARD: thu ngân quên chốt ca thì ca treo vô hạn, ngày không chốt, số
+# liệu sai. Job này gọi endpoint /api/cron/auto-close — endpoint tự chốt các
+# ca quá giờ rồi chốt ngày nghiệp vụ đã qua, idempotent nên chạy lại vô hại.
+#
+# VÌ SAO KHÔNG DÙNG CRON CỦA CLOUDFLARE: worker do @opennextjs/cloudflare sinh
+# ra chỉ có export `fetch`, KHÔNG có `scheduled`. Khai báo [triggers] crons sẽ
+# bắn sự kiện vào chỗ không ai nghe → tính năng chết mà KHÔNG báo lỗi.
+# scripts/test-cron-auto-close.ts khoá lại điều này.
+
+on:
+  schedule:
+    # 23:40 giờ VN = 16:40 UTC. Sau giờ cắt chốt của từng kho, trước nửa đêm.
+    - cron: '40 16 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: auto-close-shift
+  cancel-in-progress: false
+
+jobs:
+  auto-close:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Gọi safeguard chốt ca + chốt ngày
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL}" ]; then
+            echo "::error::Thiếu repository variable APP_URL"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::Thiếu secret CRON_SECRET"
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/auto-close.json -w '%{http_code}' \
+            -X POST "${APP_URL}/api/cron/auto-close" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            --max-time 120)
+          echo "HTTP ${code}"
+          cat /tmp/auto-close.json
+          echo
+          # 401 = secret sai → phải làm lỏ để người khác thấy, đừng nuốt.
+          if [ "$code" = "401" ]; then
+            echo "::error::Safeguard từ chối: CRON_SECRET sai hoặc chưa được set"
+            exit 1
+          fi
+          if [ "$code" -ge 500 ]; then
+            echo "::error::Safeguard lỗi server"
+            exit 1
+          fi
