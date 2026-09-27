@@ -36,6 +36,54 @@ async function run() {
   const mtimeBefore = st.mtimeMs;
   ok('1. Prod DB tồn tại, readable', st.size > 100000, `${Math.round(st.size / 1024)}KB`);
 
+  // 1b. File KHÔNG chỉ phải đủ lớn, mà phải còn là DB SQLite thật. Một lần
+  // `Copy-Item -Force` với nguồn == đích đã xoá sạch nội dung file còn giữ
+  // nguyên kích thước, khiến check 1 vẫn xanh trong khi app chết với
+  // SQLITE_NOTADB. `PRAGMA integrity_check` là thứ duy nhất bắt được.
+  const prodHeader = Buffer.alloc(16);
+  {
+    const fd = fs.openSync(prodPath, 'r');
+    try {
+      fs.readSync(fd, prodHeader, 0, 16, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  ok(
+    '1b. Prod DB có header SQLite hợp lệ',
+    prodHeader.toString('latin1').startsWith('SQLite format 3'),
+    `${[...prodHeader.subarray(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join(' ')}`
+  );
+  {
+    // 1c. Chạy integrity_check trên BẢN SAO TẠM, không mở handle libsql vào
+    // prod: runner đã cảnh báo rõ handle libsql trên Windows không nhả ngay
+    // cả sau close() khiến suite sau gặp EBUSY. Đồng thời cấm tuyệt đối copy
+    // đè lên chính file nguồn — đó là cách làm hỏng DB production trong nháy mắt.
+    const os = await import('node:os');
+    const tmpCopy = path.join(os.tmpdir(), `drill-prod-copy-${process.pid}.db`);
+    if (path.resolve(tmpCopy) === path.resolve(prodPath)) {
+      ok('1c. Prod DB qua integrity_check', false, 'đường dẫn bản sao trùng prod — dừng');
+    } else {
+      let integrity = 'khong doc duoc';
+      try {
+        fs.copyFileSync(prodPath, tmpCopy);
+        const { createClient } = await import('@libsql/client');
+        const ro = createClient({ url: `file:${tmpCopy}` });
+        try {
+          const r = await ro.execute('PRAGMA integrity_check');
+          integrity = String(r.rows[0]?.[Object.keys(r.rows[0] || {})[0]] ?? 'khong ro');
+        } finally {
+          ro.close();
+        }
+      } catch (e: any) {
+        integrity = `LOI: ${e?.message || e}`;
+      } finally {
+        try { fs.unlinkSync(tmpCopy); } catch { /* temp cleanup khong quan trong */ }
+      }
+      ok('1c. Prod DB qua integrity_check', integrity === 'ok', integrity);
+    }
+  }
+
   // 2. Staging fresh từ migration chain.
   const stagingPath = path.resolve(process.cwd(), 'formapubli_staging.db');
   if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath);
