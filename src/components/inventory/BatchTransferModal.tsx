@@ -325,10 +325,11 @@ export function BatchTransferModal({
       { defaultQuantity: DEFAULT_PASTE_QUANTITY }
     );
     setPasteResult(result);
+    setPastedConfirmed({});
   };
 
-  // Chỉ nhóm "Khop tuyet doi" được tự đổ thẳng vào phiếu. Nhóm "Can xac nhan"
-  // thì bấm từng ứng viên; nhóm "Khong tim thay" không có đường thêm nào.
+  // Chỉ nhóm "Khớp tuyệt đối" được đổ thẳng vào phiếu. Nhóm "Cần xác nhận" thì
+  // bấm từng ứng viên; nhóm "Không tìm thấy" không có đường thêm nào.
   const handleAddPastedMatches = () => {
     if (!pasteResult) return;
     addPastedRows(
@@ -338,17 +339,25 @@ export function BatchTransferModal({
     );
   };
 
+  // Những dòng "cần xác nhận" đã được người dùng bấm chọn rồi. Giữ state riêng
+  // để dòng đó chuyển sang trạng thái "Đã thêm" và không bấm nhầm thêm 2 lần
+  // (addBookLine cộng dồn số lượng nên bấm 2 lần sẽ nhân đôi số lượng).
+  const [pastedConfirmed, setPastedConfirmed] = useState<Record<string, string>>({});
+
   const handleAddPastedCandidate = (
     row: Extract<ParsedRow, { status: 'needs_confirm' }>,
     bookId: string
   ) => {
+    const picked = row.candidates.find((c) => c.id === bookId);
     addPastedRows([{ editionId: bookId, quantity: row.quantity }]);
+    setPastedConfirmed((prev) => ({ ...prev, [row.line]: picked?.title || bookId }));
   };
 
   const closePaste = () => {
     setIsPasteOpen(false);
     setPasteText('');
     setPasteResult(null);
+    setPastedConfirmed({});
   };
 
   const handleRemoveLine = (editionId: string) => {
@@ -860,14 +869,14 @@ export function BatchTransferModal({
                   type="button"
                   onClick={() => setIsPasteOpen(true)}
                   className="min-h-[38px] min-w-[38px] px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
-                  title="Dán danh sách sách chép từ Excel (tên sách - so luong)"
+                  title="Dán danh sách chép từ Excel (tên sách · số lượng)"
                 >
                   <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Dan</span>
+                  <span className="whitespace-nowrap">Dán</span>
                 </button>
                 <span className="text-[11px] text-slate-500">
                   {lines.length === 0
-                    ? 'Dán danh sách 2 cột tu Excel: ten sach - so luong (thieu so luong thi mac dinh 5).'
+                    ? 'Dán danh sách 2 cột từ Excel: tên sách · số lượng. Thiếu số lượng thì mặc định 5.'
                     : ''}
                 </span>
               </div>
@@ -1153,16 +1162,16 @@ export function BatchTransferModal({
             ref={pasteModalRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Danh sach dan tu Excel"
+            aria-label="Dán danh sách từ Excel"
             className="w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl"
           >
             <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-slate-200">
               <p className="min-w-0 text-xs font-extrabold text-slate-900 truncate">
-                Dan danh sach tu Excel
+                Dán danh sách từ Excel
               </p>
               <button
                 type="button"
-                aria-label="Dong hop danh sach"
+                aria-label="Đóng hộp dán danh sách"
                 onClick={closePaste}
                 className="min-h-[38px] min-w-[38px] shrink-0 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
               >
@@ -1172,9 +1181,11 @@ export function BatchTransferModal({
 
             <div className="p-4 space-y-3">
               <p className="text-[11px] leading-relaxed text-slate-600">
-                Dán 2 cot: ten sach - so luong. Ten sach phai khop CHINH XAC voi danh muc,
-                he thong khong doan. Mac dinh 5 cuon moi dong. Dan chi them vao bang chuyen,
-                van phai bam &quot;Kiem tra ton kho&quot; roi &quot;Xac nhan chuyen kho&quot;.
+                Dán 2 cột: <span className="font-semibold">tên sách · số lượng</span> (cột cách nhau
+                bằng Tab hoặc dấu phẩy). Tên sách phải khớp <span className="font-semibold">CHÍNH XÁC</span> với danh
+                mục — hệ thống không tự đoán. Dòng nào không có số lượng thì lấy mặc định{' '}
+                <span className="font-mono font-bold">5</span>. Dán chỉ thêm vào bảng chuyển, vẫn
+                phải bấm &quot;Kiểm tra tồn kho&quot; rồi &quot;Xác nhận chuyển kho&quot;.
               </p>
 
               <textarea
@@ -1185,7 +1196,7 @@ export function BatchTransferModal({
                 }}
                 rows={6}
                 spellCheck={false}
-                placeholder={'Ten sach 1\t5\nTen sach 2\t3'}
+                placeholder={'Tên sách 1\t5\nTên sách 2\t3'}
                 className="w-full min-h-[38px] px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
 
@@ -1196,21 +1207,22 @@ export function BatchTransferModal({
                   disabled={!pasteText.trim()}
                   className="min-h-[38px] min-w-[38px] px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Kiem tra
+                  Kiểm tra
                 </button>
                 {pasteResult && (
                   <span className="text-[11px] font-bold text-slate-600 break-words">
-                    {pasteResult.summary.matched} dong vao . {pasteResult.summary.needsConfirm} can xac nhan . {pasteResult.summary.notFound} khong tim thay
+                    {pasteResult.summary.matched} dòng vào bảng · {pasteResult.summary.needsConfirm} cần
+                    xác nhận · {pasteResult.summary.notFound} không tìm thấy
                   </span>
                 )}
               </div>
               {pasteResult && (
                 <div className="space-y-3">
-                  {/* 1. Khop tuyet doi */}
+                  {/* 1. Khớp tuyệt đối */}
                   <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
                     <h3 className="text-[11px] font-extrabold text-emerald-900 mb-2 flex items-center gap-1">
                       <Check className="w-3.5 h-3.5 shrink-0" />
-                      Khop tuyet doi ({pasteResult.summary.matched})
+                      Khớp tuyệt đối ({pasteResult.summary.matched})
                     </h3>
                     <ul className="space-y-1 mb-2">
                       {pasteResult.rows
@@ -1227,50 +1239,70 @@ export function BatchTransferModal({
                       disabled={pasteResult.summary.matched === 0}
                       className="min-h-[38px] min-w-[38px] w-full px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Vao bang ({pasteResult.summary.matched})
+                      Vào bảng ({pasteResult.summary.matched})
                     </button>
                   </section>
 
-                  {/* 2. Can xac nhan — bam de chon dung dau sach */}
+                  {/* 2. Cần xác nhận — bấm vào đầu sách đúng để thêm vào phiếu. */}
                   {pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
-                    <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                      <h3 className="text-[11px] font-extrabold text-amber-900 mb-2 flex items-center gap-1">
+                    <section className="rounded-xl border border-amber-300 bg-amber-50/70 p-3">
+                      <h3 className="text-[11px] font-extrabold text-amber-900 mb-1 flex items-center gap-1">
                         <CircleHelp className="w-3.5 h-3.5 shrink-0" />
-                        Can xac nhan ({pasteResult.summary.needsConfirm})
+                        Cần xác nhận ({pasteResult.summary.needsConfirm})
                       </h3>
+                      <p className="text-[10px] font-semibold text-amber-800 mb-2 leading-relaxed">
+                        Tên trong danh sách không khớp tuyệt đối với danh mục. Bấm vào đầu sách đúng
+                        bên dưới để thêm vào phiếu.
+                      </p>
                       <ul className="space-y-2">
                         {pasteResult.rows
                           .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
-                          .map((r) => (
-                            <li key={`c-${r.line}`} className="min-w-0">
-                              <p className="text-[11px] text-slate-700 break-words">
-                                {r.line} — <span className="font-mono font-bold">{r.quantity}</span>
-                              </p>
-                              <div className="mt-1 flex flex-wrap gap-1.5">
-                                {r.candidates.map((c) => (
-                                  <button
-                                    key={`c-${r.line}-${c.id}`}
-                                    type="button"
-                                    onClick={() => handleAddPastedCandidate(r, c.id)}
-                                    className="min-h-[38px] min-w-[38px] max-w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-[11px] font-semibold transition break-words"
-                                  >
-                                    {c.title}
-                                  </button>
-                                ))}
-                              </div>
-                            </li>
-                          ))}
+                          .map((r) => {
+                            const chosen = pastedConfirmed[r.line];
+                            return (
+                              <li
+                                key={`c-${r.line}`}
+                                className="min-w-0 rounded-lg border border-amber-200 bg-white/70 p-2"
+                              >
+                                <p className="text-[11px] text-slate-700 break-words">
+                                  Dán: <span className="font-semibold">{r.line}</span> · SL{' '}
+                                  <span className="font-mono font-bold">{r.quantity}</span>
+                                </p>
+                                {chosen ? (
+                                  <p className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-emerald-700 break-words">
+                                    <Check className="w-3.5 h-3.5 shrink-0" />
+                                    Đã thêm: {chosen}
+                                  </p>
+                                ) : (
+                                  <div className="mt-1.5 flex flex-col gap-1.5">
+                                    {r.candidates.map((c) => (
+                                      <button
+                                        key={`c-${r.line}-${c.id}`}
+                                        type="button"
+                                        onClick={() => handleAddPastedCandidate(r, c.id)}
+                                        aria-label={`Thêm đầu sách ${c.title}`}
+                                        className="flex w-full items-center gap-1.5 min-h-[38px] px-2.5 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 active:bg-amber-200 text-amber-900 text-[11px] font-bold transition text-left"
+                                      >
+                                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                                        <span className="min-w-0 break-words">{c.title}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
                       </ul>
                     </section>
                   )}
-                  {/* 3. Khong tim thay — chi hien thi, KHONG co nut them. */}
+                  {/* 3. Không tìm thấy — chỉ hiển thị, KHÔNG có nút thêm. */}
                   {pasteResult.rows.some((r) => r.status === 'not_found') && (
                     <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <h3 className="text-[11px] font-extrabold text-slate-700 mb-1">
-                        Khong tim thay ({pasteResult.summary.notFound})
+                        Không tìm thấy ({pasteResult.summary.notFound})
                       </h3>
                       <p className="text-[10px] text-slate-500 mb-2">
-                        Khong co du lieu khop. Hay tim tay tung cua.
+                        Danh mục không có dữ liệu khớp. Hãy tìm và thêm tay từng cuốn.
                       </p>
                       <ul className="space-y-1">
                         {pasteResult.rows

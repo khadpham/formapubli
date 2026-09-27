@@ -47,17 +47,17 @@ const blockOf = (anchor: string): string => bodyOf(anchor);
 // 1. The compact trigger button, next to the existing bulk quantity control.
 // ---------------------------------------------------------------------------
 const applyInputAt = src.indexOf('placeholder="SL mới..."');
-const danAt = src.search(/Dan<\/span>|>Dan</);
-expect(danAt !== -1, 'Có nút/nhãn "Dan" trong BatchTransferModal');
+const danAt = src.search(/Dán<\/span>|>Dán</);
+expect(danAt !== -1, 'Có nút/nhãn "Dán" trong BatchTransferModal');
 expect(applyInputAt !== -1, 'Bộ điều khiển SL hàng loạt (ô "SL mới...") còn nguyên');
 expect(
   applyInputAt !== -1 && danAt !== -1 && Math.abs(danAt - applyInputAt) < 2500,
-  'Nút "Dan" nằm ngay cạnh bộ điều khiển SL hàng loạt'
+  'Nút "Dán" nằm ngay cạnh bộ điều khiển SL hàng loạt'
 );
 expect(blockOf('const handleApplyBulkQuantity').length > 0, 'handleApplyBulkQuantity còn nguyên');
 expect(
   /onClick=\{\(\) => setIsPasteOpen\(true\)\}/.test(src),
-  'Nút "Dan" chỉ mở hộp thoại dán (không tự gọi validate/submit)'
+  'Nút "Dán" chỉ mở hộp thoại dán (không tự gọi validate/submit)'
 );
 
 // ---------------------------------------------------------------------------
@@ -108,9 +108,9 @@ expect(/const DEFAULT_PASTE_QUANTITY = 5/.test(src), 'Hằng số mặc định 
 // ---------------------------------------------------------------------------
 // 4. Three result groups are rendered.
 // ---------------------------------------------------------------------------
-expect(/Khop tuyet doi/.test(src), 'Nhóm "Khop tuyet doi" (matched) được render');
-expect(/Can xac nhan/.test(src), 'Nhóm "Can xac nhan" (needs_confirm) được render');
-expect(/Khong tim thay/.test(src), 'Nhóm "Khong tim thay" (not_found) được render');
+expect(/Khớp tuyệt đối/.test(src), 'Nhóm "Khop tuyet doi" (matched) được render');
+expect(/Cần xác nhận/.test(src), 'Nhóm "Can xac nhan" (needs_confirm) được render');
+expect(/Không tìm thấy/.test(src), 'Nhóm "Khong tim thay" (not_found) được render');
 for (const status of ['matched', 'needs_confirm', 'not_found']) {
   expect(
     new RegExp(`status === '${status}'`).test(src),
@@ -118,10 +118,10 @@ for (const status of ['matched', 'needs_confirm', 'not_found']) {
   );
 }
 expect(
-  /summary\.matched\} dong vao \. .*summary\.needsConfirm\} can xac nhan \. .*summary\.notFound\} khong tim thay/.test(
+  /summary\.matched\} dòng vào bảng[\s\S]*?summary\.needsConfirm\} cần[\s\S]*?xác nhận[\s\S]*?summary\.notFound\} không tìm thấy/.test(
     src
   ),
-  'Dòng tổng kết đúng mẫu "N dong vao . M can xac nhan . K khong tim thay" từ parser summary'
+  'Dòng tổng kết dạng "N dòng vào bảng · M cần xác nhận · K không tìm thấy" từ parser summary'
 );
 // ---------------------------------------------------------------------------
 // 5. needs_confirm: each candidate is a tappable button that adds the line.
@@ -131,10 +131,46 @@ expect(
   candBlock.length > 0 && /addPastedRows/.test(candBlock),
   'handleAddPastedCandidate ghi vào bảng chuyển (qua cùng hàm thêm dòng)'
 );
-expect(/candidates\.map\(\(c\)/.test(src), 'Ứng viên trong nhóm "Can xac nhan" được render bằng .map()');
+expect(/candidates\.map\(\(c\)/.test(src), 'Ứng viên trong nhóm "Cần xác nhận" được render bằng .map()');
 expect(
   /onClick=\{\(\) => handleAddPastedCandidate\(/.test(src),
   'Mỗi ứng viên là một nút bấm được (onClick thêm dòng với số lượng hiển thị)'
+);
+
+// Người dùng báo: ứng viên trông như mảnh chữ trắng, không ai biết bấm được.
+// Bắt buộc phải có: dấu hiệu bấm (icon + viền đậm), nhãn aria nói rõ thao tác,
+// và trạng thái "Đã thêm" sau khi bấm để không bấm nhầm 2 lần (cộng dồn SL).
+expect(
+  /aria-label=\{`Thêm đầu sách \$\{c\.title\}`\}/.test(src),
+  'Ứng viên có aria-label "Thêm đầu sách <tên>" để người dùng biết đây là nút thêm'
+);
+expect(
+  /border-2 border-amber-400/.test(src),
+  'Ứng viên có viền đậm hơn để nhìn ra là nút bấm được'
+);
+expect(
+  /Đã thêm: \{chosen\}/.test(src) && /pastedConfirmed\[r\.line\]/.test(src),
+  'Dòng đã chọn phải hiện trạng thái "Đã thêm" thay vì còn bấm lại được'
+);
+
+// Tiếng Việt trong UI phải CÓ DẤU. Người dùng đã phàn về nhãn không dấu.
+const UNACCENTED_LABELS = [
+  '>Dan<',
+  '>Kiem tra<',
+  'Khop tuyet doi',
+  'Can xac nhan',
+  'Khong tim thay',
+  'Vao bang',
+  'dan sach',
+  'so luong',
+  'ten sach',
+];
+for (const bad of UNACCENTED_LABELS) {
+  expect(!src.includes(bad), `Nhãn không dấu "${bad}" không được xuất hiện — UI phải tiếng Việt có dấu`);
+}
+expect(
+  /Dán danh sách từ Excel/.test(src) && /Cần xác nhận/.test(src) && /Không tìm thấy/.test(src),
+  'Tiêu đề và tên nhóm phải là tiếng Việt có dấu'
 );
 
 // ---------------------------------------------------------------------------
@@ -146,7 +182,7 @@ const notFoundStart = src.indexOf("status === 'not_found'");
 expect(notFoundStart !== -1, 'Tồn tại nhóm not_found');
 const notFoundBlock = src.slice(notFoundStart);
 expect(
-  /Khong tim thay/.test(notFoundBlock) && /{r\.line} — {r\.quantity}/.test(notFoundBlock),
+  /Không tìm thấy/.test(notFoundBlock) && /{r\.line} — {r\.quantity}/.test(notFoundBlock),
   'Nhóm "Khong tim thay" liệt kê nguyên văn dòng đã dán kèm số lượng'
 );
 expect(
