@@ -103,4 +103,36 @@ if (fs.existsSync(workerBundle)) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// 7. GIỚI HẠN SUBREQUEST CỦA WORKER (đã gặp thật trên production)
+//    Gặp lỗi thật: "Too many subrequests by single Worker invocation" khi quét
+//    cả 5 kho trong MỘT lần gọi — 2 kho xong, 3 kho chết. Local/Node KHÔNG có
+//    giới hạn này nên test máy vẫn xanh. Phải mỗi lần gọi MỘT kho, vòng lặp
+//    do workflow đảm nhiệm.
+// ---------------------------------------------------------------------------
+ok(
+  /searchParams\.get\(['"]warehouse['"]\)/.test(src),
+  'Endpoint phải nhận ?warehouse=CODE để mỗi lần gọi chỉ xử lý MỘT kho — quét nhiều kho trong một lần gọi sẽ vỡ giới hạn subrequest của Worker'
+);
+ok(
+  /searchParams\.get\(['"]list['"]\)/.test(src),
+  'Endpoint phải có ?list=1 để bên gọi biết cần quét những kho nào'
+);
+ok(
+  /partial:/.test(src),
+  'Response phải báo partial để bên gọi biết mới quét được một phần'
+);
+ok(
+  /auto-close\?warehouse=/.test(wf),
+  'Workflow phải gọi RIÊNG từng kho (auto-close?warehouse=CODE), không gọi một lần cho tất cả'
+);
+ok(
+  /auto-close\?list=1/.test(wf),
+  'Workflow phải lấy danh sách kho trước rồi mới quét từng kho'
+);
+ok(
+  /errors/.test(wf),
+  'Workflow phải ĐỌC errors[] trong payload và fail, không được coi 200 là xong'
+);
+
 console.log(`\n=== SAFEGUARD CHỐT CA / CHỐT NGÀY: ${checks} assertions PASS ===`);

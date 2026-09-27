@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Gọi safeguard chốt ca + chốt ngày
+      - name: Quét từng kho, mỗi kho một lần gọi
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -38,19 +38,54 @@ jobs:
             echo "::error::Thiếu secret CRON_SECRET"
             exit 1
           fi
-          code=$(curl -sS -o /tmp/auto-close.json -w '%{http_code}' \
-            -X POST "${APP_URL}/api/cron/auto-close" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            --max-time 120)
-          echo "HTTP ${code}"
-          cat /tmp/auto-close.json
-          echo
-          # 401 = secret sai → phải làm lỏ để người khác thấy, đừng nuốt.
-          if [ "$code" = "401" ]; then
-            echo "::error::Safeguard từ chối: CRON_SECRET sai hoặc chưa được set"
+          AUTH="Authorization: Bearer ${CRON_SECRET}"
+
+          # Worker có giới hạn subrequest mỗi lần gọi: quét nhiều kho trong
+          # MỘT lần gọi sẽ chết với "Too many subrequests". Nên lấy danh sách
+          # kho, rồi gọi RIÊNG từng kho — mỗi lần gọi có hạn mức riêng.
+          list_code=$(curl -sS -o /tmp/kho.json -w '%{http_code}' \
+            "${APP_URL}/api/cron/auto-close?list=1" -H "${AUTH}" --max-time 60)
+          if [ "$list_code" != "200" ]; then
+            echo "::error::Không lấy được danh sách kho (HTTP ${list_code})"
+            cat /tmp/kho.json; echo
             exit 1
           fi
-          if [ "$code" -ge 500 ]; then
-            echo "::error::Safeguard lỗi server"
+
+          codes=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/kho.json","utf8")).data.warehouses.map(w=>w.code).join("\n"))')
+          total=$(printf '%s\n' "$codes" | grep -c . || true)
+          echo "Có ${total} kho cần quét"
+          if [ "$total" -eq 0 ]; then
+            echo "::error::Danh sách kho rỗng — KHÔNG coi là thành công"
             exit 1
           fi
+
+          failed=0
+          while IFS= read -r code; do
+            [ -z "$code" ] && continue
+            http=$(curl -sS -o "/tmp/kho-${code}.json" -w '%{http_code}' \
+              -X POST "${APP_URL}/api/cron/auto-close?warehouse=${code}" \
+              -H "${AUTH}" --max-time 120)
+            echo "--- ${code}: HTTP ${http}"
+            cat "/tmp/kho-${code}.json"; echo
+            if [ "$http" = "401" ]; then
+              echo "::error::Safeguard từ chối: CRON_SECRET sai hoặc chưa được set"
+              exit 1
+            fi
+            if [ "$http" -ge 400 ]; then
+              echo "::error::Kho ${code} lỗi (HTTP ${http})"
+              failed=1
+              continue
+            fi
+            # 200 nhưng payload có errors[] = kho đó chưa chốt được, KHÔNG im lặng.
+            if node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=(d.data&&d.data.errors)||[];if(e.length){console.error("  "+e.map(x=>x.step+": "+x.error).join("\n  "));process.exit(1)}' "/tmp/kho-${code}.json"; then
+              :
+            else
+              failed=1
+            fi
+          done <<< "$codes"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Có kho chưa chốt được — xem log ở trên"
+            exit 1
+          fi
+          echo "Đã quét đủ ${total} kho"

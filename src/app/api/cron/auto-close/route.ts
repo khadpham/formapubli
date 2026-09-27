@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
   }
-  return runSafeguard();
+  return handle(req);
 }
 
 // Cron services thường chỉ gọi được GET cho nên hỗ trợ cả hai.
@@ -54,21 +54,52 @@ export async function GET(req: NextRequest) {
       { status: 401 }
     );
   }
-  return runSafeguard();
+  return handle(req);
 }
 
-async function runSafeguard() {
+async function handle(req: NextRequest) {
+  const url = new URL(req.url);
+  // Danh sách kho để bên gọi quét từng kho (xem giải thích giới hạn bên dưới).
+  if (url.searchParams.get('list') === '1') {
+    const all = await db.select({ code: warehouses.code, id: warehouses.id }).from(warehouses);
+    return NextResponse.json({ success: true, data: { warehouses: all } });
+  }
+  return runSafeguard(url.searchParams.get('warehouse'));
+}
+
+/**
+ * GIỚI HẠN CLOUDFLARE (đã gặp thật, không phải phỏng đoán): Worker chỉ được
+ * dùng một hạn mức subrequest cho mỗi lần gọi. Lặp N kho trong một lần gọi
+ * thì kho thứ vài trở đi sẽ chết với "Too many subrequests by single Worker
+ * invocation" — và Local/Node KHÔNG có giới hạn này nên test ở máy vẫn xanh.
+ *
+ * Vì vậy: mỗi lần gọi chỉ xử lý MỘT kho (`?warehouse=CODE`), còn vòng lặp quét
+ * hết kho do workflow đảm nhiệm (mỗi vòng là một lần gọi riêng nên hết hạn mức
+ * mỗi vòng). Không có `warehouse` thì vẫn quét hết — chỉ dùng khi chạy local.
+ */
+async function runSafeguard(onlyWarehouse?: string | null) {
   const now = new Date();
   // Ngày nghiệp vụ hôm qua (theo giờ VN): chốt ngày QUÁ KHỎI, không phải hôm nay.
   const yesterday = new Date(now.getTime() - 24 * 3600 * 1000)
     .toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 
   const all = await db.select().from(warehouses);
+  const target = onlyWarehouse
+    ? all.filter((w) => w.code === onlyWarehouse || w.id === onlyWarehouse)
+    : all;
+  if (onlyWarehouse && target.length === 0) {
+    return NextResponse.json({
+      success: false,
+      code: 'NOT_FOUND',
+      error: `Không tìm thấy kho "${onlyWarehouse}".`,
+    });
+  }
+
   const shiftsClosed: string[] = [];
   const daysClosed: string[] = [];
   const errors: { warehouse: string; step: string; error: string }[] = [];
 
-  for (const wh of all) {
+  for (const wh of target) {
     // --- Bước 1: chốt các ca quá giờ của kho này ---
     try {
       const check = await CashboxService.getStaleOpenShiftCheck({
@@ -117,7 +148,9 @@ async function runSafeguard() {
     data: {
       ranAt: now.toISOString(),
       businessDaySettled: yesterday,
-      warehouses: all.length,
+      warehouses: target.length,
+      // Cờ cho bên gọi biết đã quét HẾT kho hay mới một phần, để tự quét tiếp.
+      partial: Boolean(onlyWarehouse),
       shiftsClosed,
       daysClosed,
       errors,
