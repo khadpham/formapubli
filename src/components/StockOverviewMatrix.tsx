@@ -34,6 +34,7 @@ import { TransitPanel } from './inventory/TransitPanel';
 import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
 import { CreateWarehouseModal } from './inventory/CreateWarehouseModal';
 import { WarehouseBankManager } from './inventory/WarehouseBankManager';
+import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -109,6 +110,19 @@ export function StockOverviewMatrix({
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [bankManagerOpen, setBankManagerOpen] = useState(false);
+  // Panel "Kho": xem tổng số kho + tổng tồn từng kho, ngưng/mở lại/xóa kho.
+  const [warehousePanelOpen, setWarehousePanelOpen] = useState(false);
+  /** Sau khi panel thao tác: nạp lại danh sách kho để chip row không bị cũ. */
+  const reloadWarehouseChips = useCallback(async () => {
+    try {
+      const j = await fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json());
+      if (j?.success && Array.isArray(j.data)) {
+        setLocalWarehouses(j.data.map((w: any) => ({ id: w.id, code: w.code, name: w.name })));
+      }
+    } catch {
+      /* giữ số cũ, không chặn thao tác */
+    }
+  }, []);
   // Gộp nút kho: 'OUT' = các loại xuất, 'MOVE' = chuyển kho/soạn kệ.
   const [actionMenu, setActionMenu] = useState<'OUT' | 'MOVE' | null>(null);
   const [createdWarehouseToast, setCreatedWarehouseToast] = useState<{
@@ -390,14 +404,16 @@ export function StockOverviewMatrix({
   }, [initialBooks]);
 
   // Danh sách tab kho ĐỘNG: thêm kho mới là tự xuất hiện, không sửa code nữa.
+  // Đọc `localWarehouses` (không phải prop) để panel "Kho" xóa/ngưng kho xong thì
+  // dải chip này cập nhật ngay, không phải reload trang.
   const warehouseTabs = useMemo(() => {
-    const list = (warehouses || []).map((w) => ({
+    const list = (localWarehouses || []).map((w) => ({
       id: w.id,
       label: w.name,
       total: warehouseTotals.totals[w.id] || 0,
     }));
     return [{ id: 'ALL', label: `Tất cả ${list.length} kho`, total: warehouseTotals.all }, ...list];
-  }, [warehouses, warehouseTotals]);
+  }, [localWarehouses, warehouseTotals]);
 
   const getWarehouseStock = (b: MatrixBookItem, tab: string) => {
     if (tab === 'ALL') return b.totalStock;
@@ -654,6 +670,18 @@ export function StockOverviewMatrix({
               className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
               <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho
+            </button>
+          )}
+          {/* "Kho" — panel xem tổng số kho + tồn từng kho, ngưng/mở lại/xóa.
+              Nhãn ngắn theo luật đặt tên: nút là động từ, mô tả nằm ở title. */}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setWarehousePanelOpen(true)}
+              title="Xem tổng số kho, tồn từng kho, ngưng hoạt động hoặc xóa kho"
+              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <Warehouse className="w-3.5 h-3.5" /> Kho
             </button>
           )}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
@@ -1293,6 +1321,13 @@ export function StockOverviewMatrix({
       />
       {bankManagerOpen && (
         <WarehouseBankManager onClose={() => { setBankManagerOpen(false); handleRefresh(); }} />
+      )}
+      {warehousePanelOpen && (
+        <WarehouseManagerPanel
+          isOpen={warehousePanelOpen}
+          onClose={() => setWarehousePanelOpen(false)}
+          onChanged={reloadWarehouseChips}
+        />
       )}
     </div>
   );
