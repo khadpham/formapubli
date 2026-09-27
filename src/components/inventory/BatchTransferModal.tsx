@@ -13,8 +13,16 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  ClipboardPaste,
+  Check,
+  CircleHelp,
 } from 'lucide-react';
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
 import { generateUUIDv7 } from '@/lib/uuidv7';
+
+/** Số lượng mặc định khi quản lý chỉ copy cột tên sách từ Excel sang. */
+const DEFAULT_PASTE_QUANTITY = 5;
 
 interface BookItem {
   id: string;
@@ -79,6 +87,18 @@ export function BatchTransferModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
   const [mounted, setMounted] = useState(false);
+
+  // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển — không bao giờ gọi
+  // validate/submit; người dùng vẫn phải bấm nút Kiểm tra tồn kho rồi Xác nhận.
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteResult, setPasteResult] = useState<{
+    rows: ParsedRow[];
+    summary: { matched: number; needsConfirm: number; notFound: number };
+  } | null>(null);
+  const pasteModalRef = useModalFocusTrap<HTMLDivElement>(isPasteOpen && mounted, () =>
+    setIsPasteOpen(false)
+  );
   // Gợi ý sách: trước đây là `absolute z-20` nằm trong modal card `overflow-hidden`
   // (và body của modal là `overflow-y-auto`) nên bị CẮT mất phần dưới ở mọi kích
   // thước màn hình. Nay nó nằm trên document.body nên không tổ tiên nào cắt được.
@@ -253,22 +273,82 @@ export function BatchTransferModal({
     if (filteredBooksToAdd.length === 0) setIsSuggestOpen(false);
   }, [filteredBooksToAdd.length]);
 
-  const handleAddLine = (book: BookItem) => {
+  // Hàm thêm dòng DUY NHẤT — dùng chung cho cả tìm kiếm và dán, để hai đường
+  // sinh ra đúng một hình dạng dòng (và validate/toctou xử lý y hệt nhau).
+  // Trùng editionId thì CỘNG dồn số lượng vào dòng đang có, không thêm dòng mới.
+  const addBookLine = (book: BookItem, quantity?: number) => {
     const stock = getFromStock(book.id);
     const defaultQty = stock > 0 ? Math.min(20, stock) : 10;
-    setLines((prev) => [
-      ...prev,
-      {
-        editionId: book.id,
-        code: book.code,
-        title: book.title,
-        quantity: defaultQty,
-        availableStock: stock,
-      },
-    ]);
-    setSearchBookTerm('');
+    const qty = Math.max(1, Math.floor(quantity ?? defaultQty) || 1);
+    setLines((prev) => {
+      const existing = prev.find((l) => l.editionId === book.id);
+      if (existing) {
+        return prev.map((l) =>
+          l.editionId === book.id
+            ? { ...l, quantity: l.quantity + qty, staleWarning: undefined }
+            : l
+        );
+      }
+      return [
+        ...prev,
+        {
+          editionId: book.id,
+          code: book.code,
+          title: book.title,
+          quantity: qty,
+          availableStock: stock,
+        },
+      ];
+    });
     invalidateValidation();
     setErrorMessage(null);
+  };
+
+  const handleAddLine = (book: BookItem) => {
+    addBookLine(book);
+    setSearchBookTerm('');
+  };
+
+  // --- Luồng dán danh sách -------------------------------------------------
+  // Không gọi mạng, không validate, không submit: chỉ điền bảng chuyển.
+  const addPastedRows = (rows: { editionId: string; quantity: number }[]) => {
+    for (const r of rows) {
+      const book = books.find((b) => b.id === r.editionId);
+      if (book) addBookLine(book, r.quantity);
+    }
+  };
+
+  const handleCheckPasted = () => {
+    const result = parsePastedBookList(
+      pasteText,
+      books.map((b) => ({ id: b.id, title: b.title, code: b.code, isbnLast4: b.isbnLast4 })),
+      { defaultQuantity: DEFAULT_PASTE_QUANTITY }
+    );
+    setPasteResult(result);
+  };
+
+  // Chỉ nhóm "Khop tuyet doi" được tự đổ thẳng vào phiếu. Nhóm "Can xac nhan"
+  // thì bấm từng ứng viên; nhóm "Khong tim thay" không có đường thêm nào.
+  const handleAddPastedMatches = () => {
+    if (!pasteResult) return;
+    addPastedRows(
+      pasteResult.rows
+        .filter((r): r is Extract<ParsedRow, { status: 'matched' }> => r.status === 'matched')
+        .map((r) => ({ editionId: r.editionId, quantity: r.quantity }))
+    );
+  };
+
+  const handleAddPastedCandidate = (
+    row: Extract<ParsedRow, { status: 'needs_confirm' }>,
+    bookId: string
+  ) => {
+    addPastedRows([{ editionId: bookId, quantity: row.quantity }]);
+  };
+
+  const closePaste = () => {
+    setIsPasteOpen(false);
+    setPasteText('');
+    setPasteResult(null);
   };
 
   const handleRemoveLine = (editionId: string) => {
@@ -571,7 +651,9 @@ export function BatchTransferModal({
 
   if (!isOpen || !mounted) return null;
 
-  return createPortal(
+  return (
+    <>
+    {createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150 overflow-y-auto"
       onClick={(e) => {
@@ -818,6 +900,19 @@ export function BatchTransferModal({
                       </button>
                     </div>
 
+                    {/* Dán danh sách 2 cột từ Excel. Modal này vốn chỉ mở được
+                        cho ROLE_OWNER/ROLE_MANAGER nên nút thừa hưởng luôn cùng
+                        quyền — không cần (và không nên) gate lần nữa. */}
+                    <button
+                      type="button"
+                      onClick={() => setIsPasteOpen(true)}
+                      className="min-h-[38px] min-w-[38px] px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
+                      title="Dán danh sách sách chép từ Excel (tên sách - so luong)"
+                    >
+                      <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
+                      <span className="whitespace-nowrap">Dan</span>
+                    </button>
+
                     <div className="h-4 w-px bg-slate-300 mx-1 hidden sm:block"></div>
 
                     {/* Xóa dòng đã chọn */}
@@ -1039,5 +1134,155 @@ export function BatchTransferModal({
       </div>
     </div>,
     document.body
+    )}
+
+    {/* Hộp thoại dán danh sách — portal riêng trên document.body để không bị
+        `overflow-hidden` của modal cha cắt. max-h + overflow-y-auto để luôn
+        cuộn tới được trên màn 375px. KHÔNG có nút nào gửi phiếu ở đây. */}
+    {isPasteOpen && (
+      <PortalToBody>
+        <div className="fixed inset-0 z-[90] bg-slate-950/70 flex items-center justify-center p-3">
+          <div
+            ref={pasteModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Danh sach dan tu Excel"
+            className="w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-slate-200">
+              <p className="min-w-0 text-xs font-extrabold text-slate-900 truncate">
+                Dan danh sach tu Excel
+              </p>
+              <button
+                type="button"
+                aria-label="Dong hop danh sach"
+                onClick={closePaste}
+                className="min-h-[38px] min-w-[38px] shrink-0 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-[11px] leading-relaxed text-slate-600">
+                Dán 2 cot: ten sach - so luong. Ten sach phai khop CHINH XAC voi danh muc,
+                he thong khong doan. Mac dinh 5 cuon moi dong. Dan chi them vao bang chuyen,
+                van phai bam &quot;Kiem tra ton kho&quot; roi &quot;Xac nhan chuyen kho&quot;.
+              </p>
+
+              <textarea
+                value={pasteText}
+                onChange={(e) => {
+                  setPasteText(e.target.value);
+                  setPasteResult(null);
+                }}
+                rows={6}
+                spellCheck={false}
+                placeholder={'Ten sach 1\t5\nTen sach 2\t3'}
+                className="w-full min-h-[38px] px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCheckPasted}
+                  disabled={!pasteText.trim()}
+                  className="min-h-[38px] min-w-[38px] px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Kiem tra
+                </button>
+                {pasteResult && (
+                  <span className="text-[11px] font-bold text-slate-600 break-words">
+                    {pasteResult.summary.matched} dong vao . {pasteResult.summary.needsConfirm} can xac nhan . {pasteResult.summary.notFound} khong tim thay
+                  </span>
+                )}
+              </div>
+              {pasteResult && (
+                <div className="space-y-3">
+                  {/* 1. Khop tuyet doi */}
+                  <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <h3 className="text-[11px] font-extrabold text-emerald-900 mb-2 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                      Khop tuyet doi ({pasteResult.summary.matched})
+                    </h3>
+                    <ul className="space-y-1 mb-2">
+                      {pasteResult.rows
+                        .filter((r): r is Extract<ParsedRow, { status: 'matched' }> => r.status === 'matched')
+                        .map((r) => (
+                          <li key={`m-${r.line}`} className="text-[11px] text-slate-700 break-words">
+                            {r.title} — <span className="font-mono font-bold">{r.quantity}</span>
+                          </li>
+                        ))}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={handleAddPastedMatches}
+                      disabled={pasteResult.summary.matched === 0}
+                      className="min-h-[38px] min-w-[38px] w-full px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Vao bang ({pasteResult.summary.matched})
+                    </button>
+                  </section>
+
+                  {/* 2. Can xac nhan — bam de chon dung dau sach */}
+                  {pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
+                    <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <h3 className="text-[11px] font-extrabold text-amber-900 mb-2 flex items-center gap-1">
+                        <CircleHelp className="w-3.5 h-3.5 shrink-0" />
+                        Can xac nhan ({pasteResult.summary.needsConfirm})
+                      </h3>
+                      <ul className="space-y-2">
+                        {pasteResult.rows
+                          .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
+                          .map((r) => (
+                            <li key={`c-${r.line}`} className="min-w-0">
+                              <p className="text-[11px] text-slate-700 break-words">
+                                {r.line} — <span className="font-mono font-bold">{r.quantity}</span>
+                              </p>
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {r.candidates.map((c) => (
+                                  <button
+                                    key={`c-${r.line}-${c.id}`}
+                                    type="button"
+                                    onClick={() => handleAddPastedCandidate(r, c.id)}
+                                    className="min-h-[38px] min-w-[38px] max-w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-[11px] font-semibold transition break-words"
+                                  >
+                                    {c.title}
+                                  </button>
+                                ))}
+                              </div>
+                            </li>
+                          ))}
+                      </ul>
+                    </section>
+                  )}
+                  {/* 3. Khong tim thay — chi hien thi, KHONG co nut them. */}
+                  {pasteResult.rows.some((r) => r.status === 'not_found') && (
+                    <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <h3 className="text-[11px] font-extrabold text-slate-700 mb-1">
+                        Khong tim thay ({pasteResult.summary.notFound})
+                      </h3>
+                      <p className="text-[10px] text-slate-500 mb-2">
+                        Khong co du lieu khop. Hay tim tay tung cua.
+                      </p>
+                      <ul className="space-y-1">
+                        {pasteResult.rows
+                          .filter((r): r is Extract<ParsedRow, { status: 'not_found' }> => r.status === 'not_found')
+                          .map((r) => (
+                            <li key={`n-${r.line}`} className="text-[11px] text-slate-500 line-through break-words">
+                              {r.line} — {r.quantity}
+                            </li>
+                          ))}
+                      </ul>
+                    </section>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </PortalToBody>
+    )}
+    </>
   );
 }
