@@ -19,7 +19,7 @@ import {
   Landmark,
   Building2,
   ChevronDown,
-  PackageSearch,
+  RefreshCw,
   Check,
   Truck,
   FileCheck,
@@ -38,6 +38,7 @@ import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
+import { useRouter } from 'next/navigation';
 
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { matchActionShortcut } from '@/lib/keyboard';
@@ -66,6 +67,8 @@ interface WarehouseItem {
   id: string;
   code: string;
   name: string;
+  /** Còn hoạt động không — để thẻ tóm tắt kho đếm đúng (bảng `warehouses`). */
+  isActive?: boolean;
 }
 
 interface LedgerEntry {
@@ -117,7 +120,9 @@ export function StockOverviewMatrix({
     try {
       const j = await fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json());
       if (j?.success && Array.isArray(j.data)) {
-        setLocalWarehouses(j.data.map((w: any) => ({ id: w.id, code: w.code, name: w.name })));
+        setLocalWarehouses(
+          j.data.map((w: any) => ({ id: w.id, code: w.code, name: w.name, isActive: w.isActive !== false }))
+        );
       }
     } catch {
       /* giữ số cũ, không chặn thao tác */
@@ -132,6 +137,7 @@ export function StockOverviewMatrix({
   } | null>(null);
   const [presetTargetWarehouseId, setPresetTargetWarehouseId] = useState<string | undefined>(undefined);
   const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(warehouses);
+  const router = useRouter();
 
   useEffect(() => {
     setLocalWarehouses(warehouses);
@@ -415,14 +421,27 @@ export function StockOverviewMatrix({
     return [{ id: 'ALL', label: `Tất cả ${list.length} kho`, total: warehouseTotals.all }, ...list];
   }, [localWarehouses, warehouseTotals]);
 
+  // Tóm tắt trạng thái kho cho thẻ QUẢN LÝ KHO (thẻ này không còn nút hành
+  // động nào — mọi thao tác đã gộp lên thanh công cụ).
+  const warehouseSummary = useMemo(() => {
+    const list = localWarehouses || [];
+    return { total: list.length, active: list.filter((w) => w.isActive !== false).length };
+  }, [localWarehouses]);
+
   const getWarehouseStock = (b: MatrixBookItem, tab: string) => {
     if (tab === 'ALL') return b.totalStock;
     // Động theo mọi kho (kể cả kho hội chợ) — không hardcode 3 kho nữa.
     return b.stockByWarehouse?.[tab] ?? 0;
   };
 
+  // Nút "Làm mới" cho quản lý: NẠP LẠI DỮ LIỆU chứ không reload trang.
+  // Reload cả trang xóa sạch mọi việc đang dở (phiếu nháp, ô tìm kiếm, tab
+  // đang mở). `router.refresh()` chạy lại server component `page.tsx` — đúng
+  // đường nạp dữ liệu sẵn có — rồi props mới chảy vào mà state client (tìm
+  // kiếm, tab, modal) được giữ nguyên.
   const handleRefresh = () => {
-    window.location.reload();
+    reloadWarehouseChips();
+    router.refresh();
   };
 
   // Tự động focus ô tìm kiếm tương ứng khi kích hoạt Micro giọng nói
@@ -660,8 +679,9 @@ export function StockOverviewMatrix({
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
           {/* Nút kho của login-ux: Mở Kho + TK Nhận Tiền nằm thẳng trên dải
-              hành động (nowrap + shrink-0 để không tràn ở 320px). Side A gộp
-              cùng hai hành động này vào card "Quản Lý Kho" bên dưới — giữ cả hai. */}
+              hành động (nowrap + shrink-0 để không tràn ở 320px). Thanh công cụ
+              là ĐƯỜNG VÀO DUY NHẤT cho mọi hành động kho — thẻ QUẢN LÝ KHO
+              bên dưới chỉ còn tóm tắt trạng thái, không lặp lại nút nào. */}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
@@ -784,6 +804,20 @@ export function StockOverviewMatrix({
           >
             <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly Sách Lỗi
           </button>
+
+          {/* Làm mới — chỉ quản lý. Nạp lại dữ liệu, KHÔNG reload trang nên
+              không mất việc đang làm dở. min-h 38px + nowrap + shrink-0: nút
+              đủ lớn để bấm trên điện thoại và không làm dải tràn ngang. */}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => handleRefresh()}
+              title="Nạp lại tồn kho và sổ cái mới nhất"
+              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-slate-500" /> Làm mới
+            </button>
+          )}
         </div>
         {/* Lớp nền đóng menu hành động (intent từ main): chặn click nhầm ra
             ngoài và đóng menu khi bấm khoảng trống. z-40 nằm dưới dropdown. */}
@@ -852,9 +886,17 @@ export function StockOverviewMatrix({
         )}
       </div>
 
-      {/* BẢNG ĐIỀU KHIỂN KHO — điểm vào rõ ràng cho mọi việc quản lý kho (kể cả hội chợ) */}
+      {/* QUẢN LÝ KHO — sau khi gộp, thẻ này KHÔNG còn nút hành động nào.
+          Trước đây "Mở kho mới" lặp đúng nút "Mở Kho", "Soạn kệ" lặp mục
+          "Soạn kệ (gom theo kệ)" trong menu "Chuyển kho", và "Quản lý kho &
+          gán nhân sự" lặp nút "TK Nhận Tiền" — cùng một hành động xuất hiện
+          hai chỗ. Nay thẻ chỉ TÓM TẮT trạng thái; mọi thao tác nằm trên thanh
+          công cụ phía trên: Mở Kho · Kho · TK Nhận Tiền · Làm mới. */}
       {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-        <div className="rounded-2xl border-2 border-indigo-200 bg-white p-4 shadow-sm">
+        <div
+          className="rounded-2xl border-2 border-indigo-200 bg-white p-4 shadow-sm"
+          data-kho-ui="warehouse-summary"
+        >
           <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
@@ -864,37 +906,16 @@ export function StockOverviewMatrix({
                 <p className="text-sm font-extrabold text-slate-900">
                   QUẢN LÝ KHO
                   <span className="ml-2 px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[11px] font-extrabold">
-                    {(localWarehouses || warehouses || []).length} kho
+                    {warehouseSummary.total} kho
+                  </span>
+                  <span className="ml-2 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[11px] font-extrabold">
+                    {warehouseSummary.active} đang hoạt động
                   </span>
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Mở/Xóa kho · Gán thu ngân cho kho hội chợ · Gán tài khoản nhận tiền QR · Mẫu nội dung chuyển khoản
+                  Thao tác kho nằm trên thanh công cụ: Mở Kho · Kho · TK Nhận Tiền · Làm mới
                 </p>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCreateWarehouseOpen(true)}
-                className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-              >
-                <Store className="w-3.5 h-3.5" /> Mở kho mới
-              </button>
-              <button
-                type="button"
-                onClick={() => setBankManagerOpen(true)}
-                className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-              >
-                <Landmark className="w-3.5 h-3.5" /> Quản lý kho & gán nhân sự
-              </button>
-              <button
-                type="button"
-                onClick={() => setPickListOpen(true)}
-                title="Danh sách soạn sách gom hàng theo kệ"
-                className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-              >
-                <PackageSearch className="w-3.5 h-3.5" /> Soạn kệ
-              </button>
             </div>
           </div>
         </div>
