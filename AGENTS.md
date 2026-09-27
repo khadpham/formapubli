@@ -11,6 +11,9 @@
   secret/token (kể cả `scripts/deploy-cloudflare.ts`).
 - Test: suite DB chung → `npx tsx scripts/run-isolated.ts --only=...`;
   không hạ assertion để xanh; không log PIN/giá trị secret.
+- TÊN TRONG UI: ngắn, dọn, tiếng Việt không dấu-không cũng đọc được. Ví dụ đúng:
+  "Mở Kho", "Xoá Kho", "Ngưng hoạt động", "Ma trận". Cấm nhãn dài kiểu
+  "Quản lý kho hàng hội chợ / gian hàng sự kiện". Tên nút là động từ ngắn.
 
 This repository is configured with two always-on frameworks:
 1. **Ponytail** (Lazy senior dev mode — YAGNI, standard library first, shortest diffs, root-cause bug fixing)
