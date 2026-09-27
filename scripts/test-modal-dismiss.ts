@@ -10,7 +10,7 @@ const cases = [
   ['src/components/inventory/PickListModal.tsx', [['onClose']]],
   ['src/components/inventory/RmaTicketModal.tsx', [['onClose']]],
   ['src/components/auth/LoginModal.tsx', [['onCancel']]],
-  ['src/components/pos/DiscountApprovalModal.tsx', [['onClose']]],
+  ['src/components/pos/DiscountApprovalModal.tsx', [['onCancel']]],
   ['src/components/pos/PosCheckoutTerminal.tsx', [
     ['setCompletedOrder'], ['setAmbiguousMatches'], ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],
@@ -42,6 +42,9 @@ for (const [file, expected] of cases) {
     const calls: Array<{ name: string; value: unknown }> = [];
     const scope: Record<string, unknown> = { loading: false, submitting: false, busy: false, isSubmitting: false, isSubmittingSession: false, isClosable: true, status: 'PENDING', setShowPasscode: () => {} };
     for (const name of expected[index]) scope[name] = (value: unknown) => calls.push({ name, value });
+    if (file.includes('PosCheckoutTerminal') && index === 2) {
+      scope.handleCloseParser = () => (scope.setIsParserOpen as ((value: boolean) => void))(false);
+    }
     vm.createContext(scope);
     const js = ts.transpileModule(`const handle = ${handler}; handle;`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     const click = vm.runInContext(js, scope) as ((event: { target: object; currentTarget: object }) => void) | undefined;
@@ -56,10 +59,13 @@ for (const [file, expected] of cases) {
     }
     const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : file.includes('DiscountApprovalModal') ? 'status' : null;
     if (pending) {
-      calls.length = 0;
-      scope[pending] = pending === 'status' ? 'LOADING' : true;
-      click?.({ target: backdrop, currentTarget: backdrop });
-      assert.equal(calls.length, 0, 'Do not dismiss an in-flight transaction by accidental backdrop tap');
+      const guardedValues = pending === 'status' ? ['LOADING', 'APPROVED'] : [true];
+      for (const guardedValue of guardedValues) {
+        calls.length = 0;
+        scope[pending] = guardedValue;
+        click?.({ target: backdrop, currentTarget: backdrop });
+        assert.equal(calls.length, 0, 'Do not dismiss an in-flight or approved transaction by accidental backdrop tap');
+      }
     }
     if (file.includes('LoginModal')) {
       calls.length = 0;

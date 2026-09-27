@@ -1,12 +1,16 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances } from '../db';
+import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
-import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, or, isNotNull, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { isLeaseEnforcedRole, isLeaseEnforcementEnabled } from '../lib/auth-session';
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
+import { DiscountApprovalService } from './discount-approval.service';
+import { generateUUIDv7 } from '../lib/uuidv7';
+import { parseDbTimestamp } from '../lib/db-timestamp';
+import { priceLine } from '../lib/pricing';
 
 export interface OrderItemInput {
   editionId: string;
@@ -32,6 +36,14 @@ const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE'
 
 // Bước 1: TTL giữ chỗ ATP cho đơn PENDING (giờ). Quá hạn coi như nhả chỗ.
 export const PENDING_TTL_HOURS = 48;
+
+// Trần SỐ LƯỢNG sách một thu ngân được giữ chỗ ATP bằng đơn PENDING_CONFIRMATION
+// chưa thu tiền, tính theo (thu ngân, kho) — mọi phương thức thanh toán.
+// Lý do: đơn PENDING giữ ATP mà không thu được đồng nào; nếu trần đo SỐ DÒNG
+// đơn thì một client độc hại chỉ cần vài đơn (mỗi đơn số lượng tùy ý, khai
+// paymentMethod CASH/COD để né trần chuyển khoản) là giữ hết kho. Đo số lượng
+// thì trần trúng đúng tài nguyên bị giữ. Manager/Owner miễn trần.
+export const MAX_PENDING_HOLD_UNITS_PER_CASHIER = 20;
 
 // P2-10: đơn gõ bù tối đa 7 ngày tuổi; tương lai quá 5 phút dung sai đồng hồ là từ chối.
 export const BACKDATE_LIMIT_DAYS = 7;
@@ -77,9 +89,40 @@ export interface CreateOrderParams {
   // APPROVED→CONSUMED, đòi đúng 1 row) — chống reuse/race. Bỏ qua trên đường
   // replay idempotency (trả đơn cũ, không consume lại).
   discountApprovalId?: string;
+  requiredAudit?: Array<{
+    id: string;
+    action: string;
+    actorRole: string;
+    actorId: string;
+    resource: string;
+    details: string | ((orderCode: string) => string);
+    ipAddress?: string;
+  }>;
+}
+
+/** Ảnh xác nhận chuyển khoản do client gửi (chốt quy trình, server không kiểm chứng ảnh). */
+export interface TransferPaymentProof {
+  id: string;
+  capturedAt: string;
+}
+
+const TRANSFER_PAYMENT_METHODS: OrderPaymentMethod[] = ['BANK_TRANSFER', 'QR_CODE'];
+
+function requiresPaymentProof(paymentMethod: string | null | undefined): boolean {
+  return TRANSFER_PAYMENT_METHODS.includes(paymentMethod as OrderPaymentMethod);
+}
+
+/**
+ * Đơn bán tại quầy = kênh RETAIL_OFFICE. Cửa sổ thanh toán 30 phút và yêu cầu có ca
+ * két phải bám vào KÊNH, không bám vào cashboxSessionId — vì cashboxSessionId do
+ * client gửi: bỏ đi là rơi về TTL 48h và lách được cửa sổ ngắn.
+ */
+function isCounterChannel(channel: string | null | undefined): boolean {
+  return channel === 'RETAIL_OFFICE';
 }
 
 export interface OrderFingerprint {
+  orderCode?: string;
   warehouseId: string;
   channel: string;
   paymentMethod: string;
@@ -92,6 +135,8 @@ export interface OrderFingerprint {
   customerName?: string | null;
   isGift?: boolean;
   giftReason?: string | null;
+  /** Ngữ nghĩa hoàn tất của request: false = tạo đơn PENDING giữ chỗ, true = chốt. */
+  confirmImmediately?: boolean;
   items?: OrderItemInput[];
   bundles?: Array<{ bundleId: string; quantity: number }>;
 }
@@ -142,6 +187,73 @@ export class OrderService {
     if (!VALID_PAYMENTS.includes(paymentMethod)) {
       throw AppError.invalid(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
     }
+    if (params.idempotencyKey) {
+      const existingPre = await withDbRetry(async () => {
+        return await db
+          .select()
+          .from(orders)
+          .where(eq(orders.idempotencyKey, params.idempotencyKey!))
+          .limit(1);
+      });
+      if (existingPre.length > 0) {
+        await this.assertSameOrderContent(
+          existingPre[0].id,
+           {
+             orderCode: params.orderCode,
+             warehouseId,
+             channel,
+             paymentMethod,
+             fiscalScope,
+             discountRate,
+             cashboxSessionId: params.cashboxSessionId,
+             effCashierId,
+             customerId: params.customerId,
+             partnerId,
+             customerName,
+             isGift: Boolean((params as any).isGift),
+             giftReason: (params as any).giftReason,
+             confirmImmediately,
+             items: items || [],
+             bundles: params.bundles || [],
+           },
+           db
+         );
+          if (params.discountApprovalId) {
+           const approval = await DiscountApprovalService.getRequest(params.discountApprovalId);
+           // MERGE: bỏ so sánh approval.orderCode. origin/main chỉ set
+           // status/updatedAt khi tiêu thụ, KHÔNG ghi orderCode vào yêu cầu, nên
+           // phép so sánh này không bao giờ đúng và làm hỏng replay hợp lệ
+           // (D07: cùng key + cùng approval phải trả về đúng đơn cũ).
+           // Vẫn ràng buộc chặt: approval phải CONSUMED, đúng kho, đúng thu ngân.
+           if (
+             approval.status !== 'CONSUMED' ||
+             approval.warehouseId !== existingPre[0].warehouseId ||
+             approval.cashierId !== effCashierId
+           ) {
+             throw AppError.idempotency('Approval không khớp với order đã commit.');
+           }
+         }
+        const existingLines = await db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existingPre[0].id));
+        return {
+          orderId: existingPre[0].id,
+          orderCode: existingPre[0].orderCode,
+          warehouseId: existingPre[0].warehouseId,
+          customerName: existingPre[0].customerName,
+          subtotal: existingPre[0].subtotal,
+          discountAmount: existingPre[0].discountAmount,
+          finalAmount: existingPre[0].finalAmount,
+          fiscalScope: existingPre[0].fiscalScope,
+          itemsCount: existingLines.length,
+          totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          status: existingPre[0].status,
+          isDuplicate: true,
+        };
+      }
+    }
+
     // V4.1 S1.2: chặn bán từ kho ảo/ký gửi/ngưng bán ngay từ cổng vào (đọc DB, không hardcode).
     const sellRow = await WarehouseService.assertSellable(warehouseId);
     // V4.1 S1.2 (lock Q5): đơn giữ chỗ online (PENDING) chỉ được giữ ở kho chính —
@@ -262,19 +374,21 @@ export class OrderService {
       if (existingPre.length > 0) {
         await this.assertSameOrderContent(
           existingPre[0].id,
-          {
-            warehouseId,
-            channel,
-            paymentMethod,
-            fiscalScope,
-            discountRate,
-            cashboxSessionId: params.cashboxSessionId,
-            effCashierId,
-            customerId: params.customerId,
-            partnerId,
-            customerName,
-            isGift,
+           {
+             orderCode: params.orderCode,
+             warehouseId,
+             channel,
+             paymentMethod,
+             fiscalScope,
+             discountRate,
+             cashboxSessionId: params.cashboxSessionId,
+             effCashierId,
+             customerId: params.customerId,
+             partnerId,
+             customerName,
+             isGift,
             giftReason: params.giftReason,
+            confirmImmediately,
             items: looseItems,
             bundles: bundleOrders,
           },
@@ -326,7 +440,24 @@ export class OrderService {
       }
     }
 
+    // Phiên két ghi trên đơn: client gửi thì dùng, không gửi thì (đơn quầy chờ,
+    // có ca mở) server tự gắn vào ca đang mở — xem khối B2a trong transaction.
+    let resolvedCashboxSessionId = params.cashboxSessionId ?? null;
+
     const isPending = confirmImmediately === false;
+    // POS counter transfer: PENDING hạn 30 phút (đơn PENDING khác giữ TTL 48h).
+    // Hạn do server đặt, không nhận từ client; "đơn quầy" xác định bằng KÊNH
+    // (RETAIL_OFFICE) chứ không phải cashboxSessionId do client gửi.
+    const isCounterTransfer = isPending && requiresPaymentProof(paymentMethod) && isCounterChannel(channel);
+    const paymentExpiresAt = isCounterTransfer
+      ? new Date(Date.now() + 30 * 60_000).toISOString()
+      : null;
+    if (isPending && params.discountApprovalId) {
+      throw AppError.invalid('Đơn chờ xác nhận không được dùng approval chiết khấu.');
+    }
+    if (params.discountApprovalId && bundleOrders.length > 0) {
+      throw AppError.invalid('Approval chiết khấu chỉ áp dụng cho đơn sách lẻ, không dùng với combo.');
+    }
 
     // 1. Chuẩn bị danh sách kiểm tra nhu cầu theo edition (lẻ + linh kiện combo)
     const stockCheckItems = [...looseItems, ...bundleLines];
@@ -365,20 +496,19 @@ export class OrderService {
         if (!edition) throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
         const coverPrice = edition.coverPrice || 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
-        const unitSellingPrice = Math.round(coverPrice * (1 - itemDiscountRate));
-        const lineTotal = item.quantity * unitSellingPrice;
+        const priced = priceLine(coverPrice, itemDiscountRate, item.quantity);
 
-        calculatedSubtotal += item.quantity * coverPrice;
-        calculatedFinalAmount += lineTotal;
+        calculatedSubtotal += priced.subtotal;
+        calculatedFinalAmount += priced.finalAmount;
 
         return {
-          id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          id: `oi-${generateUUIDv7()}`,
           editionId: item.editionId,
           quantity: item.quantity,
-          unitCoverPrice: coverPrice,
+          unitCoverPrice: priced.coverPrice,
           unitDiscountRate: itemDiscountRate,
-          unitSellingPrice,
-          totalAmount: lineTotal,
+          unitSellingPrice: priced.unitSellingPrice,
+          totalAmount: priced.finalAmount,
           bundleId: undefined as string | undefined,
           bundleQty: undefined as number | undefined,
         };
@@ -389,7 +519,7 @@ export class OrderService {
         calculatedFinalAmount += line.totalAmount;
 
         return {
-          id: `oi-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+           id: `oi-${generateUUIDv7()}`,
           editionId: line.editionId,
           quantity: line.quantity,
           unitCoverPrice: line.unitCoverPrice,
@@ -406,9 +536,8 @@ export class OrderService {
 
     // 4. Sinh mã đơn hàng và Idempotency Key cố định (giữ nguyên khi retry)
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderCode = params.orderCode || `ORD-${dateStr}-${randomSuffix}`;
-    const orderId = params.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const orderCode = params.orderCode || `ORD-${dateStr}-${generateUUIDv7().replace(/-/g, '').slice(-16).toUpperCase()}`;
+    const orderId = params.id || `ord-${generateUUIDv7()}`;
     const idempotencyKey = params.idempotencyKey || `idem-order-${orderId}`;
     const createdAt = params.createdAt || new Date().toISOString();
     const giftTag = isGift ? `[QUÀ TẶNG: ${giftReason || (note || '').trim() || 'Tặng sách / Quà tặng sự kiện'}]` : '';
@@ -428,10 +557,11 @@ export class OrderService {
         if (existing.length > 0) {
           await this.assertSameOrderContent(
             existing[0].id,
-            {
-              warehouseId,
-              channel,
-              paymentMethod,
+             {
+               orderCode: params.orderCode,
+               warehouseId,
+               channel,
+               paymentMethod,
               fiscalScope,
               discountRate,
               cashboxSessionId: params.cashboxSessionId,
@@ -441,13 +571,25 @@ export class OrderService {
               customerName,
               isGift,
               giftReason: params.giftReason,
+              confirmImmediately,
               items: looseItems,
               bundles: bundleOrders,
             },
-            tx
-          );
+             tx
+           );
+           if (params.discountApprovalId) {
+             const approval = await DiscountApprovalService.getRequest(params.discountApprovalId, tx);
+             if (
+               approval.status !== 'CONSUMED' ||
+               approval.orderCode !== existing[0].orderCode ||
+               approval.warehouseId !== existing[0].warehouseId ||
+               approval.cashierId !== effCashierId
+             ) {
+               throw AppError.idempotency('Approval không khớp với order đã commit.');
+             }
+           }
 
-          const existingLines = await tx
+           const existingLines = await tx
             .select()
             .from(orderItems)
             .where(eq(orderItems.orderId, existing[0].id));
@@ -470,25 +612,11 @@ export class OrderService {
 
         // B0b (A1-H): tiêu thụ phê duyệt chiết khấu NGUYÊN TỬ trong cùng
         // transaction, SAU kiểm tra replay (replay trả đơn cũ, không consume
-        // lại), TRƯỚC khi ghi đơn. Conditional UPDATE đòi đúng 1 row còn
-        // APPROVED — hai request tranh nhau chỉ một thắng, còn lại rollback
-        // toàn bộ (không ghi đơn, không trừ kho).
-        if (params.discountApprovalId) {
-          const consumeRes: any = await tx
-            .update(discountApprovalRequests)
-            .set({ status: 'CONSUMED', updatedAt: new Date().toISOString() })
-            .where(
-              and(
-                eq(discountApprovalRequests.id, params.discountApprovalId),
-                eq(discountApprovalRequests.status, 'APPROVED')
-              )
-            );
-          if (consumeRes?.rowsAffected !== 1) {
-            throw AppError.conflict(
-              'Phê duyệt chiết khấu đã được sử dụng hoặc hết hiệu lực. Vui lòng xin duyệt lại.'
-            );
-          }
-        }
+        // lại), TRƯỚC khi ghi đơn. consumeApproval tự UPDATE có điều kiện
+        // (đúng 1 row còn APPROVED + version + hạn) — hai request tranh nhau
+        // chỉ một thắng, còn lại rollback toàn bộ (không ghi đơn, không trừ kho).
+        // Không UPDATE trần ở đây: UPDATE trần trước sẽ đốt trạng thái APPROVED
+        // khiến consumeApproval (bước verify giỏ/tiền) luôn fail-closed oan.
 
         // B0c (S-01): kiểm tra lại lease cashier BẰNG CHÍNH tx hiện hành —
         // đọc qua db global sẽ thấy snapshot khác, mất nguyên tử với ghi đơn.
@@ -536,6 +664,73 @@ export class OrderService {
           }
         }
 
+        // B2a. Đơn quầy CHỜ (mọi phương thức trừ thanh toán tức thì) bắt buộc phải
+        // có ca két đang mở của chính thu ngân tại đúng kho này. Nếu không, đơn vừa
+        // tạo sẽ không bao giờ duyệt được (confirmOrder cũng chặn) — thu ngân thấy
+        // QR, thu tiền, rồi đơn kẹt giữ ATP tới 30 phút. Chặn ngay lúc tạo để lỗi
+        // có hành động được: mở ca két. Owner/Manager miễn (giữ phạm vi quản lý);
+        // bán tiền mặt / quà tặng / đơn chốt ngay không đi qua đây (không phải PENDING).
+        // Client bỏ trống cashboxSessionId thì gắn vào ca đang mở của chính thu ngân
+        // (openSession giữ tối đa 1 ca OPEN cho mỗi (thu ngân, kho) nên không mơ hồ):
+        // nếu không gắn, đơn sẽ tồn tại mà không bao giờ xác nhận được — đúng cái bẫy
+        // im lặng ta muốn diệt.
+        const creatorRole = params.actorContext?.role;
+        const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
+        let openShiftRows: Array<{ id: string; openedAt: string | null }> = [];
+        if (isPending && isCounterChannel(channel) && !creatorIsPrivileged) {
+          openShiftRows = await tx
+            .select({ id: cashboxSessions.id, openedAt: cashboxSessions.openedAt })
+            .from(cashboxSessions)
+            .where(
+              and(
+                eq(cashboxSessions.cashierId, effCashierId),
+                eq(cashboxSessions.warehouseId, warehouseId),
+                eq(cashboxSessions.status, 'OPEN')
+              )
+            )
+            .limit(1);
+          if (openShiftRows.length === 0) {
+            throw AppError.conflict(
+              `Đơn tại quầy cần ca két đang mở tại kho ${warehouseId} nhưng thu ngân chưa mở ca. ` +
+                `Vui lòng mở ca két trước khi tạo đơn chờ thanh toán.`
+            );
+          }
+          if (!resolvedCashboxSessionId) {
+            resolvedCashboxSessionId = openShiftRows[0].id;
+          }
+        }
+
+        // B2c. Ca quá giờ chốt ngày thì POS tạm ngưng bán cho ca đó. Chốt ở
+        // SERVER (không chỉ ở UI) vì đây là chốt chặn tiền mặt. Ca mở sau
+        // nửa đêm thuộc ngày mới nên không bị chặn. Dùng lại row đã tải ở
+        // B2a; đơn tức thì chỉ thêm 1 câu đọc theo index (cashier,kho,status).
+        // ponytail: trần hiện tại = 1 câu đọc có index mỗi đơn quầy tức thì.
+        // Nếu sau này thấy nóng, nâng lên cache theo (cashier, kho) đã đóng
+        // bằng cách bắn bus/event khi AUTO_CLOSE/CLOSE chạy — không cache ở
+        // đây vì cache hỏng = bán được sau giờ.
+        if (isCounterChannel(channel) && !creatorIsPrivileged) {
+          const guardShift: Array<{ openedAt: string | null }> = openShiftRows.length > 0
+            ? [openShiftRows[0]]
+            : await tx
+                .select({ openedAt: cashboxSessions.openedAt })
+                .from(cashboxSessions)
+                .where(
+                  and(
+                    eq(cashboxSessions.cashierId, effCashierId),
+                    eq(cashboxSessions.warehouseId, warehouseId),
+                    eq(cashboxSessions.status, 'OPEN')
+                  )
+                )
+                .limit(1);
+          if (guardShift.length > 0 && guardShift[0].openedAt) {
+            CashboxService.assertShiftWithinBusinessDay({
+              openedAt: guardShift[0].openedAt,
+              warehouseId,
+              cashierId: effCashierId,
+            });
+          }
+        }
+
         // B2. Tính toán & Kiểm tra ATP nguyên tử bên trong Transaction
         for (const [editionId, qty] of Array.from(needTotal.entries())) {
           const atp = await this.getATP(editionId, warehouseId, tx);
@@ -546,7 +741,74 @@ export class OrderService {
           }
         }
 
+        // B2b. Trần giữ ATP (xem MAX_PENDING_HOLD_UNITS_PER_CASHIER): đo SỐ LƯỢNG
+        // đang bị giữ chỗ, mọi phương thức thanh toán, theo (thu ngân, kho).
+        // Manager/Owner miễn. Tính ngay trong transaction để hai lần tạo song song
+        // không cùng lọt qua trần. Đơn đã quá hạn không tính (cùng quy tắc hạn
+        // dùng ở ATP và job dọn).
+        if (isPending && !creatorIsPrivileged) {
+          const openHoldLines = await tx
+            .select({
+              quantity: orderItems.quantity,
+              createdAt: orders.createdAt,
+              paymentExpiresAt: orders.paymentExpiresAt,
+            })
+            .from(orderItems)
+            .innerJoin(orders, eq(orderItems.orderId, orders.id))
+            .where(
+              and(
+                eq(orders.status, 'PENDING_CONFIRMATION'),
+                eq(orders.cashierId, effCashierId),
+                eq(orders.warehouseId, warehouseId)
+              )
+            );
+          let heldUnits = 0;
+          for (const line of openHoldLines) {
+            if (this.isPendingExpired(line)) continue;
+            heldUnits += Number(line.quantity || 0);
+          }
+          const newUnits = Array.from(needTotal.values()).reduce((sum, qty) => sum + qty, 0);
+          if (heldUnits + newUnits > MAX_PENDING_HOLD_UNITS_PER_CASHIER) {
+            throw AppError.conflict(
+              `Thu ngân đang giữ chỗ ${heldUnits} cuốn chờ tại kho này; đơn mới cần thêm ${newUnits} cuốn ` +
+                `vượt trần ${MAX_PENDING_HOLD_UNITS_PER_CASHIER} cuốn chờ. ` +
+                `Vui lòng xác nhận hoặc hủy các đơn cũ trước khi tạo đơn mới.`
+            );
+          }
+        }
+
         // B3: Tạo bản ghi Master đơn hàng bên trong Transaction
+        if (params.discountApprovalId) {
+          const hasUnexpectedLineDiscount = preparedItems.some(
+            (item) => Math.abs((item.unitDiscountRate ?? discountRate) - discountRate) > 0.0001
+          );
+          if (hasUnexpectedLineDiscount) {
+            throw AppError.conflict('Mức chiết khấu từng dòng không khớp yêu cầu đã được duyệt.');
+          }
+          // MERGE: giữ consumeApproval() của c-login-ux vì nó chặn cả 2 lớp:
+          // (1) verify lại hash giỏ + tổng tiền trong transaction, (2) conditional
+          // UPDATE đòi đúng 1 row còn APPROVED + version + chưa hết hạn — mạnh
+          // hơn UPDATE trần của origin/main. Hash đã sửa để dùng orderCode của
+          // yêu cầu nên không còn lệch với đơn đang tạo.
+          await DiscountApprovalService.consumeApproval({
+            requestId: params.discountApprovalId,
+            currentItems: preparedItems
+              .filter((item) => !item.bundleId)
+              .map((item) => ({
+                editionId: item.editionId,
+                quantity: item.quantity,
+                unitPrice: item.unitCoverPrice,
+              })),
+            discountRate,
+            warehouseId,
+            orderCode,
+            cashierId: effCashierId,
+            originalAmount: calculatedSubtotal,
+            discountAmount: calculatedDiscountAmount,
+            finalAmount: calculatedFinalAmount,
+            txOrDb: tx,
+          });
+        }
         await tx.insert(orders).values({
           id: orderId,
           orderCode,
@@ -565,9 +827,10 @@ export class OrderService {
           vatInvoiceRequired,
           vatInvoiceCode,
           status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
+          paymentExpiresAt,
           syncStatus: 'SYNCED',
           cashierId: effCashierId,
-          cashboxSessionId: params.cashboxSessionId,
+          cashboxSessionId: resolvedCashboxSessionId,
           idempotencyKey,
           note: mergedNote,
           createdAt,
@@ -614,10 +877,24 @@ export class OrderService {
             idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
             tx,
           });
-          lineIdx++;
-        }
+           lineIdx++;
+         }
 
-        return {
+         if (params.requiredAudit?.length) {
+           await tx.insert(auditLogs).values(
+             params.requiredAudit.map((audit) => ({
+               id: `aud-order-${orderId}-${audit.id}`,
+               action: audit.action,
+               actorRole: audit.actorRole,
+               actorId: audit.actorId,
+               resource: audit.resource,
+               details: typeof audit.details === 'function' ? audit.details(orderCode) : audit.details,
+               ipAddress: audit.ipAddress,
+             }))
+           );
+         }
+
+         return {
           orderId,
           orderCode,
           warehouseId,
@@ -627,6 +904,7 @@ export class OrderService {
           finalAmount: calculatedFinalAmount,
           fiscalScope,
           status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
+          paymentExpiresAt,
           itemsCount: preparedItems.length,
           totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
           isDuplicate: false,
@@ -648,6 +926,12 @@ export class OrderService {
     const ord = (await txOrDb.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
     if (!ord) return;
 
+    if (want.orderCode && ord.orderCode !== want.orderCode) {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} có mã đơn khác (${want.orderCode} vs ${ord.orderCode}).`
+      );
+    }
+
     if (ord.warehouseId !== want.warehouseId) {
       throw AppError.idempotency(
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có kho xuất khác (${ord.warehouseId} vs ${want.warehouseId}).`
@@ -657,6 +941,19 @@ export class OrderService {
     if (ord.channel !== want.channel) {
       throw AppError.idempotency(
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có kênh bán khác (${ord.channel} vs ${want.channel}).`
+      );
+    }
+
+    // Ngữ nghĩa hoàn tất là một phần của fingerprint: replay key của đơn PENDING
+    // với confirmImmediately mặc định (true) là payload của sync offline — nếu
+    // im lặng trả lại đơn PENDING, client tưởng đã bán, xoá bản ghi offline và
+    // không có bút toán kho nào. Phải báo xung đột để client giữ đơn + ảnh ở
+    // NEEDS_RECONCILIATION. Chiều ngược lại (key của đơn đã COMPLETED) vẫn trả
+    // bản ghi cũ: đơn đã chốt thì trả về là đúng.
+    if (want.confirmImmediately !== false && ord.status === 'PENDING_CONFIRMATION') {
+      throw AppError.idempotency(
+        `Idempotency-Key đã gắn với đơn ${ord.orderCode} đang chờ xác nhận (PENDING_CONFIRMATION), ` +
+          `nhưng request lại yêu cầu chốt đơn ngay. Dùng action=CONFIRM để hoàn tất đơn đang chờ.`
       );
     }
 
@@ -838,9 +1135,22 @@ export class OrderService {
       for (const id of ids) out.set(id, balMap.get(id) || 0);
       return out;
     }
-    const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
-    const heldRows = await txOrDb
-      .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+    // ponytail: đọc thêm 1 row warehouses mỗi lần tính ATP; cache lại khi thành điểm nghẽn đo được.
+    // CHỈ so NGÀY UTC ('YYYY-MM-DD'), không so timestamp đầy đủ: created_at
+    // trong DB lẫn thứ tự "YYYY-MM-DD HH:MM:SS" (SQLite) lẫn ISO "...T...Z"
+    // (app) — so chuỗi giữa hai họ này là vô nghĩa (' ' < 'T') và âm thầm
+    // loại mất đơn do DB ghi, tức là nhả ATP oan. Ngày là tiền tố chung nên
+    // luôn siêu tập, không bao giờ loại nhầm.
+    const cutoffDate = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString().slice(0, 10);
+    // Prefilter rộng (siêu tập) trong SQL; quyết định giữ chỗ cuối cùng do
+    // getPendingEffectiveExpiry (một quy tắc hạn duy nhất của hệ thống).
+    const held = await txOrDb
+      .select({
+        editionId: orderItems.editionId,
+        quantity: orderItems.quantity,
+        createdAt: orders.createdAt,
+        paymentExpiresAt: orders.paymentExpiresAt,
+      })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
@@ -848,41 +1158,85 @@ export class OrderService {
           inArray(orderItems.editionId, ids),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
-          gte(orders.createdAt, cutoff)
+          or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoffDate))
         )
-      )
-      .groupBy(orderItems.editionId);
+      );
+    const now = Date.now();
     const heldMap = new Map<string, number>();
-    for (const r of heldRows) heldMap.set(`${r.editionId}`, Number(r.qty || 0));
+    for (const row of held) {
+      const expiry = this.getPendingEffectiveExpiry(row);
+      if (!expiry || expiry.getTime() <= now) continue;
+      const key = `${row.editionId}`;
+      heldMap.set(key, (heldMap.get(key) || 0) + Number(row.quantity || 0));
+    }
     for (const id of ids) out.set(id, (balMap.get(id) || 0) - (heldMap.get(id) || 0));
     return out;
   }
 
   /**
    * ATP một ấn bản (đường lẻ) — uỷ quyền cho batch để chỉ có MỘT nơi định
-   * nghĩa semantics: fair = physical, còn lại trừ giữ chỗ PENDING còn hạn.
+   * nghĩa semantics: fair = physical, còn lại trừ giữ chỗ PENDING còn hạn
+   * (payment_expires_at nếu có, nếu không thì TTL 48h).
    */
   static async getATP(editionId: string, warehouseId: string, txOrDb: any = db): Promise<number> {
     const batch = await this.getBatchATP([editionId], warehouseId, txOrDb);
     return batch.get(editionId) ?? 0;
   }
 
-  static isPendingExpired(createdAt: string | null): boolean {
-    if (!createdAt) return false;
-    const t = new Date(createdAt).getTime();
-    if (Number.isNaN(t)) return false;
-    return Date.now() - t > PENDING_TTL_HOURS * 3600000;
+  /**
+   * Quy tắc hạn duy nhất cho đơn PENDING (contract §7.1):
+   * - có payment_expires_at (POS counter transfer 30 phút) → dùng giá trị đó;
+   * - đơn PENDING cũ không có → TTL PENDING_TTL_HOURS kể từ createdAt.
+   */
+  static getPendingEffectiveExpiry(order: {
+    createdAt: string | null;
+    paymentExpiresAt?: string | null;
+  }): Date | null {
+    if (!order.createdAt) return null;
+    if (order.paymentExpiresAt) {
+      const explicit = parseDbTimestamp(order.paymentExpiresAt);
+      // payment_expires_at hỏng (dữ liệu cũ/sửa tay) → rơi về TTL 48h, không để đơn
+      // PENDING treo vĩnh viễn và không nhả ATP.
+      if (explicit) return explicit;
+    }
+    // created_at phải đọc theo UTC: SQLite CURRENT_TIMESTAMP ghi UTC không múi
+    // giờ, đọc bằng new Date() lệch 7 tiếng ở GMT+7 → đơn bị coi là hết hạn sớm
+    // và ATP bị nhả oan.
+    const created = parseDbTimestamp(order.createdAt);
+    if (!created) return null;
+    return new Date(created.getTime() + PENDING_TTL_HOURS * 3600_000);
   }
 
-  /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần). Chỉ Manager/Owner. */
-  static async confirmOrder(orderId: string, actorRole: string, actorId = 'staff-admin', actorContext?: ActorContext) {
+  static isPendingExpired(order: { createdAt: string | null; paymentExpiresAt?: string | null }): boolean {
+    const expiry = this.getPendingEffectiveExpiry(order);
+    if (!expiry) return false;
+    return Date.now() > expiry.getTime();
+  }
+
+  /** Duyệt đơn PENDING → COMPLETED + trừ kho thật (nguyên tử toàn phần).
+   *  Cashier chỉ duyệt được đơn của chính mình; Owner/Manager duyệt mọi đơn.
+   *  Đơn BANK_TRANSFER/QR_CODE bắt buộc có paymentProof (chốt quy trình, server
+   *  không kiểm chứng ảnh).
+   *  `actorId` TUYỆT ĐỐI không có giá trị mặc định: mọi duyệt đơn đều là quyết định
+   *  của con người nên phải truy ra được người đó (session/actorContext). Không có
+   *  định danh thì fail loud — không bao giờ ghi 'staff-admin' (vừa là actor giả
+   *  trong audit + bút toán kho, vừa trùng cashierId mặc định của đơn legacy và
+   *  biến thành điều kiện vượt phân quyền của một caller không định danh). */
+  static async confirmOrder(
+    orderId: string,
+    actorRole: string,
+    actorId?: string,
+    actorContext?: ActorContext,
+    paymentProof?: TransferPaymentProof
+  ) {
     if (actorContext) {
       actorRole = actorContext.role;
       actorId = actorContext.staffId;
     }
-    if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw AppError.forbidden('Chỉ Manager/Owner được duyệt đơn PENDING.');
+    if (!actorId) {
+      throw AppError.forbidden('Thiếu định danh người duyệt đơn: không thể ghi nhận đơn dưới danh tính giả.');
     }
+    const resolvedActorId: string = actorId;
 
     return await withDbRetry(async () => {
       let expiredError: Error | null = null;
@@ -892,6 +1246,9 @@ export class OrderService {
         const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
         if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
         const ord = rows[0];
+
+        // 1b. Phân quyền ngay trong transaction (route không phải lớp bảo vệ duy nhất)
+        this.assertOrderActor(ord, actorRole, resolvedActorId, 'xác nhận');
 
         // 2. Nếu đã completed: kiểm tra xem có phải idempotent retry hợp lệ không
         if (ord.status === 'COMPLETED') {
@@ -918,20 +1275,45 @@ export class OrderService {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
         }
 
-        // 4. Nếu hết TTL: commit cập nhật CANCELLED, sau đó ném lỗi ngoài tx
-        if (this.isPendingExpired(ord.createdAt)) {
+        // 3b. Quá hạn trước, proof sau: đơn hết hạn phải báo quá hạn và tự hủy
+        // ngay, không bị chặn bởi lỗi "thiếu ảnh" và không chờ cleanup job.
+        if (this.isPendingExpired(ord)) {
           await tx
             .update(orders)
             .set({
               status: 'CANCELLED',
-              note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]`,
+              note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá hạn giữ chỗ]`,
             })
             .where(eq(orders.id, orderId));
-          expiredError = AppError.conflict(`Đơn đã quá hạn giữ chỗ ${PENDING_TTL_HOURS}h và tự động hủy.`);
+          expiredError = AppError.conflict('Đơn đã quá hạn giữ chỗ và tự động hủy.');
           return null;
         }
 
-        // 5. Đọc order items trong transaction
+        // 3c. Đơn chuyển khoản/QR bắt buộc có ảnh xác nhận đã lưu
+        if (requiresPaymentProof(ord.paymentMethod) && (!paymentProof?.id || !paymentProof?.capturedAt)) {
+          throw AppError.invalid('Phải lưu ảnh xác nhận trước khi xác nhận đơn chuyển khoản/QR.');
+        }
+
+         if (ord.cashboxSessionId) {
+           const sessionRows = await tx
+             .select()
+             .from(cashboxSessions)
+             .where(eq(cashboxSessions.id, ord.cashboxSessionId))
+             .limit(1);
+           const cashbox = sessionRows[0];
+           if (!cashbox || cashbox.status !== 'OPEN' || cashbox.warehouseId !== ord.warehouseId) {
+             throw AppError.conflict('Két ca đã đóng, không thể duyệt đơn chờ.');
+           }
+         } else if (isCounterChannel(ord.channel)) {
+           // Đơn quầy mà không gắn phiên két: KHÔNG được duyệt. cashboxSessionId do
+           // client gửi nên bỏ trống là lách toàn bộ guard két — tiền chuyển khoản/QR
+           // thu được sẽ không nằm trong két nào và đối soát tiền mặt lệch. Đơn quầy
+           // phải mở ca két trước rồi mới bán được; hủy thì vẫn cho phép để không
+           // kẹt vĩnh viễn (xem cancelOrder — hủy không ghi doanh thu vào két nào).
+           throw AppError.conflict('Đơn tại quầy chưa gắn phiên két ca đang mở, không thể duyệt.');
+         }
+
+         // 5. Đọc order items trong transaction
         const lines = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 
         // 6. Gộp nhu cầu theo edition & kiểm tra tồn trong transaction
@@ -963,7 +1345,7 @@ export class OrderService {
             condition: 'NEW',
             documentRef: ord.orderCode,
             note: `Duyệt đơn online ${ord.orderCode} (${ord.channel})`,
-            actorId,
+            actorId: resolvedActorId,
             correlationId: orderId,
             idempotencyKey: `idem-confirm-${orderId}-${idx}-${ln.editionId}`,
             tx,
@@ -982,6 +1364,19 @@ export class OrderService {
           throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi bởi tiến trình khác.');
         }
 
+        // 9. Audit nguyên tử cùng transaction (id xác định → retry không nhân bản)
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-order-confirm-${orderId}`,
+            action: 'ORDER_CONFIRMED',
+            actorRole,
+            actorId: resolvedActorId,
+            resource: '/api/orders',
+            details: `Xác nhận ${ord.orderCode}; proof=${paymentProof?.id || 'N/A'}; capturedAt=${paymentProof?.capturedAt || 'N/A'}`,
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+
         return { orderId, orderCode: ord.orderCode, status: 'COMPLETED' };
       });
 
@@ -992,12 +1387,19 @@ export class OrderService {
     });
   }
 
-  /** Hủy đơn PENDING → CANCELLED (có điều kiện, chống race với confirm). Chỉ Manager/Owner. */
-  static async cancelOrder(orderId: string, actorRole: string, reason?: string, actorContext?: ActorContext) {
+  /** Hủy đơn PENDING → CANCELLED (có điều kiện, chống race với confirm).
+   *  Cashier chỉ hủy được đơn của chính mình; Owner/Manager hủy mọi đơn.
+   *  `actorId` tường minh (nếu không dùng actorContext) để audit không bao giờ
+   *  ghi SYSTEM cho một quyết định của con người. */
+  static async cancelOrder(
+    orderId: string,
+    actorRole: string,
+    reason?: string,
+    actorContext?: ActorContext,
+    actorId?: string
+  ) {
     if (actorContext) { actorRole = actorContext.role; }
-    if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw AppError.forbidden('Chỉ Manager/Owner được hủy đơn PENDING.');
-    }
+    const resolvedActorId = actorContext?.staffId ?? actorId;
 
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
@@ -1005,11 +1407,28 @@ export class OrderService {
         if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
         const ord = rows[0];
 
+        this.assertOrderActor(ord, actorRole, resolvedActorId, 'hủy');
+
         if (ord.status === 'CANCELLED') {
           return { orderId, status: 'CANCELLED', isIdempotent: true };
         }
         if (ord.status !== 'PENDING_CONFIRMATION') {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
+        }
+
+        // Đóng ca = không được xử lý đơn chờ thuộc két (đồng bộ với confirmOrder).
+        // Đơn quầy KHÔNG gắn két thì vẫn hủy được: hủy không ghi doanh thu vào
+        // két nào mà chỉ nhả chỗ giữ ATP — từ chối hủy sẽ kẹt vĩnh viễn đơn.
+        if (ord.cashboxSessionId) {
+          const sessionRows = await tx
+            .select()
+            .from(cashboxSessions)
+            .where(eq(cashboxSessions.id, ord.cashboxSessionId))
+            .limit(1);
+          const cashbox = sessionRows[0];
+          if (!cashbox || cashbox.status !== 'OPEN' || cashbox.warehouseId !== ord.warehouseId) {
+            throw AppError.conflict('Két ca đã đóng, không thể hủy đơn chờ.');
+          }
         }
 
         const noteUpdate = reason ? `${ord.note ? ord.note + ' | ' : ''}[HỦY: ${reason}]` : ord.note;
@@ -1024,24 +1443,67 @@ export class OrderService {
           throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi trong khi đang hủy.');
         }
 
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-order-cancel-${orderId}`,
+            action: 'ORDER_CANCELLED',
+            actorRole,
+            // Mọi hủy đơn ở đây đều do con người quyết định (đã qua assertOrderActor).
+            // Không có mã nhân viên thì ghi đúng vai trò đã khai, TUYỆT ĐỐI không ghi
+            // SYSTEM — SYSTEM chỉ dành cho các đường hủy tự động (cleanup/quá hạn),
+            // vốn không đi qua hàm này.
+            actorId: resolvedActorId || `unattributed:${actorRole}`,
+            resource: '/api/orders',
+            details: `Hủy ${ord.orderCode}${reason ? ` (lý do: ${reason})` : ''}`,
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+
         return { orderId, status: 'CANCELLED' };
       });
     });
   }
 
-  /** Job dọn đơn PENDING quá TTL → CANCELLED. Trả về số đơn đã dọn. */
-  static async cleanupExpiredPending(): Promise<number> {
-    const cutoff = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString();
-    const stale = await db.select().from(orders).where(
-      and(eq(orders.status, 'PENDING_CONFIRMATION'), lte(orders.createdAt, cutoff))
-    );
-    for (const ord of stale) {
-      await db.update(orders).set({
-        status: 'CANCELLED',
-        note: `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá ${PENDING_TTL_HOURS}h giữ chỗ]`,
-      }).where(eq(orders.id, ord.id));
+  /** Owner/Manager xử lý mọi đơn; Cashier chỉ xử lý đơn có cashierId của chính mình. */
+  private static assertOrderActor(
+    ord: { cashierId: string | null },
+    actorRole: string,
+    actorId: string | undefined,
+    verb: string
+  ): void {
+    const isPrivileged = actorRole === 'ROLE_OWNER' || actorRole === 'ROLE_MANAGER';
+    const isOwnCashierOrder = actorRole === 'ROLE_CASHIER' && !!actorId && ord.cashierId === actorId;
+    if (!isPrivileged && !isOwnCashierOrder) {
+      throw AppError.forbidden(`Cashier chỉ được ${verb} đơn của chính mình.`);
     }
-    return stale.length;
+  }
+
+  /** Job dọn đơn PENDING quá hạn (payment_expires_at, fallback TTL 48h) → CANCELLED. */
+  static async cleanupExpiredPending(): Promise<number> {
+    const stale = (
+      await db
+        .select({
+          id: orders.id,
+          note: orders.note,
+          createdAt: orders.createdAt,
+          paymentExpiresAt: orders.paymentExpiresAt,
+        })
+        .from(orders)
+        .where(eq(orders.status, 'PENDING_CONFIRMATION'))
+    ).filter((ord) => this.isPendingExpired(ord));
+    let cleaned = 0;
+    for (const ord of stale) {
+      // SELECT nằm ngoài transaction: phải khoá có điều kiện status, nếu không một
+      // confirmOrder chạy xen giữa sẽ bị ghi đè CANCELLED sau khi kho đã xuất.
+      const note = `${ord.note ? ord.note + ' | ' : ''}[TỰ ĐỘNG HỦY: quá hạn giữ chỗ]`;
+      const res: any = await db.run(sql`
+        UPDATE orders
+        SET status = 'CANCELLED', note = ${note}
+        WHERE id = ${ord.id} AND status = 'PENDING_CONFIRMATION'
+      `);
+      if (res.rowsAffected === 1) cleaned++;
+    }
+    return cleaned;
   }
 
   /**
@@ -1146,12 +1608,170 @@ export interface OpenCashboxParams {
   cashierId: string;
   openingCash: number;
   notes?: string;
+  audit?: {
+    actorRole: string;
+    actorId: string;
+    details: string;
+  };
 }
 
 export interface CloseCashboxParams {
   sessionId: string;
   closingCashActual: number;
   notes?: string;
+  audit?: {
+    actorRole: string;
+    actorId: string;
+  };
+}
+
+export interface AutoCloseCashboxParams {
+  sessionId: string;
+  actorRole: string;
+  actorId: string;
+  notes?: string;
+  reason?: string;
+}
+
+// ============================================================================
+// CHỐT CA QUÁ GIỜ (auto-close shift) — bảo vệ "không ca nào bị bỏ quên qua ngày"
+// ----------------------------------------------------------------------------
+// Ràng buộc toàn vẹn: KHÔNG BAO GIỜ bịa số tiền thực đếm. closeSession tính
+// cashDiscrepancy = closingCashActual - expectedCash; nếu tự động chốt bằng
+// closingCashActual = expectedCash thì hệ thống khẳng định một con người đã
+// đếm két — đúng thứ ta không được phép nói. Mọi chốt tự động ghi
+// closingCashActual = NULL, cashDiscrepancy = NULL và đánh dấu UNVERIFIED.
+// ============================================================================
+
+/** Giờ chốt ngày (múi giờ máy chủ) mặc định: 23:59. */
+export const BUSINESS_DAY_CUTOFF_HHMM = '23:59';
+
+const CUTOFF_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function parseCutoff(raw: unknown): { h: number; m: number } | null {
+  if (typeof raw !== 'string') return null;
+  const m = CUTOFF_RE.exec(raw.trim());
+  return m ? { h: Number(m[1]), m: Number(m[2]) } : null;
+}
+
+/**
+ * Ngưỡng chốt ca cho một kho.
+ *
+ * FALLBACK ĐÃ GHI RÕ: bảng `warehouses` KHÔNG có cột giờ mở/đóng nên không thể
+ * đọc ngưỡng riêng từ dữ liệu kho mà không thêm migration. Nguồn duy nhất cho
+ * ngưỡng riêng từng kho (không đụng schema) là biến môi trường
+ * CASHBOX_CUTOFF_BY_WAREHOUSE='{"<warehouseId>":"HH:MM"}'; sau đó tới
+ * CASHBOX_BUSINESS_DAY_CUTOFF cho toàn hệ thống; cuối cùng lùi về hằng số
+ * BUSINESS_DAY_CUTOFF_HHMM (23:59).
+ */
+export function resolveBusinessDayCutoff(
+  warehouseId?: string | null,
+  override?: string | null
+): { cutoff: string; source: 'OVERRIDE' | 'WAREHOUSE_ENV' | 'GLOBAL_ENV' | 'DEFAULT' } {
+  const asOverride = parseCutoff(override);
+  if (asOverride) return { cutoff: `${pad2(asOverride.h)}:${pad2(asOverride.m)}`, source: 'OVERRIDE' };
+
+  if (warehouseId) {
+    let map: Record<string, string> = {};
+    try {
+      map = JSON.parse(process.env.CASHBOX_CUTOFF_BY_WAREHOUSE || '{}') || {};
+    } catch {
+      map = {};
+    }
+    const perWarehouse = parseCutoff(map[warehouseId]);
+    if (perWarehouse) return { cutoff: `${pad2(perWarehouse.h)}:${pad2(perWarehouse.m)}`, source: 'WAREHOUSE_ENV' };
+  }
+
+  const global = parseCutoff(process.env.CASHBOX_BUSINESS_DAY_CUTOFF);
+  if (global) return { cutoff: `${pad2(global.h)}:${pad2(global.m)}`, source: 'GLOBAL_ENV' };
+
+  return { cutoff: BUSINESS_DAY_CUTOFF_HHMM, source: 'DEFAULT' };
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** Ngày (YYYY-MM-DD) theo giờ máy chủ — "ngày nghiệp vụ" của một ca. */
+export function businessDateOf(instant: Date): string {
+  return `${instant.getFullYear()}-${pad2(instant.getMonth() + 1)}-${pad2(instant.getDate())}`;
+}
+
+function cutoffInstantOf(businessDate: string, cutoff: string): Date {
+  const [y, mo, d] = businessDate.split('-').map(Number);
+  const p = parseCutoff(cutoff)!;
+  return new Date(y, mo - 1, d, p.h, p.m, 0, 0);
+}
+
+/**
+ * Đồng hồ dùng cho kiểm tra chốt ca. CASHBOX_TEST_NOW chỉ dùng cho test tự
+ * động (đồng hồ thật ở mọi lần chạy thật) — để case "quá giờ" không phụ thuộc
+ * giờ thật lúc chạy suite.
+ */
+function businessDayNow(): Date {
+  const override = process.env.CASHBOX_TEST_NOW;
+  const d = override ? new Date(override) : new Date();
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+export interface ShiftCutoffEvaluation {
+  businessDate: string;
+  cutoff: string;
+  cutoffSource: 'OVERRIDE' | 'WAREHOUSE_ENV' | 'GLOBAL_ENV' | 'DEFAULT';
+  cutoffAt: string;
+  openedAt: string;
+  /** false = opened_at hỏng/không đọc được → KHÔNG chặn bán (không đoán bừa). */
+  openedAtValid: boolean;
+  elapsedMinutes: number;
+  overdue: boolean;
+}
+
+/**
+ * Ca quá giờ khi ĐÃ QUA mốc chốt ngày của chính ngày nghiệp vụ mà ca mở.
+ * Nhờ vậy ca mở SAU NỬA ĐÊM (bán đêm, mở 00:10) thuộc ngày mới nên chưa quá
+ * giờ — ca đêm hợp lệ không bị chặn.
+ *
+ * opened_at phải đi qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP ghi UTC
+ * không kèm múi giờ, đọc bằng `new Date()` sẽ lệch +7 tiếng ở GMT+7 và chặn
+ * nhầm ngay ca vừa mở.
+ */
+export function evaluateShiftCutoff(
+  openedAt: string | Date | null | undefined,
+  opts: { warehouseId?: string | null; now?: Date; cutoff?: string | null } = {}
+): ShiftCutoffEvaluation {
+  const now = opts.now || businessDayNow();
+  const { cutoff, source } = resolveBusinessDayCutoff(opts.warehouseId, opts.cutoff);
+  const opened = openedAt instanceof Date ? openedAt : parseDbTimestamp(openedAt);
+
+  if (opened === null) {
+    // opened_at hỏng (dữ liệu cũ/sửa tay): KHÔNG chặn bán — một chốt chặn sai
+    // chặn cả POS. Đồng thời cờ openedAtValid=false để báo cáo/cảnh báo thấy.
+    const today = businessDateOf(now);
+    return {
+      businessDate: today,
+      cutoff,
+      cutoffSource: source,
+      cutoffAt: cutoffInstantOf(today, cutoff).toISOString(),
+      openedAt: '',
+      openedAtValid: false,
+      elapsedMinutes: 0,
+      overdue: false,
+    };
+  }
+
+  const businessDate = businessDateOf(opened);
+  const cutoffAt = cutoffInstantOf(businessDate, cutoff);
+  const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - opened.getTime()) / 60_000));
+  return {
+    businessDate,
+    cutoff,
+    cutoffSource: source,
+    cutoffAt: cutoffAt.toISOString(),
+    openedAt: opened.toISOString(),
+    openedAtValid: true,
+    elapsedMinutes,
+    overdue: now.getTime() > cutoffAt.getTime(),
+  };
 }
 
 export class CashboxService {
@@ -1161,63 +1781,77 @@ export class CashboxService {
    */
   static async openSession(params: OpenCashboxParams) {
     const { warehouseId, cashierId, openingCash = 0, notes } = params;
+    if (!Number.isFinite(openingCash) || openingCash < 0) throw AppError.invalid('Tiền đầu ca không hợp lệ.');
 
-    const existingOpen = await db
-      .select()
-      .from(cashboxSessions)
-      .where(
-        and(
-          eq(cashboxSessions.cashierId, cashierId),
-          eq(cashboxSessions.status, 'OPEN')
+    return withDbRetry(() => db.transaction(async (tx) => {
+      const existingOpen = await tx
+        .select()
+        .from(cashboxSessions)
+        .where(
+          and(
+            eq(cashboxSessions.cashierId, cashierId),
+            eq(cashboxSessions.warehouseId, warehouseId),
+            eq(cashboxSessions.status, 'OPEN')
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (existingOpen.length > 0) {
-      return {
-        session: existingOpen[0],
-        isExisting: true,
+      if (existingOpen.length > 0) {
+        return {
+          session: existingOpen[0],
+          isExisting: true,
+        };
+      }
+
+      const sessionId = `cbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newSession = {
+        id: sessionId,
+        warehouseId,
+        cashierId,
+        openingCash: Math.max(0, openingCash),
+        status: 'OPEN' as const,
+        notes: notes || null,
+        openedAt: new Date().toISOString(),
+        totalCashSales: 0,
+        totalTransferSales: 0,
+        totalOrdersCount: 0,
       };
-    }
 
-    const sessionId = `cbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-    const newSession = {
-      id: sessionId,
-      warehouseId,
-      cashierId,
-      openingCash: Math.max(0, openingCash),
-      status: 'OPEN' as const,
-      notes: notes || null,
-      openedAt: new Date().toISOString(),
-      totalCashSales: 0,
-      totalTransferSales: 0,
-      totalOrdersCount: 0,
-    };
-
-    await withDbRetry(async () => {
-      await db.insert(cashboxSessions).values(newSession);
-    });
-
-    return {
-      session: newSession,
-      isExisting: false,
-    };
+       await tx.insert(cashboxSessions).values(newSession);
+       if (params.audit) {
+         await tx
+           .insert(auditLogs)
+           .values({
+             id: `aud-cashbox-open-${sessionId}`,
+             action: 'MUTATE_ORDER',
+             actorRole: params.audit.actorRole,
+             actorId: params.audit.actorId,
+             resource: '/api/cashbox',
+             details: params.audit.details.slice(0, 500),
+             ipAddress: 'local',
+           })
+           .onConflictDoNothing({ target: auditLogs.id });
+       }
+       return {
+         session: newSession,
+         isExisting: false,
+       };
+     }));
   }
 
   /**
    * Lấy phiên két tiền hiện tại đang hoạt động của thu ngân.
    */
-  static async getActiveSession(cashierId: string) {
+  static async getActiveSession(cashierId: string, warehouseId?: string) {
+    const conditions = [
+      eq(cashboxSessions.cashierId, cashierId),
+      eq(cashboxSessions.status, 'OPEN'),
+    ];
+    if (warehouseId) conditions.push(eq(cashboxSessions.warehouseId, warehouseId));
     const sessions = await db
       .select()
       .from(cashboxSessions)
-      .where(
-        and(
-          eq(cashboxSessions.cashierId, cashierId),
-          eq(cashboxSessions.status, 'OPEN')
-        )
-      )
+      .where(and(...conditions))
       .limit(1);
 
     if (sessions.length === 0) return null;
@@ -1235,14 +1869,19 @@ export class CashboxService {
   /**
    * Tính toán doanh thu tiền mặt, chuyển khoản và số đơn hàng thuộc phiên làm việc.
    */
-  static async calculateSessionStats(sessionId: string) {
-    const sessionOrders = await db
+  static async calculateSessionStats(sessionId: string, txOrDb: any = db) {
+    const sessionOrders = await txOrDb
       .select({
         finalAmount: orders.finalAmount,
         paymentMethod: orders.paymentMethod,
       })
       .from(orders)
-      .where(eq(orders.cashboxSessionId, sessionId));
+      .where(
+        and(
+          eq(orders.cashboxSessionId, sessionId),
+          eq(orders.status, 'COMPLETED')
+        )
+      );
 
     let totalCashSales = 0;
     let totalTransferSales = 0;
@@ -1258,7 +1897,7 @@ export class CashboxService {
 
     // FIX-09: trừ tiền hoàn (phiếu COMPLETED cùng ca) khỏi két — chốt ca khỏi lệch.
     // Chỉ tính hoàn tiền mặt: hoàn chuyển khoản đối soát ngân hàng riêng (SETTLE_COD pattern).
-    const refunds = await db
+    const refunds = await txOrDb
       .select({ refundAmount: returnOrders.refundAmount })
       .from(returnOrders)
       .where(and(eq(returnOrders.cashboxSessionId, sessionId), eq(returnOrders.status, 'COMPLETED')));
@@ -1279,30 +1918,62 @@ export class CashboxService {
    */
   static async closeSession(params: CloseCashboxParams) {
     const { sessionId, closingCashActual, notes } = params;
+    if (!Number.isFinite(closingCashActual) || closingCashActual < 0) throw AppError.invalid('Tiền thực đếm không hợp lệ.');
 
-    const existing = await db
-      .select()
-      .from(cashboxSessions)
-      .where(eq(cashboxSessions.id, sessionId))
-      .limit(1);
+    return withDbRetry(() => db.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(cashboxSessions)
+        .where(eq(cashboxSessions.id, sessionId))
+        .limit(1);
 
-    if (existing.length === 0) {
-      throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
-    }
+      if (existing.length === 0) {
+        throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
+      }
 
-    const session = existing[0];
-    if (session.status === 'CLOSED') {
-      throw AppError.invalid(`Phiên két tiền ${sessionId} đã được đóng trước đó.`);
-    }
+       const session = existing[0];
+       if (session.status === 'CLOSED') {
+         if (session.closingCashActual !== closingCashActual) {
+           throw AppError.idempotency('Phiên két tiền đã đóng với số tiền thực đếm khác.');
+         }
+         return {
+           sessionId,
+           cashierId: session.cashierId,
+           warehouseId: session.warehouseId,
+           openingCash: session.openingCash,
+           closingCashActual: session.closingCashActual ?? 0,
+           expectedCash: session.expectedCash ?? 0,
+           cashDiscrepancy: session.cashDiscrepancy ?? 0,
+           totalCashSales: session.totalCashSales ?? 0,
+           totalTransferSales: session.totalTransferSales ?? 0,
+           totalOrdersCount: session.totalOrdersCount ?? 0,
+           openedAt: session.openedAt,
+           closedAt: session.closedAt,
+           status: 'CLOSED' as const,
+           isIdempotent: true,
+         };
+       }
 
-    const stats = await this.calculateSessionStats(sessionId);
-    const expectedCash = session.openingCash + stats.totalCashSales;
-    const cashDiscrepancy = closingCashActual - expectedCash;
+      // Còn đơn chuyển khoản/QR chờ xác nhận → chặn chốt ca (spec §10.3)
+      const pending = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.cashboxSessionId, sessionId),
+            eq(orders.status, 'PENDING_CONFIRMATION')
+          )
+        )
+        .limit(1);
+      if (pending.length > 0) {
+        throw AppError.conflict('Còn đơn chuyển khoản/QR đang chờ. Hãy xác nhận hoặc hủy trước khi chốt ca.');
+      }
 
-    const closedAt = new Date().toISOString();
-
-    await withDbRetry(async () => {
-      await db
+      const stats = await this.calculateSessionStats(sessionId, tx);
+      const expectedCash = session.openingCash + stats.totalCashSales;
+      const cashDiscrepancy = closingCashActual - expectedCash;
+      const closedAt = new Date().toISOString();
+      const updateResult = await tx
         .update(cashboxSessions)
         .set({
           closingCashActual,
@@ -1315,24 +1986,292 @@ export class CashboxService {
           notes: notes ? `${session.notes ? session.notes + ' | ' : ''}${notes}` : session.notes,
           closedAt,
         })
-        .where(eq(cashboxSessions.id, sessionId));
-    });
+        .where(
+          and(
+            eq(cashboxSessions.id, sessionId),
+            eq(cashboxSessions.status, 'OPEN')
+          )
+        );
+      if (updateResult.rowsAffected !== 1) {
+        throw AppError.conflict('Phiên két tiền đã được đóng bởi thao tác khác.');
+      }
+      if (params.audit) {
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-cashbox-close-${sessionId}`,
+            action: 'MUTATE_ORDER',
+            actorRole: params.audit.actorRole,
+            actorId: params.audit.actorId,
+            resource: '/api/cashbox',
+            details: `Chốt ca két tiền ${sessionId}: Thực đếm ${closingCashActual} đ, Kỳ vọng ${expectedCash} đ, Lệch: ${cashDiscrepancy} đ`.slice(0, 500),
+            ipAddress: 'local',
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+      }
 
+      return {
+        sessionId,
+        cashierId: session.cashierId,
+        warehouseId: session.warehouseId,
+        openingCash: session.openingCash,
+        closingCashActual,
+        expectedCash,
+        cashDiscrepancy,
+        totalCashSales: stats.totalCashSales,
+        totalTransferSales: stats.totalTransferSales,
+        totalOrdersCount: stats.totalOrdersCount,
+        openedAt: session.openedAt,
+        closedAt,
+         status: 'CLOSED',
+       };
+     }));
+  }
+
+  /**
+   * KIỂM TRA CHỐT CA QUÁ GIỜ (read-only).
+   *
+   * Rẻ + idempotent + KHÔNG ghi gì: một câu đọc theo index status của
+   * cashbox_sessions, rồi chỉ tính thống kê ca cho các ca thực sự quá giờ
+   * (thường 0-1 ca/kho/ngày). Nhờ vậy POS gọi được mỗi lần mở app.
+   */
+  static async getStaleOpenShiftCheck(
+    params: {
+      warehouseId?: string | null;
+      cashierId?: string | null;
+      now?: Date;
+      cutoff?: string | null;
+    } = {},
+    txOrDb: any = db
+  ) {
+    const now = params.now || businessDayNow();
+    const conditions = [eq(cashboxSessions.status, 'OPEN')];
+    if (params.warehouseId) conditions.push(eq(cashboxSessions.warehouseId, params.warehouseId));
+    if (params.cashierId) conditions.push(eq(cashboxSessions.cashierId, params.cashierId));
+
+    const openSessions = await txOrDb
+      .select()
+      .from(cashboxSessions)
+      .where(and(...conditions));
+
+    const shifts: any[] = [];
+    for (const s of openSessions) {
+      const evaluation = evaluateShiftCutoff(s.openedAt, {
+        warehouseId: s.warehouseId,
+        now,
+        cutoff: params.cutoff,
+      });
+      if (!evaluation.overdue) continue;
+
+      const stats = await this.calculateSessionStats(s.id, txOrDb);
+      const amountNeedingClosure = (s.openingCash || 0) + stats.totalCashSales;
+      const wh = await txOrDb
+        .select({ code: warehouses.code, name: warehouses.name })
+        .from(warehouses)
+        .where(eq(warehouses.id, s.warehouseId))
+        .limit(1);
+      shifts.push({
+        sessionId: s.id,
+        warehouseId: s.warehouseId,
+        warehouseCode: wh[0]?.code || null,
+        warehouseName: wh[0]?.name || null,
+        cashierId: s.cashierId,
+        // openedAt = ISO chuẩn có Z (mọi client parse đúng); openedAtRaw = giá trị
+        // nguyên trong DB để đối chiếu. TUYỆT ĐỐI không đưa thẳng chuỗi DB ra
+        // API cho client tự parse — đó là chính là lỗi múi giờ này.
+        openedAt: evaluation.openedAt,
+        openedAtRaw: s.openedAt,
+        businessDate: evaluation.businessDate,
+        cutoff: evaluation.cutoff,
+        cutoffAt: evaluation.cutoffAt,
+        elapsedMinutes: evaluation.elapsedMinutes,
+        amountNeedingClosure,
+        expectedCash: amountNeedingClosure,
+        action: 'CLOSE_SHIFT' as const,
+        actionBy: 'CASHIER' as const,
+        autoCloseAction: 'AUTO_CLOSE' as const,
+        autoCloseActionBy: 'MANAGER' as const,
+        message:
+          `Ca két ${s.id} của thu ngân ${s.cashierId} tại kho ${s.warehouseId} mở từ ${evaluation.openedAt} ` +
+          `đã quá giờ chốt ngày (${evaluation.cutoff} ngày ${evaluation.businessDate}). ` +
+          `Thu ngân cần đếm tiền thực tế và chốt ca. Nếu không thể, quản lý chốt tự động: ` +
+          `tiền mặt sẽ KHÔNG được đếm nên chênh lệch KHÔNG xác minh.`,
+      });
+    }
+
+    const resolvedCutoff = resolveBusinessDayCutoff(params.warehouseId, params.cutoff);
     return {
-      sessionId,
-      cashierId: session.cashierId,
-      warehouseId: session.warehouseId,
-      openingCash: session.openingCash,
-      closingCashActual,
-      expectedCash,
-      cashDiscrepancy,
-      totalCashSales: stats.totalCashSales,
-      totalTransferSales: stats.totalTransferSales,
-      totalOrdersCount: stats.totalOrdersCount,
-      openedAt: session.openedAt,
-      closedAt,
-      status: 'CLOSED',
+      serverTime: now.toISOString(),
+      cutoff: resolvedCutoff.cutoff,
+      cutoffSource: resolvedCutoff.source,
+      count: shifts.length,
+      salesBlocked: shifts.length > 0,
+      shifts,
     };
+  }
+
+  /**
+   * CHỐT CA TỰ ĐỘNG — chỉ gọi được bởi quản lý.
+   *
+   * KHÔNG bịa tiền thực đếm: closingCashActual = NULL, cashDiscrepancy = NULL,
+   * discrepancyVerified = false. Audit riêng (AUTO_CLOSE_SHIFT, actor SYSTEM)
+   * nên không bao giờ nhập nhầm với chốt tay của con người.
+   */
+  static async autoCloseSession(params: AutoCloseCashboxParams, txOrDb?: any) {
+    if (txOrDb) return withDbRetry(() => this.applyAutoClose(txOrDb, params));
+    return withDbRetry(() => db.transaction((tx) => this.applyAutoClose(tx, params)));
+  }
+
+  private static async applyAutoClose(tx: any, params: AutoCloseCashboxParams) {
+    const { sessionId, notes, reason } = params;
+    const AUDIT_ID = `aud-cashbox-auto-close-${sessionId}`;
+    const AUTO_NOTE = 'AUTO_CLOSE_UNVERIFIED_CASH';
+
+    return (async () => {
+      const existing = await tx
+        .select()
+        .from(cashboxSessions)
+        .where(eq(cashboxSessions.id, sessionId))
+        .limit(1);
+      if (existing.length === 0) {
+        throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
+      }
+      const session = existing[0];
+
+      // Đã chốt tự động trước đó → replay, không ghi thêm.
+      if (session.status === 'CLOSED') {
+        const priorAudit = await tx
+          .select({ id: auditLogs.id })
+          .from(auditLogs)
+          .where(eq(auditLogs.id, AUDIT_ID))
+          .limit(1);
+        if (priorAudit.length === 0) {
+          throw AppError.conflict('Phiên két tiền đã được chốt tay bởi con người, không thể chốt tự động ghi đè.');
+        }
+        return {
+          sessionId,
+          cashierId: session.cashierId,
+          warehouseId: session.warehouseId,
+          openingCash: session.openingCash,
+          closingCashActual: null,
+          expectedCash: session.expectedCash ?? 0,
+          cashDiscrepancy: null,
+          discrepancyVerified: false,
+          totalCashSales: session.totalCashSales ?? 0,
+          totalTransferSales: session.totalTransferSales ?? 0,
+          totalOrdersCount: session.totalOrdersCount ?? 0,
+          openedAt: session.openedAt,
+          closedAt: session.closedAt,
+          status: 'CLOSED' as const,
+          closeType: 'AUTO' as const,
+          isIdempotent: true,
+        };
+      }
+
+      // Giữ nguyên guard của chốt tay: còn đơn chờ thì không đụng (không bỏ rơi đơn).
+      const pending = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.cashboxSessionId, sessionId),
+            eq(orders.status, 'PENDING_CONFIRMATION')
+          )
+        )
+        .limit(1);
+      if (pending.length > 0) {
+        throw AppError.conflict('Còn đơn chuyển khoản/QR đang chờ. Hãy xác nhận hoặc hủy trước khi chốt ca.');
+      }
+
+      const stats = await this.calculateSessionStats(sessionId, tx);
+      const expectedCash = session.openingCash + stats.totalCashSales;
+      const closedAt = new Date().toISOString();
+      const noteText = [
+        AUTO_NOTE,
+        reason ? `Lý do: ${reason}` : null,
+        notes || null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      const updateResult = await tx
+        .update(cashboxSessions)
+        .set({
+          closingCashActual: null, // KHÔNG có số đếm — KHÔNG được bịa
+          expectedCash,
+          cashDiscrepancy: null, // lệch chưa kiểm chứng
+          totalCashSales: stats.totalCashSales,
+          totalTransferSales: stats.totalTransferSales,
+          totalOrdersCount: stats.totalOrdersCount,
+          status: 'CLOSED',
+          notes: session.notes ? `${session.notes} | ${noteText}` : noteText,
+          closedAt,
+        })
+        .where(and(eq(cashboxSessions.id, sessionId), eq(cashboxSessions.status, 'OPEN')));
+      if (updateResult.rowsAffected !== 1) {
+        throw AppError.conflict('Phiên két tiền đã được đóng bởi thao tác khác.');
+      }
+
+      await tx
+        .insert(auditLogs)
+        .values({
+          id: AUDIT_ID,
+          action: 'AUTO_CLOSE_SHIFT',
+          actorRole: 'SYSTEM',
+          actorId: 'SYSTEM',
+          resource: '/api/cashbox',
+          details:
+            `HỆ THỐNG chốt ca két tự động ${sessionId} (thủ phát: ${params.actorRole} ${params.actorId}). ` +
+            `KHÔNG đếm tiền mặt (closingCashActual = NULL) nên chênh lệch KHÔNG xác minh. ` +
+            `Kỳ vọng hệ thống: ${expectedCash} đ.`.slice(0, 500),
+          ipAddress: 'local',
+        })
+        .onConflictDoNothing({ target: auditLogs.id });
+
+      return {
+        sessionId,
+        cashierId: session.cashierId,
+        warehouseId: session.warehouseId,
+        openingCash: session.openingCash,
+        closingCashActual: null,
+        expectedCash,
+        cashDiscrepancy: null,
+        discrepancyVerified: false,
+        totalCashSales: stats.totalCashSales,
+        totalTransferSales: stats.totalTransferSales,
+        totalOrdersCount: stats.totalOrdersCount,
+        openedAt: session.openedAt,
+        closedAt,
+        status: 'CLOSED' as const,
+        closeType: 'AUTO' as const,
+        isIdempotent: false,
+      };
+    })();
+  }
+
+  /**
+   * Chặn bán tại quầy khi ca của thu ngân đã quá giờ chốt ngày.
+   * Hàm thuần: không đọc DB (dùng session row đã tải sẵn) để không làm nặng
+   * đường nóng tạo đơn.
+   */
+  static assertShiftWithinBusinessDay(params: {
+    openedAt: string;
+    warehouseId: string;
+    cashierId: string;
+    now?: Date;
+    cutoff?: string | null;
+  }) {
+    const evaluation = evaluateShiftCutoff(params.openedAt, {
+      warehouseId: params.warehouseId,
+      now: params.now,
+      cutoff: params.cutoff,
+    });
+    if (!evaluation.overdue) return evaluation;
+    throw AppError.conflict(
+      `Đã quá giờ chốt ngày ${evaluation.cutoff} ngày ${evaluation.businessDate}: ca két của thu ngân ` +
+        `${params.cashierId} tại kho ${params.warehouseId} vẫn chưa chốt, POS tạm ngưng tạo đơn cho ca này. ` +
+        `Vui lòng đếm tiền thực tế trong két và chốt ca (Đóng ca) trước khi bán tiếp.`
+    );
   }
 
   /**

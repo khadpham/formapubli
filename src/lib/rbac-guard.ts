@@ -42,6 +42,8 @@ export interface AuditLogParams {
   resource: string;
   details?: string;
   ipAddress?: string;
+  id?: string;
+  required?: boolean;
 }
 
 /**
@@ -97,17 +99,21 @@ export function enforceFiscalScope(
  */
 export async function recordAuditLog(params: AuditLogParams): Promise<void> {
   try {
-    const id = `aud-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    await db.insert(auditLogs).values({
-      id,
-      action: params.action,
-      actorRole: params.actorRole,
-      actorId: params.actorId || 'unknown-actor',
-      resource: params.resource,
-      details: params.details ? params.details.slice(0, 500) : undefined,
-      ipAddress: params.ipAddress || 'local',
-    });
+    const id = params.id || `aud-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    await db
+      .insert(auditLogs)
+      .values({
+        id,
+        action: params.action,
+        actorRole: params.actorRole,
+        actorId: params.actorId || 'unknown-actor',
+        resource: params.resource,
+        details: params.details ? params.details.slice(0, 500) : undefined,
+        ipAddress: params.ipAddress || 'local',
+      })
+      .onConflictDoNothing({ target: auditLogs.id });
   } catch (error) {
+    if (params.required) throw error;
     // Không làm sập luồng chính nếu lỗi ghi audit
     console.error('Lỗi khi ghi audit log:', error);
   }

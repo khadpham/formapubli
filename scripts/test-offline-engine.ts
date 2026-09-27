@@ -1,6 +1,18 @@
 import { generateUUIDv7, extractTimestampFromUUIDv7 } from '../src/lib/uuidv7';
+import {
+  applySyncErrorToOfflineOrder,
+  AUTO_SYNCABLE_PAYMENT_STATES,
+  getOfflineOrderRepairAction,
+  isPaymentWindowExpired,
+  needsManualReview,
+  normalizeOfflinePaymentState,
+  paymentStateAfterManualRepair,
+  RECONCILIATION_ERROR_CODES,
+  OfflineOrder,
+  OfflinePaymentState,
+} from '../src/lib/offline-db';
 import { OrderService } from '../src/services/order.service';
-import { db, orders, editions, warehouses } from '../src/db';
+import { db, orders, editions, warehouses, cashboxSessions } from '../src/db';
 import { eq } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
 
@@ -168,7 +180,489 @@ async function testOfflineEngine() {
     `Tổng doanh thu: ${salesSummary.totalRevenue.toLocaleString('vi-VN')} đ | Nội bộ: ${salesSummary.internalManagement.revenue.toLocaleString('vi-VN')} đ | Thuế VAT: ${salesSummary.officialTax.revenue.toLocaleString('vi-VN')} đ`
   );
 
-  // Dọn dẹp dữ liệu đơn test
+  const blockedBase: OfflineOrder = {
+    id: offlineUuid,
+    orderCode: 'OFF-BLOCKED',
+    idempotencyKey: 'idem-offline-blocked',
+    warehouseId: sampleWarehouse.id,
+    customerName: 'Khách offline',
+    channel: 'RETAIL_OFFICE',
+    discountRate: 0,
+    paymentMethod: 'BANK_TRANSFER',
+    fiscalScope: 'INTERNAL_MANAGEMENT',
+    cashierId: 'NV-OFFLINE',
+    items: [{ editionId: sampleEdition.id, code: sampleEdition.code, title: sampleEdition.title || '', quantity: 1, unitCoverPrice: sampleEdition.coverPrice || 0 }],
+    subtotal: sampleEdition.coverPrice || 0,
+    discountAmount: 0,
+    finalAmount: sampleEdition.coverPrice || 0,
+    totalQuantity: 1,
+    createdAt: new Date().toISOString(),
+    syncStatus: 'FAILED',
+  };
+  assert(
+    getOfflineOrderRepairAction({ ...blockedBase, lastError: 'Phiên két ca đã đóng' }) === 'REASSIGN_CASHBOX' &&
+      getOfflineOrderRepairAction({ ...blockedBase, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' }) === 'CONFIRM_MONEY_RECEIVED' &&
+      getOfflineOrderRepairAction({ ...blockedBase, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.', moneyReceived: true }) === null &&
+      getOfflineOrderRepairAction({ ...blockedBase, discountRate: 1, isGift: true, lastError: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' }) === null,
+    'Đơn offline bị chặn chỉ được sửa qua hành động tường minh, không tự mặc định nhận tiền',
+    'Cashbox yêu cầu tái gán ca; transfer/QR yêu cầu xác nhận nhận tiền; gift đã miễn'
+  );
+
+  // Trạng thái thanh toán cục bộ: tiền mặt sẵn sàng sync, chuyển khoản/QR cần ảnh
+  // trước khi được coi là đã thu tiền.
+  const normalizeBase: OfflineOrder = {
+    ...blockedBase,
+    id: generateUUIDv7(),
+    orderCode: 'OFF-STATE',
+    idempotencyKey: 'idem-offline-state',
+    syncStatus: 'PENDING',
+  };
+  const states: Array<[string, OfflineOrder, OfflinePaymentState]> = [
+    ['Tiền mặt offline sẵn sàng đồng bộ', { ...normalizeBase, paymentMethod: 'CASH' }, 'READY_TO_SYNC'],
+    ['Chuyển khoản đã thu tiền → chờ sync', { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true }, 'PAID_PENDING_SYNC'],
+    ['QR chưa có ảnh xác nhận → cần đối soát', { ...normalizeBase, paymentMethod: 'QR_CODE' }, 'NEEDS_RECONCILIATION'],
+    [
+      'paymentState tường minh được giữ, moneyReceived false không nâng cấp sai',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: false, paymentState: 'AWAITING_PAYMENT' },
+      'AWAITING_PAYMENT',
+    ],
+    [
+      'Đơn hủy cục bộ giữ nguyên trạng thái',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true, paymentState: 'CANCELLED_LOCAL' },
+      'CANCELLED_LOCAL',
+    ],
+  ];
+  for (const [name, order, expected] of states) {
+    const actual = normalizeOfflinePaymentState(order as OfflineOrder);
+    assert(actual === expected, `Trạng thái thanh toán offline: ${name}`, `Kỳ vọng ${expected}, nhận ${actual}`);
+  }
+
+  // Xung đột ATP / idempotency / ca két phải vào đối soát; lỗi mạng thì
+  // giữ nguyên để retry được, không kẹt đơn vào đối soát.
+  // (CASHBOX_SESSION_NOT_FOUND đã bị gỡ khỏi danh sách: server không có mã đó —
+  //  ca két hỏng thật sự đến dưới dạng STATE_CONFLICT hoặc INVALID_INPUT.)
+  const reconcileBase: OfflineOrder = { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: true };
+  for (const code of ['INSUFFICIENT_ATP', 'IDEMPOTENCY_CONFLICT', 'STATE_CONFLICT', 'INVALID_INPUT', 'FORBIDDEN']) {
+    const actual = applySyncErrorToOfflineOrder(reconcileBase, code);
+    assert(
+      actual === 'NEEDS_RECONCILIATION',
+      `Lỗi sync ${code} chuyển đơn sang NEEDS_RECONCILIATION`,
+      `Nhận ${actual}`
+    );
+  }
+  for (const code of ['RATE_LIMITED', 'INTERNAL_ERROR', 'AUTH_REQUIRED', 'TRANSFER_TOCTOU_ATP_STALE', 'OVER_RETURN_LIMIT', '']) {
+    const actual = applySyncErrorToOfflineOrder(reconcileBase, code);
+    assert(
+      actual === 'PAID_PENDING_SYNC',
+      `Lỗi tạm thời ${code || '(không mã)'} giữ PAID_PENDING_SYNC để thử lại được`,
+      `Nhận ${actual}`
+    );
+  }
+  const networkState = applySyncErrorToOfflineOrder(reconcileBase, 'NETWORK');
+  assert(
+    networkState === 'PAID_PENDING_SYNC',
+    'Lỗi mạng giữ nguyên trạng thái để thử lại được, không kẹt vào đối soát',
+    `Nhận ${networkState}`
+  );
+  const cashState = applySyncErrorToOfflineOrder({ ...normalizeBase, paymentMethod: 'CASH' }, 'INSUFFICIENT_ATP');
+  assert(
+    cashState === 'READY_TO_SYNC',
+    'Đơn tiền mặt không bị đổi trạng thái vì lỗi ATP của luồng chuyển khoản',
+    `Nhận ${cashState}`
+  );
+
+  // --- Rà soát đối soát: đơn kẹt phải nhìn thấy, và không ai được tự dán nhãn ---
+  // getPendingOfflineOrders chỉ trả về READY_TO_SYNC/PAID_PENDING_SYNC. Đơn đã
+  // kẹt ở AWAITING_PAYMENT (khách bỏ đi giữa chừng) hoặc NEEDS_RECONCILIATION
+  // (xung đột ATP/idempotency/két) không bao giờ đi qua đường tự động, nên bề mặt
+  // rà soát phải lấy chúng từ getOfflineOrdersForReview chứ không lọc bằng
+  // danh sách pending — nếu không chúng vô hình vĩnh viễn trên máy cashier.
+  const stuck: Array<[string, OfflineOrder, boolean]> = [
+    [
+      'Đơn chờ khách chuyển (AWAITING_PAYMENT) phải hiện ra rà soát',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', moneyReceived: false, paymentState: 'AWAITING_PAYMENT' },
+      true,
+    ],
+    [
+      'Đơn xung đột ATP (NEEDS_RECONCILIATION) phải hiện ra rà soát',
+      { ...reconcileBase, paymentState: 'NEEDS_RECONCILIATION' },
+      true,
+    ],
+    [
+      'Đơn chuyển khoản đã thu tiền chờ sync không cần rà soát thủ công',
+      { ...reconcileBase, paymentState: 'PAID_PENDING_SYNC' },
+      false,
+    ],
+    [
+      'Đơn tiền mặt sẵn sàng không cần rà soát thủ công',
+      { ...normalizeBase, paymentMethod: 'CASH' },
+      false,
+    ],
+    [
+      'Đơn quà tặng chuyển khoản KHÔNG bị kẹt (discountRate 1 nghĩa là không thu tiền)',
+      { ...normalizeBase, paymentMethod: 'BANK_TRANSFER', discountRate: 1, moneyReceived: false },
+      false,
+    ],
+    [
+      'Đơn quà tặng có isGift=true cũng không bị kẹt',
+      { ...normalizeBase, paymentMethod: 'QR_CODE', isGift: true, moneyReceived: false },
+      false,
+    ],
+  ];
+  for (const [name, order, expected] of stuck) {
+    const actual = needsManualReview(order as OfflineOrder);
+    assert(actual === expected, name, `Kỳ vọng ${expected}, nhận ${actual}`);
+  }
+  assert(
+    needsManualReview({ ...normalizeBase, paymentMethod: 'BANK_TRANSFER', isGift: true, discountRate: 1 } as OfflineOrder) === false,
+    'Đơn quà tặng không bao giờ rơi vào hàng đối soát dù hình thức là chuyển khoản',
+    'isGift và discountRate 1 đều được miễn'
+  );
+  // Đơn đã huỷ cục bộ thì không rà soát nữa, nhưng cũng không được coi là hợp lệ.
+  assert(
+    normalizeOfflinePaymentState({ ...reconcileBase, paymentState: 'CANCELLED_LOCAL' }) === 'CANCELLED_LOCAL' &&
+      needsManualReview({ ...reconcileBase, paymentState: 'CANCELLED_LOCAL' }) === false,
+    'Đơn huỷ cục bộ: giữ trạng thái huỷ và không mở vô ích hàng rà soát'
+  );
+
+  // Sửa thủ công phải đưa đơn thật sự trở lại đường tự đồng bộ, nếu không POS báo
+  // "đã cập nhật" rồi mọi lần sync sau đều loại nó khỏi danh sách pending.
+  assert(
+    paymentStateAfterManualRepair({ ...reconcileBase, moneyReceived: true, paymentState: 'NEEDS_RECONCILIATION' }) ===
+      'PAID_PENDING_SYNC',
+    'Sửa đơn đã thu tiền bị kẹt → PAID_PENDING_SYNC (thực sự sync được)',
+    `Nhận ${paymentStateAfterManualRepair({ ...reconcileBase, moneyReceived: true, paymentState: 'NEEDS_RECONCILIATION' })}`
+  );
+  assert(
+    paymentStateAfterManualRepair({ ...reconcileBase, moneyReceived: false, paymentState: 'NEEDS_RECONCILIATION' }) ===
+      'READY_TO_SYNC',
+    'Sửa đơn chưa thu tiền bị kẹt → READY_TO_SYNC (được gửi lại như đơn tiền mặt)'
+  );
+  assert(
+    AUTO_SYNCABLE_PAYMENT_STATES.includes(
+      paymentStateAfterManualRepair({ ...reconcileBase, moneyReceived: true, paymentState: 'NEEDS_RECONCILIATION' })
+    ),
+    'Sau khi sửa, đơn phải nằm trong AUTO_SYNCABLE_PAYMENT_STATES'
+  );
+  assert(
+    paymentStateAfterManualRepair({ ...reconcileBase, paymentState: 'CANCELLED_LOCAL' }) === 'CANCELLED_LOCAL',
+    'Đơn đã huỷ cục bộ là trạng thái kết: sửa không được làm nó sống lại'
+  );
+  assert(
+    paymentStateAfterManualRepair({
+      ...reconcileBase,
+      paymentMethod: 'CASH',
+      moneyReceived: false,
+      paymentState: 'NEEDS_RECONCILIATION',
+    }) === 'READY_TO_SYNC',
+    'Sửa đơn tiền mặt bị két → READY_TO_SYNC, không kẹt đối soát vĩnh viễn'
+  );
+  assert(
+    paymentStateAfterManualRepair({
+      ...reconcileBase,
+      paymentMethod: 'CASH',
+      moneyReceived: true,
+      paymentState: 'NEEDS_RECONCILIATION',
+    }) === 'READY_TO_SYNC',
+    'Đơn tiền mặt không được đổi thành PAID_PENDING_SYNC dù cờ moneyReceived bị bẩn'
+  );
+  assert(
+    paymentStateAfterManualRepair({
+      ...reconcileBase,
+      paymentMethod: 'BANK_TRANSFER',
+      discountRate: 1,
+      moneyReceived: true,
+      paymentState: 'NEEDS_RECONCILIATION',
+    }) === 'READY_TO_SYNC',
+    'Đơn quà tặng (discountRate 1) sửa xong phải là READY_TO_SYNC'
+  );
+
+  // ==========================================================================
+  // N1d + AUDIT: mọi mã lỗi của POST /api/orders phải rơi vào trạng thái mà
+  // cashier thực sự xử lý được — không biến mất, không retry vô hạn.
+  //
+  // Server bắt buộc đơn tại quầy phải có ca két OPEN, nên đơn chuyển khoản gom
+  // offline rồi sync lúc thu ngân chưa mở ca sẽ nhận 409 STATE_CONFLICT.
+  // Trước đây STATE_CONFLICT không nằm trong RECONCILIATION_ERROR_CODES nên đơn
+  // rơi vào FAILED chung chung: mất ảnh, mất đối soát, mất dấu vết đã thu tiền.
+  // ==========================================================================
+  const paidDigital: OfflineOrder = {
+    ...reconcileBase,
+    paymentMethod: 'BANK_TRANSFER',
+    moneyReceived: true,
+    paymentState: 'PAID_PENDING_SYNC',
+    paymentProofId: 'proof-n1d-1',
+  };
+
+  // N1d: 409 STATE_CONFLICT từ quy tắc ca két.
+  assert(
+    applySyncErrorToOfflineOrder(paidDigital, 'STATE_CONFLICT') === 'NEEDS_RECONCILIATION',
+    'N1d: 409 STATE_CONFLICT (chưa mở ca két) → NEEDS_RECONCILIATION, không rơi vào FAILED chung chung'
+  );
+  assert(
+    needsManualReview({
+      ...paidDigital,
+      paymentState: applySyncErrorToOfflineOrder(paidDigital, 'STATE_CONFLICT') as OfflinePaymentState,
+    }),
+    'N1d: đơn kẹt vì ca két phải hiện ra panel rà soát cho người xử lý'
+  );
+  assert(
+    !AUTO_SYNCABLE_PAYMENT_STATES.includes(
+      applySyncErrorToOfflineOrder(paidDigital, 'STATE_CONFLICT') as OfflinePaymentState
+    ),
+    'N1d: đơn kẹt vì ca két không bị auto-sync lại mãi (giữ nguyên để người quyết định)'
+  );
+
+  // Bảng đầy đủ: mọi mã lỗi của orders API trên create/sync, và trạng thái
+  // client phải rơi vào. Đơn số (tiền mặt/quà tặng) không bị ảnh hưởng.
+  const ORDERS_API_SYNC_CODES: Array<[string, boolean]> = [
+    // [mã lỗi, có phải lỗi vĩnh viễn cần người xử lý không]
+    ['INSUFFICIENT_ATP', true],
+    ['IDEMPOTENCY_CONFLICT', true],
+    ['STATE_CONFLICT', true],
+    ['INVALID_INPUT', true],
+    ['FORBIDDEN', true],
+    ['RATE_LIMITED', false],
+    ['INTERNAL_ERROR', false],
+    ['AUTH_REQUIRED', false],
+    ['TRANSFER_TOCTOU_ATP_STALE', false],
+    ['OVER_RETURN_LIMIT', false],
+    ['', false],
+    ['SOMETHING_NEW_FROM_SERVER', false],
+  ];
+  for (const [code, permanent] of ORDERS_API_SYNC_CODES) {
+    const state = applySyncErrorToOfflineOrder(paidDigital, code);
+    if (permanent) {
+      assert(
+        state === 'NEEDS_RECONCILIATION',
+        `Mã lỗi vĩnh viễn ${code || '(rỗng)'} → NEEDS_RECONCILIATION (không retry mãi, không biến mất)`,
+        `Nhận ${state}`
+      );
+    } else {
+      assert(
+        state === 'PAID_PENDING_SYNC',
+        `Mã lỗi tạm thời ${code || '(rỗng)'} → giữ PAID_PENDING_SYNC để thử lại được`,
+        `Nhận ${state}`
+      );
+    }
+    // Đơn tiền mặt phải giữ nguyên READY_TO_SYNC với MỌI mã lỗi.
+    const cashState = applySyncErrorToOfflineOrder(
+      { ...reconcileBase, paymentMethod: 'CASH', moneyReceived: false },
+      code
+    );
+    assert(
+      cashState === 'READY_TO_SYNC',
+      `Đơn tiền mặt không bị kéo theo bởi mã lỗi ${code || '(rỗng)'} của luồng chuyển khoản`,
+      `Nhận ${cashState}`
+    );
+  }
+
+  // Mã lỗi của server mà client theo dõi phải là mã server thật sự phát ra.
+  // Trước đây set theo 'CASHBOX_SESSION_NOT_FOUND' — không mã nào trong
+  // statusMap của handleApiError mang tên đó, nên nhánh đó là code chết và ca
+  // két thật sự hỏng lại rơi vào nhánh FAILED chung chung.
+  assert(
+    !RECONCILIATION_ERROR_CODES.has('CASHBOX_SESSION_NOT_FOUND'),
+    'Bỏ mã bịa CASHBOX_SESSION_NOT_FOUND: server không bao giờ phát ra mã này'
+  );
+  assert(
+    RECONCILIATION_ERROR_CODES.has('STATE_CONFLICT'),
+    'RECONCILIATION_ERROR_CODES phải có STATE_CONFLICT'
+  );
+
+  // --- Cửa sổ 30 phút: hết hạn là quyết định của server, client chỉ chặn sớm ---
+  const windowNow = Date.parse('2026-09-25T10:00:00.000Z');
+  assert(
+    isPaymentWindowExpired('2026-09-25T10:30:00.000Z', windowNow) === false &&
+      isPaymentWindowExpired('2026-09-25T10:00:00.000Z', windowNow) === true &&
+      isPaymentWindowExpired('2026-09-25T09:59:59.000Z', windowNow) === true,
+    'isPaymentWindowExpired chặn đúng mốc 30 phút, không nới trước 1 phút',
+    `Còn hạn=${isPaymentWindowExpired('2026-09-25T10:30:00.000Z', windowNow)}`
+  );
+  assert(
+    isPaymentWindowExpired(undefined, windowNow) === false && isPaymentWindowExpired('không-phải-ngày', windowNow) === false,
+    'Thiếu hạn hoặc hạn hỏng thì không khoá nhầm cashier (server vẫn là chủ quyết định)'
+  );
+
+  // ==========================================================================
+  // IDEMPOTENCY_CONFLICT: chứng minh bằng DB thật rằng client GIỮ đơn + ảnh.
+  //
+  // Trước đây replay key của một đơn PENDING bằng payload của sync offline
+  // (confirmImmediately mặc định = chốt ngay) trả 200 + đơn PENDING, nên POS
+  // xoá bản ghi offline — mất dấu vết một đơn đã thu tiền, không có bút toán kho
+  // nào. Nay server trả 409 IDEMPOTENCY_CONFLICT. Phải chứng minh client ánh xạ
+  // đúng mã đó thành NEEDS_RECONCILIATION (không xoá, không coi là sync xong)
+  // và chiều ngược lại (đơn đã COMPLETED) vẫn trả bản ghi cũ để xoá hợp lệ.
+  //
+  // Fixture bám sát luồng thật: đơn tại quầy (RETAIL_OFFICE) chỉ được tạo ở
+  // trạng thái PENDING khi thu ngân đang mở ca két tại đúng kho đó. Fixture cũ
+  // tạo đơn PENDING mà không có phiên két nên chết ngay với STATE_CONFLICT,
+  // khiến cả suite chết lúc dọn dữ liệu. Ở đây ta mở phiên két thật rồi gắn
+  // vào đơn, và assert là phiên đó thực sự được ghi lên bản ghi — để fixture tự
+  // tài liệu hoá một luồng khả thi thay vì một luồng đã chết.
+  // ==========================================================================
+  const posCashboxId = `cbs-offline-engine-${generateUUIDv7().slice(-8)}`;
+  await db.insert(cashboxSessions).values({
+    id: posCashboxId,
+    warehouseId: sampleWarehouse.id,
+    cashierId: 'cashier-pos-test',
+    openingCash: 0,
+    status: 'OPEN',
+  });
+  const posCashboxRow = await db
+    .select()
+    .from(cashboxSessions)
+    .where(eq(cashboxSessions.id, posCashboxId))
+    .limit(1);
+  assert(
+    posCashboxRow.length === 1 && posCashboxRow[0].status === 'OPEN',
+    'Fixture: mở được ca két OPEN cho cashier-pos-test tại kho của đơn tại quầy',
+    `session=${posCashboxId} status=${posCashboxRow[0]?.status}`
+  );
+
+  const pendingUuid = generateUUIDv7();
+  const pendingKey = `idem-pending-${pendingUuid}`;
+  const pendingCode = `OFF-PENDING-${pendingUuid.slice(9, 17)}`;
+  const madePending = await OrderService.createOrder({
+    id: pendingUuid,
+    orderCode: pendingCode,
+    createdAt: new Date().toISOString(),
+    idempotencyKey: pendingKey,
+    warehouseId: sampleWarehouse.id,
+    customerName: 'Khách chuyển khoản chờ',
+    channel: 'RETAIL_OFFICE',
+    discountRate: 0,
+    paymentMethod: 'BANK_TRANSFER',
+    fiscalScope: 'INTERNAL_MANAGEMENT',
+    cashierId: 'cashier-pos-test',
+    cashboxSessionId: posCashboxId,
+    confirmImmediately: false,
+    items: [{ editionId: sampleEdition.id, quantity: 1 }],
+  });
+  const pendingRow = await db.select().from(orders).where(eq(orders.id, pendingUuid)).limit(1);
+  assert(
+    pendingRow[0]?.cashboxSessionId === posCashboxId,
+    'Fixture: đơn PENDING tại quầy gắn đúng ca két đang mở (luồng tạo được trong thực tế)',
+    `cashboxSessionId=${pendingRow[0]?.cashboxSessionId}`
+  );
+  assert(
+    madePending.status === 'PENDING_CONFIRMATION',
+    'Đơn chuyển khoản tạo ở trạng thái PENDING (giữ chỗ ATP)',
+    `status=${madePending.status}`
+  );
+
+  // Replay đúng key đó bằng payload sync offline (không confirmImmediately) —
+  // đây chính là tình huống POS gặp khi mạng chết giữa chừng rồi sync lại.
+  // Cố ý dùng CÙNG cashboxSessionId: fingerprint chỉ khác nhau ở
+  // confirmImmediately, nên nếu quy tắc chặn replay bị gỡ thì test này phải đỏ.
+  let conflictCode = '';
+  let conflictMessage = '';
+  let conflicted = false;
+  try {
+    await OrderService.createOrder({
+      id: generateUUIDv7(),
+      orderCode: pendingCode,
+      createdAt: new Date().toISOString(),
+      idempotencyKey: pendingKey,
+      warehouseId: sampleWarehouse.id,
+      customerName: 'Khách chuyển khoản chờ',
+      channel: 'RETAIL_OFFICE',
+      discountRate: 0,
+      paymentMethod: 'BANK_TRANSFER',
+      fiscalScope: 'INTERNAL_MANAGEMENT',
+      cashierId: 'cashier-pos-test',
+      cashboxSessionId: posCashboxId,
+      items: [{ editionId: sampleEdition.id, quantity: 1 }],
+    });
+  } catch (err: any) {
+    conflicted = true;
+    conflictCode = String(err?.code || '');
+    conflictMessage = String(err?.message || '');
+  }
+  assert(
+    conflicted && conflictCode === 'IDEMPOTENCY_CONFLICT',
+    'Replay key của đơn PENDING bằng payload chốt ngay bị từ chối IDEMPOTENCY_CONFLICT (không trả 200 im lặng)',
+    `code=${conflictCode || '(không ném)'}`
+  );
+  assert(
+    !/PENDING_CONFIRMATION/.test(conflictMessage) || conflictCode === 'IDEMPOTENCY_CONFLICT',
+    'Lỗi trả về mang mã để client quyết định, không chỉ chuỗi thông báo',
+    conflictMessage.slice(0, 90)
+  );
+
+  // Đây là phép ánh xạ client thật sự dùng trong syncPendingOrders.
+  const paidTransfer: OfflineOrder = {
+    ...reconcileBase,
+    paymentState: 'PAID_PENDING_SYNC',
+    paymentProofId: 'proof-replay-1',
+  };
+  assert(
+    applySyncErrorToOfflineOrder(paidTransfer, conflictCode) === 'NEEDS_RECONCILIATION',
+    'Client giữ đơn + ảnh ở NEEDS_RECONCILIATION khi nhận 409 IDEMPOTENCY_CONFLICT (không xoá bản ghi offline)',
+    `code=${conflictCode}`
+  );
+  assert(
+    needsManualReview({ ...paidTransfer, paymentState: 'NEEDS_RECONCILIATION' }),
+    'Đơn sau xung đột phải hiện ra panel rà soát để cashier/quản lý thấy và xử lý'
+  );
+  assert(
+    !AUTO_SYNCABLE_PAYMENT_STATES.includes(
+      applySyncErrorToOfflineOrder(paidTransfer, conflictCode) as OfflinePaymentState
+    ),
+    'Đơn đã vào đối soát không được tự sync lại (nếu không sẽ xoá bản ghi khi gặp xung đột lặp)'
+  );
+
+  // Chiều ngược lại: replay key của đơn đã COMPLETED vẫn trả bản ghi cũ, nên
+  // client xoá bản ghi offline là ĐÚNG (đơn đã chốt, không mất dấu vết).
+  const completedUuid = generateUUIDv7();
+  const completedKey = `idem-completed-${completedUuid}`;
+  const completedCode = `OFF-COMPLETED-${completedUuid.slice(9, 17)}`;
+  const madeCompleted = await OrderService.createOrder({
+    id: completedUuid,
+    orderCode: completedCode,
+    createdAt: new Date().toISOString(),
+    idempotencyKey: completedKey,
+    warehouseId: sampleWarehouse.id,
+    customerName: 'Khách đã chốt',
+    channel: 'RETAIL_OFFICE',
+    discountRate: 0,
+    paymentMethod: 'BANK_TRANSFER',
+    fiscalScope: 'INTERNAL_MANAGEMENT',
+    cashierId: 'cashier-pos-test',
+    cashboxSessionId: posCashboxId,
+    confirmImmediately: true,
+    items: [{ editionId: sampleEdition.id, quantity: 1 }],
+  });
+  assert(
+    madeCompleted.status === 'COMPLETED',
+    'Đơn chốt ngay ở trạng thái COMPLETED',
+    `status=${madeCompleted.status}`
+  );
+  const replayCompleted = await OrderService.createOrder({
+    id: generateUUIDv7(),
+    orderCode: completedCode,
+    createdAt: new Date().toISOString(),
+    idempotencyKey: completedKey,
+    warehouseId: sampleWarehouse.id,
+    customerName: 'Khách đã chốt',
+    channel: 'RETAIL_OFFICE',
+    discountRate: 0,
+    paymentMethod: 'BANK_TRANSFER',
+    fiscalScope: 'INTERNAL_MANAGEMENT',
+    cashierId: 'cashier-pos-test',
+    cashboxSessionId: posCashboxId,
+    confirmImmediately: true,
+    items: [{ editionId: sampleEdition.id, quantity: 1 }],
+  });
+  assert(
+    replayCompleted.isDuplicate === true && replayCompleted.status === 'COMPLETED',
+    'Happy path replay đơn đã COMPLETED: trả bản ghi cũ, client xoá bản ghi offline là đúng',
+    `isDuplicate=${replayCompleted.isDuplicate} status=${replayCompleted.status}`
+  );
+  await db.delete(orders).where(eq(orders.id, pendingUuid));
+  await db.delete(orders).where(eq(orders.id, completedUuid));
+  await db.delete(cashboxSessions).where(eq(cashboxSessions.id, posCashboxId));
+
   await db.delete(orders).where(eq(orders.id, offlineUuid));
 
   console.log('\n=======================================================');

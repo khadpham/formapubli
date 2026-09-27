@@ -36,7 +36,7 @@ export async function GET(
 
 /**
  * POST /api/pos/discount-approvals/[id]
- * - Quản lý phê duyệt (APPROVE) hoặc từ chối (REJECT).
+ * - Quản lý phê duyệt (APPROVE), từ chối (REJECT) hoặc thu ngân hủy yêu cầu của mình (CANCEL).
  */
 export async function POST(
   req: NextRequest,
@@ -52,8 +52,10 @@ export async function POST(
     const body = await req.json();
     const { action, method, shortCode, qrToken, emergencyCode, rejectedReason } = body;
 
-    // Thu ngân chỉ được: gửi mã cấp phép (OTP)/mã khẩn cấp, hoặc HỦY yêu cầu
-    // của chính mình (A1-F: nút "Sửa giỏ và hủy phê duyệt").
+    // Thu ngân KHÔNG được duyệt trực tiếp (không có ONE_TOUCH/QR): chỉ mở
+    // khóa được khi Quản lý đã cấp mã (SHORTCODE_BOUND/OFFLINE_EMERGENCY —
+    // service tự verify mã), hoặc hủy yêu cầu của chính mình.
+    // Chặn cả 2 cửa sổ: duyệt trần và duyệt qua mã lấy lỏng.
     if (session.role === 'ROLE_CASHIER') {
       const isOtpFlow =
         action === 'APPROVE' && (method === 'SHORTCODE_BOUND' || method === 'OFFLINE_EMERGENCY');
@@ -66,9 +68,21 @@ export async function POST(
 
     const actorContext = {
       staffId: session.actorId,
-      role: session.role === 'ROLE_CASHIER' ? 'ROLE_MANAGER' : session.role,
-      fullName: session.role === 'ROLE_CASHIER' ? `Quản lý (cấp OTP cho ${session.actorId})` : session.fullName,
+      role: session.role,
+      fullName: session.fullName,
     };
+
+    if (action === 'CANCEL') {
+      const data = await DiscountApprovalService.cancelRequest({
+        requestId: params.id,
+        actorContext: {
+          staffId: session.actorId,
+          role: session.role,
+          fullName: session.fullName,
+        },
+      });
+      return NextResponse.json({ success: true, data });
+    }
 
     if (action === 'APPROVE') {
       const data = await DiscountApprovalService.approveRequest({
@@ -93,18 +107,7 @@ export async function POST(
 
     // A1-F: cashier hủy yêu cầu của mình (hoặc manager/owner hủy hộ) trước
     // khi sửa giỏ — server chuyển SUPERSEDED có điều kiện, UI mới bỏ khóa.
-    if (action === 'CANCEL') {
-      const data = await DiscountApprovalService.cancelRequest({
-        requestId: params.id,
-        actorContext: {
-          staffId: session.actorId,
-          role: session.role,
-          fullName: session.fullName,
-        },
-      });
-      return NextResponse.json({ success: true, data });
-    }
-
+    // (nhánh CANCEL đã được xử lý ở trên, trước khi mở khóa APPROVE)
     throw AppError.invalid(`Hành động '${action}' không được hỗ trợ (chỉ APPROVE, REJECT hoặc CANCEL)`);
   } catch (error: any) {
     return handleApiError(error);

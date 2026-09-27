@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-22T17:36:09.852Z",
+  "timestamp": "2026-09-27T02:01:32.106Z",
   "totalTests": 26,
   "passed": 26,
   "passRatio": "100%",
@@ -113,8 +113,8 @@
       "name": "Số đầu sách RED_ALERT khớp 100% với ForecastService gốc",
       "category": "DATA_ACCURACY",
       "passed": true,
-      "expected": "Số lượng RED = 3",
-      "actual": "Tool trả về: 3"
+      "expected": "Số lượng RED = 5",
+      "actual": "Tool trả về: 5"
     },
     {
       "id": "CASHBOX-01",
@@ -129,7 +129,7 @@
       "name": "Doanh thu trong câu trả lời khớp toolData (không bịa số)",
       "category": "DATA_ACCURACY",
       "passed": true,
-      "expected": "Chứa 11297000",
+      "expected": "Chứa 12792200",
       "actual": "Khớp"
     },
     {
@@ -145,7 +145,7 @@
       "name": "Tồn khả dụng trong câu trả lời khớp toolData",
       "category": "DATA_ACCURACY",
       "passed": true,
-      "expected": "Chứa 10978",
+      "expected": "Chứa 5601",
       "actual": "Đối chiếu chuẩn hóa"
     },
     {

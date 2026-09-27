@@ -14,6 +14,12 @@ export interface RoleConfig {
   allowedNavItems: string[];
 }
 
+export interface SettingsAccess {
+  canManageAccounts: boolean;
+  canManageBanks: boolean;
+  canManagePrinter: boolean;
+}
+
 export const USER_ROLES: Record<UserRole, RoleConfig> = {
   ROLE_OWNER: {
     id: 'ROLE_OWNER',
@@ -36,8 +42,8 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     label: 'Thu Ngân Hội Chợ (Cashier)',
     badgeColor: 'text-emerald-700 border-emerald-300',
     badgeBg: 'bg-emerald-50',
-    description: 'Bán hàng quầy siêu tốc, tra cứu sách tại kho, không thấy doanh thu tổng',
-    allowedNavItems: ['pos', 'inventory', 'settings'],
+    description: 'Bán hàng quầy siêu tốc, không thấy doanh thu tổng',
+    allowedNavItems: ['pos', 'settings'],
   },
   ROLE_WAREHOUSE: {
     id: 'ROLE_WAREHOUSE',
@@ -56,3 +62,17 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     allowedNavItems: ['sales', 'inventory', 'settings'],
   },
 };
+
+export function getDefaultTabForRole(role: UserRole): string {
+  return USER_ROLES[role].allowedNavItems[0] || 'dashboard';
+}
+
+export function getSettingsAccess(role?: UserRole): SettingsAccess {
+  const canManage = role === 'ROLE_OWNER' || role === 'ROLE_MANAGER';
+
+  return {
+    canManageAccounts: canManage,
+    canManageBanks: canManage,
+    canManagePrinter: canManage || role === 'ROLE_CASHIER',
+  };
+}

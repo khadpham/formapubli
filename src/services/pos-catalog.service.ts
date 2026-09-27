@@ -90,7 +90,10 @@ export class PosCatalogService {
                 inArray(orderItems.editionId, ids),
                 eq(orders.warehouseId, warehouseId),
                 eq(orders.status, 'PENDING_CONFIRMATION'),
-                gte(orders.createdAt, new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString())
+                // Chỉ so NGÀY UTC: created_at lẫn "YYYY-MM-DD HH:MM:SS" (SQLite
+                // CURRENT_TIMESTAMP) lẫn ISO (app) — so chuỗi giữa hai họ là vô
+                // nghĩa và làm thiếu hàng đang giữ chỗ. Ngày là tiền tố chung.
+                gte(orders.createdAt, new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString().slice(0, 10))
               )
             )
             .groupBy(orderItems.editionId)

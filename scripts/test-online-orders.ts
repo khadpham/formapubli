@@ -1,11 +1,11 @@
 /**
  * Bước 1 — Kiểm thử Đơn Online PENDING + ATP Soft Reserve (DB cách ly).
  * Chạy: npx tsx scripts/run-isolated.ts --only=test-online-orders
- * 8 cases: tạo pending / ATP giữ chỗ / chặn bán lẹm / confirm trừ kho /
+ * 10 cases: tạo pending / ATP giữ chỗ / chặn bán lẹm / confirm trừ kho /
  * cancel nhả chỗ / cashier bị chặn / TTL tự hủy / summary loại pending.
  */
 import { db, orders, inventoryLedger } from '../src/db';
-import { editions } from '../src/db/schema';
+import { cashboxSessions, editions } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { OrderService, PENDING_TTL_HOURS } from '../src/services/order.service';
 import { InventoryService } from '../src/services/inventory.service';
@@ -31,7 +31,7 @@ async function run() {
   const [edA, edB, edC, edD] = roomy;
 
   let passed = 0;
-  const total = 8;
+  const total = 10;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -125,15 +125,79 @@ async function run() {
   try {
     await OrderService.confirmOrder(pend6.orderId, 'ROLE_CASHIER', 'cashier-1');
   } catch (e: any) {
-    if (/Manager\/Owner/.test(e.message)) roleBlocked++;
+    if (/chính mình/.test(e.message)) roleBlocked++;
   }
   try {
     await OrderService.cancelOrder(pend6.orderId, 'ROLE_CASHIER', 'tự hủy');
   } catch (e: any) {
-    if (/Manager\/Owner/.test(e.message)) roleBlocked++;
+    if (/chính mình/.test(e.message)) roleBlocked++;
   }
   await OrderService.cancelOrder(pend6.orderId, 'ROLE_MANAGER', 'dọn test');
-  ok('6. Cashier bị chặn duyệt/hủy', roleBlocked === 2);
+  ok('6. Cashier bị chặn duyệt/hủy đơn người khác', roleBlocked === 2);
+
+  // 6b. Đơn tại quầy CHỜ của thu ngân chưa mở ca két bị từ chối NGAY LÚC TẠO,
+  // kèm thông báo chỉ cách sửa (mở ca). Nếu cho tạo, đơn sẽ tồn tại mà không bao
+  // giờ xác nhận được (confirmOrder chặn đơn quầy không gắn phiên két) — thu ngân
+  // thấy QR, thu tiền, rồi đơn kẹt giữ ATP tới 30 phút. Không được để lại dòng
+  // đơn nào và không được giữ ATP (bẫy im lặng).
+  // (schema không có channel RETAIL_POS; kênh bán tại quầy là RETAIL_OFFICE)
+  const selfProof = { id: 'proof-cashier-1', capturedAt: new Date().toISOString() };
+  const key6b = uniq('idem-pos-noshift');
+  const atpBefore6b = await OrderService.getATP(edC, 'wh-au-co');
+  let noShiftBlocked = 0;
+  let noShiftMessage = '';
+  let noShiftCode = '';
+  try {
+    await OrderService.createOrder({
+      warehouseId: 'wh-au-co',
+      channel: 'RETAIL_OFFICE',
+      customerName: 'Khách Không Mở Két',
+      paymentMethod: 'BANK_TRANSFER',
+      cashierId: 'cashier-1',
+      confirmImmediately: false,
+      idempotencyKey: key6b,
+      items: [{ editionId: edC, quantity: 1 }],
+    });
+  } catch (e: any) {
+    noShiftMessage = String(e?.message || '');
+    noShiftCode = String(e?.code || '');
+    if (noShiftCode === 'STATE_CONFLICT' && /mở ca/i.test(noShiftMessage)) noShiftBlocked++;
+  }
+  const pend6bRow = await db.select().from(orders).where(eq(orders.idempotencyKey, key6b)).limit(1);
+  const atpAfter6b = await OrderService.getATP(edC, 'wh-au-co');
+  ok(
+    '6b. Đơn quầy của thu ngân chưa mở ca bị từ chối lúc tạo; không còn dòng đơn, ATP không bị giữ (không có bẫy im lặng)',
+    noShiftBlocked === 1 && pend6bRow.length === 0 && atpAfter6b === atpBefore6b,
+    `code=${noShiftCode} rows=${pend6bRow.length} atp ${atpBefore6b}→${atpAfter6b} msg=${noShiftMessage.slice(0, 80)}`
+  );
+
+  // 6c. Có phiên két đang mở ở đúng kho: cashier tự duyệt được đơn của chính mình,
+  // và retry là idempotent (chỉ trừ kho đúng một lần).
+  const sessionId6c = uniq('cbs-online-6c');
+  await db.insert(cashboxSessions).values({
+    id: sessionId6c,
+    warehouseId: 'wh-au-co',
+    cashierId: 'cashier-1',
+    openingCash: 500000,
+    status: 'OPEN',
+  });
+  const pend6c = await OrderService.createOrder({
+    warehouseId: 'wh-au-co',
+    channel: 'RETAIL_OFFICE',
+    customerName: 'Khách Tự Duyệt',
+    paymentMethod: 'BANK_TRANSFER',
+    cashierId: 'cashier-1',
+    cashboxSessionId: sessionId6c,
+    confirmImmediately: false,
+    idempotencyKey: uniq('idem-pos-self'),
+    items: [{ editionId: edC, quantity: 1 }],
+  });
+  const selfConfirmed = await OrderService.confirmOrder(pend6c.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  const selfRetry = await OrderService.confirmOrder(pend6c.orderId, 'ROLE_CASHIER', 'cashier-1', undefined, selfProof);
+  ok(
+    '6c. Cashier tự duyệt được đơn của mình khi đã mở két (retry idempotent)',
+    selfConfirmed.status === 'COMPLETED' && (selfRetry as any).isIdempotent === true
+  );
 
   // 7. Quá TTL: confirm tự hủy + cleanup dọn
   const oldTs = new Date(Date.now() - (PENDING_TTL_HOURS + 1) * 3600000).toISOString();

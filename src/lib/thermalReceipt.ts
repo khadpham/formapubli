@@ -39,10 +39,19 @@ export interface PrintableReceiptOrder {
 export function printThermalReceipt(
   order: PrintableReceiptOrder,
   preset: PaperPreset = 'K80',
-  currentRole: string = 'ROLE_OWNER'
+  currentRole: string = 'ROLE_OWNER',
+  receiptFooterText: string = 'Cảm ơn Quý khách & Hẹn gặp lại!'
 ): void {
   if (typeof window === 'undefined') return;
 
+  const safeNumber = (value: unknown): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  };
+  const subtotal = safeNumber(order.subtotal);
+  const discountAmount = safeNumber(order.discountAmount);
+  const finalAmount = safeNumber(order.finalAmount);
+  const totalQuantity = Math.max(0, Math.floor(safeNumber(order.totalQuantity)));
   const isK57 = preset === 'K57';
   const paperWidthMm = isK57 ? '57mm' : '80mm';
   const contentWidthMm = isK57 ? '48mm' : '72mm';
@@ -67,20 +76,28 @@ export function printThermalReceipt(
       : 'Mã QR';
 
   const orderDate = order.date || new Date().toLocaleString('vi-VN');
+  const safeReceiptFooterText = receiptFooterText.slice(0, 200);
+  const safeQrDataUrl =
+    order.qrDataUrl &&
+    order.qrDataUrl.length <= 2_000_000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(order.qrDataUrl)
+      ? order.qrDataUrl
+      : null;
   const cashier = order.cashierId || `User-${currentRole}`;
   const customer = order.customerName || 'Khách vãng lai';
 
-  const itemsHtml = order.items
+  const printableItems = Array.isArray(order.items) ? order.items : [];
+  const itemsHtml = printableItems
     .map((item) => {
-      const price = item.coverPrice || item.unitCoverPrice || 0;
-      const total = price * item.quantity;
+      const price = Math.max(0, safeNumber(item.coverPrice ?? item.unitCoverPrice));
+      const quantity = Math.max(0, Math.floor(safeNumber(item.quantity)));
+      const total = safeNumber(price * quantity);
       return `
         <tr style="border-bottom: 1px dashed #ccc;">
           <td style="padding: 4px 0; vertical-align: top;">
             <div style="font-weight: 600; font-size: ${titleFontSize}; line-height: 1.2;">${escapeHtml(item.title)}</div>
             <div style="font-size: 9px; color: #555; font-family: monospace;">[${escapeHtml(item.code)}]</div>
           </td>
-          <td style="padding: 4px 0; text-align: center; vertical-align: top; font-weight: bold;">x${item.quantity}</td>
+          <td style="padding: 4px 0; text-align: center; vertical-align: top; font-weight: bold;">x${quantity}</td>
           <td style="padding: 4px 0; text-align: right; vertical-align: top; font-family: monospace;">${price.toLocaleString('vi-VN')}</td>
           <td style="padding: 4px 0; text-align: right; vertical-align: top; font-family: monospace; font-weight: bold;">${total.toLocaleString('vi-VN')}</td>
         </tr>
@@ -88,14 +105,15 @@ export function printThermalReceipt(
     })
     .join('');
 
-  const discountPercentText = Math.round((order.discountRate || 0) * 100);
+  const discountRate = Math.min(1, Math.max(0, safeNumber(order.discountRate)));
+  const discountPercentText = Math.round(discountRate * 100);
 
   const htmlDoc = `
     <!DOCTYPE html>
     <html lang="vi">
     <head>
       <meta charset="utf-8">
-      <title>Hoa_Don_${order.orderCode}</title>
+      <title>Hoa_Don_${escapeHtml(order.orderCode)}</title>
       <style>
         @page {
           size: ${paperWidthMm} auto;
@@ -192,27 +210,27 @@ export function printThermalReceipt(
 
         <div class="row">
           <span>Tổng số lượng sách:</span>
-          <span class="bold" style="font-family: monospace;">${order.totalQuantity} cuốn</span>
+          <span class="bold" style="font-family: monospace;">${totalQuantity} cuốn</span>
         </div>
         ${
-          order.subtotal && order.subtotal !== order.finalAmount
+          subtotal > 0 && subtotal !== finalAmount
             ? `<div class="row">
                 <span>Tạm tính (Giá bìa):</span>
-                <span style="font-family: monospace;">${order.subtotal.toLocaleString('vi-VN')} đ</span>
+                <span style="font-family: monospace;">${subtotal.toLocaleString('vi-VN')} đ</span>
               </div>`
             : ''
         }
         ${
-          order.discountAmount && order.discountAmount > 0
+          discountAmount > 0
             ? `<div class="row">
                 <span>Chiết khấu (${discountPercentText}%):</span>
-                <span style="font-family: monospace;">-${order.discountAmount.toLocaleString('vi-VN')} đ</span>
+                <span style="font-family: monospace;">-${discountAmount.toLocaleString('vi-VN')} đ</span>
               </div>`
             : ''
         }
         <div class="row" style="font-size: ${headerFontSize}; font-weight: 900; margin-top: 3px;">
           <span>THỰC THU:</span>
-          <span style="font-family: monospace;">${order.finalAmount.toLocaleString('vi-VN')} đ</span>
+          <span style="font-family: monospace;">${finalAmount.toLocaleString('vi-VN')} đ</span>
         </div>
 
         <div class="divider-dashed"></div>
@@ -224,10 +242,10 @@ export function printThermalReceipt(
         }
 
         ${
-          order.qrDataUrl
+          safeQrDataUrl
             ? `<div class="text-center" style="margin: 6px 0;">
-                 <img src="${order.qrDataUrl}" style="width: 45mm; height: 45mm;" />
-                 <div style="font-size: 10px; font-weight: bold; font-family: monospace;">${order.finalAmount.toLocaleString('vi-VN')} đ${order.qrAccountNo ? ` - ${escapeHtml(order.qrAccountNo)}` : ''}</div>
+                 <img src="${safeQrDataUrl}" style="width: 45mm; height: 45mm;" />
+                 <div style="font-size: 10px; font-weight: bold; font-family: monospace;">${finalAmount.toLocaleString('vi-VN')} đ${order.qrAccountNo ? ` - ${escapeHtml(order.qrAccountNo)}` : ''}</div>
                  <div style="font-size: 8px;">Quét VietQR để thanh toán</div>
                </div>
                <div class="divider-dashed"></div>`
@@ -235,7 +253,7 @@ export function printThermalReceipt(
         }
 
         <div class="text-center" style="margin-top: 8px; font-size: 9px; line-height: 1.4;">
-          <div>Cảm ơn Quý khách & Hẹn gặp lại!</div>
+          <div>${escapeHtml(safeReceiptFooterText)}</div>
           <div style="font-size: 8px; color: #444; margin-top: 2px;">Mọi thắc mắc về đơn hàng xin liên hệ hotline CSKH</div>
           <div style="margin-top: 6px; font-family: monospace; font-size: 8px; letter-spacing: 2px;">*** ${escapeHtml(order.orderCode)} ***</div>
         </div>
@@ -281,8 +299,8 @@ export function printThermalReceipt(
   }, 250);
 }
 
-function escapeHtml(text: string): string {
-  return text
+function escapeHtml(text: unknown): string {
+  return String(text ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

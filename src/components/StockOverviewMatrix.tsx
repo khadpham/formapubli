@@ -20,8 +20,12 @@ import {
   Building2,
   ChevronDown,
   PackageSearch,
+  Check,
+  Truck,
+  FileCheck,
 } from 'lucide-react';
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
 import { PickListModal } from './inventory/PickListModal';
@@ -79,6 +83,8 @@ interface LedgerEntry {
   warehouseName: string;
 }
 
+type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS';
+
 interface StockOverviewMatrixProps {
   initialBooks: MatrixBookItem[];
   warehouses: WarehouseItem[];
@@ -118,11 +124,127 @@ export function StockOverviewMatrix({
   }, [warehouses]);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS'>('MATRIX');
+  const [activeTab, setActiveTab] = useState<MainTabId>('MATRIX');
   // Ticket 3 MVP: tab kho kiểu Sheets — chỉ lọc hiển thị read-only, không đụng ledger.
   const [warehouseTab, setWarehouseTab] = useState<string>('ALL');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
+  // Menu tab gọn: thay vì dải 4 pill inline (bị bóp + tràn trên ~470px), ta dùng
+  // 1 chip trigger gọn + dropdown render qua portal trên document.body.
+  const [mounted, setMounted] = useState(false);
+  const [isTabMenuOpen, setIsTabMenuOpen] = useState(false);
+  const [tabMenuPos, setTabMenuPos] = useState({ top: 0, left: 0, openUp: false });
+  // Option đang được bàn phím chỉ tới (mô hình aria-activedescendant: focus thật
+  // vẫn nằm trên trigger nên không mất vị trí focus sau khi menu đóng).
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const tabTriggerRef = useRef<HTMLButtonElement>(null);
+  const tabMenuRef = useRef<HTMLDivElement>(null);
+
+  const TAB_ITEMS = useMemo(
+    () =>
+      [
+        { id: 'MATRIX' as MainTabId, label: 'Ma trận 3 Kho', short: 'Ma trận', Icon: Warehouse, title: 'Bảng tồn kho theo 3 kho' },
+        { id: 'LEDGER' as MainTabId, label: `Sổ Cái Bất Biến (${initialLedger.length})`, short: 'Sổ cái', Icon: History, title: 'Sổ cái append-only, nghiêm cấm sửa/xóa' },
+        { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
+        { id: 'DELIVERY_ORDERS' as MainTabId, label: 'Sổ Phiếu Xuất', short: 'Sổ PX', Icon: FileText, title: 'Sổ phiếu xuất kho bán buôn đại lý' },
+      ] as const,
+    [initialLedger.length]
+  );
+  const activeTabItem = TAB_ITEMS.find((t) => t.id === activeTab) || TAB_ITEMS[0];
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Vị trí dropdown: neo dưới chip, clamp trong khung nhìn để không bao giờ
+  // tràn ra ngoài màn hình (kể cả 320px) và không bị chồng lên mép dưới.
+  const positionTabMenu = useCallback(() => {
+    const el = tabTriggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const width = Math.min(320, Math.max(160, window.innerWidth - 24));
+    const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8));
+    const estimatedHeight = 4 * 44 + 12;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const openUp = spaceBelow < estimatedHeight && rect.top > spaceBelow;
+    const top = openUp ? Math.max(8, rect.top - estimatedHeight - 6) : rect.bottom + 6;
+    setTabMenuPos({ top, left, openUp });
+  }, []);
+
+  useEffect(() => {
+    if (!isTabMenuOpen) return;
+    positionTabMenu();
+    const handleOutsidePointer = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (tabMenuRef.current?.contains(t) || tabTriggerRef.current?.contains(t)) return;
+      setIsTabMenuOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      const lastIndex = TAB_ITEMS.length - 1;
+      // Chặn phím mũi tên/Home/End khiến trang bị cuộn khỏi màn hình trong lúc
+      // người dùng đang duyệt danh sách.
+      switch (e.key) {
+        case 'Escape':
+          e.preventDefault();
+          e.stopPropagation();
+          setIsTabMenuOpen(false);
+          tabTriggerRef.current?.focus();
+          return;
+        case 'ArrowDown':
+          e.preventDefault();
+          setActiveTabIndex((i) => (i >= lastIndex ? 0 : i + 1));
+          return;
+        case 'ArrowUp':
+          e.preventDefault();
+          setActiveTabIndex((i) => (i <= 0 ? lastIndex : i - 1));
+          return;
+        case 'Home':
+          e.preventDefault();
+          setActiveTabIndex(0);
+          return;
+        case 'End':
+          e.preventDefault();
+          setActiveTabIndex(lastIndex);
+          return;
+        case 'Enter':
+        case ' ': {
+          e.preventDefault();
+          const picked = TAB_ITEMS[activeTabIndex];
+          if (picked) {
+            setActiveTab(picked.id);
+            setIsTabMenuOpen(false);
+            tabTriggerRef.current?.focus();
+          }
+          return;
+        }
+        default:
+      }
+    };
+    document.addEventListener('mousedown', handleOutsidePointer);
+    document.addEventListener('keydown', handleKey);
+    window.addEventListener('resize', positionTabMenu);
+    window.addEventListener('scroll', positionTabMenu, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsidePointer);
+      document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('resize', positionTabMenu);
+      window.removeEventListener('scroll', positionTabMenu, true);
+    };
+  }, [isTabMenuOpen, positionTabMenu, activeTabIndex]);
+
+  // Giữ option đang chỉ tới nằm trong khung nhìn khi menu cuộn dài.
+  useEffect(() => {
+    if (!isTabMenuOpen) return;
+    const id = `kho-tab-option-${TAB_ITEMS[activeTabIndex]?.id}`;
+    if (!id) return;
+    document.getElementById(id)?.scrollIntoView({ block: 'nearest' });
+  }, [activeTabIndex, isTabMenuOpen]);
+
+  const selectTab = (id: MainTabId) => {
+    setActiveTab(id);
+    setIsTabMenuOpen(false);
+    tabTriggerRef.current?.focus();
+  };
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const magnetInputRef = useRef<HTMLInputElement>(null);
@@ -303,85 +425,88 @@ export function StockOverviewMatrix({
 
   return (
     <div className="space-y-6">
-      {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN (CONDITIONAL MAGNET BAR) */}
-      {showMagnetBar && (
-        <div
-          className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
-            isListening
-              ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
-              : 'bg-white/95 border-indigo-200'
-          }`}
-        >
-          <Search
-            className={`w-5 h-5 shrink-0 transition-colors ${
-              isListening ? 'text-rose-600 animate-pulse' : 'text-indigo-600'
-            }`}
-          />
-          <input
-            ref={magnetInputRef}
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={
+      {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN — render qua portal trên
+          document.body để không tổ tiên nào (overflow:hidden / transform) cắt mất nó. */}
+      {showMagnetBar && mounted && (
+        <PortalToBody>
+          <div
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-2xl backdrop-blur-md shadow-2xl rounded-2xl py-3 px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-200 border transition-all ${
               isListening
-                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
-                : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
-            }
-            value={searchTerm ?? ''}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onFocus={() => setIsInputFocused(true)}
-            onBlur={() => setIsInputFocused(false)}
-            style={{ color: '#1e293b' }}
-            className={`flex-1 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
-              isListening
-                ? 'text-rose-950 font-semibold placeholder:text-rose-600'
-                : 'text-slate-800 placeholder:text-slate-400'
+                ? 'bg-rose-50/95 border-rose-500 ring-4 ring-rose-400/40 shadow-rose-500/20'
+                : 'bg-white/95 border-indigo-200'
             }`}
-          />
+            >
+            <Search
+              className={`w-5 h-5 shrink-0 transition-colors ${
+                isListening ? 'text-rose-600 animate-pulse' : 'text-indigo-600'
+              }`}
+            />
+            <input
+              ref={magnetInputRef}
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={
+                isListening
+                  ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                  : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+              }
+              value={searchTerm ?? ''}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              style={{ color: '#1e293b' }}
+              className={`flex-1 min-w-0 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
+                isListening
+                  ? 'text-rose-950 font-semibold placeholder:text-rose-600'
+                  : 'text-slate-800 placeholder:text-slate-400'
+              }`}
+            />
 
-          <span
-            className={`text-xs font-mono px-2.5 py-1 rounded-full shrink-0 font-bold border transition-colors ${
-              isListening
-                ? 'bg-rose-200/80 text-rose-800 border-rose-300'
-                : 'bg-indigo-50 text-indigo-600 border-indigo-100'
-            }`}
-          >
-            {isListening ? '🎙️ Đang nghe' : `${filteredBooks.length} sách`}
-          </span>
+            <span
+              className={`text-xs font-mono px-2.5 py-1 rounded-full shrink-0 font-bold border transition-colors ${
+                isListening
+                  ? 'bg-rose-200/80 text-rose-800 border-rose-300'
+                  : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+              }`}
+            >
+              {isListening ? '🎙️ Đang nghe' : `${filteredBooks.length} sách`}
+            </span>
 
-          {searchTerm && (
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0 transition-colors"
+                title="Xóa tìm kiếm"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Magnet Voice Search Button */}
             <button
               type="button"
-              onClick={() => setSearchTerm('')}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0 transition-colors"
-              title="Xóa tìm kiếm"
+              onClick={toggleListening}
+              title={
+                isListening
+                  ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
+                  : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
+              }
+              className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[36px] min-w-[36px] cursor-pointer ${
+                isListening
+                  ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
+                  : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+              }`}
             >
-              <X className="w-4 h-4" />
+              {isListening ? (
+                <MicOff className="w-4 h-4 text-white animate-bounce" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
             </button>
-          )}
-
-          {/* Magnet Voice Search Button */}
-          <button
-            type="button"
-            onClick={toggleListening}
-            title={
-              isListening
-                ? 'Đang lắng nghe tiếng Việt... Bấm để dừng (Alt + Shift + V)'
-                : 'Bật Micro tìm sách bằng giọng nói tiếng Việt (Alt + Shift + V)'
-            }
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all shrink-0 min-h-[36px] min-w-[36px] cursor-pointer ${
-              isListening
-                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/50 ring-2 ring-rose-400 animate-pulse'
-                : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-            }`}
-          >
-            {isListening ? (
-              <MicOff className="w-4 h-4 text-white animate-bounce" />
-            ) : (
-              <Mic className="w-4 h-4" />
-            )}
-          </button>
-        </div>
+          </div>
+        </PortalToBody>
       )}
 
       {/* 2. THANH CÔNG CỤ BAN ĐẦU (IN-FLOW TOOLBAR) */}
@@ -457,67 +582,97 @@ export function StockOverviewMatrix({
           </button>
         </div>
 
-        {/* Tab & Action Buttons with Keyboard Shortcut Tooltips */}
-        <div className="flex items-center gap-2 flex-nowrap overflow-x-auto relative pb-1">
-          <div className="bg-slate-100 p-1 rounded-lg flex text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('MATRIX')}
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                activeTab === 'MATRIX'
-                  ? 'bg-white text-indigo-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ma trận {(localWarehouses || warehouses || []).length} kho
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('LEDGER')}
-              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
-                activeTab === 'LEDGER'
-                  ? 'bg-white text-indigo-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-              Sổ Cái Bất Biến ({initialLedger.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('TRANSIT')}
-              title="Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ"
-              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
-                activeTab === 'TRANSIT'
-                  ? 'bg-white text-indigo-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
-              Đi Đường
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('DELIVERY_ORDERS')}
-              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
-                activeTab === 'DELIVERY_ORDERS'
-                  ? 'bg-white text-amber-700 font-bold shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Sổ Phiếu Xuất
-            </button>
-          </div>
+        {/* Tab & Action Buttons with Keyboard Shortcut Tooltips.
+            Dải hành động WRAP + min-w-0; tab đi qua 1 chip gọn + dropdown portal
+            nên không còn flex pill lồng nhau (nguyên nhân gốc của bug tràn nút).
+            Số kho hiển thị động theo danh sách kho thật (kể cả kho hội chợ) —
+            giữ intent của main trong chip gọn của login-ux. */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <button
+            ref={tabTriggerRef}
+            type="button"
+            id="kho-main-tab-trigger"
+            aria-haspopup="listbox"
+            aria-expanded={isTabMenuOpen}
+            aria-controls="kho-main-tab-listbox"
+            onClick={() => {
+              if (isTabMenuOpen) {
+                setIsTabMenuOpen(false);
+                return;
+              }
+              // Mở đúng tại tab đang chọn để Enter ngay sau đó là lựa chọn hợp lý.
+              const currentIndex = Math.max(
+                0,
+                TAB_ITEMS.findIndex((t) => t.id === activeTab)
+              );
+              setActiveTabIndex(currentIndex);
+              setIsTabMenuOpen(true);
+              positionTabMenu();
+            }}
+            onKeyDown={(e) => {
+              if (isTabMenuOpen) return; // menu đang mở: handler document đảm nhiệm
+              if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const currentIndex = Math.max(
+                  0,
+                  TAB_ITEMS.findIndex((t) => t.id === activeTab)
+                );
+                setActiveTabIndex(currentIndex);
+                setIsTabMenuOpen(true);
+              }
+            }}
+            title={activeTabItem.label}
+            className="flex items-center gap-2 max-w-full min-w-0 shrink-0 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
+          >
+            <activeTabItem.Icon className="w-4 h-4 shrink-0 text-indigo-600" />
+            <span className="whitespace-nowrap shrink-0">{activeTabItem.short}</span>
+            {activeTab === 'MATRIX' && (
+              <span className="whitespace-nowrap shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-mono text-slate-500 border border-slate-200">
+                {(localWarehouses || warehouses || []).length} kho
+              </span>
+            )}
+            {activeTab === 'LEDGER' && (
+              <span className="whitespace-nowrap shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-mono text-slate-500 border border-slate-200">
+                {initialLedger.length}
+              </span>
+            )}
+            <ChevronDown
+              className={`w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform ${isTabMenuOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+          {/* Nút kho của login-ux: Mở Kho + TK Nhận Tiền nằm thẳng trên dải
+              hành động (nowrap + shrink-0 để không tràn ở 320px). Side A gộp
+              cùng hai hành động này vào card "Quản Lý Kho" bên dưới — giữ cả hai. */}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setCreateWarehouseOpen(true)}
+              title="Mở thêm kho hoặc gian hàng hội chợ mới"
+              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho
+            </button>
+          )}
+          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+            <button
+              type="button"
+              onClick={() => setBankManagerOpen(true)}
+              title="Gán tài khoản nhận VietQR mặc định cho từng kho"
+              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <Landmark className="w-3.5 h-3.5" /> TK Nhận Tiền
+            </button>
+          )}
 
           <div className="relative">
             <button
               type="button"
               onClick={() => setActionMenu((m) => (m === 'OUT' ? null : 'OUT'))}
               title="Chọn loại xuất kho"
-              className="flex items-center gap-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
             >
               <MinusCircle className="w-3.5 h-3.5" /> Xuất kho
               <ChevronDown className="w-3 h-3" />
@@ -529,7 +684,7 @@ export function StockOverviewMatrix({
                   onClick={() => { setActionMenu(null); openAction('DISPATCH'); }}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
                 >
-                  <span className="font-bold">Bán lẻ / Quà tặng</span>
+                  <span className="font-bold whitespace-nowrap">Bán lẻ / Quà tặng</span>
                   <span className="block text-[10px] text-slate-400">Trừ kho khi bán tại quầy (Xuất bán)</span>
                 </button>
                 <button
@@ -537,7 +692,7 @@ export function StockOverviewMatrix({
                   onClick={() => { setActionMenu(null); setWholesaleModalOpen(true); }}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
                 >
-                  <span className="font-bold">Cung ứng đối tác</span>
+                  <span className="font-bold whitespace-nowrap">Cung ứng đối tác</span>
                   <span className="block text-[10px] text-slate-400">Lập phiếu xuất kho cho đối tác</span>
                 </button>
               </div>
@@ -549,7 +704,7 @@ export function StockOverviewMatrix({
               type="button"
               onClick={() => setActionMenu((m) => (m === 'MOVE' ? null : 'MOVE'))}
               title="Chọn cách di chuyển hàng giữa kho / soạn kệ"
-              className="flex items-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
             >
               <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
               <ChevronDown className="w-3 h-3" />
@@ -561,7 +716,7 @@ export function StockOverviewMatrix({
                   onClick={() => { setActionMenu(null); openAction('TRANSFER'); }}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
                 >
-                  <span className="font-bold">1 phiếu chuyển kho</span>
+                  <span className="font-bold whitespace-nowrap">1 phiếu chuyển kho</span>
                   <span className="block text-[10px] text-slate-400">Chọn từng đầu sách chuyển giữa 2 kho</span>
                 </button>
                 <button
@@ -569,7 +724,7 @@ export function StockOverviewMatrix({
                   onClick={() => { setActionMenu(null); setBatchTransferOpen(true); }}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
                 >
-                  <span className="font-bold">Hàng loạt (nhiều đầu sách)</span>
+                  <span className="font-bold whitespace-nowrap">Hàng loạt (nhiều đầu sách)</span>
                   <span className="block text-[10px] text-slate-400">Chọn/xóa cả loạt, kiểm tra tồn trước khi chuyển</span>
                 </button>
                 <button
@@ -577,7 +732,7 @@ export function StockOverviewMatrix({
                   onClick={() => { setActionMenu(null); setPickListOpen(true); }}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
                 >
-                  <span className="font-bold">Soạn kệ (gom theo kệ)</span>
+                  <span className="font-bold whitespace-nowrap">Soạn kệ (gom theo kệ)</span>
                   <span className="block text-[10px] text-slate-400">Danh sách soạn sách gom hàng từ kho ra quầy</span>
                 </button>
               </div>
@@ -586,26 +741,129 @@ export function StockOverviewMatrix({
 
           <button
             type="button"
+            onClick={() => setWholesaleModalOpen(true)}
+            title="Lập phiếu xuất kho cung ứng cho đối tác"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" /> Xuất Kho Đối Tác
+          </button>
+          <button
+            type="button"
+            onClick={() => openAction('TRANSFER')}
+            title="Chuyển kho giữa các kho"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
+          </button>
+          <button
+            type="button"
+            onClick={() => setBatchTransferOpen(true)}
+            title="Chuyển kho hàng loạt nhiều đầu sách"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển hàng loạt
+          </button>
+          <button
+            type="button"
             onClick={() => openAction('RECEIPT')}
             title="Nhập kho nhà in"
-            className="flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <PlusCircle className="w-3.5 h-3.5" /> Nhập in
+          </button>
+          <button
+            type="button"
+            onClick={() => openAction('DISPATCH')}
+            title="Xuất bán / Quà tặng"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+          >
+            <MinusCircle className="w-3.5 h-3.5" /> Xuất bán
           </button>
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
           <button
             type="button"
+            onClick={() => setPickListOpen(true)}
+            title="Danh sách soạn sách gom hàng theo kệ"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <PackageSearch className="w-3.5 h-3.5" /> Soạn Kệ
+          </button>
+
+          <button
+            type="button"
             onClick={() => setRmaModalOpen(true)}
             title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly"
-            className="flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
           >
             <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly Sách Lỗi
           </button>
         </div>
+        {/* Lớp nền đóng menu hành động (intent từ main): chặn click nhầm ra
+            ngoài và đóng menu khi bấm khoảng trống. z-40 nằm dưới dropdown. */}
         {actionMenu && (
           <div className="fixed inset-0 z-40" onClick={() => setActionMenu(null)} aria-hidden="true" />
+        )}
+
+        {/* 2.4 MENU TAB — portal trên document.body + clamp trong viewport.
+            Nhãn dài "Sổ Cái Bất Biến (n)" chỉ xuất hiện ở đây, trong 1 menu riêng,
+            nên trên điện thoại không còn dải pill inline bị bóp/tràn.
+            Điều hướng bàn phím: ArrowUp/Down di chuyển, Home/End nhảy đầu/cuối,
+            Enter chọn, Escape đóng. Focus thật giữ trên trigger (mô hình
+            aria-activedescendant) để không mất vị trí focus sau khi menu đóng. */}
+        {/* FIX: `fixed` + toạ độ đo đạc phải nằm trên CÙNG một phần tử. Trước đây
+            `fixed z-[80]` nằm trên wrapper của portal còn `top`/`left` đo được nằm
+            trên div con — div con không có position nên CSS bỏ qua top/left, còn
+            wrapper fixed không có top/left thì rơi về vị trí tĩnh (con cuối của
+            body, nằm dưới viewport). Menu hiện ra nhưng ngoài màn hình: bấm chip
+            "Ma trận" không thấy gì. Giống hệt shape đang chạy ở BatchTransferModal. */}
+        {isTabMenuOpen && mounted && (
+          <PortalToBody
+            className="fixed z-[80]"
+            style={{ top: tabMenuPos.top, left: tabMenuPos.left }}
+          >
+            <div
+              ref={tabMenuRef}
+              id="kho-main-tab-listbox"
+              role="listbox"
+              aria-label="Chọn màn kho hàng"
+              aria-activedescendant={`kho-tab-option-${TAB_ITEMS[activeTabIndex]?.id ?? 'MATRIX'}`}
+              tabIndex={-1}
+              className="w-[min(20rem,calc(100vw-1.5rem))] max-h-[70vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+            >
+              {TAB_ITEMS.map((tab, index) => {
+                const isActive = tab.id === activeTab;
+                const isFocused = index === activeTabIndex;
+                return (
+                  <button
+                    key={tab.id}
+                    id={`kho-tab-option-${tab.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={tab.id === activeTab}
+                    // Dùng chung chỉ báo "đang được bàn phím chỉ tới" (không phải
+                    // đã chọn) để người dùng screen reader biết con trỏ đang ở đâu.
+                    data-focused={isFocused ? 'true' : undefined}
+                    title={tab.title}
+                    onMouseEnter={() => setActiveTabIndex(index)}
+                    onClick={() => {
+                      selectTab(tab.id);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-indigo-50 text-indigo-800'
+                        : 'text-slate-700 hover:bg-slate-100'
+                    } ${isFocused ? 'ring-2 ring-inset ring-indigo-300' : ''}`}
+                  >
+                    <tab.Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                    <span className="flex-1 min-w-0 whitespace-nowrap">{tab.label}</span>
+                    {isActive && <Check className="w-4 h-4 shrink-0 text-indigo-600" />}
+                  </button>
+                );
+              })}
+            </div>
+          </PortalToBody>
         )}
       </div>
 
@@ -633,14 +891,14 @@ export function StockOverviewMatrix({
               <button
                 type="button"
                 onClick={() => setCreateWarehouseOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
               >
                 <Store className="w-3.5 h-3.5" /> Mở kho mới
               </button>
               <button
                 type="button"
                 onClick={() => setBankManagerOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
               >
                 <Landmark className="w-3.5 h-3.5" /> Quản lý kho & gán nhân sự
               </button>
@@ -648,7 +906,7 @@ export function StockOverviewMatrix({
                 type="button"
                 onClick={() => setPickListOpen(true)}
                 title="Danh sách soạn sách gom hàng theo kệ"
-                className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
               >
                 <PackageSearch className="w-3.5 h-3.5" /> Soạn kệ
               </button>
@@ -684,7 +942,7 @@ export function StockOverviewMatrix({
                 setBatchTransferOpen(true);
                 setCreatedWarehouseToast(null);
               }}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-2 whitespace-nowrap shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowRightLeft className="w-4 h-4" />
               Chuyển hàng vào kho này
@@ -720,7 +978,7 @@ export function StockOverviewMatrix({
           <button
             type="button"
             onClick={stopListening}
-            className="px-2.5 py-1 bg-rose-800 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold transition"
+            className="px-2.5 py-1 whitespace-nowrap shrink-0 bg-rose-800 hover:bg-rose-700 text-white rounded-xl text-[11px] font-bold transition"
           >
             Dừng Nghe
           </button>
@@ -769,8 +1027,8 @@ export function StockOverviewMatrix({
               Tạo phiếu bằng nút Cách Ly Sách Lỗi
             </span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
+          <div className="overflow-x-auto pb-24 lg:pb-2" data-kho-ui="fab-gutter">
+            <table className="w-full min-w-[640px] text-left text-xs text-slate-600">
               <thead className="bg-slate-50 uppercase text-slate-500 font-semibold border-b border-slate-200 tracking-wider">
                 <tr>
                   <th className="px-3 py-3 w-14">Mã</th>
@@ -852,7 +1110,7 @@ export function StockOverviewMatrix({
                       <button
                         type="button"
                         onClick={() => openAction('TRANSFER', b)}
-                        className="px-2 py-1 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
+                        className="px-2 py-1 whitespace-nowrap text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
                       >
                         Chuyển kho
                       </button>
@@ -861,6 +1119,9 @@ export function StockOverviewMatrix({
                 ))}
               </tbody>
             </table>
+            {/* Gutter cuộn: chừa khoảng trống cuộn được để cột cuối (Thao tác) trượt
+                khỏi nút tím nổi góc phải, không bị che vĩnh viễn. */}
+            <div aria-hidden="true" className="h-0 w-20 shrink-0" />
           </div>
         </div>
       ) : (
@@ -873,8 +1134,8 @@ export function StockOverviewMatrix({
             </div>
             <span className="text-xs text-slate-400">Thời gian thực</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
+          <div className="overflow-x-auto pb-24 lg:pb-2" data-kho-ui="fab-gutter">
+            <table className="w-full min-w-[720px] text-left text-xs text-slate-600">
               <thead className="bg-slate-100/70 uppercase text-slate-500 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-3 py-2.5 w-36">Thời gian</th>
@@ -939,6 +1200,8 @@ export function StockOverviewMatrix({
                 )}
               </tbody>
             </table>
+            {/* Gutter cuộn cho sổ cái: cột Ghi chú cuối cùng trượt khỏi nút tím nổi. */}
+            <div aria-hidden="true" className="h-0 w-20 shrink-0" />
           </div>
         </div>
       )}

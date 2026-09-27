@@ -18,6 +18,22 @@ This repository is configured with two always-on frameworks:
 
 ---
 
+## 0. Dev Server = LAN, Always
+
+The user tests on a real phone. A localhost-only dev server is useless to them.
+
+- Always start the dev server with `npm run dev:lan` (`next dev -H 0.0.0.0`), never bare `npm run dev`.
+- Always report the LAN URL, not just `localhost`. LAN IP on this machine: `192.168.1.246` (Ethernet).
+- Give the user both: `http://localhost:3000` for the desktop, `http://192.168.1.246:3000` for the phone.
+- Never assume a UI fix is verified until it is measured in a real browser (`orca eval` / `orca screenshot`).
+  A green source-level test suite has already shipped an invisible dropdown once; the assertion was green and
+  the menu was 6597px below the viewport.
+- NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps
+  serving the old asset manifest, every CSS/JS 404s and the user gets a completely unstyled page.
+  Sequence is always: stop dev -> build -> delete `.next` -> `npm run dev:lan`.
+
+---
+
 ## 1. Ponytail: Lazy Senior Dev Mode (Always-On)
 
 You are a lazy senior developer. Lazy means efficient, not careless. The best code is the code never written.

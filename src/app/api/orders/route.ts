@@ -6,7 +6,7 @@ import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
-import { db, orders, warehouses } from '@/db';
+import { db, orders, warehouses, staffAccounts } from '@/db';
 import { eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +17,36 @@ export const dynamic = 'force-dynamic';
 // PIN xác thực bằng hash (manager-pin.ts + env MANAGER_PIN_HASHES).
 // ---------------------------------------------------------------------------
 const MAX_CASHIER_DISCOUNT_RATE = 0.2;
+
+const PAYMENT_PROOF_MAX_LEN = 200;
+const CANCEL_REASON_MAX_LEN = 500;
+
+/**
+ * Kiểm tra ảnh xác nhận ở biên HTTP: cả hai trường hoặc cùng có, hoặc cùng thiếu.
+ * Giới hạn độ dài để client không phình audit_logs, và bắt buộc capturedAt là ngày hợp lệ.
+ */
+function paymentProofError(body: any): string | null {
+  const id = body?.paymentProofId;
+  const capturedAt = body?.paymentProofCapturedAt;
+  if (id === undefined && capturedAt === undefined) return null;
+  if (id == null || capturedAt == null) return 'Ảnh xác nhận thiếu id hoặc thời điểm chụp.';
+  if (typeof id !== 'string' || !id.trim() || id.length > PAYMENT_PROOF_MAX_LEN) {
+    return 'Mã ảnh xác nhận không hợp lệ.';
+  }
+  if (typeof capturedAt !== 'string' || !capturedAt.trim() || capturedAt.length > PAYMENT_PROOF_MAX_LEN || !Number.isFinite(Date.parse(capturedAt))) {
+    return 'Thời điểm chụp ảnh không hợp lệ.';
+  }
+  return null;
+}
+
+/** Lý do hủy là text tự do: chỉ nhận chuỗi, cắt khoảng trắng, giới hạn độ dài. */
+function cancelReasonError(reason: any): string | null {
+  if (reason === undefined || reason === null || reason === '') return null;
+  if (typeof reason !== 'string' || reason.trim().length > CANCEL_REASON_MAX_LEN) {
+    return 'Lý do hủy đơn không hợp lệ.';
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -116,24 +146,39 @@ export async function POST(req: NextRequest) {
       sessionId: session.sessionId,
     };
 
-    // Bước 1: duyệt / hủy đơn PENDING (chỉ Manager/Owner, enforce kép route + service)
+    // Bước 1: duyệt / hủy đơn PENDING. Phân quyền + audit nằm trong service
+    // (Cashier chỉ xử lý đơn của chính mình; Owner/Manager mọi đơn).
     if (body.action === 'CONFIRM' || body.action === 'CANCEL') {
       if (userRole === 'ROLE_TAX') {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Kế toán thuế không được duyệt/hủy đơn.' }, { status: 403 });
       }
-      if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
-        return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được duyệt/hủy đơn PENDING.' }, { status: 403 });
+      const proofError = paymentProofError(body);
+      if (proofError) {
+        return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: proofError }, { status: 400 });
+      }
+      // Lý do hủy là input tự do của client, nay đã mở cho ROLE_CASHIER: chặn độ dài
+      // để orders.note / audit_logs.details không bị phình vô hạn.
+      const reasonError = cancelReasonError(body.reason);
+      if (reasonError) {
+        return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: reasonError }, { status: 400 });
       }
       const result = body.action === 'CONFIRM'
-        ? await OrderService.confirmOrder(body.orderId, userRole, actorHeader)
-        : await OrderService.cancelOrder(body.orderId, userRole, body.reason);
-      await recordAuditLog({
-        action: body.action === 'CONFIRM' ? 'ORDER_CONFIRMED' : 'ORDER_CANCELLED',
-        actorRole: userRole,
-        actorId: actorHeader,
-        resource: '/api/orders',
-        details: `${body.action === 'CONFIRM' ? 'Duyệt' : 'Hủy'} đơn online ${body.orderId}${body.reason ? ` (lý do: ${body.reason})` : ''}.`,
-      });
+        ? await OrderService.confirmOrder(
+            body.orderId,
+            userRole,
+            actorHeader,
+            actorContext,
+            body.paymentProofId && body.paymentProofCapturedAt
+              ? { id: body.paymentProofId, capturedAt: body.paymentProofCapturedAt }
+              : undefined
+          )
+        : await OrderService.cancelOrder(
+            body.orderId,
+            userRole,
+            typeof body.reason === 'string' ? body.reason.trim() : undefined,
+            actorContext,
+            actorHeader
+          );
       return NextResponse.json({ success: true, data: result });
     }
 
@@ -176,8 +221,9 @@ export async function POST(req: NextRequest) {
       allowOverdraft,
       managerPin,
       managerApprovalCode,
-      discountApprovalId,
-      isGift,
+       discountApprovalId,
+       moneyReceived,
+       isGift,
       giftReason,
       confirmImmediately,
     } = body;
@@ -263,18 +309,45 @@ export async function POST(req: NextRequest) {
       }
       safeFiscalScope = 'INTERNAL_MANAGEMENT';
     }
+    const effectivePaymentMethod = paymentMethod || 'CASH';
+    const isDigitalMethod = effectivePaymentMethod === 'BANK_TRANSFER' || effectivePaymentMethod === 'QR_CODE';
+    // Đơn chuyển khoản/QR tại quầy: tạo PENDING trước (confirmImmediately:false),
+    // không cần moneyReceived. Đồng bộ offline tức thì vẫn phải có proof.
+    const isImmediateDigital = isDigitalMethod && confirmImmediately !== false && !giftFlag;
+    // Validate input TRƯỚC các cổng nghiệp vụ: cùng một payload lỗi phải luôn trả 400,
+    // không được rơi vào 403 của cổng "thiếu ảnh" (client không phân biệt được lỗi dữ liệu).
+    const createProofError = paymentProofError(body);
+    if (createProofError) {
+      return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: createProofError }, { status: 400 });
+    }
+    if (isImmediateDigital && moneyReceived !== true) {
+      return NextResponse.json(
+        { success: false, error: 'Phải xác nhận đã nhận tiền trước khi chốt đơn chuyển khoản/QR.' },
+        { status: 403 }
+      );
+    }
+    if (isImmediateDigital && (!body.paymentProofId || !body.paymentProofCapturedAt)) {
+      return NextResponse.json(
+        { success: false, error: 'Thiếu ảnh xác nhận thanh toán cho đơn chuyển khoản/QR.' },
+        { status: 403 }
+      );
+    }
     const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
       const v = it?.unitDiscountRate;
       const parsed =
         v !== undefined && v !== null && `${v}` !== '' ? parseFloat(v) : parsedOrderDiscount;
       return Number.isFinite(parsed) ? parsed : 0;
     });
-    const maxDiscountRate = Math.max(
-      Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
-      ...effectiveItemDiscounts
-    );
+    const maxDiscountRate = giftFlag
+      ? 1
+      : Math.max(
+          Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
+          ...effectiveItemDiscounts
+        );
     const exceedsHardCap = maxDiscountRate >= MAX_CASHIER_DISCOUNT_RATE;
     const isPrivilegedRole = userRole === 'ROLE_OWNER' || userRole === 'ROLE_MANAGER';
+    let approvalSource = isPrivilegedRole ? userRole : 'MANAGER_PIN';
+    let approvalApproverId: string | null = null;
 
     // A1-H: ID phê duyệt đã verify (khớp giỏ/mức/kho/người) để createOrder
     // tiêu thụ nguyên tử trong transaction. Khai báo ngoài để dùng ở dưới.
@@ -297,6 +370,10 @@ export async function POST(req: NextRequest) {
             actorId: actorHeader,
           });
           verifiedApprovalId = discountApprovalId;
+          // Ghi nguồn phê duyệt vào audit (người duyệt thật, không phải mặc định).
+          const appr = await DiscountApprovalService.getRequest(discountApprovalId);
+          approvalSource = appr?.approvedBy || 'APPROVAL_REQUEST';
+          approvalApproverId = appr?.approvedBy || null;
         } catch (err: any) {
           if (err?.code === 'FORBIDDEN') {
             await recordAuditLog({
@@ -328,15 +405,16 @@ export async function POST(req: NextRequest) {
           await recordAuditLog({
             action: 'MANAGER_DISCOUNT_DENIED',
             actorRole: userRole,
-            actorId: cashierId || userRole,
+            actorId: actorHeader,
             resource: '/api/orders',
-            details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${cashierId || userRole}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
+            details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${actorHeader}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
           });
           return NextResponse.json(
             { success: false, error: 'Chiết khấu từ 20% trở lên bắt buộc có mã PIN hoặc phê duyệt của Quản lý.' },
             { status: 403 }
           );
         }
+        approvalSource = 'SYSTEM_MANAGER_PIN';
       }
     }
 
@@ -369,6 +447,50 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    let approvalApproverRole: UserRole = userRole;
+    if (approvalApproverId) {
+      const approverRows = await db
+        .select({ role: staffAccounts.role })
+        .from(staffAccounts)
+        .where(eq(staffAccounts.staffId, approvalApproverId))
+        .limit(1);
+      approvalApproverRole = (approverRows[0]?.role as UserRole) || 'ROLE_MANAGER';
+    }
+    const approvalAuditActorId = approvalApproverId || (approvalSource === 'SYSTEM_MANAGER_PIN' ? 'SYSTEM_MANAGER_PIN' : actorHeader);
+    const approvalAuditRole = approvalSource === 'SYSTEM_MANAGER_PIN' ? 'ROLE_MANAGER' : approvalApproverRole;
+    const requiredAudit = [
+      ...(exceedsHardCap
+        ? [{
+            id: 'discount-approval',
+            action: 'MANAGER_DISCOUNT_APPROVED',
+            actorRole: approvalAuditRole,
+            actorId: approvalAuditActorId,
+            resource: '/api/orders',
+            details: (committedOrderCode: string) => `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${committedOrderCode} (cashier: ${actorHeader}, phê duyệt bởi: ${approvalSource}).`,
+          }]
+        : []),
+      ...(giftFlag
+        ? [{
+            id: 'gift-approval',
+            action: 'MANAGER_DISCOUNT_APPROVED',
+            actorRole: approvalAuditRole,
+            actorId: approvalAuditActorId,
+            resource: '/api/orders',
+            details: (committedOrderCode: string) => `Duyệt đơn Tặng 100% (GIFT) ${committedOrderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
+          }]
+        : []),
+      ...(isImmediateDigital
+        ? [{
+            id: 'transfer-payment-confirmation',
+            action: 'ORDER_CONFIRMED',
+            actorRole: userRole,
+            actorId: actorHeader,
+            resource: '/api/orders',
+            details: (committedOrderCode: string) => `Xác nhận offline ${committedOrderCode}; proof=${body.paymentProofId}; capturedAt=${body.paymentProofCapturedAt}.`,
+          }]
+        : []),
+    ];
+
     const result = await OrderService.createOrder({
       id,
       orderCode,
@@ -398,6 +520,7 @@ export async function POST(req: NextRequest) {
 
       isGift: giftFlag,
       giftReason: giftFlag ? `${giftReason ?? note ?? ''}`.trim() : undefined,
+      requiredAudit,
       items: giftFlag
         ? pricedItems.map((it: any) => ({ ...it, unitDiscountRate: 1 }))
         : pricedItems,
@@ -411,6 +534,7 @@ export async function POST(req: NextRequest) {
     });
 
     await recordAuditLog({
+      id: `aud-order-${result.orderId}-mutate`,
       action: 'MUTATE_ORDER',
       actorRole: userRole,
       actorId: actorHeader,
@@ -418,28 +542,7 @@ export async function POST(req: NextRequest) {
       details: `Tạo đơn hàng ${result.orderCode} (${safeFiscalScope}) - Thực thu: ${result.finalAmount}`,
     });
 
-    // Ghi vết phê duyệt chiết khấu vượt trần (tuyệt đối không lưu mã PIN).
-    if (exceedsHardCap) {
-      await recordAuditLog({
-        action: 'MANAGER_DISCOUNT_APPROVED',
-        actorRole: userRole,
-        actorId: actorHeader,
-        resource: '/api/orders',
-        details: `Duyệt chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% cho đơn ${result.orderCode} (cashier: ${actorHeader}, phê duyệt bởi: ${userRole}).`,
-      });
-    }
 
-    // BV-03: vết kiểm toán riêng cho đơn quà tặng (doanh thu 0đ, vẫn trừ kho).
-    // Tái dùng MANAGER_DISCOUNT_APPROVED để không phình enum audit (giữ nguyên rbac-guard).
-    if (giftFlag) {
-      await recordAuditLog({
-        action: 'MANAGER_DISCOUNT_APPROVED',
-        actorRole: userRole,
-        actorId: actorHeader,
-        resource: '/api/orders',
-        details: `Duyệt đơn Tặng 100% (GIFT) ${result.orderCode} (lý do: ${`${giftReason ?? note ?? ''}`.trim()}, kho: ${warehouseId}).`,
-      });
-    }
 
     return NextResponse.json({
       success: true,
