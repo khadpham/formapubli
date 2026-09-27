@@ -40,6 +40,15 @@ jobs:
           fi
           AUTH="Authorization: Bearer ${CRON_SECRET}"
 
+          # Cloudflare WAF của book.formaform.vn có managed challenge và chặn IP
+          # datacenter (mà GitHub Actions chạy trên đó) → 403 trang "Just a moment".
+          # Endpoint không cần challenge nên gọi thẳng URL worker.
+          if curl -sS --max-time 30 "${APP_URL}/api/cron/auto-close?list=1" -H "${AUTH}" \
+               | grep -q "Just a moment"; then
+            echo "::error::APP_URL đang bị Cloudflare challenge (403). Đổi APP_URL sang URL worker https://<worker>.workers.dev"
+            exit 1
+          fi
+
           # Worker có giới hạn subrequest mỗi lần gọi: quét nhiều kho trong
           # MỘT lần gọi sẽ chết với "Too many subrequests". Nên lấy danh sách
           # kho, rồi gọi RIÊNG từng kho — mỗi lần gọi có hạn mức riêng.
