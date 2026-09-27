@@ -134,5 +134,34 @@ ok(
   /errors/.test(wf),
   'Workflow phải ĐỌC errors[] trong payload và fail, không được coi 200 là xong'
 );
+ok(
+  /truncated/.test(wf),
+  'Workflow phải đọc truncated[] — ca bị bỏ sót vì chạm trần thì CHƯA xong, không được báo xanh'
+);
+
+// ---------------------------------------------------------------------------
+// 8. Ngày lỡ trôt: cron chết vài ngày thì những ngày đó chưa từng được chốt.
+//    Chỉ chốt "hôm qua" thì lỡ 3 ngày là mất 3 ngày số liệu.
+// ---------------------------------------------------------------------------
+ok(
+  /searchParams\.get\(['"]date['"]\)/.test(src),
+  'Endpoint phải nhận ?date=YYYY-MM-DD để quét được cả ngày đã lỡ trôt'
+);
+ok(
+  /isRealDate/.test(src),
+  'Phải kiểm ngày hợp lệ ở ranh giới tin cậy (chặn 2026-02-30, chuỗi rác)'
+);
+ok(
+  /FUTURE_DATE/.test(src),
+  'Phải từ chối chốt ngày CHƯA KẾT THÚC — chốt ngày đang chạy là chốt số liệu dở'
+);
+ok(
+  /auto-close\?warehouse=.*&date=/.test(wf),
+  'Workflow phải quét N ngày gần nhất cho mỗi kho, không chỉ hôm qua'
+);
+ok(
+  /MAX_SHIFTS/.test(src),
+  'Phải giới hạn số ca chốt mỗi lần gọi, nếu không sẽ vỡ giới hạn subrequest khi ca tồn đọng dồn'
+);
 
 console.log(`\n=== SAFEGUARD CHỐT CA / CHỐT NGÀY: ${checks} assertions PASS ===`);

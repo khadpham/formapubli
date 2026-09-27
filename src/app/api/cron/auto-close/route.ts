@@ -64,24 +64,63 @@ async function handle(req: NextRequest) {
     const all = await db.select({ code: warehouses.code, id: warehouses.id }).from(warehouses);
     return NextResponse.json({ success: true, data: { warehouses: all } });
   }
-  return runSafeguard(url.searchParams.get('warehouse'));
+
+  // Ngày cần chốt. Mặc định = hôm qua giờ VN. Bên gọi truyền vào để quét được
+  // cả những ngày đã LỠ TRÔT (cron chết mấy ngày), không chỉ hôm qua.
+  const raw = (url.searchParams.get('date') || '').trim();
+  if (raw && !isRealDate(raw)) {
+    return NextResponse.json({
+      success: false,
+      code: 'BAD_DATE',
+      error: `Ngày "${raw}" không hợp lệ. Cần dạng YYYY-MM-DD.`,
+      // Phải là 4xx chứ không phải 200: bên gọi chỉ fail khi HTTP >= 400, nên trả
+      // 200 kèm mã lỗi sẽ bị nuốt im lặng.
+    },
+    { status: 400 }
+  );
+  }
+
+  return runSafeguard(url.searchParams.get('warehouse'), raw || undefined);
+}
+
+/** Ngày ở ranh giới tin cậy: đúng dạng VÀ là ngày có thật (chặn 2026-02-30). */
+function isRealDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
 /**
  * GIỚI HẠN CLOUDFLARE (đã gặp thật, không phải phỏng đoán): Worker chỉ được
- * dùng một hạn mức subrequest cho mỗi lần gọi. Lặp N kho trong một lần gọi
+ * dùng một hạn mức subrequest mỗi lần gọi. Lặp N kho trong một lần gọi
  * thì kho thứ vài trở đi sẽ chết với "Too many subrequests by single Worker
  * invocation" — và Local/Node KHÔNG có giới hạn này nên test ở máy vẫn xanh.
  *
- * Vì vậy: mỗi lần gọi chỉ xử lý MỘT kho (`?warehouse=CODE`), còn vòng lặp quét
- * hết kho do workflow đảm nhiệm (mỗi vòng là một lần gọi riêng nên hết hạn mức
- * mỗi vòng). Không có `warehouse` thì vẫn quét hết — chỉ dùng khi chạy local.
+ * Vì vậy: mỗi lần gọi chỉ xử lý MỘT kho MỘT ngày (`?warehouse=CODE&date=`),
+ * còn vòng lặp quét hết kho × hết ngày do workflow đảm nhiệm (mỗi vòng là
+ * một lần gọi riêng nên hết hạn mức mỗi vòng). Không có `warehouse` thì vẫn
+ * quét hết — chỉ dùng khi chạy local.
  */
-async function runSafeguard(onlyWarehouse?: string | null) {
+async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
   const now = new Date();
   // Ngày nghiệp vụ hôm qua (theo giờ VN): chốt ngày QUÁ KHỎI, không phải hôm nay.
+  // Giờ VN cố định UTC+7, không DST, nên trừ 24h rồi định dạng lại tương đương
+  // trừ đúng một ngày lịch.
   const yesterday = new Date(now.getTime() - 24 * 3600 * 1000)
     .toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const settleDate = onlyDate || yesterday;
+
+  // Trừ 24h ra khỏi ngày đang chốt: hôm nay chưa xong, không được chốt hôm nay.
+  const todayVN = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  if (settleDate >= todayVN) {
+    return NextResponse.json({
+      success: false,
+      code: 'FUTURE_DATE',
+      error: `Ngày "${settleDate}" chưa kết thúc (hôm nay giờ VN là ${todayVN}). Chỉ chốt ngày đã qua.`,
+    },
+    { status: 400 }
+  );
+  }
 
   const all = await db.select().from(warehouses);
   const target = onlyWarehouse
@@ -92,12 +131,20 @@ async function runSafeguard(onlyWarehouse?: string | null) {
       success: false,
       code: 'NOT_FOUND',
       error: `Không tìm thấy kho "${onlyWarehouse}".`,
-    });
+    },
+    { status: 404 }
+  );
   }
 
   const shiftsClosed: string[] = [];
   const daysClosed: string[] = [];
   const errors: { warehouse: string; step: string; error: string }[] = [];
+  // Ca quá giờ tồn đọng nhiều (cron chết lâu, sự cố DB) thì một lần gọi không
+  // chịu nổi. ponytail: trần mỗi lần gọi; vì idempotent nên lần sau chạy tiếp,
+  // và `truncated` báo ra để KHÔNG im lặng bỏ sót. Nâng lên nếu thực tế gặp.
+  const MAX_SHIFTS = 5;
+  const truncated: string[] = [];
+
 
   for (const wh of target) {
     // --- Bước 1: chốt các ca quá giờ của kho này ---
@@ -107,6 +154,10 @@ async function runSafeguard(onlyWarehouse?: string | null) {
         now,
       });
       for (const s of check.shifts || []) {
+        if (shiftsClosed.length >= MAX_SHIFTS) {
+          truncated.push(`${wh.code}:${s.sessionId}`);
+          continue;
+        }
         try {
           await CashboxService.autoCloseSession({
             sessionId: s.sessionId,
@@ -126,17 +177,17 @@ async function runSafeguard(onlyWarehouse?: string | null) {
 
     // --- Bước 2: chốt ngày nghiệp vụ đã qua nếu chưa có bản chốt ---
     try {
-      const existing = await DailySettlementService.getDayCloseRecord(wh.id, yesterday);
+      const existing = await DailySettlementService.getDayCloseRecord(wh.id, settleDate);
       if (!existing) {
         await DailySettlementService.closeDay({
           warehouseId: wh.id,
-          date: yesterday,
+          date: settleDate,
           actorRole: 'ROLE_OWNER',
           actorId: 'CRON_SAFEGUARD',
           notes: 'Chốt ngày tự động bởi safeguard theo lịch.',
           autoCloseOpenShifts: true,
         });
-        daysClosed.push(`${wh.code}:${yesterday}`);
+        daysClosed.push(`${wh.code}:${settleDate}`);
       }
     } catch (e: any) {
       errors.push({ warehouse: wh.code, step: 'CLOSE_DAY', error: e?.message || String(e) });
@@ -144,15 +195,17 @@ async function runSafeguard(onlyWarehouse?: string | null) {
   }
 
   return NextResponse.json({
-    success: errors.length === 0,
+    // Còn ca bị bỏ sót vì chạm trần = CHƯA xong. Báo hỏng thay vì báo xanh.
+    success: errors.length === 0 && truncated.length === 0,
     data: {
       ranAt: now.toISOString(),
-      businessDaySettled: yesterday,
+      businessDaySettled: settleDate,
       warehouses: target.length,
       // Cờ cho bên gọi biết đã quét HẾT kho hay mới một phần, để tự quét tiếp.
       partial: Boolean(onlyWarehouse),
       shiftsClosed,
       daysClosed,
+      truncated,
       errors,
     },
   });

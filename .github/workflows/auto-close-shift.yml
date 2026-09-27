@@ -60,7 +60,7 @@ jobs:
             exit 1
           fi
 
-          codes=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/kho.json","utf8")).data.warehouses.map(w=>w.code).join("\n"))')
+          codes=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{process.stdout.write(JSON.parse(s).data.warehouses.map(w=>w.code).join("\n"))})' < /tmp/kho.json)
           total=$(printf '%s\n' "$codes" | grep -c . || true)
           echo "Có ${total} kho cần quét"
           if [ "$total" -eq 0 ]; then
@@ -69,32 +69,48 @@ jobs:
           fi
 
           failed=0
+          # Quét N ngày gần nhất, không chỉ hôm qua: nếu cron chết vài ngày thì
+          # những ngày đó chưa từng được chốt. Mỗi (kho × ngày) là MỘT lần gọi
+          # riêng nên không vỡ giới hạn subrequest của Worker.
+          BACK_DAYS=7
           while IFS= read -r code; do
             [ -z "$code" ] && continue
-            http=$(curl -sS -o "/tmp/kho-${code}.json" -w '%{http_code}' \
-              -X POST "${APP_URL}/api/cron/auto-close?warehouse=${code}" \
-              -H "${AUTH}" --max-time 120)
-            echo "--- ${code}: HTTP ${http}"
-            cat "/tmp/kho-${code}.json"; echo
-            if [ "$http" = "401" ]; then
-              echo "::error::Safeguard từ chối: CRON_SECRET sai hoặc chưa được set"
-              exit 1
-            fi
-            if [ "$http" -ge 400 ]; then
-              echo "::error::Kho ${code} lỗi (HTTP ${http})"
-              failed=1
-              continue
-            fi
-            # 200 nhưng payload có errors[] = kho đó chưa chốt được, KHÔNG im lặng.
-            if node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=(d.data&&d.data.errors)||[];if(e.length){console.error("  "+e.map(x=>x.step+": "+x.error).join("\n  "));process.exit(1)}' "/tmp/kho-${code}.json"; then
-              :
-            else
-              failed=1
-            fi
+            for ((back = 1; back <= BACK_DAYS; back++)); do
+              day=$(node -e 'const d=new Date(Date.now()-Number(process.argv[1])*86400000);process.stdout.write(d.toLocaleDateString("en-CA",{timeZone:"Asia/Ho_Chi_Minh"}))' "$back")
+              out="/tmp/kho-${code}-${day}.json"
+              http=$(curl -sS -o "$out" -w '%{http_code}' \
+                -X POST "${APP_URL}/api/cron/auto-close?warehouse=${code}&date=${day}" \
+                -H "${AUTH}" --max-time 120)
+              if [ "$http" = "401" ]; then
+                echo "::error::Safeguard từ chối: CRON_SECRET sai hoặc chưa được set"
+                exit 1
+              fi
+              if [ "$http" -ge 400 ]; then
+                echo "--- ${code} ${day}: HTTP ${http}"
+                head -c 400 "$out"; echo
+                echo "::error::Kho ${code} ngày ${day} lỗi (HTTP ${http})"
+                failed=1
+                continue
+              fi
+              # 200 nhưng payload có errors[]/truncated = chưa xong, KHÔNG im lặng.
+              if node -e '
+                let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+                const d=(JSON.parse(s).data)||{};
+                const e=d.errors||[], t=d.truncated||[];
+                if(!e.length&&!t.length&&!(d.shiftsClosed||[]).length&&!(d.daysClosed||[]).length) process.exit(0);
+                const c=(d.shiftsClosed||[]).length, y=(d.daysClosed||[]).length;
+                if(e.length||t.length) console.error(`  ca=${c} ngay=${y}`+(t.length?` BO SOT ${t.length} ca`:"")+(e.length?` LOI: ${e.map(x=>x.step+": "+x.error).join("; ")}`:""));
+                process.exit(e.length||t.length?1:0);
+              });' < "$out"; then
+                :
+              else
+                failed=1
+              fi
+            done
           done <<< "$codes"
 
           if [ "$failed" -ne 0 ]; then
-            echo "::error::Có kho chưa chốt được — xem log ở trên"
+            echo "::error::Có kho/ngày chưa chốt được — xem log ở trên"
             exit 1
           fi
-          echo "Đã quét đủ ${total} kho"
+          echo "Đã quét đủ ${total} kho × ${BACK_DAYS} ngày"
