@@ -11,9 +11,9 @@ import { PartnersListView } from '@/components/partners/PartnersListView';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
-import { Menu, Shield, Sparkles, Bell } from 'lucide-react';
+import { Menu, Shield, Sparkles } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
-import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { NotificationBell, type NotifyItem } from '@/components/notifications/NotificationBell';
 import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 import { matchNavShortcut, matchActionShortcut, getShortcutLabel } from '@/lib/keyboard';
 import { UserRole, USER_ROLES, getDefaultTabForRole } from '@/lib/roles';
@@ -44,7 +44,6 @@ export function MasterAppShell({
   const [currentRole, setCurrentRole] = useState<UserRole>(initialRole);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [isPosNotificationsOpen, setIsPosNotificationsOpen] = useState(false);
   const [isPosCheckoutBusy, setIsPosCheckoutBusy] = useState(false);
   // Copilot 3 trang thai: closed (bong bong) • mini (chat nho goc phai) • full (drawer phai).
   const [copilotView, setCopilotView] = useState<'closed' | 'mini' | 'full'>('closed');
@@ -61,7 +60,6 @@ export function MasterAppShell({
   React.useEffect(() => {
     if (!isPosCheckoutBusy) return;
     setCopilotView('closed');
-    setIsPosNotificationsOpen(false);
     setPosDraft(null);
   }, [isPosCheckoutBusy]);
 
@@ -131,6 +129,23 @@ export function MasterAppShell({
   }, [session?.role, session?.actorId]);
 
   const roleConfig = USER_ROLES[currentRole];
+
+  // Nguồn thông báo thứ hai (POS) — trước đây là một chuông riêng chỉ mở màn POS,
+  // nay gộp vào chuông duy nhất để header không còn hai nút giống nhau.
+  const posMountedAt = React.useRef(new Date().toISOString());
+  const posNotifyItems = React.useMemo<NotifyItem[]>(() => {
+    if (!roleConfig.allowedNavItems.includes('pos')) return [];
+    return [{
+      id: 'pos-connection',
+      kind: 'pos',
+      area: 'POS',
+      severity: dbStatus && dbStatus !== 'offline' ? 'info' : 'warn',
+      title: 'Kết nối hệ thống',
+      body: `Kết nối hệ thống: ${dbStatus}. Bấm để mở quầy bán hàng.`,
+      at: posMountedAt.current,
+      href: 'pos',
+    }];
+  }, [dbStatus, roleConfig.allowedNavItems]);
 
   const handleLogout = async () => {
     try {
@@ -247,46 +262,6 @@ export function MasterAppShell({
           </div>
 
           <div className="relative flex items-center gap-2">
-            {roleConfig.allowedNavItems.includes('pos') && (
-              <button
-                type="button"
-                disabled={isPosCheckoutBusy || copilotView !== 'closed'}
-                onClick={() => setIsPosNotificationsOpen((open) => !open)}
-                className="flex items-center justify-center w-11 h-11 rounded-xl text-slate-600 hover:bg-slate-100"
-                 aria-label="Mở thông báo POS"
-                 aria-controls="pos-notification-panel"
-                 aria-expanded={isPosNotificationsOpen}
-              >
-                <Bell className="w-5 h-5" />
-              </button>
-            )}
-
-            {isPosNotificationsOpen && roleConfig.allowedNavItems.includes('pos') && (
-               <div
-                 id="pos-notification-panel"
-                 role="dialog"
-                 aria-label="Thông báo POS"
-                 className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
-               >
-                <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
-                  <Bell className="w-4 h-4 text-indigo-600" />
-                  Thông báo POS
-                </div>
-                <p className="mt-3 text-xs text-slate-600">Kết nối hệ thống: {dbStatus}</p>
-                <button
-                  type="button"
-                  disabled={copilotView !== 'closed'}
-                  onClick={() => {
-                    setCurrentTab('pos');
-                    setIsPosNotificationsOpen(false);
-                  }}
-                  className="mt-3 min-h-11 w-full rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white hover:bg-indigo-500"
-                >
-                  Mở POS
-                </button>
-              </div>
-            )}
-
             {canUseCopilot && (
               <button
                 type="button"
@@ -312,8 +287,10 @@ export function MasterAppShell({
               <span>{roleConfig.label}</span>
             </div>
 
-            {/* Chuông thông báo thời gian thực (5s) — hai chiều thu ngân ↔ quản lý */}
-            {session && <NotificationBell onNavigate={setCurrentTab} />}
+            {/* MỘT chuông duy nhất — gộp nguồn POS + nguồn nghiệp vụ, có nhãn khu vực, xóa được. */}
+            {session && (
+              <NotificationBell onNavigate={setCurrentTab} extraItems={posNotifyItems} />
+            )}
 
             {/* Connection Status */}
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full font-semibold">
