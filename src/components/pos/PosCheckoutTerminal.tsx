@@ -1962,38 +1962,10 @@ export function PosCheckoutTerminal({
   // Điều kiện kích hoạt Magnet: ĐÃ CUỘN XUỐNG DƯỚI && (CÓ TỪ KHÓA hoặc ĐANG FOCUS INPUT hoặc ĐANG BẬT MICRO GIỌNG NÓI)
   const showMagnetBar = isScrolledPast && (searchQuery.trim().length > 0 || isInputFocused || isListening);
 
-  return (
-    <div className="space-y-6">
-      <div className="md:hidden sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] z-30 -mx-3 px-3 pt-2 pb-1 bg-slate-50/95 backdrop-blur-md">
-        <button
-          type="button"
-          onClick={() => setShiftPanelExpanded((v) => !v)}
-          aria-expanded={shiftPanelExpanded}
-          className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded-xl border border-slate-200/80 shadow-sm text-[11px] font-bold text-slate-700 min-h-[38px] active:scale-[0.99] transition-all"
-        >
-          <span className={`w-2 h-2 rounded-full shrink-0 ${activeSession ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-          <span className="flex-1 text-left truncate">
-            {sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name ?? 'Chọn kho'} • {activeSession ? 'Két mở' : 'Chưa mở két'}
-          </span>
-          {shiftPanelExpanded ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
-        </button>
-      </div>
-
-      {/* Top Header Controls */}
-      <div className="bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
-        {/* Tiêu đề: chỉ desktop — mobile giấu để dành chỗ cho thao tác thu ngân */}
-        <div className="hidden md:block">
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-emerald-600" />
-            Quầy Thu Ngân POS
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Phím tắt <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">/</kbd> tìm sách | <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">Ctrl+Enter</kbd> thanh toán & trừ kho
-          </p>
-        </div>
-
-        {/* Network Status & Warehouse Selector */}
-        <div className={`${shiftPanelExpanded ? 'flex' : 'hidden'} md:flex flex-wrap items-center gap-3 w-full md:w-auto`}>
+  // Điều khiển header (mạng + chọn kho + két tiền) dùng chung: mobile nằm trong panel sticky
+  // bên dưới, desktop nằm trong card. Tách 1 biến để không nhân bản ~130 dòng JSX.
+  const posHeaderControls = (
+    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           {/* Online/Offline Status Indicator */}
           <div className="flex items-center gap-2">
             {isOnline ? (
@@ -2119,7 +2091,54 @@ export function PosCheckoutTerminal({
               <span>Chốt Ngày</span>
             </button>
           )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Mobile: panel sticky duy nhất chứa thông tin ca + điều khiển.
+          TRƯỚC: card "Top Header Controls" nằm riêng dưới đây, nhưng cả 2 child của nó
+          (tiêu đề `hidden md:block` và controls `${shiftPanelExpanded} md:flex`) đều bị ẩn
+          trên điện thoại => chỉ còn khung bo trắng rỗng. Nay card đó là `hidden md:flex`
+          và các controls nằm ngay trong panel sticky này, chỉ hiện khi panel mở. */}
+      <div className="md:hidden sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] z-30 -mx-3 px-3 pt-2 pb-1 bg-slate-50/95 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => setShiftPanelExpanded((v) => !v)}
+          aria-expanded={shiftPanelExpanded}
+          className={`w-full flex items-center gap-2 pl-3 pr-2.5 py-1.5 bg-white rounded-xl border border-slate-200/80 border-l-4 shadow-sm text-[11px] font-bold min-h-[38px] active:scale-[0.99] transition-all ${activeSession ? 'border-l-emerald-500 text-emerald-900' : 'border-l-slate-300 text-slate-600'}`}
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${activeSession ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+          <span className="text-[10px] uppercase tracking-wider text-slate-400 shrink-0">Kho</span>
+          <span className="flex-1 min-w-0 text-left truncate">
+            {sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name ?? 'Chọn kho'}
+          </span>
+          <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-tight ${activeSession ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+            {activeSession ? 'Két mở' : 'Két chưa mở'}
+          </span>
+          {shiftPanelExpanded ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+        </button>
+
+        {shiftPanelExpanded && (
+          <div className="mt-2 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-3">
+            {posHeaderControls}
+          </div>
+        )}
+      </div>
+
+      {/* Top Header Controls — chỉ desktop (md trở lên): tiêu đề bên trái, controls bên phải */}
+      <div className="hidden md:flex bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+        <div className="hidden md:block">
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <ShoppingCart className="w-5 h-5 text-emerald-600" />
+            Quầy Thu Ngân POS
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Phím tắt <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">/</kbd> tìm sách | <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">Ctrl+Enter</kbd> thanh toán & trừ kho
+          </p>
         </div>
+
+        {posHeaderControls}
       </div>
 
       {/* Toast thông báo mạng / Đồng bộ */}
