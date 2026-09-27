@@ -52,7 +52,7 @@ async function run() {
   ok(
     '1b. Prod DB có header SQLite hợp lệ',
     prodHeader.toString('latin1').startsWith('SQLite format 3'),
-    `${[...prodHeader.subarray(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join(' ')}`
+    `${prodHeader.subarray(0, 6).toString('hex').match(/../g)?.join(' ') ?? ''}`
   );
   {
     // 1c. Chạy integrity_check trên BẢN SAO TẠM, không mở handle libsql vào
