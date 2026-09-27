@@ -852,6 +852,26 @@ export function BatchTransferModal({
                 </PortalToBody>
               )}
 
+              {/* FIX: nút "Dán" phải luôn thấy được, kể cả khi bảng còn TRỐNG.
+                  Nó nằm trong khối {lines.length > 0} là nên biến mất đúng lúc
+                  người dùng cần nhất — dán danh sách lần đầu. Đưa ra ngoài. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPasteOpen(true)}
+                  className="min-h-[38px] min-w-[38px] px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
+                  title="Dán danh sách sách chép từ Excel (tên sách - so luong)"
+                >
+                  <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Dan</span>
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  {lines.length === 0
+                    ? 'Dán danh sách 2 cột tu Excel: ten sach - so luong (thieu so luong thi mac dinh 5).'
+                    : ''}
+                </span>
+              </div>
+
               {/* Thanh thao tác hàng loạt (Bulk Actions Toolbar) */}
               {lines.length > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
@@ -899,19 +919,6 @@ export function BatchTransferModal({
                         Áp dụng ({selectedIds.size})
                       </button>
                     </div>
-
-                    {/* Dán danh sách 2 cột từ Excel. Modal này vốn chỉ mở được
-                        cho ROLE_OWNER/ROLE_MANAGER nên nút thừa hưởng luôn cùng
-                        quyền — không cần (và không nên) gate lần nữa. */}
-                    <button
-                      type="button"
-                      onClick={() => setIsPasteOpen(true)}
-                      className="min-h-[38px] min-w-[38px] px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
-                      title="Dán danh sách sách chép từ Excel (tên sách - so luong)"
-                    >
-                      <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                      <span className="whitespace-nowrap">Dan</span>
-                    </button>
 
                     <div className="h-4 w-px bg-slate-300 mx-1 hidden sm:block"></div>
 
