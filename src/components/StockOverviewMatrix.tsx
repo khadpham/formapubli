@@ -752,7 +752,7 @@ export function StockOverviewMatrix({
                   onClick={() => { setActionMenu(null); setBatchTransferOpen(true); }}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
                 >
-                  <span className="font-bold whitespace-nowrap">Hàng loạt (nhiều đầu sách)</span>
+                  <span className="font-bold whitespace-nowrap">Hàng loạt</span>
                   <span className="block text-[10px] text-slate-400">Chọn/xóa cả loạt, kiểm tra tồn trước khi chuyển</span>
                 </button>
                 <button
@@ -769,54 +769,11 @@ export function StockOverviewMatrix({
 
           <button
             type="button"
-            onClick={() => setWholesaleModalOpen(true)}
-            title="Lập phiếu xuất kho cung ứng cho đối tác"
-            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <FileText className="w-3.5 h-3.5" /> Xuất Kho Đối Tác
-          </button>
-          <button
-            type="button"
-            onClick={() => openAction('TRANSFER')}
-            title="Chuyển kho giữa các kho"
-            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển kho
-          </button>
-          <button
-            type="button"
-            onClick={() => setBatchTransferOpen(true)}
-            title="Chuyển kho hàng loạt nhiều đầu sách"
-            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" /> Chuyển hàng loạt
-          </button>
-          <button
-            type="button"
             onClick={() => openAction('RECEIPT')}
             title="Nhập kho nhà in"
             className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <PlusCircle className="w-3.5 h-3.5" /> Nhập in
-          </button>
-          <button
-            type="button"
-            onClick={() => openAction('DISPATCH')}
-            title="Xuất bán / Quà tặng"
-            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
-          >
-            <MinusCircle className="w-3.5 h-3.5" /> Xuất bán
-          </button>
-
-          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-
-          <button
-            type="button"
-            onClick={() => setPickListOpen(true)}
-            title="Danh sách soạn sách gom hàng theo kệ"
-            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <PackageSearch className="w-3.5 h-3.5" /> Soạn Kệ
           </button>
 
           <button

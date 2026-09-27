@@ -54,16 +54,26 @@ const LABELS = [
   'Sổ Phiếu Xuất',
   'Mở Kho',
   'TK Nhận Tiền',
-  'Xuất Kho Đối Tác',
+  'Xuất kho',
   'Chuyển kho',
-  'Chuyển hàng loạt',
   'Nhập in',
-  'Xuất bán',
-  'Soạn Kệ',
   'Cách Ly Sách Lỗi',
 ];
 for (const label of LABELS) {
   expect(matrix.includes(label), `Nhãn "${label}" vẫn còn trong màn Kho hàng`);
+}
+
+// Thanh công cụ từng có 5 nút rời trùng chức năng với menu thu gọn
+// ("Xuất Kho Đối Tác", "Chuyển kho" lần 2, "Chuyển hàng loạt", "Xuất bản",
+// "Soạn Kệ") khiến người dùng thấy trùng lặp. Chức năng phải còn, nhưng chỉ
+// còn MỘT đường vào: qua menu "Xuất kho" / "Chuyển kho".
+// Đếm theo class đặc trưng của nút thanh công cụ (4 nút: Xuất kho, Chuyển kho,
+// Nhập in, Cách Ly Sách Lỗi) + 4 nút cố định (chip tab, Mở Kho, Kho, TK Nhận Tiền).
+const TOOLBAR_BTN_CLASS = 'className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2';
+const toolbarBtns = (matrix.match(new RegExp(TOOLBAR_BTN_CLASS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+expect(toolbarBtns === 4, `Thanh công cụ phải còn đúng 4 nút hành động (đang ${toolbarBtns}) — không được thêm nút trùng menu`);
+for (const item of ['Cung ứng đối tác', 'Hàng loạt', '1 phiếu chuyển kho', 'Soạn kệ (gom theo kệ)', 'Bán lẻ / Quà tặng']) {
+  expect(matrix.includes(item), `Mục menu "${item}" phải còn để không mất chức năng`);
 }
 // Short labels used by the compact trigger chip: the long "Sổ Cái Bất Biến (n)"
 // must never be rendered as a wide inline pill on a phone.
