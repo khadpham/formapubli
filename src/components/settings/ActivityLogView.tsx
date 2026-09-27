@@ -16,6 +16,8 @@ type LogRow = {
 const ACTION_LABEL: Record<string, string> = {
   WAREHOUSE_CREATED: 'Mở kho',
   WAREHOUSE_UPDATED: 'Sửa kho',
+  WAREHOUSE_DEACTIVATED: 'Ngưng hoạt động',
+  WAREHOUSE_ACTIVATED: 'Mở lại',
   WAREHOUSE_DELETED: 'Xóa kho',
   STAFF_UPDATED: 'Sửa nhân sự',
   STAFF_CREATED: 'Tạo nhân viên',

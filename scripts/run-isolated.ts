@@ -42,6 +42,8 @@ const ALL_SUITES = [
   'scripts/test-modal-dismiss.ts',
   'scripts/test-mobile-kho-ui.ts',
   'scripts/test-pos-header-layout.ts',
+  'scripts/test-warehouse-panel-ui.ts',
+  'scripts/test-warehouse-lifecycle.ts',
   'scripts/test-autoclose-shift.ts',
   'scripts/test-payment-photo-contract.ts',
   'scripts/test-forecast.ts',
