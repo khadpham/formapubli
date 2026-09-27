@@ -16,6 +16,9 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
 - Never assume a UI fix is verified until it is measured in a real browser (`orca eval` / `orca screenshot`).
   A green source-level test suite has already shipped an invisible dropdown once; the assertion was green and
   the menu was 6597px below the viewport.
+- NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps
+  serving the old asset manifest, every CSS/JS 404s and the user gets a completely unstyled page.
+  Sequence is always: stop dev -> build -> delete `.next` -> `npm run dev:lan`.
 
 ---
 
