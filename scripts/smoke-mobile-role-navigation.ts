@@ -62,7 +62,10 @@ assert.match(shell, /if \(!isPosCheckoutBusy\) return;[\s\S]*setCopilotView\('cl
 assert.match(shell, /disabled=\{isPosCheckoutBusy \|\| copilotView !== 'closed'\}/);
 assert.match(shell, /id="app-main-content"/);
 assert.match(shell, /aria-label="Mở menu"/);
-assert.match(shell, /aria-label="Mở thông báo POS"/);
+// Chuông POS thứ hai đã bỏ: nay chỉ CÓ MỘT chuông thông báo, gộp cả nguồn POS lẫn nghiệp vụ.
+assert.doesNotMatch(shell, /aria-label="Mở thông báo POS"/, 'Chuông POS thứ hai đã bỏ — chỉ giữ 1 chuông');
+assert.match(shell, /<NotificationBell/, 'Phải còn chuông thông báo gộp');
+assert.equal((shell.match(/<NotificationBell/g) || []).length, 1, 'Chỉ được render NotificationBell đúng 1 lần trong shell');
 
 const sidebarPath = path.resolve(process.cwd(), 'src/components/layout/AppSidebar.tsx');
 const sidebar = fs.readFileSync(sidebarPath, 'utf8');

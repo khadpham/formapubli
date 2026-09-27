@@ -7,19 +7,9 @@ import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 
-let dismissalsEnsured = false;
-async function ensureDismissalsTable() {
-  if (dismissalsEnsured) return;
-  await db.run(sql`
-    CREATE TABLE IF NOT EXISTS notification_dismissals (
-      actor_id text NOT NULL,
-      item_id text NOT NULL,
-      dismissed_at text NOT NULL,
-      PRIMARY KEY (actor_id, item_id)
-    )
-  `);
-  dismissalsEnsured = true;
-}
+// Bảng `notification_dismissals` do migration 0025_notification_dismissals.sql
+// tạo. KHÔNG tạo bảng trong route: schema phải khai báo qua migration chain để
+// migrate-fresh và drill go-live kiểm được.
 
 /**
  * Chuông thông báo — việc CẦN NGƯỜI DÙNG XỬ LÝ, hai chiều:
@@ -138,7 +128,6 @@ export async function GET(req: NextRequest) {
     items.sort((a, b) => `${b.at}`.localeCompare(`${a.at}`));
 
     // Loại các mục người dùng đã ẩn/xóa (bảng dismissal, xem POST bên dưới).
-    await ensureDismissalsTable();
     const hidden = new Set(
       ((await db.run(sql`SELECT item_id AS itemId FROM notification_dismissals WHERE actor_id = ${session.actorId}`))
         .rows ?? []).map((r: any) => `${r.itemId}`),
@@ -184,7 +173,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await ensureDismissalsTable();
     for (const itemId of itemIds) {
       await db.run(sql`
         INSERT OR IGNORE INTO notification_dismissals (actor_id, item_id, dismissed_at)

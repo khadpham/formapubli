@@ -175,6 +175,13 @@
       "when": 1790600000000,
       "tag": "0024_pos_payment_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790526639860,
+      "tag": "0025_notification_dismissals",
+      "breakpoints": true
     }
   ],
   "version": "7"
