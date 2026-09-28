@@ -213,11 +213,12 @@ export function MasterAppShell({
         };
 
         const targetTab = keyMap[digit];
-        if (targetTab) {
+        // Chỉ nuốt phím khi ta thực sự chuyển tab. Phím bị từ chối (chưa đăng
+        // nhập, hoặc vai trò không được mở tab đó) phải rơi về mặc định của
+        // trình duyệt thay vì bị preventDefault rồi làm không động gì.
+        if (targetTab && roleConfig.allowedNavItems.includes(targetTab)) {
           e.preventDefault();
-          if (roleConfig.allowedNavItems.includes(targetTab)) {
-            setCurrentTab(targetTab);
-          }
+          setCurrentTab(targetTab);
         }
       }
     };
