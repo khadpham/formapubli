@@ -49,9 +49,13 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    // Chỉ THU NGÂN được tạo yêu cầu duyệt. Quản lý/Chủ quầy đã tự áp chiết
+    // khấu vượt trần 20% ngay tại bàn chốt (client chỉ khoá nút với
+    // currentRole === 'ROLE_CASHIER' && !isManagerOverride; server bỏ qua
+    // bước verify phê duyệt cho vai trò đặc quyền và ghi audit), nên cho họ
+    // tạo yêu cầu chỉ sinh ra một dòng không ai dọn được: service chặn tự
+    // duyệt và tự từ chối, đòi một tài khoản đặc quyền khác xử lý rồi hết hạn.
     const session = await requireSessionRole(req, [
-      'ROLE_OWNER',
-      'ROLE_MANAGER',
       'ROLE_CASHIER',
     ] as UserRole[]);
 
