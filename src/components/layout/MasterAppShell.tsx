@@ -18,6 +18,21 @@ import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 import { matchNavShortcut, matchActionShortcut, getShortcutLabel } from '@/lib/keyboard';
 import { UserRole, USER_ROLES, getDefaultTabForRole, type RoleConfig } from '@/lib/roles';
 
+// Chưa có phiên = không có config nào. Mảng rỗng để mọi lệnh kiểm tra
+// allowedNavItems trả false, tức không tab nào mở được trước khi đăng nhập.
+const NO_ROLE_CONFIG: RoleConfig = {
+  id: '' as UserRole,
+  label: '',
+  badgeColor: '',
+  badgeBg: '',
+  description: '',
+  allowedNavItems: [],
+};
+
+function isKnownRole(value: UserRole | null): value is UserRole {
+  return !!value && Object.prototype.hasOwnProperty.call(USER_ROLES, value);
+}
+
 interface MasterAppShellProps {
   matrixBooks: any[];
   warehouseList: any[];
@@ -46,7 +61,7 @@ export function MasterAppShell({
   // GIỮ vai trò cuối khi phiên rớt (heartbeat 401) để POS không bị unmount và
   // làm mất sạch giỏ hàng — đó là lý do code cũ tách currentRole khỏi session.
   const [role, setRole] = useState<UserRole | null>(initialSession?.role ?? null);
-  const currentRole: UserRole | null = role;
+  const currentRole: UserRole | null = isKnownRole(role) ? role : null;
   const [currentTab, setCurrentTab] = useState<string | null>(
     initialSession?.role ? getDefaultTabForRole(initialSession.role) : null
   );
@@ -81,17 +96,17 @@ export function MasterAppShell({
 
   // Go-live: vai trò = phiên đăng nhập thật, đã xóa mô phỏng vai trò.
 
-  // Chưa có phiên = không có config nào. Mảng rỗng để mọi lệnh kiểm tra
-  // allowedNavItems trả false, tức không tab nào mở được trước khi đăng nhập.
-  const roleConfig: RoleConfig = currentRole
-    ? USER_ROLES[currentRole]
-    : { id: '' as UserRole, label: '', badgeColor: '', badgeBg: '', description: '', allowedNavItems: [] };
+  const roleConfig: RoleConfig = isKnownRole(currentRole) ? USER_ROLES[currentRole] : NO_ROLE_CONFIG;
 
   // Tab hợp lệ tính LÚC RENDER, không sửa trong useEffect. Nhờ vậy không bao
   // giờ có khung hình nào mà tab='dashboard' đi cùng role thu ngân.
   const effectiveTab: string | null = currentRole
     ? (roleConfig.allowedNavItems.includes(currentTab ?? '') ? currentTab : roleConfig.allowedNavItems[0])
     : null;
+
+  React.useEffect(() => {
+    if (currentTab !== effectiveTab) setCurrentTab(effectiveTab);
+  }, [currentTab, effectiveTab]);
 
   // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
@@ -416,15 +431,17 @@ export function MasterAppShell({
       )}
 
       {/* Executive AI Copilot: mini chat + full drawer */}
-      <CopilotDrawer
-        currentRole={currentRole ?? 'ROLE_CASHIER'}
-        isOpen={copilotView !== 'closed'}
-        mode={copilotView === 'full' ? 'full' : 'mini'}
-        onMinimize={() => setCopilotView('mini')}
-        onExpand={() => setCopilotView('full')}
-        onClose={() => setCopilotView('closed')}
-        onApplyDraft={handleApplyDraft}
-      />
+      {currentRole && (
+        <CopilotDrawer
+          currentRole={currentRole}
+          isOpen={copilotView !== 'closed'}
+          mode={copilotView === 'full' ? 'full' : 'mini'}
+          onMinimize={() => setCopilotView('mini')}
+          onExpand={() => setCopilotView('full')}
+          onClose={() => setCopilotView('closed')}
+          onApplyDraft={handleApplyDraft}
+        />
+      )}
     </div>
   );
 }

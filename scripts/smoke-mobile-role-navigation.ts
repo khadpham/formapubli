@@ -56,6 +56,33 @@ assert.match(shell, /currentRole && effectiveTab === 'dashboard'/);
 // Rớt lease (heartbeat 401) KHÔNG được xoá vai trò — POS sẽ unmount và mất sạch
 // giỏ hàng. Đăng xuất tường minh thì phải xoá.
 assert.match(shell, /if \(res\.status === 401\) \{\s*setSession\(null\);/);
+// Vai trò lạ (cookie cũ, tên vai trò đã đổi, session tự chế) là chuỗi hợp lệ
+// về kiểu nên index thẳng vào USER_ROLES sẽ ném lỗi lúc render. Bắt buộc
+// có guard theo key thật, không tin vào kiểu UserRole.
+assert.match(shell, /function isKnownRole\(value: UserRole \| null\): value is UserRole \{\s*return !!value && Object\.prototype\.hasOwnProperty\.call\(USER_ROLES, value\);/);
+assert.match(shell, /const currentRole: UserRole \| null = isKnownRole\(role\) \? role : null;/);
+assert.match(shell, /const roleConfig: RoleConfig = isKnownRole\(currentRole\) \? USER_ROLES\[currentRole\] : NO_ROLE_CONFIG;/);
+// Config rỗng phải là hằng số cấp module: tạo inline trong component sẽ đổi
+// danh tính mỗi render, kéo theo useEffect phím tắt và useMemo chuông POS
+// tháo gắn/đăng ký lại liên tục.
+const emptyConfigStart = shell.indexOf('const NO_ROLE_CONFIG: RoleConfig = {');
+const emptyConfigEnd = shell.indexOf('};', emptyConfigStart);
+assert.ok(emptyConfigStart >= 0 && emptyConfigEnd > emptyConfigStart, 'Phải có hằng số config rỗng ở cấp module');
+assert.ok(
+  emptyConfigStart < shell.indexOf('export function MasterAppShell'),
+  'Config rỗng phải nằm NGOÀI thân component để danh tính object ổn định'
+);
+const emptyConfig = shell.slice(emptyConfigStart, emptyConfigEnd);
+assert.match(emptyConfig, /allowedNavItems: \[\]/);
+assert.doesNotMatch(emptyConfig, /function/, 'Hằng số config rỗng không được chứa hàm');
+assert.equal((shell.match(/id: '' as UserRole/g) || []).length, 1, 'Config rỗng chỉ được khai báo đúng 1 lần ở cấp module, không tạo inline trong component');
+// Drawer Copilot không được nhận vai trò bịa trước khi đăng nhập (nó in ra
+// "Vai trò hiện tại của bạn: ..." ở chân drawer).
+assert.doesNotMatch(shell, /currentRole \?\? 'ROLE_CASHIER'/, 'Không được rò vai trò giả vào CopilotDrawer');
+assert.match(shell, /\{currentRole && \(\s*<CopilotDrawer[\s\S]*?currentRole=\{currentRole\}[\s\S]*?onApplyDraft=\{handleApplyDraft\}\s*\/>\s*\)\}/);
+// currentTab phải được đồng bộ ngược từ effectiveTab, chỉ set khi hai bên lệch.
+assert.match(shell, /if \(currentTab !== effectiveTab\) setCurrentTab\(effectiveTab\);/);
+assert.match(shell, /\}, \[currentTab, effectiveTab\]\);/);
 assert.match(shell, /mainBottomPadding = canUseCopilot \? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8'/);
 assert.match(shell, /bottom-\[calc\(max\(1rem,env\(safe-area-inset-bottom\)\)_\+_5\.5rem\)\]/);
 assert.match(shell, /isPosCheckoutBusy/);
