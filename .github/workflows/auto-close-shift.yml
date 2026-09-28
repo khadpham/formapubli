@@ -10,9 +10,15 @@ name: Chốt ca & chốt ngày tự động
 # scripts/test-cron-auto-close.ts khoá lại điều này.
 
 on:
-  schedule:
-    # 23:40 giờ VN = 16:40 UTC. Sau giờ cắt chốt của từng kho, trước nửa đêm.
-    - cron: '40 16 * * *'
+  # TẠM TẮT 2026-09-29 — lý do:
+  #  1. Secret Worker CRON_SECRET bị mất ⇒ 401 suốt, lịch chưa từng chạy được.
+  #     Đã set lại (Worker + GitHub) và verify 200, nhưng CHƯA từng có run thật.
+  #  2. P2 chưa sửa: `closeDay(autoCloseOpenShifts:true)` sẽ TỰ ĐÓNG ca quầy quá
+  #     hạn trên 7 ngày dữ liệu, ghi expectedCash và để closingCashActual=null
+  #     ⇒ đối soát két thành UNVERIFIED. Ghi dữ liệu tài chính không giám sát.
+  # Bật lại khi P2 xong. `workflow_dispatch` vẫn giữ để chạy tay có người canh.
+  # schedule:
+  #   - cron: '40 16 * * *'   # 23:40 giờ VN = 16:40 UTC
   workflow_dispatch:
 
 concurrency:
@@ -113,4 +119,29 @@ jobs:
             echo "::error::Có kho/ngày chưa chốt được — xem log ở trên"
             exit 1
           fi
+
+          # P2 chống XANH GIẢ: vòng trên chỉ phủ BACK_DAYS ngày. Một ngày lỡ
+          # trôt sẽ trượt khỏi cửa sổ đó sau 7 đêm, workflow xanh, mà ngày đó
+          # chưa từng được chốt — mất dữ liệu mặc áo thành công. Hỏi thẳng
+          # endpoint: còn ngày nào đã qua mà chưa có bản chốt không.
+          unclosed_json=/tmp/unclosed.json
+          uhttp=$(curl -sS -o "$unclosed_json" -w '%{http_code}' \
+            "${APP_URL}/api/cron/auto-close?unclosed=1&days=${BACK_DAYS}" \
+            -H "${AUTH}" --max-time 120)
+          if [ "$uhttp" = "401" ]; then
+            echo "::error::Safeguard từ chối khi kiểm ngày chưa chốt (CRON_SECRET sai)"
+            exit 1
+          fi
+          if [ "$uhttp" -ge 400 ]; then
+            echo "::error::Không kiểm được danh sách ngày chưa chốt (HTTP ${uhttp})"
+            head -c 400 "$unclosed_json"; echo
+            exit 1
+          fi
+          ucount=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{process.stdout.write(String(((JSON.parse(s).data)||{}).unclosed||[]).length))})' < "$unclosed_json")
+          if [ "$ucount" != "0" ]; then
+            echo "::error::Còn ${ucount} kho/ngày CHƯA CHỐT trong ${BACK_DAYS} ngày gần nhất"
+            node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const u of (((JSON.parse(s).data)||{}).unclosed||[]).slice(0,20))console.error(`  ${u.warehouse} ${u.date}`)})' < "$unclosed_json"
+            exit 1
+          fi
+          echo "Xác nhận: không còn ngày nào chưa chốt trong ${BACK_DAYS} ngày gần nhất"
           echo "Đã quét đủ ${total} kho × ${BACK_DAYS} ngày"

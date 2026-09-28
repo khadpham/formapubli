@@ -1,7 +1,7 @@
 import { db, editions, orderItems, orders, stockBalances, works } from '../db';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
-import { PENDING_TTL_HOURS } from './order.service';
+import { OrderService, PENDING_TTL_HOURS } from './order.service';
 import { WarehouseService } from './warehouse.service';
 
 export interface PosCatalogLine {
@@ -82,7 +82,12 @@ export class PosCatalogService {
         : [],
       ids.length
         ? db
-            .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+            .select({
+              editionId: orderItems.editionId,
+              quantity: orderItems.quantity,
+              createdAt: orders.createdAt,
+              paymentExpiresAt: orders.paymentExpiresAt,
+            })
             .from(orderItems)
             .innerJoin(orders, eq(orderItems.orderId, orders.id))
             .where(
@@ -90,19 +95,31 @@ export class PosCatalogService {
                 inArray(orderItems.editionId, ids),
                 eq(orders.warehouseId, warehouseId),
                 eq(orders.status, 'PENDING_CONFIRMATION'),
-                // Chỉ so NGÀY UTC: created_at lẫn "YYYY-MM-DD HH:MM:SS" (SQLite
-                // CURRENT_TIMESTAMP) lẫn ISO (app) — so chuỗi giữa hai họ là vô
-                // nghĩa và làm thiếu hàng đang giữ chỗ. Ngày là tiền tố chung.
-                gte(orders.createdAt, new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString().slice(0, 10))
+                // Prefilter rộng (siêu tập) — y hệt OrderService.getBatchATP.
+                // created_at trong DB lẫn thứ tự "YYYY-MM-DD HH:MM:SS" (SQLite
+                // CURRENT_TIMESTAMP) lẫn ISO "...T...Z" (app), nên chỉ so được
+                // NGÀY UTC (tiền tố chung), không so timestamp đầy đủ.
+                or(
+                  isNotNull(orders.paymentExpiresAt),
+                  gte(orders.createdAt, new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString().slice(0, 10))
+                )
               )
             )
-            .groupBy(orderItems.editionId)
         : [],
     ]);
     const balMap = new Map<string, number>();
     for (const r of balRows) balMap.set(r.editionId, Number(r.qty || 0));
+    // Quyết định giữ chỗ cuối cùng do OrderService.getPendingEffectiveExpiry —
+    // MỘT quy tắc hạn duy nhất của hệ thống. Trước đây danh mục POS cộng thẳng
+    // mọi đơn PENDING trong 48h nên đơn chuyển khoản quầy hết hạn sau 30 phút
+    // vẫn chặn ATP tới 48 giờ ⇒ quầy báo hết hàng oan.
     const heldMap = new Map<string, number>();
-    for (const r of heldRows) heldMap.set(r.editionId, Number(r.qty || 0));
+    const nowMs = Date.now();
+    for (const row of heldRows) {
+      const expiry = OrderService.getPendingEffectiveExpiry(row);
+      if (!expiry || expiry.getTime() <= nowMs) continue;
+      heldMap.set(row.editionId, (heldMap.get(row.editionId) || 0) + Number(row.quantity || 0));
+    }
     const isFair = wh?.warehouseType === 'FAIR_EVENT';
 
     const items: PosCatalogLine[] = [];

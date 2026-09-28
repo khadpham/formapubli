@@ -45,6 +45,28 @@ export async function migrateFresh(options: MigrateFreshOptions): Promise<{ appl
     throw new Error('REFUSED: migrate-fresh không bao giờ trỏ vào formapubli.db production!');
   }
 
+  // P6 CHẶN 2026-09-29: script này KHÔNG có bảng ghi migration, mỗi lần chạy là
+  // chạy lại TỪ 0000 trên toàn bộ 27 file — 23/27 file có câu không idempotent
+  // (CREATE TABLE/INDEX trần, ALTER TABLE ADD COLUMN). Với DB đã có dữ liệu thì
+  // câu đầu tiên của 0000 làm nổ ⇒ 0 file chạy, 0 câu ghi (an toàn GIẢ MAY MẮN,
+  // không phải có guard). Nhưng nếu ai đó thêm `IF NOT EXISTS` vào 0000 thì nó
+  // bắt đầu ghi dở rồi chết giữa chừng — không transaction, không rollback.
+  //
+  // Ngoài ra: prod KHÔNG có bảng ghi migration, nên "đã áp những gì" chỉ nằm
+  // trong đầu người vận hành. 0025/0026 đã được áp TAY lên prod.
+  //
+  // ⇒ Mặc định CHỈ cho phép DB file:. Muốn chạy trên DB từ xa phải nói rõ:
+  //   ALLOW_REMOTE_MIGRATE=true
+  const isLocalFile = targetUrl.startsWith('file:');
+  if (!isLocalFile && process.env.ALLOW_REMOTE_MIGRATE !== 'true') {
+    throw new Error(
+      'REFUSED: migrate-fresh mặc định KHÔNG chạy trên DB từ xa (libsql/Turso) vì không có ' +
+        'bảng ghi migration — sẽ chạy lại toàn bộ 27 file từ 0000 và chết giữa chừng. ' +
+        'Nếu bạn thực sự muốn: đặt ALLOW_REMOTE_MIGRATE=true, và chuẩn bị tự sửa tay ' +
+        'những gì đã áp trước đó.'
+    );
+  }
+
   const journalPath = path.resolve(process.cwd(), 'src/db/migrations/meta/_journal.json');
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
   const entries: JournalEntry[] = [...journal.entries].sort((a, b) => a.idx - b.idx);

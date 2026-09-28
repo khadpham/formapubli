@@ -76,6 +76,7 @@ import {
 import { UserRole } from '@/lib/roles';
 import { priceLine } from '@/lib/pricing';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { PortalToBody } from '@/components/PortalToBody';
 import { printThermalReceipt, PaperPreset } from '@/lib/thermalReceipt';
 
 /** Nhắc thu ngân khi thanh toán số được gọi mà chưa có ảnh xác nhận. */
@@ -510,7 +511,6 @@ export function PosCheckoutTerminal({
     setPendingDiscountRate(null);
     setPendingApprovalRequestId(null);
     setApprovedDiscountRequestId(null);
-    setApprovedPin(null);
     setIsManagerOverride(false);
     setDiscountRate(0);
     setIsGift(false);
@@ -549,7 +549,6 @@ export function PosCheckoutTerminal({
   // V4.1 S2.4: ô nhập CK lẻ (% nguyên)
   const [customDiscountInput, setCustomDiscountInput] = useState('');
   const [isManagerOverride, setIsManagerOverride] = useState(false);
-  const [approvedPin, setApprovedPin] = useState<string | null>(null);
   // Mã đơn hiện tại (sinh sẵn để đồng bộ với ShortCode duyệt chiết khấu)
   const [activeOrderCode, setActiveOrderCode] = useState<string>(() => createOrderCode());
   // BV-03: chế độ Tặng sách 100% (doanh thu 0đ, vẫn trừ kho)
@@ -1507,7 +1506,6 @@ export function PosCheckoutTerminal({
       setPendingDiscountRate(null);
       setPendingApprovalRequestId(null);
       setApprovedDiscountRequestId(null);
-      setApprovedPin(null);
       setIsManagerOverride(false);
       setCustomerName('Khách lẻ vãng lai');
       setFiscalScope('INTERNAL_MANAGEMENT');
@@ -1698,7 +1696,6 @@ export function PosCheckoutTerminal({
             fiscalScope,
             cashierId,
             cashboxSessionId: activeSession?.id,
-            managerPin: approvedPin || undefined,
             discountApprovalId: approvedDiscountRequestId || undefined,
             note,
             confirmImmediately: false,
@@ -1782,8 +1779,7 @@ export function PosCheckoutTerminal({
            moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
           cashierId,
-          cashboxSessionId: activeSession?.id,
-          managerPin: approvedPin || undefined,
+           cashboxSessionId: activeSession?.id,
           discountApprovalId: approvedDiscountRequestId || undefined,
           note,
           isGift,
@@ -2048,6 +2044,11 @@ export function PosCheckoutTerminal({
    */
   const handleCheckoutButtonClick = () => {
     if (isDigitalCheckout) {
+      // DẤU HIỆU BẤM RÕ: iOS huỷ camera KHÔNG bắn `change` event, nên không có
+      // gì để báo "bạn đã huỷ". Nếu không báo trước, nút trông chết và thu ngân
+      // tưởng app treo. Báo ngay khi bấm, tự tắt sau 6s.
+      setSyncToast('📷 Đang mở camera — chụp màn hình xác nhận chuyển khoản rồi bấm Xác nhận.');
+      setTimeout(() => setSyncToast(null), 6000);
       checkoutCaptureInputRef.current?.click();
       return;
     }
@@ -3067,7 +3068,7 @@ export function PosCheckoutTerminal({
                         ? 'bg-slate-100 text-slate-300 cursor-not-allowed border border-dashed border-slate-200'
                         : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                     }`}
-                    title={isCartFrozen ? 'Giỏ hàng đang tạm khóa' : 'Tặng 100%: doanh thu 0đ, vẫn trừ kho, chỉ ghi Sổ Nội bộ (thu ngân cần PIN quản lý)'}
+                    title={isCartFrozen ? 'Giỏ hàng đang tạm khóa' : 'Tặng 100%: doanh thu 0đ, vẫn trừ kho, chỉ ghi Sổ Nội bộ (thu ngân cần Quản lý phê duyệt)'}
                   >
                     🎁 100%
                   </button>
@@ -3101,7 +3102,7 @@ export function PosCheckoutTerminal({
                     Áp dụng
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Thu ngân quá 20% cần PIN quản lý • 100% là tặng sự kiện • Nhập số nguyên để chọn CK lẻ</p>
+                <p className="text-[10px] text-slate-400 mt-1">Thu ngân quá 20% cần Quản lý phê duyệt • 100% là tặng sự kiện • Nhập số nguyên để chọn CK lẻ</p>
                 {isGift && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-rose-700 block">
@@ -3227,15 +3228,28 @@ export function PosCheckoutTerminal({
           mất mạng — cashier bấm nút rồi không có gì xảy ra. */}
       {/* Input chụp ảnh của nút ở quầy. LUÔN có mặt trong DOM (không theo vòng
           đời modal) vì iOS chỉ mở được camera picker khi `.click()` chạy đồng
-          bộ trong user gesture. Modal chỉ dùng nút "Chụp lại" để thay ảnh mờ. */}
-      <input
-        ref={checkoutCaptureInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="sr-only"
-        onChange={handleCheckoutCaptureChange}
-      />
+          bộ trong user gesture. Modal chỉ dùng nút "Chụp lại" để thay ảnh mờ.
+
+          SỬA iOS 2026-09-29: input này PHẢI nằm ở document.body, KHÔNG được nằm
+          trong cây component. Sheet thanh toán di động (createPortal ở dưới) gọi
+          useModalFocusTrap, và hook đó đánh dấu `inert` lên #app-main-content —
+          tức là chính input này. Trên iPhone nút chụp ảnh DUY NHẤT nằm trong
+          sheet, nên nó luôn gọi .click() vào một phần tử đang inert. Safari hiện
+          thực `inert` (từ 15.5) nên camera có thể không mở, tùy phiên bản iOS.
+          Portal ra body là cách chắc chắn, không phụ thuộc WebKit xử lý
+          programmatic click trên inert thế nào. */}
+      {mounted && (
+        <PortalToBody>
+          <input
+            ref={checkoutCaptureInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={handleCheckoutCaptureChange}
+          />
+        </PortalToBody>
+      )}
 
       {transferSession && mounted && (
         <TransferPaymentModal
@@ -3775,7 +3789,7 @@ export function PosCheckoutTerminal({
           setIsDiscountApprovalModalOpen(false);
           setPendingDiscountRate(null);
           setSyncToast(
-            `✅ Quản lý đã duyệt chiết khấu ${Math.round(data.rate * 100)}% (${data.method === 'ONE_TOUCH' ? '1-Chạm' : data.method === 'SHORTCODE_BOUND' ? 'Mã 4 số' : data.method === 'OFFLINE_EMERGENCY' ? 'Mã Khẩn Cấp' : 'QR Scan'})!`
+            `✅ Quản lý đã duyệt chiết khấu ${Math.round(data.rate * 100)}% (${data.method === 'ONE_TOUCH' ? '1-Chạm' : data.method === 'SHORTCODE_BOUND' ? 'Mã 4 số' : 'QR Scan'})!`
           );
            setTimeout(() => setSyncToast(null), 4000);
          }}

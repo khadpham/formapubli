@@ -83,6 +83,8 @@ async function run() {
     { id: 'wh-auto', code: 'KHO_AUTO', name: 'Kho Tự Động', warehouseType: 'FAIR_EVENT', isSellableOnPos: true, isActive: true },
     { id: 'wh-auto-2', code: 'KHO_AUTO_2', name: 'Kho Tự Động 2', warehouseType: 'FAIR_EVENT', isSellableOnPos: true, isActive: true },
     { id: 'wh-auto-3', code: 'KHO_AUTO_3', name: 'Kho Tự Động 3', warehouseType: 'FAIR_EVENT', isSellableOnPos: true, isActive: true },
+    { id: 'wh-p2', code: 'KHO_P2', name: 'Kho P2 hết hạn', warehouseType: 'FAIR_EVENT', isSellableOnPos: true, isActive: true },
+    { id: 'wh-p2b', code: 'KHO_P2B', name: 'Kho P2 còn hạn', warehouseType: 'FAIR_EVENT', isSellableOnPos: true, isActive: true },
   ]);
   await db.insert(schema.works).values({ id: 'work-auto', code: 'W-AUTO', title: 'Sách Auto', author: 'A', isActive: true });
   await db.insert(schema.editions).values([
@@ -133,6 +135,94 @@ async function run() {
     status: 'OPEN',
     openedAt: twoDaysAgo10h,
   });
+
+  // ================== P2 (2026-09-29): đơn PENDING HẾT HẠN không chặn nữa ====
+  // Trước đây `autoCloseSession` và `closeDay` chặn theo TRẠNG THÁI thô, nên một
+  // đơn chuyển khoản quầy hết hạn sau 30 phút vẫn giữ dòng PENDING ⇒ chặn đóng
+  // ca (bước 1) ⇒ ca vẫn OPEN ⇒ chặn chốt ngày (bước 2). Một đơn kẹt tê cả
+  // đường ống cron của kho đó. Nay cả hai chỉ chặn đơn CÒN HẠN.
+  console.log('\n[P2] Đơn PENDING hết hạn KHÔNG chặn đóng ca / chốt ngày');
+  const p2Day = '2026-09-26'; // hôm trước theo lịch VN của NOW
+  await db.insert(schema.cashboxSessions).values({
+    id: 'cbs-p2-stale', warehouseId: 'wh-p2', cashierId: 'cashier-p2',
+    openingCash: 100000, status: 'OPEN', openedAt: iso(-2 * 86400_000),
+  });
+  // Đơn chuyển khoản quầy ĐÃ HẾT HẠN: createdAt 2 ngày trước, hạn 30 phút.
+  await db.insert(schema.orders).values({
+    id: 'ord-p2-expired', orderCode: 'ORD-P2-EXPIRED', warehouseId: 'wh-p2',
+    channel: 'FAIR_EVENT', subtotal: 100000, finalAmount: 100000,
+    paymentMethod: 'BANK_TRANSFER', status: 'PENDING_CONFIRMATION',
+    cashierId: 'cashier-p2', cashboxSessionId: 'cbs-p2-stale',
+    idempotencyKey: 'idem-p2-expired', createdAt: iso(-2 * 86400_000),
+    paymentExpiresAt: iso(-2 * 86400_000 + 30 * 60_000),
+  });
+  const p2ExpiredRows = await db.select().from(schema.orders).where(eq(schema.orders.id, 'ord-p2-expired'));
+  check('OrderService.isPendingExpired = true cho đơn P2 hết hạn', () => {
+    assert.strictEqual(OrderService.isPendingExpired(p2ExpiredRows[0] as any), true);
+  });
+
+  const p2Closed = await CashboxService.autoCloseSession({
+    sessionId: 'cbs-p2-stale', reason: 'P2_TEST',
+    actorRole: 'ROLE_OWNER', actorId: 'P2_TEST',
+    notes: 'Ca có đơn hết hạn — phải đóng được.',
+  });
+  check('autoCloseSession ĐÓNG ĐƯỢC ca dù ca có đơn PENDING đã hết hạn', () => {
+    assert.ok(p2Closed);
+  });
+  const p2SessionRow = await db.select().from(schema.cashboxSessions).where(eqId('cbs-p2-stale'));
+  check('ca đã đóng, tiền mặt KHÔNG xác minh (không bịa số đếm)', () => {
+    assert.strictEqual(p2SessionRow[0].status, 'CLOSED');
+    assert.strictEqual(p2SessionRow[0].closingCashActual, null);
+    assert.strictEqual(p2SessionRow[0].cashDiscrepancy, null);
+  });
+
+  const p2DayRec = await DailySettlementService.closeDay({
+    warehouseId: 'wh-p2', date: p2Day,
+    actorRole: 'ROLE_OWNER', actorId: 'P2_TEST', notes: 'P2 test',
+  });
+  check('closeDay CHỐT ĐƯỢC dù ngày đó có đơn PENDING đã hết hạn', () => {
+    assert.strictEqual(p2DayRec.isDuplicate, false);
+  });
+
+  // Ngược lại: đơn PENDING CÒN HẠN thì vẫn phải chặn — không nới thành xoá.
+  // LƯU Ý: isPendingExpired dùng Date.now() THẬT, còn suite này giả lập
+  // CASHBOX_TEST_NOW cho phần ca. Nên hạn phải tính theo đồng hồ thật, còn
+  // createdAt giữ trong ngày p2Day để khớp lọc `like('<date>%')` của closeDay.
+  const realNowMs = Date.now();
+  console.log('\n[P2b] Đơn PENDING CÒN HẠN vẫn chặn đúng');
+  await db.insert(schema.cashboxSessions).values({
+    id: 'cbs-p2-live', warehouseId: 'wh-p2b', cashierId: 'cashier-p2b',
+    openingCash: 100000, status: 'OPEN', openedAt: iso(-2 * 86400_000),
+  });
+  await db.insert(schema.orders).values({
+    id: 'ord-p2-live', orderCode: 'ORD-P2-LIVE', warehouseId: 'wh-p2b',
+    channel: 'FAIR_EVENT', subtotal: 100000, finalAmount: 100000,
+    paymentMethod: 'BANK_TRANSFER', status: 'PENDING_CONFIRMATION',
+    cashierId: 'cashier-p2b', cashboxSessionId: 'cbs-p2-live',
+    idempotencyKey: 'idem-p2-live', createdAt: `${p2Day}T10:00:00.000Z`,
+    // Còn 10 phút nữa mới hết hạn (theo đồng hồ thật) ⇒ phải chặn.
+    paymentExpiresAt: new Date(realNowMs + 10 * 60_000).toISOString(),
+  });
+  const p2bRows = await db.select().from(schema.orders).where(eq(schema.orders.id, 'ord-p2-live'));
+  check('đơn P2b được nhận diện là CÒN HẠN', () => {
+    assert.strictEqual(OrderService.isPendingExpired(p2bRows[0] as any), false);
+  });
+  await expectReject(
+    'ca có đơn PENDING CÒN HẠN thì vẫn bị từ chối đóng',
+    () => CashboxService.autoCloseSession({
+      sessionId: 'cbs-p2-live', reason: 'P2B_TEST',
+      actorRole: 'ROLE_OWNER', actorId: 'P2B_TEST',
+    }),
+    'STATE_CONFLICT'
+  );
+  await expectReject(
+    'ngày có đơn PENDING CÒN HẠN thì vẫn bị từ chối chốt',
+    () => DailySettlementService.closeDay({
+      warehouseId: 'wh-p2b', date: p2Day,
+      actorRole: 'ROLE_OWNER', actorId: 'P2B_TEST', autoCloseOpenShifts: true,
+    }),
+    'STATE_CONFLICT'
+  );
 
   // Đơn tiền mặt COMPLETED (nằm trong ca quá giờ) + 1 đơn OFFLINE chưa đồng bộ
   await db.insert(schema.orders).values([

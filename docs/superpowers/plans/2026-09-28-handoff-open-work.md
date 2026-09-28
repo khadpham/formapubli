@@ -3,6 +3,20 @@
 Trạng thái lúc viết: `main` = `7f61072`, prod = worker `275516cb`.
 Mọi việc trong tài liệu này **CHƯA** làm. Đọc `AGENTS.md` trước khi bắt tay.
 
+> ## ⚠️ CẬP NHẬT 2026-09-29 — 4 mục dưới đây ĐÃ SAI, đã kiểm chứng từng dòng
+>
+> Bản đã hiệu chỉnh + phân thứ tự ưu tiên: `2026-09-29-open-work-corrected-plan.md`.
+> **Đừng làm theo các mục đã đánh dấu sai.** Cụ thể:
+>
+> | Mục | Sai ở đâu |
+> |---|---|
+> | §1 (dòng "điều kiện **duy nhất**") | `setIsDiscountApprovalModalOpen(true)` có **HAI** call site: `PosCheckoutTerminal.tsx:965` và `:2868` (nút "Mở lại mã"). Xoá "dead code" theo tin này sẽ **hỏng nút của thu ngân**. |
+> | §2 | `OFFLINE_EMERGENCY` **không phải** lỗ hổng đang mở: `service.ts:386-391` chặn mọi role ≠ OWNER/MANAGER, và quản lý đã có `ONE_TOUCH` không trần. Nó là **cái bẫy chân** (route vẫn cấu hình thu ngân được phép). **ĐÃ GỠ 2026-09-29.** |
+> | §4.1 | Đơn hết 30′ **không** giữ ATP. ATP theo **thời gian**, không theo trạng thái (`order.service.ts:1185-1188`). Cái thật sự kẹt là dòng `PENDING_CONFIRMATION` **chặn chốt ngày** — nghiêm trọng hơn, và dây chuyền (xem P2 trong kế hoạch đã hiệu chỉnh). |
+> | §4.5 | `lowStockBooks` **đã bị xoá**, không phải "tính rồi không render". Grep toàn repo chỉ còn 1 dòng trong comment (`ExecutiveDashboard.tsx:85`). |
+>
+> Thêm: `scripts/deploy-cloudflare.ts` **không tồn tại** và chưa bao giờ commit (§4.7a) — nhưng token **vẫn nằm trong git history** (5 commit), nên vẫn phải thu hồi ở Cloudflare.
+
 ---
 
 ## 0. Bối cảnh: những gì đã deploy và đã đóng

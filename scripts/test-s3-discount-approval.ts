@@ -293,20 +293,25 @@ async function run() {
     actorContext: CASHIER,
   });
 
-  let ceilingCaught = false;
+  // HỢP ĐỒNG MỚI 2026-09-29: OFFLINE_EMERGENCY bị GỠ khỏi hệ thống.
+  // Trước đây chỉ chặn khi > 25%, nên "EMG-x" với đơn ≤ 25% là duyệt được.
+  // Nay phương thức này không còn hợp lệ ở BẤT KỲ mức nào — chặn chặt hơn cũ.
+  let emergencyMethodRejectedOverCap = false;
   try {
     await DiscountApprovalService.approveRequest({
       requestId: req4.id,
-      method: 'OFFLINE_EMERGENCY',
+      method: 'OFFLINE_EMERGENCY' as any,
       emergencyCode: 'EMG-20260923-1',
       actorContext: MGR,
-    });
+    } as any);
   } catch (err: any) {
-    ceilingCaught = true;
+    emergencyMethodRejectedOverCap = true;
   }
-  assert.ok(ceilingCaught, 'Mã khẩn cấp vượt 25% phải bị chặn');
+  assert.ok(
+    emergencyMethodRejectedOverCap,
+    'OFFLINE_EMERGENCY phải bị từ chối với đơn > 25% (không còn trần 25% nữa)'
+  );
 
-  // Now test valid 25% with emergency code
   const orderCode5 = 'ORD-2026-5556';
   const req5 = await DiscountApprovalService.createRequest({
     orderCode: orderCode5,
@@ -316,15 +321,29 @@ async function run() {
     requestedDiscountRate: 0.25,
     actorContext: CASHIER,
   });
-  const approvedReq5 = await DiscountApprovalService.approveRequest({
-    requestId: req5.id,
-    method: 'OFFLINE_EMERGENCY',
-    emergencyCode: 'EMG-20260923-1',
-    actorContext: MGR,
-  });
-  assert.equal(approvedReq5.status, 'APPROVED');
-  assert.equal(approvedReq5.approvalMethod, 'OFFLINE_EMERGENCY');
-  console.log('✓ Mã khẩn cấp <= 25% duyệt thành công');
+  let emergencyMethodRejectedUnderCap = false;
+  let emergencyRowStillPending = false;
+  try {
+    await DiscountApprovalService.approveRequest({
+      requestId: req5.id,
+      method: 'OFFLINE_EMERGENCY' as any,
+      emergencyCode: 'EMG-20260923-1',
+      actorContext: MGR,
+    } as any);
+  } catch (err: any) {
+    emergencyMethodRejectedUnderCap = true;
+  }
+  const req5After = await DiscountApprovalService.getRequest(req5.id);
+  emergencyRowStillPending = req5After?.status === 'PENDING';
+  assert.ok(
+    emergencyMethodRejectedUnderCap,
+    'OFFLINE_EMERGENCY phải bị từ chối kể cả đơn ≤ 25% — đây là lỗ hổng cũ đã đóng'
+  );
+  assert.ok(
+    emergencyRowStillPending,
+    'Yêu cầu bị từ chối duyệt bằng mã khẩn cấp phải giữ nguyên PENDING, không đổi trạng thái'
+  );
+  console.log('✓ OFFLINE_EMERGENCY bị từ chối ở mọi mức chiết khấu, yêu cầu giữ PENDING');
 
   // Test 8: Rejection
   console.log('\n[Case 8] Quản lý từ chối chiết khấu');

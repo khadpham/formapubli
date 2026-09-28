@@ -117,9 +117,13 @@ Ghi lại để quyết sau, không tự đụng vào:
 
 1. Đơn chuyển khoản ở kho **hội chợ** giữ tồn **48 giờ** thay vì 30 phút
    (`order.service.ts` — `isCounterChannel` chỉ nhận `RETAIL_OFFICE`), và bỏ qua yêu cầu két mở.
-2. Duyệt chiết khấu bằng **QR** có backend + test nhưng **chưa có UI nào gửi mã** — QR hiện chỉ để trưng bày.
+2. Duyệt chiết khấu bằng **QR** có backend + test nhưng **UI chưa từng được viết** — không ai gọi được,
+   kể cả thu ngân (ô QR nằm trong nhánh quản lý mà modal chỉ mở cho thu ngân). **Không xây UI quét QR.**
 3. Không có tác vụ nền giải phóng đơn `PENDING_CONFIRMATION` hết hạn; chỉ có nút bấm tay của Quản lý.
-   Một đơn kẹt 48h chặn **không cho chốt ngày** cho cả ngày đó.
-4. `getStockMatrix` đếm TẤT CẢ bản ghi `stock_balances` không lọc `condition='NEW'`.
+   Đơn kẹt **chặn không cho chốt ngày**, và làm `autoCloseSession` từ chối đóng ca ⇒ tê cả đường ống
+   đêm của cron (xem P2 trong `2026-09-29-open-work-corrected-plan.md`).
+   *Lưu ý 2026-09-29: đơn quầy hết 30′ **không** giữ ATP — ATP theo thời gian, không theo trạng thái.*
+4. ~~`getStockMatrix` đếm TẤT CẢ bản ghi `stock_balances` không lọc `condition='NEW'`.~~
+   **ĐÃ SỬA + COMMIT `084a50e`** — nay lọc `condition='NEW'`. Xoá khỏi danh sách tồn đọng.
 5. `StockOverviewMatrix.tsx:105` còn `currentRole = 'ROLE_OWNER'` mặc định — hiện **không gọi tới được**
    (shell luôn truyền prop), để nguyên vì thêm guard chỉ là chi phí không sinh lợi.

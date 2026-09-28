@@ -296,20 +296,31 @@ async function run() {
     console.log('✓ D08');
   }
 
-  // D10: đơn Tặng 100% của cashier vẫn phải qua PIN (không đường bypass).
-  console.log('\n[D10] Gift orders require manager PIN');
+  // D10: đơn Tặng 100% của cashier vẫn phải qua phê duyệt của Quản lý.
+  // HỢP ĐỒNG MỚI 2026-09-29: bỏ đường rẽ PIN. Cổng PIN chưa bao giờ chạy được
+  // (client không có UI nhập PIN) nên thu ngân bị kẹt với lỗi không gỡ được.
+  // Nay MỘT đường duy nhất: yêu cầu duyệt hợp lệ của Quản lý. Test siết chặt
+  // hơn: trước chỉ chặn "không PIN", nay phải có duyệt thật mới qua.
+  console.log('\n[D10] Gift orders require manager approval (no PIN path)');
   {
     const c1 = await loginCookie(CASHIER.staffId, '1234');
-    const giftBody = (pin?: string) => ({
+    const giftBody = (apprId?: string) => ({
       warehouseId: 'wh-au-co', channel: 'FAIR_EVENT', customerName: 'D10',
       discountRate: 1, paymentMethod: 'CASH', isGift: true, giftReason: 'Tặng đối tác D10',
-      ...(pin ? { managerPin: pin } : {}),
-      items: [{ editionId: 'ed-h01', quantity: 1 }],
+      ...(apprId ? { discountApprovalId: apprId } : {}),
+      items: baseItems.map((i) => ({ editionId: i.editionId, quantity: i.quantity })),
     });
-    const noPin = await postOrdersWith(c1.cookie, giftBody());
-    assert.equal(noPin.status, 403, `Gift không PIN phải 403, thực tế ${noPin.status}`);
-    const withPin = await postOrdersWith(c1.cookie, giftBody('9999'));
-    assert.equal(withPin.status, 200, `Gift + PIN đúng phải 200, thực tế ${withPin.status}`);
+    const noApproval = await postOrdersWith(c1.cookie, giftBody());
+    assert.equal(noApproval.status, 403, `Gift không duyệt phải 403, thực tế ${noApproval.status}`);
+    assert.equal(noApproval.json?.code, 'FORBIDDEN', 'Lỗi phải là FORBIDDEN có mã, không phải 400 mơ hồ');
+
+    // PIN "đúng" KHÔNG còn là đường thoát — phải 403 như không có gì.
+    const withPin = await postOrdersWith(c1.cookie, { ...giftBody(), managerPin: '9999' });
+    assert.equal(withPin.status, 403, `Gift + PIN không còn là đường thoát, thực tế ${withPin.status}`);
+
+    const giftAppr = await approvedRequest('ORD-D10-GIFT', 1);
+    const withApproval = await postOrdersWith(c1.cookie, giftBody(giftAppr.id));
+    assert.equal(withApproval.status, 200, `Gift + Quản lý duyệt phải 200, thực tế ${withApproval.status}`);
     await logoutCookie(c1.cookie);
     console.log('✓ D10');
   }

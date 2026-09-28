@@ -281,6 +281,37 @@ assert.doesNotMatch(
   /getUserMedia|playsInline|<video|facingMode|createBarcodeDecoder|OCR|tesseract|bank-?api/i,
   'Modal thanh toán không được dựng camera trong web, không OCR, không gọi API ngân hàng'
 );
+
+// --- SỬA iOS 2026-09-29 -------------------------------------------------------------
+// Lỗi thật trên iPhone: sheet thanh toán di động dùng useModalFocusTrap, hook đó
+// đánh dấu `inert` lên #app-main-content — nơi input chụp ảnh của nút ở quầy đang
+// nằm. Trên iPhone nút chụp DUY NHẤT nằm trong sheet, nên nó luôn gọi .click() vào
+// phần tử đang inert ⇒ camera có thể không mở (Safari thực `inert` từ 15.5).
+// Đây là loại lỗi mà test regex KHÔNG bắt được — nó cần iPhone thật. Nhưng việc
+// input nằm trong vùng inert thì bắt được, và đó mới là thứ gây ra lỗi.
+const posRawCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/pos/PosCheckoutTerminal.tsx'), 'utf8');
+const captureInputIdx = posRawCode.indexOf('ref={checkoutCaptureInputRef}');
+const capturePortalIdx = posRawCode.lastIndexOf('<PortalToBody>', captureInputIdx);
+// Thẻ đóng nằm SAU input, nên phải tìm tiếp từ input chứ không tìm lùi.
+const captureCloseIdx = posRawCode.indexOf('</PortalToBody>', captureInputIdx);
+assert.ok(captureInputIdx > 0, 'Input chụp ảnh của nút quầy phải tồn tại');
+assert.ok(
+  capturePortalIdx > 0 && capturePortalIdx < captureInputIdx && captureCloseIdx > captureInputIdx,
+  'Input chụp ảnh phải nằm trong <PortalToBody> — escape khỏi #app-main-content đang bị useModalFocusTrap đánh dấu inert'
+);
+assert.match(
+  posRawCode,
+  /Đang mở camera/,
+  'Bấm nút chụp phải báo ngay — iOS huỷ camera KHÔNG bắn change event, không báo thì nút trông chết'
+);
+// Dữ liệu cục bộ chứa đơn offline CHƯA ĐỒNG BỘ + ảnh xác nhận. iOS ITP xoá toàn
+// bộ dữ liệu site không dùng 7 ngày ⇒ mất đơn đã bán tiền thật, không cảnh báo.
+const pwaCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/pwa/PwaRegister.tsx'), 'utf8');
+assert.match(
+  pwaCode,
+  /navigator\.storage\.persist\(\)/,
+  'Phải xin navigator.storage.persist() — không có thì iOS xoá đơn offline và ảnh xác nhận sau 7 ngày không mở app'
+);
 assert.doesNotMatch(
   transferModalCode,
   /max-w-lg|aspect-video/,

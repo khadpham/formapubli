@@ -346,7 +346,9 @@ export async function POST(req: NextRequest) {
         );
     const exceedsHardCap = maxDiscountRate >= MAX_CASHIER_DISCOUNT_RATE;
     const isPrivilegedRole = userRole === 'ROLE_OWNER' || userRole === 'ROLE_MANAGER';
-    let approvalSource = isPrivilegedRole ? userRole : 'MANAGER_PIN';
+    // 'NONE' = không có phê duyệt nào (dưới trần, hoặc quản lý tự bán). Không còn
+    // 'MANAGER_PIN'/'SYSTEM_MANAGER_PIN' sau khi gỡ nhánh PIN ở P1.
+    let approvalSource = isPrivilegedRole ? userRole : 'NONE';
     let approvalApproverId: string | null = null;
 
     // A1-H: ID phê duyệt đã verify (khớp giỏ/mức/kho/người) để createOrder
@@ -393,28 +395,25 @@ export async function POST(req: NextRequest) {
       }
 
       if (!verifiedApprovalId) {
-        const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-        const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
-        if (pinCheck.locked) {
-          return NextResponse.json(
-            { success: false, code: 'RATE_LIMITED', error: 'Mã PIN quản lý tạm khóa 15 phút do nhập sai nhiều lần.' },
-            { status: 429 }
-          );
-        }
-        if (!pinCheck.ok) {
-          await recordAuditLog({
-            action: 'MANAGER_DISCOUNT_DENIED',
-            actorRole: userRole,
-            actorId: actorHeader,
-            resource: '/api/orders',
-            details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${actorHeader}, thiếu phê duyệt hoặc PIN quản lý hợp lệ).`,
-          });
-          return NextResponse.json(
-            { success: false, error: 'Chiết khấu từ 20% trở lên bắt buộc có mã PIN hoặc phê duyệt của Quản lý.' },
-            { status: 403 }
-          );
-        }
-        approvalSource = 'SYSTEM_MANAGER_PIN';
+        // P1 GỠ 2026-09-29: bỏ nhánh rẽ PIN quản lý. Nhánh đó chưa bao giờ chạy
+        // được — client không có UI nhập PIN nào, `managerPin` luôn undefined nên
+        // verifyManagerPinRateLimited luôn false ⇒ thu ngân bị kẹt với lỗi không
+        // gỡ được. Một đường duyệt duy nhất: quyết định của Quản lý.
+        await recordAuditLog({
+          action: 'MANAGER_DISCOUNT_DENIED',
+          actorRole: userRole,
+          actorId: actorHeader,
+          resource: '/api/orders',
+          details: `Từ chối đơn chiết khấu vượt trần ${Math.round(maxDiscountRate * 100)}% (cashier: ${actorHeader}, không có phê duyệt hợp lệ của Quản lý).`,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'FORBIDDEN',
+            error: 'Chiết khấu từ 20% trở lên cần Quản lý phê duyệt. Hãy lập yêu cầu duyệt và thử lại sau khi Quản lý duyệt (yêu cầu cũ đã hết hạn sẽ phải lập lại).',
+          },
+          { status: 403 }
+        );
       }
     }
 
@@ -456,8 +455,8 @@ export async function POST(req: NextRequest) {
         .limit(1);
       approvalApproverRole = (approverRows[0]?.role as UserRole) || 'ROLE_MANAGER';
     }
-    const approvalAuditActorId = approvalApproverId || (approvalSource === 'SYSTEM_MANAGER_PIN' ? 'SYSTEM_MANAGER_PIN' : actorHeader);
-    const approvalAuditRole = approvalSource === 'SYSTEM_MANAGER_PIN' ? 'ROLE_MANAGER' : approvalApproverRole;
+    const approvalAuditActorId = approvalApproverId || actorHeader;
+    const approvalAuditRole = approvalApproverRole;
     const requiredAudit = [
       ...(exceedsHardCap
         ? [{

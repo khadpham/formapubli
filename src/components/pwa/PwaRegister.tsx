@@ -18,6 +18,8 @@ import { Download, Share2, X } from 'lucide-react';
  */
 const IOS_HINT_DISMISSED = 'pwa_ios_hint_dismissed';
 const INSTALLED_FLAG = 'pwa_installed';
+/** Đã được cấp quyền giữ dữ liệu cục bộ (storage.persist) — không xin lại. */
+const PERSIST_GRANTED_FLAG = 'pwa_storage_persist_granted';
 
 /** iPadOS 13+ báo UA là Macintosh — phải thêm maxTouchPoints mới nhận ra iPad. */
 function detectIOS(): boolean {
@@ -70,7 +72,37 @@ export function PwaRegister() {
       }
     }
 
-    // 2. Nhánh Android/Desktop: chờ `beforeinstallprompt`.
+    // 2. XIN QUYỀN GIỮ DỮ LIỆU CỤC BỘ (ưu tiên cao — làm trước prompt cài app).
+    // iOS ITP XOÁ TOÀN BỘ dữ liệu script-writable của site không dùng 7 ngày.
+    // `formapubli_offline_db` chứa cả đơn offline CHƯA ĐỒNG BỘ lẫn ảnh xác nhận
+    // chuyển khoản ⇒ bị xoá là mất đơn đã bán tiền thật, không có cảnh báo nào.
+    // `navigator.storage.persist()` là cơ chế "bền" của Storage API. WebKit chỉ
+    // cấp cho PWA đã cài từ Home Screen, nên gọi sớm ở đây (sau lần mở app đầu
+    // tiên) là hợp lý — nếu bị từ chối thì thử lại ở lần mở sau.
+    const requestPersistence = () => {
+      if (!navigator.storage?.persist) return;
+      navigator.storage
+        .persist()
+        .then((granted) => {
+          if (granted && !localStorage.getItem(PERSIST_GRANTED_FLAG)) {
+            localStorage.setItem(PERSIST_GRANTED_FLAG, '1');
+            console.log('formapubli OS: Đã xin quyền giữ dữ liệu cục bộ (offline an toàn hơn).');
+          }
+        })
+        .catch(() => {
+          /* im lặng: không phải lỗi chặn nghiệp vụ */
+        });
+    };
+    requestPersistence();
+    // Thử lại khi app quay lại foreground — cơ hội cấp quyền tốt hơn sau
+    // khi người dùng đã cài PWA từ Home Screen.
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !localStorage.getItem(PERSIST_GRANTED_FLAG)) {
+        requestPersistence();
+      }
+    });
+
+    // 3. Nhánh Android/Desktop: chờ `beforeinstallprompt`.
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e);

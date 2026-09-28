@@ -2186,18 +2186,25 @@ export class CashboxService {
         };
       }
 
-      // Giữ nguyên guard của chốt tay: còn đơn chờ thì không đụng (không bỏ rơi đơn).
+      // Giữ nguyên guard của chốt tay: còn đơn chờ THÌ CÒN HẠN thì không đụng
+      // (không bỏ rơi đơn). P2 SỬA 2026-09-29: trước đây chặn mọi dòng
+      // PENDING kể cả đã hết hạn ⇒ ca treo vô hạn, rồi chặn luôn cả
+      // closeDay (deadlock 2 bước trong cron).
       const pending = await tx
-        .select({ id: orders.id })
+        .select({
+          id: orders.id,
+          createdAt: orders.createdAt,
+          paymentExpiresAt: orders.paymentExpiresAt,
+        })
         .from(orders)
         .where(
           and(
             eq(orders.cashboxSessionId, sessionId),
             eq(orders.status, 'PENDING_CONFIRMATION')
           )
-        )
-        .limit(1);
-      if (pending.length > 0) {
+        );
+      const livePending = pending.filter((o: any) => !OrderService.isPendingExpired(o));
+      if (livePending.length > 0) {
         throw AppError.conflict('Còn đơn chuyển khoản/QR đang chờ. Hãy xác nhận hoặc hủy trước khi chốt ca.');
       }
 

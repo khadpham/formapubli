@@ -14,7 +14,7 @@ import {
   idempotencyKeys,
 } from '../db';
 import { AppError } from './app-error';
-import { CashboxService, businessDateOf, evaluateShiftCutoff } from './order.service';
+import { CashboxService, OrderService, businessDateOf, evaluateShiftCutoff } from './order.service';
 import { parseDbTimestamp } from '../lib/db-timestamp';
 import { withDbRetry } from '../lib/db-retry';
 
@@ -437,8 +437,18 @@ export class DailySettlementService {
           );
         }
 
-        const pendingOrders = await tx
-          .select({ id: orders.id, orderCode: orders.orderCode })
+        // P2 SỬA 2026-09-29: chỉ đơn PENDING **CÒN HẠN** mới chặn chốt ngày.
+        // Trước đây chặn mọi dòng PENDING kể cả đã quá hạn 25 giờ ⇒ một đơn
+        // chuyển khoản quầy hết hạn 30 phút chặn vô hạn, không tự giải phóng
+        // được. Dùng đúng quy tắc hạn của OrderService (payment_expires_at nếu
+        // có, không thì TTL 48h) thay vì so trạng thái thô.
+        const pendingRows = await tx
+          .select({
+            id: orders.id,
+            orderCode: orders.orderCode,
+            createdAt: orders.createdAt,
+            paymentExpiresAt: orders.paymentExpiresAt,
+          })
           .from(orders)
           .where(
             and(
@@ -447,10 +457,11 @@ export class DailySettlementService {
               like(orders.createdAt, `${date}%`)
             )
           );
-        if (pendingOrders.length > 0) {
+        const livePending = pendingRows.filter((o: any) => !OrderService.isPendingExpired(o));
+        if (livePending.length > 0) {
           throw AppError.conflict(
-            `Chưa thể chốt ngày ${date}: còn ${pendingOrders.length} đơn chờ thanh toán ` +
-              `(${pendingOrders.map((o: any) => o.orderCode).join(', ')}). Hãy xác nhận hoặc hủy trước.`
+            `Chưa thể chốt ngày ${date}: còn ${livePending.length} đơn chờ thanh toán ` +
+              `(${livePending.map((o: any) => o.orderCode).join(', ')}). Hãy xác nhận hoặc hủy trước.`
           );
         }
 

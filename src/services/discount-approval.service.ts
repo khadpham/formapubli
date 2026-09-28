@@ -356,16 +356,20 @@ export class DiscountApprovalService {
   }
 
   /**
-   * Quản lý phê duyệt chiết khấu:
-   * - Hỗ trợ 4 phương thức: ONE_TOUCH (session Web/Mobile), SHORTCODE_BOUND (nhập 4 số),
-   *   QR_JWT (quét mã), OFFLINE_EMERGENCY (mã khẩn cấp khi rớt mạng, trần 25%).
+   * Quản lý phê duyệt chiết khấu.
+   * - 3 phương thức: ONE_TOUCH (session Web/Mobile), SHORTCODE_BOUND (nhập 4 số),
+   *   QR_JWT (quét mã).
+   * - Phương thức duyệt bằng "mã khẩn cấp ngoại tuyến" đã GỠ 2026-09-29: nó chỉ
+   *   kiểm chuỗi theo tiền tố, không có bảng mã, không single-use, không hạn.
+   *   Mọi thứ quản lý dùng được vốn đã có ONE_TOUCH không trần nên nó không cho
+   *   thêm quyền, nhưng là cái bẫy: nới role-gate ở đây là biến nó thành
+   *   backdoor cho thu ngân tự duyệt chiết khấu của chính mình.
    */
   static async approveRequest(params: {
     requestId: string;
-    method: 'ONE_TOUCH' | 'QR_JWT' | 'SHORTCODE_BOUND' | 'OFFLINE_EMERGENCY';
+    method: 'ONE_TOUCH' | 'QR_JWT' | 'SHORTCODE_BOUND';
     shortCode?: string;
     qrToken?: string;
-    emergencyCode?: string;
     actorContext: ActorContext;
     txOrDb?: any;
   }) {
@@ -374,12 +378,11 @@ export class DiscountApprovalService {
       method,
       shortCode,
       qrToken,
-      emergencyCode,
       actorContext,
       txOrDb = db,
     } = params;
 
-    if (!['ONE_TOUCH', 'QR_JWT', 'SHORTCODE_BOUND', 'OFFLINE_EMERGENCY'].includes(method as string)) {
+    if (!['ONE_TOUCH', 'QR_JWT', 'SHORTCODE_BOUND'].includes(method as string)) {
       throw AppError.invalid('Phương thức phê duyệt không hợp lệ.');
     }
 
@@ -445,16 +448,6 @@ export class DiscountApprovalService {
         payload.cartHash !== request.cartHash
       ) {
         throw AppError.invalid('Mã QR không khớp với yêu cầu duyệt hiện tại');
-      }
-    } else if (method === 'OFFLINE_EMERGENCY') {
-      // V4.1 §4.3: TRẦN: mã khẩn cấp chỉ duyệt tối đa CK 25%. Vượt 25% -> bắt buộc online.
-      if (request.requestedDiscountRate > 0.25001) {
-        throw AppError.invalid(
-          'Mã khẩn cấp ngoại tuyến chỉ duyệt tối đa chiết khấu 25%. Mức chiết khấu này yêu cầu duyệt online.'
-        );
-      }
-      if (!emergencyCode || !emergencyCode.trim().startsWith('EMG-')) {
-        throw AppError.invalid('Mã khẩn cấp không hợp lệ (sai định dạng EMG-...)');
       }
     }
 

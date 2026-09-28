@@ -233,7 +233,12 @@ assert.match(reset, /setIsDiscountApprovalModalOpen\(false\)/);
 assert.match(reset, /setPendingDiscountRate\(null\)/);
 assert.match(reset, /setPendingApprovalRequestId\(null\)/);
 assert.match(reset, /setApprovedDiscountRequestId\(null\)/);
-assert.match(reset, /setApprovedPin\(null\)/);
+// HỢP ĐỒNG MỚI 2026-09-29: đường rẽ PIN quản lý ở đơn chiết khấu đã bị gỡ khỏi
+// server. State `approvedPin` chỉ tồn tại để gửi PIN vốn luôn undefined, nên xoá
+// cho khỏi giữ một state chết. Giữ assertion này ở dạng phủ định để không ai
+// cấy lại plumbing không dùng.
+assert.doesNotMatch(reset, /setApprovedPin\(null\)/, 'POS không được còn state PIN chết');
+assert.doesNotMatch(pos, /approvedPin/, 'POS không được còn tham chiếu approvedPin');
 assert.match(reset, /setIsManagerOverride\(false\)/);
 assert.match(reset, /setActiveOrderCode\(createOrderCode\(\)\)/);
 assert.match(reset, /setCustomerName\('Khách lẻ vãng lai'\)/);
@@ -344,7 +349,16 @@ assert.match(modal, /onTerminalRef\.current\?\.\('EXPIRED', req\.id\)/);
 assert.match(modal, /itemsKey/);
 assert.match(modal, /const generation = requestGenerationRef\.current/);
 assert.match(modal, /if \(generation === requestGenerationRef\.current\) setOtpError/);
-assert.match(modal, /if \(generation === requestGenerationRef\.current\) setEmergencyError/);
+// Mã khẩn cấp đã gỡ: modal không được còn gửi phương thức mà server từ chối.
+assert.doesNotMatch(modal, /OFFLINE_EMERGENCY/, 'Modal không được còn gửi OFFLINE_EMERGENCY');
+assert.doesNotMatch(modal, /EMG-/, 'Modal không được còn lời hứa mã khẩn cấp EMG-');
+assert.doesNotMatch(modal, /1 trong 5 mã khẩn cấp/, 'Xoá lời hứa "1 trong 5 mã khẩn cấp" — không có mã nào được sinh');
+// P5 sửa 2026-09-29: đồng hồ đếm lùi về 0 KHÔNG được tự khai EXPIRED. Nếu
+// Quản lý duyệt đúng trong ~2.5s cuối (chu kỳ poll) thì client bỏ rơi một
+// duyệt hợp lệ. Bắt buộc hỏi server một lần trước khi khai hết hạn.
+assert.match(modal, /const settled = await syncRef\.current\(\)/, 'Đếm lùi về 0 phải hỏi server trước khi khai EXPIRED');
+assert.match(modal, /if \(settled\) return;/, 'Server đã trả lời thì không được khai EXPIRED đè lên');
+assert.match(modal, /const syncFromServer = useCallback/, 'Logic hỏi trạng thái phải là MỘT hàm dùng chung cho cả poll lẫn đếm lùi');
 assert.match(modal, /generation !== requestGenerationRef\.current/);
 assert.match(modal, /requestAbortRef/);
 assert.match(modal, /requestController\.abort\(\)/);
@@ -434,14 +448,16 @@ assert.doesNotMatch(ordersRoute, /Không thể tiêu thụ discount approval/);
 
 const approvalRoutePath = path.resolve(process.cwd(), 'src/app/api/pos/discount-approvals/[id]/route.ts');
 const approvalRoute = fs.readFileSync(approvalRoutePath, 'utf8');
-// origin/main siết chặt hơn: thu ngân KHÔNG được tự duyệt chiết khấu của mình,
-// chỉ mở khoá qua luồng OTP/mã khẩn cấp, hoặc được hủy yêu cầu của chính mình.
+// HỢP ĐỒNG MỚI 2026-09-29: thu ngân chỉ được CANCEL yêu cầu của chính mình.
+// Cửa sổ "mã OTP / mã khẩn cấp" bị gỡ khỏi route: nó là no-op (service chặn
+// mọi role ≠ OWNER/MANAGER) và chỉ là lời hứa không có thật — không có bảng mã.
 assert.match(approvalRoute, /session\.role === 'ROLE_CASHIER'/);
-assert.match(approvalRoute, /action === 'APPROVE' && \(method === 'SHORTCODE_BOUND' \|\| method === 'OFFLINE_EMERGENCY'\)/);
-assert.match(approvalRoute, /action !== 'CANCEL' && !isOtpFlow/);
+assert.match(approvalRoute, /session\.role === 'ROLE_CASHIER' && action !== 'CANCEL'/);
 assert.match(approvalRoute, /session\.role === 'ROLE_CASHIER' && `\$\{data\.cashierId\}` !== `\$\{session\.actorId\}`/, 'Thu ngân không được xem yêu cầu của người khác');
 assert.match(approvalRoute, /action === 'CANCEL'/);
-assert.match(approvalRoute, /if \(action !== 'CANCEL' && !isOtpFlow\) \{\s*throw AppError\.forbidden/, 'Chặn cứng 403 thu ngân tự duyệt, không đổi sang PIN');
+assert.doesNotMatch(approvalRoute, /isOtpFlow/, 'Route không được mở lại cửa sổ mã OTP/khẩn cấp cho thu ngân');
+assert.doesNotMatch(approvalRoute, /OFFLINE_EMERGENCY/, 'Route không được nhắc tới OFFLINE_EMERGENCY nữa');
+assert.doesNotMatch(approvalRoute, /emergencyCode/, 'Route không được nhận emergencyCode nữa');
 
 const approvalServicePath = path.resolve(process.cwd(), 'src/services/discount-approval.service.ts');
 const approvalService = fs.readFileSync(approvalServicePath, 'utf8');
@@ -455,6 +471,12 @@ assert.match(approvalService, /Yêu cầu duyệt đã được sử dụng cho 
 assert.match(approvalService, /db\.transaction\(\(tx\) => this\.createRequest/);
 assert.match(approvalService, /originalAmount\?: number/);
 assert.match(approvalService, /eq\(discountApprovalRequests\.version, request\.version\)[\s\S]*gt\(discountApprovalRequests\.expiresAt, nowIso\)/);
+// OFFLINE_EMERGENCY đã gỡ khỏi service: allowlist chỉ còn 3 phương thức và
+// không còn nhánh verify "EMG-". Đây là chốt chặn cuối — service là nơi quyết
+// định, route chỉ là lớp vỏ.
+assert.doesNotMatch(approvalService, /OFFLINE_EMERGENCY/, 'Service không được còn phương thức OFFLINE_EMERGENCY');
+assert.doesNotMatch(approvalService, /startsWith\('EMG-'\)/, 'Không được còn kiểm mã khẩn cấp bằng tiền tố chuỗi');
+assert.match(approvalService, /'ONE_TOUCH', 'QR_JWT', 'SHORTCODE_BOUND'/, 'Allowlist phương thức duyệt còn đúng 3 mục');
 
 const orderServicePath = path.resolve(process.cwd(), 'src/services/order.service.ts');
 const orderService = fs.readFileSync(orderServicePath, 'utf8');

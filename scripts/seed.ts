@@ -236,6 +236,20 @@ async function main() {
 
   const shouldSeedStaff = process.env.SEED_DEFAULT_STAFF === 'true' || process.env.NODE_ENV === 'development';
   if (shouldSeedStaff) {
+    // P6 CHẶN 2026-09-29: nhánh này GHI ĐÈ passcode_hash + salt của 8 tài khoản
+    // mặc định (9999/8888/1234/2345/3456/5678/7890). Chạy trên prod là đặt lại
+    // PIN của toàn bộ nhân viên về PIN công khai — và `scripts/migrate-remote.ts`
+    // còn hướng dẫn chạy đúng script này ngay sau khi migrate. verifyStaffPasscode
+    // KHÔNG hề kiểm AUTH_STRICT/NODE_ENV, nên đây là cửa ngõ thật.
+    const dbUrl = process.env.DATABASE_URL || '';
+    const isRemote = !!dbUrl && !dbUrl.startsWith('file:');
+    if (isRemote && process.env.SEED_STAFF_REMOTE !== 'true') {
+      throw new Error(
+        'REFUSED: seed sẽ GHI ĐÈ PIN của 8 nhân viên mặc định. DATABASE_URL đang trỏ ' +
+          'tới DB từ xa. Đặt SEED_STAFF_REMOTE=true nếu bạn thực sự muốn reset PIN, ' +
+          'hoặc bỏ trống SEED_DEFAULT_STAFF để dùng tài khoản thật.'
+      );
+    }
     console.log('👥 Seeding default staff accounts (DEV / EXPLICIT FLAG ONLY)...');
     for (const staff of DEFAULT_STAFF_ACCOUNTS) {
       const passcodeHash = await hashStaffPasscodeV2(staff.passcode, staff.salt);

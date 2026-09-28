@@ -164,4 +164,57 @@ ok(
   'Phải giới hạn số ca chốt mỗi lần gọi, nếu không sẽ vỡ giới hạn subrequest khi ca tồn đọng dồn'
 );
 
+// ---------------------------------------------------------------------------
+// 9. P2 (2026-09-29): đơn PENDING HẾT HẠN không được chặn đóng ca / chốt ngày.
+//    Trước đây cả hai chặn theo TRẠNG THÁI thô ⇒ một đơn quầy hết hạn sau 30
+//    phút tê cả đường ống cron của kho đó.
+// ---------------------------------------------------------------------------
+ok(
+  /cleanupExpiredPending/.test(src),
+  'Cron phải dọn đơn PENDING hết hạn TRƯỚC khi đóng ca, không chỉ bấm tay'
+);
+ok(
+  /pendingCleaned/.test(src),
+  'Số đơn PENDING đã dọn phải được BÁO RA — có thay đổi dữ liệu thật, không được im lặng'
+);
+const orderSvc = fs.readFileSync(path.resolve(process.cwd(), 'src/services/order.service.ts'), 'utf8');
+const daySvc = fs.readFileSync(path.resolve(process.cwd(), 'src/services/daily-settlement.service.ts'), 'utf8');
+ok(
+  /livePending/.test(orderSvc) && /isPendingExpired/.test(orderSvc),
+  'autoCloseSession phải chỉ chặn đơn PENDING CÒN HẠN, không chặn cả đơn đã hết hạn'
+);
+ok(
+  /livePending/.test(daySvc) && /isPendingExpired/.test(daySvc),
+  'closeDay phải chỉ chặn đơn PENDING CÒN HẠN — nếu không thì một đơn kẹt chặn chốt ngày vô hạn'
+);
+
+// ---------------------------------------------------------------------------
+// 10. P2 (2026-09-29): CHỐNG XANH GIẢ. Ngày lỡ trôt trượt khỏi BACK_DAYS sau
+//     7 đêm sẽ không ai hỏi nữa ⇒ workflow xanh mà ngày chưa từng chốt.
+// ---------------------------------------------------------------------------
+ok(
+  /unclosed/.test(src),
+  'Endpoint phải có chế độ liệt kê ngày đã qua CHƯA CHỐT, độc lập cửa sổ BACK_DAYS'
+);
+ok(
+  /unclosed/.test(wf) && /ucount/.test(wf),
+  'Workflow phải hỏi danh sách ngày chưa chốt và FAIL nếu còn — không được báo xanh'
+);
+
+// ---------------------------------------------------------------------------
+// 11. P6 (2026-09-29): chặn script migrate/seed ghi vào DB từ xa.
+//     migrate-fresh không có bảng ghi migration (chạy lại từ 0000 mỗi lần),
+//     seed ghi đè PIN 8 nhân viên mặc định.
+// ---------------------------------------------------------------------------
+const migrateFresh = fs.readFileSync(path.resolve(process.cwd(), 'scripts/migrate-fresh.ts'), 'utf8');
+const seedSrc = fs.readFileSync(path.resolve(process.cwd(), 'scripts/seed.ts'), 'utf8');
+ok(
+  /ALLOW_REMOTE_MIGRATE/.test(migrateFresh),
+  'migrate-fresh phải từ chối DB từ xa trừ khi có cờ ALLOW_REMOTE_MIGRATE tường minh'
+);
+ok(
+  /SEED_STAFF_REMOTE/.test(seedSrc),
+  'seed phải từ chối ghi đè PIN nhân viên mặc định lên DB từ xa trừ khi có cờ SEED_STAFF_REMOTE'
+);
+
 console.log(`\n=== SAFEGUARD CHỐT CA / CHỐT NGÀY: ${checks} assertions PASS ===`);

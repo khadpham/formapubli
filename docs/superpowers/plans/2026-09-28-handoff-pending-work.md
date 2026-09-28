@@ -88,7 +88,7 @@ phòng trắng.
 | # | Việc | Vì sao cần duyệt |
 |---|---|---|
 | A | **Job nền giải phóng đơn `PENDING_CONFIRMATION` hết hạn.** Hiện chỉ có nút `CLEANUP` bấm tay của Quản lý (`POST /api/orders {action:'CLEANUP'}` → `OrderService.cleanupExpiredPending`). Một đơn kẹt **chặn không cho chốt ngày** cho cả ngày đó (`daily-settlement.service.ts:440-455`). | Cần chọn: cron của Workers, hay chạy lười (lazy) khi vào app, hay chỉ cảnh báo |
-| B | **Duyệt chiết khấu bằng QR (`QR_JWT`).** Backend + test đã có (`discount-approval.service.ts:438-448`), cashier thấy QR nhưng **không có UI nào gửi mã** ⇒ QR hiện chỉ để trưng bày. | Cần UI quét mã cho thu ngân |
+| B | ~~**Duyệt chiết khấu bằng QR (`QR_JWT`).**~~ **SAI — đã gỡ 2026-09-29.** Backend + test có (`discount-approval.service.ts:137-160`), nhưng **UI chưa từng được viết** và không ai gọi được: ô QR nằm trong nhánh dành cho quản lý (`DiscountApprovalModal.tsx:539`) mà modal chỉ mở khi vai trò là thu ngân. Không có endpoint nhận mã quét. **Thu ngân cũng không thấy QR.** | Không xây UI quét QR — drawer đã có nút 1-chạm, quét còn chậm hơn bấm |
 | C | **Đơn hội chợ giữ tồn 48h thay vì 30 phút + bỏ qua yêu cầu két.** Đã sửa phần chính (cùng `isCounterChannel` với kho chính → 30 phút + bắt buộc mở ca). Kiểm lại xem còn sót gì không. | Đã gần xong, chỉ cần verify |
 | D | `StockOverviewMatrix.tsx:105` còn `currentRole = 'ROLE_OWNER'` mặc định. Hiện **không gọi tới được** (shell luôn truyền prop) nên để nguyên là hợp lý. | Không làm |
 | E | `check_stock_non_negative` có trong `schema.ts:195` nhưng **không migration nào tạo** ⇒ chỉ có guard trong `UPDATE`. | Cần migration, ảnh hưởng prod |

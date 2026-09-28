@@ -665,7 +665,7 @@ export const discountApprovalRequests = sqliteTable('discount_approval_requests'
   finalAmount: real('final_amount').notNull(),
   status: text('status').default('PENDING').notNull(), // PENDING | APPROVED | REJECTED | EXPIRED | CONSUMED | SUPERSEDED
   approvedBy: text('approved_by'),
-  approvalMethod: text('approval_method'), // ONE_TOUCH | QR_JWT | SHORTCODE_BOUND | OFFLINE_EMERGENCY
+  approvalMethod: text('approval_method'), // ONE_TOUCH | QR_JWT | SHORTCODE_BOUND (OFFLINE_EMERGENCY đã gỡ 2026-09-29)
   rejectedReason: text('rejected_reason'),
   nonce: text('nonce').notNull(),
   expiresAt: text('expires_at').notNull(),

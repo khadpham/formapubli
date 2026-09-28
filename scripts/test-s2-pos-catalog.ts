@@ -32,6 +32,7 @@ async function main() {
   const { PosCatalogService } = await import('../src/services/pos-catalog.service');
   const { OrderService } = await import('../src/services/order.service');
   const { toActorContext } = await import('../src/services/actor-context');
+  const { eq } = await import('drizzle-orm');
 
   const MGR = toActorContext('s2-manager', 'ROLE_MANAGER');
   const MAIN = 'wh-main';
@@ -94,7 +95,39 @@ async function main() {
   ok('C4 catalog main B atp = 5-2 giữ chỗ = 3', c4.items.find((i: any) => i.editionId === 'ed-s2-b')?.atp === 3);
   ok('C4 pending KHÔNG tính soldToday', c4.items.find((i: any) => i.editionId === 'ed-s2-b')?.soldToday === 0);
 
-  // 5. kho ngưng → INVALID_INPUT.
+  // 5. ĐƠN CHUYỂN KHOẢN QUẦY HẾT HẠN PHẢI NHẢ ATP (lỗi đã sửa 2026-09-29).
+  // Trước đây pos-catalog cộng thẳng mọi đơn PENDING trong 48h, bỏ qua
+  // payment_expires_at, nên đơn quầy hết hạn sau 30 phút vẫn chặn ATP tới 48
+  // giờ ⇒ quầy báo hết hàng oan, khác hẳn OrderService.getBatchATP.
+  const pend: any = await OrderService.createOrder({
+    warehouseId: MAIN, channel: 'FAIR_EVENT', customerName: 'CK', paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false, idempotencyKey: 's2-pend-2',
+    items: [{ editionId: 'ed-s2-b', quantity: 1 }], actorContext: MGR,
+  });
+  ok('C6 đơn CK quầy được đặt hạn 30 phút', !!pend?.paymentExpiresAt, String(pend?.paymentExpiresAt));
+  const heldLive = await PosCatalogService.getCatalog(MAIN);
+  ok('C6 đơn CK còn hạn vẫn giữ ATP', heldLive.items.find((i: any) => i.editionId === 'ed-s2-b')?.atp === 2,
+     String(heldLive.items.find((i: any) => i.editionId === 'ed-s2-b')?.atp));
+
+  // Lùi payment_expires_at về quá khứ để giả lập đơn quá hạn 30 phút.
+  // Client `raw` đã đóng ở trên (dòng seed xong), nên mở client riêng cho 1 lệnh.
+  const fixClient = createClient({ url: process.env.DATABASE_URL! });
+  const fixDb = drizzle(fixClient);
+  const back = await fixDb.update(schema.orders)
+    .set({ paymentExpiresAt: new Date(Date.now() - 60_000).toISOString() })
+    .where(eq(schema.orders.id, pend.orderId));
+  fixClient.close();
+  ok('C6 lùi được payment_expires_at về quá khứ', Number(back.rowsAffected ?? 0) === 1, String(back.rowsAffected));
+
+  const afterExpiry = await PosCatalogService.getCatalog(MAIN);
+  ok('C6 đơn CK quá hạn KHÔNG còn giữ ATP (trả lại đủ 3)', afterExpiry.items.find((i: any) => i.editionId === 'ed-s2-b')?.atp === 3,
+     String(afterExpiry.items.find((i: any) => i.editionId === 'ed-s2-b')?.atp));
+
+  // Cùng lúc đó, quy tắc của OrderService phải KHỚP — chỉ còn một nơi quyết định.
+  const atpViaOrder = await OrderService.getATP('ed-s2-b', MAIN);
+  ok('C6 catalog KHỚP OrderService.getATP', atpViaOrder === 3, String(atpViaOrder));
+
+  // 6. kho ngưng → INVALID_INPUT.
   let err5: any = null;
   try { await PosCatalogService.getCatalog('wh-dead'); } catch (e: any) { err5 = e; }
   ok('C5 kho ngưng → INVALID_INPUT', err5?.code === 'INVALID_INPUT', err5?.code);

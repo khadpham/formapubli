@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
-import { CashboxService } from '@/services/order.service';
+import { CashboxService, OrderService } from '@/services/order.service';
 import { DailySettlementService } from '@/services/daily-settlement.service';
-import { db, warehouses } from '@/db';
-import { eq } from 'drizzle-orm';
+import { db, warehouses, idempotencyKeys } from '@/db';
+import { eq, like } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +65,15 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ success: true, data: { warehouses: all } });
   }
 
+  // P2 sửa 2026-09-29: SO NGÀY CHƯA CHỐT. Ngày lỡ trôt sẽ trượt khỏi cửa sổ
+  // BACK_DAYS sau 7 đêm rồi không ai hỏi nữa ⇒ workflow chuyển XANH trong khi
+  // ngày đó chưa từng được chốt. Mất dữ liệu mặc áo thành công. Endpoint này
+  // trả về MỌI ngày đã qua chưa có bản chốt, độc lập cửa sổ quét, để bên gọi
+  // fail thật thay vì im lặng.
+  if (url.searchParams.get('unclosed') === '1') {
+    return listUnclosed(Number(url.searchParams.get('days') || 30));
+  }
+
   // Ngày cần chốt. Mặc định = hôm qua giờ VN. Bên gọi truyền vào để quét được
   // cả những ngày đã LỠ TRÔT (cron chết mấy ngày), không chỉ hôm qua.
   const raw = (url.searchParams.get('date') || '').trim();
@@ -88,6 +97,48 @@ function isRealDate(s: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const d = new Date(`${s}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+/**
+ * Liệt kê mọi (kho × ngày) đã qua nhưng CHƯA có bản chốt trong N ngày gần nhất.
+ * Bản chốt được ghi ở `idempotency_keys` với key `day-close:<kho>:<ngày>`.
+ *
+ * P2 sửa 2026-09-29: đây là chốt chặn chống "xanh giả". Một ngày lỡ trôt sẽ
+ * trượt khỏi cửa sổ BACK_DAYS của workflow sau 7 đêm và không còn ai hỏi tới —
+ * workflow xanh, ngày chưa từng được chốt. Danh sách này độc lập cửa sổ quét.
+ *
+ * Ngày tính theo giờ VN để khớp `settleDate` mà closeDay dùng. Cố tình không
+ * lọc kho hội chợ: kho vật lý cũng phải chốt, và bỏ sót kho nào cũng là hỏng.
+ */
+async function listUnclosed(days: number) {
+  const span = Math.max(1, Math.min(365, Math.trunc(days) || 30));
+  const now = Date.now();
+  // Cùng cách tính với settleDate: trừ N ngày rồi định dạng theo giờ VN.
+  const d = (back: number) =>
+    new Date(now - back * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const firstDay = d(span);
+  const lastDay = d(1);
+
+  const all = await db.select({ id: warehouses.id, code: warehouses.code }).from(warehouses);
+  const closedKeys = await db
+    .select({ key: idempotencyKeys.key })
+    .from(idempotencyKeys)
+    .where(like(idempotencyKeys.key, 'day-close:%'));
+  const closed = new Set(closedKeys.map((r) => r.key));
+
+  const unclosed: { warehouse: string; date: string }[] = [];
+  for (let back = span; back >= 1; back--) {
+    const day = d(back);
+    for (const w of all) {
+      if (!closed.has(`day-close:${w.id}:${day}`)) unclosed.push({ warehouse: w.code, date: day });
+    }
+  }
+
+  return NextResponse.json({
+    // Còn ngày chưa chốt = CHƯA xong. Bên gọi fail thật, không báo xanh.
+    success: unclosed.length === 0,
+    data: { windowDays: span, firstDay, lastDay, warehouses: all.length, unclosed },
+  });
 }
 
 /**
@@ -144,9 +195,22 @@ async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
   // và `truncated` báo ra để KHÔNG im lặng bỏ sót. Nâng lên nếu thực tế gặp.
   const MAX_SHIFTS = 5;
   const truncated: string[] = [];
+  // Số đơn PENDING hết hạn đã dọn ở bước 0 (báo ra để không im lặng).
+  let pendingCleaned = 0;
 
 
   for (const wh of target) {
+    // --- Bước 0: dọn đơn PENDING_CONFIRMATION đã HẾT HẠN (P2 sửa 2026-09-29) ---
+    // Không có bước này thì một đơn chuyển khoản quầy hết hạn sau 30 phút
+    // vẫn giữ dòng PENDING ⇒ chặn autoCloseSession (bước 1) ⇒ ca vẫn OPEN
+    // ⇒ chặn closeDay (bước 2). Một đơn kẹt tê cả đường ống của kho này.
+    try {
+      const cleaned = await OrderService.cleanupExpiredPending();
+      if (cleaned > 0) pendingCleaned += cleaned;
+    } catch (e: any) {
+      errors.push({ warehouse: wh.code, step: 'CLEANUP_PENDING', error: e?.message || String(e) });
+    }
+
     // --- Bước 1: chốt các ca quá giờ của kho này ---
     try {
       const check = await CashboxService.getStaleOpenShiftCheck({
@@ -205,6 +269,8 @@ async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
       partial: Boolean(onlyWarehouse),
       shiftsClosed,
       daysClosed,
+      // Số đơn PENDING hết hạn đã dọn — có thay đổi dữ liệu thật, báo ra.
+      pendingCleaned,
       truncated,
       errors,
     },

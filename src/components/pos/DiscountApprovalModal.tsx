@@ -1,15 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ShieldAlert,
   QrCode,
-  KeyRound,
   CheckCircle2,
   XCircle,
   Clock,
-  WifiOff,
   AlertTriangle,
   X,
   RefreshCw,
@@ -69,14 +67,11 @@ export function DiscountApprovalModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
 
-  // Tab: Online (QR/ShortCode) vs Offline Emergency
-  const [activeTab, setActiveTab] = useState<'ONLINE' | 'OFFLINE'>('ONLINE');
+  // Tab: chỉ còn Online (QR/ShortCode) — mã khẩn cấp ngoại tuyến đã gỡ.
+  const [activeTab, setActiveTab] = useState<'ONLINE'>('ONLINE');
   const [managerOtpInput, setManagerOtpInput] = useState('');
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
-  const [emergencyCodeInput, setEmergencyCodeInput] = useState('');
-  const [isSubmittingEmergency, setIsSubmittingEmergency] = useState(false);
-  const [emergencyError, setEmergencyError] = useState<string | null>(null);
 
   const qrContainerRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -137,13 +132,10 @@ export function DiscountApprovalModal({
      setStatus('LOADING');
     setErrorMessage(null);
     setRejectedReason(null);
-     setManagerOtpInput('');
-     setOtpError(null);
-     setEmergencyCodeInput('');
-     setEmergencyError(null);
-     setIsVerifyingOtp(false);
-     setIsSubmittingEmergency(false);
-     const requestController = new AbortController();
+      setManagerOtpInput('');
+      setOtpError(null);
+      setIsVerifyingOtp(false);
+      const requestController = new AbortController();
      requestAbortRef.current = requestController;
      const requestTimeout = window.setTimeout(() => requestController.abort(), 15000);
 
@@ -222,20 +214,80 @@ export function DiscountApprovalModal({
     }
   }, [qrToken, activeTab]);
 
-  // 3. Đếm lùi thời gian TTL (5 phút)
+  // 3. Hỏi server một lần rồi mới tin. Tách riêng vì cả ĐẾM LÙI và POLLING đều
+  //    cần, và P5 (2026-09-29) chính là do chúng tách rời: đồng hồ về 0 thì
+  //    client tự khai EXPIRED mà không hỏi lại, nên một yêu cầu được Quản lý
+  //    duyệt đúng trong ~2.5 giây cuối bị rơi dù server đã APPROVED.
+  const syncFromServer = useCallback(async () => {
+    if (!requestId) return false;
+    const generation = requestGenerationRef.current;
+    try {
+      const res = await fetch(`/api/pos/discount-approvals/${requestId}`, { cache: 'no-store' });
+      if (generation !== requestGenerationRef.current) return false;
+      if (!res.ok) return false;
+      const json = await res.json();
+      if (generation !== requestGenerationRef.current) return false;
+      if (!(json.success && json.data)) return false;
+      const req = json.data;
+
+      if (req.status === 'APPROVED') {
+        setStatus('APPROVED');
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
+        approvalTimerRef.current = setTimeout(() => {
+          if (generation !== requestGenerationRef.current) return;
+          onApprovedRef.current({
+            requestId: req.id,
+            rate: req.requestedDiscountRate,
+            method: req.approvalMethod || 'ONE_TOUCH',
+          });
+          onCloseRef.current();
+        }, 1200);
+        return true;
+      }
+      if (req.status === 'REJECTED' || req.status === 'SUPERSEDED' || req.status === 'CONSUMED') {
+        setStatus('REJECTED');
+        setRejectedReason(req.rejectedReason || (req.status === 'CONSUMED' ? 'Yêu cầu đã được sử dụng cho đơn khác.' : 'Yêu cầu đã bị thay thế.'));
+        onTerminalRef.current?.('REJECTED', req.id);
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        return true;
+      }
+      if (req.status === 'EXPIRED') {
+        setStatus('EXPIRED');
+        onTerminalRef.current?.('EXPIRED', req.id);
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        return true;
+      }
+      return false;
+    } catch {
+      return false; // Lỗi mạng tạm thời không ngắt polling
+    }
+  }, [requestId]);
+  const syncRef = useRef(syncFromServer);
+  useEffect(() => { syncRef.current = syncFromServer; }, [syncFromServer]);
+
+  // 3b. Đếm lùi TTL (5 phút). Về 0 thì HỎI SERVER MỘT LẦN trước khi khai
+  //     EXPIRED — nếu không hỏi thì duyệt hợp lệ trong 2.5s cuối bị bỏ rơi.
+  //     Hỏi lỗi/offline thì vẫn khai EXPIRED như cũ: an toàn cho thu ngân.
   useEffect(() => {
     if (!expiresAt || status !== 'PENDING') return;
 
-    const timer = setInterval(() => {
+    const timer = setInterval(async () => {
+      const generation = requestGenerationRef.current;
       const remaining = Math.max(
         0,
         Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
       );
       setSecondsRemaining(remaining);
-       if (remaining <= 0) {
-         setStatus('EXPIRED');
+      if (remaining <= 0) {
+        clearInterval(timer);
+        const settled = await syncRef.current();
+        // Server đã trả lời (APPROVED/REJECTED/EXPIRED) → không đụng nữa.
+        if (settled) return;
+        if (generation === requestGenerationRef.current) {
+          setStatus('EXPIRED');
           onTerminalRef.current?.('EXPIRED', requestId);
-         clearInterval(timer);
+        }
       }
     }, 1000);
 
@@ -245,55 +297,15 @@ export function DiscountApprovalModal({
   // 4. Polling trạng thái mỗi 2.5s
   useEffect(() => {
      if (!requestId || status !== 'PENDING') {
-       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
        return;
      }
-     const generation = requestGenerationRef.current;
+    const timer = setInterval(() => { void syncRef.current(); }, 2500);
+    void syncRef.current(); // hỏi ngay khi mở, không chờ 2.5s
 
-     pollIntervalRef.current = setInterval(async () => {
-      try {
-         const res = await fetch(`/api/pos/discount-approvals/${requestId}`);
-        if (generation !== requestGenerationRef.current) return;
-        if (!res.ok) return;
-         const json = await res.json();
-         if (generation !== requestGenerationRef.current) return;
-         if (json.success && json.data) {
-          const req = json.data;
-          if (req.status === 'APPROVED') {
-            setStatus('APPROVED');
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-             if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
-             approvalTimerRef.current = setTimeout(() => {
-               if (generation !== requestGenerationRef.current) return;
-               onApprovedRef.current({
-                requestId: req.id,
-                rate: req.requestedDiscountRate,
-                method: req.approvalMethod || 'ONE_TOUCH',
-              });
-              onCloseRef.current();
-            }, 1200);
-            } else if (req.status === 'REJECTED' || req.status === 'SUPERSEDED' || req.status === 'CONSUMED') {
-              if (generation !== requestGenerationRef.current) return;
-              setStatus('REJECTED');
-              setRejectedReason(req.rejectedReason || (req.status === 'CONSUMED' ? 'Yêu cầu đã được sử dụng cho đơn khác.' : 'Yêu cầu đã bị thay thế.'));
-              onTerminalRef.current?.('REJECTED', req.id);
-             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            } else if (req.status === 'EXPIRED') {
-              if (generation !== requestGenerationRef.current) return;
-              setStatus('EXPIRED');
-              onTerminalRef.current?.('EXPIRED', req.id);
-             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          }
-        }
-      } catch {
-        // Lỗi mạng tạm thời không ngắt polling
-      }
-    }, 2500);
-
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
+    return () => clearInterval(timer);
   }, [requestId, status]);
+
 
   // 5. Xử lý nhập mã cấp phép / OTP từ Quản lý (Đảo chiều luồng OTP)
   const handleVerifyManagerOtp = async (e?: React.FormEvent) => {
@@ -343,54 +355,9 @@ export function DiscountApprovalModal({
     }
   };
 
-  // 6. Xử lý nhập mã khẩn cấp (Offline Emergency)
-  const handleApplyEmergencyCode = async () => {
-    if (!requestId) return;
-    const generation = requestGenerationRef.current;
-    const code = emergencyCodeInput.trim();
-    if (!code) {
-      setEmergencyError('Vui lòng nhập mã khẩn cấp từ Quản lý');
-      return;
-    }
-    if (requestedDiscountRate > 0.25) {
-      setEmergencyError('Mã khẩn cấp chỉ duyệt tối đa chiết khấu 25%. Mức chiết khấu này bắt buộc quản lý duyệt trực tiếp.');
-      return;
-    }
-
-    setIsSubmittingEmergency(true);
-    setEmergencyError(null);
-    try {
-      const res = await fetch(`/api/pos/discount-approvals/${requestId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'APPROVE',
-          method: 'OFFLINE_EMERGENCY',
-          emergencyCode: code,
-        }),
-      });
-       const json = await res.json();
-       if (generation !== requestGenerationRef.current) return;
-       if (!res.ok || !json.success) {
-         throw new Error(json.message || 'Mã khẩn cấp không hợp lệ');
-      }
-      setStatus('APPROVED');
-      if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
-       approvalTimerRef.current = setTimeout(() => {
-         if (generation !== requestGenerationRef.current) return;
-         onApprovedRef.current({
-          requestId,
-          rate: requestedDiscountRate,
-          method: 'OFFLINE_EMERGENCY',
-        });
-        onCloseRef.current();
-      }, 1000);
-     } catch (err: any) {
-       if (generation === requestGenerationRef.current) setEmergencyError(err.message || 'Không thể xác thực mã khẩn cấp');
-     } finally {
-       if (generation === requestGenerationRef.current) setIsSubmittingEmergency(false);
-    }
-  };
+  // 6. Xử lý nhập mã khẩn cấp ngoại tuyến — ĐÃ GỠ 2026-09-29.
+  // Lý do: không có bảng mã nào tồn tại, service từ chối phương thức này nên mọi
+  // nút gửi mã đều trả lỗi. Xoá hẳn thay vì để lại một nút luôn hỏng.
 
   if (!isOpen || !mounted) return null;
 
@@ -544,7 +511,10 @@ export function DiscountApprovalModal({
               </div>
             ) : (
               <>
-            {/* Tabs chọn cách duyệt */}
+            {/* Tabs chọn cách duyệt — chỉ còn 1-chạm / mã 4 số.
+                Luồng "mã khẩn cấp ngoại tuyến" đã bị gỡ khỏi service: không có
+                bảng mã nào tồn tại, nên lời hứa "1 trong 5 mã trong ngày" là bịa.
+                Giữ nút lại chỉ tạo nút luôn trả lỗi. */}
             <div className="flex bg-slate-100 p-1 rounded-xl">
               <button
                 type="button"
@@ -556,17 +526,6 @@ export function DiscountApprovalModal({
                 }`}
               >
                 Mã OTP / 1-Chạm (Online)
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('OFFLINE')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
-                  activeTab === 'OFFLINE'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Mã Khẩn Cấp (Offline)
               </button>
             </div>
 
@@ -649,58 +608,6 @@ export function DiscountApprovalModal({
                   </div>
                   <div ref={qrContainerRef} className="w-14 h-14 bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0 flex items-center justify-center" />
                 </div>
-              </div>
-            )}
-
-            {/* TAB 2: OFFLINE EMERGENCY (Mã khẩn cấp 25%) */}
-            {activeTab === 'OFFLINE' && (
-              <div className="p-4 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-3">
-                <div className="flex items-start gap-2 text-amber-900">
-                  <WifiOff className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                  <div className="text-xs">
-                    <p className="font-bold">Chế độ Ngoại Tuyến (Khi Mất Mạng)</p>
-                    <p className="text-amber-700 text-[11px] mt-0.5">
-                      Quản lý đọc 1 trong 5 mã khẩn cấp trong ngày (<span className="font-mono">EMG-...</span>).
-                      Trần chiết khấu tối đa: <strong className="text-amber-900">25%</strong>.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-700 block">
-                    Nhập mã khẩn cấp Quản lý cung cấp:
-                  </label>
-                  <input
-                    type="text"
-                    value={emergencyCodeInput}
-                    onChange={(e) => {
-                      setEmergencyCodeInput(e.target.value);
-                      setEmergencyError(null);
-                    }}
-                    placeholder="Ví dụ: EMG-20260923-1"
-                    className="w-full text-center font-mono font-bold text-sm px-3 py-2 bg-white border border-amber-300 rounded-xl outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                  {emergencyError && (
-                    <p className="text-[11px] text-rose-600 font-bold text-center">{emergencyError}</p>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleApplyEmergencyCode}
-                  disabled={isSubmittingEmergency}
-                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5"
-                >
-                  {isSubmittingEmergency ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang xác thực...
-                    </>
-                  ) : (
-                    <>
-                      <KeyRound className="w-3.5 h-3.5" /> Áp Dụng Mã Khẩn Cấp
-                    </>
-                  )}
-                </button>
               </div>
             )}
 

@@ -83,7 +83,7 @@ async function run() {
   const testEditionId = seeded[0].id;
   guardEditionId = testEditionId;
   let passed = 0;
-  const total = 11;
+  const total = 13;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -97,48 +97,52 @@ async function run() {
   let r = await postOrder(baseBody({ discountRate: 0.1 }), 'ROLE_CASHIER');
   ok('Cashier CK 10% được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
 
-  // 2. Cashier chạm trần 20% (>= 20%) thiếu duyệt/PIN -> bị chặn 403 (boundary).
+  // 2. Cashier chạm trần 20% (>= 20%) thiếu duyệt -> bị chặn 403 (boundary).
   r = await postOrder(baseBody({ discountRate: 0.2 }), 'ROLE_CASHIER');
-  ok('Cashier chạm trần 20% thiếu duyệt/PIN bị chặn 403', r.status === 403 && /PIN|Quản lý/i.test(r.json?.error || ''), `status=${r.status}`);
+  ok('Cashier chạm trần 20% thiếu duyệt bị chặn 403', r.status === 403 && /Quản lý/i.test(r.json?.error || ''), `status=${r.status}`);
+  // HỢP ĐỒNG MỚI 2026-09-29: lỗi KHÔNG được hứa "mã PIN" nữa — không có UI nhập
+  // PIN, hứa vậy là chỉ tay vào ngõ cụt. Phải chỉ đường thoát thật: xin Quản lý duyệt.
+  ok('Lỗi vượt trần KHÔNG còn hứa "mã PIN"', !/PIN/i.test(r.json?.error || ''), r.json?.error);
 
-  // 3. Cashier 35% không PIN -> 403.
+  // 3. Cashier 35% không duyệt -> 403, nói rõ cần Quản lý phê duyệt.
   r = await postOrder(baseBody({ discountRate: 0.35 }), 'ROLE_CASHIER');
-  ok('Cashier 35% thiếu PIN bị chặn 403', r.status === 403 && /PIN/.test(r.json?.error || ''), `status=${r.status}`);
+  ok('Cashier 35% thiếu duyệt bị chặn 403', r.status === 403 && /Quản lý/i.test(r.json?.error || ''), `status=${r.status}`);
 
-  // 4. Cashier 35% PIN sai -> 403.
+  // 4. PIN sai -> 403. GIỮ: vẫn phải chặn.
   r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '0000' }), 'ROLE_CASHIER');
   ok('Cashier 35% PIN sai bị chặn 403', r.status === 403, `status=${r.status}`);
 
-  // 5. Cashier 35% PIN đúng -> cho qua + audit MANAGER_DISCOUNT_APPROVED.
+  // 5. PIN ĐÚNG cũng phải bị chặn — đường PIN đã bị gỡ khỏi đơn chiết khấu.
+  // Trước đây case này đòi 200; nay đòi 403 + FORBIDDEN. Đây là hợp đồng MỚI.
   r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '9999' }), 'ROLE_CASHIER');
-  const approvedCode = r.json?.data?.orderCode || '';
-  const audits = await db
+  ok(
+    'Cashier 35% + PIN đúng KHÔNG còn là đường thoát (403 FORBIDDEN)',
+    r.status === 403 && r.json?.code === 'FORBIDDEN',
+    `status=${r.status} code=${r.json?.code}`
+  );
+  // Phải ghi audit TỪ CHỐI, và audit KHÔNG được lộ giá trị PIN.
+  const denyAudits = await db
     .select()
     .from(auditLogs)
-    .where(eq(auditLogs.action, 'MANAGER_DISCOUNT_APPROVED'))
+    .where(eq(auditLogs.action, 'MANAGER_DISCOUNT_DENIED'))
     .orderBy(desc(auditLogs.createdAt))
     .limit(5);
-  const auditHit = audits.some((a) => (a.details || '').includes(approvedCode));
-  const pinLeaked = audits.some((a) => /9999|1234|8888/.test(a.details || ''));
-  ok(
-    'Cashier 35% + PIN đúng được duyệt và ghi audit (không lộ PIN)',
-    r.status === 200 && r.json?.success === true && auditHit && !pinLeaked,
-    `status=${r.status}`
-  );
+  const pinLeaked = denyAudits.some((a) => /9999|1234|8888/.test(a.details || ''));
+  ok('Audit từ chối được ghi và không lộ PIN', denyAudits.length > 0 && !pinLeaked, `rows=${denyAudits.length}`);
 
-  // 6. Lách qua line item 40% (tổng 0%) không PIN -> 403.
+  // 6. Lách qua line item 40% (tổng 0%) không duyệt -> 403.
   r = await postOrder(
     baseBody({ discountRate: 0, items: [{ editionId: guardEditionId, quantity: 1, unitDiscountRate: 0.4 }] }),
     'ROLE_CASHIER'
   );
-  ok('Lách line-item 40% không PIN bị chặn 403', r.status === 403, `status=${r.status}`);
+  ok('Lách line-item 40% không duyệt bị chặn 403', r.status === 403, `status=${r.status}`);
 
-  // 7. Line item 40% + PIN 8888 -> cho qua.
+  // 7. Lách line item 40% + PIN -> 403. Đường lách qua PIN đã đóng.
   r = await postOrder(
     baseBody({ discountRate: 0, managerPin: '8888', items: [{ editionId: guardEditionId, quantity: 1, unitDiscountRate: 0.4 }] }),
     'ROLE_CASHIER'
   );
-  ok('Line-item 40% + PIN 8888 được duyệt', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+  ok('Line-item 40% + PIN 8888 cũng bị chặn (không lách được)', r.status === 403, `status=${r.status}`);
 
   r = await postOrder(
     baseBody({ isGift: true, discountRate: 0.1, giftReason: 'Quà tặng sự kiện' }),
@@ -146,20 +150,36 @@ async function run() {
   );
   ok('Gift spoof discount 10% vẫn bị chặn nếu thiếu duyệt', r.status === 403, `status=${r.status}`);
 
-  // 8. Manager 40% không PIN -> cho qua (miễn trừ theo vai trò).
+  // 8. Manager 40% không cần duyệt -> cho qua (miễn trừ theo vai trò), và audit
+  // phải ghi đúng người duyệt mà KHÔNG lộ PIN.
   r = await postOrder(baseBody({ discountRate: 0.4 }), 'ROLE_MANAGER', 'test-manager-guard');
-  ok('Manager 40% không PIN được chấp nhận', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+  const mgrCode = r.json?.data?.orderCode || '';
+  const mgrAudits = await db
+    .select()
+    .from(auditLogs)
+    .where(eq(auditLogs.action, 'MANAGER_DISCOUNT_APPROVED'))
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(5);
+  const mgrAuditHit = mgrAudits.some((a) => (a.details || '').includes(mgrCode));
+  const mgrPinLeak = mgrAudits.some((a) => /9999|1234|8888|4321/.test(a.details || ''));
+  ok(
+    'Manager 40% không duyệt vẫn được chấp nhận + audit không lộ PIN',
+    r.status === 200 && r.json?.success === true && mgrAuditHit && !mgrPinLeak,
+    `status=${r.status} auditHit=${mgrAuditHit}`
+  );
 
-  // 9-10. Env MANAGER_PIN_HASHES: PIN mới theo env được duyệt, PIN legacy bị vô hiệu.
+  // 9-10. Env MANAGER_PIN_HASHES KHÔNG còn là đường thoát cho đơn chiết khấu.
+  // PIN vẫn còn dùng ở 2 cổng khác (đơn gõ bù >7 ngày, phiếu đổi/trả quá hạn),
+  // nên lib/manager-pin.ts và env này GIỮ NGUYÊN — chỉ đường chiết khấu bị gỡ.
   const { hashPinForEnv } = await import('../src/lib/manager-pin');
   const prevEnv = process.env.MANAGER_PIN_HASHES;
   process.env.MANAGER_PIN_HASHES = await hashPinForEnv('4321');
   try {
     r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '4321' }), 'ROLE_CASHIER');
-    ok('PIN theo env (4321) được duyệt', r.status === 200 && r.json?.success === true, `status=${r.status}`);
+    ok('PIN hợp lệ theo env vẫn bị chặn ở đơn chiết khấu', r.status === 403, `status=${r.status}`);
 
     r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '9999' }), 'ROLE_CASHIER');
-    ok('PIN legacy (9999) bị vô hiệu khi đã set env', r.status === 403, `status=${r.status}`);
+    ok('PIN legacy (9999) bị chặn', r.status === 403, `status=${r.status}`);
   } finally {
     if (prevEnv === undefined) delete process.env.MANAGER_PIN_HASHES;
     else process.env.MANAGER_PIN_HASHES = prevEnv;
