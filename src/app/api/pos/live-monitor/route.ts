@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { db, orders, orderItems, editions, cashboxSessions, staffAccounts, warehouses } from '@/db';
-import { OrderService } from '@/services/order.service';
+import { OrderService, evaluateShiftCutoff } from '@/services/order.service';
 import { and, desc, eq, gte, inArray, or, isNotNull, sql } from 'drizzle-orm';
 import type { UserRole } from '@/lib/roles';
 
@@ -30,6 +30,15 @@ function vnToday(now = new Date()): string {
   return now.toLocaleDateString('en-CA', { timeZone: VN_TZ });
 }
 
+/** YYYY-MM-DD và là ngày có thật (2026-02-30 là ngày không tồn tại). */
+function isRealDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  // So ngược: Date.parse cuộn ngày 30/2 thành 2/3, nên phải so lại chuỗi.
+  return d.toISOString().slice(0, 10) === s;
+}
+
 export async function GET(req: NextRequest) {
   try {
     // Chỉ quản lý: đây là số liệu doanh thu tức thời của từng gian hàng.
@@ -38,9 +47,12 @@ export async function GET(req: NextRequest) {
     const sp = new URL(req.url).searchParams;
     const onlyWarehouse = (sp.get('warehouseId') || '').trim();
     const date = (sp.get('date') || '').trim() || vnToday();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    // Regex KHÔNG đủ: Date.parse('2026-02-30') trả Date hợp lệ vì ISO chỉ ràng
+    // buộc ngày 01-31, nên 30/2 lặng lẽ cuộn thành 2/3. Phải so ngược Y-M-D sau khi
+    // parse, nếu không ngày rác sẽ trả 200 với số liệu của hôm khác.
+    if (!isRealDate(date)) {
       return NextResponse.json(
-        { success: false, code: 'INVALID_INPUT', error: `Ngày "${date}" không hợp lệ. Cần dạng YYYY-MM-DD.` },
+        { success: false, code: 'INVALID_INPUT', error: `Ngày "${date}" không hợp lệ. Cần dạng YYYY-MM-DD và là ngày có thật.` },
         { status: 400 }
       );
     }
@@ -51,7 +63,20 @@ export async function GET(req: NextRequest) {
       .from(warehouses)
       .where(and(eq(warehouses.warehouseType, 'FAIR_EVENT'), eq(warehouses.isActive, true)));
     const fairIds = fairRows.map((w) => w.id);
-    const scopeIds = onlyWarehouse ? fairIds.filter((id) => id === onlyWarehouse) : fairIds;
+    // `?warehouseId=` trỏ tới kho không phải kho hội chợ, hoặc không tồn tại, là lỗi
+    // cấu hình/đường dẫn. Trả 200 rỗng im lặng sẽ khiến người dùng tưởng kho hôm
+    // nay không có phát sinh — nguy hiểm hơn là báo lỗi.
+    if (onlyWarehouse && !fairIds.includes(onlyWarehouse)) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'INVALID_INPUT',
+          error: `Kho "${onlyWarehouse}" không phải kho hội chợ đang hoạt động.`,
+        },
+        { status: 400 }
+      );
+    }
+    const scopeIds = onlyWarehouse ? [onlyWarehouse] : fairIds;
     const whName = (id: string) => fairRows.find((w) => w.id === id)?.name || id;
 
     if (scopeIds.length === 0) {
@@ -150,7 +175,8 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 4. Đơn vừa đóng (5 dòng) — câu trả lời "vừa xong gì".
+    // 4. Đơn vừa đóng (5 dòng) — câu trả lời "vừa xong gì". Lọc theo ngày làm
+    // việc như KPI và top sản phẩm, nếu không sẽ lọt đơn của hôm qua vào.
     const recentClosedRows = await db
       .select({
         orderCode: orders.orderCode,
@@ -160,7 +186,13 @@ export async function GET(req: NextRequest) {
         createdAt: orders.createdAt,
       })
       .from(orders)
-      .where(and(inArray(orders.warehouseId, scopeIds), eq(orders.status, 'COMPLETED')))
+      .where(
+        and(
+          inArray(orders.warehouseId, scopeIds),
+          eq(orders.status, 'COMPLETED'),
+          sql`${orders.createdAt} LIKE ${`${date}%`}`
+        )
+      )
       .orderBy(desc(orders.createdAt))
       .limit(5);
 
@@ -178,35 +210,40 @@ export async function GET(req: NextRequest) {
     const shiftStaffIds = Array.from(new Set(shiftRows.map((r) => r.cashierId).filter(Boolean))) as string[];
     const shiftStaffNames = await loadStaffNames(shiftStaffIds);
 
-    // Tiền mặt bán trong ca, tính cùng điều kiện "hôm nay" — dùng để báo
-    // "dự kiến có trong két". KHÔNG dùng cột `totalCashSales`: đó là bản chốt
-    // lúc đóng ca nên LUÔN bằng 0 khi ca còn mở (báo cáo chốt ngày đang mắc
-    // lỗi này; kế hoạch B sẽ sửa cho khớp).
-    const cashTodayRows = await db
-      .select({
-        warehouseId: orders.warehouseId,
-        cashierId: orders.cashierId,
-        cash: sql<number>`COALESCE(SUM(${orders.finalAmount}), 0)`,
-      })
-      .from(orders)
-      .where(
-        and(
-          inArray(orders.warehouseId, scopeIds),
-          eq(orders.status, 'COMPLETED'),
-          eq(orders.paymentMethod, CASH),
-          sql`${orders.createdAt} LIKE ${`${date}%`}`
+    // Tiền mặt thu trong TỪNG CA đang mở. Phải gom theo `cashboxSessionId`, KHÔNG
+    // theo warehouseId+cashierId: một thu ngân mở hai ca cùng kho sẽ bị cộng chung
+    // một số. Cũng KHÔNG lọc theo ngày — tiền thuộc về ca, nên ca qua nửa đêm vẫn
+    // phải tính đủ cả hai mốc ngày. KHÔNG dùng cột `totalCashSales`: đó là bản chốt
+    // lúc đóng ca nên LUÔN bằng 0 khi ca còn mở (báo cáo chốt ngày đang mắc lỗi này;
+    // kế hoạch B sẽ sửa cho khớp).
+    const openShiftIds = shiftRows.map((s) => s.id);
+    const cashByShift = new Map<string, number>();
+    if (openShiftIds.length > 0) {
+      const cashRows = await db
+        .select({
+          sessionId: orders.cashboxSessionId,
+          cash: sql<number>`COALESCE(SUM(${orders.finalAmount}), 0)`,
+        })
+        .from(orders)
+        .where(
+          and(
+            inArray(orders.cashboxSessionId, openShiftIds),
+            eq(orders.status, 'COMPLETED'),
+            eq(orders.paymentMethod, CASH)
+          )
         )
-      )
-      .groupBy(orders.warehouseId, orders.cashierId);
-
-    const cashKey = (wh: string, cashier: string) => `${wh}::${cashier}`;
-    const cashMap = new Map<string, number>();
-    for (const r of cashTodayRows) {
-      cashMap.set(cashKey(r.warehouseId, r.cashierId), Number(r.cash || 0));
+        .groupBy(orders.cashboxSessionId);
+      for (const r of cashRows) {
+        if (r.sessionId) cashByShift.set(r.sessionId, Number(r.cash || 0));
+      }
     }
 
     const openShifts = shiftRows.map((s) => {
-      const openedMs = s.openedAt ? Date.parse(s.openedAt) : NaN;
+      // Dùng hàm sẵn có của CashboxService thay vì tự Date.parse: hàm này đi qua
+      // parseDbTimestamp (SQLite CURRENT_TIMESTAMP ghi UTC không kèm múi giờ, đọc
+      // bằng new Date() lệch +7h ở GMT+7 ⇒ elapsedMinutes sai), và cho sẵn cờ
+      // `overdue` + giờ cắt chốt theo đúng quy tắc nghiệp vụ két. Thuần tuý, 0 truy vấn.
+      const cut = evaluateShiftCutoff(s.openedAt, { warehouseId: s.warehouseId, now: new Date(now) });
       return {
         id: s.id,
         warehouseId: s.warehouseId,
@@ -214,10 +251,11 @@ export async function GET(req: NextRequest) {
         cashierId: s.cashierId,
         cashierName: shiftStaffNames.get(s.cashierId) || s.cashierId,
         openedAt: s.openedAt,
-        elapsedMinutes: Number.isNaN(openedMs) ? null : Math.max(0, Math.round((now - openedMs) / 60000)),
-        // Không cần "quá giờ": giờ cắt chốt là quy tắc riêng của nghiệp vụ két và
-        // đã có nơi tính. Ở đây chỉ cần thấy ca còn mở và tồn đọng bao lâu.
-        expectedCashLive: Number(s.openingCash || 0) + (cashMap.get(cashKey(s.warehouseId, s.cashierId)) || 0),
+        elapsedMinutes: cut.openedAtValid ? cut.elapsedMinutes : null,
+        overdue: cut.overdue,
+        cutoffAt: cut.cutoffAt,
+        cutoff: cut.cutoff,
+        expectedCashLive: Number(s.openingCash || 0) + (cashByShift.get(s.id) || 0),
       };
     });
 

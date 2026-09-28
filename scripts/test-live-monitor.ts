@@ -106,6 +106,64 @@ ok(
   'Phải tái dùng ManagerApprovalDrawer có sẵn thay vì viết lại luồng duyệt'
 );
 
+// --- 6b. Sửa lỗi tiền thật tìm được sau khi đã deploy (2026-09-29) ---------------
+// A-1: gom theo kho+thu ngân ⇒ một người mở 2 ca cùng kho bị cộng chung một số;
+//      và lọc theo ngày ⇒ ca qua nửa đêm sai. Phải gom theo cashboxSessionId.
+ok(
+  /groupBy\(orders\.cashboxSessionId\)/.test(route),
+  'expectedCashLive phải gom theo cashboxSessionId, KHÔNG theo warehouseId+cashierId'
+);
+ok(
+  /inArray\(orders\.cashboxSessionId, openShiftIds\)/.test(route),
+  'expectedCashLive phải chỉ gom tiền của chính các ca đang mở'
+);
+ok(
+  !/groupBy\(orders\.warehouseId, orders\.cashierId\)/.test(route),
+  'KHÔNG được gom tiền mặt theo warehouseId+cashierId — hai ca cùng thu ngân sẽ trùng số'
+);
+// A-2: recentClosed phải lọc ngày, nếu không sẽ lọt đơn hôm qua.
+ok(
+  /recentClosedRows[\s\S]{0,900}createdAt\} LIKE/.test(route),
+  'recentClosed phải lọc theo ngày làm việc như KPI và top sản phẩm'
+);
+// A-3 + lỗi múi giờ: tự Date.parse(openedAt) lệch +7h vì SQLite ghi UTC trần.
+ok(
+  /evaluateShiftCutoff/.test(route),
+  'Phải dùng evaluateShiftCutoff có sẵn (đi qua parseDbTimestamp) thay vì Date.parse tay'
+);
+ok(
+  !/Date\.parse\(s\.openedAt\)/.test(route),
+  'KHÔNG Date.parse(openedAt) tay — SQLite CURRENT_TIMESTAMP là UTC trần, lệch +7h ở GMT+7'
+);
+ok(/overdue: cut\.overdue/.test(route), 'Ca đang mở phải có cờ quá giờ');
+ok(
+  /Quá giờ chốt ngày/.test(modal),
+  'UI phải hiện nhãn đỏ "Quá giờ chốt ngày" cho ca quá hạn'
+);
+// A-5/A-6: im lặng trả 200 rỗng là lỗi cấu hình, phải báo lỗi.
+ok(
+  /không phải kho hội chợ đang hoạt động/.test(route),
+  'warehouseId không hợp lệ phải trả 400, không trả 200 phạm vi rỗng'
+);
+ok(
+  /function isRealDate/.test(route) && /toISOString\(\)\.slice\(0, 10\) === s/.test(route),
+  'date phải kiểm là ngày có thật bằng cách so ngược, không chỉ regex — 2026-02-30 phải bị chặn'
+);
+// A-4: drawer cùng cấp document.body nên phải tự inert panel monitor.
+ok(
+  /el\.setAttribute\('inert', ''\)/.test(modal),
+  'Khi mở drawer duyệt, phải inert panel monitor — hook chỉ inert #app-main-content'
+);
+ok(
+  /approvalTriggerRef\.current\?\.focus\(\)/.test(modal),
+  'Phải trả focus về nút đã bấm sau khi drawer đóng (focus restore của hook chạy lúc panel còn inert)'
+);
+// COD phải hiện, nếu không tổng tiền mặt+chuyển khoản không cộng lại bằng doanh thu.
+ok(
+  /COD/.test(modal),
+  'UI phải hiện COD, nếu không người dùng tưởng mất tiền'
+);
+
 // --- 8. Nhãn UI tiếng Việt CÓ DẤU + dấu hiệu bấm rõ (AGENTS.md) -----------------
 ok(/Xem Trạng Thái/.test(dash), 'Nút mở phải có nhãn tiếng Việt có dấu');
 ok(

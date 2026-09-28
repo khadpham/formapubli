@@ -37,6 +37,7 @@ interface MonitorPayload {
   openShifts: Array<{
     id: string; warehouseName: string; cashierName: string; cashierId: string;
     openedAt: string | null; elapsedMinutes: number | null; expectedCashLive: number;
+    overdue: boolean; cutoffAt: string; cutoff: string;
   }>;
   pending: Array<{
     id: string; orderCode: string; cashierName: string; warehouseName: string;
@@ -84,10 +85,28 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
   const [mounted, setMounted] = useState(false);
 
   const panelRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
+  const approvalTriggerRef = useRef<HTMLButtonElement | null>(null);
   const aliveRef = useRef(true);
   const backoffRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Drawer duyệt chiết khấu cũng render ra document.body, cùng cấp với modal
+  // monitor. useModalFocusTrap chỉ đánh dấu inert lên #app-main-content, không
+  // đụng tới monitor ⇒ Tab trong drawer nhảy được xuống modal dưới. Phải tự
+  // inert panel. React 18 chưa hỗ trợ prop `inert` (tính từ React 19) nên set
+  // attribute trực tiếp.
+  //
+  // Thứ tự cũ thật sự: cleanup của hook drawer chạy TRƯỚC effect này trong cùng
+  // một commit, nên lúc nó gọi previousFocus.focus() thì panel vẫn còn inert và
+  // focus() bị bỏ qua âm thầm. Vì vậy phải tự trả focus về nút đã bấm.
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    if (approvalOpen) el.setAttribute('inert', '');
+    else el.removeAttribute('inert');
+    if (!approvalOpen) approvalTriggerRef.current?.focus();
+  }, [approvalOpen, panelRef]);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -295,7 +314,10 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
                   <Kpi
                     label="Tiền mặt / Chuyển khoản"
                     value={money(t?.cashRevenue)}
-                    sub={`CK ${money(t?.transferRevenue)} · ${t?.transferPct ?? 0}%`}
+                    // COD không phải tiền mặt cũng không phải chuyển khoản, nhưng
+                    // vẫn nằm trong doanh thu. Không in ra thì tổng "TM + CK" không
+                    // cộng lại bằng doanh thu và người dùng tưởng mất tiền.
+                    sub={`CK ${money(t?.transferRevenue)} · ${t?.transferPct ?? 0}%${t?.otherRevenue ? ` · COD ${money(t?.otherRevenue)}` : ''}`}
                     tone="emerald"
                   />
                   <Kpi
@@ -329,6 +351,11 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
                               Mở {clockOf(s.openedAt)}
                               {s.elapsedMinutes != null ? ` · đã ${s.elapsedMinutes} phút` : ''}
                             </p>
+                            {s.overdue && (
+                              <p className="text-[11px] font-extrabold text-rose-600 mt-0.5">
+                                Quá giờ chốt ngày {s.cutoff}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-[10px] text-slate-400">Dự kiến trong két</p>
@@ -435,6 +462,7 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
                   <Block icon={ShieldAlert} title="Cần Quản lý duyệt">
                     <button
                       type="button"
+                      ref={approvalTriggerRef}
                       onClick={() => setApprovalOpen(true)}
                       className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow transition flex items-center justify-center gap-2 cursor-pointer"
                       title="Mở danh sách yêu cầu duyệt chiết khấu"
@@ -474,7 +502,10 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
         </div>
       </div>
 
-      {/* Drawer duyệt chiết khấu: tự fetch + tự poll, không cần props POS. */}
+      {/* Drawer duyệt chiết khấu: tự fetch + tự poll, không cần props POS.
+          Cả hai đều nằm ở document.body, nên useModalFocusTrap chỉ inert
+          #app-main-content — nó KHÔNG chạm tới modal monitor. Không tự inert
+          panel ở đây thì Tab trong drawer nhảy được xuống modal phía dưới. */}
       {approvalOpen && (
         <ManagerApprovalDrawer isOpen onClose={() => setApprovalOpen(false)} onActionCompleted={() => { void load(); }} />
       )}
