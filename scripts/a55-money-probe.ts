@@ -55,7 +55,7 @@ async function main() {
 
     // Chọn 1 ấn bản có sẵn rồi cho nó 5 cuốn ở kho hội chợ.
     if (!EDITION) {
-      const e = await c.execute({ sql: `SELECT id FROM editions ORDER BY id LIMIT 1` });
+      const e = await c.execute({ sql: `SELECT id FROM editions ORDER BY id LIMIT 1`, args: [] });
       if (e.rows.length === 0) throw new Error('DB không có ấn bản nào');
       process.env.A55_EDITION = String(e.rows[0].id);
       (globalThis as any).__ED = String(e.rows[0].id);
@@ -92,7 +92,7 @@ async function main() {
   const { DailySettlementService } = await import('../src/services/daily-settlement.service');
 
   const ed = EDITION || (globalThis as any).__ED || String(
-    (await c.execute({ sql: `SELECT edition_id FROM order_items WHERE order_id='o-a55' LIMIT 1` })).rows[0]?.edition_id || ''
+    (await c.execute({ sql: `SELECT edition_id FROM order_items WHERE order_id='o-a55' LIMIT 1`, args: [] })).rows[0]?.edition_id || ''
   );
   const atp = await OrderService.getATP(ed, WH);
   const pendingOrders = await db
@@ -108,5 +108,4 @@ async function main() {
   console.log(`Doanh thu báo cáo ngày ${vnDate}: ${rev}`);
   console.log(`Tồn kho vật lý trong sổ: ${JSON.stringify((await c.execute({ sql: `SELECT physical_quantity FROM stock_balances WHERE edition_id=? AND warehouse_id=? AND condition='NEW'`, args: [ed, WH] })).rows[0] ?? null)}`);
 }
-
 main().catch((e) => { console.error('LOI:', e.message); process.exit(1); });
