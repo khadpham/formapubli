@@ -1,0 +1,517 @@
+'use client';
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
+import {
+  Activity, AlertTriangle, Banknote, Landmark, CalendarDays, CheckCircle2, Clock,
+  DoorOpen, RefreshCw, ShieldAlert, TrendingUp, X,
+} from 'lucide-react';
+
+/**
+ * Trạng thái quầy hội chợ — LÚC NÀY, không phải báo cáo.
+ *
+ * Ba điều làm nên khác Báo Cáo Chốt Ngày:
+ *  - tự làm mới khi đang mở, dừng hẳn khi đóng / tab ẩn (0 request khi không xem);
+ *  - TẤT CẢ kho hội chợ cùng lúc, không chọn từng kho;
+ *  - thấy đơn CHƯA ĐÓNG — thứ báo cáo ngày không bao giờ hiện.
+ *
+ * `isOpen` là cổng duy nhất quyết định có poll hay không. Đây là bản sao có
+ * chủ đích của cách ManagerApprovalDrawer làm; sai chỗ là poll vô tình tiêu
+ * request của từng người mở app.
+ */
+
+const POLL_MS = 10_000;
+const BACKOFF_MS = [10_000, 20_000, 40_000];
+const STALE_AFTER_MS = 30_000;
+
+interface MonitorPayload {
+  businessDate: string;
+  timezoneNote: string;
+  today: {
+    orderCount: number; revenue: number; cashRevenue: number; transferRevenue: number;
+    otherRevenue: number; transferPct: number; avgOrderValue: number;
+    totalDiscount: number; overCapCount: number;
+  };
+  openShifts: Array<{
+    id: string; warehouseName: string; cashierName: string; cashierId: string;
+    openedAt: string | null; elapsedMinutes: number | null; expectedCashLive: number;
+  }>;
+  pending: Array<{
+    id: string; orderCode: string; cashierName: string; warehouseName: string;
+    finalAmount: number; paymentMethod: string; minutesLeft: number | null; overdue: boolean;
+  }>;
+  recentClosed: Array<{
+    orderCode: string; warehouseName: string; finalAmount: number;
+    paymentMethod: string; createdAt: string | null;
+  }>;
+  topSellers: Array<{ code: string; title: string; copies: number; revenue: number }>;
+  generatedAt: string;
+}
+
+const PAY_LABEL: Record<string, string> = {
+  CASH: 'Tiền mặt',
+  BANK_TRANSFER: 'Chuyển khoản',
+  QR_CODE: 'QR ngân hàng',
+  COD: 'Thu hộ',
+};
+
+function payLabel(m?: string | null) {
+  return PAY_LABEL[`${m}`] || `${m || '—'}`;
+}
+
+function money(v: number | null | undefined) {
+  return `${Number(v || 0).toLocaleString('vi-VN')} đ`;
+}
+
+function clockOf(iso: string | null | undefined) {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '—';
+  return new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [data, setData] = useState<MonitorPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState(false);
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [busyOrder, setBusyOrder] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  const panelRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
+  const aliveRef = useRef(true);
+  const backoffRef = useRef(0);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  const flash = useCallback((text: string) => {
+    setNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(null), 5000);
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/pos/live-monitor', { cache: 'no-store' });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        throw new Error(j?.error || `Không tải được trạng thái (HTTP ${res.status}).`);
+      }
+      const j = await res.json();
+      if (!aliveRef.current) return;
+      setData(j.data);
+      setLastUpdatedAt(new Date().toISOString());
+      setIsStale(false);
+      setError(null);
+      backoffRef.current = 0;
+    } catch (e: any) {
+      if (!aliveRef.current) return;
+      setError(e?.message || 'Không tải được trạng thái.');
+      // Mạng hội chợ yếu: giãn dần thay vì dội 10 giây/lần cho tới khi hết pin.
+      backoffRef.current = Math.min(backoffRef.current + 1, BACKOFF_MS.length - 1);
+    }
+  }, []);
+
+  const schedule = useCallback(() => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    const wait = BACKOFF_MS[backoffRef.current] ?? POLL_MS;
+    pollRef.current = setTimeout(async () => {
+      // setInterval bị throttle khi màn hình điện thoại khoá; dùng setTimeout +
+      // kiểm tra visibility để không đốt request lúc người dùng không nhìn.
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        schedule();
+        return;
+      }
+      await load();
+      schedule();
+    }, wait);
+  }, [load]);
+
+  // Cổng duy nhất quyết định có poll hay không.
+  useEffect(() => {
+    if (!isOpen) {
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = null;
+      return;
+    }
+    aliveRef.current = true;
+    setLoading(true);
+    void load().finally(() => setLoading(false));
+    schedule();
+    return () => {
+      aliveRef.current = false;
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = null;
+    };
+  }, [isOpen, load, schedule]);
+
+  // Quay lại tab thì nạp ngay, không bắt thu ngân chờ tới lượt poll kế tiếp.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = null;
+      backoffRef.current = 0;
+      void load();
+      schedule();
+    };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [isOpen, load, schedule]);
+
+  // Cũ quá 30s mà không nạp được gì thì nói ra, thay vì để số liệu đứng yên
+  // trông như còn đúng.
+  useEffect(() => {
+    if (!isOpen || !lastUpdatedAt) return;
+    const t = setInterval(() => {
+      if (Date.now() - new Date(lastUpdatedAt).getTime() > STALE_AFTER_MS) setIsStale(true);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [isOpen, lastUpdatedAt, data]);
+
+  const cancelOrder = async (orderId: string, orderCode: string) => {
+    setBusyOrder(orderId);
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CANCEL',
+          orderId,
+          reason: 'Hủy từ Trạng Thái Hội Chợ (quá hạn chờ tiền)',
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) {
+        flash(`Không huỷ được ${orderCode}: ${j?.error || `HTTP ${res.status}`}`);
+        return;
+      }
+      flash(`Đã huỷ: ${orderCode}`);
+      await load();
+    } catch {
+      flash(`Không huỷ được ${orderCode} — mạng lỗi.`);
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const t = data?.today;
+  const showStaleBanner = isStale || (!!error && !!data);
+
+  // createPortal trực tiếp, khớt với 18 file khác trong src/components. Lưu ý:
+  // KHÔNG dùng PortalToBody ở đây. Helper đó gate nội dung bằng state `mounted` riêng
+  // nên panel xuất hiện ở commit SAU commit mà useModalFocusTrap chạy effect
+  // (deps của hook là [isOpen]) — ref chưa có mặt lúc đó, hook return sớm và không
+  // bao giờ thử lại ⇒ mất cả bẫy focus lẫn `inert` trên #app-main-content.
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        <div
+          ref={panelRef}
+          className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-200 my-auto flex flex-col max-h-[92vh]"
+        >
+          <div className="no-print shrink-0 bg-slate-900 text-white px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 shrink-0 rounded-2xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-sm sm:text-base whitespace-nowrap">Trạng Thái Hội Chợ</h3>
+                <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                  {data ? `Ngày ${data.businessDate} · cập nhật lúc ${clockOf(lastUpdatedAt)}` : 'Đang tải…'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { if (pollRef.current) clearTimeout(pollRef.current); pollRef.current = null; setLoading(true); void load().finally(() => setLoading(false)); schedule(); }}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                title="Làm mới số liệu"
+                aria-label="Làm mới số liệu trạng thái hội chợ"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                title="Đóng"
+                aria-label="Đóng bảng trạng thái hội chợ"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[11px] text-slate-600 flex items-center justify-between gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              Tự làm mới mỗi 10 giây khi đang mở · dừng khi bạn chuyển tab
+            </span>
+            {showStaleBanner && (
+              <span className="inline-flex items-center gap-1.5 text-rose-700 font-bold">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {error ? `Không làm mới được: ${error}` : 'Số liệu đã cũ hơn 30 giây'}
+              </span>
+            )}
+          </div>
+
+          <div className="p-4 overflow-y-auto flex-1 space-y-5">
+            {notice && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold" role="status">
+                {notice}
+              </div>
+            )}
+
+            {!data && loading && (
+              <p className="py-14 text-center text-slate-400 text-xs font-bold">Đang tải trạng thái các gian hàng…</p>
+            )}
+
+            {!data && !loading && !error && (
+              <p className="py-14 text-center text-slate-400 text-xs">Chưa có số liệu.</p>
+            )}
+
+            {data && (
+              <>
+                {/* 1. KPI hôm nay */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Kpi label="Đơn hôm nay" value={`${t?.orderCount ?? 0}`} sub={`Đơn TB ${money(t?.avgOrderValue)}`} tone="slate" />
+                  <Kpi label="Doanh thu hôm nay" value={money(t?.revenue)} sub={`Chiết khấu −${money(t?.totalDiscount)}`} tone="indigo" />
+                  <Kpi
+                    label="Tiền mặt / Chuyển khoản"
+                    value={money(t?.cashRevenue)}
+                    sub={`CK ${money(t?.transferRevenue)} · ${t?.transferPct ?? 0}%`}
+                    tone="emerald"
+                  />
+                  <Kpi
+                    label="Chờ tiền"
+                    value={`${data.pending.length}`}
+                    sub={`${data.pending.filter((p) => p.overdue).length} quá hạn`}
+                    tone={data.pending.some((p) => p.overdue) ? 'rose' : 'amber'}
+                  />
+                </div>
+
+                {t && t.overCapCount > 0 && (
+                  <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    {t.overCapCount} đơn có chiết khấu từ 20% trở lên hôm nay.
+                  </p>
+                )}
+
+                {/* 2. Ai đang bán ở đâu */}
+                <Block icon={DoorOpen} title="Đang mở ca">
+                  {data.openShifts.length === 0 ? (
+                    <Empty text="Chưa có ca nào đang mở ở kho hội chợ." />
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {data.openShifts.map((s) => (
+                        <li key={s.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 truncate">
+                              {s.cashierName} <span className="text-slate-400 font-normal">·</span>{' '}
+                              <span className="text-slate-600">{s.warehouseName}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-500 font-mono">
+                              Mở {clockOf(s.openedAt)}
+                              {s.elapsedMinutes != null ? ` · đã ${s.elapsedMinutes} phút` : ''}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[10px] text-slate-400">Dự kiến trong két</p>
+                            <p className="font-mono font-bold text-slate-800">{money(s.expectedCashLive)}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Block>
+
+                {/* 3. Đơn đang chờ tiền */}
+                <Block icon={Landmark} title="Đơn đang chờ tiền">
+                  {data.pending.length === 0 ? (
+                    <Empty text="Không có đơn nào đang chờ." />
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {data.pending.map((p) => (
+                        <li key={p.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-mono font-bold text-slate-900">{p.orderCode}</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {p.cashierName} · {p.warehouseName} · {payLabel(p.paymentMethod)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              <p className="font-mono font-bold text-slate-900">{money(p.finalAmount)}</p>
+                              {p.overdue ? (
+                                <p className="text-[10px] font-bold text-rose-600">Quá hạn — cần NV chụp lại ảnh</p>
+                              ) : p.minutesLeft != null ? (
+                                <p className="text-[10px] font-mono text-slate-400">còn {p.minutesLeft} phút</p>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => cancelOrder(p.id, p.orderCode)}
+                              disabled={busyOrder === p.id}
+                              className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-[11px] font-bold shadow transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                              title={`Huỷ đơn ${p.orderCode} đang chờ tiền`}
+                              aria-label={`Huỷ đơn ${p.orderCode}`}
+                            >
+                              {busyOrder === p.id ? '…' : 'Huỷ'}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Block>
+
+                {/* 4. Đơn vừa đóng */}
+                <Block icon={CheckCircle2} title="Đơn vừa đóng">
+                  {data.recentClosed.length === 0 ? (
+                    <Empty text="Chưa có đơn nào đóng." />
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {data.recentClosed.map((o, i) => (
+                        <li key={`${o.orderCode}-${i}`} className="py-2 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-mono font-bold text-slate-900 truncate">{o.orderCode}</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {o.warehouseName} · {payLabel(o.paymentMethod)}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-mono font-bold text-slate-900">{money(o.finalAmount)}</p>
+                            <p className="text-[10px] font-mono text-slate-400">{clockOf(o.createdAt)}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Block>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 5. Top sản phẩm */}
+                  <Block icon={TrendingUp} title="Bán chạy nhất hôm nay">
+                    {data.topSellers.length === 0 ? (
+                      <Empty text="Chưa có bán hôm nay." />
+                    ) : (
+                      <ul className="divide-y divide-slate-100">
+                        {data.topSellers.map((s, i) => (
+                          <li key={s.code} className="py-2 flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-5 h-5 shrink-0 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
+                                {i + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-bold text-slate-800 truncate max-w-[190px]">[{s.code}] {s.title}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">{money(s.revenue)}</p>
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs shrink-0">
+                              {s.copies} cuốn
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Block>
+
+                  {/* 6. Duyệt chiết khấu — tái dùng drawer có sẵn, không viết lại logic */}
+                  <Block icon={ShieldAlert} title="Cần Quản lý duyệt">
+                    <button
+                      type="button"
+                      onClick={() => setApprovalOpen(true)}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                      title="Mở danh sách yêu cầu duyệt chiết khấu"
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                      Xem &amp; Duyệt Yêu Cầu
+                    </button>
+                    <p className="text-[11px] text-slate-500 mt-2 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      Đơn chờ tiền không phải đơn chờ duyệt — hai việc khác nhau.
+                    </p>
+                  </Block>
+                </div>
+
+                <p className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+                  {data.timezoneNote}
+                </p>
+              </>
+            )}
+          </div>
+
+          <div className="no-print shrink-0 px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1.5 font-mono">
+              <Banknote className="w-3.5 h-3.5" />
+              {lastUpdatedAt ? `Cập nhật lúc ${clockOf(lastUpdatedAt)}` : 'Chưa cập nhật'}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition cursor-pointer"
+              title="Đóng bảng trạng thái"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Drawer duyệt chiết khấu: tự fetch + tự poll, không cần props POS. */}
+      {approvalOpen && (
+        <ManagerApprovalDrawer isOpen onClose={() => setApprovalOpen(false)} onActionCompleted={() => { void load(); }} />
+      )}
+    </>,
+    document.body
+  );
+}
+
+function Kpi({ label, value, sub, tone }: { label: string; value: string; sub: string; tone: 'slate' | 'indigo' | 'emerald' | 'amber' | 'rose' }) {
+  const tones: Record<string, string> = {
+    slate: 'bg-slate-50 border-slate-200',
+    indigo: 'bg-indigo-50/70 border-indigo-200/80',
+    emerald: 'bg-emerald-50/70 border-emerald-200/80',
+    amber: 'bg-amber-50/70 border-amber-200/80',
+    rose: 'bg-rose-50/70 border-rose-200/80',
+  };
+  return (
+    <div className={`p-3 rounded-2xl border ${tones[tone]}`}>
+      <p className="text-[11px] font-bold text-slate-600">{label}</p>
+      <p className="text-sm font-black font-mono text-slate-900 mt-1 truncate">{value}</p>
+      <p className="text-[10px] text-slate-500 mt-0.5 truncate">{sub}</p>
+    </div>
+  );
+}
+
+function Block({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2">
+      <h4 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+        <Icon className="w-4 h-4 text-indigo-500" />
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return <p className="text-xs text-slate-400 py-3 text-center">{text}</p>;
+}

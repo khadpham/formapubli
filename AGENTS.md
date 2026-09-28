@@ -36,6 +36,18 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
 - Never assume a UI fix is verified until it is measured in a real browser (`orca eval` / `orca screenshot`).
   A green source-level test suite has already shipped an invisible dropdown once; the assertion was green and
   the menu was 6597px below the viewport.
+- **Service worker che code mới.** App này có PWA: sau khi đã từng mở `localhost:3000` một lần,
+  SW giữ cache và tải JS cũ. Triệu chứng: bạn sửa file, `curl` thấy mã mới, TypeScript sạch, test xanh,
+  nhưng trình duyệt vẫn chạy hành vi cũ và `next dev` **không** recompile. Đã mất nhiều lượt debug
+  sai vì tưởng bug của code trong khi thực ra là cache. Trước khi kết luận "code tôi sửa không chạy":
+  1. `Get-CimInstance Win32_Process -Filter "Name='node.exe'"` — xác nhận đúng 1 tiến trình `next dev`
+     và nó mới khởi động (Start-Process không giết được tiến trình cũ giữ port 3000).
+  2. Kiểm tra bundle thật: `curl` trang rồi grep từ khóa mới trong `/_next/static/chunks/*.js`.
+  3. Xoá SW + cache rồi tải lại:
+     `await (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister())` và
+     `await caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k))))`.
+- File watcher của `next dev` trên máy này hay bị trễ/hỏng khi có nhiều worktree. Nếu sửa file mà
+  log không in `Compiled`, **restart dev server** thay vì chờ.
 - NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps
   serving the old asset manifest, every CSS/JS 404s and the user gets a completely unstyled page.
   Sequence is always: stop dev -> build -> delete `.next` -> `npm run dev:lan`.

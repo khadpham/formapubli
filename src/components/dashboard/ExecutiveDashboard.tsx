@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  Activity,
   DollarSign,
   TrendingUp,
   Boxes,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
+import { LiveFairMonitorModal } from '@/components/dashboard/LiveFairMonitorModal';
 
 interface ExecutiveDashboardProps {
   currentRole: UserRole;
@@ -34,6 +36,7 @@ export function ExecutiveDashboard({
   /** Mốc thời gian nạp xong gần nhất — để nút "Làm mới" có trạng thái SAU khi bấm. */
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [isLiveMonitorOpen, setIsLiveMonitorOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [selectedSettlementWarehouseId, setSelectedSettlementWarehouseId] = useState<string>('wh-du-phong');
 
@@ -182,9 +185,23 @@ export function ExecutiveDashboard({
           <button
             onClick={() => onNavigateTab('pos')}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all shrink-0"
+            title="Mở quầy bán hàng"
+            aria-label="Mở quầy bán hàng POS"
           >
             <ShoppingCart className="w-4 h-4" />
             Mở Quầy POS
+          </button>
+          {/* Trạng thái hội chờ lúc NÀY: ai đang bán, đơn nào chờ tiền, cần duyệt gì.
+              Modal tự làm mới 10 giây khi mở và dừng hẳn khi đóng — không tốn
+              request khi không ai xem. */}
+          <button
+            onClick={() => setIsLiveMonitorOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-teal-600/30 transition-all shrink-0"
+            title="Xem trạng thái bán hàng hội chợ lúc này"
+            aria-label="Xem trạng thái bán hàng hội chợ lúc này"
+          >
+            <Activity className="w-4 h-4" />
+            Xem Trạng Thái
           </button>
           {/* Bộ chọn kho & nút chốt ngày hội chợ */}
           <div className="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl p-1 shadow-inner shrink-0 max-w-full">
@@ -624,6 +641,12 @@ export function ExecutiveDashboard({
           warehouses.find((w) => w.id === selectedSettlementWarehouseId)?.name || 'Kho 3 - Hội Chợ (Gian hàng sự kiện)'
         }
         currentRole={currentRole}
+      />
+
+      {/* Modal Trạng Thái Hội Chợ — lúc này, không phải báo cáo cuối ngày. */}
+      <LiveFairMonitorModal
+        isOpen={isLiveMonitorOpen}
+        onClose={() => setIsLiveMonitorOpen(false)}
       />
     </div>
   );
