@@ -12,8 +12,29 @@ const MAX_CAPTURE_EDGE = 1280;
 const CAPTURE_MIME = 'image/jpeg';
 const CAPTURE_QUALITY = 0.8;
 
+/**
+ * Ảnh mà máy này không xử lý được (thiếu createImageBitmap, sai định dạng).
+ * Thử chụp lại cũng không được nên thông báo phải khác lỗi lưu tạm thời.
+ */
+class CaptureError extends Error {}
+
+/** Trần chờ lưu ảnh: IndexedDB kẹt (iOS dồn bộ nhớ, ITP) thì modal phải tự thoát. */
+const CAPTURE_SAVE_TIMEOUT_MS = 20_000;
+
 const normalizeCapture = async (file: File): Promise<Blob> => {
-  const bitmap = await createImageBitmap(file);
+  if (!file.type.startsWith('image/')) {
+    throw new CaptureError('Máy không đọc được ảnh này. Chụp bằng Camera, hoặc đổi ảnh sang JPG rồi thử lại.');
+  }
+  // Safari 15+ mới có createImageBitmap. Máy cũ không giải mã được thì giữ nguyên
+  // file gốc (ảnh camera native vẫn lưu, xem lại và đối soát được) thay vì chết.
+  if (typeof createImageBitmap !== 'function') return file;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    // HEIC từ thư viện ảnh: không giải mã được thì vẫn lưu file gốc.
+    return file;
+  }
   try {
     const scale = Math.min(1, MAX_CAPTURE_EDGE / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
@@ -52,10 +73,21 @@ export interface TransferPaymentModalProps {
   busy: boolean;
   /** Nhãn nguồn tài khoản: mạng hay cache 24h (null khi dùng mạng). */
   cacheLabel?: string | null;
+  /**
+   * VietQrPay chưa tải xong danh sách tài khoản. Phải phân biệt với "không có
+   * tài khoản" (nguồn NONE) — nếu không, mọi đơn chuyển khoản bình thường đều báo
+   * "chưa có tài khoản nhận" trong lúc tài khoản đang tải.
+   */
+  bankInfoLoading?: boolean;
   cashierId: string;
   onUsePhoto: (photo: PaymentProofPhoto) => Promise<void>;
   onConfirm: () => Promise<void>;
   onCancel: () => Promise<void>;
+  /**
+   * Tạm đóng (nút X / ESC): KHÔNG huỷ đơn, KHÔNG xoá giỏ. Đơn vẫn giữ chỗ tới khi
+   * hết hạn, phiên được giữ trong cache để mở lại. Muốn giải phóng chỗ thì bấm
+   * "Khách chuyển sau" / "Hủy đơn" (onCancel).
+   */
   onClose: () => void;
   errorMessage: string | null;
 }
@@ -71,6 +103,7 @@ export function TransferPaymentModal({
   session,
   busy,
   cacheLabel,
+  bankInfoLoading = false,
   cashierId,
   onUsePhoto,
   onConfirm,
@@ -121,6 +154,14 @@ export function TransferPaymentModal({
     savingRef.current = true;
     setIsSaving(true);
     setCaptureError(null);
+    // Chốn treo: nếu ghi xuống IndexedDB kẹt (iOS dồn bộ nhớ, ITP), modal không
+    // được đứng "Đang lưu ảnh..." mãi. Mở khoá + báo lỗi; lần ghi vẫn chạy nền
+    // và nếu nó xong sau đó thì ảnh vẫn được gắn vào phiên như bình thường.
+    const watchdog = setTimeout(() => {
+      savingRef.current = false;
+      setIsSaving(false);
+      setCaptureError('Lưu ảnh quá lâu. Đơn chưa được xác nhận. Hãy thử lại.');
+    }, CAPTURE_SAVE_TIMEOUT_MS);
     try {
       await onUsePhoto({
         id: `proof-${generateUUIDv7()}`,
@@ -133,11 +174,13 @@ export function TransferPaymentModal({
         blob: await normalizeCapture(file),
         syncState: 'LOCAL_ONLY',
       });
-    } catch {
-      setCaptureError('Lưu ảnh thất bại, đơn chưa được xác nhận. Hãy chụp lại.');
+    } catch (err) {
+      if (err instanceof CaptureError) setCaptureError(err.message);
+      else setCaptureError('Lưu ảnh thất bại, đơn chưa được xác nhận. Hãy thử lại.');
     } finally {
       savingRef.current = false;
       setIsSaving(false);
+      clearTimeout(watchdog);
     }
   };
 
@@ -164,9 +207,11 @@ export function TransferPaymentModal({
           </div>
           <button
             type="button"
-            aria-label="Đóng"
+            aria-label="Tạm đóng, giữ đơn chờ"
+            title="Tạm đóng — đơn vẫn chờ, chưa huỷ"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+            disabled={busy}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
@@ -181,7 +226,10 @@ export function TransferPaymentModal({
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium">Số tài khoản</span>
-            <span className="font-mono font-bold text-slate-800">{session.qrSnapshot.accountNo}</span>
+            <span className="font-mono font-bold text-slate-800">
+              {session.qrSnapshot.accountNo ||
+                (bankInfoLoading ? 'Đang tải...' : 'Chưa có tài khoản nhận')}
+            </span>
           </div>
           <div className="flex items-center justify-between text-xs gap-2">
             <span className="text-slate-500 font-medium">Nội dung</span>
@@ -206,14 +254,33 @@ export function TransferPaymentModal({
           ) : null}
           {cacheLabel ? <p className="text-[10px] text-amber-600 font-medium">{cacheLabel}</p> : null}
 
-          <div className="flex justify-center py-1">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={session.qrSnapshot.dataUrl}
-              alt="QR chuyển khoản"
-              className="w-[200px] h-[200px] rounded-xl border border-slate-200 bg-white"
-            />
-          </div>
+          {session.qrSnapshot.dataUrl ? (
+            <div className="flex justify-center py-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={session.qrSnapshot.dataUrl}
+                alt="QR chuyển khoản"
+                className="w-[200px] h-[200px] rounded-xl border border-slate-200 bg-white"
+              />
+            </div>
+          ) : bankInfoLoading ? (
+            // Tài khoản + QR đang được tải: KHÔNG báo lỗi, mọi chuyển khoản bình
+            // thường đều đi qua màn hình này.
+            <p className="text-[11px] text-slate-500 font-medium text-center">
+              Đang tải thông tin chuyển khoản...
+            </p>
+          ) : session.qrSnapshot.accountNo ? (
+            // Có tài khoản nhưng QR lỗi: vẫn chuyển khoản được theo số bên trên.
+            <p className="text-[11px] text-amber-700 font-medium text-center">
+              Không dựng được mã QR — chuyển khoản theo số tài khoản bên trên, rồi chụp ảnh xác nhận như bình thường.
+            </p>
+          ) : (
+            // Không có tài khoản nhận: cảnh báo phải đúng với màn hình, không trỏ
+            // tới "số tài khoản bên trên" vì trên kia chính là dòng này.
+            <p className="text-[11px] text-amber-700 font-medium text-center">
+              Kho này chưa có tài khoản nhận — thêm ở Quản lý tài khoản ngân hàng, hoặc thu tiền mặt.
+            </p>
+          )}
 
           {shownError ? <p className="text-[11px] text-rose-600 font-medium">{shownError}</p> : null}
           {session.paymentProof ? (
@@ -239,7 +306,7 @@ export function TransferPaymentModal({
             className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <Camera className="w-4 h-4" />
-            {isSaving ? 'Đang lưu ảnh...' : 'Chụp ảnh receipt'}
+            {isSaving ? 'Đang lưu ảnh...' : 'Chụp ảnh xác nhận'}
           </button>
           <button
             type="button"
@@ -250,6 +317,9 @@ export function TransferPaymentModal({
             {busy ? 'Đang xử lý...' : 'Xác nhận đã nhận tiền'}
           </button>
           <div className="flex gap-2">
+            {/* "Khách chuyển sau" = đơn VẪN CHỜ, chỉ gỡ modal (onClose). Huỷ đơn
+                thật sự là "Hủy đơn" (onCancel). Gộp hai nút về một hành động
+                sẽ khiến cashier huỷ nhầm đơn còn giữ tồn. */}
             <button
               type="button"
               onClick={onClose}

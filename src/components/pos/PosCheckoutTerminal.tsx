@@ -389,6 +389,12 @@ export function PosCheckoutTerminal({
   const [isPhotoGalleryOpen, setIsPhotoGalleryOpen] = useState(false);
   const [isTransferSubmitting, setIsTransferSubmitting] = useState(false);
   const [transferBankSource, setTransferBankSource] = useState<'NETWORK' | 'CACHE' | 'NONE'>('NONE');
+  /**
+   * VietQrPay chỉ phát `onSource` khi đã tải xong danh sách tài khoản. Chưa phát
+   * lần nào = đang tải; 'NONE' sau khi đã tải = kho thật sự không có tài khoản.
+   * Không có cờ này thì modal báo "chưa có tài khoản nhận" cho mọi đơn bình thường.
+   */
+  const [transferBankSourceReady, setTransferBankSourceReady] = useState(false);
   const [transferBankCachedAt, setTransferBankCachedAt] = useState<number | null>(null);
   const [transferErrorMessage, setTransferErrorMessage] = useState<string | null>(null);
   /** ID đơn offline đang mở phiên chuyển khoản (dùng để đổi trạng thái sau khi lưu ảnh). */
@@ -461,6 +467,11 @@ export function PosCheckoutTerminal({
   const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null || checkoutLockRef.current;
   const isInteractionLocked = isCartFrozen || isParserImporting;
   const isTransferOverlayOpen = Boolean(transferSession) || isPhotoGalleryOpen;
+  /** Tài khoản nhận/QR của kho đang tải: chưa có QR và chưa từng có nguồn. */
+  const isTransferBankInfoLoading =
+    (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') &&
+    !transferBankSourceReady &&
+    !transferSession?.qrSnapshot.dataUrl;
   const isPosOverlayOpen =
     isParserOpen || isScannerOpen || isMobileCheckoutSheetOpen || Boolean(completedOrder) ||
     Boolean(ambiguousMatches) || isAddingToCart || isDiscountApprovalModalOpen || isManagerApprovalDrawerOpen ||
@@ -1772,6 +1783,15 @@ export function PosCheckoutTerminal({
     );
   };
 
+  /**
+   * VietQrPay phát nguồn tài khoản → ghi nguồn + đánh dấu đã tải xong, để modal
+   * phân biệt "đang tải" với "kho không có tài khoản nhận".
+   */
+  const handleTransferBankSource = (source: 'NETWORK' | 'CACHE' | 'NONE') => {
+    setTransferBankSource(source);
+    setTransferBankSourceReady(true);
+  };
+
   const closeTransferSession = () => {
     setTransferSession(null);
     setTransferErrorMessage(null);
@@ -1779,6 +1799,22 @@ export function PosCheckoutTerminal({
     // Dọn cache phiên: đơn đã xong (xác nhận/huỷ) thì không được hồi sinh
     // sau refresh. Ghi theo kho hiện tại vì session đã bị xoá khỏi state.
     writeTransferSessionCache(null, selectedWarehouseIdRef.current);
+  };
+
+  /**
+   * Tạm đóng modal (nút X / ESC): KHÔNG huỷ đơn, KHÔNG xoá giỏ, KHÔNG xoá cache
+   * phiên — đơn vẫn PENDING giữ ATP tới khi hết hạn và phiên vẫn mở lại được sau
+   * refresh. Xoá cache ở đường này là mất dữ liệu khôi phục mà không xử lý đơn.
+   */
+  const dismissTransferSession = () => {
+    const orderCode = transferSession?.orderCode;
+    setTransferSession(null);
+    setTransferErrorMessage(null);
+    setTransferOfflineOrderId(null);
+    setSyncToast(
+      `⏸ Đơn [${orderCode}] vẫn chờ thanh toán. Tải lại trang để mở lại phiên, hoặc bấm "Chụp ảnh xác nhận" để thu tiền ngay.`
+    );
+    setTimeout(() => setSyncToast(null), 8000);
   };
 
   /**
@@ -2994,7 +3030,7 @@ export function PosCheckoutTerminal({
                     warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
                     warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
                     onQr={handleTransferQrSnapshot}
-                    onSource={setTransferBankSource}
+                    onSource={handleTransferBankSource}
                     onCachedAt={setTransferBankCachedAt}
                   />
                   <button
@@ -3048,9 +3084,13 @@ export function PosCheckoutTerminal({
         </div>
       </div>
 
+      {/* KHÔNG mở có điều kiện theo `qrSnapshot.dataUrl`: ảnh chụp xác nhận không
+          phụ thuộc QR có dựng được hay không. Gating theo dataUrl khiến modal
+          (và camera) không bao giờ mở khi kho chưa có tài khoản nhận / QR lỗi /
+          mất mạng — cashier bấm nút rồi không có gì xảy ra. */}
       {transferSession && mounted && (
         <TransferPaymentModal
-          isOpen={Boolean(transferSession.qrSnapshot.dataUrl)}
+          isOpen
           session={transferSession}
           busy={isTransferSubmitting}
           cacheLabel={
@@ -3058,11 +3098,12 @@ export function PosCheckoutTerminal({
               ? `Dữ liệu cache ${new Date(transferBankCachedAt).toLocaleString('vi-VN')}`
               : null
           }
+          bankInfoLoading={isTransferBankInfoLoading}
           cashierId={cashierActorId}
           onUsePhoto={handleUseTransferPhoto}
           onConfirm={handleConfirmTransfer}
           onCancel={handleCancelTransfer}
-          onClose={closeTransferSession}
+          onClose={dismissTransferSession}
           errorMessage={transferErrorMessage}
         />
       )}
@@ -3751,7 +3792,7 @@ export function PosCheckoutTerminal({
                     warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
                     warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
                     onQr={handleTransferQrSnapshot}
-                    onSource={setTransferBankSource}
+                    onSource={handleTransferBankSource}
                     onCachedAt={setTransferBankCachedAt}
                   />
                   <button

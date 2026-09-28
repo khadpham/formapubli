@@ -383,7 +383,11 @@ assert.match(transferModal, /remainingMs/, 'Modal có đồng hồ đếm ngư�
 assert.match(transferModal, /setInterval\(update, 1000\)/, 'Đếm ngược cập nhật mỗi giây');
 assert.match(transferModal, /new Date\(session\.expiresAt/, 'Đếm ngược suy ra từ expiresAt');
 assert.match(transferModal, /const expired = Boolean\(session(\?)?\.expiresAt\) && remainingMs === 0/, 'expired suy ra từ đếm ngược');
-assert.match(transferModal, /'Chụp ảnh receipt'/, 'Modal có nút chụp ảnh (camera native), nhãn đúng dấu');
+// Nhãn phải là tiếng Việt CÓ DẤU và khớp với nút POS đang ghi "Chụp ảnh xác nhận"
+// — cashier bấm nút ở POS rồi tìm nút trong modal, hai nhãn phải giống nhau.
+// Nhãn cũ "Chụp ảnh receipt" là nửa Anh, vi phạm quy tắc nhãn UI của AGENTS.md.
+assert.match(transferModal, /'Chụp ảnh xác nhận'/, 'Modal có nút chụp ảnh (camera native), nhãn tiếng Việt có dấu');
+assert.doesNotMatch(transferModal, /Chụp ảnh receipt/, 'Nhãn nửa Anh "Chụp ảnh receipt" đã bị thay bằng tiếng Việt');
 assert.doesNotMatch(transferModal, /Chụp màn hình xác nhận/, 'Nhãn cũ "Chụp màn hình xác nhận" đã bị thay');
 assert.match(transferModal, /onUsePhoto: \(photo: PaymentProofPhoto\) => Promise<void>/, 'Modal nhận onUsePhoto dạng Promise');
 assert.doesNotMatch(transferModal, /onCapture/, 'Prop onCapture đã bị gỡ hoàn toàn');
