@@ -1,7 +1,7 @@
 # KẾ HOẠCH — Kế hoạch A (nợ còn lại) + Kế hoạch B (chưa viết spec)
 
 - **Ngày:** 2026-09-29
-- **Căn cứ:** `main` = `ae51c53` (đã deploy prod worker `779d9857-35f3-448f-93cd-d5bf1c58a79d`)
+- **Căn cứ:** `main` = `57c833e` (đã deploy prod worker `4c45dec8-85d6-4de0-a3de-94347184977c`)
 - **Spec Kế hoạch A:** `docs/superpowers/specs/2026-09-29-live-fair-monitor-design.md`
 - **Tracker P0–P8:** `docs/superpowers/plans/2026-09-29-open-work-corrected-plan.md`
 
@@ -30,38 +30,78 @@ Khi nào tài liệu và trí nhớ lệch nhau, tài liệu là chuẩn.
 | A5.2 | `build` sạch (đã dừng dev, build, xoá `.next`, `dev:lan`) |
 | A5.4 | **Trình duyệt thật**: desktop + iPhone 12 390×844 — `mainInert=true`, Escape đóng modal và gỡ `inert`, không tràn ngang (390/390), cao 777 ≤ 844, đủ 5 khối + KPI, API 200 poll đều, prod 401 khi chưa đăng nhập |
 
-### A5.3 — CHƯA LÀM. 8 suite hồi quy, mới chạy 3
+### A5.3 — 8 suite hồi quy — ĐÃ CHẠY ĐỦ (2026-09-29)
 
-Phải chạy nốt: `test-pos-report-permissions`, `test-s4-settlement`,
-`smoke-mobile-role-navigation`, `test-modal-dismiss`, `test-mobile-kho-ui`,
-`test-cron-auto-close`, `test-warehouse-stock`.
+`test-pos-report-permissions` · `test-s4-settlement` · `test-autoclose-shift` ·
+`smoke-mobile-role-navigation` · `test-modal-dismiss` · `test-mobile-kho-ui` ·
+`test-cron-auto-close` · `test-warehouse-stock` — **8/8 PASS**.
 
-Có rủi ro thấp vì A không đụng file dùng chung, nhưng spec ghi bắt buộc thì làm.
+Lưu ý: `test-warehouse-stock` trước đó **chưa được đăng ký** trong
+`scripts/run-isolated.ts`, nên không chạy được bằng `--only`. Đã thêm vào.
 
-### A5.5 — CHƯA LÀM. Nghịch thử với tiền thật. **Đây là bước quan trọng nhất còn lại**
+### A5.5 — nghịch thử với tiền thật — ĐẠT (2026-09-29, trên dev)
 
-Spec A5.5 ghi rõ: *"Không đạt thì dừng, không deploy."* — đã deploy mà chưa làm bước này.
-Cần kiểm trên **dev**, không đụng prod:
+Dựng dữ liệu thật bằng `scripts/a55-money-probe.ts seed` (kho `FAIR_EVENT`,
+1 ca mở, 5 cuốn tồn, 1 đơn chuyển khoản `PENDING_CONFIRMATION` 2 cuốn 150.000đ
+còn hạn), rồi bấm nút **Huỷ** thật trong modal.
 
-1. Mở POS ở kho hội chợ, tạo 1 đơn chuyển khoản, **chưa** xác nhận.
-2. Mở modal "Xem Trạng Thái" → phải thấy đơn ở khối *Đơn đang chờ tiền* + đếm ngược.
-3. Bấm **"Huỷ"** → đơn biến mất khỏi modal.
-4. Kiểm ATP: món vừa giữ chỗ phải **được giải phóng** ngay.
-5. Mở báo cáo ngày → **không đổi** (đơn bị huỷ không tính doanh thu, trước lẫn sau).
+| Kiểm | Kết quả |
+|---|---|
+| Đơn hiện trong modal kèm đếm ngược | ✅ `ORD-A55-PROBE · Thu ngân A5.5 · Kho A55 · Chuyển khoản · 150.000 đ · còn 28 phút` |
+| Bấm **Huỷ** → đơn biến mất khỏi modal | ✅ khối *Đơn đang chờ tiền* chuyển sang "Không có đơn nào đang chờ" |
+| Trạng thái trong DB | ✅ `PENDING_CONFIRMATION` → `CANCELLED` |
+| **Báo cáo ngày không đổi** | ✅ doanh thu `null` trước và sau — đơn bị huỷ không tính vào doanh thu |
+| Có ghi audit | ✅ `ORDER_CANCELLED`, `actor_role = ROLE_OWNER` |
+| ATP được giải phóng | ⚠️ **không kiểm được** — xem phát hiện mới bên dưới |
 
-### 6 lỗi còn nợ trong A — CHƯA SỬA
+Đã khôi phục `formapubli.db` về nguyên trạng sau khi thử
+(backup: `%TEMP%\opencode\formapubli.db.bak-before-a55`).
 
-| # | Lỗi | Vị trí | Tác động |
+### PHÁT HIỆN MỚI — kho hội chợ ATP KHÔNG trừ đơn đang giữ chỗ
+
+`OrderService.getBatchATP` (`order.service.ts:1152-1155`) **thoát sớm** với kho
+`warehouseType = 'FAIR_EVENT'`:
+
+```ts
+if (wh?.warehouseType === 'FAIR_EVENT') {
+  for (const id of ids) out.set(id, balMap.get(id) || 0);   // ← tồn vật lý, KHÔNG trừ giữ chỗ
+  return out;
+}
+```
+
+Nhánh này nằm **trước** truy vấn `held` ở `:1165`. Đo thật: 5 cuốn tồn, 2 cuốn
+đang giữ chỗ bởi đơn chuyển khoản còn hạn ⇒ **ATP vẫn = 5, không phải 3**.
+
+⇒ Ở kho hội chợ, bán 3 cuốn cho 3 khách chờ chuyển khoản đều được ⇒ **bán vượt tồn**.
+Phạm vi chưa rõ: `OrderService.createOrder` có tự chặn riêng hay không, cần kiểm
+thêm trước khi kết luận là lỗi. **CHƯA SỬA** — nằm ngoài Kế hoạch A, cần quyết
+riêng vì đổi semantics ATP là việc lớn.
+
+### 6 lỗi đã sửa (commit `57c833e`)
+
+| # | Lỗi | Vị trí | Sửa |
 |---|---|---|---|
-| **A-1** | `expectedCashLive` gom theo `warehouseId + cashierId` thay vì `cashboxSessionId` | `route.ts:200`, `:220` | Một thu ngân mở **hai** ca cùng kho → hai ca cùng nhận một số tiền. Ca qua nửa đêm → tiền trước nửa đêm của hôm qua bị cộng vào ca, tiền sau nửa đêm bị rớt. **Sai số tiền thật.** |
-| **A-2** | `recentClosed` không lọc theo ngày | `route.ts:154-165` | Lệch spec "5 đơn vừa đóng **trong ngày**" — hiện là 5 đơn mới nhất **mọi thời đại** |
-| **A-3** | Ca đang mở không có cờ quá giờ | `route.ts:149` chỉ có `overdue` ở đơn chờ | Spec §6 yêu cầu nhãn đỏ "Quá giờ X phút" |
-| **A-4** | Khi mở `ManagerApprovalDrawer`, modal monitor không bị `inert` | `LiveFairMonitorModal.tsx` | Cả 2 modal cùng nằm ở `document.body`; hook chỉ inert `#app-main-content` → Tab trôi ra modal dưới |
-| **A-5** | `warehouseId` sai/không tồn tại trả `200` + phạm vi rỗng | `route.ts` | Nên `400`/`404` để lộ lỗi cấu hình |
-| **A-6** | `date` chỉ kiểm regex, không kiểm ngày có thật | `route.ts` | `2026-02-30` trả `200` rỗng im lặng |
+| **A-1** | `expectedCashLive` gom theo kho+thu ngân, lọc theo ngày | `route.ts` | gom theo `cashboxSessionId`, không lọc ngày |
+| **A-2** | `recentClosed` không lọc ngày | `route.ts` | thêm điều kiện ngày |
+| **A-3** | thiếu cờ quá giờ; `elapsedMinutes` sai +7h | `route.ts` | dùng `evaluateShiftCutoff` có sẵn |
+| **A-4** | drawer duyệt không inert modal monitor | `LiveFairMonitorModal.tsx` | tự `setAttribute('inert')` + trả focus |
+| **A-5** | `warehouseId` sai trả 200 rỗng | `route.ts` | trả 400 |
+| **A-6** | ngày giả `2026-02-30` qua được | `route.ts` | `isRealDate()` so ngược Y-M-D |
 
-Ngoài ra: `otherRevenue` (COD) được trả về nhưng UI không hiển thị → COD làm doanh thu
-biến khỏi tổng "tiền mặt + chuyển khoản" mà không có dòng nào giải thích.
+Ngoài ra: hiện COD trong KPI.
+
+Test chặn hồi quy: `test-live-monitor.ts` 28 → **41** assertion nguồn;
+thêm mới `test-live-monitor-runtime.ts` **39** assertion gọi thẳng route handler
+(hai ca cùng thu ngân phải ra hai số khác nhau · đơn hôm qua không lọt vào
+`recentClosed` · không ghi `audit_logs` · tham số rác trả 400).
+
+### Còn NỢ
+
+| Mục | Trạng thái |
+|---|---|
+| Test **tạo** đơn qua `POST /api/orders` | Không làm — cần đủ cấu hình POS (lease phiên, gán kho, mở ca). Phần cần kiểm là phần **huỷ**, phần đó đi qua API thật. Ghi rõ giới hạn này. |
+| Quyết định về phát hiện ATP ở kho hội chợ | **CHỜ USER** — đổi semantics ATP ảnh hưởng POS nhiều nơi |
+| Quyết định có sửa lỗi A-1/A-2 đã lên prod hay để nguyên | Đã sửa và deploy (`57c833e`) |
 
 ---
 
@@ -126,12 +166,12 @@ Top sản phẩm + giờ bán chạy trong monitor (đã có ở báo cáo ngày
 
 ## 4. Thứ tự làm tiếp
 
-| Bước | Việc | Lý do |
+| Bước | Việc | Trạng thái |
 |---|---|---|
-| 1 | A-1 + A-2: `expectedCashLive` theo `cashboxSessionId`, `recentClosed` lọc ngày | Sai số tiền thật, đã lên prod |
-| 2 | A-3 + A-4 + A-5 + A-6 + hiển thị COD | Nhỏ, cùng file, làm một lượt |
-| 3 | **A5.5 nghịch thử với tiền thật trên dev** | Spec: "Không đạt thì dừng, không deploy" |
-| 4 | A5.3 chạy nốt 8 suite hồi quy | Spec bắt buộc |
-| 5 | Dọn worktree/branch đã merge (giữ nguyên mọi thứ dirty) | Đã được user duyệt |
-| 6 | Viết **spec Kế hoạch B** rồi mới code | B đụng đối soát két, cần duyệt trước |
-| 7 | P1b, P8, P6-journal — cần user quyết hoặc xác nhận | Chặn ở quyết định người dùng |
+| 1 | A-1 … A-6 + test nguồn 41 + test runtime 39 | ✅ xong, deploy `57c833e` |
+| 2 | A5.3 chạy 8 suite hồi quy | ✅ 8/8 |
+| 3 | A5.5 nghịch thử tiền thật trên dev | ✅ đạt (trừ kiểm ATP — xem phát hiện mới) |
+| 4 | Dọn worktree/branch đã merge (giữ nguyên mọi thứ dirty) | đã được user duyệt |
+| 5 | Viết **spec Kế hoạch B** rồi mới code | B đụng đối soát két, cần duyệt trước |
+| 6 | Quyết ATP kho hội chợ (bán vượt tồn) | **CHỜ USER** |
+| 7 | P1b, P8, P6-journal — cần user quyết hoặc xác nhận | **CHỜ USER** |
