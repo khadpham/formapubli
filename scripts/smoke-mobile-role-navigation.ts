@@ -47,7 +47,15 @@ const shell = fs.readFileSync(shellPath, 'utf8');
 assert.doesNotMatch(shell, /Mobile Bottom Navigation Dock/);
 assert.doesNotMatch(shell, /currentTab === 'pos' \? 'hidden md:flex' : 'flex'/);
 assert.match(shell, /<header className="[^"]*h-\[max\(3\.5rem,calc\(2\.75rem_\+_env\(safe-area-inset-top\)\)\)\][^"]*"/);
-assert.match(shell, /currentTab === 'pos'/);
+assert.match(shell, /effectiveTab === 'pos'/);
+// Bảo mật: không được có fallback 'ROLE_OWNER' khi chưa biết phiên. Nếu có,
+// thu ngân sẽ thấy Bảng Quản Trị trước khi app giới hạn lại về POS.
+assert.doesNotMatch(shell, /\|\|\s*'ROLE_OWNER'/);
+assert.match(shell, /useState<UserRole \| null>\(initialSession\?\.role \?\? null\)/);
+assert.match(shell, /currentRole && effectiveTab === 'dashboard'/);
+// Rớt lease (heartbeat 401) KHÔNG được xoá vai trò — POS sẽ unmount và mất sạch
+// giỏ hàng. Đăng xuất tường minh thì phải xoá.
+assert.match(shell, /if \(res\.status === 401\) \{\s*setSession\(null\);/);
 assert.match(shell, /mainBottomPadding = canUseCopilot \? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8'/);
 assert.match(shell, /bottom-\[calc\(max\(1rem,env\(safe-area-inset-bottom\)\)_\+_5\.5rem\)\]/);
 assert.match(shell, /isPosCheckoutBusy/);

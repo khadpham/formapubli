@@ -420,6 +420,69 @@ async function run() {
     cashierId: CASHIER.staffId,
     openingCash: 0,
   });
+
+  console.log('\n[Case 16] Chiết khấu >= 20% + chuyển khoản (đơn chờ xác nhận)');
+  const reqTransfer = await DiscountApprovalService.createRequest({
+    orderCode: 'ORD-2026-7790',
+    warehouseId: 'wh-au-co',
+    cashierId: CASHIER.staffId,
+    items: [{ editionId: 'ed-h01', quantity: 2, unitPrice: 150000 }],
+    requestedDiscountRate: 0.25,
+    actorContext: CASHIER,
+  });
+  await DiscountApprovalService.approveRequest({
+    requestId: reqTransfer.id,
+    method: 'ONE_TOUCH',
+    actorContext: MGR,
+  });
+  const transferOrder = await OrderService.createOrder({
+    id: 'order-transfer-with-approval',
+    orderCode: 'ORD-2026-7790',
+    idempotencyKey: 'idem-transfer-with-approval',
+    warehouseId: 'wh-au-co',
+    channel: 'RETAIL_OFFICE',
+    discountRate: 0.25,
+    paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false,
+    cashboxSessionId: openedCashbox.session.id,
+    actorContext: CASHIER,
+    discountApprovalId: reqTransfer.id,
+    items: [{ editionId: 'ed-h01', quantity: 2 }],
+  });
+  assert.equal(transferOrder.status, 'PENDING_CONFIRMATION');
+  assert.equal((await DiscountApprovalService.getRequest(reqTransfer.id)).status, 'CONSUMED');
+  const transferRow = (await db.select().from(schema.orders).where(eq(schema.orders.id, 'order-transfer-with-approval')))[0];
+  assert.equal(Number(transferRow.discountRate), 0.25);
+  assert.ok(transferRow.paymentExpiresAt, 'đơn chuyển khoản phải có hạn giữ chỗ');
+  console.log('✓ Tạo được đơn chờ xác nhận kèm approval 25% (trước đây 400 chết)');
+  console.log('✓ Approval CONSUMED + mức chiết khấu đóng băng vào đơn');
+
+  console.log('\n[Case 17] Một approval không dùng lại được cho đơn thứ hai');
+  let reuseRejected = false;
+  try {
+    await OrderService.createOrder({
+      id: 'order-transfer-reuse',
+      orderCode: 'ORD-2026-7791',
+      idempotencyKey: 'idem-transfer-reuse',
+      warehouseId: 'wh-au-co',
+      channel: 'RETAIL_OFFICE',
+      discountRate: 0.25,
+      paymentMethod: 'BANK_TRANSFER',
+      confirmImmediately: false,
+      cashboxSessionId: openedCashbox.session.id,
+      actorContext: CASHIER,
+      discountApprovalId: reqTransfer.id,
+      items: [{ editionId: 'ed-h01', quantity: 1 }],
+    });
+  } catch {
+    reuseRejected = true;
+  }
+  assert.equal(reuseRejected, true);
+  assert.equal((await db.select().from(schema.orders).where(eq(schema.orders.id, 'order-transfer-reuse'))).length, 0);
+  console.log('✓ Approval đã tiêu thụ không tái dùng cho đơn thứ hai, không lọt đơn');
+  await OrderService.cancelOrder('order-transfer-with-approval', CASHIER.role, 'Dọn ca', CASHIER);
+  console.log('✓ Đơn chờ đã hủy để két đóng được');
+
   const cashboxOrder = await OrderService.createOrder({
     id: 'order-cashbox-replay-1',
     orderCode: 'ORD-2026-7789',

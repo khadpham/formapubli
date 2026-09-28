@@ -16,7 +16,7 @@ import { LoginModal } from '@/components/auth/LoginModal';
 import { NotificationBell, type NotifyItem } from '@/components/notifications/NotificationBell';
 import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
 import { matchNavShortcut, matchActionShortcut, getShortcutLabel } from '@/lib/keyboard';
-import { UserRole, USER_ROLES, getDefaultTabForRole } from '@/lib/roles';
+import { UserRole, USER_ROLES, getDefaultTabForRole, type RoleConfig } from '@/lib/roles';
 
 interface MasterAppShellProps {
   matrixBooks: any[];
@@ -39,9 +39,17 @@ export function MasterAppShell({
 }: MasterAppShellProps) {
   const [session, setSession] = useState(initialSession);
   const [showLoginModal, setShowLoginModal] = useState(requiresAuth || !initialSession);
-  const initialRole = initialSession?.role || 'ROLE_OWNER';
-  const [currentTab, setCurrentTab] = useState<string>(() => getDefaultTabForRole(initialRole));
-  const [currentRole, setCurrentRole] = useState<UserRole>(initialRole);
+  // KHÔNG được default 'ROLE_OWNER'. Không có phiên = KHÔNG có quyền nào cả.
+  // Trước đây default OWNER khiến dashboard Bảng Quản Trị render trước khi
+  // biết thu ngân đăng nhập, rồi mới giới hạn lại — thu ngân thấy số liệu
+  // kinh doanh trong khoảng thời gian đó.
+  // GIỮ vai trò cuối khi phiên rớt (heartbeat 401) để POS không bị unmount và
+  // làm mất sạch giỏ hàng — đó là lý do code cũ tách currentRole khỏi session.
+  const [role, setRole] = useState<UserRole | null>(initialSession?.role ?? null);
+  const currentRole: UserRole | null = role;
+  const [currentTab, setCurrentTab] = useState<string | null>(
+    initialSession?.role ? getDefaultTabForRole(initialSession.role) : null
+  );
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isPosCheckoutBusy, setIsPosCheckoutBusy] = useState(false);
@@ -73,24 +81,28 @@ export function MasterAppShell({
 
   // Go-live: vai trò = phiên đăng nhập thật, đã xóa mô phỏng vai trò.
 
+  // Chưa có phiên = không có config nào. Mảng rỗng để mọi lệnh kiểm tra
+  // allowedNavItems trả false, tức không tab nào mở được trước khi đăng nhập.
+  const roleConfig: RoleConfig = currentRole
+    ? USER_ROLES[currentRole]
+    : { id: '' as UserRole, label: '', badgeColor: '', badgeBg: '', description: '', allowedNavItems: [] };
+
+  // Tab hợp lệ tính LÚC RENDER, không sửa trong useEffect. Nhờ vậy không bao
+  // giờ có khung hình nào mà tab='dashboard' đi cùng role thu ngân.
+  const effectiveTab: string | null = currentRole
+    ? (roleConfig.allowedNavItems.includes(currentTab ?? '') ? currentTab : roleConfig.allowedNavItems[0])
+    : null;
+
   // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   let mainBottomPadding = 'pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-8';
   let fabBottom = 'bottom-[max(1.5rem,env(safe-area-inset-bottom))]';
-  if (currentTab === 'pos') {
+  if (effectiveTab === 'pos') {
     mainBottomPadding = canUseCopilot ? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8';
     if (canUseCopilot) fabBottom = 'bottom-[calc(max(1rem,env(safe-area-inset-bottom))_+_5.5rem)]';
   } else if (canUseCopilot) {
     mainBottomPadding = 'pb-28 lg:pb-8';
   }
-
-  // Cập nhật currentRole khi session thay đổi
-  React.useEffect(() => {
-    if (session?.role) {
-      setCurrentRole(session.role);
-      setCurrentTab(getDefaultTabForRole(session.role));
-    }
-  }, [session]);
 
   // S-01: heartbeat giữ lease cashier (5 phút/lần). 401 → mở lại login
   // (giữ nguyên giỏ/queue). Lỗi mạng/503 → im lặng thử lại kỳ sau.
@@ -128,8 +140,6 @@ export function MasterAppShell({
     };
   }, [session?.role, session?.actorId]);
 
-  const roleConfig = USER_ROLES[currentRole];
-
   // Nguồn thông báo thứ hai (POS) — trước đây là một chuông riêng chỉ mở màn POS,
   // nay gộp vào chuông duy nhất để header không còn hai nút giống nhau.
   const posMountedAt = React.useRef(new Date().toISOString());
@@ -152,18 +162,11 @@ export function MasterAppShell({
       await fetch('/api/auth/logout', { method: 'POST' });
     } finally {
       setSession(null);
+      setRole(null);
       setShowLoginModal(true);
       window.location.reload();
     }
   };
-
-  // Nếu vai trò hiện tại không được phép truy cập tab này, tự chuyển về tab đầu tiên được phép
-  React.useEffect(() => {
-    if (!roleConfig.allowedNavItems.includes(currentTab)) {
-      setCurrentTab(roleConfig.allowedNavItems[0]);
-    }
-  }, [currentRole, currentTab, roleConfig]);
-
 
   // Phím tắt bàn phím toàn cục:
   // - Windows: Alt + 1..8 (chuyển Tab), Alt + C (Copilot)
@@ -210,19 +213,23 @@ export function MasterAppShell({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
-      {/* Vertical Sidebar Navigation */}
-      <AppSidebar
-        currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        currentRole={currentRole}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        isMobileOpen={isMobileSidebarOpen}
-        isNavigationDisabled={isPosCheckoutBusy || copilotView !== 'closed'}
-        onCloseMobile={() => setIsMobileSidebarOpen(false)}
-        onOpenCopilot={() => setCopilotView('mini')}
-        onLogout={session ? handleLogout : undefined}
-      />
+      {/* Vertical Sidebar Navigation — chưa có vai trò thì không render: trước
+          đây truyền 'ROLE_CASHIER' giả khiến hiện 2 nút bấm được nhưng bấm
+          không làm gì (effectiveTab null). Nút chết là dấu hiệu bấm rõ bị sai. */}
+      {currentRole && (
+        <AppSidebar
+          currentTab={effectiveTab ?? ''}
+          onSelectTab={setCurrentTab}
+          currentRole={currentRole}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          isMobileOpen={isMobileSidebarOpen}
+          isNavigationDisabled={isPosCheckoutBusy || copilotView !== 'closed'}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          onOpenCopilot={() => setCopilotView('mini')}
+          onLogout={session ? handleLogout : undefined}
+        />
+      )}
 
       {/* Main Content Area */}
       <div
@@ -248,14 +255,14 @@ export function MasterAppShell({
                   Khung Vận Hành:
                 </span>
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5 truncate">
-                  {currentTab === 'dashboard' && 'Bảng Quản Trị'}
-                  {currentTab === 'pos' && 'Quầy Bán Hàng POS'}
-                  {currentTab === 'inventory' && 'Kho Hàng & Thẻ Kho'}
-                  {currentTab === 'sales' && 'Doanh Số & Sổ Kép'}
-                  {currentTab === 'partners' && 'Đối Tác & Đại Lý'}
-                  {currentTab === 'customers' && 'Độc Giả CRM'}
-                  {currentTab === 'studio' && 'Phân Tích & Dự Báo'}
-                  {currentTab === 'settings' && 'Cài Đặt'}
+                  {effectiveTab === 'dashboard' && 'Bảng Quản Trị'}
+                  {effectiveTab === 'pos' && 'Quầy Bán Hàng POS'}
+                  {effectiveTab === 'inventory' && 'Kho Hàng & Thẻ Kho'}
+                  {effectiveTab === 'sales' && 'Doanh Số & Sổ Kép'}
+                  {effectiveTab === 'partners' && 'Đối Tác & Đại Lý'}
+                  {effectiveTab === 'customers' && 'Độc Giả CRM'}
+                  {effectiveTab === 'studio' && 'Phân Tích & Dự Báo'}
+                  {effectiveTab === 'settings' && 'Cài Đặt'}
                 </span>
               </div>
             </div>
@@ -279,13 +286,15 @@ export function MasterAppShell({
               </button>
             )}
 
-            <div
-              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${roleConfig.badgeBg} ${roleConfig.badgeColor}`}
-              title={roleConfig.label}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>{roleConfig.label}</span>
-            </div>
+            {currentRole && (
+              <div
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${roleConfig.badgeBg} ${roleConfig.badgeColor}`}
+                title={roleConfig.label}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>{roleConfig.label}</span>
+              </div>
+            )}
 
             {/* MỘT chuông duy nhất — gộp nguồn POS + nguồn nghiệp vụ, có nhãn khu vực, xóa được. */}
             {session && (
@@ -301,16 +310,17 @@ export function MasterAppShell({
         </header>
 
 
-        {/* Dynamic View Body */}
+        {/* Dynamic View Body — currentRole là cổng chặn DUY NHẤT. Không có phiên
+            thì không render bất kỳ màn nghiệp vụ nào, kể cả 1 khung hình. */}
         <main className={`p-3 sm:p-4 md:p-8 max-w-7xl w-full mx-auto flex-1 ${mainBottomPadding}`}>
-          {currentTab === 'dashboard' && (
+          {currentRole && effectiveTab === 'dashboard' && (
             <ExecutiveDashboard
               currentRole={currentRole}
               onNavigateTab={setCurrentTab}
             />
           )}
 
-          {currentTab === 'pos' && (
+          {currentRole && effectiveTab === 'pos' && (
             <PosCheckoutTerminal
                books={matrixBooks}
                currentRole={currentRole}
@@ -325,7 +335,7 @@ export function MasterAppShell({
             />
           )}
 
-          {currentTab === 'inventory' && (
+          {currentRole && effectiveTab === 'inventory' && (
             <div className="space-y-6">
               {/* Tên kho đã có ở pill top bar — ẩn cả card trên mobile */}
               <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -348,25 +358,25 @@ export function MasterAppShell({
             </div>
           )}
 
-          {currentTab === 'sales' && (
+          {currentRole && effectiveTab === 'sales' && (
             <SalesLedgerView currentRole={currentRole} />
           )}
 
-          {currentTab === 'sales' && (
+          {currentRole && effectiveTab === 'sales' && (
             <PendingOrdersView currentRole={currentRole} />
           )}
 
-          {currentTab === 'partners' && (
+          {currentRole && effectiveTab === 'partners' && (
             <PartnersListView partners={partnerList} currentRole={currentRole} />
           )}
 
-          {currentTab === 'customers' && <CustomersListView />}
+          {currentRole && effectiveTab === 'customers' && <CustomersListView />}
 
-          {currentTab === 'settings' && (
+          {currentRole && effectiveTab === 'settings' && (
             <SettingsRbacView sessionRole={session?.role} />
           )}
 
-          {currentTab === 'studio' && (
+          {currentRole && effectiveTab === 'studio' && (
             <AnalyticsStudio currentRole={currentRole} />
           )}
         </main>
@@ -378,7 +388,8 @@ export function MasterAppShell({
           isClosable={!requiresAuth && !!session}
           onLoginSuccess={(newSession) => {
             setSession(newSession);
-            setCurrentRole(newSession.role);
+            setRole(newSession.role);
+            setCurrentTab(getDefaultTabForRole(newSession.role));
             setShowLoginModal(false);
             window.location.reload();
           }}
@@ -406,7 +417,7 @@ export function MasterAppShell({
 
       {/* Executive AI Copilot: mini chat + full drawer */}
       <CopilotDrawer
-        currentRole={currentRole}
+        currentRole={currentRole ?? 'ROLE_CASHIER'}
         isOpen={copilotView !== 'closed'}
         mode={copilotView === 'full' ? 'full' : 'mini'}
         onMinimize={() => setCopilotView('mini')}

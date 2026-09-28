@@ -2953,15 +2953,15 @@ export function PosCheckoutTerminal({
                 </div>
               </div>
               {(paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
-                <div className="mt-3">
+                <div className="mt-3 hidden lg:block">
                   <VietQrPay
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
-                    initialContent={activeOrderCode}
+                    initialContent={transferSession ? transferSession.orderCode : activeOrderCode}
                     itemCount={cart.reduce((sum, l) => sum + l.quantity, 0)}
                     warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
                     warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
-                    onQr={setQrSnapshot}
+                    onQr={handleTransferQrSnapshot}
                     onSource={setTransferBankSource}
                     onCachedAt={setTransferBankCachedAt}
                   />
@@ -3015,20 +3015,6 @@ export function PosCheckoutTerminal({
           </div>
         </div>
       </div>
-
-      {/* Luồng chuyển khoản/QR: QR theo mã đơn thật, modal phiên, camera, gallery */}
-      {isDigitalCheckout && (
-        <div className="mt-2">
-          <VietQrPay
-            warehouseId={selectedWarehouseId}
-            amount={finalAmount}
-            initialContent={transferSession ? transferSession.orderCode : activeOrderCode}
-            onQr={handleTransferQrSnapshot}
-            onSource={setTransferBankSource}
-            onCachedAt={setTransferBankCachedAt}
-          />
-        </div>
-      )}
 
       {transferSession && mounted && (
         <TransferPaymentModal
@@ -3741,11 +3727,11 @@ export function PosCheckoutTerminal({
                   <VietQrPay
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
-                    initialContent={activeOrderCode}
+                    initialContent={transferSession ? transferSession.orderCode : activeOrderCode}
                     itemCount={cart.reduce((sum, l) => sum + l.quantity, 0)}
                     warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
                     warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
-                    onQr={setQrSnapshot}
+                    onQr={handleTransferQrSnapshot}
                     onSource={setTransferBankSource}
                     onCachedAt={setTransferBankCachedAt}
                   />

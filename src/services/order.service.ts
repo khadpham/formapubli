@@ -452,9 +452,11 @@ export class OrderService {
     const paymentExpiresAt = isCounterTransfer
       ? new Date(Date.now() + 30 * 60_000).toISOString()
       : null;
-    if (isPending && params.discountApprovalId) {
-      throw AppError.invalid('Đơn chờ xác nhận không được dùng approval chiết khấu.');
-    }
+    // ĐƯỢC phép tạo đơn chờ xác nhận (chuyển khoản/QR) kèm approval chiết khấu.
+    // Approval đã được tiêu thụ NGUYÊN TỬ ngay trong tx này (consumeApproval) và
+    // mức chiết khấu đã đóng băng vào dòng đơn; confirmOrder không đụng approval.
+    // Trước đây chặn ở đây khiến "chiết khấu >=20% + chuyển khoản" là ngõ cụt:
+    // 400 chết, không tạo được đơn, không hiện được QR. Cấm thêm lại guard này.
     if (params.discountApprovalId && bundleOrders.length > 0) {
       throw AppError.invalid('Approval chiết khấu chỉ áp dụng cho đơn sách lẻ, không dùng với combo.');
     }

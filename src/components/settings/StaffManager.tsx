@@ -38,6 +38,9 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   const [resetPin, setResetPin] = useState('');
   const [editId, setEditId] = useState('');
   const [editName, setEditName] = useState('');
+  const [releaseId, setReleaseId] = useState('');
+  const [releaseReason, setReleaseReason] = useState('');
+  const [releasing, setReleasing] = useState(false);
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; code: string; warehouseType?: string }>>([]);
 
   const load = useCallback(async () => {
@@ -95,33 +98,33 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   // Gửi expected session+version để chống hủy nhầm phiên mới (409 → tải lại).
   const forceRelease = async (row: StaffRow) => {
     if (!row.lease) return;
-    const reason = window.prompt(
-      `Giải phóng phiên đang mở của ${row.staffId}?\nMáy kia sẽ bị đăng xuất. Đơn chưa sync KHÔNG bị xóa.\nNhập lý do:`
-    );
-    if (!reason || !reason.trim()) return;
-    if (!window.confirm(`Chắc chắn giải phóng phiên ${row.staffId}?`)) return;
     setError(null);
     setNotice(null);
+    setReleasing(true);
     try {
       const res = await fetch(`/api/staff/${encodeURIComponent(row.staffId)}/release-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          reason: reason.trim(),
+          reason: releaseReason.trim(),
           expectedSessionId: row.lease.sessionId,
           expectedSessionVersion: row.sessionVersion,
         }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        setError(json.error || 'Giải phóng phiên thất bại.');
+        setError(json.error || 'Buộc đăng xuất thất bại.');
         await load();
         return;
       }
-      setNotice(`Đã giải phóng phiên ${row.staffId}.`);
+      setNotice(`Đã buộc đăng xuất máy của ${row.staffId}.`);
+      setReleaseId('');
+      setReleaseReason('');
       await load();
     } catch (err: any) {
       setError(err.message || 'Lỗi kết nối.');
+    } finally {
+      setReleasing(false);
     }
   };
 
@@ -370,11 +373,12 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                           )}
                           {r.lease && (
                             <button
-                              title={`Giải phóng phiên đang mở (từ ${r.lease.startedAt || 'không rõ'})`}
-                              onClick={() => forceRelease(r)}
-                              className="p-1.5 bg-rose-100 hover:bg-rose-200 rounded-lg text-rose-700 cursor-pointer"
+                              title={`Buộc đăng xuất máy đang mở phiên (từ ${r.lease.startedAt || 'không rõ'})`}
+                              aria-label={`Buộc đăng xuất máy của ${r.staffId}`}
+                              onClick={() => { setReleaseId(r.staffId); setReleaseReason(''); }}
+                              className="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 rounded-lg text-rose-700 text-[11px] font-bold cursor-pointer flex items-center gap-1.5"
                             >
-                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <ShieldCheck className="w-3.5 h-3.5" /> Buộc đăng xuất
                             </button>
                           )}
                         </>
@@ -383,6 +387,39 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                   </td>
                 </tr>
               ))}
+              {rows.map((r) =>
+                releaseId === r.staffId ? (
+                  <tr key={`${r.staffId}-release`} className="bg-rose-50/40">
+                    <td colSpan={6} className="px-3 pb-3">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <span className="text-[11px] text-slate-500">Bắt buộc nhập lý do (để ghi audit) để đuổi máy của {r.staffId}.</span>
+                        <input
+                          aria-label="Lý do buộc đăng xuất"
+                          value={releaseReason}
+                          onChange={(e) => setReleaseReason(e.target.value)}
+                          placeholder="Lý do buộc đăng xuất"
+                          autoFocus
+                          className="w-56 px-2 py-1.5 bg-white border border-rose-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-rose-500"
+                        />
+                        <button
+                          onClick={() => forceRelease(r)}
+                          disabled={!releaseReason.trim() || releasing}
+                          className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-[11px] transition disabled:opacity-50 cursor-pointer"
+                        >
+                          Xác nhận
+                        </button>
+                        <button
+                          onClick={() => { setReleaseId(''); setReleaseReason(''); }}
+                          disabled={releasing}
+                          className="px-2.5 py-1.5 bg-slate-100 text-slate-600 font-bold rounded-lg text-[11px] disabled:opacity-50 cursor-pointer"
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null
+              )}
             </tbody>
           </table>
         </div>

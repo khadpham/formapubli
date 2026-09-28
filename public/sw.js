@@ -20,16 +20,19 @@
 // 3) Đăng nhập xong thấy màn cũ (bug #2 cũ): đã xử lý bằng cách không
 //    cache HTML và bỏ qua toàn bộ /api/.
 
-const BUILD = 'v3';
+const BUILD = 'v4';
 const CACHE_NAME = `formapubli-cache-${BUILD}`;
 
 // Nguyên tắc: app này có PHIÊN ĐĂNG NHẬP. Không được phục vụ HTML cũ,
 // vì HTML cũ = shell cũ + logic cũ, dẫn tới lệch phiên và mất thao tác.
 // Chỉ cache tài nguyên tĩnh bất biến (icon, manifest, asset có hash tên).
+// v4: manifest trỏ icon PNG (iOS không nhận SVG cho apple-touch-icon) → cache
+// PNG để app cài offline không trắng màn hình chính.
 const PRECACHE_ASSETS = [
   '/manifest.json',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg',
+  '/icons/apple-touch-icon.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
