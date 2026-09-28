@@ -23,7 +23,7 @@ import {
   works, editions, warehouses,
   orders, orderItems,
   returnOrders, returnOrderItems, returnActions,
-  inventoryLedger, stockBalances, rmaTickets,
+  inventoryLedger, stockBalances, rmaTickets, cashboxSessions,
 } from '../src/db/schema';
 
 assertIsolatedTestDb('test-cp3-return-concurrency');
@@ -86,6 +86,13 @@ async function freshProbeDb(probe: string, openingQty: number) {
     id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',
     eventType: 'OPENING_BALANCE', quantityDelta: openingQty, condition: 'NEW',
     documentRef: `OPEN-${probe}`, actorId: 'cp3r-fixture', idempotencyKey: `idem-open-${wid}`,
+  });
+  // salePayload dùng channel='FAIR_EVENT' = bán tại quầy, nên đơn PENDING bắt
+  // buộc có ca két OPEN của chính thu ngân tại kho này (guard B2a ở order.service).
+  // Fixture trước đây thiếu ca nên chỉ xanh khi guard chưa nhận FAIR_EVENT là quầy.
+  await db.insert(cashboxSessions).values({
+    id: `cbs-${wid}-cp3r-cashier`, warehouseId: 'wh-au-co',
+    cashierId: 'cp3r-cashier', openingCash: 0, status: 'OPEN',
   });
   client.close();
   return { file, url, editionId: wid };

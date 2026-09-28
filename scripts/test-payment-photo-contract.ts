@@ -349,8 +349,14 @@ assert.doesNotMatch(gallery, /fetch\(|XMLHttpRequest|FormData/, 'Gallery không 
 const pos = readSource('src/components/pos/PosCheckoutTerminal.tsx');
 const posCode = stripComments(pos);
 
-// Nút thanh toán số đổi nhãn: tạo đơn trước, hiện QR sau.
-expectMatch(pos, /Tạo đơn & hiện QR/, 'Nút thanh toán số phải là "Tạo đơn & hiện QR"');
+// Nút thanh toán số đổi nhãn: QR đã hiện sẵn ở giỏ, bước này là chụp ảnh xác nhận.
+expectMatch(pos, /'Chụp ảnh xác nhận'/, 'Nút thanh toán số phải là "Chụp ảnh xác nhận"');
+const checkoutLabels = pos.slice(
+  pos.indexOf('const checkoutButtonLabel'),
+  pos.indexOf('const approvalPricedCart')
+);
+expectMatch(checkoutLabels, /'Chụp ảnh xác nhận'/, 'Cả nút desktop lẫn mobile phải dùng nhãn "Chụp ảnh xác nhận"');
+expectNoMatch(checkoutLabels, /hiện QR/, 'Nhãn nút không được hứa hiện QR ở bước này');
 expectNoMatch(
   posCode,
   /if \(!isGift && \(paymentMethod === 'BANK_TRANSFER' \|\| paymentMethod === 'QR_CODE'\) && !isMoneyReceived\)/,

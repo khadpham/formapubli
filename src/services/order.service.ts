@@ -113,12 +113,21 @@ function requiresPaymentProof(paymentMethod: string | null | undefined): boolean
 }
 
 /**
- * Đơn bán tại quầy = kênh RETAIL_OFFICE. Cửa sổ thanh toán 30 phút và yêu cầu có ca
- * két phải bám vào KÊNH, không bám vào cashboxSessionId — vì cashboxSessionId do
- * client gửi: bỏ đi là rơi về TTL 48h và lách được cửa sổ ngắn.
+ * Quy tắc nghiệp vụ: đơn bán tại quầy = kênh RETAIL_OFFICE (kho chính) HOẶC
+ * FAIR_EVENT (gian hàng hội chợ). Gian hàng hội chợ CŨNG là bán trực tiếp tại
+ * quầy: POS chọn kênh theo warehouseType (PosCheckoutTerminal), nên thu ngân
+ * hội chợ gửi channel='FAIR_EVENT'. Trước đây chỉ nhận RETAIL_OFFICE khiến
+ * chuyển khoản tại hội chợ rơi vào ngõ cụt: chặn đơn chờ, mất cửa sổ 30 phút,
+ * và lách được yêu cầu mở ca két. Giá trị 'FAIR_EVENT' trong orders.channel là
+ * hợp lệ và độc lập với quy tắc này (isFairOfflineSync, analytics) — KHÔNG
+ * chuẩn hoá channel, chỉ mở rộng tập "kênh quầy".
+ *
+ * Cửa sổ thanh toán 30 phút và yêu cầu có ca két phải bám vào KÊNH, không bám
+ * vào cashboxSessionId — vì cashboxSessionId do client gửi: bỏ đi là rơi về
+ * TTL 48h và lách được cửa sổ ngắn.
  */
 function isCounterChannel(channel: string | null | undefined): boolean {
-  return channel === 'RETAIL_OFFICE';
+  return channel === 'RETAIL_OFFICE' || channel === 'FAIR_EVENT';
 }
 
 export interface OrderFingerprint {
@@ -256,9 +265,16 @@ export class OrderService {
 
     // V4.1 S1.2: chặn bán từ kho ảo/ký gửi/ngưng bán ngay từ cổng vào (đọc DB, không hardcode).
     const sellRow = await WarehouseService.assertSellable(warehouseId);
-    // V4.1 S1.2 (lock Q5): đơn giữ chỗ online (PENDING) chỉ được giữ ở kho chính —
-    // sách đã ra gian hàng hội chợ chỉ bán trực tiếp tại quầy.
-    if (params.confirmImmediately === false && sellRow.warehouseType === 'FAIR_EVENT') {
+    // V4.1 S1.2 (lock Q5): đơn giữ chỗ ONLINE (PENDING) chỉ được giữ ở kho chính —
+    // sách đã ra gian hàng hội chợ chỉ bán trực tiếp tại quầy, không giữ chỗ cho
+    // khách online. Chặn theo KÊNH (isCounterChannel), KHÔNG chặn theo kho: gian
+    // hàng hội chợ vẫn bán chuyển khoản/QR tại quầy (POS gửi FAIR_EVENT). Chặn
+    // theo kho là ngõ cụt chuyển khoản tại POS hội chợ.
+    if (
+      params.confirmImmediately === false &&
+      sellRow.warehouseType === 'FAIR_EVENT' &&
+      !isCounterChannel(channel)
+    ) {
       throw AppError.invalid('Đơn online không được giữ chỗ tại kho hội chợ (chỉ giữ tại kho chính).');
     }
     // P2-08/09: két ca gắn vào đơn phải OPEN + đúng kho + đúng thu ngân (chống bán ké két)
