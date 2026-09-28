@@ -19,8 +19,26 @@
 //
 // 3) Đăng nhập xong thấy màn cũ (bug #2 cũ): đã xử lý bằng cách không
 //    cache HTML và bỏ qua toàn bộ /api/.
-
-const BUILD = 'v4';
+//
+// 4) Nút "Làm mới" ở tab Kho bấm không ăn, dữ liệu đứng yên.
+//    Nguyên nhân: nhánh cache-first bắt MỌI GET cùng origin không phải
+//    navigate — trong đó có payload RSC của Next.js app-router. RSC là
+//    DỮ LIỆU theo PHIÊN (router.refresh() để lấy số liệu mới từ server),
+//    nhưng SW lại cache-first → trả lại bản cũ từ CacheStorage, transferSize
+//    = 0, server KHÔNG nhận request nào. Người dùng bấm refresh, UI quay
+//    spinner, số liệu y nguyên.
+//    Sửa: nhận diện request RSC và BỎ QUA HOÀN TOÀN (return, không
+//    respondWith) → trình duyệt tự đi mạng, đúng như không có SW.
+//    Đây là điểm quan trọng nhất của cả file: dữ liệu KHÔNG BAO GIỜ được
+//    phục vụ từ cache. Chỉ tài nguyên tĩnh bất biến mới được cache.
+//
+// PHIÊN BẢN CACHE (BUILD) phải tăng mỗi khi ĐỔI CHÍNH SÁCH CACHE.
+// Lý do: SW đã cài trên máy người dùng là một FILE ĐÃ CŨ — trình duyệt
+// không tự tải lại sw.js cho tới lần đăng nhập có SW mới. Cache cũ vẫn
+// nằm trong CacheStorage. Đổi tên cache (BUILD) làm activate xoá sạch bản
+// cũ, và install/activate mới chạy với file mới. Giữ nguyên BUILD thì bản
+// vá không bao giờ tới máy đã cài PWA.
+const BUILD = 'v5';
 const CACHE_NAME = `formapubli-cache-${BUILD}`;
 
 // Nguyên tắc: app này có PHIÊN ĐĂNG NHẬP. Không được phục vụ HTML cũ,
@@ -55,6 +73,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Next.js app-router đánh dấu mọi request dữ liệu RSC (navigate mềm,
+// router.refresh(), prefetch) bằng header `RSC: 1` KÈM query `_rsc=<hash>`.
+// Ngoài ra các request tới cache phân đoạn nằm dưới đường dẫn `/_rsc/`.
+// Bất kỳ dấu hiệu nào cũng đủ: bỏ sót thì lại quay về bug dữ liệu đứng yên.
+function isRscRequest(req, url) {
+  if (req.headers && req.headers.get('rsc') === '1') return true;
+  if (url.searchParams.has('_rsc')) return true;
+  if (url.pathname.startsWith('/_rsc/')) return true;
+  return false;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
@@ -70,6 +99,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
 
+  // RSC = DỮ LIỆU app, theo phiên đăng nhập. Tuyệt đối không cache, không
+  // respondWith — để trình duyệt tự đi mạng. Đây là fix bug "nút Làm mới
+  // ở tab Kho không ăn" (bug #4 ở đầu file).
+  if (isRscRequest(req, url)) return;
+
   // Điều hướng = HTML của app shell theo PHIÊN. Luôn lấy mạng trước.
   // Offline thì mới rơi về cache, và cache chỉ có asset tĩnh nên coi như
   // không có offline shell — thà hiện thông báo hơn là chạy code cũ.
@@ -78,8 +112,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Tài nguyên tĩnh: cache-first (tên file có hash nên bất biến), nền
+  // Tài nguyên TĨNH: cache-first (tên file có hash nên bất biến), nền
   // nếu thiếu. Không dùng stale-while-revalidate vì nó giữ HTML/JS cũ.
+  // Chỉ asset tĩnh mới tới đây: mọi request dữ liệu (RSC, /api/) đã bị
+  // bỏ qua ở trên, nên cache này KHÔNG BAO GIỜ chứa dữ liệu nghiệp vụ.
   event.respondWith(
     caches.match(req).then(
       (cached) =>

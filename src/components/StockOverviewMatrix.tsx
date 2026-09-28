@@ -24,7 +24,7 @@ import {
   Truck,
   FileCheck,
 } from 'lucide-react';
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, useTransition } from 'react';
 import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
@@ -138,6 +138,16 @@ export function StockOverviewMatrix({
   const [presetTargetWarehouseId, setPresetTargetWarehouseId] = useState<string | undefined>(undefined);
   const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(warehouses);
   const router = useRouter();
+  /** Đang làm mới: bật khi bấm, tắt khi props `initialBooks` mới trả về. */
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [, startTransition] = useTransition();
+  const refreshFallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (refreshFallbackTimer.current !== undefined) clearTimeout(refreshFallbackTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     setLocalWarehouses(warehouses);
@@ -439,10 +449,28 @@ export function StockOverviewMatrix({
   // đang mở). `router.refresh()` chạy lại server component `page.tsx` — đúng
   // đường nạp dữ liệu sẵn có — rồi props mới chảy vào mà state client (tìm
   // kiếm, tab, modal) được giữ nguyên.
+  //
+  // `isRefreshing` bật TỪ LÚC BẤM và tắt khi props `initialBooks` đổi tham
+  // chiếu (server component đã trả xong) — nếu tắt khi hết fetch client thì
+  // chip kho đã mới còn ma trận vẫn cũ ⇒ nhìn như "nút hỏng".
   const handleRefresh = () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    // Chốt an toàn: nếu vòng lặp server trả về y hệt (hoặc fail), vẫn tắt
+    // spinner thay vì kẹt vô hạn. ponytail: timer 1 tầng; nâng lên
+    // useTransition/stream khi cần báo lỗi chính xác.
+    refreshFallbackTimer.current = setTimeout(() => setIsRefreshing(false), 15000);
     reloadWarehouseChips();
-    router.refresh();
+    startTransition(() => router.refresh());
   };
+
+  // Props mới đã chảy vào ⇒ tắt trạng thái đang tải.
+  useEffect(() => {
+    if (isRefreshing) {
+      if (refreshFallbackTimer.current !== undefined) clearTimeout(refreshFallbackTimer.current);
+      setIsRefreshing(false);
+    }
+  }, [initialBooks]);
 
   // Tự động focus ô tìm kiếm tương ứng khi kích hoạt Micro giọng nói
   useEffect(() => {
@@ -812,10 +840,23 @@ export function StockOverviewMatrix({
             <button
               type="button"
               onClick={() => handleRefresh()}
-              title="Nạp lại tồn kho và sổ cái mới nhất"
-              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              disabled={isRefreshing}
+              aria-busy={isRefreshing}
+              title={
+                isRefreshing
+                  ? 'Đang nạp lại tồn kho và sổ cái…'
+                  : 'Nạp lại tồn kho và sổ cái mới nhất'
+              }
+              className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 rounded-lg text-xs font-bold shadow-sm transition-colors border ${
+                isRefreshing
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300 cursor-progress'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 cursor-pointer'
+              }`}
             >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" /> Làm mới
+              <RefreshCw
+                className={`w-3.5 h-3.5 shrink-0 ${isRefreshing ? 'animate-spin text-indigo-600' : 'text-slate-500'}`}
+              />
+              {isRefreshing ? 'Đang tải…' : 'Làm mới'}
             </button>
           )}
         </div>
@@ -1008,11 +1049,30 @@ export function StockOverviewMatrix({
         </div>
       )}
 
+      {/* Đang làm mới: chip kho nạp xong trước, ma trận tồn phải chờ vòng
+          `router.refresh()` chạy xong server component. Không có dải này thì
+          người dùng thấy chip đổi mà số tồn đứng yên ⇒ tưởng nút hỏng. */}
+      {isRefreshing && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold"
+        >
+          <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" />
+          Đang cập nhật tồn kho…
+        </div>
+      )}
+
       {/* Main View: Matrix vs Ledger vs Transit */}
       {activeTab === 'TRANSIT' ? (
         <TransitPanel currentRole={(currentRole as any) || 'ROLE_OWNER'} />
       ) : activeTab === 'MATRIX' ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          aria-busy={isRefreshing}
+          className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative ${
+            isRefreshing ? 'opacity-60 pointer-events-none' : ''
+          }`}
+        >
           {/* Ticket 3 MVP: Thanh tab kho kiểu Sheets — read-only, Transit/RMA để sprint sau */}
           <div className="flex items-center gap-1.5 px-3 pt-3 pb-2 overflow-x-auto border-b border-slate-100 bg-slate-50/60">
             {warehouseTabs.map((t) => (

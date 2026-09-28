@@ -211,7 +211,7 @@ export function PosCheckoutTerminal({
     let alive = true;
     const poll = async () => {
       try {
-        const res = await fetch('/api/pos/discount-approvals');
+        const res = await fetch('/api/pos/discount-approvals', { cache: 'no-store' });
         const j = await res.json();
         if (!alive || !j?.success || !Array.isArray(j.data)) return;
         const ids = j.data.map((r: any) => `${r.id}`);
@@ -2598,7 +2598,7 @@ export function PosCheckoutTerminal({
                   type="button"
                   onClick={() => setIsManagerApprovalDrawerOpen(true)}
                   className="relative p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center font-bold"
-                  title="Mở bảng duyệt chiết khấu POS (Quản lý)"
+                  title="Duyệt chiết khấu POS — chuông đếm mọi kho, bảng duyệt lọc theo kho đang chọn"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   {pendingApprovals.length > 0 && (
@@ -3796,6 +3796,7 @@ export function PosCheckoutTerminal({
           isOpen={isManagerApprovalDrawerOpen}
           onClose={() => setIsManagerApprovalDrawerOpen(false)}
           warehouseId={selectedWarehouseId}
+          warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || selectedWarehouseId}
         />
       )}
 

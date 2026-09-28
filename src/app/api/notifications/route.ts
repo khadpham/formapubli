@@ -1,15 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, discountApprovalRequests, cashboxSessions, orders, staffAccounts } from '@/db';
-import { desc, eq, sql } from 'drizzle-orm';
+import { db, discountApprovalRequests, cashboxSessions, orders, staffAccounts, notificationDismissals } from '@/db';
+import { desc, eq, and, inArray } from 'drizzle-orm';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 
-// Bảng `notification_dismissals` do migration 0025_notification_dismissals.sql
-// tạo. KHÔNG tạo bảng trong route: schema phải khai báo qua migration chain để
+// Bảng `notification_dismissals` do migration 0025_notification_dismissals.sql tạo
+// (cột `expires_at` do 0026 thêm), khai báo Drizzle ở src/db/schema.ts.
+// KHÔNG tạo bảng trong route: schema phải khai báo qua migration chain để
 // migrate-fresh và drill go-live kiểm được.
+
+/** Giấu một mục tối đa 7 ngày rồi tự hiện lại (xem `DISMISS_TTL_MS`). */
+const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Đưa mọi mốc thời gian trong DB về cùng một đơn vị (epoch ms) trước khi so sánh.
+ *
+ * Cột `*_at` của các bảng nghiệp vụ có CẢ HAI kiểu giá trị đang tồn tại ngoài đời:
+ * service POS ghi ISO-8601 (`2026-09-28T16:08:16.294Z`), còn cột có
+ * `.default(sql\`CURRENT_TIMESTAMP\`)` mặc định là SQLite `YYYY-MM-DD HH:MM:SS`
+ * (UTC, KHÔNG có `T`/`Z`). So sánh chuỗi giữa hai kiểu này là vô nghĩa —
+ * `'2026-09-28 16:08:16' > '2026-09-28T16:08:16.294Z'` luôn sai vì `' '` < `'T'`.
+ */
+function toEpoch(value: unknown): number {
+  if (typeof value !== 'string' || value.length === 0) return 0;
+  // SQLite CURRENT_TIMESTAMP: thay khoảng trắng thành 'T' và gắn 'Z' vì đó là UTC.
+  const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)
+    ? `${value.replace(' ', 'T')}Z`
+    : value;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? 0 : ms;
+}
 
 /**
  * Chuông thông báo — việc CẦN NGƯỜI DÙNG XỬ LÝ, hai chiều:
@@ -29,49 +52,59 @@ export async function GET(req: NextRequest) {
       title: string; body: string; at: string; href?: string; area: string;
     }> = [];
 
-    // 1) Yêu cầu duyệt chiết khấu.
-    const approvalRows = await db
+    // 1) Yêu cầu duyệt chiết khấu. Tách 2 truy vấn vì `createRequest` liên tục
+    // SUPERSEDE dòng cũ và dòng cũ chuyển EXPIRED: gộp chung `limit(30)` thì sau ~30
+    // lần giao dịch cửa sổ có thể KHÔNG còn dòng PENDING nào dù đang có.
+    const pendingApprovals = await db
       .select()
       .from(discountApprovalRequests)
+      .where(eq(discountApprovalRequests.status, 'PENDING'))
       .orderBy(desc(discountApprovalRequests.createdAt))
       .limit(30);
-    const nowIso = new Date().toISOString();
-    for (const r of approvalRows) {
+    // Kết quả duyệt chỉ quan tới người tạo yêu cầu (kể cả khi người đó là quản lý).
+    const myResults = await db
+      .select()
+      .from(discountApprovalRequests)
+      .where(and(
+        inArray(discountApprovalRequests.status, ['APPROVED', 'REJECTED']),
+        eq(discountApprovalRequests.cashierId, session.actorId),
+      ))
+      .orderBy(desc(discountApprovalRequests.updatedAt))
+      .limit(15);
+
+    const nowMs = Date.now();
+    for (const r of pendingApprovals) {
       const mine = r.cashierId === session.actorId;
       // Quản lý thấy mọi yêu cầu; thu ngân chỉ thấy yêu cầu của mình.
       if (!isManager && !mine) continue;
-      if (r.status === 'PENDING') {
-        items.push({
-          id: `apv-${r.id}`,
-          kind: 'approval',
-          area: 'Duyệt chiết khấu',
-          severity: isManager ? 'warn' : 'info',
-          title: isManager
-            ? `Cần duyệt chiết khấu — đơn ${r.orderCode}`
-            : `Đã gửi yêu cầu duyệt chiết khấu — đơn ${r.orderCode}`,
-          body: isManager
-            ? `${r.cashierId} xin duyệt, hạn ${r.expiresAt}`
-            : `Đang chờ quản lý duyệt, hạn ${r.expiresAt}`,
-          at: `${r.createdAt || ''}`,
-          href: isManager ? 'pos' : undefined,
-        });
-        if (nowIso > `${r.expiresAt}`) {
-          items[items.length - 1].severity = 'danger';
-          items[items.length - 1].body += ' — ĐÃ HẾT HẠN';
-        }
-      } else if (mine && (r.status === 'APPROVED' || r.status === 'REJECTED')) {
-        items.push({
-          id: `apv-done-${r.id}`,
-          kind: 'approval-result',
-          area: 'Duyệt chiết khấu',
-          severity: r.status === 'APPROVED' ? 'info' : 'danger',
-          title: r.status === 'APPROVED'
-            ? `Yêu cầu duyệt chiết khấu ĐÃ ĐƯỢC DUYỆT — đơn ${r.orderCode}`
-            : `Yêu cầu duyệt chiết khấu BỊ TỪ CHỐI — đơn ${r.orderCode}`,
-          body: `${r.approvedBy || 'quản lý'} · ${r.rejectedReason || 'không có lý do'}`,
-          at: `${r.updatedAt || r.createdAt || ''}`,
-        });
-      }
+      const expired = toEpoch(r.expiresAt) > 0 && toEpoch(r.expiresAt) <= nowMs;
+      items.push({
+        id: `apv-${r.id}`,
+        kind: 'approval',
+        area: 'Duyệt chiết khấu',
+        severity: expired ? 'danger' : (isManager ? 'warn' : 'info'),
+        title: isManager
+          ? `Cần duyệt chiết khấu — đơn ${r.orderCode}`
+          : `Đã gửi yêu cầu duyệt chiết khấu — đơn ${r.orderCode}`,
+        body: (isManager
+          ? `${r.cashierId} xin duyệt, hạn ${r.expiresAt}`
+          : `Đang chờ quản lý duyệt, hạn ${r.expiresAt}`) + (expired ? ' — ĐÃ HẾT HẠN' : ''),
+        at: `${r.createdAt || ''}`,
+        href: isManager ? 'pos' : undefined,
+      });
+    }
+    for (const r of myResults) {
+      items.push({
+        id: `apv-done-${r.id}`,
+        kind: 'approval-result',
+        area: 'Duyệt chiết khấu',
+        severity: r.status === 'APPROVED' ? 'info' : 'danger',
+        title: r.status === 'APPROVED'
+          ? `Yêu cầu duyệt chiết khấu ĐÃ ĐƯỢC DUYỆT — đơn ${r.orderCode}`
+          : `Yêu cầu duyệt chiết khấu BỊ TỪ CHỐI — đơn ${r.orderCode}`,
+        body: `${r.approvedBy || 'quản lý'} · ${r.rejectedReason || 'không có lý do'}`,
+        at: `${r.updatedAt || r.createdAt || ''}`,
+      });
     }
 
     // 2) Đơn online chờ xác nhận (quản lý + thủ kho xử lý).
@@ -125,15 +158,33 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    items.sort((a, b) => `${b.at}`.localeCompare(`${a.at}`));
+    // Sắp xếp theo thời gian thật (epoch ms), không so chuỗi thô.
+    items.sort((a, b) => toEpoch(b.at) - toEpoch(a.at));
 
     // Loại các mục người dùng đã ẩn/xóa (bảng dismissal, xem POST bên dưới).
-    const hidden = new Set(
-      ((await db.run(sql`SELECT item_id AS itemId FROM notification_dismissals WHERE actor_id = ${session.actorId}`))
-        .rows ?? []).map((r: any) => `${r.itemId}`),
-    );
+    // ĐỒNG BỘ: bảng này chỉ là bộ lọc phụ. Nếu đọc lỗi (bảng chưa được migrate trên
+    // DB nào đó) thì coi như CHƯA ẩn gì cả và vẫn trả về đủ thông báo — tuyệt đối
+    // không để một bảng phụ làm sập toàn bộ endpoint.
+    let hidden = new Set<string>();
+    try {
+      const now = Date.now();
+      const dismissals = await db
+        .select({ itemId: notificationDismissals.itemId, expiresAt: notificationDismissals.expiresAt })
+        .from(notificationDismissals)
+        .where(eq(notificationDismissals.actorId, session.actorId));
+        hidden = new Set(
+        dismissals
+          // expires_at NULL = bản ghi ghi từ trước 0026, giữ nguyên nghĩa cũ (đã ẩn).
+          // NULL sẽ tự hết hiệu lực lần ghi đầu tiên sau này (POST luôn set expires_at).
+          .filter((d) => d.expiresAt == null || toEpoch(d.expiresAt) > now)
+          .map((d) => d.itemId),
+      );
+    } catch (err: any) {
+      console.warn('[notifications] Không đọc được notification_dismissals — coi như chưa ẩn mục nào:', err?.message ?? err);
+    }
     const visible = items.filter((i) => !hidden.has(i.id));
 
+    const nowIso = new Date().toISOString();
     return NextResponse.json({
       success: true,
       data: { items: visible.slice(0, 40), serverTime: nowIso, count: visible.length },
@@ -148,10 +199,12 @@ export async function GET(req: NextRequest) {
  * ta ghi danh sách id bị ẩn vào bảng nhỏ `notification_dismissals` (mẫu customer_tags).
  * action = 'dismiss' (ẩn 1 mục) | 'clear' (ẩn toàn bộ mục client đang hiện).
  *
- * ponytail: bảng được CREATE IF NOT EXISTS ngay trong route vì phạm vi sửa file
- * của đợt này không cho thêm migration. Cần thêm migration 0025_notification_dismissals.sql
- * (mẫu: 0013_customer_tags.sql) và khai báo trong src/db/schema.ts khi được mở quyền sửa.
- * Trần: client chỉ gửi tối đa 200 id/lần, và chỉ id đang hiện — không phình vô hạn.
+ * Mỗi lần ẩn ghi kèm `expires_at` = nay + DISMISS_TTL_MS. Nếu không có hạn, quản lý
+ * bấm "Xóa tất cả" lúc đang có yêu cầu duyệt sẽ không bao giờ thấy lại yêu cầu đó,
+ * kể cả sau khi mở lại trang. Đây là dữ liệu dùng để giảm ồn trên UI, KHÔNG phải
+ * audit log nên hết hạn là hành vi đúng — muốn duyệt thì phải còn thấy việc cần làm.
+ *
+ * ponytail: trần client gửi tối đa 200 id/lần và chỉ id đang hiện — không phình vô hạn.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -173,11 +226,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const expiresAt = new Date(Date.now() + DISMISS_TTL_MS).toISOString();
     for (const itemId of itemIds) {
-      await db.run(sql`
-        INSERT OR IGNORE INTO notification_dismissals (actor_id, item_id, dismissed_at)
-        VALUES (${session.actorId}, ${itemId}, ${new Date().toISOString()})
-      `);
+      // REPLACE (không phải INSERT OR IGNORE) để ẩn lại làm gia hạn mốc hạn mới.
+      await db
+        .insert(notificationDismissals)
+        .values({ actorId: session.actorId, itemId, dismissedAt: new Date().toISOString(), expiresAt })
+        .onConflictDoUpdate({
+          target: [notificationDismissals.actorId, notificationDismissals.itemId],
+          set: { dismissedAt: new Date().toISOString(), expiresAt },
+        });
     }
 
     return NextResponse.json({ success: true, data: { action, count: itemIds.length } });

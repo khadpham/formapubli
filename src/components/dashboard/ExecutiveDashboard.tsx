@@ -31,7 +31,8 @@ export function ExecutiveDashboard({
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
-  const [matrixBooks, setMatrixBooks] = useState<any[]>([]);
+  /** Mốc thời gian nạp xong gần nhất — để nút "Làm mới" có trạng thái SAU khi bấm. */
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [selectedSettlementWarehouseId, setSelectedSettlementWarehouseId] = useState<string>('wh-du-phong');
@@ -40,13 +41,16 @@ export function ExecutiveDashboard({
     setLoading(true);
     try {
       const [orderRes] = await Promise.all([
-        fetch('/api/orders?fiscalScope=ALL'),
+        // no-store: bấm "Làm mới" phải đọc server thật, không phải bản cache
+        // của trình duyệt (dynamic route nhưng client fetch vẫn bị HTTP cache).
+        fetch('/api/orders?fiscalScope=ALL', { cache: 'no-store' }),
       ]);
       const orderData = await orderRes.json();
 
       if (orderData.success) {
         setOrders(orderData.orders || []);
         setSummary(orderData.summary || null);
+        setLastUpdatedAt(new Date().toLocaleTimeString('vi-VN'));
       }
     } catch (err) {
       console.error('Lỗi tải dữ liệu dashboard:', err);
@@ -62,7 +66,7 @@ export function ExecutiveDashboard({
   useEffect(() => {
     async function loadWarehouses() {
       try {
-        const res = await fetch('/api/warehouses?all=true');
+        const res = await fetch('/api/warehouses?all=true', { cache: 'no-store' });
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setWarehouses(json.data);
@@ -78,8 +82,12 @@ export function ExecutiveDashboard({
     loadWarehouses();
   }, []);
 
-  // Sách sắp hết hàng (tồn kho tổng dưới 15 cuốn hoặc bằng 0)
-  const lowStockBooks = matrixBooks.filter((b) => (b.totalStock || 0) < 15).slice(0, 5);
+  // Thẻ "Sách sắp hết hàng" KHÔNG tồn tại trong JSX: `lowStockBooks` cũ chỉ
+  // được tính ra rồi bỏ không, và biến `matrixBooks` từng được setState ở đâu đó
+  // nhưng không chỗ nào render. Dữ liệu tồn chỉ có ở server prop
+  // `page.tsx` → `MasterAppShell`, mà shell KHÔNG truyền xuống Dashboard.
+  // Không tự bịa số: cần thêm `books={matrixBooks}` ở MasterAppShell:333 và
+  // render thẻ — cả hai đều ngoài phạm vi sửa của phiên này.
 
   // Ticket 4: 3 chart SVG nhẹ tính từ orders/summary đã fetch — không lib, không API mới.
   const last7Days = React.useMemo(() => {
@@ -151,10 +159,21 @@ export function ExecutiveDashboard({
           <button
             onClick={fetchDashboardData}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-colors shrink-0"
+            aria-busy={loading}
+            title="Đọc lại số liệu đơn hàng từ server"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors shrink-0 cursor-pointer ${
+              loading
+                ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-progress'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+            }`}
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Làm mới số liệu
+            <RefreshCw className={`w-4 h-4 shrink-0 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Đang tải…' : 'Làm mới số liệu'}
+            {!loading && lastUpdatedAt && (
+              <span className="font-mono text-[10px] font-normal text-slate-400">
+                {lastUpdatedAt}
+              </span>
+            )}
           </button>
           <button
             onClick={() => onNavigateTab('pos')}

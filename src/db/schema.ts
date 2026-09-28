@@ -717,3 +717,15 @@ export const deliveryOrderItems = sqliteTable('delivery_order_items', {
   editionIdx: index('idx_delivery_items_edition').on(table.editionId),
 }));
 
+// 36. Notification Dismissals (chuông thông báo — danh sách mục người dùng đã ẩn)
+// KHÔNG phải audit log: có `expiresAt` để yêu cầu duyệt còn PENDING không bị ẩn vĩnh viễn.
+export const notificationDismissals = sqliteTable('notification_dismissals', {
+  actorId: text('actor_id').notNull(), // ai ẩn
+  itemId: text('item_id').notNull(), // id mục thông báo, vd `apv-<requestId>`
+  dismissedAt: text('dismissed_at').default(sql`CURRENT_TIMESTAMP`),
+  expiresAt: text('expires_at'), // ISO; hết hạn thì coi như chưa ẩn
+}, (table) => ({
+  pk: primaryKey({ columns: [table.actorId, table.itemId] }),
+  expiresIdx: index('idx_notif_dismiss_expires').on(table.expiresAt),
+}));
+

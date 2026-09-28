@@ -46,6 +46,7 @@ interface ManagerApprovalDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   warehouseId?: string;
+  warehouseName?: string;
   onActionCompleted?: () => void;
 }
 
@@ -53,10 +54,18 @@ export function ManagerApprovalDrawer({
   isOpen,
   onClose,
   warehouseId,
+  warehouseName,
   onActionCompleted,
 }: ManagerApprovalDrawerProps) {
   const [items, setItems] = useState<PendingApprovalItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  /** Lỗi tải danh sách — phải nhìn ra khác hẳn "không có yêu cầu nào". */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /** true = xem mọi kho, false = chỉ kho đang chọn. */
+  const [showAllWarehouses, setShowAllWarehouses] = useState(false);
+  /** Số yêu cầu đang chờ ở kho KHÁC (chỉ tính khi đang lọc 1 kho và danh sách rỗng). */
+  const [otherWarehouseCount, setOtherWarehouseCount] = useState(0);
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [quickShortCode, setQuickShortCode] = useState('');
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
@@ -81,18 +90,39 @@ export function ManagerApprovalDrawer({
   }, [isOpen, onClose]);
 
   const fetchPending = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      const url = warehouseId
-        ? `/api/pos/discount-approvals?warehouseId=${warehouseId}`
+      const scoped = Boolean(warehouseId) && !showAllWarehouses;
+      const url = scoped
+        ? `/api/pos/discount-approvals?warehouseId=${encodeURIComponent(warehouseId as string)}`
         : `/api/pos/discount-approvals`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setItems(json.data);
+      // no-store: nút "Làm mới" và poll 4s phải luôn đọc server, không được phục vụ
+      // từ HTTP cache của trình duyệt (nếu không thì bấm refresh vẫn ra kết quả cũ).
+      const res = await fetch(url, { cache: 'no-store' });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success || !Array.isArray(json.data)) {
+        throw new Error(json?.message || json?.error || `HTTP ${res.status}`);
       }
-    } catch {
-      // Ignore network errors on polling
+      setItems(json.data);
+      setLoadError(null);
+      setLastLoadedAt(new Date());
+
+      // Rỗng ở kho này: hỏi thêm toàn bộ để phân biệt "không có gì" với "có ở kho khác".
+      if (scoped && json.data.length === 0) {
+        try {
+          const allRes = await fetch('/api/pos/discount-approvals', { cache: 'no-store' });
+          const allJson = await allRes.json().catch(() => null);
+          setOtherWarehouseCount(
+            allRes.ok && allJson?.success && Array.isArray(allJson.data) ? allJson.data.length : 0
+          );
+        } catch {
+          setOtherWarehouseCount(0);
+        }
+      } else {
+        setOtherWarehouseCount(0);
+      }
+    } catch (err: any) {
+      setLoadError(err?.message || 'Không kết nối được máy chủ');
     } finally {
       setIsLoading(false);
     }
@@ -100,10 +130,11 @@ export function ManagerApprovalDrawer({
 
   useEffect(() => {
     if (!isOpen) return;
+    setOtherWarehouseCount(0);
     fetchPending();
     const timer = setInterval(fetchPending, 4000);
     return () => clearInterval(timer);
-  }, [isOpen, warehouseId]);
+  }, [isOpen, warehouseId, showAllWarehouses]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -180,6 +211,13 @@ export function ManagerApprovalDrawer({
 
   if (!isOpen || !mounted) return null;
 
+  const isScoped = Boolean(warehouseId) && !showAllWarehouses;
+  const scopeLabel = !warehouseId
+    ? 'Mọi kho'
+    : isScoped
+      ? (warehouseName || warehouseId)
+      : 'Mọi kho';
+
   return createPortal(
     <div
       className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150"
@@ -199,7 +237,7 @@ export function ManagerApprovalDrawer({
                 Duyệt Chiết Khấu POS
               </h3>
               <p className="text-[11px] text-slate-400">
-                {items.length} yêu cầu đang chờ xử lý
+                {items.length} yêu cầu chờ • Phạm vi: {scopeLabel}
               </p>
             </div>
           </div>
@@ -210,6 +248,24 @@ export function ManagerApprovalDrawer({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Chọn phạm vi: đúng kho đang mở, hay mọi kho (khớp với chuông báo) */}
+        {Boolean(warehouseId) && (
+          <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+            <span className="text-[11px] text-slate-300 flex items-center gap-1 min-w-0 truncate">
+              <Building2 className="w-3 h-3 shrink-0" />
+              <span className="truncate">{isScoped ? `Đang lọc: ${scopeLabel}` : 'Đang xem: Mọi kho'}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAllWarehouses((v) => !v)}
+              disabled={isLoading}
+              className="shrink-0 ml-2 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 text-amber-300 text-[11px] font-bold border border-amber-500/40 transition"
+            >
+              {isScoped ? 'Xem mọi kho' : 'Chỉ kho này'}
+            </button>
+          </div>
+        )}
 
         {/* Toast thông báo nhanh */}
         {toastMessage && (
@@ -255,13 +311,44 @@ export function ManagerApprovalDrawer({
             </div>
           )}
 
-          {!isLoading && items.length === 0 && (
-            <div className="py-16 text-center space-y-2 text-slate-400">
+          {!isLoading && loadError && (
+            <div className="py-12 text-center space-y-2">
+              <AlertCircle className="w-10 h-10 mx-auto text-rose-500" />
+              <p className="text-xs font-semibold text-rose-700">Không tải được danh sách</p>
+              <p className="text-[11px] text-slate-500 break-words">{loadError}</p>
+              <p className="text-[11px] text-slate-400">Bấm “Làm mới” để thử lại.</p>
+            </div>
+          )}
+
+          {!isLoading && !loadError && items.length === 0 && (
+            <div className="py-12 text-center space-y-2 text-slate-400">
               <CheckCircle2 className="w-10 h-10 mx-auto text-slate-300" />
-              <p className="text-xs font-semibold text-slate-600">Hiện không có yêu cầu nào chờ duyệt</p>
-              <p className="text-[11px] text-slate-400">
-                Khi thu ngân xin chiết khấu &ge;20%, đơn sẽ lập tức xuất hiện tại đây.
-              </p>
+              {isScoped && otherWarehouseCount > 0 ? (
+                <>
+                  <p className="text-xs font-semibold text-slate-600">
+                    {scopeLabel} không có yêu cầu nào
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Đang có {otherWarehouseCount} yêu cầu ở kho khác.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllWarehouses(true)}
+                    className="mx-auto mt-1 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[11px] font-bold hover:bg-amber-600 transition"
+                  >
+                    Xem mọi kho
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold text-slate-600">
+                    {isScoped ? `${scopeLabel}: không có yêu cầu nào` : 'Không có yêu cầu nào ở mọi kho'}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Khi thu ngân xin chiết khấu &ge;20%, đơn sẽ lập tức xuất hiện tại đây.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -423,12 +510,21 @@ export function ManagerApprovalDrawer({
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500">
-          <span>Tự động cập nhật mỗi 4 giây</span>
+          <span className="truncate">
+            {isLoading
+              ? 'Đang nạp...'
+              : lastLoadedAt
+                ? `Cập nhật lúc ${lastLoadedAt.toLocaleTimeString('vi-VN')}`
+                : 'Tự động cập nhật mỗi 4 giây'}
+          </span>
           <button
+            type="button"
             onClick={fetchPending}
-            className="flex items-center gap-1 text-slate-700 hover:text-slate-900 font-medium"
+            disabled={isLoading}
+            className="shrink-0 ml-2 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-bold disabled:opacity-50 transition"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Làm mới
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? 'Đang nạp' : 'Làm mới'}
           </button>
         </div>
       </div>

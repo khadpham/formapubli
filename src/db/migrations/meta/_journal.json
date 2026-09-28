@@ -182,6 +182,13 @@
       "when": 1790526639860,
       "tag": "0025_notification_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790526700000,
+      "tag": "0026_notification_dismissal_expiry",
+      "breakpoints": true
     }
   ],
   "version": "7"
