@@ -251,58 +251,130 @@ assert.equal(
   'Chuyển khoản chưa thu tiền là AWAITING_PAYMENT'
 );
 
-// --- Task 6: camera chụp ảnh chứng minh --------------------------------------
-const camera = readSource('src/components/pos/PaymentProofCamera.tsx');
-assert.match(camera, /getUserMedia/, 'Camera dùng getUserMedia');
-assert.match(camera, /facingMode/, 'Camera có chọn trước/sau');
-assert.match(camera, /'environment'/, 'Camera sau là mặc định');
-assert.match(camera, /playsInline/, 'Video phải playsInline');
-assert.match(camera, /muted/, 'Video phải muted');
-assert.match(camera, /canvas\.toBlob/, 'Chụp ảnh qua canvas.toBlob');
-assert.match(camera, /'image\/jpeg'/, 'Ảnh xuất JPEG');
-assert.match(camera, /0\.8/, 'JPEG quality 0.8');
-assert.match(camera, /1280/, 'Cạnh dài tối đa 1280px');
-assert.match(camera, /track\.stop\(\)/, 'Phải dừng toàn bộ media track');
-assert.match(camera, /useModalFocusTrap/, 'Camera dùng focus trap có sẵn');
-assert.match(camera, /max-w-lg/, 'Dialog camera giới hạn max-w-lg');
-assert.match(camera, /Chụp lại/, 'Có nút Chụp lại');
-assert.match(camera, /Dùng ảnh này/, 'Có nút Dùng ảnh này');
-assert.match(camera, /role="dialog"/, 'Camera là dialog');
-assert.doesNotMatch(camera, /createBarcodeDecoder|OCR|tesseract|bank-?api/i, 'Camera không OCR và không gọi API ngân hàng');
-
-// Review Focus 1: camera bị từ chối / không có thiết bị → đóng, tuyệt đối không gọi onUsePhoto.
 // Bỏ comment trước khi kiểm tra: chỉ assert trên mã thực thi, không trên chú thích.
 const stripComments = (code: string) => code.replace(/\/\/[^\n\r]*/g, '');
-const deniedStart = camera.indexOf("'NotAllowedError'");
-const deniedEnd = camera.indexOf('}, [isOpen');
-const deniedBranch = stripComments(
-  deniedStart >= 0 ? camera.slice(deniedStart, deniedEnd > deniedStart ? deniedEnd : camera.length) : ''
-);
-assert.ok(deniedBranch.length > 0, 'Camera có nhánh xử lý NotAllowedError');
-assert.match(deniedBranch, /NotFoundError/, 'Camera xử lý cả NotFoundError');
-assert.match(deniedBranch, /onClose\(\)/, 'Nhánh lỗi quyền/thiết bị gọi onClose');
-assert.doesNotMatch(deniedBranch, /onUsePhoto/, 'Nhánh lỗi quyền/thiết bị tuyệt đối không gọi onUsePhoto');
-// Camera từ chối không được báo "đã lưu ảnh" — không được setPreview rỗng giả.
-assert.doesNotMatch(deniedBranch, /setPreview\(/, 'Nhánh lỗi không tạo preview giả');
 
-// Review Focus 2: lưu ảnh lỗi thì giữ preview, không đóng.
-const usePhotoStart = camera.indexOf('const usePhoto = async');
-const usePhotoEnd = camera.indexOf('return createPortal', usePhotoStart);
-const usePhotoRegion = stripComments(
-  camera.slice(usePhotoStart > 0 ? usePhotoStart : 0, usePhotoEnd > usePhotoStart ? usePhotoEnd : camera.length)
+// --- Task 6: chụp ảnh chứng minh bằng CAMERA NATIVE của máy ------------------
+// Đặc tả mới: bấm nút chụp phải mở app Camera toàn màn hình của điện thoại.
+// Cách duy nhất tin cậy trên iOS là file input `capture` bấm trong user gesture;
+// ô camera nhỏ getUserMedia bị iOS chặn user-gesture và chỉ quét được khung ngang.
+const transferModalCode = stripComments(readSource('src/components/pos/TransferPaymentModal.tsx'));
+
+assert.match(
+  transferModalCode,
+  /type="file"\s*\n\s*accept="image\/\*"\s*\n\s*capture="environment"/,
+  'Chụp ảnh phải đi qua file input accept="image/*" capture="environment" (mở camera native toàn màn hình)'
 );
-assert.ok(usePhotoStart > 0, 'Camera có hàm usePhoto');
-assert.match(usePhotoRegion, /await onUsePhoto\(/, 'Camera await onUsePhoto trước khi đóng');
-const tryIndex = usePhotoRegion.lastIndexOf('try {');
-const catchIndex = usePhotoRegion.indexOf('} catch');
-const useIndex = usePhotoRegion.indexOf('await onUsePhoto(');
-const closeIndex = usePhotoRegion.indexOf('onClose();');
-assert.ok(tryIndex >= 0 && catchIndex > tryIndex, 'onUsePhoto phải nằm trong try/catch');
-assert.ok(useIndex > tryIndex && useIndex < catchIndex, 'await onUsePhoto nằm trong try');
-assert.ok(closeIndex > useIndex && closeIndex < catchIndex, 'onClose chạy sau khi lưu thành công, trong try');
-assert.doesNotMatch(usePhotoRegion.slice(catchIndex), /setPreview\(null\)/, 'Lỗi lưu không được xóa preview');
-assert.match(usePhotoRegion, /setErrorMessage\('Lưu ảnh thất bại/, 'Lỗi lưu ảnh phải báo rõ cho thu ngân');
-assert.match(camera, /setPreview\(\{/, 'Preview được set khi chụp thành công');
+assert.match(
+  transferModalCode,
+  /<input[\s\S]{0,300}?className="sr-only"[\s\S]{0,300}?onChange=\{handlePickPhoto\}/,
+  'Input ảnh phải ẩn (sr-only) chứ không phải ô cửa sổ nhỏ hiện ra trong trang'
+);
+assert.match(
+  transferModalCode,
+  /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}/,
+  'Nút chụp phải gọi fileInputRef.current.click() ngay trong onClick (giữ user gesture trên iOS)'
+);
+assert.match(transferModalCode, /ref=\{fileInputRef\}/, 'Input ảnh phải gắn fileInputRef');
+assert.doesNotMatch(
+  transferModalCode,
+  /getUserMedia|playsInline|<video|facingMode|createBarcodeDecoder|OCR|tesseract|bank-?api/i,
+  'Modal thanh toán không được dựng camera trong web, không OCR, không gọi API ngân hàng'
+);
+assert.doesNotMatch(
+  transferModalCode,
+  /max-w-lg|aspect-video/,
+  'Modal thanh toán không được còn ô camera ngang bé (max-w-lg / aspect-video)'
+);
+assert.equal(
+  (transferModalCode.match(/max-w-md/g) || []).length,
+  1,
+  'max-w-md chỉ còn đúng một lần: khung chính của modal thanh toán, không phải card camera'
+);
+
+// Hợp đồng chuẩn hoá ảnh phải y hệt camera cũ (ảnh lưu IndexedDB rồi chia sẻ).
+assert.match(transferModalCode, /const MAX_CAPTURE_EDGE = 1280;/, 'Cạnh dài tối đa 1280px');
+assert.match(transferModalCode, /const CAPTURE_MIME = 'image\/jpeg';/, 'Ảnh xuất JPEG');
+assert.match(transferModalCode, /const CAPTURE_QUALITY = 0\.8;/, 'JPEG quality 0.8');
+assert.match(
+  transferModalCode,
+  /const scale = Math\.min\(1, MAX_CAPTURE_EDGE \/ Math\.max\(bitmap\.width, bitmap\.height\)\)/,
+  'Phải co ảnh về cạnh dài tối đa 1280 trước khi xuất, không chuyển thẳng file gốc'
+);
+assert.match(transferModalCode, /context\.drawImage\(bitmap/, 'Vẽ ảnh vào canvas trước khi xuất');
+assert.match(
+  transferModalCode,
+  /canvas\.toBlob\(resolve, CAPTURE_MIME, CAPTURE_QUALITY\)/,
+  'Xuất Blob qua canvas.toBlob với đúng mime/quality đã khai báo'
+);
+assert.match(transferModalCode, /createImageBitmap\(file\)/, 'Ảnh do camera native trả về phải được giải mã trước khi chuẩn hoá');
+
+// Ảnh phát ra phải đủ mọi trường PaymentProofPhoto — thiếu cashierId thì
+// isPhotoInScope chặn, thu ngân không xem lại được ảnh của chính mình.
+const photoStart = transferModalCode.indexOf('await onUsePhoto({');
+const photoEnd = transferModalCode.indexOf('});', photoStart);
+assert.ok(photoStart > 0 && photoEnd > photoStart, 'Modal gọi onUsePhoto với ảnh đã chuẩn hoá');
+const emittedPhoto = transferModalCode.slice(photoStart, photoEnd);
+assert.equal(
+  (transferModalCode.match(/await onUsePhoto\(/g) || []).length,
+  1,
+  'onUsePhoto chỉ được gọi đúng một chỗ: không được có đường tạo ảnh giả'
+);
+for (const [field, pattern] of [
+  ['id', /id: `proof-\$\{generateUUIDv7\(\)\}`/],
+  ['orderCode', /orderCode: session\.orderCode/],
+  ['warehouseId', /warehouseId: session\.warehouseId/],
+  ['cashierId', /cashierId,/],
+  ['amount', /amount: session\.amount/],
+  ['paymentMethod', /paymentMethod: session\.paymentMethod/],
+  ['capturedAt', /capturedAt: new Date\(\)\.toISOString\(\)/],
+  ['blob', /blob: await normalizeCapture\(file\)/],
+  ['syncState', /syncState: 'LOCAL_ONLY'/],
+] as const) {
+  assert.match(emittedPhoto, pattern, `Ảnh phát ra phải có trường ${field}`);
+}
+
+// Lưu ảnh hỏng: phải báo lỗi và KHÔNG được báo đã lưu / không được bỏ ảnh.
+const saveStart = transferModalCode.indexOf('const handlePickPhoto = async');
+assert.ok(saveStart > 0, 'Modal có handlePickPhoto');
+const saveBody = transferModalCode.slice(saveStart, transferModalCode.indexOf('if (!isOpen', saveStart));
+const saveTryIdx = saveBody.lastIndexOf('try {');
+const saveCatchIdx = saveBody.indexOf('} catch');
+const saveUseIdx = saveBody.indexOf('await onUsePhoto(');
+assert.ok(
+  saveTryIdx >= 0 && saveCatchIdx > saveTryIdx,
+  'handlePickPhoto phải bọc onUsePhoto trong try/catch'
+);
+assert.ok(saveUseIdx > saveTryIdx && saveUseIdx < saveCatchIdx, 'await onUsePhoto nằm trong try');
+assert.match(saveBody, /setCaptureError\('Lưu ảnh thất bại/, 'Lỗi lưu ảnh phải báo rõ cho thu ngân');
+const saveCatchOnly = saveBody.slice(saveCatchIdx, saveBody.indexOf('} finally', saveCatchIdx));
+assert.ok(saveCatchOnly.length > 0, 'handlePickPhoto có nhánh finally');
+assert.doesNotMatch(
+  saveCatchOnly,
+  /savingRef\.current = false|setIsSaving\(false\)/,
+  'Nhánh catch chỉ được báo lỗi, không được tự mở khoá (chỉ finally mới mở khoá)'
+);
+assert.match(
+  saveBody.slice(saveBody.indexOf('} finally')),
+  /savingRef\.current = false;[\s\S]{0,120}?setIsSaving\(false\);/,
+  'Finally phải mở khoá cả ref lẫn state, đồng bộ với nút chụp'
+);
+// Bỏ chọn file phải reset để chụp lại cùng ảnh không bị im lặng, và chặn 2 lần lưu.
+assert.match(
+  saveBody,
+  /input\.value = '';[\s\S]{0,120}?if \(!file \|\| !session \|\| savingRef\.current\) return;/,
+  'Reset value của input và chặn double-save bằng ref trước khi lưu'
+);
+
+// PaymentProofCamera đã bị gỡ khỏi sản phẩm: không còn ai được import.
+for (const file of sourceFiles(path.resolve(process.cwd(), 'src'))) {
+  const code = fs.readFileSync(file, 'utf8');
+  assert.doesNotMatch(
+    code,
+    /PaymentProofCamera/,
+    `${path.relative(process.cwd(), file)} vẫn tham chiếu PaymentProofCamera đã bị xoá`
+  );
+}
 
 // --- Task 7: modal thanh toán chuyển khoản + gallery ảnh ----------------------
 const transferModal = readSource('src/components/pos/TransferPaymentModal.tsx');
@@ -311,15 +383,18 @@ assert.match(transferModal, /remainingMs/, 'Modal có đồng hồ đếm ngư�
 assert.match(transferModal, /setInterval\(update, 1000\)/, 'Đếm ngược cập nhật mỗi giây');
 assert.match(transferModal, /new Date\(session\.expiresAt/, 'Đếm ngược suy ra từ expiresAt');
 assert.match(transferModal, /const expired = Boolean\(session(\?)?\.expiresAt\) && remainingMs === 0/, 'expired suy ra từ đếm ngược');
-assert.match(transferModal, /Chụp màn hình xác nhận/, 'Modal có nút chụp màn hình xác nhận');
+assert.match(transferModal, /'Chụp ảnh receipt'/, 'Modal có nút chụp ảnh (camera native), nhãn đúng dấu');
+assert.doesNotMatch(transferModal, /Chụp màn hình xác nhận/, 'Nhãn cũ "Chụp màn hình xác nhận" đã bị thay');
+assert.match(transferModal, /onUsePhoto: \(photo: PaymentProofPhoto\) => Promise<void>/, 'Modal nhận onUsePhoto dạng Promise');
+assert.doesNotMatch(transferModal, /onCapture/, 'Prop onCapture đã bị gỡ hoàn toàn');
 assert.match(transferModal, /Khách chuyển sau/, 'Modal có hành động Khách chuyển sau');
 assert.match(transferModal, /onClick=\{onCancel\}/, 'Modal có hành động hủy tường minh');
 assert.match(transferModal, /onClick=\{onClose\}/, 'Modal có hành động đóng (khách chuyển sau)');
-assert.match(transferModal, /onClick=\{onCapture\}/, 'Modal gọi onCapture');
 assert.match(transferModal, /onClick=\{onConfirm\}/, 'Modal gọi onConfirm');
 assert.match(transferModal, /qrSnapshot\.dataUrl/, 'Modal hiển thị QR từ snapshot');
 assert.match(transferModal, /useModalFocusTrap/, 'Modal dùng focus trap có sẵn');
-// Confirm và chụp bị khoá khi hết hạn / đang bận / chưa có ảnh.
+assert.match(transferModal, /role="dialog"/, 'Modal thanh toán là dialog');
+// Confirm và chụp bị khoá khi hết hạn / đang bận / chưa có ảnh / đang lưu ảnh.
 assert.match(
   transferModal,
   /disabled=\{expired \|\| busy \|\| !session\?\.paymentProof\}/,
@@ -327,8 +402,8 @@ assert.match(
 );
 assert.match(
   transferModal,
-  /disabled=\{expired \|\| busy\}/,
-  'Nút chụp khoá khi hết hạn hoặc đang bận'
+  /disabled=\{expired \|\| busy \|\| isSaving\}/,
+  'Nút chụp khoá khi hết hạn, đang bận, hoặc đang lưu ảnh'
 );
 
 const gallery = readSource('src/components/pos/PaymentPhotoGallery.tsx');
@@ -382,22 +457,27 @@ expectNoMatch(
 expectNoMatch(posCode, /<MoneyReceivedToggle/, 'MoneyReceivedToggle không còn được render ở POS');
 
 // Trạng thái phiên chuyển khoản + overlay mới.
-for (const state of ['transferSession', 'isTransferCameraOpen', 'isPhotoGalleryOpen', 'isTransferSubmitting']) {
+for (const state of ['transferSession', 'isPhotoGalleryOpen', 'isTransferSubmitting']) {
   expectMatch(
     pos,
     new RegExp(`const \\[${state}, set${state[0].toUpperCase()}${state.slice(1)}\\] = useState`),
     `POS có state ${state}`,
   );
 }
-expectMatch(
+expectNoMatch(
   posCode,
-  /const isPosOverlayOpen[\s\S]*isTransferCameraOpen[\s\S]*isPhotoGalleryOpen/,
-  'Overlay camera/gallery phải nằm trong isPosOverlayOpen',
+  /isTransferCameraOpen/,
+  'State isTransferCameraOpen đã bị gỡ: camera native không còn modal trung gian',
 );
 expectMatch(
   posCode,
-  /const isTransferOverlayOpen = Boolean\(transferSession\) \|\| isTransferCameraOpen \|\| isPhotoGalleryOpen/,
-  'POS có cờ overlay phiên chuyển khoản gồm cả 3 lớp',
+  /const isPosOverlayOpen[\s\S]*isPhotoGalleryOpen/,
+  'Overlay gallery ảnh phải nằm trong isPosOverlayOpen',
+);
+expectMatch(
+  posCode,
+  /const isTransferOverlayOpen = Boolean\(transferSession\) \|\| isPhotoGalleryOpen/,
+  'POS có cờ overlay phiên chuyển khoản gồm phiên + gallery',
 );
 // Chặn checkout và chặn scanner khi phiên chuyển khoản đang mở.
 expectMatch(
@@ -410,11 +490,27 @@ expectMatch(
   /const openScanner = \(\) => \{\s*\n\s*if \(isTransferOverlayOpen\) return;/,
   'openScanner bị chặn khi overlay phiên chuyển khoản đang mở',
 );
+// Scanner quét mã sách vẫn là đường riêng: không được dính vào ảnh chứng minh.
+expectMatch(
+  pos,
+  /<InAppBarcodeScanner/,
+  'POS vẫn render InAppBarcodeScanner (quét ISBN, tách khỏi chụp ảnh xác nhận)',
+);
 
-// Camera mở trước, xác nhận sau, và không xác nhận được khi chưa có ảnh.
-expectMatch(pos, /<PaymentProofCamera/, 'POS render PaymentProofCamera');
+// Ảnh do modal chụp, xác nhận sau, và không xác nhận được khi chưa có ảnh.
+expectNoMatch(pos, /PaymentProofCamera/, 'POS không còn render PaymentProofCamera');
 expectMatch(pos, /<TransferPaymentModal/, 'POS render TransferPaymentModal');
 expectMatch(pos, /<PaymentPhotoGallery/, 'POS render PaymentPhotoGallery');
+expectMatch(
+  posCode,
+  /cashierId=\{cashierActorId\}\s*\n\s*onUsePhoto=\{handleUseTransferPhoto\}/,
+  'POS truyền cashierId thật + handleUseTransferPhoto xuống modal chụp ảnh',
+);
+expectNoMatch(
+  posCode,
+  /<TransferPaymentModal[\s\S]{0,600}?onCapture/,
+  'POS không được truyền onCapture cho modal nữa',
+);
 expectMatch(
   posCode,
   /if \(!session\.paymentProof\) \{[\s\S]{0,300}?return;/,
@@ -741,24 +837,36 @@ expectMatch(
   'Đơn vào đối soát phải đánh dấu ảnh NEEDS_RECONCILIATION để retention miễn xoá'
 );
 
-// --- A6. Camera: lỗi quyền phải còn lại để cashier đọc được -----------------
-// setErrorMessage() rồi onClose() ngay -> modal unmount, thông báo biến mất,
-// cashier thấy camera tự biến mất mà không biết vì sao.
-const advDeniedStart = camera.indexOf("'NotAllowedError'");
-assert.ok(advDeniedStart > 0, 'Camera có nhánh NotAllowedError');
-const advDeniedBody = stripComments(camera.slice(advDeniedStart, camera.indexOf('}, [isOpen')));
-expectNoMatch(
-  advDeniedBody,
-  /setErrorMessage\([\s\S]{0,400}?onClose\(\);/,
-  'Camera không được set lỗi rồi đóng ngay (thông báo bị unmount mất)'
+// --- A6. Lỗi chụp/lưu ảnh phải còn lại để cashier đọc được -------------------
+// Lỗi cũ: setErrorMessage() rồi onClose() ngay -> modal camera unmount, thông
+// báo biến mất, cashier thấy camera tự biến mất mà không biết vì sao.
+// Nay lỗi nằm ngay trong modal thanh toán (modal cha không đóng) nên bắt buộc
+// phải hiện được, và nút chụp phải khoá lúc đang lưu.
+assert.doesNotMatch(
+  transferModalCode,
+  /setCaptureError\([\s\S]{0,400}?onClose\(\)/,
+  'Modal không được set lỗi rồi đóng ngay (thông báo bị unmount mất)'
 );
-expectMatch(pos, /onCameraError=/, 'Lỗi camera phải được nâng lên POS để hiện trong modal chuyển khoản');
-// Nút X trên camera không khoá khi đang lưu, còn focus trap thì có.
-const cameraHeaderClose = stripComments(camera.slice(0, camera.indexOf('{preview ?')));
 expectMatch(
-  cameraHeaderClose,
-  /onClick=\{onClose\}[\s\S]{0,200}?disabled=\{isSaving\}/,
-  'Nút đóng camera phải khoá khi đang lưu ảnh, đồng bộ với focus trap'
+  transferModal,
+  /const shownError = captureError \|\| errorMessage/,
+  'Lỗi chụp/lưu ảnh phải hiện trong modal chuyển khoản, ưu tiên lỗi mới nhất'
+);
+expectMatch(
+  transferModal,
+  /\{shownError \? <p[\s\S]{0,200}?\{shownError\}/,
+  'Lỗi phải được render ra màn hình chứ không chỉ nằm trong state'
+);
+expectNoMatch(pos, /onCameraError=/, 'Không còn callback onCameraError (không còn modal camera riêng)');
+expectMatch(
+  transferModal,
+  /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}\s*\n\s*disabled=\{expired \|\| busy \|\| isSaving\}/,
+  'Nút chụp phải khoá khi đang lưu ảnh, đồng bộ với focus trap'
+);
+expectMatch(
+  transferModal,
+  /useModalFocusTrap<HTMLDivElement>\(isOpen && mounted && !busy, onClose\)/,
+  'Modal khoá focus khi đang bận — nút chụp khoá cùng nhịp với việc lưu ảnh'
 );
 
 // --- A7. Object URL của ảnh đã xoá phải được thu hồi -------------------------

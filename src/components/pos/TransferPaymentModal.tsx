@@ -1,10 +1,36 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, Clock, X } from 'lucide-react';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { generateUUIDv7 } from '@/lib/uuidv7';
 import type { PaymentProofPhoto } from '@/lib/offline-db';
+
+/** Cạnh dài tối đa của ảnh chụp — giữ file nhẹ để lưu IndexedDB trên máy thu ngân. */
+const MAX_CAPTURE_EDGE = 1280;
+const CAPTURE_MIME = 'image/jpeg';
+const CAPTURE_QUALITY = 0.8;
+
+const normalizeCapture = async (file: File): Promise<Blob> => {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, MAX_CAPTURE_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Không tạo được canvas xử lý ảnh');
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, CAPTURE_MIME, CAPTURE_QUALITY)
+    );
+    if (!blob) throw new Error('Không xuất được ảnh JPEG');
+    return blob;
+  } finally {
+    bitmap.close();
+  }
+};
 
 export interface TransferPaymentSession {
   mode: 'ONLINE' | 'OFFLINE';
@@ -26,7 +52,8 @@ export interface TransferPaymentModalProps {
   busy: boolean;
   /** Nhãn nguồn tài khoản: mạng hay cache 24h (null khi dùng mạng). */
   cacheLabel?: string | null;
-  onCapture: () => void;
+  cashierId: string;
+  onUsePhoto: (photo: PaymentProofPhoto) => Promise<void>;
   onConfirm: () => Promise<void>;
   onCancel: () => Promise<void>;
   onClose: () => void;
@@ -35,14 +62,17 @@ export interface TransferPaymentModalProps {
 
 /**
  * Modal thanh toán chuyển khoản/QR: mã đơn, số tiền, QR, đếm ngược hạn và
- * bước chụp ảnh xác nhận. Không có ảnh thì không thể xác nhận đơn.
+ * bước chụp ảnh xác nhận. Camera là app Camera native của máy (file input
+ * `capture`), không phải ô cửa sổ nhỏ trong web. Không có ảnh thì không
+ * thể xác nhận đơn.
  */
 export function TransferPaymentModal({
   isOpen,
   session,
   busy,
   cacheLabel,
-  onCapture,
+  cashierId,
+  onUsePhoto,
   onConfirm,
   onCancel,
   onClose,
@@ -50,6 +80,11 @@ export function TransferPaymentModal({
 }: TransferPaymentModalProps) {
   const [mounted, setMounted] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Chặn hai lần lưu trong cùng tick: state bất đồng bộ chưa kịp set. */
+  const savingRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -78,8 +113,37 @@ export function TransferPaymentModal({
 
   const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted && !busy, onClose);
 
+  const handlePickPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !session || savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    setCaptureError(null);
+    try {
+      await onUsePhoto({
+        id: `proof-${generateUUIDv7()}`,
+        orderCode: session.orderCode,
+        warehouseId: session.warehouseId,
+        cashierId,
+        amount: session.amount,
+        paymentMethod: session.paymentMethod,
+        capturedAt: new Date().toISOString(),
+        blob: await normalizeCapture(file),
+        syncState: 'LOCAL_ONLY',
+      });
+    } catch {
+      setCaptureError('Lưu ảnh thất bại, đơn chưa được xác nhận. Hãy chụp lại.');
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
+  };
+
   if (!isOpen || !mounted || !session) return null;
   const expired = Boolean(session.expiresAt) && remainingMs === 0;
+  const shownError = captureError || errorMessage;
   const totalSeconds = Math.floor(remainingMs / 1000);
   const countdown = `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`;
 
@@ -151,7 +215,7 @@ export function TransferPaymentModal({
             />
           </div>
 
-          {errorMessage ? <p className="text-[11px] text-rose-600 font-medium">{errorMessage}</p> : null}
+          {shownError ? <p className="text-[11px] text-rose-600 font-medium">{shownError}</p> : null}
           {session.paymentProof ? (
             <p className="text-[11px] text-emerald-700 font-medium">
               Đã lưu ảnh xác nhận lúc {new Date(session.paymentProof.capturedAt).toLocaleString('vi-VN')}.
@@ -160,14 +224,22 @@ export function TransferPaymentModal({
             <p className="text-[11px] text-slate-500 font-medium">Cần chụp ảnh màn hình khách chuyển trước khi xác nhận.</p>
           )}
 
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={handlePickPhoto}
+          />
           <button
             type="button"
-            onClick={onCapture}
-            disabled={expired || busy}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={expired || busy || isSaving}
             className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <Camera className="w-4 h-4" />
-            Chụp màn hình xác nhận
+            {isSaving ? 'Đang lưu ảnh...' : 'Chụp ảnh receipt'}
           </button>
           <button
             type="button"
