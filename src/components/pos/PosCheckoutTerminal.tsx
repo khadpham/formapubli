@@ -42,7 +42,7 @@ import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { VietQrPay } from '@/components/pos/VietQrPay';
 import { PaymentPhotoGallery } from '@/components/pos/PaymentPhotoGallery';
-import { TransferPaymentModal, type TransferPaymentSession } from '@/components/pos/TransferPaymentModal';
+import { TransferPaymentModal, CaptureError, normalizeCapture, CAPTURE_SAVE_TIMEOUT_MS, type TransferPaymentSession, type TransferQrSnapshot } from '@/components/pos/TransferPaymentModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -317,6 +317,9 @@ export function PosCheckoutTerminal({
         }
       }
       if (!alive) return;
+      // Cache phiên cũ không lưu orderQuantity. Khi thiếu thì GIỮ NGUYÊN nội
+      // dung đã đóng băng: bộ snapshot đầy đủ sẽ chặn VietQrPay ghi đè nên
+      // modal vẫn hiện đúng nội dung của đơn cũ, không dựng lại từ giỏ rỗng.
       setTransferSession({
         mode: cached.mode,
         orderId: cached.orderId,
@@ -413,6 +416,20 @@ export function PosCheckoutTerminal({
    * để chặn cả hai.
    */
   const transferLockRef = useRef(false);
+  /**
+   * Camera của nút ở quầy. Input này LUÔN có mặt trong DOM (không mount/unmount
+   * theo modal) vì `.click()` chỉ mở được picker khi gọi ĐỒNG BỘ ngay trong
+   * user gesture trên iOS Safari.
+   */
+  const checkoutCaptureInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Ảnh đã chụp nhưng đơn chưa tạo xong (camera về nhanh hơn POST /api/orders).
+   * Giữ lại để gắn vào đơn vừa tạo; nếu đơn không tạo được thì phải BỎ đi —
+   * tuyệt đối không gắn ảnh mồ côi vào đơn kế tiếp.
+   */
+  const pendingCaptureFileRef = useRef<File | null>(null);
+  /** Khoá ghi ảnh trong lúc lưu: hai lần lưu chồng nhau sẽ hỏng phiên. */
+  const captureLockRef = useRef(false);
 
   /**
    * Ghi phiên chuyển khoản xuống cache mỗi khi nó đổi — kể cả lúc mới tạo, trước
@@ -1379,6 +1396,14 @@ export function PosCheckoutTerminal({
       ? 'Chụp ảnh xác nhận'
       : `Xác nhận Thanh toán (${finalAmount.toLocaleString('vi-VN')} đ)`;
   const mobileCheckoutSubmittingLabel = checkoutSubmittingLabel;
+  /**
+   * Đơn đã tạo ⇒ VietQrPay nhận MÃ ĐƠN + SỐ LƯỢNG THẬT CỦA ĐƠN (server trả về
+   * lúc tạo) và bị khoá. Trước khi có đơn, VietQrPay vẫn xem trước từ giỏ.
+   */
+  const frozenOrderForQr = transferSession
+    ? { orderCode: transferSession.orderCode, quantity: transferSession.qrSnapshot.orderQuantity ?? 0 }
+    : null;
+  const qrItemCount = transferSession ? frozenOrderForQr!.quantity : totalCopies;
   const approvalPricedCart = useMemo(
     () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
     [cart, discountRate, pendingDiscountRate]
@@ -1580,7 +1605,10 @@ export function PosCheckoutTerminal({
             amount: finalAmount,
             paymentMethod,
             createdAt: orderTimestamp,
-            qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: orderCode },
+            // Nội dung ĐỂ TRỐNG có chủ đích: chưa có nội dung đã resolve thì
+            // không được điền bằng mã đơn trần — đó chính là lỗi "số tài khoản
+            // và nội dung không khớp ảnh QR". VietQrPay phát ra bộ đóng băng.
+            qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: '', orderQuantity: totalCopies },
           });
           setSyncToast(`💾 Đơn ngoại tuyến [${orderCode}] đã ghi nhận, chờ đồng bộ. Chụp ảnh xác nhận để hoàn tất.`);
           setTimeout(() => setSyncToast(null), 6000);
@@ -1676,7 +1704,15 @@ export function PosCheckoutTerminal({
           paymentMethod,
           createdAt: orderTimestamp,
           expiresAt: resData.data?.paymentExpiresAt || undefined,
-          qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: orderCode },
+          // Số lượng lấy từ CHÍNH server trả về: giỏ có thể bị sửa giữa lúc
+          // gọi, nhưng {SL} trên QR phải là số lượng thật của đơn đã tạo.
+          qrSnapshot: {
+            dataUrl: '',
+            payload: '',
+            accountNo: '',
+            content: '',
+            orderQuantity: Number(resData.data?.totalQuantity ?? totalCopies),
+          },
         });
       } catch (err: any) {
         // Phân loại lỗi dùng lại đúng cách handleCheckout đang làm cho cash/gift.
@@ -1688,6 +1724,15 @@ export function PosCheckoutTerminal({
           }
         } else {
           setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
+        }
+        // Ảnh đã được chụp TRƯỚC khi có đơn. Nếu đơn không tạo được thì ảnh mồ
+        // côi không được gắn vào bất cứ thứ gì — báo rõ để thu ngân không
+        // tưởng đã chụp xong rồi bấm nhầm Xác nhận.
+        if (pendingCaptureFileRef.current) {
+          pendingCaptureFileRef.current = null;
+          setErrorMessage((prev) =>
+            `${prev ? `${prev} ` : ''}Ảnh vừa chụp không dùng được — chưa có đơn để gắn. Tạo đơn thành công rồi hãy chụp lại.`
+          );
         }
       } finally {
         checkoutLockRef.current = false;
@@ -1773,14 +1818,23 @@ export function PosCheckoutTerminal({
     }
   };
 
-  /** VietQrPay phát QR mới → giữ snapshot trong phiên chuyển khoản. */
+  /**
+   * VietQrPay phát QR mới.
+   *
+   * ĐÃ ĐÓNG BĂNG: khi phiên đã có tài khoản + nội dung thì bộ thông này là
+   * chốt — mọi phát sau bị bỏ qua. Nhờ vậy modal không bao giờ hiện tài khoản
+   * của đơn khác: đổi kho, đổi số lượng giỏ hay VietQrPay dựng lại sau đều
+   * không xoá được ảnh QR đã sinh cho đơn này.
+   */
   const handleTransferQrSnapshot = (
     snapshot: { dataUrl: string; payload: string; accountNo: string; content: string } | null
   ) => {
     setQrSnapshot(snapshot);
-    setTransferSession((current) =>
-      current && snapshot ? { ...current, qrSnapshot: snapshot } : current
-    );
+    setTransferSession((current) => {
+      if (!current || !snapshot) return current;
+      if (current.qrSnapshot.accountNo && current.qrSnapshot.content) return current;
+      return { ...current, qrSnapshot: { ...current.qrSnapshot, ...snapshot } };
+    });
   };
 
   /**
@@ -1799,22 +1853,6 @@ export function PosCheckoutTerminal({
     // Dọn cache phiên: đơn đã xong (xác nhận/huỷ) thì không được hồi sinh
     // sau refresh. Ghi theo kho hiện tại vì session đã bị xoá khỏi state.
     writeTransferSessionCache(null, selectedWarehouseIdRef.current);
-  };
-
-  /**
-   * Tạm đóng modal (nút X / ESC): KHÔNG huỷ đơn, KHÔNG xoá giỏ, KHÔNG xoá cache
-   * phiên — đơn vẫn PENDING giữ ATP tới khi hết hạn và phiên vẫn mở lại được sau
-   * refresh. Xoá cache ở đường này là mất dữ liệu khôi phục mà không xử lý đơn.
-   */
-  const dismissTransferSession = () => {
-    const orderCode = transferSession?.orderCode;
-    setTransferSession(null);
-    setTransferErrorMessage(null);
-    setTransferOfflineOrderId(null);
-    setSyncToast(
-      `⏸ Đơn [${orderCode}] vẫn chờ thanh toán. Tải lại trang để mở lại phiên, hoặc bấm "Chụp ảnh xác nhận" để thu tiền ngay.`
-    );
-    setTimeout(() => setSyncToast(null), 8000);
   };
 
   /**
@@ -1918,6 +1956,81 @@ export function PosCheckoutTerminal({
     }
   };
 
+  /**
+   * Gắn ảnh vừa chụp vào phiên của đúng đơn đó, rồi lưu xuống IndexedDB.
+   * Dùng chung cho ảnh chụp từ nút ở quầy (một chạm) và nút chụp lại trong modal.
+   */
+  const attachCaptureToSession = async (session: TransferPaymentSession, file: File) => {
+    if (captureLockRef.current) return;
+    captureLockRef.current = true;
+    setTransferErrorMessage(null);
+    // Chốn treo: IndexedDB kẹt (iOS dồn bộ nhớ, ITP) thì không đứng "Đang lưu
+    // ảnh..." mãi. Lần ghi vẫn chạy nền; nếu xong sau đó thì ảnh gắn bình thường.
+    const watchdog = setTimeout(() => {
+      captureLockRef.current = false;
+      setTransferErrorMessage('Lưu ảnh quá lâu. Đơn chưa được xác nhận. Hãy thử lại.');
+    }, CAPTURE_SAVE_TIMEOUT_MS);
+    try {
+      await handleUseTransferPhoto({
+        id: `proof-${generateUUIDv7()}`,
+        orderCode: session.orderCode,
+        warehouseId: session.warehouseId,
+        cashierId: cashierActorId,
+        amount: session.amount,
+        paymentMethod: session.paymentMethod,
+        capturedAt: new Date().toISOString(),
+        blob: await normalizeCapture(file),
+        syncState: 'LOCAL_ONLY',
+      });
+    } catch (err) {
+      if (err instanceof CaptureError) setTransferErrorMessage(err.message);
+      else setTransferErrorMessage('Lưu ảnh thất bại, đơn chưa được xác nhận. Hãy thử lại.');
+    } finally {
+      captureLockRef.current = false;
+      clearTimeout(watchdog);
+    }
+  };
+
+  /**
+   * Ảnh từ input ẩn ở quầy. Camera có thể về TRƯỚC khi POST /api/orders xong,
+   * nên ảnh chưa gắn được thì giữ lại chờ phiên; effect bên dưới gắn ngay khi
+   * phiên xuất hiện. Không có ảnh nào được gắn nhầm vào đơn khác.
+   */
+  const handleCheckoutCaptureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    // Reset để chọn lại đúng ảnh cũ sau này không bị im lặng.
+    input.value = '';
+    if (!file) return;
+    if (!transferSession) {
+      pendingCaptureFileRef.current = file;
+      return;
+    }
+    void attachCaptureToSession(transferSession, file);
+  };
+
+  useEffect(() => {
+    const file = pendingCaptureFileRef.current;
+    if (!file || !transferSession) return;
+    pendingCaptureFileRef.current = null;
+    void attachCaptureToSession(transferSession, file);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transferSession]);
+
+  /**
+   * Một chạm mở camera: `.click()` phải là ĐẦU TIÊN trong handler, không được
+   * `await` gì trước — iOS Safari chỉ mở được picker trong user gesture thật.
+   * Tạo đơn chạy SONG SONG phía sau, không chặn camera.
+   */
+  const handleCheckoutButtonClick = () => {
+    if (isDigitalCheckout) {
+      // Ảnh cũ (nếu lần trước hỏng) không được sang đơn mới.
+      pendingCaptureFileRef.current = null;
+      checkoutCaptureInputRef.current?.click();
+    }
+    void handleCheckout();
+  };
+
   const handleCancelTransfer = async () => {
     if (transferLockRef.current) return;
     const session = transferSession;
@@ -1952,7 +2065,7 @@ export function PosCheckoutTerminal({
         const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'CANCEL', orderId: session.orderId, reason: 'Khách chuyển sau' }),
+          body: JSON.stringify({ action: 'CANCEL', orderId: session.orderId, reason: 'Thu ngân huỷ đơn' }),
         });
         // F6: phải đọc response trước khi dọn state. 409 từ cashbox guard, 403
         // phân quyền, 400 input, 500 lỗi server — tất cả đều để nguyên đơn PENDING
@@ -3026,9 +3139,10 @@ export function PosCheckoutTerminal({
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
                     initialContent={transferSession ? transferSession.orderCode : activeOrderCode}
-                    itemCount={cart.reduce((sum, l) => sum + l.quantity, 0)}
+                    itemCount={qrItemCount}
                     warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
                     warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
+                    locked={Boolean(transferSession)}
                     onQr={handleTransferQrSnapshot}
                     onSource={handleTransferBankSource}
                     onCachedAt={setTransferBankCachedAt}
@@ -3067,7 +3181,7 @@ export function PosCheckoutTerminal({
             <button
               type="button"
               id="btn-desktop-checkout"
-              onClick={handleCheckout}
+              onClick={handleCheckoutButtonClick}
               disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
@@ -3088,6 +3202,18 @@ export function PosCheckoutTerminal({
           phụ thuộc QR có dựng được hay không. Gating theo dataUrl khiến modal
           (và camera) không bao giờ mở khi kho chưa có tài khoản nhận / QR lỗi /
           mất mạng — cashier bấm nút rồi không có gì xảy ra. */}
+      {/* Input chụp ảnh của nút ở quầy. LUÔN có mặt trong DOM (không theo vòng
+          đời modal) vì iOS chỉ mở được camera picker khi `.click()` chạy đồng
+          bộ trong user gesture. Modal chỉ dùng nút "Chụp lại" để thay ảnh mờ. */}
+      <input
+        ref={checkoutCaptureInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="sr-only"
+        onChange={handleCheckoutCaptureChange}
+      />
+
       {transferSession && mounted && (
         <TransferPaymentModal
           isOpen
@@ -3103,7 +3229,6 @@ export function PosCheckoutTerminal({
           onUsePhoto={handleUseTransferPhoto}
           onConfirm={handleConfirmTransfer}
           onCancel={handleCancelTransfer}
-          onClose={dismissTransferSession}
           errorMessage={transferErrorMessage}
         />
       )}
@@ -3788,9 +3913,10 @@ export function PosCheckoutTerminal({
                     warehouseId={selectedWarehouseId}
                     amount={isGift ? 0 : finalAmount}
                     initialContent={transferSession ? transferSession.orderCode : activeOrderCode}
-                    itemCount={cart.reduce((sum, l) => sum + l.quantity, 0)}
+                    itemCount={qrItemCount}
                     warehouseName={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.name || ''}
                     warehouseCode={sellableWarehouses.find((w) => w.id === selectedWarehouseId)?.code || ''}
+                    locked={Boolean(transferSession)}
                     onQr={handleTransferQrSnapshot}
                     onSource={handleTransferBankSource}
                     onCachedAt={setTransferBankCachedAt}
@@ -3830,7 +3956,7 @@ export function PosCheckoutTerminal({
                 type="button"
                 id="btn-confirm-mobile-checkout"
                 disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
-                onClick={handleCheckout}
+                onClick={handleCheckoutButtonClick}
                 className={`w-full py-3 rounded-xl text-white text-xs font-extrabold shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 shadow-emerald-950/20'}`}
               >
                 {isSubmitting ? (

@@ -45,16 +45,18 @@ const base = {
   manualContent: null,
 };
 
-console.log('\n[#1] Mẫu tuỳ biến là nguồn duy nhất khi có mẫu');
+console.log('\n[#1] {MA} và {SL} sống sót — tên kho là phần được bóp');
+const MA = compactOrderCode(LONG_CODE);
+const btKho = resolveTransferContent(base);
 ok(
-  resolveTransferContent(base) === `HT ${LONG_CODE} - 12 cu - Kho Hội Chợ ABC (KHC-ABC)`,
-  'thay đủ {MA} {SL} {KHO} {KH}',
-  `nhận: ${resolveTransferContent(base)}`
+  btKho.startsWith(`HT ${MA}`) && btKho.includes('12 cu'),
+  'mẫu dài: {MA} rút gọn và {SL} vẫn còn, tên kho nhường chỗ',
+  `nhận: ${btKho}`
 );
 ok(
-  !resolveTransferContent(base).startsWith(LONG_CODE),
-  'KHÔNG trả về mã đơn dài nguyên xi',
-  `nhận: ${resolveTransferContent(base)}`
+  !btKho.includes(LONG_CODE),
+  '{MA} trong QR LUÔN là mã rút gọn, không bao giờ là mã đơn đầy đủ 29 ký tự',
+  `nhận: ${btKho}`
 );
 
 console.log('\n[#2] Chưa cấu hình mẫu thì dùng MẪU MẶC ĐỊNH (có số lượng + mã đơn rút gọn)');
@@ -74,7 +76,11 @@ ok(macDinh(12).length <= 23 && macDinh(12).includes('12'),
 
 console.log('\n[#3] Đổi mã đơn KHÔNG được làm mất mẫu');
 const doiMaDon = resolveTransferContent({ ...base, orderCode: 'ORD-20260928-ZZZ' });
-ok(doiMaDon.includes('ORD-20260928-ZZZ'), 'mã đơn mới được nội suy vào {MA}', doiMaDon);
+ok(
+  doiMaDon.includes(compactOrderCode('ORD-20260928-ZZZ')) && !doiMaDon.includes('ORD-20260928-ZZZ'),
+  'đổi mã đơn thì {MA} đổi theo, và không rò mã đơn dài lên QR',
+  doiMaDon
+);
 ok(!doiMaDon.includes(LONG_CODE), 'không còn sót mã đơn cũ', doiMaDon);
 ok(doiMaDon.includes('12 cu'), 'phần còn lại của mẫu giữ nguyên', doiMaDon);
 
@@ -87,7 +93,14 @@ const thieu = resolveTransferContent({
   warehouseCode: '',
   manualContent: null,
 });
-ok(thieu === '0|||', 'biến rỗng → chuỗi rỗng, số 0 vẫn hiện', `nhận: ${thieu}`);
+// Bảo đảm còn giữ từ assertion cũ: biến RỖNG không được sinh ra rác, và số 0
+// (giỏ rỗng / chưa chốt) vẫn phải hiện. Ký tự phân cách bị normalize bỏ hết,
+// nên "0" dính liền mã rút gọn — đó là hình dạng ĐÚNG, không phải rác.
+ok(
+  thieu === `0${compactOrderCode('')}`,
+  'biến rỗng → không sinh rác, số 0 vẫn hiện, {MA} rỗng ra mã rút gọn ổn định',
+  `nhận: ${thieu}`
+);
 ok(!thieu.includes('undefined') && !thieu.includes('null'), 'không lọt chữ undefined/null', thieu);
 
 console.log('\n[#5] Người dùng gõ tay thì giữ bản của họ');
@@ -134,23 +147,47 @@ ok(!hasTransferTemplate(null) && !hasTransferTemplate('') && !hasTransferTemplat
 ok(hasTransferTemplate('DH {MA}') && hasTransferTemplate(' DH {MA} '),
   'hasTransferTemplate: có nội dung là đã cấu hình (kể cả có khoảng trắng quanh)');
 
-// (a) mẫu tường minh vẫn nội sup đúng số lượng
+// (a) mẫu tường minh vẫn nội sup đúng số lượng, với {MA} ĐÃ RÚT GỌN
 ok(
-  resolveTransferContent({ ...base, template: 'DH {MA} - {SL} cuon', itemCount: 3 }) === `DH ${LONG_CODE} - 3 cuon`,
-  'mẫu tường minh vẫn thay {SL} bằng số lượng thật'
+  resolveTransferContent({ ...base, template: 'DH {MA} - {SL} cuon', itemCount: 3 }) === `DH ${MA}  3 cuon`,
+  'mẫu tường minh: {SL} = số lượng thật, {MA} = mã rút gọn (mã đơn dài lên QR là lỗi)',
+  `nhận: ${resolveTransferContent({ ...base, template: 'DH {MA} - {SL} cuon', itemCount: 3 })}`
 );
 // (b) mẫu tường minh LUÔN thắng, kể cả khi có "mẫu mặc định" tương lai
 ok(
-  resolveTransferContent({ ...base, template: 'ONLY {MA}' }) === `ONLY ${LONG_CODE}`,
-  'mẫu tường minh luôn thắng — không đường nào ghi đè mẫu của kho'
+  resolveTransferContent({ ...base, template: 'ONLY {MA}' }) === `ONLY ${MA}`,
+  'mẫu tường minh luôn thắng — không đường nào ghi đè mẫu của kho',
+  `nhận: ${resolveTransferContent({ ...base, template: 'ONLY {MA}' })}`
 );
-// (c) nội dung nào thật sự lên QR: cắt 23 ký tự, bỏ dấu, bỏ ký tự lạ
-const withQty = resolveTransferContent({ ...base, template: 'DH {MA} - {SL} cuốn', itemCount: 12 });
-const onQr = normalizeVietqrContent(withQty);
-ok(onQr.length === 23 && !onQr.includes('12'),
-  'mẫu "{MA} - {SL} cuốn" CÓ thay số lượng nhưng số lượng bị cắt khỏi QR (23 ký tự)' +
-  ' → đây là lý do người dùng thấy "{SL} biến mất", không phải lỗi nội suy',
-  `gửi bank: ${onQr}`);
+// (c) SỐ LƯỢNG KHÔNG BAO GIỜ BỊ CẮT khỏi QR. Trước đây assertion ở đây chốt
+// NGƯỢC LẠI ("số lượng bị cắt là bình thường") — đó chính là hợp đồng đã gây ra
+// lỗi người dùng báo. Nay: tên kho dài là phần phải nhường, {SL} thì không.
+const SL_SURVIVE = [
+  {
+    label: 'mẫu kho "{KHO} {SL}" + tên kho 26 ký tự',
+    input: { template: '{KHO} {SL}', warehouseName: 'Kho Dai Nam Thang 10 2026' },
+    expected: 'Kho Dai Nam Thang 10 12',
+  },
+  {
+    label: 'mẫu "DH {MA} - {SL} cuốn"',
+    input: { template: 'DH {MA} - {SL} cuốn' },
+    expected: `DH ${MA}  12 cuon`,
+  },
+];
+for (const c of SL_SURVIVE) {
+  const nd = normalizeVietqrContent(resolveTransferContent({ ...base, ...c.input, itemCount: 12 }));
+  ok(
+    nd === c.expected && nd.length <= VIETQR_CONTENT_MAX,
+    `${c.label}: số lượng 12 KHÔNG BAO GIỜ bị cắt khỏi QR (23 ký tự ngân hàng nhận)`,
+    `gửi bank: ${nd} (${nd.length})`
+  );
+}
+ok(
+  !normalizeVietqrContent(
+    resolveTransferContent({ ...base, template: '{KHO} {SL}', warehouseName: 'Kho Dai Nam Thang 10 2026' })
+  ).includes('Thang 10 2026'),
+  'tên kho dài là phần phải nhường chỗ — không được nuốt mất số lượng'
+);
 const qtyFirst = normalizeVietqrContent(
   resolveTransferContent({ ...base, template: '{SL}cuon {MA}', itemCount: 12 })
 );
@@ -218,11 +255,11 @@ for (const a of adversarial) {
 ok(!normalizeVietqrContent(resolveTransferContent({ ...base, template: null })).includes('91D9A82AF0543D86'),
   'QR KHÔNG chứa mã đơn đầy đủ — nếu ai đó "đơn giản hoá" ngược lại thì test này đỏ');
 
-// Mẫu đã cấu hình LUÔN thắng mẫu mặc định.
+// Mẫu đã cấu hình LUÔN thắng mẫu mặc định — và {MA} trong đó vẫn là mã rút gọn.
 ok(
   resolveTransferContent({ ...base, template: 'DH {SL} {MA}', itemCount: 7 })
-    === `DH 7 ${LONG_CODE}`,
-  'mẫu của kho thắng mẫu mặc định (và dùng mã đơn đầy đủ như trước)',
+    === `DH 7 ${MA}`,
+  'mẫu của kho thắng mẫu mặc định, {MA} vẫn là mã rút gọn',
   `nhận: ${resolveTransferContent({ ...base, template: 'DH {SL} {MA}', itemCount: 7 })}`
 );
 ok(resolveTransferContent({ ...base, template: 'DH {SL} {MA}' }) !== resolveTransferContent({ ...base, template: null }),

@@ -20,8 +20,9 @@ export function hasTransferTemplate(template: string | null | undefined): boolea
   return typeof template === 'string' && template.trim().length > 0;
 }
 
-/** VietQR chỉ mang tối đa 23 ký tự trong `add_info` (xem normalizeVietqrContent). */
-export const VIETQR_CONTENT_MAX = 23;
+import { normalizeVietqrContent, VIETQR_CONTENT_MAX } from './vietqr';
+
+export { VIETQR_CONTENT_MAX };
 
 /**
  * Mẫu nội dung DỰ PHÒNG khi kho chưa cấu hình mẫu riêng.
@@ -74,14 +75,35 @@ export function compactOrderCode(orderCode: string): string {
 export function resolveTransferContent(input: TransferContentInput): string {
   const { template, orderCode, itemCount, warehouseName, warehouseCode, manualContent } = input;
   if (manualContent !== null) return manualContent;
-  const configured = hasTransferTemplate(template);
-  // Mẫu mặc định dùng mã đơn RÚT GỌN để số lượng còn chỗ; mẫu của kho giữ mã
-  // đơn đầy đủ như cũ (quản lý tự chọn, preview báo sẽ bị cắt chỗ nào).
-  const tpl = configured ? (template as string) : DEFAULT_TRANSFER_TEMPLATE;
-  const ma = configured ? orderCode || '' : compactOrderCode(orderCode);
-  return tpl
-    .replace(/\{SL\}/g, String(itemCount || 0))
-    .replace(/\{MA\}/g, ma)
-    .replace(/\{KHO\}/g, warehouseName || '')
-    .replace(/\{KH\}/g, warehouseCode || '');
+  const tpl = hasTransferTemplate(template) ? (template as string) : DEFAULT_TRANSFER_TEMPLATE;
+
+  // Mã đơn trong QR LUÔN là bản rút gọn, kể cả khi kho có mẫu riêng. Mã đơn đầy
+  // đủ (29 ký tự) chiếm trọn ô 23 ký tự và đẩy {SL} ra ngoài — đó chính là lỗi
+  // "mất số lượng". Bản đầy đủ vẫn nằm nguyên trong DB, nó mới là khoá đối soát.
+  const ma = compactOrderCode(orderCode);
+  const sl = String(itemCount || 0);
+
+  // DỒN NGÂN SÁCH KÝ TỰ. {SL} và {MA} là phần PHẢI sống sót; tên kho là phần
+  // có thể nhường chỗ. Đo trước bằng cách BỎ {KHO} hẳn ra (đếm trên chuỗi đã
+  // normalize, tức là đúng số ký tự thật sự đi vào ô), chia phần trống cho số
+  // lần xuất hiện, rồi mới cấp cho tên kho. Không có bước này thì tên kho dài
+  // ("Kho Dai Nam Thang 10 2026" = 26 ký tự) tự ăn hết ô và {SL} bị cắt mất.
+  const slots = (tpl.match(/\{KHO\}/g) || []).length;
+  const withoutKho = normalizeVietqrContent(
+    tpl
+      .replace(/\{SL\}/g, sl)
+      .replace(/\{MA\}/g, ma)
+      .replace(/\{KH\}/g, warehouseCode || '')
+      .replace(/\{KHO\}/g, '')
+  );
+  const room = Math.floor((VIETQR_CONTENT_MAX - withoutKho.length) / Math.max(slots, 1));
+  const kho = room > 0 ? normalizeVietqrContent(warehouseName || '').slice(0, room).trim() : '';
+
+  return normalizeVietqrContent(
+    tpl
+      .replace(/\{SL\}/g, sl)
+      .replace(/\{MA\}/g, ma)
+      .replace(/\{KH\}/g, warehouseCode || '')
+      .replace(/\{KHO\}/g, kho)
+  );
 }

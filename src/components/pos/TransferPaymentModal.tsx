@@ -13,15 +13,15 @@ const CAPTURE_MIME = 'image/jpeg';
 const CAPTURE_QUALITY = 0.8;
 
 /**
- * Ảnh mà máy này không xử lý được (thiếu createImageBitmap, sai định dạng).
+ * Ảnh mà máy này không xử lý được (thiếu createImageBitmap, sai địa dạng).
  * Thử chụp lại cũng không được nên thông báo phải khác lỗi lưu tạm thời.
  */
-class CaptureError extends Error {}
+export class CaptureError extends Error {}
 
 /** Trần chờ lưu ảnh: IndexedDB kẹt (iOS dồn bộ nhớ, ITP) thì modal phải tự thoát. */
-const CAPTURE_SAVE_TIMEOUT_MS = 20_000;
+export const CAPTURE_SAVE_TIMEOUT_MS = 20_000;
 
-const normalizeCapture = async (file: File): Promise<Blob> => {
+export const normalizeCapture = async (file: File): Promise<Blob> => {
   if (!file.type.startsWith('image/')) {
     throw new CaptureError('Máy không đọc được ảnh này. Chụp bằng Camera, hoặc đổi ảnh sang JPG rồi thử lại.');
   }
@@ -53,6 +53,22 @@ const normalizeCapture = async (file: File): Promise<Blob> => {
   }
 };
 
+/**
+ * Bộ thông tin chuyển khoản ĐÓNG BĂNG của đơn.
+ *
+ * Một nguồn duy nhất cho modal: số tài khoản, nội dung và ảnh QR đều đọc từ
+ * đây, nên chúng không thể mâu thuẫn nhau. `orderQuantity` là số lượng CHÍNH
+ * THỨC của đơn (server trả về lúc tạo) — {SL} trên QR dựng từ số này, không
+ * phải từ giỏ hàng.
+ */
+export interface TransferQrSnapshot {
+  dataUrl: string;
+  payload: string;
+  accountNo: string;
+  content: string;
+  orderQuantity?: number;
+}
+
 export interface TransferPaymentSession {
   mode: 'ONLINE' | 'OFFLINE';
   orderId?: string;
@@ -63,7 +79,7 @@ export interface TransferPaymentSession {
   paymentMethod: 'BANK_TRANSFER' | 'QR_CODE';
   createdAt: string;
   expiresAt?: string;
-  qrSnapshot: { dataUrl: string; payload: string; accountNo: string; content: string };
+  qrSnapshot: TransferQrSnapshot;
   paymentProof?: PaymentProofPhoto | null;
 }
 
@@ -83,20 +99,15 @@ export interface TransferPaymentModalProps {
   onUsePhoto: (photo: PaymentProofPhoto) => Promise<void>;
   onConfirm: () => Promise<void>;
   onCancel: () => Promise<void>;
-  /**
-   * Tạm đóng (nút X / ESC): KHÔNG huỷ đơn, KHÔNG xoá giỏ. Đơn vẫn giữ chỗ tới khi
-   * hết hạn, phiên được giữ trong cache để mở lại. Muốn giải phóng chỗ thì bấm
-   * "Khách chuyển sau" / "Hủy đơn" (onCancel).
-   */
-  onClose: () => void;
   errorMessage: string | null;
 }
 
 /**
- * Modal thanh toán chuyển khoản/QR: mã đơn, số tiền, QR, đếm ngược hạn và
- * bước chụp ảnh xác nhận. Camera là app Camera native của máy (file input
- * `capture`), không phải ô cửa sổ nhỏ trong web. Không có ảnh thì không
- * thể xác nhận đơn.
+ * Bước XÁC NHẬN của luồng chuyển khoản/QR: mã đơn, số tiền, tài khoản, nội
+ * dung và QR — tất cả đọc từ MỘT bộ thông tin đã đóng băng của đơn, nên không
+ * thể lệch nhau. Camera đã mở ngay từ nút ở quầy; ảnh chụp trước khi modal này
+ * hiện, nút ở đây chỉ để chụp lại. Đơn PENDING đang giữ ATP nên chỉ có hai lối
+ * thoát: Xác nhận hoặc Huỷ đơn (kể cả ESC và nút X).
  */
 export function TransferPaymentModal({
   isOpen,
@@ -108,7 +119,6 @@ export function TransferPaymentModal({
   onUsePhoto,
   onConfirm,
   onCancel,
-  onClose,
   errorMessage,
 }: TransferPaymentModalProps) {
   const [mounted, setMounted] = useState(false);
@@ -144,7 +154,9 @@ export function TransferPaymentModal({
     };
   }, [session?.expiresAt]);
 
-  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted && !busy, onClose);
+  // ESC / focus trap: KHÔNG có đường đóng tạm. Đơn PENDING đang giữ ATP nên
+  // chỉ có hai lối thoát hợp lệ — Xác nhận hoặc Huỷ đơn. ESC = Huỷ đơn.
+  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted && !busy, onCancel);
 
   const handlePickPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
@@ -207,11 +219,11 @@ export function TransferPaymentModal({
           </div>
           <button
             type="button"
-            aria-label="Tạm đóng, giữ đơn chờ"
-            title="Tạm đóng — đơn vẫn chờ, chưa huỷ"
-            onClick={onClose}
+            aria-label="Huỷ đơn, trả lại tồn kho"
+            title="Huỷ đơn — trả lại tồn kho đang giữ chỗ"
+            onClick={onCancel}
             disabled={busy}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
@@ -231,9 +243,19 @@ export function TransferPaymentModal({
                 (bankInfoLoading ? 'Đang tải...' : 'Chưa có tài khoản nhận')}
             </span>
           </div>
+          {typeof session.qrSnapshot.orderQuantity === 'number' ? (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Số lượng đơn</span>
+              <span className="font-mono font-bold text-slate-800">
+                {session.qrSnapshot.orderQuantity.toLocaleString('vi-VN')} cuốn
+              </span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between text-xs gap-2">
             <span className="text-slate-500 font-medium">Nội dung</span>
-            <span className="font-mono font-bold text-slate-800 break-all text-right">{session.qrSnapshot.content}</span>
+            <span className="font-mono font-bold text-slate-800 break-all text-right">
+              {session.qrSnapshot.content || 'Chưa có nội dung chuyển khoản'}
+            </span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium">Trạng thái</span>
@@ -283,6 +305,7 @@ export function TransferPaymentModal({
           )}
 
           {shownError ? <p className="text-[11px] text-rose-600 font-medium">{shownError}</p> : null}
+          <p className="text-[11px] font-bold text-slate-700">Chụp ảnh xác nhận</p>
           {session.paymentProof ? (
             <p className="text-[11px] text-emerald-700 font-medium">
               Đã lưu ảnh xác nhận lúc {new Date(session.paymentProof.capturedAt).toLocaleString('vi-VN')}.
@@ -299,6 +322,8 @@ export function TransferPaymentModal({
             className="sr-only"
             onChange={handlePickPhoto}
           />
+          {/* Camera đã mở ngay từ nút ở quầy (một chạm). Nút ở đây chỉ để chụp
+              lại khi ảnh bị mờ — không phải bước phải qua để tới camera. */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -306,7 +331,7 @@ export function TransferPaymentModal({
             className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <Camera className="w-4 h-4" />
-            {isSaving ? 'Đang lưu ảnh...' : 'Chụp ảnh xác nhận'}
+            {isSaving ? 'Đang lưu ảnh...' : session.paymentProof ? 'Chụp lại ảnh' : 'Chụp ảnh xác nhận'}
           </button>
           <button
             type="button"
@@ -316,27 +341,14 @@ export function TransferPaymentModal({
           >
             {busy ? 'Đang xử lý...' : 'Xác nhận đã nhận tiền'}
           </button>
-          <div className="flex gap-2">
-            {/* "Khách chuyển sau" = đơn VẪN CHỜ, chỉ gỡ modal (onClose). Huỷ đơn
-                thật sự là "Hủy đơn" (onCancel). Gộp hai nút về một hành động
-                sẽ khiến cashier huỷ nhầm đơn còn giữ tồn. */}
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition disabled:opacity-50"
-            >
-              Khách chuyển sau
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={busy}
-              className="flex-1 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition disabled:opacity-50"
-            >
-              Hủy đơn
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="w-full py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs transition disabled:opacity-50"
+          >
+            {busy ? 'Đang huỷ đơn...' : 'Huỷ đơn'}
+          </button>
         </div>
       </div>
     </div>,

@@ -391,9 +391,13 @@ assert.doesNotMatch(transferModal, /Chụp ảnh receipt/, 'Nhãn nửa Anh "Ch�
 assert.doesNotMatch(transferModal, /Chụp màn hình xác nhận/, 'Nhãn cũ "Chụp màn hình xác nhận" đã bị thay');
 assert.match(transferModal, /onUsePhoto: \(photo: PaymentProofPhoto\) => Promise<void>/, 'Modal nhận onUsePhoto dạng Promise');
 assert.doesNotMatch(transferModal, /onCapture/, 'Prop onCapture đã bị gỡ hoàn toàn');
-assert.match(transferModal, /Khách chuyển sau/, 'Modal có hành động Khách chuyển sau');
+// Chủ cửa đã cấm "khách chuyển sau": đơn PENDING giữ chỗ ATP nên không được để
+// tồn tại đường thoát nào chỉ gỡ modal mà không huỷ đơn.
+assert.doesNotMatch(transferModal, /Khách chuyển sau/, 'Đã gỡ hẳn hành động "Khách chuyển sau"');
 assert.match(transferModal, /onClick=\{onCancel\}/, 'Modal có hành động hủy tường minh');
-assert.match(transferModal, /onClick=\{onClose\}/, 'Modal có hành động đóng (khách chuyển sau)');
+assert.doesNotMatch(transferModal, /onClose/, 'Không còn prop onClose — mọi lối thoát đều phải huỷ đơn');
+// Nút X phải đi vào đúng đường huỷ, không phải đóng im lặng.
+expectMatch(transferModal, /onClick=\{onCancel\}[^>]*disabled=\{busy\}/, 'Nút X huỷ đơn và khoá khi đang bận');
 assert.match(transferModal, /onClick=\{onConfirm\}/, 'Modal gọi onConfirm');
 assert.match(transferModal, /qrSnapshot\.dataUrl/, 'Modal hiển thị QR từ snapshot');
 assert.match(transferModal, /useModalFocusTrap/, 'Modal dùng focus trap có sẵn');
@@ -869,7 +873,7 @@ expectMatch(
 );
 expectMatch(
   transferModal,
-  /useModalFocusTrap<HTMLDivElement>\(isOpen && mounted && !busy, onClose\)/,
+  /useModalFocusTrap<HTMLDivElement>\(isOpen && mounted && !busy, onCancel\)/,
   'Modal khoá focus khi đang bận — nút chụp khoá cùng nhịp với việc lưu ảnh'
 );
 

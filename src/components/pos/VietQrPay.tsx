@@ -16,6 +16,7 @@ export function VietQrPay({
   itemCount = 0,
   warehouseName = '',
   warehouseCode = '',
+  locked = false,
   onQr,
   onSource,
   onCachedAt,
@@ -26,6 +27,12 @@ export function VietQrPay({
   itemCount?: number;
   warehouseName?: string;
   warehouseCode?: string;
+  /**
+   * Đơn PENDING đã tạo ⇒ mọi thứ về tài khoản/nội dung là của CHÍNH đơn đó.
+   * Khoá ô tài khoản và ô nội dung, và ép `manualContent` về null để QR luôn
+   * dựng lại từ mẫu của kho với `itemCount` (số lượng thật của đơn).
+   */
+  locked?: boolean;
   onQr?: (snapshot: { dataUrl: string; payload: string; accountNo: string; content: string } | null) => void;
   /** Nguồn dữ liệu tài khoản: mạng, cache 24h, hoặc không có (chặn QR). */
   onSource?: (source: BankAccountSource) => void;
@@ -50,6 +57,9 @@ export function VietQrPay({
     lastOrderRef.current = initialContent;
     if (manualContent !== null) setManualContent(null);
   }
+  // Đã có đơn thì nội dung gõ tay không còn ý nghĩa: khách đã đọc nội dung
+  // trên QR cũ. Ép về null để mọi lần dựng lại đều ra đúng một giá trị.
+  const effectiveManual = locked ? null : manualContent;
 
   useEffect(() => {
     let alive = true;
@@ -85,10 +95,10 @@ export function VietQrPay({
         itemCount,
         warehouseName,
         warehouseCode,
-        manualContent,
+        manualContent: effectiveManual,
       })
     );
-  }, [template, initialContent, itemCount, warehouseName, warehouseCode, manualContent]);
+  }, [template, initialContent, itemCount, warehouseName, warehouseCode, effectiveManual, locked]);
 
   const [qrUrl, setQrUrl] = useState('');
   const [payload, setPayload] = useState('');
@@ -170,13 +180,16 @@ export function VietQrPay({
         onQrRef.current?.({ dataUrl: url, payload: p, accountNo: acc.accountNo, content });
       })
       .catch(() => { if (req !== reqRef.current) return; setQrUrl(''); onQrRef.current?.(null); });
-  }, [list, selectedId, amount, content]);
+    // `locked` nằm trong deps: lúc đơn vừa tạo, mã đơn và số lượng có thể KHÔNG
+    // đổi ⇒ không có dep nào khác đổi ⇒ không có lần phát snapshot nào cho cha,
+    // và modal sẽ mãi hiện "chưa có tài khoản nhận".
+  }, [list, selectedId, amount, content, locked]);
 
   if (amount <= 0) return null;
   const acc = list.find((b) => b.id === selectedId);
   return (
     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-      <select aria-label="Tài khoản nhận tiền" value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none">
+      <select aria-label="Tài khoản nhận tiền" value={selectedId} onChange={(e) => setSelectedId(e.target.value)} disabled={locked} className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none disabled:opacity-70 disabled:bg-slate-100">
         {list.map((b) => <option key={b.id} value={b.id}>{b.label} — {b.accountNo}</option>)}
       </select>
       <input
@@ -184,9 +197,15 @@ export function VietQrPay({
         type="text"
         value={content}
         onChange={(e) => { setManualContent(e.target.value); setContent(e.target.value); }}
+        disabled={locked}
         placeholder="Nội dung chuyển khoản (tự sửa)"
-        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
+        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none disabled:opacity-70 disabled:bg-slate-100"
       />
+      {locked ? (
+        <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+          Đã khoá theo đơn — muốn đổi tài khoản hoặc nội dung thì huỷ đơn và tạo lại.
+        </p>
+      ) : null}
       {templateLoaded && !hasTransferTemplate(template) ? (
         // KHÔNG chặn bán: đơn vẫn hợp lệ, QR vẫn quét được, và nhờ mẫu mặc định
         // thì SỐ LƯỢNG vẫn lên QR (mã đơn bị rút gọn). Chỉ còn thiếu phần tuỳ

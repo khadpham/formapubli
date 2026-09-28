@@ -2,6 +2,14 @@ function tlv(id: string, value: string): string {
   return id + value.length.toString().padStart(2, '0') + value;
 }
 
+/**
+ * VietQR chỉ mang tối đa 23 ký tự trong trường `add_info` (tag 62.08). Đây là
+ * giới hạn của CHUẨN, không phải lựa chọn của app — mọi thứ đi vào ô nội dung
+ * chuyển khoản đều phải chịu nó. `resolveTransferContent` cần biết con số này
+ * để dồn ngân sách ký tự, nên nó sống ở đây (chỗ thi hành) thay vì nhân bản.
+ */
+export const VIETQR_CONTENT_MAX = 23;
+
 export function crc16Ccitt(data: string): string {
   let crc = 0xffff;
   for (let i = 0; i < data.length; i++) {
@@ -20,7 +28,7 @@ export function normalizeVietqrContent(text: string): string {
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D')
     .replace(/[^a-zA-Z0-9 ]/g, '')
-    .slice(0, 23);
+    .slice(0, VIETQR_CONTENT_MAX);
 }
 
 export function generateVietQRPayload(params: {
