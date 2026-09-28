@@ -1936,6 +1936,17 @@ export function PosCheckoutTerminal({
       setCompletedOrder({
         ...resData.data,
         orderCode: session.orderCode,
+        // API CONFIRM chỉ trả { orderId, orderCode, status } — KHÔNG có tiền, số
+        // lượng, kho. Phiếu thu cần chúng, và `completedOrder.finalAmount
+        // .toLocaleString()` là deref không chống undefined ⇒ chết render. Lấy
+        // từ PHIÊN ĐÃ ĐÓNG BĂNG (đúng bằng số lúc tạo đơn) + số của giỏ.
+        finalAmount: session.amount,
+        totalQuantity: session.qrSnapshot.orderQuantity ?? totalCopies,
+        subtotal,
+        discountAmount: isGift ? subtotal : discountAmount,
+        warehouseId: session.warehouseId,
+        fiscalScope,
+        customerName,
         items: [...cart],
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
