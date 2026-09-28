@@ -51,7 +51,13 @@ export function VietQrPay({
   useEffect(() => {
     let alive = true;
     if (!warehouseId) { setTemplate(null); return; }
-    fetch(`/api/warehouses?all=true`, { cache: 'no-store' })
+    // KHÔNG dùng `?all=true`: cờ đó là quyền ưu tiên (xem toàn bộ kho + tồn
+    // thật), còn thao tác duy nhất ở đây là lấy mẫu nội dung của đúng kho đang
+    // bán. `?all=true` bị chặn theo role nên thu ngân còn không lấy được mẫu
+    // của kho mình đang bán. Danh sách kho bán trên POS luôn là
+    // listSellable() ⇒ kho đang chọn chắc chắn có trong response này, và
+    // `qrTransferTemplate` được trả cho MỌI role.
+    fetch(`/api/warehouses`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
         if (!alive) return;
@@ -65,8 +71,9 @@ export function VietQrPay({
   // Nguồn DUY NHẤT ghi nội dung chuyển khoản. Trước đây có thêm effect
   // `setContent(initialContent)` chạy kèm theo — nó đè ngược mẫu tuỳ biến mỗi
   // khi mã đơn đổi, nên QR ra mã đơn dài thay vì nội dung đã cấu hình.
+  // KHÔNG return sớm khi manualContent: `resolveTransferContent` đã tự quyết
+  // định "gõ tay thì giữ bản của họ" — một nơi quyết luật, không hai.
   useEffect(() => {
-    if (manualContent !== null) return;
     setContent(
       resolveTransferContent({
         template,

@@ -89,7 +89,10 @@ export function BatchTransferModal({
   const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
-  const [addNotice, setAddNotice] = useState<string | null>(null);
+  // Thông báo sau thao tác thêm dòng. `kind` quyết định màu + icon: 'success' là
+  // "Đã thêm: N đầu sách" (thắng lợi), còn 'warning' là kết quả RỖNG ("kho nguồn
+  // không còn sách nào có tồn") — không được vẽ bằng hộp xanh như thắng lợi.
+  const [addNotice, setAddNotice] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển — không bao giờ gọi
@@ -134,6 +137,16 @@ export function BatchTransferModal({
     setValidationSuccess(null);
   };
 
+  // MỘT nơi duy nhất cho mọi thay đổi bảng chuyển: huỷ validate, xoá lỗi cũ và
+  // bỏ thông báo "Đã thêm: N đầu sách" — sau khi người dùng sửa/xoá dòng thì con
+  // số đó không còn đúng nữa. Cảnh báo "kho nguồn rỗng" vẫn được giữ vì nó nói
+  // về kho nguồn, không nói về bảng chuyển.
+  const invalidateCart = () => {
+    invalidateValidation();
+    setErrorMessage(null);
+    setAddNotice((prev) => (prev?.kind === 'success' ? null : prev));
+  };
+
   // Đồng bộ kho đích khi có initialToWarehouseId (#10-CTA)
   useEffect(() => {
     if (initialToWarehouseId) {
@@ -143,6 +156,7 @@ export function BatchTransferModal({
         if (alt) setFromWarehouseId(alt.id);
       }
       invalidateValidation();
+      setAddNotice(null); // kho nguồn đổi theo ⇒ thông báo về kho cũ hết đúng
     }
   }, [initialToWarehouseId, warehouses]);
 
@@ -302,8 +316,7 @@ export function BatchTransferModal({
         },
       ];
     });
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   const handleAddLine = (book: BookItem) => {
@@ -370,24 +383,21 @@ export function BatchTransferModal({
       next.delete(editionId);
       return next;
     });
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   const handleRemoveSelected = () => {
     if (selectedIds.size === 0) return;
     setLines((prev) => prev.filter((l) => !selectedIds.has(l.editionId)));
     setSelectedIds(new Set());
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   const handleRemoveAll = () => {
     setLines([]);
     setSelectedIds(new Set());
     setConfirmDeleteAll(false);
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   const handleQuantityChange = (editionId: string, qty: number) => {
@@ -395,8 +405,7 @@ export function BatchTransferModal({
     setLines((prev) =>
       prev.map((l) => (l.editionId === editionId ? { ...l, quantity: validQty, staleWarning: undefined } : l))
     );
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   const handleApplyBulkQuantity = () => {
@@ -421,8 +430,7 @@ export function BatchTransferModal({
       )
     );
     setBulkQtyInput('');
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   // Thêm nhanh toàn bộ sách có tồn > 0 tại kho nguồn
@@ -443,8 +451,7 @@ export function BatchTransferModal({
       }
     }
     setLines((prev) => [...prev, ...toAdd]);
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
   };
 
   const handleAddAllSourceStock = () => {
@@ -464,12 +471,14 @@ export function BatchTransferModal({
       }
     }
     setLines((prev) => [...prev, ...toAdd]);
-    invalidateValidation();
-    setErrorMessage(null);
+    invalidateCart();
     setAddNotice(
       toAdd.length === 0
-        ? 'Kho nguồn không còn sách nào có tồn để lấy.'
-        : `Đã thêm: ${toAdd.length} đầu sách, ${toAdd.reduce((acc, l) => acc + l.quantity, 0)} cuốn`
+        ? { kind: 'warning', text: 'Kho nguồn không còn sách nào có tồn để lấy.' }
+        : {
+            kind: 'success',
+            text: `Đã thêm: ${toAdd.length} đầu sách, ${toAdd.reduce((acc, l) => acc + l.quantity, 0)} cuốn`,
+          }
     );
   };
 
@@ -590,7 +599,7 @@ export function BatchTransferModal({
         return next;
       });
     }
-    invalidateValidation();
+    invalidateCart(); // hạ SL / bỏ dòng cũng là thay đổi bảng chuyển
     if (zeroCount > 0) {
       setErrorMessage(`Đã hạ số lượng về tồn tối đa và tự động loại bỏ ${zeroCount} đầu sách có tồn khả dụng bằng 0.`);
     } else {
@@ -765,6 +774,9 @@ export function BatchTransferModal({
                       setFromWarehouseId(e.target.value);
                       invalidateValidation();
                       setErrorMessage(null);
+                      // Cả 2 loại thông báo đều nói về KHO NGUỒN cũ → đổi kho là
+                      // cả hai đều hết đúng.
+                      setAddNotice(null);
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
@@ -783,6 +795,7 @@ export function BatchTransferModal({
                       setToWarehouseId(e.target.value);
                       invalidateValidation();
                       setErrorMessage(null);
+                      setAddNotice(null); // xem giải thích ở select kho nguồn
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
@@ -834,10 +847,17 @@ export function BatchTransferModal({
                 </div>
 
                 {addNotice && (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{addNotice}</span>
-                  </div>
+                  addNotice.kind === 'success' ? (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{addNotice.text}</span>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{addNotice.text}</span>
+                    </div>
+                  )
                 )}
 
                 <div className="relative">

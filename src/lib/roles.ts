@@ -63,8 +63,12 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
   },
 };
 
+// Vai trò lạ (cookie cũ, session tự chế, tên vai trò đã đổi) không có trong
+// registry thì KHÔNG được mở tab nào. Trả '' (không phải 'dashboard') vì ''
+// không nằm trong allowedNavItems của bất kỳ vai trò nào: mọi kiểm tra
+// includes('') đều false, nên caller buộc phải rơi về nhánh "không có quyền".
 export function getDefaultTabForRole(role: UserRole): string {
-  return USER_ROLES[role].allowedNavItems[0] || 'dashboard';
+  return USER_ROLES[role]?.allowedNavItems[0] || '';
 }
 
 export function getSettingsAccess(role?: UserRole): SettingsAccess {

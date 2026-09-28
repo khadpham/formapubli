@@ -197,8 +197,14 @@ expect(
   /existingIds\.has\(b\.id\)/.test(takeAllBlock),
   'BỎ QUA dòng đã có trong bảng — không đụng dòng người dùng tự nhập/sửa'
 );
+// Handler gọi invalidateCart() (wrapper gộp) thay vì gọi thẳng
+// invalidateValidation() + setErrorMessage(null). Kiểm cả hai tầng để wrapper
+// không thể nuốt mất hành vi mà assertion này bảo vệ.
+const cartWrapperBlock = bodyOf('const invalidateCart');
 expect(
-  /invalidateValidation\(\)/.test(takeAllBlock) && /setErrorMessage\(null\)/.test(takeAllBlock),
+  /invalidateCart\(\)/.test(takeAllBlock) &&
+    /invalidateValidation\(\)/.test(cartWrapperBlock) &&
+    /setErrorMessage\(null\)/.test(cartWrapperBlock),
   'Lấy tồn thật vô hiệu hoá kết quả kiểm tra tồn cũ + xoá lỗi cũ'
 );
 expect(/Đã thêm: /.test(src), 'Báo kết quả dạng "Đã thêm: N đầu sách, M cuốn"');

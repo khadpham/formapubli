@@ -221,9 +221,17 @@ expect(
   /staleWarning/.test(src) && /staleWarning: undefined/.test(src),
   'Dán giữ nguyên cơ chế staleWarning (vẫn phải qua bước kiểm tra tồn)'
 );
+// addBookLine gọi invalidateCart() (wrapper gộp mọi thay đổi bảng chuyển), nên
+// phải kiểm tra CẢ hai tầng: wrapper có tồn tại và wrapper thật sự gọi
+// invalidateValidation() — nếu chỉ grep `invalidateValidation()` trong addBookLine
+// thì hành vi đã mất cũng xanh, tức là assertion yếu hơn hành vi nó bảo vệ.
 expect(
-  /invalidateValidation\(\)/.test(blockOf('const addBookLine')),
-  'Thêm dòng từ dán vẫn vô hiệu hoá kết quả kiểm tra tồn cũ'
+  /invalidateCart\(\)/.test(blockOf('const addBookLine')),
+  'Thêm dòng từ dán đi qua invalidateCart()'
+);
+expect(
+  /invalidateValidation\(\)/.test(blockOf('const invalidateCart')),
+  'invalidateCart() vẫn vô hiệu hoá kết quả kiểm tra tồn cũ'
 );
 expect(
   /prev\.find\(\(l\) => l\.editionId === book\.id\)/.test(addBookLineBlock) &&

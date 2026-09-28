@@ -21,6 +21,10 @@ export async function GET(req: NextRequest) {
       'ROLE_MANAGER',
       'ROLE_CASHIER',
       'ROLE_WAREHOUSE',
+      // roles.ts:62 cấp tab `inventory` cho ROLE_TAX ⇒ không có nó thì kế toán
+      // thuế bấm tab kho luôn 403. KHÔNG thêm ROLE_TAX vào `isPrivileged` bên
+      // dưới: kế toán thuế chỉ xem danh sách kho bán, không xem tồn thật.
+      'ROLE_TAX',
     ] as UserRole[]);
 
     const { searchParams } = new URL(req.url);

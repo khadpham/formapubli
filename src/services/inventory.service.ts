@@ -701,7 +701,12 @@ export class InventoryService {
       .innerJoin(works, eq(editions.workId, works.id));
 
     // 2. Lấy toàn bộ số dư tồn kho
-    const allBalances = await db.select().from(stockBalances);
+    // CHỈ bucket condition = 'NEW': transferBatch chỉ trừ/cộng NEW, đếm cả
+    // hàng hỏng/cách ly làm tổng ma trận lệch với tồn chuyển được thật.
+    const allBalances = await db
+      .select()
+      .from(stockBalances)
+      .where(eq(stockBalances.condition, 'NEW'));
 
     // Map số dư theo format: Map<editionId, Map<warehouseCode, quantity>>
     // Lấy thông tin kho để map warehouseId sang code

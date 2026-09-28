@@ -1359,9 +1359,15 @@ export function PosCheckoutTerminal({
     : isDigitalCheckout
       ? 'Chụp ảnh xác nhận'
       : 'THANH TOÁN & KHẤU TRỪ KHO';
-  const mobileCheckoutButtonLabel = isDigitalCheckout
-    ? 'Chụp ảnh xác nhận'
-    : `Xác nhận Thanh toán (${finalAmount.toLocaleString('vi-VN')} đ)`;
+  const checkoutSubmittingLabel = isDigitalCheckout
+    ? 'Đang tạo đơn chờ xác nhận...'
+    : 'Đang khấu trừ kho & tạo đơn...';
+  const mobileCheckoutButtonLabel = isGift
+    ? checkoutButtonLabel
+    : isDigitalCheckout
+      ? 'Chụp ảnh xác nhận'
+      : `Xác nhận Thanh toán (${finalAmount.toLocaleString('vi-VN')} đ)`;
+  const mobileCheckoutSubmittingLabel = isGift ? checkoutSubmittingLabel : 'Đang xử lý tạo đơn...';
   const approvalPricedCart = useMemo(
     () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
     [cart, discountRate, pendingDiscountRate]
@@ -2713,7 +2719,7 @@ export function PosCheckoutTerminal({
 
             {/* Error Message */}
             {errorMessage && (
-              <div id="pos-error-message" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+              <div id="pos-error-message" className={`p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 ${isWideCheckout ? '' : 'hidden'}`}>
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
@@ -3030,7 +3036,7 @@ export function PosCheckoutTerminal({
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
-                <span>{isDigitalCheckout ? 'Đang tạo đơn chờ xác nhận...' : 'Đang khấu trừ kho & tạo đơn...'}</span>
+                <span>{checkoutSubmittingLabel}</span>
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
@@ -3696,7 +3702,7 @@ export function PosCheckoutTerminal({
             {/* Sheet Body (scrollable) */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {errorMessage && (
-                <div id="mobile-pos-error-message" role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                <div id="mobile-pos-error-message" role="alert" className={`p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 ${isWideCheckout ? 'hidden' : ''}`}>
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{errorMessage}</span>
                 </div>
@@ -3771,8 +3777,8 @@ export function PosCheckoutTerminal({
                   </div>
                 )}
                 <div className="flex justify-between pt-1 border-t border-slate-200 text-sm font-extrabold text-slate-900">
-                  <span>Khách thanh toán:</span>
-                  <span className="font-mono text-emerald-600 font-black">{finalAmount.toLocaleString('vi-VN')} đ</span>
+                  <span>{isGift ? 'THỰC THU (TẶNG 100%):' : 'Khách thanh toán:'}</span>
+                  <span className="font-mono text-emerald-600 font-black">{(isGift ? 0 : finalAmount).toLocaleString('vi-VN')} đ</span>
                 </div>
               </div>
             </div>
@@ -3784,10 +3790,10 @@ export function PosCheckoutTerminal({
                 id="btn-confirm-mobile-checkout"
                 disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
                 onClick={handleCheckout}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-extrabold shadow-lg shadow-emerald-950/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full py-3 rounded-xl text-white text-xs font-extrabold shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 shadow-emerald-950/20'}`}
               >
                 {isSubmitting ? (
-                  <span>Đang xử lý tạo đơn...</span>
+                  <span>{mobileCheckoutSubmittingLabel}</span>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
