@@ -2,10 +2,39 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Landmark, Plus, Pencil, Trash2, Power, PowerOff } from 'lucide-react';
+import { X, Landmark, Plus, Pencil, Trash2, Power, PowerOff, AlertTriangle } from 'lucide-react';
+import { hasTransferTemplate, resolveTransferContent, DEFAULT_TRANSFER_TEMPLATE, VIETQR_CONTENT_MAX } from '@/lib/transfer-content';
+import { normalizeVietqrContent } from '@/lib/vietqr';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
 type Warehouse = { id: string; code: string; name: string; address?: string | null; isActive?: boolean; isSellableOnPos?: boolean; warehouseType?: string; stockQuantity?: number; qrTransferTemplate?: string | null; defaultBankAccountId?: string | null };
+
+/** Mã đơn giả lập đúng shape thật (29 ký tự). `resolveTransferContent` tự rút gọn
+ *  nó khi dùng mẫu mặc định, nên preview vẫn phản ánh đúng thứ lên QR. */
+const PREVIEW_ORDER_CODE = 'ORD-20260928-A1B2C3D4E5F60718293A4B5C';
+
+/**
+ * Xem trước nội dung QR cho kho: `raw` là chuỗi sau khi nội suy biến, `norm` là
+ * thứ ngân hàng THỰC SỰ nhận (VietQR chỉ mang 23 ký tự, vietqr.ts). Không có
+ * `norm` này thì quản lý tưởng phần bị cắt vẫn lên QR — đó là lý do `{SL}` hay
+ * "biến mất" dù mẫu đã lưu đúng.
+ *
+ * Ô trống KHÔNG phải lỗi: `resolveTransferContent` rơi về mẫu mặc định (có số
+ * lượng + mã đơn rút gọn), nên preview vẫn chạy và gắn cờ nguồn mẫu.
+ */
+function previewTransfer(template: string, w: Warehouse) {
+  const usingDefault = !hasTransferTemplate(template);
+  const raw = resolveTransferContent({
+    template,
+    orderCode: PREVIEW_ORDER_CODE,
+    itemCount: 3,
+    warehouseName: w.name,
+    warehouseCode: w.code,
+    manualContent: null,
+  });
+  const norm = normalizeVietqrContent(raw);
+  return { raw, norm, usingDefault, cut: raw.replace(/[^a-zA-Z0-9 ]/g, '').length > norm.length };
+}
 
 export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -61,7 +90,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   };
 
   /** #6: sửa tên/địa chỉ kho, bật/tắt bán trên POS. */
-  const patchWarehouse = async (id: string, body: Record<string, unknown>, confirmMsg?: string) => {
+  const patchWarehouse = async (id: string, body: Record<string, unknown>, confirmMsg?: string, savedMsg?: string) => {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setSavingId(id);
     setError(null);
@@ -74,7 +103,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
       });
       const j = await res.json();
       if (!res.ok || !j.success) throw new Error(j.error || 'Cập nhật kho thất bại.');
-      setNotice(j.message || 'Đã cập nhật kho.');
+      setNotice(savedMsg || j.message || 'Đã cập nhật kho.');
       setEditingId(null);
       await reload();
     } catch (e: any) {
@@ -162,24 +191,57 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                     <input
                       value={editTemplate}
                       onChange={(e) => setEditTemplate(e.target.value)}
-                      placeholder="Mẫu nội dung chuyển khoản (bỏ trống = dùng mã đơn)"
-                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Mẫu nội dung chuyển khoản (bỏ trống = dùng mẫu mặc định)"
+                      aria-label="Mẫu nội dung chuyển khoản"
+                      className={`w-full px-2 py-1.5 bg-white rounded-lg text-xs outline-none focus:ring-2 ${
+                        editTemplate
+                          ? 'border border-slate-200 focus:ring-indigo-500'
+                          : 'border-2 border-dashed border-amber-400 focus:ring-amber-500'
+                      }`}
                     />
                     <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
                       Mẫu riêng cho kho này. Biến dùng được: <b>{'{SL}'}</b> số lượng · <b>{'{MA}'}</b> mã đơn ·{' '}
-                      <b>{'{KHO}'}</b> tên kho · <b>{'{KH}'}</b> mã kho. Ví dụ: <code className="bg-slate-100 px-1 rounded">{`DH{SL} {KHO}`}</code>
+                      <b>{'{KHO}'}</b> tên kho · <b>{'{KH}'}</b> mã kho.
                     </p>
-                    {editTemplate && (
-                      <p className="text-[10px] text-emerald-700 mt-1">
-                        Xem trước (đơn 3 sản phẩm, mã DH00123):{' '}
-                        <b>{editTemplate.replace(/\{SL\}/g, '3').replace(/\{MA\}/g, 'DH00123').replace(/\{KHO\}/g, w.name).replace(/\{KH\}/g, w.code)}</b>
-                      </p>
-                    )}
+                    {(() => {
+                      const p = previewTransfer(editTemplate, w);
+                      return (
+                        <>
+                          <p className="text-[10px] text-emerald-700 mt-1 leading-relaxed">
+                            {p.usingDefault ? 'Mặc định' : 'Mẫu của kho'} (đơn 3 sản phẩm): <b>{p.raw}</b>
+                          </p>
+                          <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                            Ngân hàng nhận ({VIETQR_CONTENT_MAX} ký tự): <b className="font-mono">{p.norm}</b>
+                            <span className="ml-1">({p.norm.length}/{VIETQR_CONTENT_MAX})</span>
+                          </p>
+                          {p.usingDefault ? (
+                            <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                              Đang trống nên dùng mẫu mặc định <b>{DEFAULT_TRANSFER_TEMPLATE.replace('{SL}', 'số lượng').replace('{MA}', 'mã đơn')}</b> — vẫn có số lượng. Gõ vào đây để tuỳ biến.
+                            </p>
+                          ) : null}
+                          {p.cut ? (
+                            <p className="text-[10px] text-amber-700 font-semibold mt-0.5 flex items-start gap-1 leading-relaxed">
+                              <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
+                              Bị cắt — đặt {`{SL}`} trước phần dài, hoặc rút gọn mẫu. Phần bị cắt KHÔNG lên QR.
+                            </p>
+                          ) : null}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="flex gap-1.5">
                     <button
-                      onClick={() => patchWarehouse(w.id, { name: editName, address: editAddress, qrTransferTemplate: editTemplate })}
+                      onClick={() => patchWarehouse(
+                        w.id,
+                        { name: editName, address: editAddress, qrTransferTemplate: editTemplate },
+                        undefined,
+                        // Trạng thái sau khi bấm phải nói rõ đã lưu CÁI GÌ.
+                        hasTransferTemplate(editTemplate)
+                          ? `Đã lưu mẫu: ${previewTransfer(editTemplate, w).norm}`
+                          : `Đã lưu: để trống — dùng mẫu mặc định ${previewTransfer(editTemplate, w).norm}`
+                      )}
                       disabled={savingId === w.id}
+                      aria-label="Lưu thông tin kho"
                       className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-[11px] disabled:opacity-50"
                     >
                       Lưu
@@ -211,6 +273,21 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                       <span className={`text-[10px] font-bold ${(w.stockQuantity || 0) > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
                         Tồn: {(w.stockQuantity || 0).toLocaleString('vi-VN')} cuốn
                       </span>
+                      {/* Trạng thái mẫu phải thấy được NGAY ở danh sách, không phải
+                          mở sửa mới thấy. Ô trống KHÔNG phải lỗi: kho đó dùng mẫu
+                          mặc định (có số lượng) — chỉ chưa tuỳ biến. */}
+                      {hasTransferTemplate(w.qrTransferTemplate) ? (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                          Mẫu QR: {normalizeVietqrContent(previewTransfer(w.qrTransferTemplate || '', w).raw)}
+                        </span>
+                      ) : (
+                        <span
+                          title={`Chưa cấu hình mẫu nội dung chuyển khoản — đang dùng mẫu mặc định: ${normalizeVietqrContent(previewTransfer('', w).raw)}. Bấm bút chî để tuỳ biến.`}
+                          className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-0.5"
+                        >
+                          <AlertTriangle className="w-2.5 h-2.5" /> Mặc định QR
+                        </span>
+                      )}
                     </div>
                   </div>
                   <button

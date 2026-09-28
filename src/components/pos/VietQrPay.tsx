@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { generateVietQRPayload } from '@/lib/vietqr';
 import { readBankAccountsCache, writeBankAccountsCache } from '@/lib/bank-account-cache';
-import { resolveTransferContent } from '@/lib/transfer-content';
+import { resolveTransferContent, hasTransferTemplate, DEFAULT_TRANSFER_TEMPLATE } from '@/lib/transfer-content';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
 export type BankAccountSource = 'NETWORK' | 'CACHE' | 'NONE';
@@ -38,6 +38,9 @@ export function VietQrPay({
   // Mẫu nội dung chuyển khoản RIÊNG THEO KHO (quản lý sửa ở Quản Lý Kho).
   // Biến hỗ trợ: {SL} tổng số lượng, {MA} mã đơn, {KHO} tên kho, {KH} mã kho.
   const [template, setTemplate] = useState<string | null>(null);
+  // Chỉ hiện nhắc "chưa có mẫu" SAU khi đã hỏi xong server, tránh nháy nhắc
+  // giả trong lúc fetch — thu ngân không bị dọn dẹp bằng cảnh báo giả.
+  const [templateLoaded, setTemplateLoaded] = useState(false);
   // Người dùng đã tự sửa nội dung → giữ bản của họ, không đè lại bằng template.
   const [manualContent, setManualContent] = useState<string | null>(null);
   // Gõ tay chỉ áp cho ĐƠN HIỆN TẠI. Đổi mã đơn là phải quay về mẫu, nếu không
@@ -50,7 +53,7 @@ export function VietQrPay({
 
   useEffect(() => {
     let alive = true;
-    if (!warehouseId) { setTemplate(null); return; }
+    if (!warehouseId) { setTemplate(null); setTemplateLoaded(true); return; }
     // KHÔNG dùng `?all=true` (là cờ quyền ưu tiên, kèm tồn thật) và cũng KHÔNG
     // dựa vào `/api/warehouses` không tham số: danh sách đó là listSellable(),
     // còn kho POS có thể là kho được GÁN mà không bán được ⇒ .find() trượt ⇒
@@ -63,8 +66,9 @@ export function VietQrPay({
         if (!alive) return;
         const w = (j?.data || []).find((x: any) => x.id === warehouseId);
         setTemplate(w?.qrTransferTemplate || null);
+        if (alive) setTemplateLoaded(true);
       })
-      .catch(() => { if (alive) setTemplate(null); });
+      .catch(() => { if (alive) { setTemplate(null); setTemplateLoaded(true); } });
     return () => { alive = false; };
   }, [warehouseId]);
 
@@ -183,6 +187,14 @@ export function VietQrPay({
         placeholder="Nội dung chuyển khoản (tự sửa)"
         className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
       />
+      {templateLoaded && !hasTransferTemplate(template) ? (
+        // KHÔNG chặn bán: đơn vẫn hợp lệ, QR vẫn quét được, và nhờ mẫu mặc định
+        // thì SỐ LƯỢNG vẫn lên QR (mã đơn bị rút gọn). Chỉ còn thiếu phần tuỳ
+        // biến của kho ⇒ nhắc, không cảnh báo.
+        <p className="text-[10px] text-amber-600 font-medium leading-relaxed">
+          Kho chưa có mẫu riêng — đang dùng mẫu mặc định: {DEFAULT_TRANSFER_TEMPLATE.replace('{SL}', 'SL').replace('{MA}', 'mã đơn')}. Sửa ở Quản Lý Kho.
+        </p>
+      ) : null}
       {source === 'CACHE' && cachedAt ? (
         <p className="text-[10px] text-amber-600 font-medium">Dữ liệu cache {new Date(cachedAt).toLocaleString('vi-VN')}</p>
       ) : null}
