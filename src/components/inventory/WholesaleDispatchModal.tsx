@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
+import { stockOfWarehouse } from '@/lib/warehouse-stock';
 import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint';
 
 interface BookItem {
@@ -29,7 +30,7 @@ interface BookItem {
   stockAuCo: number;
   stockQuynhMai: number;
   stockDuPhong: number;
-  totalStock: number;
+  stockByWarehouse?: Record<string, number>;
 }
 
 interface WarehouseItem {
@@ -124,20 +125,12 @@ export function WholesaleDispatchModal({
     }
   };
 
-  // Tính tồn kho của sách tại kho nguồn được chọn
-  const getBookStockInWarehouse = (book: BookItem, whId: string) => {
-    if (whId === 'wh-au-co') return book.stockAuCo;
-    if (whId === 'wh-quynh-mai') return book.stockQuynhMai;
-    if (whId === 'wh-du-phong') return book.stockDuPhong;
-    return book.totalStock || 0;
-  };
-
   // Sách khả dụng sau lọc
   const filteredAvailableBooks = useMemo(() => {
     const q = searchBookTerm.trim();
     return books
       .filter((b) => {
-        const stock = getBookStockInWarehouse(b, fromWarehouseId);
+        const stock = stockOfWarehouse(b, fromWarehouseId);
         if (stock <= 0) return false;
         if (!q) return true;
         return matchesVietnameseSearch(q, `${b.title} ${b.code} ${b.isbn}`);
@@ -148,7 +141,7 @@ export function WholesaleDispatchModal({
   // Thêm sách vào danh sách xuất
   const handleAddItem = (book: BookItem) => {
     setErrorMessage(null);
-    const stock = getBookStockInWarehouse(book, fromWarehouseId);
+    const stock = stockOfWarehouse(book, fromWarehouseId);
     if (stock <= 0) {
       setErrorMessage(`Ấn phẩm [${book.code}] hiện không còn tồn tại kho nguồn đã chọn!`);
       return;
@@ -464,7 +457,7 @@ export function WholesaleDispatchModal({
                     <p className="text-xs text-slate-400 p-2 text-center">Không tìm thấy sách có tồn khả dụng.</p>
                   ) : (
                     filteredAvailableBooks.map((b) => {
-                      const stock = getBookStockInWarehouse(b, fromWarehouseId);
+                      const stock = stockOfWarehouse(b, fromWarehouseId);
                       return (
                         <div
                           key={b.id}

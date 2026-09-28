@@ -1,7 +1,7 @@
 import { InventoryService } from '../src/services/inventory.service';
 import { toActorContext } from '../src/services/actor-context';
 import { setDirectTransferAllowlist, resetDirectTransferAllowlist } from '../src/services/direct-transfer-policy';
-import { db, editions, warehouses, inventoryLedger } from '../src/db';
+import { db, editions, warehouses, inventoryLedger, stockBalances } from '../src/db';
 import { eq } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
 
@@ -146,8 +146,64 @@ async function runInventoryTests() {
     );
   });
 
+  // 8. Test 7: Ma trận tồn kho CHỈ đếm bucket condition = 'NEW'.
+  // 68/68 xanh KHÔNG nói được gì về thay đổi này: mọi suite cũ chỉ ghi
+  // condition: 'NEW', nên có lọc hay không thì kết quả y hệt. Test này ghim
+  // bucket KHÁC (cách ly) cho cùng một ấn bản rồi đòi ma trận phải y nguyên —
+  // bỏ điều kiện `eq(stockBalances.condition, 'NEW')` là test này đỏ.
+  console.log('\n--- TEST 7: Ma trận bỏ qua tồn KHÔNG phải NEW (cách ly / hỏng) ---');
+  const matrixBefore = (await InventoryService.getStockMatrix()).find(
+    (item) => item.id === book.id
+  )!;
+  const QUARANTINE_ROW_ID = `test-quarantine-${book.id}`;
+  await db.delete(stockBalances).where(eq(stockBalances.id, QUARANTINE_ROW_ID));
+  await db.insert(stockBalances).values({
+    id: QUARANTINE_ROW_ID,
+    editionId: book.id,
+    warehouseId: whAuCo.id,
+    condition: 'QUARANTINE',
+    physicalQuantity: 77,
+  });
+  const cols = ['stockAuCo', 'stockQuynhMai', 'stockDuPhong', 'totalStock'] as const;
+  try {
+    const quarantined = await InventoryService.getBalance(book.id, whAuCo.id, 'QUARANTINE');
+    console.log(`🧪 Đã cấm [H01] tại Âu Cơ: 77 cuốn QUARANTINE (đọc lại: ${quarantined} cuốn)`);
+    if (quarantined !== 77) {
+      throw new Error('❌ Không ghi được bucket QUARANTINE — test vô nghĩa!');
+    }
+
+    const matrixAfter = (await InventoryService.getStockMatrix()).find(
+      (item) => item.id === book.id
+    )!;
+    const diff: string[] = cols.filter((c) => matrixAfter[c] !== matrixBefore[c]);
+    if (
+      JSON.stringify(matrixAfter.stockByWarehouse) !== JSON.stringify(matrixBefore.stockByWarehouse)
+    ) {
+      diff.push('stockByWarehouse');
+    }
+    console.log(`📊 Trước: ${cols.map((c) => `${c}=${matrixBefore[c]}`).join(' · ')}`);
+    console.log(`📊 Sau : ${cols.map((c) => `${c}=${matrixAfter[c]}`).join(' · ')}`);
+    if (diff.length > 0) {
+      throw new Error(
+        `❌ MA TRẬN ĐÃ CỘNG NHẦM TỒN CÁCH LY! Khác ở: ${diff.join(', ')}. ` +
+          'getStockMatrix phải lọc condition = NEW (transferBatch chỉ đụng NEW).'
+      );
+    }
+    console.log('🎉 Tồn QUARANTINE bị loại khỏi ma trận — tổng ma trận khớp tổng tồn chuyển được.');
+  } finally {
+    await db.delete(stockBalances).where(eq(stockBalances.id, QUARANTINE_ROW_ID));
+    const matrixRestored = (await InventoryService.getStockMatrix()).find(
+      (item) => item.id === book.id
+    )!;
+    const left: string[] = cols.filter((c) => matrixRestored[c] !== matrixBefore[c]);
+    if (left.length > 0) {
+      throw new Error(`❌ Dọn dẹp thất bại, ma trận còn lệch ở: ${left.join(', ')}`);
+    }
+    console.log('🧹 Đã xoá bucket QUARANTINE, ma trận về đúng trạng thái ban đầu.');
+  }
+
   console.log('\n===============================================');
-  console.log('🎉 TẤT CẢ 6 BÀI KIỂM THỬ ĐÃ ĐẠT KẾT QUẢ XUẤT SẮC 100%!');
+  console.log('🎉 TẤT CẢ 7 BÀI KIỂM THỬ ĐÃ ĐẠT KẾT QUẢ XUẤT SẮC 100%!');
   console.log('===============================================\n');
   } finally {
     resetDirectTransferAllowlist();

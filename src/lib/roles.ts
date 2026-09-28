@@ -67,8 +67,16 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
 // registry thì KHÔNG được mở tab nào. Trả '' (không phải 'dashboard') vì ''
 // không nằm trong allowedNavItems của bất kỳ vai trò nào: mọi kiểm tra
 // includes('') đều false, nên caller buộc phải rơi về nhánh "không có quyền".
+//
+// `?.` KHÔNG đủ: nó chỉ chặn key thiếu, không chặn key KẾ THỪA từ prototype.
+// `role='toString'` hay `'constructor'` (chuỗi tấn công từ cookie/session) là
+// key có thật trên Object.prototype nên `USER_ROLES[role]` trả về một hàm/ký
+// hiệu ứng thay vì undefined → `.allowedNavItems[0]` ném TypeError. Đây chính
+// là lớp crash mà P4 định vá. hasOwnProperty mới là kiểm tra đúng: chỉ key do
+// chính registry khai báo mới được tin.
 export function getDefaultTabForRole(role: UserRole): string {
-  return USER_ROLES[role]?.allowedNavItems[0] || '';
+  if (!Object.prototype.hasOwnProperty.call(USER_ROLES, role)) return '';
+  return USER_ROLES[role].allowedNavItems[0] || '';
 }
 
 export function getSettingsAccess(role?: UserRole): SettingsAccess {

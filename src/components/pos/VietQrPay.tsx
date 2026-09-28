@@ -51,13 +51,13 @@ export function VietQrPay({
   useEffect(() => {
     let alive = true;
     if (!warehouseId) { setTemplate(null); return; }
-    // KHÔNG dùng `?all=true`: cờ đó là quyền ưu tiên (xem toàn bộ kho + tồn
-    // thật), còn thao tác duy nhất ở đây là lấy mẫu nội dung của đúng kho đang
-    // bán. `?all=true` bị chặn theo role nên thu ngân còn không lấy được mẫu
-    // của kho mình đang bán. Danh sách kho bán trên POS luôn là
-    // listSellable() ⇒ kho đang chọn chắc chắn có trong response này, và
-    // `qrTransferTemplate` được trả cho MỌI role.
-    fetch(`/api/warehouses`, { cache: 'no-store' })
+    // KHÔNG dùng `?all=true` (là cờ quyền ưu tiên, kèm tồn thật) và cũng KHÔNG
+    // dựa vào `/api/warehouses` không tham số: danh sách đó là listSellable(),
+    // còn kho POS có thể là kho được GÁN mà không bán được ⇒ .find() trượt ⇒
+    // mất mẫu ⇒ QR ra mã đơn dài. Gọi đúng hợp đồng hẹp `?qrTemplate=<id>`:
+    // server chỉ trả `qrTransferTemplate` của đúng kho này, không tồn, không
+    // tên/địa chỉ, và không cần quyền quản lý.
+    fetch(`/api/warehouses?qrTemplate=${encodeURIComponent(warehouseId)}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
         if (!alive) return;

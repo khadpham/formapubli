@@ -5,6 +5,7 @@ import {
   USER_ROLES,
   getDefaultTabForRole,
   getSettingsAccess,
+  type UserRole,
 } from '../src/lib/roles';
 
 const cashierNav = USER_ROLES.ROLE_CASHIER.allowedNavItems;
@@ -15,6 +16,57 @@ assert.equal(getDefaultTabForRole('ROLE_MANAGER'), 'dashboard');
 assert.equal(getDefaultTabForRole('ROLE_CASHIER'), 'pos');
 assert.equal(getDefaultTabForRole('ROLE_WAREHOUSE'), 'inventory');
 assert.equal(getDefaultTabForRole('ROLE_TAX'), 'sales');
+
+// P4 (crash fix): role KHÔNG có trong registry từng làm `USER_ROLES[role].allowed...`
+// ném lỗi NGAY TRONG useState initializer của MasterAppShell — trước cả guard
+// isKnownRole kịp chạy. Nay phải trả '' (không phải 'dashboard').
+//
+// LÝ DO BẢO MẬT: 'dashboard' nằm trong allowedNavItems của OWNER và MANAGER.
+// Nếu fallback là 'dashboard', một cookie phiên cũ / session tự chế (role bịa,
+// tên vai trò đã đổi) sẽ được mở thẳng Bảng Quản Trị — mọi includes('') đều
+// false nên caller buộc phải rơi về nhánh "không có quyền".
+const asRole = (value: string) => value as unknown as UserRole;
+const UNKNOWN_ROLES = [
+  'ROLE_SUPERADMIN',
+  'ROLE_ADMIN',
+  'role_owner',
+  'ROLE_OWNER ',
+  '__proto__',
+  'constructor',
+  'toString',
+];
+for (const bad of UNKNOWN_ROLES) {
+  assert.equal(
+    getDefaultTabForRole(asRole(bad)),
+    '',
+    `Vai trò lạ "${bad}" không được mở tab nào (rỗng), tuyệt đối KHÔNG phải 'dashboard'`
+  );
+  // Củng cố: rỗng không nằm trong allowedNavItems của bất kỳ role nào ⇒ caller
+  // rơi về nhánh không có quyền thay vì render 1 tab bất kỳ.
+  for (const known of Object.keys(USER_ROLES) as UserRole[]) {
+    assert.ok(
+      !USER_ROLES[known].allowedNavItems.includes(''),
+      `Tab rỗng phải nằm ngoài allowedNavItems của ${known}`
+    );
+  }
+}
+// Chuỗi rỗng / rác cũng không được ném lỗi (throw ở đây = app sập trắng).
+for (const junk of ['', ' ', '0', 'null', 'undefined', 'ROLE_', '🙂']) {
+  assert.doesNotThrow(
+    () => getDefaultTabForRole(asRole(junk)),
+    `getDefaultTabForRole không được ném lỗi với chuỗi rác "${junk}"`
+  );
+  assert.equal(getDefaultTabForRole(asRole(junk)), '', `Chuỗi rác "${junk}" → tab rỗng`);
+}
+// Tab mặc định của 5 role thật vẫn phải là tab ĐẦU TIÊN trong allowedNavItems
+// (hồi quy guard): getDefaultTabForRole không được tự ý trả tab ngoài registry.
+for (const known of Object.keys(USER_ROLES) as UserRole[]) {
+  assert.equal(
+    getDefaultTabForRole(known),
+    USER_ROLES[known].allowedNavItems[0],
+    `getDefaultTabForRole(${known}) = tab đầu tiên trong allowedNavItems`
+  );
+}
 
 assert.deepEqual(getSettingsAccess('ROLE_OWNER'), {
   canManageAccounts: true,

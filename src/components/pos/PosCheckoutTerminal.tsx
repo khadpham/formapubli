@@ -1367,7 +1367,7 @@ export function PosCheckoutTerminal({
     : isDigitalCheckout
       ? 'Chụp ảnh xác nhận'
       : `Xác nhận Thanh toán (${finalAmount.toLocaleString('vi-VN')} đ)`;
-  const mobileCheckoutSubmittingLabel = isGift ? checkoutSubmittingLabel : 'Đang xử lý tạo đơn...';
+  const mobileCheckoutSubmittingLabel = checkoutSubmittingLabel;
   const approvalPricedCart = useMemo(
     () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
     [cart, discountRate, pendingDiscountRate]
@@ -2719,7 +2719,7 @@ export function PosCheckoutTerminal({
 
             {/* Error Message */}
             {errorMessage && (
-              <div id="pos-error-message" className={`p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 ${isWideCheckout ? '' : 'hidden'}`}>
+              <div id="pos-error-message" role="alert" className={`p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 ${isMobileCheckoutSheetOpen ? 'hidden' : ''}`}>
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
@@ -3633,10 +3633,10 @@ export function PosCheckoutTerminal({
             </button>
             <div className="flex flex-col flex-1 min-w-0">
               <span className="text-[11px] text-slate-400 font-medium">
-                {totalCopies} cuốn • Giảm {Math.round(discountRate * 100)}%
+                {totalCopies} cuốn • {isGift ? 'Tặng 100%' : `Giảm ${Math.round(discountRate * 100)}%`}
               </span>
               <span className="text-base font-extrabold text-emerald-400 font-mono">
-                {finalAmount.toLocaleString('vi-VN')} đ
+                {(isGift ? 0 : finalAmount).toLocaleString('vi-VN')} đ
               </span>
             </div>
             <button
@@ -3702,7 +3702,7 @@ export function PosCheckoutTerminal({
             {/* Sheet Body (scrollable) */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {errorMessage && (
-                <div id="mobile-pos-error-message" role="alert" className={`p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 ${isWideCheckout ? 'hidden' : ''}`}>
+                <div id="mobile-pos-error-message" role="alert" className={`p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 ${isMobileCheckoutSheetOpen ? '' : 'hidden'}`}>
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{errorMessage}</span>
                 </div>

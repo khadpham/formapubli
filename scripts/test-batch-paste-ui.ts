@@ -241,6 +241,79 @@ expect(
 );
 
 // ---------------------------------------------------------------------------
+// 8b. Luật BẤT ĐỐI XỨNG của thông báo sau thao tác thêm dòng (P6).
+//
+// addNotice là discriminated union { kind, text }:
+//   - kind 'success'  = "Đã thêm: N đầu sách" -> NÓI VỀ BẢNG CHUYỂN.
+//     Sửa/xoá dòng là con số đó không còn đúng ⇒ phải BỊ XOÁ.
+//   - kind 'warning'  = "Kho nguồn không còn sách nào có tồn để lấy." -> NÓI VỀ
+//     KHO NGUỒN, không nói về bảng chuyển ⇒ phải SỐNG SÓT qua mọi thay đổi dòng.
+// Nếu cả hai cùng bị xoá, người dùng bấm lại "Thêm hết tồn kho nguồn" thì không
+// còn manh mối nào cho biết vì sao không có gì được thêm.
+// ---------------------------------------------------------------------------
+expect(
+  /useState<\{ kind: 'success' \| 'warning'; text: string \} \| null>\(null\)/.test(src),
+  'addNotice là tagged union mang `kind`, KHÔNG được là chuỗi trần (nếu là string thì phân biệt thành công/rỗng biến mất)'
+);
+expect(
+  !/useState<string \| null>\(null\)/.test(blockOf('const [addNotice')),
+  'addNotice không được khai báo dạng string | null'
+);
+const invalidateCartBlock = blockOf('const invalidateCart');
+expect(invalidateCartBlock.length > 0, 'Có helper invalidateCart() gom mọi thay đổi bảng chuyển');
+expect(
+  /setAddNotice\(\(prev\) => \(prev\?\.kind === 'success' \? null : prev\)\)/.test(
+    invalidateCartBlock
+  ),
+  'invalidateCart chỉ xoá thông báo kind=success (giữ nguyên kind=warning vì nó mô tả kho nguồn, không mô tả bảng chuyển)'
+);
+expect(
+  !/setAddNotice\(null\)/.test(invalidateCartBlock),
+  'invalidateCart không được xoá mô bảo thông báo — cảnh báo kho nguồn rỗng phải sống sót'
+);
+expect(
+  /setErrorMessage\(null\)/.test(invalidateCartBlock) &&
+    /invalidateValidation\(\)/.test(invalidateCartBlock),
+  'invalidateCart vẫn xoá lỗi cũ và huỷ kết quả kiểm tra tồn trước khi'
+);
+
+// Nguồn phát sinh hai loại thông báo — số lượng N và điều kiện rỗng.
+const bulkSourceBlock = blockOf('const handleAddAllSourceStock');
+expect(
+  /toAdd\.length === 0[\s\S]{0,80}kind: 'warning'[\s\S]{0,120}Kho nguồn không còn sách nào có tồn để lấy\./.test(
+    bulkSourceBlock
+  ),
+  'Kết quả RỖNG sinh thông báo kind=warning với câu "Kho nguồn không còn sách nào có tồn để lấy."'
+);
+expect(
+  /kind: 'success'[\s\S]{0,160}Đã thêm: \$\{toAdd\.length\} đầu sách/.test(bulkSourceBlock),
+  'Có dòng nào đó thì sinh thông báo kind=success "Đã thêm: N đầu sách"'
+);
+
+// Hiển thị: nhánh success vẽ hộp XANH + CheckCircle2, nhánh còn lại (warning)
+// vẽ hộp HÀM NHẠT + AlertTriangle. Rỗng mà vẽ hộp xanh thì người dùng tưởng
+// đã thêm thành công.
+expect(
+  /addNotice\.kind === 'success' \? \(/.test(src),
+  'Render bắt đầu bằng nhánh addNotice.kind === "success" (nhánh else là warning)'
+);
+const noticeRenderAt = src.indexOf('addNotice.kind === \'success\' ? (');
+const noticeRender = src.slice(noticeRenderAt, src.indexOf(')}', src.indexOf('<span>{addNotice.text}</span>', noticeRenderAt)));
+expect(
+  /bg-emerald-50 border border-emerald-200/.test(noticeRender) &&
+    /CheckCircle2/.test(noticeRender),
+  'Thông báo success vẽ hộp emerald + icon CheckCircle2'
+);
+expect(
+  /bg-amber-50 border border-amber-200/.test(noticeRender) && /AlertTriangle/.test(noticeRender),
+  'Thông báo warning (kho nguồn rỗng) vẽ hộp amber + icon AlertTriangle, KHÔNG dùng hộp xanh thắng lợi'
+);
+expect(
+  (noticeRender.match(/<span>\{addNotice\.text\}<\/span>/g) || []).length === 2,
+  'Cả hai nhánh đều render cùng addNotice.text (nhãn theo kind, nội dung theo text)'
+);
+
+// ---------------------------------------------------------------------------
 // 9. Mobile hard constraints in the dialog.
 // ---------------------------------------------------------------------------
 expect(/min-h-\[38px\]/.test(src), 'Có lớp touch target tối thiểu 38px (min-h-[38px]) trong vùng dán');

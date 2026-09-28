@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
 import { db, stockBalances } from '@/db';
 import { WarehouseService } from '@/services/warehouse.service';
 import type { BankAccountRow } from '@/services/warehouse.service';
@@ -28,6 +29,21 @@ export async function GET(req: NextRequest) {
     ] as UserRole[]);
 
     const { searchParams } = new URL(req.url);
+
+    // `?qrTemplate=<warehouseId>` — hợp đồng HẸP cho POS: chỉ trả mẫu nội dung
+    // chuyển khoản của đúng một kho, KHÔNG tên/địa chỉ, KHÔNG số tồn. Cần vì
+    // kho POS có thể là kho được GÁN mà không bán được (is_sellable_on_pos=0
+    // hoặc đã ngưng) ⇒ `listSellable()` không có nó, mà POS vẫn phải dựng QR
+    // từ mẫu. Không dùng `?all=true` để lách: cờ đó gắn quyền xem tồn thật.
+    const qrTemplateFor = (searchParams.get('qrTemplate') || '').trim();
+    if (qrTemplateFor) {
+      const w = await WarehouseService.getWarehouse(qrTemplateFor);
+      return NextResponse.json({
+        success: true,
+        data: w ? [{ id: w.id, qrTransferTemplate: (w as any).qrTransferTemplate || null }] : [],
+      });
+    }
+
     const getAll = searchParams.get('all') === 'true';
     const isPrivileged =
       session.role === 'ROLE_OWNER' ||
@@ -36,14 +52,18 @@ export async function GET(req: NextRequest) {
 
     const list = getAll && isPrivileged ? await WarehouseService.listAll() : await WarehouseService.listSellable();
 
-    // Số lượng thật trong từng kho (1 query gộp) để quản lý thấy kho nào còn hàng.
-    // CHỈ quản lý/thủ kho được xem. Trước đây chỉ chặn theo `getAll`, nên thu ngân
-    // gọi `?all=true` (đúng URL mà VietQrPay dùng để lấy mẫu nội dung) là lộ
+    // Số lượng BÁN ĐƯỢC trong từng kho (1 query gộp) để quản lý thấy kho nào còn
+    // hàng. CHỈ quản lý/thủ kho được xem. Trước đây chỉ chặn theo `getAll`, nên thu
+    // ngân gọi `?all=true` (đúng URL mà VietQrPay dùng để lấy mẫu nội dung) là lộ
     // tồn thật của mọi kho.
+    // CHỈ bucket condition = 'NEW' (khớp getStockMatrix + mọi service chuyển
+    // kho): ô này hiện cạnh ma trận "Tồn Nguồn", đếm cả hàng hỏng/cách ly thì
+    // cùng một kho mà ra hai số khác nhau.
     const stockRows = getAll && isPrivileged
       ? await db
           .select({ warehouseId: stockBalances.warehouseId, qty: stockBalances.physicalQuantity })
           .from(stockBalances)
+          .where(eq(stockBalances.condition, 'NEW'))
       : [];
     const stockMap = new Map<string, number>();
     for (const r of stockRows) {
