@@ -1344,10 +1344,10 @@ export function PosCheckoutTerminal({
   const checkoutButtonLabel = isGift
     ? 'XÁC NHẬN TẶNG & TRỪ KHO'
     : isDigitalCheckout
-      ? 'Tạo đơn & hiện QR'
+      ? 'Chụp ảnh xác nhận'
       : 'THANH TOÁN & KHẤU TRỪ KHO';
   const mobileCheckoutButtonLabel = isDigitalCheckout
-    ? 'Tạo đơn & hiện QR'
+    ? 'Chụp ảnh xác nhận'
     : `Xác nhận Thanh toán (${finalAmount.toLocaleString('vi-VN')} đ)`;
   const approvalPricedCart = useMemo(
     () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
@@ -3004,7 +3004,7 @@ export function PosCheckoutTerminal({
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
-                <span>Đang khấu trừ kho & tạo đơn...</span>
+                <span>{isDigitalCheckout ? 'Đang tạo đơn chờ xác nhận...' : 'Đang khấu trừ kho & tạo đơn...'}</span>
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />

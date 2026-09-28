@@ -739,6 +739,199 @@ async function run() {
   );
   console.log('✓ Cửa sổ 30 phút theo kênh RETAIL_OFFICE; web/social giữ TTL 48h');
 
+  // -------------------------------------------- B9: kho hội chợ (FAIR_EVENT) ---
+  // Gian hàng hội chợ LÀ bán tại quầy: POS gửi channel='FAIR_EVENT', không phải
+  // RETAIL_OFFICE. Trước đây isCounterChannel chỉ nhận RETAIL_OFFICE nên chuyển
+  // khoản tại hội chợ bị chặn ở cổng ("Đơn online không được giữ chỗ tại kho hội
+  // chợ") — ngõ cụt. 4 hệ quả sửa chung: tạo được đơn chờ, cửa sổ 30 phút,
+  // bắt buộc ca két mở, và confirmOrder chặn đơn quầy không két.
+  const FAIR_WH = 'wh-fair-booth';
+  await db.insert(schema.warehouses).values({
+    id: FAIR_WH, code: 'GIAN_HOI_CHO', name: 'Gian hàng hội chợ', isActive: true,
+    isSellableOnPos: true, warehouseType: 'FAIR_EVENT',
+  });
+  await db.insert(schema.editions).values({
+    id: 'ed-fair-1', code: 'FAIR1', workId: 'work-tp', title: 'Sách hội chợ 1',
+    isbn: '9786040003010', isbnLast4: '3010', coverPrice: 100000,
+  });
+  await db.insert(schema.stockBalances).values({
+    id: 'sb-fair-1', editionId: 'ed-fair-1', warehouseId: FAIR_WH, condition: 'NEW', physicalQuantity: 30,
+  });
+  const fairBody = (overrides: Record<string, any> = {}) => ({
+    warehouseId: FAIR_WH,
+    channel: 'FAIR_EVENT',
+    customerName: `Khách hội chợ ${Date.now()}-${seq++}`,
+    paymentMethod: 'BANK_TRANSFER',
+    confirmImmediately: false,
+    items: [{ editionId: 'ed-fair-1', quantity: 1 }],
+    ...overrides,
+  });
+
+  // B9.1 Thu ngân CHƯA mở ca két tại gian hàng → đơn quầy chờ phải bị từ chối.
+  //      Đây là hệ quả của việc FAIR_EVENT là kênh quầy: đơn không có ca két thì
+  //      không bao giờ duyệt được (confirmOrder cũng chặn) → thu tiền xong đơn kẹt.
+  const fairNoShift = await postAs(fairBody());
+  assert.equal(
+    fairNoShift.status, 409,
+    `đơn quầy hội chợ chưa mở ca két phải bị chặn: ${JSON.stringify(fairNoShift.json)}`
+  );
+  assert.equal(fairNoShift.json.code, 'STATE_CONFLICT');
+  assert.match(
+    String(fairNoShift.json.error), /ca két/i,
+    'thông báo phải chỉ rõ cần mở ca két'
+  );
+  assert.equal(
+    (await db.select().from(schema.orders).where(eq(schema.orders.warehouseId, FAIR_WH))).length,
+    0, 'đơn bị chặn không được để lại hàng trong DB'
+  );
+  console.log('✓ Đơn quầy tại hội chợ chưa mở ca két bị chặn 409 (không tạo rác)');
+
+  // Mở ca két thật tại gian hàng cho thu ngân A.
+  const fairSession = await CashboxService.openSession({
+    warehouseId: FAIR_WH, cashierId: CASHIER_A.staffId, openingCash: 0,
+  });
+
+  // B9.2 Đơn chuyển khoản tại gian hàng hội chợ PHẢI tạo được (bug chính).
+  const fairOrder = await postAs(fairBody({ cashboxSessionId: fairSession.session.id }));
+  assert.equal(
+    fairOrder.status, 200,
+    `chuyển khoản tại kho hội chợ phải tạo được: ${JSON.stringify(fairOrder.json)}`
+  );
+  const fairRow = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, fairOrder.json.data.orderId)))[0];
+  assert.equal(fairRow.status, 'PENDING_CONFIRMATION', 'đơn chờ thanh toán phải là PENDING_CONFIRMATION');
+  assert.equal(fairRow.channel, 'FAIR_EVENT', 'channel phải giữ nguyên FAIR_EVENT (không chuẩn hoá)');
+  assert.equal(fairRow.cashboxSessionId, fairSession.session.id, 'đơn phải gắn ca két của thu ngân');
+  // B9.3 Cửa sổ 30 phút (không phải TTL 48h của đơn online).
+  assert.ok(
+    fairRow.paymentExpiresAt != null,
+    'đơn chuyển khoản tại quầy hội chợ phải có paymentExpiresAt (không phải TTL 48h)'
+  );
+  const fairMs = new Date(fairRow.paymentExpiresAt as string).getTime() - Date.now();
+  assert.ok(
+    fairMs > 29 * 60_000 && fairMs <= 30 * 60_000,
+    `đơn FAIR_EVENT phải hạn ~30 phút, thực tế ${fairMs}ms`
+  );
+  // Chứng minh KHÔNG phải TTL 48h: effective expiry phải bám paymentExpiresAt.
+  assert.equal(
+    OrderService.getPendingEffectiveExpiry({
+      createdAt: fairRow.createdAt, paymentExpiresAt: fairRow.paymentExpiresAt,
+    })!.getTime(),
+    new Date(fairRow.paymentExpiresAt as string).getTime(),
+    'effective expiry phải là paymentExpiresAt 30 phút, không phải createdAt + 48h'
+  );
+  console.log('✓ Chuyển khoản tại kho hội chợ tạo được PENDING, hạn ~30 phút (không phải 48h)');
+
+  // B9.4 Kênh quầy khác tại kho hội chợ (RETAIL_OFFICE + kho FAIR_EVENT) vẫn là đơn
+  //      quầy — chống hồi quy khi ai đó thu hẹp lại tập kênh.
+  const fairRetailRes = await postAs(
+    fairBody({ channel: 'RETAIL_OFFICE', cashboxSessionId: fairSession.session.id })
+  );
+  assert.equal(fairRetailRes.status, 200, `FAIR_EVENT kho + RETAIL_OFFICE phải tạo được: ${JSON.stringify(fairRetailRes.json)}`);
+  const fairRetailRow = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, fairRetailRes.json.data.orderId)))[0];
+  assert.equal(fairRetailRow.status, 'PENDING_CONFIRMATION');
+  const fairRetailMs = new Date(fairRetailRow.paymentExpiresAt as string).getTime() - Date.now();
+  assert.ok(
+    fairRetailMs > 29 * 60_000 && fairRetailMs <= 30 * 60_000,
+    `FAIR_EVENT kho + RETAIL_OFFICE phải hạn ~30 phút, thực tế ${fairRetailMs}ms`
+  );
+  // Không gửi cashboxSessionId vẫn phải tự gắn ca OPEN (đơn quầy không lách được két).
+  const fairAutoRes = await postAs(fairBody({ cashboxSessionId: undefined }));
+  assert.equal(fairAutoRes.status, 200, `đơn quầy hội chợ không gửi két: ${JSON.stringify(fairAutoRes.json)}`);
+  const fairAutoRow = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.id, fairAutoRes.json.data.orderId)))[0];
+  assert.equal(
+    fairAutoRow.cashboxSessionId, fairSession.session.id,
+    'đơn quầy hội chợ không gửi cashboxSessionId phải tự gắn ca OPEN'
+  );
+  console.log('✓ Gian hàng hội chợ với kênh RETAIL_OFFICE vẫn là đơn quầy (30 phút + tự gắn ca)');
+
+  // B9.5 Đơn ONLINE thật tại kho hội chợ vẫn bị chặn — chặn theo KÊNH, không mở
+  //      lỗ hổng "đơn online giữ chỗ sách đã ra gian hàng".
+  for (const onlineChannel of ['ONLINE', 'RETAIL_ONLINE_WEB']) {
+    const onlineRes = await postAs(
+      fairBody({ channel: onlineChannel, cashboxSessionId: fairSession.session.id })
+    );
+    assert.equal(
+      onlineRes.status, 400,
+      `đơn ${onlineChannel} tại kho hội chợ phải bị chặn: ${JSON.stringify(onlineRes.json)}`
+    );
+    assert.match(
+      String(onlineRes.json.error), /hội chợ/i,
+      `thông báo chặn đơn online tại hội chợ phải còn nguyên (${onlineChannel})`
+    );
+  }
+  assert.equal(
+    (await db
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.status, 'PENDING_CONFIRMATION'))).filter((o) => o.warehouseId === FAIR_WH)
+      .length,
+    3,
+    'đơn online bị chặn không được tạo (đúng 3 đơn quầy đã tạo ở B9.2/B9.4)'
+  );
+  console.log('✓ Đơn ONLINE / RETAIL_ONLINE_WEB tại kho hội chợ vẫn bị chặn — lỗ hổng đóng');
+
+  // B9.6 Replay cùng idempotency key: trả về đúng đơn cũ, không tạo đơn thứ hai,
+  //      không giữ chỗ ATP hai lần.
+  const fairIdemKey = `idem-fair-${Date.now()}-${seq++}`;
+  const fairIdemName = `Khách replay hội chợ ${Date.now()}-${seq++}`;
+  const fairIdemBody = fairBody({
+    cashboxSessionId: fairSession.session.id,
+    idempotencyKey: fairIdemKey,
+    customerName: fairIdemName,
+  });
+  const fairFirst = await postAs(fairIdemBody);
+  assert.equal(fairFirst.status, 200, `đơn hội chợ đầu: ${JSON.stringify(fairFirst.json)}`);
+  const fairStockBefore = (await db
+    .select()
+    .from(schema.stockBalances)
+    .where(eq(schema.stockBalances.id, 'sb-fair-1')))[0].physicalQuantity;
+  const fairAtpBefore = await OrderService.getATP('ed-fair-1', FAIR_WH);
+  const fairLinesBefore = (await db
+    .select()
+    .from(schema.orderItems)
+    .where(eq(schema.orderItems.orderId, fairFirst.json.data.orderId))).length;
+
+  const fairReplay = await postAs({ ...fairIdemBody });
+  assert.equal(fairReplay.status, 200, `replay: ${JSON.stringify(fairReplay.json)}`);
+  assert.equal(
+    fairReplay.json.data.orderId, fairFirst.json.data.orderId,
+    'replay cùng idempotency key phải trả về đúng đơn cũ'
+  );
+  assert.equal(
+    (await db
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, fairFirst.json.data.orderId))).length,
+    fairLinesBefore,
+    'replay không được nhân bản dòng đơn'
+  );
+  const fairKeyRows = (await db
+    .select()
+    .from(schema.orders)
+    .where(eq(schema.orders.idempotencyKey, fairIdemKey)));
+  assert.equal(fairKeyRows.length, 1, 'replay không được tạo đơn thứ hai');
+  assert.equal(
+    (await db
+      .select()
+      .from(schema.stockBalances)
+      .where(eq(schema.stockBalances.id, 'sb-fair-1')))[0].physicalQuantity,
+    fairStockBefore,
+    'đơn PENDING không được trừ kho vật lý (và replay không trừ thêm)'
+  );
+  assert.equal(
+    await OrderService.getATP('ed-fair-1', FAIR_WH), fairAtpBefore,
+    'ATP kho hội chợ không đổi khi replay (không giữ chỗ hai lần)'
+  );
+  console.log('✓ Replay idempotency key ở kho hội chợ: cùng đơn, không nhân bản, không giữ chỗ kép');
 
   raw.close();
   console.log('TRANSFER PAYMENT API CONTRACT PASS');

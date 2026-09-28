@@ -32,7 +32,7 @@ import { migrateFresh } from './migrate-fresh';
 import {
   works, editions, warehouses,
   transferShipments, transferShipmentItems,
-  inventoryLedger, stockBalances, orders,
+  inventoryLedger, stockBalances, orders, cashboxSessions,
 } from '../src/db/schema';
 
 assertIsolatedTestDb('test-cp3-transfer-concurrency');
@@ -96,6 +96,13 @@ async function freshProbeDb(probe: string, openingQty: number) {
   await db.insert(stockBalances).values({
     id: `sb-${wid}-auco`, editionId: wid, warehouseId: 'wh-au-co',
     condition: 'NEW', physicalQuantity: openingQty,
+  });
+  // salePayload dùng channel='FAIR_EVENT' = bán tại quầy, nên đơn PENDING bắt
+  // buộc có ca két OPEN của chính thu ngân tại kho này (guard B2a ở order.service).
+  // Fixture trước đây thiếu ca nên chỉ xanh khi guard chưa nhận FAIR_EVENT là quầy.
+  await db.insert(cashboxSessions).values({
+    id: `cbs-${wid}-cp3-cashier`, warehouseId: 'wh-au-co',
+    cashierId: 'cp3-cashier', openingCash: 0, status: 'OPEN',
   });
   client.close();
   return { file, url, editionId: wid };
