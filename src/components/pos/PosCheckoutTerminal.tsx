@@ -78,6 +78,9 @@ import { priceLine } from '@/lib/pricing';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { printThermalReceipt, PaperPreset } from '@/lib/thermalReceipt';
 
+/** Nhắc thu ngân khi thanh toán số được gọi mà chưa có ảnh xác nhận. */
+const NEED_PROOF_MESSAGE = 'Chuyển khoản cần ảnh xác nhận. Bấm nút Chụp ảnh xác nhận.';
+
 interface BookItem {
   id: string;
   code: string;
@@ -422,12 +425,6 @@ export function PosCheckoutTerminal({
    * user gesture trên iOS Safari.
    */
   const checkoutCaptureInputRef = useRef<HTMLInputElement>(null);
-  /**
-   * Ảnh đã chụp nhưng đơn chưa tạo xong (camera về nhanh hơn POST /api/orders).
-   * Giữ lại để gắn vào đơn vừa tạo; nếu đơn không tạo được thì phải BỎ đi —
-   * tuyệt đối không gắn ảnh mồ côi vào đơn kế tiếp.
-   */
-  const pendingCaptureFileRef = useRef<File | null>(null);
   /** Khoá ghi ảnh trong lúc lưu: hai lần lưu chồng nhau sẽ hỏng phiên. */
   const captureLockRef = useRef(false);
 
@@ -1418,7 +1415,9 @@ export function PosCheckoutTerminal({
   );
 
   // Xử lý nộp đơn bán hàng (Offline-First: Lưu IndexedDB khi mất mạng, Sync khi có mạng)
-  const handleCheckout = async () => {
+  // `captureFile` = ảnh xác nhận ĐÃ CHỤP XONG. Chuyển khoản/QR chỉ chạy được khi có
+  // ảnh: bỏ trống thì không tạo đơn, không mở modal (xem handleCheckoutCaptureChange).
+  const handleCheckout = async (captureFile?: File) => {
     if (!actorId?.trim()) {
       setErrorMessage('Không có phiên đăng nhập hợp lệ để ghi đơn.');
       return;
@@ -1480,6 +1479,14 @@ export function PosCheckoutTerminal({
     setErrorMessage(null);
 
     const isDigitalPayment = paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE';
+    // Chuyển khoản/QR: chưa có ảnh xác nhận thì KHÔNG tạo đơn. Đơn PENDING giữ chỗ
+    // ATP 30 phút mà không ai mở được modal để huỷ — nên chỉ tạo sau khi ảnh về.
+    if (!isGift && isDigitalPayment && !captureFile) {
+      checkoutLockRef.current = false;
+      setIsSubmitting(false);
+      setErrorMessage(NEED_PROOF_MESSAGE);
+      return;
+    }
     const orderUuid = generateUUIDv7();
     const channel = selectedWarehouseType === 'FAIR_EVENT' ? 'FAIR_EVENT' : 'RETAIL_OFFICE';
      const cashierId = cashierActorId;
@@ -1545,13 +1552,19 @@ export function PosCheckoutTerminal({
          // để sinh QR. Không có cache hợp lệ → chặn, hướng dẫn dùng tiền mặt.
          if (!isGift && isDigitalPayment) {
            const cached = readBankAccountsCache(selectedWarehouseId);
-           if (!cached || cached.accounts.length === 0) {
-             setErrorMessage(
-               'Mất mạng và cache tài khoản nhận đã quá 24 giờ, không thể tạo QR. Vui lòng thu tiền mặt hoặc chờ có mạng.'
-             );
-             return;
-           }
-         }
+            if (!cached || cached.accounts.length === 0) {
+              setErrorMessage(
+                'Mất mạng và cache tài khoản nhận đã quá 24 giờ, không thể tạo QR. Vui lòng thu tiền mặt hoặc chờ có mạng.'
+              );
+              return;
+            }
+            // Không có ảnh thì KHÔNG ghi đơn ngoại tuyến: đơn AWAITING_PAYMENT mà
+            // không ai huỷ được sẽ kẹt vô thời hạn trong bảng rà soát.
+            if (!captureFile) {
+              setErrorMessage(NEED_PROOF_MESSAGE);
+              return;
+            }
+          }
          const offlineOrder: OfflineOrder = {
             id: orderUuid,
             orderCode,
@@ -1596,7 +1609,7 @@ export function PosCheckoutTerminal({
         if (!isGift && isDigitalPayment) {
           setTransferErrorMessage(null);
           setTransferOfflineOrderId(orderUuid);
-          setTransferSession({
+          const offlineSession: TransferPaymentSession = {
             mode: 'OFFLINE',
             orderId: orderUuid,
             orderCode,
@@ -1609,8 +1622,13 @@ export function PosCheckoutTerminal({
             // không được điền bằng mã đơn trần — đó chính là lỗi "số tài khoản
             // và nội dung không khớp ảnh QR". VietQrPay phát ra bộ đóng băng.
             qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: '', orderQuantity: totalCopies },
-          });
-          setSyncToast(`💾 Đơn ngoại tuyến [${orderCode}] đã ghi nhận, chờ đồng bộ. Chụp ảnh xác nhận để hoàn tất.`);
+          };
+          setTransferSession(offlineSession);
+          // Ảnh gắn vào đơn local ngay: đây là bước đưa nó AWAITING_PAYMENT →
+          // PAID_PENDING_SYNC, không gắn thì đơn không bao giờ tự sync.
+          if (captureFile) void attachCaptureToSession(offlineSession, captureFile);
+          else setErrorMessage(NEED_PROOF_MESSAGE);
+          setSyncToast(`💾 Đơn ngoại tuyến [${orderCode}] đã ghi nhận, chờ đồng bộ. Ảnh xác nhận đang được lưu.`);
           setTimeout(() => setSyncToast(null), 6000);
           return;
         }
@@ -1694,7 +1712,7 @@ export function PosCheckoutTerminal({
         if (!resData.success) throw new Error(resData.error || 'Lỗi tạo đơn hàng');
         setTransferErrorMessage(null);
         setTransferOfflineOrderId(null);
-        setTransferSession({
+        const session: TransferPaymentSession = {
           mode: 'ONLINE',
           orderId: resData.data?.orderId || resData.data?.id || orderUuid,
           orderCode: resData.data?.orderCode || orderCode,
@@ -1713,7 +1731,13 @@ export function PosCheckoutTerminal({
             content: '',
             orderQuantity: Number(resData.data?.totalQuantity ?? totalCopies),
           },
-        });
+        };
+        setTransferSession(session);
+        // Ảnh đã chụp xong và đơn đã có: gắn ảnh vào CHÍNH đơn này. Nút Xác nhận
+        // trong modal khoá tới khi ảnh lưu thành công, nên thu ngân không thể
+        // xác nhận đơn không ảnh.
+        if (captureFile) void attachCaptureToSession(session, captureFile);
+        else setErrorMessage(NEED_PROOF_MESSAGE);
       } catch (err: any) {
         // Phân loại lỗi dùng lại đúng cách handleCheckout đang làm cho cash/gift.
         if (err.name === 'TypeError' || err.message?.includes('fetch') || (typeof navigator !== 'undefined' && !navigator.onLine)) {
@@ -1725,11 +1749,10 @@ export function PosCheckoutTerminal({
         } else {
           setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
         }
-        // Ảnh đã được chụp TRƯỚC khi có đơn. Nếu đơn không tạo được thì ảnh mồ
+        // Ảnh đã được chụp TRƯỚC khi có đơn. Nếu đơn không tạo được thì ảnh mồi
         // côi không được gắn vào bất cứ thứ gì — báo rõ để thu ngân không
         // tưởng đã chụp xong rồi bấm nhầm Xác nhận.
-        if (pendingCaptureFileRef.current) {
-          pendingCaptureFileRef.current = null;
+        if (captureFile) {
           setErrorMessage((prev) =>
             `${prev ? `${prev} ` : ''}Ảnh vừa chụp không dùng được — chưa có đơn để gắn. Tạo đơn thành công rồi hãy chụp lại.`
           );
@@ -2003,9 +2026,9 @@ export function PosCheckoutTerminal({
   };
 
   /**
-   * Ảnh từ input ẩn ở quầy. Camera có thể về TRƯỚC khi POST /api/orders xong,
-   * nên ảnh chưa gắn được thì giữ lại chờ phiên; effect bên dưới gắn ngay khi
-   * phiên xuất hiện. Không có ảnh nào được gắn nhầm vào đơn khác.
+   * Ảnh từ input ẩn ở quầy. Đây là ĐIỂM VÀO DUY NHẤT của thanh toán số: đơn chỉ
+   * được tạo ở đây, SAU khi ảnh về. Thu ngân bấm Huỷ (hoặc change không kèm file)
+   * => không tạo đơn, không mở modal, không báo lỗi: giỏ giữ nguyên, ATP không bị giữ.
    */
   const handleCheckoutCaptureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
@@ -2013,31 +2036,20 @@ export function PosCheckoutTerminal({
     // Reset để chọn lại đúng ảnh cũ sau này không bị im lặng.
     input.value = '';
     if (!file) return;
-    if (!transferSession) {
-      pendingCaptureFileRef.current = file;
-      return;
-    }
-    void attachCaptureToSession(transferSession, file);
+    void handleCheckout(file);
   };
-
-  useEffect(() => {
-    const file = pendingCaptureFileRef.current;
-    if (!file || !transferSession) return;
-    pendingCaptureFileRef.current = null;
-    void attachCaptureToSession(transferSession, file);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transferSession]);
 
   /**
    * Một chạm mở camera: `.click()` phải là ĐẦU TIÊN trong handler, không được
    * `await` gì trước — iOS Safari chỉ mở được picker trong user gesture thật.
-   * Tạo đơn chạy SONG SONG phía sau, không chặn camera.
+   * KHÔNG tạo đơn ở đây: modal chuyển khoản (fixed inset-0 z-[70]) mở chung lúc
+   * với hộp thoại native sẽ che mất hộp thoại trên desktop. Đơn chỉ tạo ở
+   * handleCheckoutCaptureChange, tức là sau khi thật sự có ảnh.
    */
   const handleCheckoutButtonClick = () => {
     if (isDigitalCheckout) {
-      // Ảnh cũ (nếu lần trước hỏng) không được sang đơn mới.
-      pendingCaptureFileRef.current = null;
       checkoutCaptureInputRef.current?.click();
+      return;
     }
     void handleCheckout();
   };
