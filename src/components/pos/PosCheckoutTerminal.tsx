@@ -33,6 +33,7 @@ import {
   CalendarCheck,
   ChevronDown,
   ChevronUp,
+  ScanLine,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
@@ -40,7 +41,6 @@ import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { VietQrPay } from '@/components/pos/VietQrPay';
-import { PaymentProofCamera } from '@/components/pos/PaymentProofCamera';
 import { PaymentPhotoGallery } from '@/components/pos/PaymentPhotoGallery';
 import { TransferPaymentModal, type TransferPaymentSession } from '@/components/pos/TransferPaymentModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
@@ -245,6 +245,15 @@ export function PosCheckoutTerminal({
     mq.addEventListener('change', sync);
     return () => mq.removeEventListener('change', sync);
   }, []);
+  const [isWideCheckout, setIsWideCheckout] = useState(true);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setIsWideCheckout(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
   const [sortMode, setSortMode] = useState<'default' | 'az' | 'hot'>('default');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('Khách lẻ vãng lai');
@@ -377,7 +386,6 @@ export function PosCheckoutTerminal({
   const [approvalCancelError, setApprovalCancelError] = useState<string | null>(null);
   // Luồng chuyển khoản/QR theo đơn thật: tạo đơn PENDING → QR → chụp ảnh → xác nhận.
   const [transferSession, setTransferSession] = useState<TransferPaymentSession | null>(null);
-  const [isTransferCameraOpen, setIsTransferCameraOpen] = useState(false);
   const [isPhotoGalleryOpen, setIsPhotoGalleryOpen] = useState(false);
   const [isTransferSubmitting, setIsTransferSubmitting] = useState(false);
   const [transferBankSource, setTransferBankSource] = useState<'NETWORK' | 'CACHE' | 'NONE'>('NONE');
@@ -452,12 +460,12 @@ export function PosCheckoutTerminal({
     isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
   const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null || checkoutLockRef.current;
   const isInteractionLocked = isCartFrozen || isParserImporting;
-  const isTransferOverlayOpen = Boolean(transferSession) || isTransferCameraOpen || isPhotoGalleryOpen;
+  const isTransferOverlayOpen = Boolean(transferSession) || isPhotoGalleryOpen;
   const isPosOverlayOpen =
     isParserOpen || isScannerOpen || isMobileCheckoutSheetOpen || Boolean(completedOrder) ||
     Boolean(ambiguousMatches) || isAddingToCart || isDiscountApprovalModalOpen || isManagerApprovalDrawerOpen ||
     isOpenShiftModalOpen || isCloseShiftModalOpen || isSettlementModalOpen ||
-    isTransferCameraOpen || isPhotoGalleryOpen;
+    isPhotoGalleryOpen;
   const selectedWarehouseIdRef = useRef(selectedWarehouseId);
   const cartFrozenRef = useRef(isCartFrozen);
   useEffect(() => {
@@ -1033,8 +1041,13 @@ export function PosCheckoutTerminal({
   );
 
   // Bộ lọc sách thời gian thực + V4.1 S2.2/S2.3: ẩn hết hàng mặc định, sắp xếp A-Z / bán chạy
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  // Mobile: chủ yếu quét scanner, danh mục thường xuyên chỉ làm nhiễu. Không có từ
+  // khoá thì không hiện danh mục — chỉ hiện kết quả tìm kiếm. Desktop giữ nguyên.
+  const showCatalogGrid = !isMobileView || hasSearchQuery;
   const filteredBooks = useMemo(() => {
     const q = searchQuery.trim();
+    if (!q && isMobileView) return [];
     let list = q
       ? books.filter((b) =>
           matchesAnyVietnameseField(searchQuery, [b.title, b.code, b.isbnLast4, b.author])
@@ -1048,7 +1061,7 @@ export function PosCheckoutTerminal({
       );
     }
     return q ? list : list.slice(0, 20); // Không tìm kiếm: hiển thị 20 cuốn đầu sau lọc/sắp xếp
-  }, [books, searchQuery, showAllBooks, sortMode, catalogAtp, catalogReady, selectedWarehouseId]);
+  }, [books, searchQuery, showAllBooks, sortMode, catalogAtp, catalogReady, selectedWarehouseId, isMobileView]);
 
   // Thêm sách vào giỏ
   const addToCart = (book: BookItem, atpOverride?: number | null) => {
@@ -2536,6 +2549,17 @@ export function PosCheckoutTerminal({
           {/* Book Catalog Grid — mobile thu gọn mặc định, desktop full như cũ.
               Hàng nút và slice dùng chung 1 cờ isMobileView (không dùng md:hidden
               để 2 phía không bao giờ lệch nhau). */}
+          {!showCatalogGrid && (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-4 py-6 text-center">
+              <ScanLine className="w-7 h-7 mx-auto text-slate-400" />
+              <p className="mt-2 text-sm font-extrabold text-slate-700">Danh mục đang ẩn</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Quét mã vạch sách để thêm nhanh, hoặc gõ tên / mã ở ô tìm kiếm.
+              </p>
+            </div>
+          )}
+          {showCatalogGrid && (
+          <>
           {isMobileView && (
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-extrabold text-slate-800">Danh mục ({filteredBooks.length})</span>
@@ -2620,6 +2644,8 @@ export function PosCheckoutTerminal({
               );
             })}
           </div>
+          </>
+          )}
         </div>
 
         {/* Right Side: Order Cart & Checkout Controls */}
@@ -2935,7 +2961,7 @@ export function PosCheckoutTerminal({
                   </select>
                 </div>
 
-                <div>
+                <div className="hidden lg:block">
                   <label className="text-[11px] font-bold text-slate-500 block mb-1">
                     Thanh toán:
                   </label>
@@ -2952,7 +2978,7 @@ export function PosCheckoutTerminal({
                   </select>
                 </div>
               </div>
-              {(paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
+              {isWideCheckout && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
                 <div className="mt-3 hidden lg:block">
                   <VietQrPay
                     warehouseId={selectedWarehouseId}
@@ -2978,7 +3004,7 @@ export function PosCheckoutTerminal({
           </div>
 
           {/* Financial Totals & Checkout Button */}
-          <div className="pt-4 border-t border-slate-200 space-y-3 mt-4">
+          <div className="pt-4 border-t border-slate-200 space-y-3 mt-4 hidden lg:block">
             <div className="space-y-1 text-xs">
               <div className="flex justify-between text-slate-500">
                 <span>Tổng tiền bìa ({totalCopies} cuốn):</span>
@@ -3026,25 +3052,12 @@ export function PosCheckoutTerminal({
               ? `Dữ liệu cache ${new Date(transferBankCachedAt).toLocaleString('vi-VN')}`
               : null
           }
-          onCapture={() => setIsTransferCameraOpen(true)}
+          cashierId={cashierActorId}
+          onUsePhoto={handleUseTransferPhoto}
           onConfirm={handleConfirmTransfer}
           onCancel={handleCancelTransfer}
           onClose={closeTransferSession}
           errorMessage={transferErrorMessage}
-        />
-      )}
-
-      {transferSession && mounted && (
-        <PaymentProofCamera
-          isOpen={isTransferCameraOpen}
-          orderCode={transferSession.orderCode}
-          warehouseId={transferSession.warehouseId}
-          cashierId={cashierActorId}
-          amount={transferSession.amount}
-          paymentMethod={transferSession.paymentMethod}
-          onClose={() => setIsTransferCameraOpen(false)}
-          onCameraError={setTransferErrorMessage}
-          onUsePhoto={handleUseTransferPhoto}
         />
       )}
 
@@ -3722,7 +3735,7 @@ export function PosCheckoutTerminal({
                 </select>
               </div>
 
-              {(paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
+              {!isWideCheckout && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
                 <div className="mt-2">
                   <VietQrPay
                     warehouseId={selectedWarehouseId}
