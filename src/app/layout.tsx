@@ -17,8 +17,10 @@ export const metadata: Metadata = {
     title: 'formapubli OS',
   },
   icons: {
-    icon: '/icons/icon-192.svg',
-    apple: '/icons/icon-192.svg',
+    icon: '/icons/icon-192.png',
+    // iOS BỎ QUA IM LẶNG mọi apple-touch-icon không phải PNG. Trỏ vào .svg thì
+    // sau khi Thêm vào Màn hình Chính, icon là ảnh chụp màn hình hoặc trống.
+    apple: '/icons/apple-touch-icon.png',
   },
 };
 
@@ -28,6 +30,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  // BẮT BUỘC để mọi `env(safe-area-inset-*)` trong UI (7 chỗ: MasterAppShell,
+  // AppSidebar, PosCheckoutTerminal) có giá trị thật. Thiếu nó thì cả chạy ra
+  // 0px → app chạy fullscreen bị Dynamic Island / thanh home đè lên nội dung.
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

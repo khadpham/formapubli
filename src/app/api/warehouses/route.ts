@@ -25,17 +25,18 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const getAll = searchParams.get('all') === 'true';
+    const isPrivileged =
+      session.role === 'ROLE_OWNER' ||
+      session.role === 'ROLE_MANAGER' ||
+      session.role === 'ROLE_WAREHOUSE';
 
-    const list =
-      getAll &&
-      (session.role === 'ROLE_OWNER' ||
-        session.role === 'ROLE_MANAGER' ||
-        session.role === 'ROLE_WAREHOUSE')
-        ? await WarehouseService.listAll()
-        : await WarehouseService.listSellable();
+    const list = getAll && isPrivileged ? await WarehouseService.listAll() : await WarehouseService.listSellable();
 
     // Số lượng thật trong từng kho (1 query gộp) để quản lý thấy kho nào còn hàng.
-    const stockRows = getAll
+    // CHỈ quản lý/thủ kho được xem. Trước đây chỉ chặn theo `getAll`, nên thu ngân
+    // gọi `?all=true` (đúng URL mà VietQrPay dùng để lấy mẫu nội dung) là lộ
+    // tồn thật của mọi kho.
+    const stockRows = getAll && isPrivileged
       ? await db
           .select({ warehouseId: stockBalances.warehouseId, qty: stockBalances.physicalQuantity })
           .from(stockBalances)

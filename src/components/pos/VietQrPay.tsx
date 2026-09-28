@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { generateVietQRPayload } from '@/lib/vietqr';
 import { readBankAccountsCache, writeBankAccountsCache } from '@/lib/bank-account-cache';
+import { resolveTransferContent } from '@/lib/transfer-content';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
 export type BankAccountSource = 'NETWORK' | 'CACHE' | 'NONE';
@@ -37,6 +38,15 @@ export function VietQrPay({
   // Mẫu nội dung chuyển khoản RIÊNG THEO KHO (quản lý sửa ở Quản Lý Kho).
   // Biến hỗ trợ: {SL} tổng số lượng, {MA} mã đơn, {KHO} tên kho, {KH} mã kho.
   const [template, setTemplate] = useState<string | null>(null);
+  // Người dùng đã tự sửa nội dung → giữ bản của họ, không đè lại bằng template.
+  const [manualContent, setManualContent] = useState<string | null>(null);
+  // Gõ tay chỉ áp cho ĐƠN HIỆN TẠI. Đổi mã đơn là phải quay về mẫu, nếu không
+  // đơn sau sẽ mang nội dung của đơn cũ và lệch đối soát ngân hàng.
+  const lastOrderRef = useRef(initialContent);
+  if (lastOrderRef.current !== initialContent) {
+    lastOrderRef.current = initialContent;
+    if (manualContent !== null) setManualContent(null);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -52,16 +62,24 @@ export function VietQrPay({
     return () => { alive = false; };
   }, [warehouseId]);
 
+  // Nguồn DUY NHẤT ghi nội dung chuyển khoản. Trước đây có thêm effect
+  // `setContent(initialContent)` chạy kèm theo — nó đè ngược mẫu tuỳ biến mỗi
+  // khi mã đơn đổi, nên QR ra mã đơn dài thay vì nội dung đã cấu hình.
   useEffect(() => {
-    if (!template) { setContent(initialContent); return; }
+    if (manualContent !== null) return;
     setContent(
-      template
-        .replace(/\{SL\}/g, String(itemCount || 0))
-        .replace(/\{MA\}/g, initialContent || '')
-        .replace(/\{KHO\}/g, warehouseName || '')
-        .replace(/\{KH\}/g, warehouseCode || '')
+      resolveTransferContent({
+        template,
+        orderCode: initialContent,
+        itemCount,
+        warehouseName,
+        warehouseCode,
+        manualContent,
+      })
     );
-  }, [template, initialContent, itemCount, warehouseName, warehouseCode]);  const [qrUrl, setQrUrl] = useState('');
+  }, [template, initialContent, itemCount, warehouseName, warehouseCode, manualContent]);
+
+  const [qrUrl, setQrUrl] = useState('');
   const [payload, setPayload] = useState('');
   const [source, setSource] = useState<BankAccountSource>('NONE');
   const [cachedAt, setCachedAt] = useState<number | null>(null);
@@ -72,8 +90,6 @@ export function VietQrPay({
   useEffect(() => { onQrRef.current = onQr; }, [onQr]);
   useEffect(() => { onSourceRef.current = onSource; }, [onSource]);
   useEffect(() => { onCachedAtRef.current = onCachedAt; }, [onCachedAt]);
-
-  useEffect(() => { setContent(initialContent); }, [initialContent]);
 
   // Ưu tiên mạng; chỉ fallback sang cache 24h khi fetch hỏng. Không có nguồn nào
   // → source NONE + onQr(null) để cha không bao giờ hiện QR cũ.
@@ -149,13 +165,14 @@ export function VietQrPay({
   const acc = list.find((b) => b.id === selectedId);
   return (
     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-      <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none">
+      <select aria-label="Tài khoản nhận tiền" value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none">
         {list.map((b) => <option key={b.id} value={b.id}>{b.label} — {b.accountNo}</option>)}
       </select>
       <input
+        aria-label="Nội dung chuyển khoản"
         type="text"
         value={content}
-        onChange={(e) => setContent(e.target.value)}
+        onChange={(e) => { setManualContent(e.target.value); setContent(e.target.value); }}
         placeholder="Nội dung chuyển khoản (tự sửa)"
         className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
       />

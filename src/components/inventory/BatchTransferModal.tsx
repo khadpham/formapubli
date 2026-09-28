@@ -16,9 +16,11 @@ import {
   ClipboardPaste,
   Check,
   CircleHelp,
+  Warehouse,
 } from 'lucide-react';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
+import { stockOfWarehouse } from '@/lib/warehouse-stock';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 
 /** Số lượng mặc định khi quản lý chỉ copy cột tên sách từ Excel sang. */
@@ -32,6 +34,7 @@ interface BookItem {
   stockAuCo?: number;
   stockQuynhMai?: number;
   stockDuPhong?: number;
+  stockByWarehouse?: Record<string, number>;
   totalStock?: number;
 }
 
@@ -86,6 +89,7 @@ export function BatchTransferModal({
   const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
+  const [addNotice, setAddNotice] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển — không bao giờ gọi
@@ -151,6 +155,7 @@ export function BatchTransferModal({
       setConfirmDeleteAll(false);
       setErrorMessage(null);
       setSuccessInfo(null);
+      setAddNotice(null);
       idempotencyKeyRef.current = null;
       payloadFingerprintRef.current = '';
     }
@@ -199,10 +204,7 @@ export function BatchTransferModal({
   const getFromStock = (bookId: string): number => {
     const book = books.find((b) => b.id === bookId);
     if (!book) return 0;
-    if (fromWarehouseId === 'wh-au-co') return book.stockAuCo ?? 0;
-    if (fromWarehouseId === 'wh-quynh-mai') return book.stockQuynhMai ?? 0;
-    if (fromWarehouseId === 'wh-du-phong') return book.stockDuPhong ?? 0;
-    return book.totalStock ?? 0;
+    return stockOfWarehouse(book, fromWarehouseId);
   };
 
   // Tìm sách để thêm vào danh sách chuyển
@@ -443,6 +445,32 @@ export function BatchTransferModal({
     setLines((prev) => [...prev, ...toAdd]);
     invalidateValidation();
     setErrorMessage(null);
+  };
+
+  const handleAddAllSourceStock = () => {
+    const existingIds = new Set(lines.map((l) => l.editionId));
+    const toAdd: TransferLine[] = [];
+    for (const b of books) {
+      if (existingIds.has(b.id)) continue;
+      const stock = getFromStock(b.id);
+      if (stock > 0) {
+        toAdd.push({
+          editionId: b.id,
+          code: b.code,
+          title: b.title,
+          quantity: stock,
+          availableStock: stock,
+        });
+      }
+    }
+    setLines((prev) => [...prev, ...toAdd]);
+    invalidateValidation();
+    setErrorMessage(null);
+    setAddNotice(
+      toAdd.length === 0
+        ? 'Kho nguồn không còn sách nào có tồn để lấy.'
+        : `Đã thêm: ${toAdd.length} đầu sách, ${toAdd.reduce((acc, l) => acc + l.quantity, 0)} cuốn`
+    );
   };
 
   // 1. Kiểm tra tồn trước (Dry-Run TOCTOU Validation)
@@ -708,6 +736,10 @@ export function BatchTransferModal({
               <p className="text-xs text-emerald-700 font-medium">
                 Tổng cộng {lines.length} đầu sách ({successInfo.totalItems} cuốn) đã được trừ kho nguồn và nhập kho đích đồng thời.
               </p>
+              <p className="text-[11px] text-emerald-700/90">
+                Kho nguồn đã về 0: vào Quản Lý Kho bấm <span className="font-bold">Ngưng hoạt động</span> — đừng bấm
+                &quot;Xoá&quot;, kho đã có sổ kho nên xoá luôn bị từ chối.
+              </p>
               <div className="pt-2">
                 <button
                   type="button"
@@ -781,14 +813,32 @@ export function BatchTransferModal({
                   <label className="text-xs font-bold text-slate-800">
                     Danh Sách Đầu Sách Điều Chuyển ({lines.length} đầu sách, {lines.reduce((acc, l) => acc + l.quantity, 0)} cuốn)
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleBulkAddInStock}
-                    className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" /> Thêm nhanh toàn bộ sách có tồn
-                  </button>
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={handleBulkAddInStock}
+                      className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                      title="Chuẩn bị hàng ra hội chợ: mỗi đầu sách lấy tối đa 30 cuốn"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Thêm nhanh — tối đa 30 cuốn/đầu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddAllSourceStock}
+                      className="flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-[11px] font-bold transition"
+                      title="Lấy đúng số lượng tồn còn lại trong kho nguồn, không giới hạn"
+                    >
+                      <Warehouse className="w-3.5 h-3.5" /> Lấy tồn thật kho nguồn
+                    </button>
+                  </div>
                 </div>
+
+                {addNotice && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{addNotice}</span>
+                  </div>
+                )}
 
                 <div className="relative">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -1004,7 +1054,7 @@ export function BatchTransferModal({
                       {lines.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-3 py-8 text-center text-slate-400 italic">
-                            Chưa có đầu sách nào. Tìm kiếm ở trên hoặc bấm &quot;Thêm nhanh toàn bộ sách có tồn&quot;.
+                            Chưa có đầu sách nào. Tìm kiếm ở trên hoặc bấm &quot;Lấy tồn thật kho nguồn&quot;.
                           </td>
                         </tr>
                       ) : (
