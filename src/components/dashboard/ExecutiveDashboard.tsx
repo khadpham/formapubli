@@ -70,7 +70,11 @@ export function ExecutiveDashboard({
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setWarehouses(json.data);
-          const fairWh = json.data.find((w: any) => w.type === 'FAIR_EVENT');
+          // API trả `warehouseType`, KHÔNG có `type` ⇒ trước đây fairWh luôn
+          // undefined và kho được ghim cứng 'wh-du-phong'; nếu kho đó không tồn
+          // tại, API chốt ngày trả 400 và modal báo "không có dữ liệu" — tưởng
+          // không có dữ liệu trong khi thực ra là chọn sai kho.
+          const fairWh = json.data.find((w: any) => w.warehouseType === 'FAIR_EVENT');
           if (fairWh) {
             setSelectedSettlementWarehouseId(fairWh.id);
           }
