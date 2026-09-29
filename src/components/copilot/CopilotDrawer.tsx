@@ -123,7 +123,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
 - **Cảnh báo cạn kho & Đề xuất in** (Chính sách đệm an toàn 105 ngày)
 - **Đối soát két ca quầy** (Đầu ca, tiền mặt, số lệch ghi nhận)
 - **Danh mục**: sách của 1 tác giả, tựa bắt đầu bằng chữ nào, tác giả được yêu thích
-- **Lên đơn nháp**: nói "lấy 2 cuốn H01..." rồi bấm **Áp vào POS**, qua quầy kiểm tra và tự thanh toán`,
+- **Lên đơn nháp**: nói "lấy 2 cuốn HH001..." rồi bấm **Áp vào POS**, qua quầy kiểm tra và tự thanh toán`,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);

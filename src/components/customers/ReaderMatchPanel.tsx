@@ -47,7 +47,7 @@ export function ReaderMatchPanel() {
           value={code}
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && search()}
-          placeholder="Mã SKU (VD: H01)"
+          placeholder="Mã SKU (VD: HH001)"
           className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500 font-mono uppercase w-44"
         />
         <button

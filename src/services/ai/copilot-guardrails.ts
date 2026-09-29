@@ -60,7 +60,7 @@ export class CopilotGuardrails {
       if (/doanh thu|doanh so|ton kho|doi soat|ket|tai ban|can kho|tac gia|liet ke|ban chay|ket qua|du bao/.test(n)) {
         plan.directAnswer =
           (plan.directAnswer || '') +
-          '\n\n📌 Tôi thấy câu hỏi còn nhắc tới số liệu — gửi thêm 1 câu riêng (ví dụ: "Doanh số 30 ngày?" hoặc "Tồn kho H01?") để tôi tra cứu chính xác từng phần.';
+          '\n\n📌 Tôi thấy câu hỏi còn nhắc tới số liệu — gửi thêm 1 câu riêng (ví dụ: "Doanh số 30 ngày?" hoặc "Tồn kho HH001?") để tôi tra cứu chính xác từng phần.';
       }
       return plan;
     }
@@ -329,7 +329,7 @@ Trả về JSON chuẩn khớp schema:
         '- **Cảnh báo cạn kho** và đề xuất in theo chính sách 105 ngày\n' +
         '- **Đối soát két tiền** ca làm việc\n' +
         '- **Danh mục**: sách của 1 tác giả, tựa bắt đầu bằng chữ nào, tác giả được yêu thích\n' +
-        '- **Lên đơn nháp**: nói "lấy 2 cuốn H01..." rồi bấm Áp vào POS, tự thanh toán\n\n' +
+        '- **Lên đơn nháp**: nói "lấy 2 cuốn HH001..." rồi bấm Áp vào POS, tự thanh toán\n\n' +
         'Quý lãnh đạo cũng có thể hỏi tôi ngày giờ hiện tại hoặc cách sử dụng.',
     };
   }

@@ -511,7 +511,7 @@ export function StockOverviewMatrix({
               spellCheck={false}
               placeholder={
                 isListening
-                  ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                  ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
                   : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
               }
               value={searchTerm ?? ''}
@@ -588,7 +588,7 @@ export function StockOverviewMatrix({
             spellCheck={false}
             placeholder={
               isListening
-                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
                 : 'Tìm theo tên không dấu (truong, benh), 4 số cuối (7507), mã tắt (bt) hoặc bấm Micro...'
             }
             value={searchTerm ?? ''}
@@ -1019,7 +1019,7 @@ export function StockOverviewMatrix({
               Đang thu âm giọng nói tiếng Việt:
             </span>
             <span className="text-[11px] text-rose-200 font-medium hidden sm:inline">
-              Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "H01", "7507")
+              Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "HH001", "7507")
             </span>
           </div>
           <button

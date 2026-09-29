@@ -183,12 +183,12 @@ async function main() {
     let workId = `work-${itemCode.toLowerCase()}`;
     let editionNum = 1;
 
-    if (itemCode === 'H36') {
-      workId = 'work-h21'; // Shared work with H21 Le Spleen de Paris
+    if (itemCode === 'H36' || itemCode === 'HH042') {
+      workId = itemCode === 'HH042' ? 'work-hh032' : 'work-h21'; // Shared work with Le Spleen de Paris
       editionNum = 2;
     }
 
-    if (itemCode !== 'H36') {
+    if (itemCode !== 'H36' && itemCode !== 'HH042') {
       const workRecord = {
         id: workId,
         code: `W-${itemCode}`,
