@@ -30,6 +30,24 @@ function vnToday(now = new Date()): string {
   return now.toLocaleDateString('en-CA', { timeZone: VN_TZ });
 }
 
+/**
+ * Điều kiện "đơn thuộc ngày nghiệp vụ `date`" — NGÀY VIỆT NAM, không phải ngày UTC.
+ *
+ * `created_at` luôn là UTC, còn `date` ở đây là ngày VN. So `created_at LIKE
+ * 'YYYY-MM-DD%'` tức là so với NGÀY UTC, lệch 7 giờ với ngày đang hiển thị:
+ *  · đơn 00:00–07:00 giờ VN rơi vào ngày UTC HÔM TRƯỚC ⇒ KPI của "hôm nay" thiếu
+ *    gần hết ca đêm, và các đơn đó không hiện trong "đơn gần đây"
+ *  · đơn sau 17:00 giờ VN lọt vào báo cáo của hôm nay dù đã sang ngày mới
+ * Cùng lý do này đã được sửa ở daily-settlement và cron; ở đây còn sót vì dùng
+ * `LIKE` thay vì đổi timezone trong SQL.
+ *
+ * `datetime()` của SQLite nhận cả hai họ timestamp đang cùng tồn tại
+ * ('YYYY-MM-DD HH:MM:SS' của SQLite và ISO 'YYYY-MM-DDTHH:MM:SSZ' của app).
+ * Việt Nam cố định UTC+7, không có DST.
+ */
+const vnDayEq = (col: any, date: string) =>
+  sql`substr(datetime(${col}, '+7 hours'), 1, 10) = ${date}`;
+
 /** YYYY-MM-DD và là ngày có thật (2026-02-30 là ngày không tồn tại). */
 function isRealDate(s: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -104,10 +122,9 @@ export async function GET(req: NextRequest) {
         and(
           inArray(orders.warehouseId, scopeIds),
           eq(orders.status, 'COMPLETED'),
-          // Tiền tố 10 ký tự: an toàn cho CẢ hai họ timestamp đang cùng tồn tại
-          // trong bảng (SQLite CURRENT_TIMESTAMP và ISO của app). So chuỗi
-          // timestamp đầy đủ giữa hai họ là vô nghĩa và âm thầm loại mất dữ liệu.
-          sql`${orders.createdAt} LIKE ${`${date}%`}`
+          // Ngày VIỆT NAM, xem vnDayEq. Trước đây so 10 ký tự đầu của created_at,
+          // tức ngày UTC ⇒ lệch 7 tiếng so với ngày đang hiển thị.
+          vnDayEq(orders.createdAt, date)
         )
       )
       .groupBy(orders.paymentMethod);
@@ -190,7 +207,7 @@ export async function GET(req: NextRequest) {
         and(
           inArray(orders.warehouseId, scopeIds),
           eq(orders.status, 'COMPLETED'),
-          sql`${orders.createdAt} LIKE ${`${date}%`}`
+          vnDayEq(orders.createdAt, date)
         )
       )
       .orderBy(desc(orders.createdAt))
@@ -274,7 +291,7 @@ export async function GET(req: NextRequest) {
         and(
           inArray(orders.warehouseId, scopeIds),
           eq(orders.status, 'COMPLETED'),
-          sql`${orders.createdAt} LIKE ${`${date}%`}`
+          vnDayEq(orders.createdAt, date)
         )
       )
       .groupBy(orderItems.editionId, editions.code, editions.title)

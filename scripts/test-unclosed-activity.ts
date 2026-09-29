@@ -169,7 +169,42 @@ async function run() {
   ok(!eDays2.includes(d2), `sau khi dong ca, ngay ${d2} het phai chot`);
   ok(eDays2.includes(d3), `ngay ${d3} van phai chot (co don cua ca)`);
 
-  console.log('\n[P6] Fail-closed: sai secret van 401');
+  // [P7] Ranh giới 7 GIỜ UTC — ca này CHỈ pass nếu đổi ngày trong SQL.
+  //
+  // `created_at` là UTC. Đặt đơn ở 20:00 UTC của ngày d2 thì giờ Việt Nam đã
+  // sang ngày d1 (03:00). Nói cách khác: NGÀY UTC của đơn là d2, NGÀY NGHIỆP VỤ là d1.
+  //   · code cũ (`substr(col,1,10)`) gán d2 ⇒ bắt chốt nhầm d2, bỏ sót d1
+  //   · code đúng (`substr(datetime(col,'+7 hours'),1,10)`) gán d1
+  // Endpoint này quyết định ngày nào phải chốt, nên lệch ở đây là lệch tiền thật.
+  const d1 = vnDay(1);
+  await raw.execute({
+    sql: `INSERT INTO warehouses (id,code,name,warehouse_type,is_active,is_sellable_on_pos,created_at)
+          VALUES ('wh-f','KHO_F','Kho F','PHYSICAL_MAIN',1,1,?)`,
+    args: [`${vnDay(60)} 00:00:00`],
+  });
+  await raw.execute({
+    sql: `INSERT INTO orders
+          (id,order_code,idempotency_key,warehouse_id,cashier_id,status,payment_method,subtotal,final_amount,created_at)
+          VALUES ('o-f','OD-F','k-f','wh-f','C-U','COMPLETED','CASH',100000,100000,?)`,
+    args: [`${d2} 20:00:00`],
+  });
+  const resF: any = await GET(new Request('http://localhost/api/cron/auto-close?unclosed=1&days=10', {
+    headers: { Authorization: 'Bearer test-secret-unclosed' },
+  }) as any);
+  const fDays = ((await resF.json())?.data?.unclosed || [])
+    .filter((x: any) => x.warehouse === 'KHO_F')
+    .map((x: any) => x.date);
+  console.log(`   KHO_F biet thieu chot o: ${fDays.join(', ')}`);
+  ok(
+    fDays.includes(d1),
+    `don luc 20:00 UTC = 03:00 ngay ${d1} giờ VN ⇒ ngay ${d1} phai bat chot`
+  );
+  ok(
+    !fDays.includes(d2),
+    `ngay ${d2} giờ VN da qua 17:00 (chi con 7 tieng) ⇒ KHONG bat chot ${d2}`
+  );
+
+  console.log('\n[P8] Fail-closed: sai secret van 401');
   const res3 = await GET(new Request('http://localhost/api/cron/auto-close?unclosed=1', {
     headers: { Authorization: 'Bearer sai-secret' },
   }) as any);

@@ -122,9 +122,22 @@ ok(
   'KHÔNG được gom tiền mặt theo warehouseId+cashierId — hai ca cùng thu ngân sẽ trùng số'
 );
 // A-2: recentClosed phải lọc ngày, nếu không sẽ lọt đơn hôm qua.
+// Trước đây assertion này bắt chuỗi `createdAt} LIKE` — tức nó chỉ kiểm tra
+// CÁCH VIẾT, không kiểm tra ngày đúng. Sau khi đổi sang ngày VN trong SQL, chuỗi
+// đó biến mất và test đỏ trong khi hành vi lại đúng hơn. Giờ kiểm tra đúng thứ
+// cần kiểm: cả ba truy vấn ngày đều dùng CHUNG một hàm `vnDayEq`, và không còn
+// so chuỗi `LIKE 'YYYY-MM-DD%'` nào (so với ngày UTC ⇒ lệch 7 tiếng).
 ok(
-  /recentClosedRows[\s\S]{0,900}createdAt\} LIKE/.test(route),
+  /recentClosedRows[\s\S]{0,900}vnDayEq\(orders\.createdAt, date\)/.test(route),
   'recentClosed phải lọc theo ngày làm việc như KPI và top sản phẩm'
+);
+ok(
+  !/createdAt\} LIKE/.test(route),
+  'không được lọc ngày bằng LIKE trên created_at — đó là NGÀY UTC, lệch 7 tiếng so với ngày hiển thị'
+);
+ok(
+  (route.match(/vnDayEq\(orders\.createdAt, date\)/g) || []).length >= 3,
+  'KPI, đơn gần đây và top sản phẩm phải dùng CHUNG bộ lọc ngày VN'
 );
 // A-3 + lỗi múi giờ: tự Date.parse(openedAt) lệch +7h vì SQLite ghi UTC trần.
 ok(

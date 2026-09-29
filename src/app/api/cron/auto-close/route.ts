@@ -140,30 +140,41 @@ async function listUnclosed(days: number) {
   //    phát sinh (tiền vẫn trong két). Bỏ qua trường hợp này thì báo cáo báo
   //    xanh trong lúc két còn mở — đúng "xanh giả" mà endpoint này sinh ra để
   //    chống.
-  // substr(...,1,10) an toàn vì created_at có hai họ trong DB: 'YYYY-MM-DD HH:MM:SS'
-  // (SQLite CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' — 10 ký tự đầu là
-  // ngày ở cả hai, cùng lý do dùng LIKE 'YYYY-MM-DD%' ở daily-settlement.
-  // Đây là endpoint chẩn đoán, gọi tay bằng ?unclosed=1, KHÔNG nằm trong
-  // workflow nhiệm vụ tự động nên thêm vài truy vấn là không đáng kể.
+  // Ngày phải là NGÀY NGHIỆP VỤ VIỆT NAM, không phải ngày UTC.
+  //
+  // `created_at`/`opened_at` luôn là UTC (app ghi `new Date().toISOString()`, mặc
+  // định cột SQLite là CURRENT_TIMESTAMP). Còn `d(back)` sinh ngày VN. Trước đây
+  // dùng `substr(col,1,10)` = ngày UTC, nên lệch nhau 7 giờ:
+  //  · đơn 00:00–07:00 giờ VN nằm ở ngày UTC HÔM TRƯỚC ⇒ ngày VN đó KHÔNG được
+  //    đánh dấu "có phát sinh" ⇒ có thể bỏ sót một ngày thật sự có phát sinh
+  //  · đơn 17:00–24:00 giờ VN rơi vào ngày UTC kế tiếp ⇒ đánh dấu nhầm ngày khác
+  // Hàm này QUYẾT ĐỊNH ngày nào phải chốt, nên lệch ở đây là lệch tiền thật.
+  //
+  // Cách đúng: đổi sang ngày VN ngay trong SQL. `datetime()` của SQLite nhận CẢ HAI
+  // họ timestamp đang cùng tồn tại ('YYYY-MM-DD HH:MM:SS' và ISO
+  // 'YYYY-MM-DDTHH:MM:SSZ'). Việt Nam cố định UTC+7, không DST.
+  //
+  // Đây là endpoint chẩn đoán, gọi tay bằng ?unclosed=1, KHÔNG nằm trong workflow
+  // nhiệm vụ tự động nên thêm vài truy vấn là không đáng kể.
   const active = new Set<string>();
-  const dayRange = (col: any) =>
-    sql`${col} >= ${`${firstDay} 00:00:00`} AND ${col} <= ${`${lastDay} 23:59:59`}`;
+  const vnDay = (col: any) => sql<string | null>`substr(datetime(${col}, '+7 hours'), 1, 10)`;
+  const inWindow = (col: any) => sql`${vnDay(col)} BETWEEN ${firstDay} AND ${lastDay}`;
   const orderDays = await db
-    .select({ wh: orders.warehouseId, day: sql<string | null>`substr(${orders.createdAt}, 1, 10)` })
+    .select({ wh: orders.warehouseId, day: vnDay(orders.createdAt) })
     .from(orders)
-    .where(dayRange(orders.createdAt));
+    .where(inWindow(orders.createdAt));
   const shiftDays = await db
-    .select({ wh: cashboxSessions.warehouseId, day: sql<string | null>`substr(${cashboxSessions.openedAt}, 1, 10)` })
+    .select({ wh: cashboxSessions.warehouseId, day: vnDay(cashboxSessions.openedAt) })
     .from(cashboxSessions)
-    .where(dayRange(cashboxSessions.openedAt));
+    .where(inWindow(cashboxSessions.openedAt));
   for (const r of [...orderDays, ...shiftDays]) {
     if (r.wh && r.day) active.add(`${r.wh}::${r.day}`);
   }
-  // Ca còn mở ⇒ mọi ngày từ ngày mở ca tới hôm nay đều "còn phát sinh".
+  // Ca còn mở ⇒ mọi ngày từ ngày mở ca (giờ VN) tới hôm nay đều "còn phát sinh".
   const openShifts = await db
     .select({
       wh: cashboxSessions.warehouseId,
-      openedDay: sql<string | null>`substr(${cashboxSessions.openedAt}, 1, 10)`,
+      openedDay: vnDay(cashboxSessions.openedAt),
     })
     .from(cashboxSessions)
     .where(eq(cashboxSessions.status, 'OPEN'));
