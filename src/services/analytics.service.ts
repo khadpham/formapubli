@@ -128,7 +128,6 @@ export class AnalyticsService {
   /** Ký gửi đa điểm: mỗi kho wh-consign-* đang giữ bao nhiêu + đã bán kỳ này. */
   static async consignment(range: DateRange = {}) {
     const whs = await db.select().from(warehouses).where(like(warehouses.id, 'wh-consign-%'));
-<<<<<<< HEAD
     if (whs.length === 0) return [];
     // Số truy vấn cố định (3) bất kể bao nhiêu kho ký gửi và bao nhiêu SKU.
     // Trước đây: mỗi kho × mỗi dòng tồn lại một SELECT editions ⇒ 3 kho × 60 SKU
