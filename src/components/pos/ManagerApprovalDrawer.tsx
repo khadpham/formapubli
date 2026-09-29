@@ -26,7 +26,7 @@ function parseCartSnapshot(raw?: string | null): CartItemSnapshot[] {
   }
 }
 
-interface PendingApprovalItem {
+export interface PendingApprovalItem {
   id: string;
   orderCode: string;
   warehouseId: string;
@@ -50,6 +50,43 @@ interface ManagerApprovalDrawerProps {
   onActionCompleted?: () => void;
 }
 
+/**
+ * Khoá theo từng thẻ. Một ô busy dùng chung sẽ bị thẻ nào xong trước xoá mất
+ * trạng thái của thẻ đang bay còn lại (spinner biến mất, nút sáng lại, bấm trùng).
+ */
+export function addBusyId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+export function removeBusyId(ids: string[], id: string): string[] {
+  return ids.filter((current) => current !== id);
+}
+
+export type QuickApproveDecision =
+  | { kind: 'none'; code: string }
+  | { kind: 'single'; code: string; item: PendingApprovalItem }
+  | { kind: 'ambiguous'; code: string; items: PendingApprovalItem[] };
+
+/**
+ * Ô duyệt nhanh: shortCode là 4 ký tự cuối của 16 hex ngẫu nhiên
+ * (order.service.ts:559 → extractShortCode, discount-approval.service.ts:128)
+ * ⇒ chỉ 65.536 giá trị, trùng chắc chắn xảy ra trong một hội chợ. Server so
+ * shortCode với CHÍNH request client chọn (discount-approval.service.ts:434)
+ * nên không chặn được — quản lý đọc mã A có thể duyệt đơn B của thu ngân khác.
+ * Vì vậy trả về MỌI đơn khớp: 1 thì duyệt, nhiều thì bắt quản lý chọn.
+ */
+export function decideQuickApprove(
+  items: PendingApprovalItem[],
+  rawCode: string
+): QuickApproveDecision {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return { kind: 'none', code };
+  const matches = items.filter((i) => i.shortCode === code || i.orderCode.endsWith(code));
+  if (matches.length === 0) return { kind: 'none', code };
+  if (matches.length === 1) return { kind: 'single', code, item: matches[0] };
+  return { kind: 'ambiguous', code, items: matches };
+}
+
 export function ManagerApprovalDrawer({
   isOpen,
   onClose,
@@ -67,7 +104,10 @@ export function ManagerApprovalDrawer({
   const [otherWarehouseCount, setOtherWarehouseCount] = useState(0);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [quickShortCode, setQuickShortCode] = useState('');
-  const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
+  /** id các thẻ đang bay — khoá từng thẻ, xong thẻ nào bỏ thẻ nó. */
+  const [busyIds, setBusyIds] = useState<string[]>([]);
+  /** Mã 4 số bị trùng: bắt quản lý chọn đúng đơn thay vì duyệt bừa. */
+  const [ambiguous, setAmbiguous] = useState<{ code: string; items: PendingApprovalItem[] } | null>(null);
   const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
   const [rejectReasonInput, setRejectReasonInput] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -141,10 +181,14 @@ export function ManagerApprovalDrawer({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const markBusy = (id: string) => setBusyIds((prev) => addBusyId(prev, id));
+  /** Chỉ bỏ khoá đúng thẻ vừa xong — không đụng trạng thái của thẻ khác. */
+  const clearBusy = (id: string) => setBusyIds((prev) => removeBusyId(prev, id));
+
   // 1-Chạm duyệt
   const handleApprove = async (id: string, shortCode?: string) => {
     try {
-      setActionInProgressId(id);
+      markBusy(id);
       const res = await fetch(`/api/pos/discount-approvals/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -159,19 +203,20 @@ export function ManagerApprovalDrawer({
         throw new Error(json.message || 'Lỗi khi phê duyệt');
       }
       showToast('✅ Đã phê duyệt chiết khấu thành công!');
+      setAmbiguous(null);
       fetchPending();
       if (onActionCompleted) onActionCompleted();
     } catch (err: any) {
       showToast(`❌ ${err.message || 'Không thể phê duyệt'}`);
     } finally {
-      setActionInProgressId(null);
+      clearBusy(id);
     }
   };
 
   // Từ chối kèm lý do
   const handleReject = async (id: string) => {
     try {
-      setActionInProgressId(id);
+      markBusy(id);
       const res = await fetch(`/api/pos/discount-approvals/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -192,21 +237,25 @@ export function ManagerApprovalDrawer({
     } catch (err: any) {
       showToast(`❌ ${err.message || 'Không thể từ chối'}`);
     } finally {
-      setActionInProgressId(null);
+      clearBusy(id);
     }
   };
 
   // Duyệt nhanh bằng ô ShortCode 4 số
   const handleQuickApproveByShortCode = () => {
-    const code = quickShortCode.trim().toUpperCase();
-    if (!code) return;
-    const match = items.find((i) => i.shortCode === code || i.orderCode.endsWith(code));
-    if (!match) {
-      showToast(`⚠️ Không tìm thấy đơn nào có mã '${code}' đang chờ duyệt`);
+    const decision = decideQuickApprove(items, quickShortCode);
+    setQuickShortCode('');
+    if (decision.kind === 'none') {
+      showToast(`⚠️ Không tìm thấy đơn nào có mã '${decision.code}' đang chờ duyệt`);
       return;
     }
-    handleApprove(match.id, code);
-    setQuickShortCode('');
+    if (decision.kind === 'single') {
+      setAmbiguous(null);
+      handleApprove(decision.item.id, decision.code);
+      return;
+    }
+    // Trùng mã: không tự chọn đơn — đưa danh sách để quản lý chọn đúng thẻ.
+    setAmbiguous({ code: decision.code, items: decision.items });
   };
 
   if (!isOpen || !mounted) return null;
@@ -300,6 +349,75 @@ export function ManagerApprovalDrawer({
               Duyệt Ngay
             </button>
           </div>
+
+          {/* Trùng mã 4 số: KHÔNG duyệt bừa — bắt quản lý chọn đúng đơn */}
+          {ambiguous && ambiguous.items.length > 1 && (
+            <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-2.5 space-y-2">
+              <p className="text-[11px] font-extrabold text-rose-800">
+                ⚠️ Trùng mã {ambiguous.code}: {ambiguous.items.length} đơn cùng mã. Chọn đúng đơn:
+              </p>
+              {ambiguous.items.map((row) => {
+                const rowBusy = busyIds.includes(row.id);
+                return (
+                  <div
+                    key={`amb-${row.id}`}
+                    className="bg-white border border-rose-200 rounded-xl p-2.5 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-extrabold text-xs text-slate-900">
+                        {row.orderCode}
+                      </span>
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-black text-[10px] rounded-lg border border-amber-300">
+                        Mã {row.shortCode}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                      <span className="flex items-center gap-1 min-w-0 truncate">
+                        <Building2 className="w-3 h-3 shrink-0" /> {row.warehouseId}
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1 min-w-0 truncate">
+                        <User className="w-3 h-3 shrink-0" /> {row.cashierId}
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <Clock className="w-3 h-3" />{' '}
+                        {new Date(row.createdAt).toLocaleTimeString('vi-VN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAmbiguous(null)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-lg text-[11px] transition"
+                      >
+                        Huỷ chọn
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(row.id, row.shortCode)}
+                        disabled={rowBusy}
+                        className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-lg text-[11px] transition flex items-center justify-center gap-1"
+                      >
+                        {rowBusy ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Đang xử lý...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3 h-3" /> Duyệt đơn này
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Danh sách yêu cầu chờ duyệt */}
@@ -354,7 +472,7 @@ export function ManagerApprovalDrawer({
 
           {items.map((item) => {
             const isGift = item.requestedDiscountRate === 1;
-            const isBusy = actionInProgressId === item.id;
+            const isBusy = busyIds.includes(item.id);
             const isRejecting = rejectPromptId === item.id;
 
             return (
