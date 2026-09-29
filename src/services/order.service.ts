@@ -1115,10 +1115,12 @@ export class OrderService {
   }
 
   /**
-   * V4.1 S1.2 (lock Q5) — Tồn khả dụng ATP chia theo loại kho:
-   * - Kho hội chợ (FAIR_EVENT): ATP = physical (sách ra gian hàng chỉ bán tại quầy;
-   *   API giữ chỗ online từ chối kho hội chợ bằng 422 nên không cần trừ).
-   * - Kho còn lại: ATP = physical NEW trừ phần đơn PENDING còn hạn giữ chỗ.
+   * V4.1 S1.2 (lock Q5) — Tồn khả dụng ATP:
+   * - Mọi kho: ATP = physical NEW trừ phần đơn PENDING còn hạn giữ chỗ.
+   *   Kể cả kho hội chợ (FAIR_EVENT): quầy tại đó tạo đơn chuyển khoản
+   *   PENDING_CONFIRMATION tại chính kho đó, giữ hàng thật, nên cũng phải trừ.
+   *   (Trước 2026-09-29 kho hội chợ trả thẳng tồn vật lý ⇒ bán vượt tồn.
+   *   Xem scripts/test-fair-atp-hold.ts.)
    * Đơn PENDING không có bút toán ledger nên phải tính động từ order_items.
    * Hỗ trợ nhận `txOrDb` để thực thi đồng nhất trong cùng write transaction.
    */
@@ -1135,7 +1137,6 @@ export class OrderService {
     const ids = Array.from(new Set(editionIds.filter(Boolean)));
     const out = new Map<string, number>();
     if (ids.length === 0) return out;
-    const wh = await WarehouseService.getWarehouse(warehouseId, txOrDb);
     const balRows = await txOrDb
       .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
       .from(stockBalances)
@@ -1148,12 +1149,15 @@ export class OrderService {
       );
     const balMap = new Map<string, number>();
     for (const r of balRows) balMap.set(`${r.editionId}`, Number(r.qty || 0));
-    // Kho hội chợ: ATP = physical, không trừ giữ chỗ online (giống getATP).
-    if (wh?.warehouseType === 'FAIR_EVENT') {
-      for (const id of ids) out.set(id, balMap.get(id) || 0);
-      return out;
-    }
-    // ponytail: đọc thêm 1 row warehouses mỗi lần tính ATP; cache lại khi thành điểm nghẽn đo được.
+    // KHÔNG có nhánh riêng cho kho hội chợ nữa. Trước đây có:
+    //   if (wh?.warehouseType === 'FAIR_EVENT') { out = balMap; return; }
+    // với lý do ghi ở doc là "API giữ chỗ online từ chối kho hội chợ bằng 422 nên
+    // không cần trừ". Giả định đó đã lệch: quầy tại kho hội chợ tạo đơn chuyển
+    // khoản PENDING_CONFIRMATION ngay tại chính kho đó, giữ hàng thật. Nhánh đó
+    // làm ATP kho hội chợ = tồn vật lý ⇒ createOrder (:754) dùng số sai đó để
+    // chặn ⇒ chặn không có tác dụng ⇒ bán vượt tồn.
+    // Đo được: 5 cuốn tồn + 1 đơn quầy giữ 5 cuốn ⇒ ATP trả 5 thay vì 0.
+    // Xem scripts/test-fair-atp-hold.ts (P1/P2/P3).
     // CHỈ so NGÀY UTC ('YYYY-MM-DD'), không so timestamp đầy đủ: created_at
     // trong DB lẫn thứ tự "YYYY-MM-DD HH:MM:SS" (SQLite) lẫn ISO "...T...Z"
     // (app) — so chuỗi giữa hai họ này là vô nghĩa (' ' < 'T') và âm thầm
