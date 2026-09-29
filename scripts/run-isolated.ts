@@ -56,6 +56,7 @@ const ALL_SUITES = [
     'scripts/test-live-monitor.ts',
     'scripts/test-live-monitor-runtime.ts',
     'scripts/test-fair-atp-hold.ts',
+    'scripts/test-unclosed-activity.ts',
   'scripts/test-forecast.ts',
   'scripts/test-royalties.ts',
   'scripts/test-returns.ts',

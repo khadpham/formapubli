@@ -46,6 +46,12 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
   3. Xoá SW + cache rồi tải lại:
      `await (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister())` và
      `await caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k))))`.
+- **`npm install` KHÔNG cài devDependencies.** Lệnh thường báo "added N packages"
+  nhưng `typescript` và `@opennextjs/cloudflare` vẫn vắng mặt ⇒ `npx tsc` resolve
+  nhầm package `tsc` khác, và `next dev` chết vì không đọc được `next.config.mjs`.
+  Đã mất nhiều lượt debug vì tưởng repo hỏng. Phải dùng:
+  `npm install --include=dev`
+  Sau đó kiểm `Test-Path node_modules\typescript\package.json` phải True.
 - File watcher của `next dev` trên máy này hay bị trễ/hỏng khi có nhiều worktree. Nếu sửa file mà
   log không in `Compiled`, **restart dev server** thay vì chờ.
 - NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps

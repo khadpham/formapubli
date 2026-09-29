@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { CashboxService, OrderService } from '@/services/order.service';
 import { DailySettlementService } from '@/services/daily-settlement.service';
-import { db, warehouses, idempotencyKeys } from '@/db';
-import { eq, like } from 'drizzle-orm';
+import { db, warehouses, idempotencyKeys, orders, cashboxSessions } from '@/db';
+import { eq, like, sql } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,25 +119,69 @@ async function listUnclosed(days: number) {
   const firstDay = d(span);
   const lastDay = d(1);
 
-  const all = await db.select({ id: warehouses.id, code: warehouses.code }).from(warehouses);
+  const all = await db
+    .select({ id: warehouses.id, code: warehouses.code, createdAt: warehouses.createdAt })
+    .from(warehouses);
   const closedKeys = await db
     .select({ key: idempotencyKeys.key })
     .from(idempotencyKeys)
     .where(like(idempotencyKeys.key, 'day-close:%'));
   const closed = new Set(closedKeys.map((r) => r.key));
 
+  // Ngày KHÔNG có phát sinh thì không cần chốt. Trước đây hàm này liệt kê mọi
+  // (kho x ngày) nên kho tạo ngày 20 vẫn bị bắt chốt cho ngày 19, và ngày không
+  // ai bán gì vẫn phải "chốt" — tức báo cáo xanh giả rồi lại đỏ.
+  //
+  // "Có phát sinh" = ngày đó kho đó có ít nhất MỘT dòng dữ liệu vận động:
+  //   · orders.created_at        (bán, kể cả đơn chuyển khoản đang chờ tiền)
+  //   · cashbox_sessions.opened_at (mở ca = có dòng tiền, kể cả 0 đơn)
+  // substr(...,1,10) an toàn vì created_at có hai họ trong DB: 'YYYY-MM-DD HH:MM:SS'
+  // (SQLite CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' — 10 ký tự đầu là
+  // ngày ở cả hai, cùng lý do dùng LIKE 'YYYY-MM-DD%' ở daily-settlement.
+  // Đây là endpoint chẩn đoán, gọi tay bằng ?unclosed=1, KHÔNG nằm trong
+  // workflow nhiệm vụ tự động nên thêm 2 truy vấn là không đáng kể.
+  const active = new Set<string>();
+  const dayRange = (col: any) =>
+    sql`${col} >= ${`${firstDay} 00:00:00`} AND ${col} <= ${`${lastDay} 23:59:59`}`;
+  const orderDays = await db
+    .select({ wh: orders.warehouseId, day: sql<string | null>`substr(${orders.createdAt}, 1, 10)` })
+    .from(orders)
+    .where(dayRange(orders.createdAt));
+  const shiftDays = await db
+    .select({ wh: cashboxSessions.warehouseId, day: sql<string | null>`substr(${cashboxSessions.openedAt}, 1, 10)` })
+    .from(cashboxSessions)
+    .where(dayRange(cashboxSessions.openedAt));
+  for (const r of [...orderDays, ...shiftDays]) {
+    if (r.wh && r.day) active.add(`${r.wh}::${r.day}`);
+  }
+
   const unclosed: { warehouse: string; date: string }[] = [];
+  let skippedNoActivity = 0;
   for (let back = span; back >= 1; back--) {
     const day = d(back);
     for (const w of all) {
-      if (!closed.has(`day-close:${w.id}:${day}`)) unclosed.push({ warehouse: w.code, date: day });
+      if (closed.has(`day-close:${w.id}:${day}`)) continue;
+      // Kho chưa tồn tại vào ngày đó thì không thể có phát sinh.
+      const born = w.createdAt ? String(w.createdAt).slice(0, 10) : null;
+      if (born && born > day) { skippedNoActivity++; continue; }
+      if (!active.has(`${w.id}::${day}`)) { skippedNoActivity++; continue; }
+      unclosed.push({ warehouse: w.code, date: day });
     }
   }
 
   return NextResponse.json({
     // Còn ngày chưa chốt = CHƯA xong. Bên gọi fail thật, không báo xanh.
     success: unclosed.length === 0,
-    data: { windowDays: span, firstDay, lastDay, warehouses: all.length, unclosed },
+    data: {
+      windowDays: span,
+      firstDay,
+      lastDay,
+      warehouses: all.length,
+      unclosed,
+      // Số (kho x ngày) bị bỏ qua vì không có phát sinh — để nhìn thấy ngay
+      // tại sao con số nhỏ hơn tổng, không phải quét thiếu.
+      skippedNoActivity,
+    },
   });
 }
 
