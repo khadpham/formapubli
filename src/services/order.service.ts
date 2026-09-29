@@ -175,7 +175,7 @@ export class OrderService {
       channel = 'FAIR_EVENT',
       partnerId,
       customerId,
-      customerName = 'Khách lẻ vãng lai',
+      customerName = 'Khách lẻ',
       discountRate = 0.0,
       paymentMethod = 'CASH',
       fiscalScope = 'INTERNAL_MANAGEMENT',
@@ -1027,8 +1027,8 @@ export class OrderService {
       );
     }
 
-    const dbCustName = (ord.customerName || '').trim() || 'Khách lẻ vãng lai';
-    const wantCustName = (want.customerName || '').trim() || 'Khách lẻ vãng lai';
+    const dbCustName = (ord.customerName || '').trim() || 'Khách lẻ';
+    const wantCustName = (want.customerName || '').trim() || 'Khách lẻ';
     if (dbCustName !== wantCustName) {
       throw AppError.idempotency(
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có tên khách hàng khác (${dbCustName} vs ${wantCustName}).`
@@ -2396,4 +2396,5 @@ export class CashboxService {
       .limit(limit);
   }
 }
+
 

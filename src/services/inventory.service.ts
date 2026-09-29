@@ -696,6 +696,9 @@ export class InventoryService {
         author: works.author,
         translator: works.translator,
         shortCode: works.shortCode,
+        // POS sắp xếp "Cũ → Mới" theo năm phát hành, nên ma trận tồn kho phải
+        // trả field này. `publication_year` có trong 81/81 ấn bản.
+        publicationYear: editions.publicationYear,
       })
       .from(editions)
       .innerJoin(works, eq(editions.workId, works.id));

@@ -12,6 +12,8 @@ export interface PosCatalogLine {
   isbn: string;
   isbnLast4: string;
   coverPrice: number;
+  /** Năm phát hành — POS sắp xếp "Cũ → Mới / Mới → Cũ" theo trường này. Có thể null. */
+  publicationYear: number | null;
   atp: number;
   soldToday: number;
 }
@@ -62,6 +64,7 @@ export class PosCatalogService {
         isbn: editions.isbn,
         isbnLast4: editions.isbnLast4,
         coverPrice: editions.coverPrice,
+        publicationYear: editions.publicationYear,
         isActive: editions.isActive,
         author: works.author,
       })
@@ -139,6 +142,7 @@ export class PosCatalogService {
         isbn: e.isbn,
         isbnLast4: e.isbnLast4,
         coverPrice: e.coverPrice || 0,
+        publicationYear: e.publicationYear ?? null,
         // getATP đã khóa chốt theo loại kho (fair = physical, chính trừ giữ chỗ).
         atp: isFair ? physical : physical - (heldMap.get(e.id) || 0),
         soldToday: soldMap.get(e.id) || 0,

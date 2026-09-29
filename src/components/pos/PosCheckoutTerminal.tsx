@@ -90,11 +90,36 @@ interface BookItem {
   isbnLast4: string;
   author: string;
   coverPrice: number;
+  /** Năm phát hành (POS sắp xếp Cũ → Mới). Có thể null. */
+  publicationYear?: number | null;
   stockAuCo: number;
   stockQuynhMai: number;
   stockDuPhong: number;
   totalStock: number;
 }
+
+/**
+ * Nhóm sách đặc biệt hiện bằng một nút bấm ở POS mobile.
+ *
+ * Tên ở đây KHỚP CHÍNH XÁC với DB — đã đọc trực tiếp `editions` để đối chiếu:
+ *   H74 "Tên mọi trên tàu Narcissus" · H65 "Job, tiểu thuyết về một người thuần hậu"
+ *   H69 "Lý thuyết tầng lớp nhàn rỗi" · H67 "Một người tên là Thứ Năm"
+ * Cả 4 đều xuất bản năm 2025. Cố tình KHÔNG so "gần giống": tên rút gọn dễ dính
+ * nhầm sang cuốn khác, và dính nhầm ở POS là mất tiền thật.
+ */
+const SPECIAL_BOOK_TITLES = new Set([
+  'Tên mọi trên tàu Narcissus',
+  'Job, tiểu thuyết về một người thuần hậu',
+  'Lý thuyết tầng lớp nhàn rỗi',
+  'Một người tên là Thứ Năm',
+]);
+
+/** Nhãn hiển thị khi nút đang bật BỊ ĐẢO CHIỀU — phải đúng nghĩa thật. */
+const REVERSED_LABEL: Record<string, string> = {
+  az: 'Z → A',
+  year: 'Mới → Cũ',
+  hot: '🔥 Bán chạy ↓',
+};
 
 interface CartItem {
   editionId: string;
@@ -266,9 +291,15 @@ export function PosCheckoutTerminal({
     mq.addEventListener('change', sync);
     return () => mq.removeEventListener('change', sync);
   }, []);
-  const [sortMode, setSortMode] = useState<'default' | 'az' | 'hot'>('default');
+  const [sortMode, setSortMode] = useState<'default' | 'az' | 'year' | 'hot'>('default');
+  // Đảo chiều sắp xếp. Tách riêng thay vì tạo thêm nút "Z→A"/"Mới→Cũ" thì
+  // danh sách nút phình to trên mobile mà người dùng vẫn phải nhớ bấm đúng nút.
+  const [sortReversed, setSortReversed] = useState(false);
+  // Mở nhóm sách đặc biệt. Mặc định ĐÓNG: trên mobile danh mục vốn ẩn hết (chỉ hiện
+  // khi có từ khoá tìm kiếm), nên thêm một nút mở nhóm là đủ, không cần lọc.
+  const [showSpecialBooks, setShowSpecialBooks] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [customerName, setCustomerName] = useState('Khách lẻ vãng lai');
+  const [customerName, setCustomerName] = useState('Khách lẻ');
   const [discountRate, setDiscountRate] = useState(0.0);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'QR_CODE'>('CASH');
   const [fiscalScope, setFiscalScope] = useState<'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX'>('INTERNAL_MANAGEMENT');
@@ -375,11 +406,20 @@ export function PosCheckoutTerminal({
     if (!orderCode || autoPrintedOrderCodes.current.has(orderCode)) return;
     const timer = window.setTimeout(() => {
       if (autoPrintedOrderCodes.current.has(orderCode)) return;
-      printThermalReceipt(completedOrder, paperPreset, currentRole, receiptFooterText);
+      // `cashierFullName` lấy từ /api/auth.me (POS ĐÃ gọi endpoint này sẵn) nên
+      // không tốn thêm request. Trước đây phiếu in ra `User-ROLE_CASHIER` vì không
+      // có tên; nay in tên thật, thiếu thì lùi về mã nhân viên, KHÔNG bao giờ in
+      // chuỗi vai trò giả.
+      printThermalReceipt(
+        { ...completedOrder, cashierName: cashierFullName || undefined },
+        paperPreset,
+        currentRole,
+        receiptFooterText
+      );
       autoPrintedOrderCodes.current.add(orderCode);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [completedOrder, autoPrintOnCheckout, paperPreset, currentRole, receiptFooterText]);
+  }, [completedOrder, autoPrintOnCheckout, paperPreset, currentRole, receiptFooterText, cashierFullName]);
 
   // QUẢN LÝ KÉT TIỀN CA THU NGÂN (Cashbox Session)
   const [activeSession, setActiveSession] = useState<any | null>(null);
@@ -448,7 +488,7 @@ export function PosCheckoutTerminal({
     setPendingApprovalRequestId(null);
     setApprovedDiscountRequestId(null);
     setIsManagerOverride(false);
-    setCustomerName('Khách lẻ vãng lai');
+    setCustomerName('Khách lẻ');
     setFiscalScope('INTERNAL_MANAGEMENT');
     setPaymentMethod('CASH');
     setGiftReason('');
@@ -1126,24 +1166,44 @@ export function PosCheckoutTerminal({
   const hasSearchQuery = searchQuery.trim().length > 0;
   // Mobile: chủ yếu quét scanner, danh mục thường xuyên chỉ làm nhiễu. Không có từ
   // khoá thì không hiện danh mục — chỉ hiện kết quả tìm kiếm. Desktop giữ nguyên.
-  const showCatalogGrid = !isMobileView || hasSearchQuery;
+  // Ngoại lệ: bấm nút "Sách đặc biệt" thì hiện nhóm đó kể cả khi không có từ khoá,
+  // vì ở hội chợ thu ngân cần bấm 1 cái là ra đúng 4 cuốn đó.
+  const showCatalogGrid = !isMobileView || hasSearchQuery || showSpecialBooks;
   const filteredBooks = useMemo(() => {
     const q = searchQuery.trim();
-    if (!q && isMobileView) return [];
+    if (!q && isMobileView && !showSpecialBooks) return [];
     let list = q
       ? books.filter((b) =>
           matchesAnyVietnameseField(searchQuery, [b.title, b.code, b.isbnLast4, b.author])
         )
       : books.slice();
+    // Nhóm sách đặc biệt: so KHỚP CHÍNH XÁC tên trong DB (đã kiểm trực tiếp),
+    // không so "gần giống" — tên rút gọn dễ dính nhầm cuốn khác.
+    if (showSpecialBooks) {
+      list = list.filter((b) => SPECIAL_BOOK_TITLES.has((b.title || '').trim()));
+    }
     if (!showAllBooks) list = list.filter((b) => getBookStock(b) > 0);
-    if (sortMode === 'az') list = [...list].sort((a, b) => a.title.localeCompare(b.title, 'vi'));
-    else if (sortMode === 'hot' && catalogReady) {
+    // `dir` = 1 tăng dần, -1 giảm dần. Nút đảo chiều chỉ đổi `dir`, không sinh
+    // thêm nút mới — giữ danh sách nút ngắn trên mobile.
+    const dir = sortReversed ? -1 : 1;
+    if (sortMode === 'az') {
+      list = [...list].sort((a, b) => dir * (a.title || '').localeCompare(b.title || '', 'vi'));
+    } else if (sortMode === 'year' && catalogReady) {
+      // Theo NĂM phát hành (`publicationYear`, 81/81 ấn bản đều có, 2022–2026).
+      // Ấn bản chưa có năm đẩy xuống cuối thay vì coi như năm 0.
+      list = [...list].sort((a, b) => {
+        const ya = a.publicationYear ?? -1;
+        const yb = b.publicationYear ?? -1;
+        if (ya === yb) return (a.title || '').localeCompare(b.title || '', 'vi');
+        return dir * (ya - yb);
+      });
+    } else if (sortMode === 'hot' && catalogReady) {
       list = [...list].sort(
-        (a, b) => (catalogAtp[b.id]?.soldToday || 0) - (catalogAtp[a.id]?.soldToday || 0)
+        (a, b) => dir * ((catalogAtp[b.id]?.soldToday || 0) - (catalogAtp[a.id]?.soldToday || 0))
       );
     }
     return q ? list : list.slice(0, 20); // Không tìm kiếm: hiển thị 20 cuốn đầu sau lọc/sắp xếp
-  }, [books, searchQuery, showAllBooks, sortMode, catalogAtp, catalogReady, selectedWarehouseId, isMobileView]);
+  }, [books, searchQuery, showAllBooks, sortMode, sortReversed, showSpecialBooks, catalogAtp, catalogReady, selectedWarehouseId, isMobileView]);
 
   // Thêm sách vào giỏ
   const addToCart = (book: BookItem, atpOverride?: number | null) => {
@@ -1383,7 +1443,7 @@ export function PosCheckoutTerminal({
     (async () => {
       try {
         await handleParserOrderRef.current({
-          customerName: typeof draft.customerName === 'string' && draft.customerName.trim() ? draft.customerName.trim() : 'Khách lẻ vãng lai',
+          customerName: typeof draft.customerName === 'string' && draft.customerName.trim() ? draft.customerName.trim() : 'Khách lẻ',
           phone: typeof draft.phone === 'string' ? draft.phone : undefined,
           address: typeof draft.address === 'string' ? draft.address : undefined,
           items,
@@ -2754,12 +2814,16 @@ export function PosCheckoutTerminal({
             </div>
           )}
 
-          {/* V4.1 S2.2/S2.3: gạt hiện tất cả + sắp xếp nhanh */}
+          {/* V4.1 S2.2/S2.3: gạt hiện tất cả + sắp xếp nhanh.
+              GIỮ TINH GỌN: mỗi chiều chỉ MỘT nút, chiều ngược do nút "Đảo chiều"
+              lo. Nếu thêm nút "Z→A" và "Mới→Cũ" thì hàng nút phình ra, trên mobile
+              phải cuộn mới thấy hết, mà người dùng vẫn phải nhớ bấm đúng nút. */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {(
               [
                 ['default', 'Mặc định'],
                 ['az', 'A → Z'],
+                ['year', 'Cũ → Mới'],
                 ['hot', '🔥 Bán chạy'],
               ] as const
             ).map(([mode, label]) => (
@@ -2767,15 +2831,50 @@ export function PosCheckoutTerminal({
                 key={mode}
                 type="button"
                 onClick={() => setSortMode(mode)}
+                aria-pressed={sortMode === mode}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                   sortMode === mode
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {label}
+                {/* Nút đang chạy thì hiện chiều THỰC TẾ đang sắp xếp, không phải
+                    chiều mặc định — sau khi bấm "Đảo chiều" người dùng nhìn là biết
+                    đang A→Z hay Z→A, không phải đoán. */}
+                {mode === sortMode && sortReversed ? REVERSED_LABEL[mode] : label}
               </button>
             ))}
+            {/* Nút đảo chiều. Ẩn khi đang ở "Mặc định" vì chế độ đó không có chiều. */}
+            {sortMode !== 'default' && (
+              <button
+                type="button"
+                onClick={() => setSortReversed((v) => !v)}
+                aria-pressed={sortReversed}
+                aria-label="Đảo chiều sắp xếp"
+                title="Đảo chiều sắp xếp"
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  sortReversed
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                ⇄ Đảo chiều
+              </button>
+            )}
+            {/* Mở nhóm sách đặc biệt. Trên mobile danh mục mặc định ẩn hết, nên đây
+                là đường ra nhanh nhất tới 4 cuốn đó mà không cần gõ tìm kiếm. */}
+            <button
+              type="button"
+              onClick={() => setShowSpecialBooks((v) => !v)}
+              aria-pressed={showSpecialBooks}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                showSpecialBooks
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              ⭐ Sách đặc biệt
+            </button>
             <button
               type="button"
               onClick={() => setShowAllBooks((v) => !v)}
@@ -3067,26 +3166,25 @@ export function PosCheckoutTerminal({
                   />
                   <select
                     onChange={(e) => {
+                      // POS chỉ dành cho BÁN LẺ (đặc biệt ở hội chợ). Đại lý sỉ và
+                      // doanh nghiệp đã có luồng XUẤT KHO riêng nên không để ở đây —
+                      // mẫu cũ "Đại lý sỉ Đình Lễ (-40%) [Cần PIN]" và "Doanh nghiệp
+                      // (Xuất VAT)" chỉ làm thu ngân bấm nhầm ở chỗ không đúng chỗ.
                       if (e.target.value === 'LE') {
-                        setCustomerName('Khách lẻ hội chợ');
+                        setCustomerName('Khách lẻ');
+                        setDiscountRate(0);
+                        setFiscalScope('INTERNAL_MANAGEMENT');
+                      } else if (e.target.value === 'CHIEU_KHAU') {
+                        setCustomerName('Khách chiết khấu');
                         handleRequestDiscount(0.10);
                         setFiscalScope('INTERNAL_MANAGEMENT');
-                      } else if (e.target.value === 'DAU_NAU') {
-                        setCustomerName('Đại lý sỉ Đinh Lễ');
-                        handleRequestDiscount(0.40);
-                        setFiscalScope('INTERNAL_MANAGEMENT');
-                      } else if (e.target.value === 'VAT') {
-                        setCustomerName('Công ty Doanh nghiệp (Xuất VAT)');
-                        handleRequestDiscount(0.0);
-                        setFiscalScope('OFFICIAL_TAX');
                       }
                     }}
                     className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
                   >
                     <option value="">-- Mẫu đối tượng --</option>
-                    <option value="LE">Khách lẻ (-10%)</option>
-                    <option value="DAU_NAU">Đại lý sỉ Đinh Lễ (-40%) [Cần PIN]</option>
-                    <option value="VAT">Doanh nghiệp (Xuất VAT)</option>
+                    <option value="LE">Khách lẻ (0%)</option>
+                    <option value="CHIEU_KHAU">Khách chiết khấu (-10%)</option>
                   </select>
                 </div>
               </div>
@@ -3485,7 +3583,14 @@ export function PosCheckoutTerminal({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => printThermalReceipt(completedOrder, paperPreset, currentRole, receiptFooterText)}
+                onClick={() =>
+                  printThermalReceipt(
+                    { ...completedOrder, cashierName: cashierFullName || undefined },
+                    paperPreset,
+                    currentRole,
+                    receiptFooterText
+                  )
+                }
                 className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -4113,4 +4218,5 @@ export function PosCheckoutTerminal({
     </div>
   );
 }
+
 

@@ -1,4 +1,4 @@
-﻿,TT,ISBN,TÊN SÁCH,Giá Bìa,KHỔ SÁCH,SỐ TRANG,TÁC GIẢ,Dịch giả,VAT 5%,TÌNH TRẠNG,THỂ LOẠI,NĂM XB,NXB,YÊU CẦU VAT
+,TT,ISBN,TÊN SÁCH,Giá Bìa,KHỔ SÁCH,SỐ TRANG,TÁC GIẢ,Dịch giả,VAT 5%,TÌNH TRẠNG,THỂ LOẠI,NĂM XB,NXB,YÊU CẦU VAT
 Xuất bản Khác,HH001,9786043687507,Bệnh tưởng,36000,"11,5 x 18 cm",108,Molière,Nguyễn Văn Vĩnh,"34.285,71",Sold out,"Văn học Pháp, kịch",2022,NXB Hội nhà văn,không
 Xuất bản Khác,HH002,9786043687491,Người biển lận,36000,"11,5 x 18 cm",120,Molière,Nguyễn Văn Vĩnh,"34.285,71",Sold out,"Văn học Pháp, kịch",2022,NXB Hội nhà văn,không
 Xuất bản Khác,HH003,9786043687484,Trưởng giả học làm sang,36000,"11,5 x 18 cm",116,Molière,Nguyễn Văn Vĩnh,"34.285,71",Sold out,"Văn học Pháp, kịch",2022,NXB Hội nhà văn,không
@@ -84,6 +84,6 @@ FORMApubli,H82,9786320319558,Nữ công tước de Langeais,128000,"12,5 x 190 m
 FORMApubli,H83,9786320319398,Một vụ việc ám muội,160000,"12,5 x 190 mm",336,Honoré de Balzac,Nhị Linh,"152.380,95",New,Tiểu thuyết,2026,NXB Lao động,không
 FORMApubli,H84,9786320319572,Nicholas Nickleby,290000,130 x 190 mm,656,Charles Dickens,Nguyễn Hoài,"276.190,48",New,Tiểu thuyết,2026,NXB Lao động,không
 FORMApubli,H85,97863203176313,Đốt kho,133000,120 x 190 mm,272,William Faulkner,Bùi Gia Bin,"126.666,67",New,Tuyển tập Truyện ngắn,2026,NXB Lao động,không
-FORMApubli,H86,978632032013  4,Lá đỏ,145000,120 x 190 mm,228,William Faulkner,Bùi Gia Bin,"138.095,24",New,Tiểu thuyết,2026,NXB Lao động,không
+FORMApubli,H86,9786320320134,Lá đỏ,145000,120 x 190 mm,228,William Faulkner,Bùi Gia Bin,"138.095,24",New,Tiểu thuyết,2026,NXB Lao động,không
 FORMApubli,H87,9786320320240,Cách tồn tại riêng,222000,128 x 190 mm,512,Carl Ransom Rogers,Thạch Ngọc,"211.428,57",New,Tiểu thuyết,2026,NXB Lao động,không
 FORMApubli,H88,9786320320127,Ngắn 1 - In lần thứ 2,133000,120 x 190 mm,272,William Faulkner,Bùi Gia Bin,"126.666,67",New,Tuyển tập Truyện ngắn,2026,NXB Lao động,không

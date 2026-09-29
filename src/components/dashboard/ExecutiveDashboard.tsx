@@ -594,7 +594,7 @@ export function ExecutiveDashboard({
                       {ord.orderCode}
                     </td>
                     <td className="p-3.5 font-medium text-slate-800">
-                      {ord.customerName || 'Khách vãng lai'}
+                      {ord.customerName || 'Khách lẻ'}
                     </td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 font-mono">
