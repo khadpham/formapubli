@@ -1249,7 +1249,15 @@ export function PosCheckoutTerminal({
     items: Array<{ editionId: string; quantity: number }>;
     note: string;
   }) => {
-    if (isInteractionLocked || pendingAddToCartCountRef.current > 0 || parserImportLockRef.current) return;
+    // Ba nhánh lỗi thật dưới đây PHẢI `throw`, không được `return`.
+    // `SmartOrderParser.handleSubmit` coi `await onCreateOrder(...)` resolve là
+    // thành công và xoá sạch form (chat, số lượng, danh sách xoá). Bản cũ chỉ
+    // `return` ⇒ promise luôn resolve ⇒ UI báo "Đã tạo đơn PENDING" và xoá form
+    // trong khi giỏ hàng KHÔNG hề đổi. Con có `catch` sẵn và không re-throw, nên
+    // throw ở đây là đúng hợp đồng: con hiện lỗi và giữ nguyên form.
+    if (isInteractionLocked || pendingAddToCartCountRef.current > 0 || parserImportLockRef.current) {
+      throw new Error('Quầy đang bận - hãy thử lại sau.');
+    }
     const warehouseId = selectedWarehouseId;
     const controller = new AbortController();
     const snapshot: ParserImportSnapshot = { cart, customerName, note };
@@ -1264,9 +1272,10 @@ export function PosCheckoutTerminal({
         if (controller.signal.aborted || checkoutLockRef.current || selectedWarehouseIdRef.current !== warehouseId) return;
         const book = books.find((b) => b.id === it.editionId);
         if (!book) {
+          const msg = `Không tìm thấy ấn bản ${it.editionId} trong danh mục.`;
           parserImportFailedRef.current = true;
-          setErrorMessage(`Không tìm thấy ấn bản ${it.editionId} trong danh mục.`);
-          return;
+          setErrorMessage(msg);
+          throw new Error(msg);
         }
 
         let atp: number | null = null;
@@ -1287,13 +1296,15 @@ export function PosCheckoutTerminal({
         const existing = existingIndex >= 0 ? nextCart[existingIndex] : null;
         const nextQuantity = (existing?.quantity || 0) + quantity;
         if (effectiveLimit <= 0 || nextQuantity > effectiveLimit) {
-          parserImportFailedRef.current = true;
-          setErrorMessage(
+          const msg =
             effectiveLimit <= 0
               ? `Sách [${book.code}] không còn tồn khả dụng tại kho đang chọn.`
-              : `Giỏ sách [${book.code}] vượt tồn khả dụng (${nextQuantity} > ${effectiveLimit}).`
-          );
-          return;
+              : `Giỏ sách [${book.code}] vượt tồn khả dụng (${nextQuantity} > ${effectiveLimit}).`;
+          parserImportFailedRef.current = true;
+          setErrorMessage(msg);
+          // Xem giải thích ở đầu hàm: `return` ở đây làm con tưởng thành công
+          // và xoá form dù giỏ không đổi.
+          throw new Error(msg);
         }
         if (existing) {
           nextCart[existingIndex] = { ...existing, quantity: nextQuantity, atpAvailable: atp ?? existing.atpAvailable ?? null };
@@ -1322,6 +1333,12 @@ export function PosCheckoutTerminal({
       setIsParserOpen(false);
       searchInputRef.current?.focus();
       parserImportSucceededRef.current = true;
+    } catch (err: any) {
+      // Hiện lỗi ở POS rồi re-throw: con (`SmartOrderParser`) cần await bị reject
+      // thì mới KHÔNG xoá form. Nuốt lỗi ở đây là quay lại đúng lỗi cũ.
+      parserImportFailedRef.current = true;
+      setErrorMessage(err?.message || 'Không nhập được giỏ từ trình phân tích.');
+      throw err;
     } finally {
       if (!parserImportSucceededRef.current) {
         setCart(snapshot.cart);
