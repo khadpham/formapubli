@@ -16,6 +16,11 @@ async function run() {
   if (rows.length === 0) throw new Error('Test DB chưa seed.');
   const catalog = rows.map((r) => ({ editionId: r.id, code: r.code, title: r.title || '' }));
 
+  // "Bệnh tưởng" là tựa có thật trong danh mục; mã SKU của nó đã đổi theo đợt
+  // cập nhật danh mục nên tra động thay vì hardcode.
+  const BENH_TUONG = rows.find((r) => r.title === 'Bệnh tưởng')?.code;
+  if (!BENH_TUONG) throw new Error('Test DB chưa seed tựa "Bệnh tưởng".');
+
   let passed = 0;
   const total = 8;
   const ok = (name: string, cond: boolean, extra = '') => {
@@ -32,16 +37,16 @@ async function run() {
     'Gửi cho mình 2 cuốn Bệnh tưởng đến 123 Cầu Giấy, HN. SĐT 0912345678, ship COD giờ hành chính nhé',
     catalog
   );
-  const h01 = r1.items.find((it) => it.code === 'H01');
-  ok('1. Bóc full: SĐT + địa chỉ + 2 cuốn H01', r1.phone === '0912345678' && !!r1.address?.includes('123') && h01?.quantity === 2, JSON.stringify({ phone: r1.phone, qty: h01?.quantity }));
+  const h01 = r1.items.find((it) => it.code === BENH_TUONG);
+  ok(`1. Bóc full: SĐT + địa chỉ + 2 cuốn ${BENH_TUONG}`, r1.phone === '0912345678' && !!r1.address?.includes('123') && h01?.quantity === 2, JSON.stringify({ phone: r1.phone, qty: h01?.quantity }));
 
   // 2. Gõ không dấu
   const r2 = parseSmartOrder('lay 1 benh tuong, sdt 0987654321', catalog);
-  ok('2. Gõ không dấu vẫn ra H01', r2.items.some((it) => it.code === 'H01' && it.quantity === 1) && r2.phone === '0987654321');
+  ok(`2. Gõ không dấu vẫn ra ${BENH_TUONG}`, r2.items.some((it) => it.code === BENH_TUONG && it.quantity === 1) && r2.phone === '0987654321');
 
   // 3. Cú pháp xN
   const r3 = parseSmartOrder('Bệnh tưởng x3, 0901112223', catalog);
-  ok('3. Dạng "x3" ra số lượng 3', r3.items.find((it) => it.code === 'H01')?.quantity === 3);
+  ok('3. Dạng "x3" ra số lượng 3', r3.items.find((it) => it.code === BENH_TUONG)?.quantity === 3);
 
   // 4. Thiếu SĐT → warning
   const r4 = parseSmartOrder('Gửi mình 1 cuốn Bệnh tưởng đến 456 Xã Đàn', catalog);
