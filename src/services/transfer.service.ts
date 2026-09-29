@@ -49,6 +49,19 @@ function isUniqueViolation(e: any): boolean {
  * Mọi mutation (dispatch, receive, cancel) bắt buộc có idempotencyKey,
  * actorContext, replay verification, conditional status update, và ghi transfer_actions.
  */
+
+/**
+ * Số dòng tối đa cho MỘT lần nhận hàng.
+ *
+ * `receive` mỗi dòng tốn ~9 truy vấn (đo thật trên DB test: 186 round-trip cho
+ * phiếu 20 dòng). Cloudflare Workers chỉ cho 50 subrequest mỗi lần gọi, nên phiếu
+ * khoảng 6 dòng trở lại là đã có nguy cơ. Số 20 giữ dưới trần với biên an toàn và
+ * khớp trần 50 dòng mà `/api/inventory/transfer-batch` đã dùng.
+ *
+ * `ponytail:` đây là trần tạm thời, chưa gom lô SQL. Nâng cấp: viết `receive`
+ * bằng 1 truy vấn gộp (`getBatchATP` là mẫu) rồi bỏ hẳn trần này.
+ */
+const RECEIVE_MAX_LINES = 20;
 export const TRANSIT_WAREHOUSE_ID = 'wh-in-transit';
 export const TRANSIT_WAREHOUSE_CODE = 'KHO_IN_TRANSIT';
 export const DEFAULT_STALE_HOURS = 12;
@@ -352,6 +365,18 @@ export class TransferService {
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       throw AppError.invalid('Biên bản nhận phải có danh sách kiểm đếm (items).');
+    }
+
+    // Chặn số dòng: hàm này mỗi dòng hàng tốn ~9 truy vấn (đo thật: 186 round-trip
+    // cho phiếu 20 dòng). Cloudflare Workers giới hạn 50 subrequest ⇒ phiếu vài
+    // chục dòng sẽ ném lỗi 500 thô "Too many subrequests" — người dùng thấy màn
+    // hình lỗi kỹ thuật và phiếu nhận hằng nằm dở. Chặn sớm ở đây để thấy lỗi
+    // tiếng Việt có hướng dẫn, và tách phiếu lớn thành 2 lần nhận.
+    if (items.length > RECEIVE_MAX_LINES) {
+      throw AppError.invalid(
+        `Biên bản nhận có ${items.length} dòng, vượt giới hạn ${RECEIVE_MAX_LINES} dòng mỗi lần nhận. ` +
+          `Hãy tách phiếu thành 2 biên bản nhận.`
+      );
     }
 
     const fingerprint = computeTransferReceiveFingerprint({
