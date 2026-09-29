@@ -7,7 +7,8 @@
 > **MỐC 30/09 — rà soát toàn diện 5 agent, 40+ lỗi thật.** Người dùng hỏi thẳng
 > rằng phần doanh số / dashboard / quản lý **chưa** được kiểm. Vòng này chia theo
 > từng lớp chức năng, mỗi agent vừa review vừa viết test gọi code thật.
-> `main` = `05cf5fb`, deploy `f9e53b70`, **97/97 suite xanh**. Chi tiết ở mục 0b,
+> `main` = `8665225`, commit đã deploy `d828262` (Cloudflare version
+> `f9e53b70-161f-4e02-b84d-1483d7da7bb4`), **97/97 suite xanh**. Chi tiết ở mục 0b,
 > việc còn lại cần owner quyết ở mục 0c.
 >
 > **MỐC 29/09 — sửa xong đợt lớn:** quét toàn bộ lỗi "ngày nghiệp vụ VN so với
@@ -124,7 +125,10 @@ Sau khi sửa: 700.000 (300.000 bàn giao + 400.000 bán trong ngày).
 ## 2. Trạng thái production (đang chạy BETA)
 
 - URL: **https://book.formaform.vn** (+ formapubli.phamkha9x.workers.dev).
-- main = **`05cf5fb`**, deploy version **`f9e53b70`**, **97/97 suite xanh** (`EXIT=0`).
+- main = **`8665225`**, commit được deploy = **`d828262`**, Cloudflare version
+  **`f9e53b70-161f-4e02-b84d-1483d7da7bb4`**, **97/97 suite xanh** (`EXIT=0`).
+  (Hai mã khác nhau: `8665225` là commit, `f9e53b70…` là *version ID* của
+  Cloudflare — nó **không** phải commit SHA.)
 - Migration đã áp tay lên Turso: **`0027`** (trigger chặn tồn kho âm khi UPDATE),
   **`0028`** (bảng `daily_order_counters` cho mã đơn 13 ký tự),
   **`0029`** (trigger chặn tồn kho âm khi INSERT — 0027 chỉ chặn UPDATE).
