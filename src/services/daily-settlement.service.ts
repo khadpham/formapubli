@@ -1,4 +1,4 @@
-import { and, desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, like, or, sql } from 'drizzle-orm';
 import {
   db,
   orders,
@@ -14,9 +14,32 @@ import {
   idempotencyKeys,
 } from '../db';
 import { AppError } from './app-error';
-import { CashboxService, OrderService, businessDateOf, evaluateShiftCutoff } from './order.service';
+import { CashboxService, OrderService, businessDateOf, evaluateShiftCutoff, VN_UTC_OFFSET_MIN } from './order.service';
 import { parseDbTimestamp } from '../lib/db-timestamp';
 import { withDbRetry } from '../lib/db-retry';
+
+/**
+ * Điều kiện "nằm trong ngày nghiệp vụ Việt Nam" cho một cột timestamp.
+ *
+ * `created_at`/`opened_at` luôn là UTC: app ghi `new Date().toISOString()` và mặc
+ * định cột của SQLite là `CURRENT_TIMESTAMP` (cũng UTC). Còn `targetDate` là ngày
+ * nghiệp vụ VN. Ngày VN D = 17:00 UTC hôm trước → 17:00 UTC hôm D.
+ *
+ * KHÔNG dùng `LIKE 'YYYY-MM-DD%'` cho việc này: tiền tố 10 ký tự chỉ cho biết
+ * NGÀY UTC, không cho biết giờ. Lọc một mốc thì mất 7 tiếng đầu; lọc hai mốc
+ * (D-1 và D) thì lấy THỪA 7 tiếng cuối — cả hai đều sai tiền.
+ *
+ * Cách đúng: đổi sang ngày VN ngay trong SQL rồi so bằng. `datetime()` của SQLite
+ * nhận CẢ HAI họ timestamp đang cùng tồn tại trong DB — 'YYYY-MM-DD HH:MM:SS'
+ * (CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' (app) — nên một biểu thức
+ * này phủ cả hai. Việt Nam cố định UTC+7, không DST nên `+7 hours` là hằng số.
+ *
+ * Đánh đổi: không dùng được index trên cột timestamp. Cách `LIKE` cũng vậy (tiền
+ * tố có `%` nên index bị bỏ), nên không mất gì so với trước.
+ */
+function vnDayEquals(col: any, vnDay: string) {
+  return sql`substr(datetime(${col}, '+7 hours'), 1, 10) = ${vnDay}`;
+}
 
 export interface DailySettlementFilter {
   date?: string; // YYYY-MM-DD
@@ -30,7 +53,7 @@ export class DailySettlementService {
    */
   static async getDailyFairSettlement(filter: DailySettlementFilter, txOrDb: any = db) {
     const { warehouseId, sessionId } = filter;
-    const targetDate = filter.date || new Date().toISOString().slice(0, 10);
+    const targetDate = filter.date || businessDateOf(new Date());
 
     // 1. Kiểm tra kho tồn tại
     const whRows = await txOrDb
@@ -48,7 +71,7 @@ export class DailySettlementService {
     const orderConditions = [
       eq(orders.warehouseId, warehouseId),
       eq(orders.status, 'COMPLETED'),
-      like(orders.createdAt, `${targetDate}%`),
+      vnDayEquals(orders.createdAt, targetDate),
     ];
 
     if (sessionId) {
@@ -105,7 +128,7 @@ export class DailySettlementService {
       .where(
         and(
           eq(discountApprovalRequests.warehouseId, warehouseId),
-          like(discountApprovalRequests.createdAt, `${targetDate}%`)
+          vnDayEquals(discountApprovalRequests.createdAt, targetDate)
         )
       );
 
@@ -133,7 +156,7 @@ export class DailySettlementService {
     // 5. Đối soát ca két tiền (Cashbox Sessions)
     const sessionConditions = [
       eq(cashboxSessions.warehouseId, warehouseId),
-      like(cashboxSessions.openedAt, `${targetDate}%`),
+      vnDayEquals(cashboxSessions.openedAt, targetDate),
     ];
     if (sessionId) {
       sessionConditions.push(eq(cashboxSessions.id, sessionId));
@@ -152,19 +175,28 @@ export class DailySettlementService {
 
     // Tiền mặt bán TRONG TỪNG CA, gom theo cashboxSessionId.
     //
-    // Không dùng cột `totalCashSales`: đó là bản chốt lúc đóng ca nên LUÔN = 0
+    // Tiền mặt thu TRONG TỪNG CA, gom theo cashboxSessionId.
+    //
+    // KHÔNG dùng cột `totalCashSales`: đó là bản chốt lúc đóng ca nên LUÔN = 0
     // khi ca còn mở ⇒ "tiền kỳ vọng" thấp hơn thực tế, đối chiếu ngay với dòng
     // "doanh số tiền mặt" bên cạnh thì mâu thuẫn. Cùng định nghĩa đã dùng ở
     // GET /api/pos/live-monitor (2026-09-29).
     //
-    // Cũng KHÔNG lọc theo ngày ở đây: tiền thuộc về ca chứ không thuộc lịch, nên
-    // ca qua nửa đêm vẫn phải tính đủ cả hai mốc ngày. Điều kiện lọc theo ngày
-    // đã áp dụng ở `dayOrders` phía trên và áp dụng cho cả ca này luôn — ca mở
-    // sau nửa đêm sẽ không có đơn nào trong `dayOrders`, nên tiền của nó đóng góp
-    // 0, đúng với báo cáo trong ngày.
+    // GIỚI HẠN ĐÃ BIẾT, ghi ra đây để không ai hiểu nhầm là đã xử lý xong:
+    // `dayOrders` lọc theo ngày nghiệp vụ, nên một ca MỞ từ hôm qua và bán xuyên
+    // nửa đêm sẽ không có mặt trong `dayOrders` ⇒ `openingCash` của ca đó không
+    // được cộng vào tổng. Sửa đúng cần lấy `sessions` theo
+    // `businessDateOf(openedAt) <= targetDate` và lấy tiền theo tập đơn của từng ca,
+    // không lấy từ `dayOrders` — việc này để riêng vì đụng đối soát két.
+    //
+    // GHI CHÚ: ca CLOSED cộng `s.expectedCash` (phạm vi CẢ CA), ca OPEN cộng
+    // `openingCash + tiền trong ngày` (phạm vi TRONG NGÀY). Hai phạm vi khác nhau
+    // cộng chung một tổng — xem lại khi chuẩn hoá đối soát két.
     const cashBySession = new Map<string, number>();
     for (const ord of dayOrders as any[]) {
-      if (ord.paymentMethod !== 'CASH') continue;
+      // So khớp case: dòng 82 dùng `(ord.paymentMethod || 'CASH').toUpperCase()`.
+      // Lệch case một chữ là mất tiền mặt khỏi két.
+      if ((ord.paymentMethod || 'CASH').toUpperCase() !== 'CASH') continue;
       if (!ord.cashboxSessionId) continue;
       cashBySession.set(
         ord.cashboxSessionId,
@@ -400,7 +432,7 @@ export class DailySettlementService {
   ) {
     const warehouseId = params.warehouseId;
     if (!warehouseId) throw AppError.invalid('Thiếu kho (warehouseId).');
-    const date = params.date || new Date().toISOString().slice(0, 10);
+    const date = params.date || businessDateOf(new Date());
     const key = DailySettlementService.dayCloseKey(warehouseId, date);
     const fingerprint = JSON.stringify({
       warehouseId,

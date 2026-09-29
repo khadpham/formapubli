@@ -137,34 +137,58 @@ async function run() {
   }
   const oldTs = new Date(Date.now() - 8 * 86400000).toISOString();
   let oldBlocked = false;
+  let oldMessage = '';
   try {
     await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', createdAt: oldTs, idempotencyKey: uniq('i'), items: [{ editionId: f10.id, quantity: 1 }] });
   } catch (e: any) {
-    oldBlocked = /PIN Quản lý/.test(e.message);
+    oldMessage = String(e?.message || '');
+    // Cố ý KHÔNG so khớp chuỗi tiếng Việt: file này từng bị hỏng encoding và
+    // so khớp tiếng Việt là nguồn FAIL giả. Chỉ cần: (1) có ném lỗi, (2) thông
+    // điệp KHÔNG còn nhắc tới PIN — vì PIN đã bị gỡ ở P1b 2026-09-29.
+    oldBlocked = oldMessage.length > 0 && !/\bPIN\b/.test(oldMessage);
   }
   const oldOk = await OrderService.createOrder({ warehouseId: 'wh-au-co', customerName: 't', cashierId: 't', createdAt: oldTs, backdateApproved: true, idempotencyKey: uniq('i'), items: [{ editionId: f10.id, quantity: 1 }] });
-  // API: cashier gõ bù thiếu PIN → 403, đủ PIN → qua
-  // P1b: route orders bắt buộc session cookie — ký session test thay cho header mock.
+  // P1b đã GỠ nhánh PIN quản lý (2026-09-29): không UI nào gửi `managerPin` nên
+  // `verifyManagerPinRateLimited` luôn false ⇒ thu ngân bị kẹt với lỗi không gỡ
+  // được. Lớp kiểm soát thật là VAI TRÒ: thu ngân không gõ bù, Quản lý/Owner thì
+  // được. Vì vậy: có PIN cũng phải bị chặn, và Quản lý phải qua.
+  // Route orders bắt buộc session cookie — ký session test thay cho header mock.
   const p2bCashierToken = await signSession({
     role: 'ROLE_CASHIER',
     actorId: 't',
     issuedAt: Date.now(),
     expiresAt: Date.now() + 3600 * 1000,
   });
-  const apiOld = (pin?: string) =>
+  const p2bMgrToken = await signSession({
+    role: 'ROLE_MANAGER',
+    actorId: 'm',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 3600 * 1000,
+  });
+  const apiOld = (opts: { pin?: string; role?: 'ROLE_CASHIER' | 'ROLE_MANAGER' } = {}) =>
     postOrder(new Request('http://localhost/api/orders', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-formapubli-role': 'ROLE_CASHIER',
-        'x-formapubli-actor': 't',
-        Cookie: `${SESSION_COOKIE_NAME}=${p2bCashierToken}`,
+        Cookie: `${SESSION_COOKIE_NAME}=${opts.role === 'ROLE_MANAGER' ? p2bMgrToken : p2bCashierToken}`,
       },
-      body: J({ warehouseId: 'wh-au-co', createdAt: oldTs, ...(pin ? { managerPin: pin } : {}), items: [{ editionId: f10.id, quantity: 1 }] }),
+      body: J({ warehouseId: 'wh-au-co', createdAt: oldTs, ...(opts.pin ? { managerPin: opts.pin } : {}), items: [{ editionId: f10.id, quantity: 1 }] }),
     }) as any).then(async (r: any) => ({ status: r.status, body: await r.json() }));
   const apiNoPin: any = await apiOld();
-  const apiPin: any = await apiOld('9999');
-  ok('P2-10 chặn tương lai + gõ bù cần PIN', futBlocked && oldBlocked && !!oldOk.orderId && apiNoPin.status === 403 && apiPin.status === 200, `api ${apiNoPin.status}/${apiPin.status}`);
+  const apiPin: any = await apiOld({ pin: '9999' });
+  const apiMgr: any = await apiOld({ role: 'ROLE_MANAGER' });
+  ok(
+    'P2-10 chặn tương lai + gõ bù chặn theo VAI TRÒ (không phải PIN)',
+    futBlocked &&
+      oldBlocked &&
+      !!oldOk.orderId &&
+      apiNoPin.status === 403 &&
+      // PIN KHÔNG phải lối thoát: có PIN vẫn 403.
+      apiPin.status === 403 &&
+      // Quản lý thì qua.
+      apiMgr.status === 200,
+    `api cashier ${apiNoPin.status}/${apiPin.status}, manager ${apiMgr.status}`
+  );
 
   // ---- P2-12: settle bắt DELIVERED ----
   const f12 = await fixture(10);

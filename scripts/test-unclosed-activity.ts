@@ -175,9 +175,16 @@ async function run() {
   }) as any);
   ok(res3.status === 401, `sai secret phai 401, thuc te ${res3.status}`);
 
-  const real = await createClient({ url: 'file:formapubli.db' });
-  const n = (await real.execute({ sql: `SELECT COUNT(*) n FROM warehouses WHERE id IN ('wh-a','wh-b','wh-c')`, args: [] })).rows[0].n;
-  ok(Number(n) === 0, 'DB that khong bi dinh du lieu thu');
+  // DB dev la file gitignore: co tren may chinh, khong co trong worktree khac.
+  // Khong co file thi khong co gi de "khong bi dinh" — bo qua, dung bao loi.
+  const devDb = path.resolve(process.cwd(), 'formapubli.db');
+  if (fs.existsSync(devDb) && fs.statSync(devDb).size > 0) {
+    const real = await createClient({ url: 'file:formapubli.db' });
+    const n = (await real.execute({ sql: `SELECT COUNT(*) n FROM warehouses WHERE id IN ('wh-a','wh-b','wh-c')`, args: [] })).rows[0].n;
+    ok(Number(n) === 0, 'DB that khong bi dinh du lieu thu');
+  } else {
+    console.log('   (bo qua kiem tra DB that: file formapubli.db khong co o worktree nay)');
+  }
 
   console.log(`\n=== UNCLOSED ACTIVITY: ${checks} assertions PASS ===`);
 }

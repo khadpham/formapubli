@@ -68,20 +68,75 @@ ok(
   'phải nói số ca còn mở'
 );
 
-// --- 4. openShiftAlerts phải được đọc ----------------------------------------
+// --- 4. openShiftAlerts phải được đọc ĐÚNG SHAPE ---------------------------
+// Bẫy đã dính: `getStaleOpenShiftCheck` trả OBJECT
+// `{ serverTime, cutoff, cutoffSource, count, salesBlocked, shifts }`, không phải
+// mảng. Đo `Array.isArray(data.openShiftAlerts)` ⇒ luôn false ⇒ cả khối cảnh báo
+// chết MÀ test nguồn vẫn xanh. Không được lặp lại.
 ok(
-  /data\.openShiftAlerts/.test(modal),
-  'modal phải đọc openShiftAlerts do API đã trả sẵn'
+  /data\.openShiftAlerts\?\.shifts/.test(modal),
+  'phải đọc data.openShiftAlerts.shifts — hàm trả OBJECT, đo Array.isArray là sai'
+);
+ok(
+  !/Array\.isArray\(data\.openShiftAlerts\)/.test(modal),
+  'KHÔNG được đo Array.isArray(data.openShiftAlerts) — đây là object, luôn false'
+);
+ok(
+  /data\.openShiftAlerts\.shifts\.map/.test(modal),
+  'phải map trên .shifts'
 );
 ok(
   /Ca chưa đóng/.test(modal),
   'phải hiện cảnh báo ca chưa đóng'
 );
 
+// --- 4b. Dòng đối soát: phải dùng cờ pending, không đoán qua null -----------
+// `cashVariance === null` xảy ra khi còn ca mở LẪN khi không có ca nào. Nếu đo
+// vậy, ngày không có ca nào sẽ hiện "còn 1 ca chưa đóng" ⇒ quản lý đi tìm ca
+// không tồn tại hoặc kết luận sai két còn tiền.
+ok(
+  /cashVariancePending === true/.test(modal),
+  'phải dùng cashVariancePending để phân biệt "còn ca mở" với "không có ca nào"'
+);
+ok(
+  !/cashVariance\?\.cashVariance === null/.test(modal),
+  'KHÔNG được suy đoán trạng thái qua cashVariance === null'
+);
+ok(
+  !/\|\|\s*1\s*ca chưa đóng/.test(modal),
+  'KHÔNG được ép openSessionCount về 1 khi bằng 0 — sẽ báo cáo ca không tồn tại'
+);
+ok(
+  /openSessionCount/.test(modal),
+  'phải hiện số ca còn mở lấy từ openSessionCount'
+);
+
+// --- 4c. Bản in bàn giao không được in số 0 giả cho phần kiểm kê -----------
+ok(
+  !/totalBookVariance/.test(modal),
+  'không được giữ biến totalBookVariance cứng 0 — sẽ in "chênh lệch 0" lên biên bản ký'
+);
+ok(
+  !/TỔNG CỘNG SỐ CUỐN KIỂM KÊ/.test(modal),
+  'không được ghi "TỔNG CỘNG SỐ CUỐN KIỂM KÊ" khi không có kiểm kê thật'
+);
+
 // --- 5. Không được tự thêm lệnh ghi từ trình duyệt ----------------------------
 ok(
   !/method:\s*'(POST|PUT|PATCH|DELETE)'/.test(modal),
   'modal KHÔNG được tự thêm lệnh ghi — chốt ngày là việc của cron, không hoàn tác được'
+);
+
+// --- 6. Ngày mặc định của modal phải là ngày VN, không phải UTC -------------
+// `toISOString().slice(0,10)` là ngày UTC ⇒ 00:00-07:00 giờ VN modal mở báo cáo
+// HÔM QUA, lệch với cron chốt ngày theo giờ VN.
+ok(
+  !/useState\(\(\) => new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\)/.test(modal),
+  'selectedDate mặc định KHÔNG được lấy bằng toISOString() — đó là ngày UTC'
+);
+ok(
+  /Asia\/Ho_Chi_Minh/.test(modal),
+  'selectedDate mặc định phải theo giờ Việt Nam'
 );
 
 console.log(`\n=== BÁO CÁO CHỐT NGÀY: ${checks} assertions PASS ===`);

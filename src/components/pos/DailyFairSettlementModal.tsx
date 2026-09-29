@@ -45,7 +45,15 @@ export function DailyFairSettlementModal({
   const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
   const [warehouseList, setWarehouseList] = useState<any[]>([]);
   const [discountDisplayMode, setDiscountDisplayMode] = useState<'PERCENT' | 'VND'>('PERCENT');
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Ngày mặc định phải là NGÀY NGHIỆP VỤ VIỆT NAM. Trước đây dùng
+  // `toISOString().slice(0,10)` là ngày UTC ⇒ từ 00:00 đến 07:00 giờ VN, modal mở
+  // báo cáo của HÔM QUA, lệch hẳn với cron chốt ngày theo giờ VN.
+  // Tính tại chỗ (không import từ order.service) vì đó là module server nặng —
+  // import vào client component sẽ kéo cả tầng db vào bundle. Cùng cách với
+  // `vnToday()` ở GET /api/pos/live-monitor.
+  const [selectedDate, setSelectedDate] = useState(
+    () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
+  );
   const [activeTab, setActiveTab] = useState<'FINANCIALS' | 'STOCKTAKE' | 'DISCOUNT'>('FINANCIALS');
 
   // Số đếm thực tế KHÔNG được lưu ở đâu: chỉ nằm trong useState này, không có
@@ -129,11 +137,10 @@ export function DailyFairSettlementModal({
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
   );
-  // Không có số đếm thực tế nữa (xem chú thích state ở trên) ⇒ tổng "thực đếm"
-  // chính là tổng lý thuyết và chênh lệch luôn bằng 0. Giữ biến để phần biên
-  // bản bàn giao và bảng bên dưới không phải đổi cấu trúc.
-  const totalActualBooks = totalTheoreticalBooks;
-  const totalBookVariance = 0;
+  // Không có số đếm thực tế nữa (xem chú thích state ở trên) ⇒ không còn "chênh
+  // lệch" để hiển thị. Giữ `totalTheoreticalBooks` vì bản in bàn giao vẫn cần tổng
+  // tồn lý thuyết. Cố ý KHÔNG in 0 cho phần kiểm kê: số 0 là hẹn số bịa.
+  void 0;
 
   return createPortal(
     <div
@@ -464,34 +471,44 @@ export function DailyFairSettlementModal({
                       )}
 
                       {/* Trước đây dòng chênh lệch BỊ ẨN im lặng khi còn ca mở — đúng dòng
-                          cần kiểm nhất lại biến mất. Giờ nói rõ vì sao chưa đối soát được. */}
-                      {data.cashboxReconciliation?.cashVariance === null && (
+                          cần kiểm nhất lại biến mất. Giờ nói rõ vì sao chưa đối soát được.
+                          Phải dùng `cashVariancePending` chứ không đoán qua
+                          `cashVariance === null`: null còn xảy ra khi KHÔNG có ca nào
+                          trong ngày, đó là chuyện khác hẳn. */}
+                      {data.cashboxReconciliation?.cashVariancePending === true && (
                         <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
                           <span className="font-bold text-amber-800">
                             Kết quả đối soát chênh lệch két:
                           </span>
                           <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold">
-                            Chưa thể đối soát — còn{' '}
-                            {(data.cashboxReconciliation?.openSessionCount || 0) || 1} ca chưa đóng
+                            Chưa thể đối soát — còn {data.cashboxReconciliation?.openSessionCount} ca chưa đóng
                           </span>
                         </div>
                       )}
 
                       {/* openShiftAlerts do API trả sẵn (route daily-settlement gắn vào data)
-                          nhưng trước đây không màn hình nào đọc. Ca treo là nguyên nhân
-                          ngày không chốt được, nên phải thấy được. */}
-                      {Array.isArray(data.openShiftAlerts) && data.openShiftAlerts.length > 0 && (
+                          nhưng trước đây không màn hình nào đọc.
+                          QUAN TRỌNG: `getStaleOpenShiftCheck` trả OBJECT
+                          `{ serverTime, cutoff, cutoffSource, count, salesBlocked, shifts }`,
+                          KHÔNG phải mảng. Đo `Array.isArray(...)` ⇒ luôn false ⇒ cả khối
+                          cảnh báo này chết mà test nguồn vẫn xanh. Phải đọc `.shifts`.
+                          Mỗi phần tử có `id/warehouseId/cashierId/openedAt/cutoff/...`
+                          — không có `warehouseName`/`cashierName`, nên dùng id làm dự phòng. */}
+                      {Array.isArray(data.openShiftAlerts?.shifts) && data.openShiftAlerts.shifts.length > 0 && (
                         <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-1.5">
                           <p className="text-xs font-extrabold text-rose-800 flex items-center gap-1.5">
                             <AlertTriangle className="w-4 h-4" />
                             Ca chưa đóng — ngày chưa thể chốt
                           </p>
-                          {data.openShiftAlerts.map((s: any, i: number) => (
+                          {data.openShiftAlerts.shifts.map((s: any, i: number) => (
                             <p key={i} className="text-[11px] text-rose-700 font-mono">
-                              {s.warehouseName || s.warehouseId} · {s.cashierName || s.cashierId} · mở lúc{' '}
-                              {s.openedAt}
+                              {s.warehouseId} · {s.cashierId} · mở lúc {s.openedAt} · đã{' '}
+                              {s.elapsedMinutes} phút
                             </p>
                           ))}
+                          <p className="text-[11px] text-rose-800 font-semibold">
+                            Ngày chưa thể chốt cho tới khi đóng hết các ca trên.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -510,17 +527,14 @@ export function DailyFairSettlementModal({
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="text-[11px] text-slate-500 block">Chênh lệch tổng:</span>
-                      <span
-                        className={`font-mono font-black text-sm ${
-                          totalBookVariance === 0
-                            ? 'text-emerald-700'
-                            : totalBookVariance > 0
-                            ? 'text-blue-600'
-                            : 'text-rose-600'
-                        }`}
-                      >
-                        {totalBookVariance > 0 ? `+${totalBookVariance}` : totalBookVariance} cuốn
+                      <span className="text-[11px] text-slate-500 block">Kiểm kê thực tế:</span>
+                      {/* KHÔNG in "0 cuốn / Khớp 100%" ở đây. Không có số đếm thật
+                          (hệ thống chưa lưu, quy trình không đếm cuối ngày) nên
+                          0 là HẸN SỐ BỊA, và bản in này đưa cho kế toán — in số 0
+                          tạo ra một biên bản "khớp tuyệt đối" rỗng. Nói thẳng là
+                          chưa kiểm kê. */}
+                      <span className="font-mono font-black text-sm text-slate-400">
+                        Chưa kiểm kê
                       </span>
                     </div>
                   </div>
@@ -833,12 +847,14 @@ export function DailyFairSettlementModal({
                   })}
                   <tr className="font-bold bg-slate-50 font-sans">
                     <td colSpan={4} className="border border-slate-900 p-1.5 text-center uppercase">
-                      TỔNG CỘNG SỐ CUỐN KIỂM KÊ:
+                      TỔNG SỐ CUỐN TỒN LÝ THUYẾT:
                     </td>
                     <td className="border border-slate-900 p-1.5 text-center font-mono">{totalTheoreticalBooks}</td>
-                    <td className="border border-slate-900 p-1.5 text-center font-mono">{totalActualBooks}</td>
-                    <td className="border border-slate-900 p-1.5 text-center font-mono">
-                      {totalBookVariance === 0 ? '0' : totalBookVariance > 0 ? `+${totalBookVariance}` : `${totalBookVariance}`}
+                    {/* Bản in bàn giao đưa cho kế toán. Không có số đếm thật thì
+                        KHÔNG in 0 ở cột kiểm kê — số 0 ở đây là hẹn số bịa và tạo
+                        ra một biên bản "chênh lệch 0" giả. */}
+                    <td colSpan={2} className="border border-slate-900 p-1.5 text-center font-sans text-amber-800">
+                      Chưa kiểm kê thực tế
                     </td>
                   </tr>
                 </tbody>

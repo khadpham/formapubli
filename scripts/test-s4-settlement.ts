@@ -199,13 +199,112 @@ async function run() {
 
   console.log('✓ Doanh số và phân bổ thanh toán khớp 100%');
 
-  // [Case 1b] TIỀN MẶT KỲ VỌNG khi ca còn MỞ (2026-09-29)
+  // [Case 1c] Ngày nghiệp vụ KHÔNG được phụ thuộc múi giờ máy chủ (2026-09-29)
+  //
+  // Lỗi thật: `businessDateOf` dùng `getDate()` tức múi giờ của máy đang chạy.
+  // Cloudflare Workers luôn UTC, máy dev là GMT+7 ⇒ cùng code trả ngày khác nhau
+  // giữa production và dev trong khung 00:00-07:00 giờ VN. Ngày nghiệp vụ là khái
+  // niệm kế toán VN, phải cố định ở mọi môi trường.
+  console.log('\n[Case 1c] Ngày nghiệp vụ theo giờ Việt Nam, không theo máy chủ');
+  const { businessDateOf, VN_TZ } = await import('../src/services/order.service');
+  assert.strictEqual(VN_TZ, 'Asia/Ho_Chi_Minh', 'hằng múi giờ phải là Asia/Ho_Chi_Minh');
+
+  // 2026-09-28T20:00:00Z = 03:00 ngày 29 theo giờ VN.
+  const crossMidnight = new Date('2026-09-28T20:00:00Z');
+  assert.strictEqual(
+    businessDateOf(crossMidnight), '2026-09-29',
+    '03:00 giờ VN ngày 29 phải ra ngày 29, không phải 28 (UTC)'
+  );
+  // 2026-09-28T16:00:00Z = 23:00 ngày 28 theo giờ VN.
+  assert.strictEqual(
+    businessDateOf(new Date('2026-09-28T16:00:00Z')), '2026-09-28',
+    '23:00 giờ VN ngày 28 phải ra ngày 28'
+  );
+  // 2026-09-28T17:00:00Z = 00:00 ngày 29 — ranh giới đúng 00:00 VN.
+  assert.strictEqual(
+    businessDateOf(new Date('2026-09-28T17:00:00Z')), '2026-09-29',
+    '00:00 giờ VN phải sang ngày mới'
+  );
+  // Chạy lại với TZ môi trường khác: kết quả phải KHÔNG đổi.
+  const originalTz = process.env.TZ;
+  const seen: string[] = [];
+  for (const tz of ['UTC', 'America/New_York', 'Asia/Tokyo', '']) {
+    if (tz === '') delete process.env.TZ; else process.env.TZ = tz;
+    const v = businessDateOf(crossMidnight);
+    if (seen.indexOf(v) === -1) seen.push(v);
+  }
+  if (originalTz === undefined) delete process.env.TZ; else process.env.TZ = originalTz;
+  assert.strictEqual(
+    seen.length, 1,
+    `businessDateOf phải cho CÙNG kết quả ở mọi TZ, thấy ${seen.join(' | ')}`
+  );
+  console.log('✓ Ngày nghiệp vụ nhất quán ở mọi múi giờ máy');
+
   //
   // Lỗi đã sửa: vòng lặp đối soát két cộng `openingCash + s.totalCashSales` cho ca
   // OPEN. `totalCashSales` là bản chốt lúc đóng ca nên LUÔN = 0 khi ca còn mở ⇒
   // "tiền kỳ vọng" thấp hơt thực tế, mâu thuẫn với dòng "doanh số tiền mặt" ngay
   // bên cạnh. Định nghĩa đúng (giống GET /api/pos/live-monitor): tiền thuộc về CA,
   // gom theo cashboxSessionId, KHÔNG lọc theo lịch.
+  // [Case 1d] Ngày nghiệp vụ VN trải trên HAI ngày UTC (2026-09-29)
+  //
+  // Lỗi THẬT do chính commit trước gây ra: đổi nhãn ngày sang VN nhưng SQL vẫn
+  // lọc `LIKE '${targetDate}%'`, mà `created_at` luôn là UTC (app ghi
+  // `new Date().toISOString()`, mặc định cột của SQLite là CURRENT_TIMESTAMP).
+  // Ngày VN D chạy 17:00 UTC hôm trước → 17:00 UTC hôm D ⇒ nằm trải trên HAI
+  // ngày UTC. Chỉ lọc một ngày thì mất 7 tiếng đầu, rồi `closeDay` ghi vĩnh
+  // viễn vào `idempotency_keys` — không sửa được sau đó.
+  console.log('\n[Case 1d] Ngày VN phải lấy đủ 2 mốc ngày UTC');
+  await db.insert(schema.staffAccounts).values({
+    staffId: 'CASH-UTC', fullName: 'Thu ngân UTC', role: 'ROLE_CASHIER',
+    passcodeHash: 'v2$100000$' + '0'.repeat(64), salt: 'salt-utc', isActive: true, sessionVersion: 1,
+  });
+  // Ca mở 20:00 UTC ngày 28 = 03:00 ngày 29 theo giờ VN.
+  await db.insert(schema.cashboxSessions).values({
+    id: 'sess-utc', warehouseId: 'wh-fair-s4', cashierId: 'CASH-UTC',
+    openingCash: 111000, status: 'OPEN', openedAt: '2026-09-28 20:00:00',
+  });
+  const D = '2026-09-29';
+  const utcPrev = new Date(Date.parse(`${D}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+  assert.strictEqual(utcPrev, '2026-09-28', 'ngày VN 29 bắt đầu từ 17:00 UTC ngày 28');
+  const rUtc = await DailySettlementService.getDailyFairSettlement(
+    { warehouseId: 'wh-fair-s4', date: D }, db
+  );
+  assert.ok(
+    (rUtc.cashboxReconciliation.sessions as any[]).find((s: any) => s.id === 'sess-utc'),
+    'Ca mở lúc 20:00 UTC hôm trước (= 03:00 VN ngày 29) PHẢI vào báo cáo ngày 29 — lọc 1 mốc UTC sẽ bỏ sót'
+  );
+  const rPrev = await DailySettlementService.getDailyFairSettlement(
+    { warehouseId: 'wh-fair-s4', date: '2026-09-28' }, db
+  );
+  assert.strictEqual(
+    (rPrev.cashboxReconciliation.sessions as any[]).find((s: any) => s.id === 'sess-utc')?.id,
+    undefined,
+    'Ca mở 03:00 giờ VN ngày 29 KHÔNG được tính vào báo cáo ngày 28'
+  );
+  console.log('✓ Báo cáo ngày VN bắt đủ 2 mốc UTC, không mất 7 tiếng đầu');
+
+  // Cùng ca đó, thêm một đơn ghi theo HỌ TIMESTAMP THỨ HAI: app ghi
+  // `new Date().toISOString()` = 'YYYY-MM-DDTHH:MM:SSZ', còn SQLite ghi
+  // 'YYYY-MM-DD HH:MM:SS'. Biểu thức `datetime(col,'+7 hours')` phải nhận cả hai.
+  await db.insert(schema.orders).values({
+    id: 'o-utc-iso', orderCode: 'ORD-UTC-ISO', idempotencyKey: 'k-utc-iso',
+    warehouseId: 'wh-fair-s4', cashierId: 'CASH-UTC', cashboxSessionId: 'sess-utc',
+    status: 'COMPLETED', paymentMethod: 'CASH', subtotal: 70000, totalAmount: 70000,
+    finalAmount: 70000, discountAmount: 0, discountRate: 0,
+    // 20:30 UTC ngày 28 = 03:30 VN ngày 29
+    createdAt: '2026-09-28T20:30:00Z', completedAt: '2026-09-28T20:30:00Z',
+  } as any);
+  const rIso = await DailySettlementService.getDailyFairSettlement(
+    { warehouseId: 'wh-fair-s4', date: D }, db
+  );
+  const isoSession = (rIso.cashboxReconciliation.sessions as any[]).find((s: any) => s.id === 'sess-utc');
+  assert.strictEqual(
+    Number(isoSession?.expectedCashLive), 181000,
+    'Tiền mặt phải cộng cả đơn họ SQLite lẫn họ ISO trong cùng ca (111.000 + 70.000)'
+  );
+  console.log('✓ Lọc ngày VN nhận đúng cả 2 họ timestamp (SQLite và ISO)');
+
   console.log('\n[Case 1b] Tiền mặt kỳ vọng khi ca còn mở');
   await db.insert(schema.staffAccounts).values({
     staffId: 'CASH-S4', fullName: 'Thu ngân S4', role: 'ROLE_CASHIER',
