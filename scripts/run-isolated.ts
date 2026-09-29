@@ -58,6 +58,7 @@ const ALL_SUITES = [
     'scripts/test-fair-atp-hold.ts',
     'scripts/test-unclosed-activity.ts',
     'scripts/test-settlement-ui.ts',
+    'scripts/test-pos-cashier-name.ts',
   'scripts/test-forecast.ts',
   'scripts/test-royalties.ts',
   'scripts/test-returns.ts',
