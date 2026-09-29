@@ -186,8 +186,11 @@ async function run() {
 
   // Ngược lại: đơn PENDING CÒN HẠN thì vẫn phải chặn — không nới thành xoá.
   // LƯU Ý: isPendingExpired dùng Date.now() THẬT, còn suite này giả lập
-  // CASHBOX_TEST_NOW cho phần ca. Nên hạn phải tính theo đồng hồ thật, còn
-  // createdAt giữ trong ngày p2Day để khớp lọc `like('<date>%')` của closeDay.
+  // CASHBOX_TEST_NOW cho phần ca. Nên hạn phải tính theo đồng hồ thật.
+  // createdAt đặt giữa ban ngày (12:00 giờ VN) nên nằm trong cả ngày UTC lẫn
+  // ngày VN — không phụ thuộc bộ lọc nào. Trước đây comment ở đây ghi "giữ trong
+  // ngày p2Day để khớp lọc like('<date>%') của closeDay", tức là test né đúng
+  // lỗi lệch 7 tiếng; lỗi đó nay đã sửa và có ca riêng [P2c] bắt.
   const realNowMs = Date.now();
   console.log('\n[P2b] Đơn PENDING CÒN HẠN vẫn chặn đúng');
   await db.insert(schema.cashboxSessions).values({
@@ -220,6 +223,42 @@ async function run() {
     () => DailySettlementService.closeDay({
       warehouseId: 'wh-p2b', date: p2Day,
       actorRole: 'ROLE_OWNER', actorId: 'P2B_TEST', autoCloseOpenShifts: true,
+    }),
+    'STATE_CONFLICT'
+  );
+
+  // [P2c] Ranh giới 7 GIỜ trong closeDay — ca này CHỈ pass sau khi bỏ `like()`.
+  //
+  // Đặt createdAt = 18:00 UTC của HÔM TRƯỚC. Giờ VN đó là 01:00 sáng của p2Day.
+  // Nói cách khác: NGÀY VN của đơn là p2Day, còn NGÀY UTC là hôm trước.
+  //   · `like(createdAt, p2Day%)` không thấy đơn này ⇒ chốt ngày thành công dù
+  //     vẫn còn đơn chờ thanh toán ⇒ mất tiền, và idempotency_keys ghi sai danh
+  //     sách đơn chưa xong.
+  //   · `vnDayEquals` thấy đơn ⇒ phải chặn.
+  console.log('\n[P2c] closeDay lọc NGÀY VIỆT NAM, không lọc ngày UTC');
+  await db.insert(schema.warehouses).values({
+    id: 'wh-p2c', code: 'KHO_P2C', name: 'Kho P2c ranh giới 7 giờ',
+    warehouseType: 'FAIR_EVENT', isSellableOnPos: true, isActive: true,
+  });
+  // p2Day lúc 01:00 giờ VN = p2Day-1 lúc 18:00 UTC. Tính bằng mốc thời gian thật
+  // thay vì trừ năm bằng tay, để không sai khi p2Day rơi vào 01/01.
+  const p2cUtcDayBefore = new Date(Date.parse(p2Day + 'T00:00:00Z') - 6 * 3600_000)
+    .toISOString().slice(0, 10);
+  await db.insert(schema.orders).values({
+    id: 'ord-p2c', orderCode: 'ORD-P2C', warehouseId: 'wh-p2c',
+    channel: 'FAIR_EVENT', subtotal: 50000, finalAmount: 50000,
+    paymentMethod: 'BANK_TRANSFER', status: 'PENDING_CONFIRMATION',
+    cashierId: 'cashier-p2c', cashboxSessionId: null,
+    idempotencyKey: 'idem-p2c',
+    // 18:00 UTC hôm trước = 01:00 VN của p2Day.
+    createdAt: `${p2cUtcDayBefore}T18:00:00.000Z`,
+    paymentExpiresAt: new Date(realNowMs + 10 * 60_000).toISOString(),
+  });
+  await expectReject(
+    'đơn PENDING lúc 01:00 giờ VN (18:00 UTC hôm trước) vẫn phải chặn chốt ngày',
+    () => DailySettlementService.closeDay({
+      warehouseId: 'wh-p2c', date: p2Day,
+      actorRole: 'ROLE_OWNER', actorId: 'P2C_TEST', autoCloseOpenShifts: true,
     }),
     'STATE_CONFLICT'
   );

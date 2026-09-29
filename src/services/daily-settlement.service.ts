@@ -530,9 +530,14 @@ export class DailySettlementService {
           .from(orders)
           .where(
             and(
-              eq(orders.warehouseId, warehouseId),
-              eq(orders.status, 'PENDING_CONFIRMATION'),
-              like(orders.createdAt, `${date}%`)
+            eq(orders.warehouseId, warehouseId),
+            eq(orders.status, 'PENDING_CONFIRMATION'),
+            // Ngày VIỆT NAM, dùng đúng helper của chính file này. Trước đây là
+            // `like(createdAt, date%)` — tức so NGÀY UTC, lệch 7 tiếng.
+            // Hậu quả: đơn chuyển khoản 00:00–07:00 giờ VN của ngày đang chốt
+            // rơi vào ngày UTC HÔM TRƯỚC nên VÔ HÌNH ở đây, và ca có thể bị
+            // chốt trong khi vẫn còn đơn chờ thanh toán chưa xong.
+            vnDayEquals(orders.createdAt, date)
             )
           );
         const livePending = pendingRows.filter((o: any) => !OrderService.isPendingExpired(o));
@@ -552,7 +557,7 @@ export class DailySettlementService {
         const unsettledOrders = await tx
           .select({ id: orders.id, orderCode: orders.orderCode, status: orders.status, syncStatus: orders.syncStatus })
           .from(orders)
-          .where(and(eq(orders.warehouseId, warehouseId), like(orders.createdAt, `${date}%`)));
+          .where(and(eq(orders.warehouseId, warehouseId), vnDayEquals(orders.createdAt, date)));
 
         const record = {
           dayCloseKey: key,
