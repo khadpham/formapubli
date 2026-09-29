@@ -568,7 +568,14 @@ export function DailyFairSettlementModal({
                             Kết quả đối soát chênh lệch két:
                           </span>
                           <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold">
-                            Chưa thể đối soát — còn {data.cashboxReconciliation?.openSessionCount} ca chưa đóng
+                            Chưa thể đối soát — {(() => {
+                              const open = Number(data.cashboxReconciliation?.openSessionCount || 0);
+                              const unrec = Number(data.cashboxReconciliation?.unreconcilableSessionCount || 0);
+                              const parts: string[] = [];
+                              if (open > 0) parts.push(`${open} ca chưa đóng`);
+                              if (unrec > open) parts.push(`${unrec} ca chưa có tiền thực đếm`);
+                              return parts.length > 0 ? parts.join(' · ') : 'thiếu số đếm két';
+                            })()}
                           </span>
                         </div>
                       )}
@@ -890,11 +897,18 @@ export function DailyFairSettlementModal({
                 <div>
                   - Chênh lệch két tiền:{' '}
                   <strong>
+                    {/* `cashVariance === null` = CHƯA ĐỦ CĂN CỨ (còn ca mở, hoặc ca
+                        chưa ai đếm két), KHÔNG phải chênh lệch bằng 0. Biểu thức
+                        cũ `(null || 0) > 0` rơi vào nhánh cuối và in ra
+                        "Thiếu: 0 đ" — tức bản in bàn giao cho kế toán mang một lời
+                        buộc tội bịa ra. In "Chưa thể đối soát" thay vì đoán. */}
                     {data.cashboxReconciliation?.cashVariance === 0
                       ? 'Khớp 100%'
-                      : (data.cashboxReconciliation?.cashVariance || 0) > 0
-                      ? `Thừa: +${(data.cashboxReconciliation?.cashVariance || 0).toLocaleString('vi-VN')} đ`
-                      : `Thiếu: ${(data.cashboxReconciliation?.cashVariance || 0).toLocaleString('vi-VN')} đ`}
+                      : (data.cashboxReconciliation?.cashVariance ?? 0) > 0
+                      ? `Thừa: +${(data.cashboxReconciliation?.cashVariance ?? 0).toLocaleString('vi-VN')} đ`
+                      : data.cashboxReconciliation?.cashVariance === null || data.cashboxReconciliation?.cashVariance === undefined
+                      ? 'Chưa thể đối soát — ca chưa đóng hoặc chưa có tiền thực đếm'
+                      : `Thiếu: ${(data.cashboxReconciliation?.cashVariance ?? 0).toLocaleString('vi-VN')} đ`}
                   </strong>
                 </div>
               </div>

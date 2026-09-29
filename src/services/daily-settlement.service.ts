@@ -154,9 +154,16 @@ export class DailySettlementService {
     });
 
     // 5. Đối soát ca két tiền (Cashbox Sessions)
+    //
+    // PHẠM VI CA = các ca CÓ MẶT trong ngày nghiệp vụ D, tức mở không sau D và
+    // (còn mở, hoặc đóng không trước D). Trước đây lọc `opened_at ∈ D` ⇒ một ca
+    // mở 23:30 hôm trước rồi bán xuyên nửa đêm vào D biến mất khỏi báo cáo D:
+    // doanh số tiền mặt trong ngày có 400.000 nhưng `expectedCashTotal` = 0, tức
+    // báo cáo tự mâu thuẫn với chính dòng doanh số ngay cạnh nó.
     const sessionConditions = [
       eq(cashboxSessions.warehouseId, warehouseId),
-      vnDayEquals(cashboxSessions.openedAt, targetDate),
+      sql`substr(datetime(${cashboxSessions.openedAt}, '+7 hours'), 1, 10) <= ${targetDate}`,
+      sql`(${cashboxSessions.status} = 'OPEN' OR ${cashboxSessions.closedAt} IS NULL OR substr(datetime(${cashboxSessions.closedAt}, '+7 hours'), 1, 10) >= ${targetDate})`,
     ];
     if (sessionId) {
       sessionConditions.push(eq(cashboxSessions.id, sessionId));
@@ -167,14 +174,6 @@ export class DailySettlementService {
       .from(cashboxSessions)
       .where(and(...sessionConditions));
 
-    let openingCashTotal = 0;
-    let closingCashActualTotal = 0;
-    let expectedCashTotal = 0;
-    let hasOpenSession = false;
-    let openSessionCount = 0;
-
-    // Tiền mặt bán TRONG TỪNG CA, gom theo cashboxSessionId.
-    //
     // Tiền mặt thu TRONG TỪNG CA, gom theo cashboxSessionId.
     //
     // KHÔNG dùng cột `totalCashSales`: đó là bản chốt lúc đóng ca nên LUÔN = 0
@@ -182,16 +181,11 @@ export class DailySettlementService {
     // "doanh số tiền mặt" bên cạnh thì mâu thuẫn. Cùng định nghĩa đã dùng ở
     // GET /api/pos/live-monitor (2026-09-29).
     //
-    // GIỚI HẠN ĐÃ BIẾT, ghi ra đây để không ai hiểu nhầm là đã xử lý xong:
-    // `dayOrders` lọc theo ngày nghiệp vụ, nên một ca MỞ từ hôm qua và bán xuyên
-    // nửa đêm sẽ không có mặt trong `dayOrders` ⇒ `openingCash` của ca đó không
-    // được cộng vào tổng. Sửa đúng cần lấy `sessions` theo
-    // `businessDateOf(openedAt) <= targetDate` và lấy tiền theo tập đơn của từng ca,
-    // không lấy từ `dayOrders` — việc này để riêng vì đụng đối soát két.
-    //
-    // GHI CHÚ: ca CLOSED cộng `s.expectedCash` (phạm vi CẢ CA), ca OPEN cộng
-    // `openingCash + tiền trong ngày` (phạm vi TRONG NGÀY). Hai phạm vi khác nhau
-    // cộng chung một tổng — xem lại khi chuẩn hoá đối soát két.
+    // Định nghĩa MỘT cho mọi ca (đã bỏ kiểu cộng chung hai phạm vi ở bản cũ):
+    //   kỳ vọng trong ngày D của một ca = tiền bàn giao đầu ca + tiền mặt bán
+    //   TRONG NGÀY D của chính ca đó.
+    // Nhờ vậy `expectedCashTotal` luôn bằng TỔNG các dòng `expectedCashLive` mà
+    // UI hiện, và ca nào kéo sang ngày mai cũng không làm ngày D dính tiền mai.
     const cashBySession = new Map<string, number>();
     for (const ord of dayOrders as any[]) {
       // So khớp case: dòng 82 dùng `(ord.paymentMethod || 'CASH').toUpperCase()`.
@@ -204,28 +198,59 @@ export class DailySettlementService {
       );
     }
 
-    for (const s of sessions) {
+    let openingCashTotal = 0;
+    let closingCashActualTotal = 0;
+    let expectedCashTotal = 0;
+    let hasOpenSession = false;
+    let openSessionCount = 0;
+    // Số ca CÓ mặt trong ngày mà ta KHÔNG ĐỦ CĂN CỨ để kết luận lệch két.
+    let unreconcilableCount = 0;
+    let canReconcile = sessions.length > 0;
+
+    const sessionRows = sessions.map((s: any) => {
+      const dayExpected = (s.openingCash || 0) + (cashBySession.get(s.id) || 0);
       openingCashTotal += s.openingCash || 0;
+      expectedCashTotal += dayExpected;
+
+      const counted = s.status !== 'OPEN' && s.closingCashActual !== null;
+      if (counted) closingCashActualTotal += s.closingCashActual;
+
+      // Số tiền thực đếm (lúc chốt ca) và số kỳ vọng trong ngày phải CÙNG PHẠM
+      // VI thì mới dám kết luận lệch. Không cùng phạm vi xảy ra khi:
+      //  · ca chưa ai đếm (chốt tự động) ⇒ KHÔNG biết còn bao nhiêu, tuyệt đối
+      //    không được bịa ra "Thiếu két: -X" (đã xảy ra: ca đóng tự động cho
+      //    `closingCashActual = NULL` bị cộng thành 0 ⇒ báo thiếu nguyên ca).
+      //  · ca có đơn vượt biên ngày D (đồng bộ offline / nhập lại) ⇒ `expected_cash`
+      //    ghi lúc chốt phủ cả đơn ngoài ngày D.
+      const sameScope =
+        counted &&
+        Number.isFinite(Number(s.expectedCash)) &&
+        Math.abs(Number(s.expectedCash) - dayExpected) <= 0.01;
+      if (!sameScope) {
+        unreconcilableCount += 1;
+        canReconcile = false;
+      }
       if (s.status === 'OPEN') {
         hasOpenSession = true;
         openSessionCount += 1;
-        expectedCashTotal += (s.openingCash || 0) + (cashBySession.get(s.id) || 0);
-      } else {
-        closingCashActualTotal += s.closingCashActual || 0;
-        expectedCashTotal += s.expectedCash || 0;
       }
-    }
+      return { s, dayExpected, reconcilable: sameScope };
+    });
 
-    // `cashVariance` giữ nguyên contract (null khi còn ca mở) nhưng KHÔNG được
-    // để dòng đối soát biến mất âm thầm. Hai trường mới cho UI biết cần nói
-    // gì: số ca còn mở, và "chưa thể đối soát" thay vì trắng trơn.
-    const cashVariance = sessions.length > 0 && !hasOpenSession
-      ? closingCashActualTotal - expectedCashTotal
-      : null;
+    // `cashVariance` giữ nguyên contract (null khi chưa đủ căn cứ) nhưng KHÔNG
+    // được để dòng đối soát biến mất âm thầm. Hai trường mới cho UI biết cần
+    // nói gì: số ca còn mở, và số ca không thể đối soát.
+    const cashVariance = canReconcile ? closingCashActualTotal - expectedCashTotal : null;
 
     // 6. Top ấn phẩm bán chạy trong ngày tại kho
     const orderIds = dayOrders.map((o: any) => o.id);
     let topSellers: any[] = [];
+    // Lượng bán theo ấn bản TRÊN TOÀN BỘ đơn trong ngày — KHÔNG phải trên 10 dòng
+    // `topSellers`. Trước đây `soldMap` dựng lại từ `topSellers` đã `.slice(0,10)`
+    // ⇒ mọi ấn bản ngoài top 10 hiện `soldToday = 0` trong bảng đối soát tồn, dù
+    // nó có bán thật. Đây là cột "Đã bán POS" trong biên bản kiểm kê bàn giao cho
+    // kế toán ⇒ báo thiếu hàng, không phải lỗi làm tròn.
+    const soldQtyAll = new Map<string, number>();
 
     if (orderIds.length > 0) {
       const lineItems = await txOrDb
@@ -260,6 +285,7 @@ export class DailySettlementService {
         const record = sellerAgg.get(edId);
         record.soldCopies += item.quantity;
         record.soldRevenue += item.totalAmount;
+        soldQtyAll.set(edId, (soldQtyAll.get(edId) || 0) + item.quantity);
       }
 
       topSellers = Array.from(sellerAgg.values())
@@ -288,10 +314,7 @@ export class DailySettlementService {
         )
       );
 
-    const soldMap = new Map<string, number>();
-    for (const seller of topSellers) {
-      soldMap.set(seller.editionId, seller.soldCopies);
-    }
+    const soldMap = soldQtyAll;
 
     const inventoryReconciliation = balances
       .filter((b: any) => b.physicalQuantity > 0 || soldMap.has(b.editionId))
@@ -350,11 +373,13 @@ export class DailySettlementService {
         expectedCashTotal,
         closingCashActualTotal,
         cashVariance,
-        // Ca còn mở ⇒ chưa thể đối soát tiền két. UI dùng 2 trường này để hiện
-        // "Còn N ca chưa đóng — chưa thể đối soát" thay vì ẩn dòng chênh lệch.
-        cashVariancePending: hasOpenSession,
+        // Ca còn mở, hoặc ca chưa ai đếm két ⇒ chưa thể đối soát tiền két. UI dùng
+        // các trường này để hiện "Còn N ca chưa đóng / M ca chưa có tiền thực đếm
+        // — chưa thể đối soát" thay vì ẩn dòng chênh lệch hoặc bịa ra con số.
+        cashVariancePending: !canReconcile,
         openSessionCount,
-        sessions: sessions.map((s: any) => ({
+        unreconcilableSessionCount: unreconcilableCount,
+        sessions: sessionRows.map(({ s, dayExpected, reconcilable }: any) => ({
           id: s.id,
           cashierId: s.cashierId,
           openingCash: s.openingCash,
@@ -362,13 +387,13 @@ export class DailySettlementService {
           expectedCash: s.expectedCash,
           cashDiscrepancy: s.cashDiscrepancy,
           // Ca còn MỞ thì `expectedCash` trong DB là NULL (chỉ ghi lúc chốt ca), nên
-          // không hiển thị được. `expectedCashLive` là con số đúng ngay lúc này:
-          // bàn giao đầu ca + tiền mặt đã bán trong chính ca đó. Đây cũng là con
-          // số mà tổng `expectedCashTotal` cộng lên.
-          expectedCashLive:
-            s.status === 'OPEN'
-              ? (s.openingCash || 0) + (cashBySession.get(s.id) || 0)
-              : (s.expectedCash ?? 0),
+          // không hiển thị được. `expectedCashLive` là con số đúng ngay lúc này và
+          // theo đúng MỘT định nghĩa cho mọi ca (bàn giao đầu ca + tiền mặt bán
+          // trong ngày) — đây cũng là con số mà tổng `expectedCashTotal` cộng lên.
+          expectedCashLive: dayExpected,
+          // false = chưa đủ căn cứ đối chiếu ca này (chưa đếm tiền, hoặc số đếm
+          // và số kỳ vọng không cùng phạm vi ngày).
+          reconcilable,
           status: s.status,
           notes: s.notes,
           openedAt: s.openedAt,

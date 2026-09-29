@@ -1,6 +1,6 @@
 import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like } from 'drizzle-orm';
-import { businessDateOf, VN_UTC_OFFSET_MIN } from './order.service';
+import { businessDateOf, createdAtBetween, VN_UTC_OFFSET_MIN } from './order.service';
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
 // (orders/order_items/ledger). Không copy ngày→tuần→tháng, không bảng mới.
@@ -10,10 +10,25 @@ export interface DateRange {
   endDate?: string;
 }
 
+/**
+ * Mọi cột `created_at`/`recorded_at` ở đây là UTC, còn tham số `startDate`/
+ * `endDate` là NGÀY NGHIỆP VỤ VIỆT NAM (YYYY-MM-DD) — cùng quy ước với
+ * `getOrders` và báo cáo chốt ngày.
+ *
+ * Trước đây so CHUỖI THÔ: `lte(created_at, '2026-11-10')` loại mất mọi đơn sau
+ * 00:00 vì 'T' của ISO (0x54) > khoảng trắng của SQLite (0x20) và > hết chuỗi;
+ * `gte(created_at, '2026-11-10')` lại loại mất 7 tiếng đầu ngày. Đo thật trên
+ * dữ liệu một ngày: 4 đơn / 1.110.000 đ trong ngày 10/11 mà báo cáo trả về
+ * 0 đơn / 0 đ, trong khi sổ doanh số cùng ngày trả đúng 1.110.000 đ ⇒ hai báo
+ * cáo cùng dữ liệu, hai con số.
+ *
+ * `createdAtBetween` là helper ĐÃ CÓ của `order.service` và tự phân biệt ngày
+ * trần (ngày nghiệp vụ) với ISO đầy đủ (mốc UTC) — dùng lại thay vì viết lần
+ * thứ ba.
+ */
 function rangeConds(table: typeof orders, range: DateRange) {
   const conds = [eq(table.status, 'COMPLETED')];
-  if (range.startDate) conds.push(gte(table.createdAt, range.startDate));
-  if (range.endDate) conds.push(lte(table.createdAt, range.endDate));
+  conds.push(...createdAtBetween(table.createdAt, range.startDate, range.endDate));
   return and(...conds);
 }
 
@@ -71,6 +86,8 @@ export class AnalyticsService {
         })
         .from(orderItems)
         .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        // Cửa sổ tuần là MỐC UTC (`mondayOf().toISOString()`), không phải ngày
+        // trần — giữ so sánh thô, `createdAtBetween` tự phân biệt hai kiểu tham số.
         .where(and(eq(orders.status, 'COMPLETED'), gte(orders.createdAt, from), lte(orders.createdAt, to)))
         .groupBy(orderItems.editionId);
       const map = new Map<string, { qty: number; revenue: number }>();
@@ -113,8 +130,7 @@ export class AnalyticsService {
       const bals = await db.select().from(stockBalances).where(eq(stockBalances.warehouseId, wh.id));
       const heldQty = bals.reduce((s, b) => s + (b.physicalQuantity || 0), 0);
       const conds = [eq(inventoryLedger.warehouseId, wh.id), eq(inventoryLedger.eventType, 'CONSIGNMENT_SOLD')];
-      if (range.startDate) conds.push(gte(inventoryLedger.recordedAt, range.startDate));
-      if (range.endDate) conds.push(lte(inventoryLedger.recordedAt, range.endDate));
+      conds.push(...createdAtBetween(inventoryLedger.recordedAt, range.startDate, range.endDate));
       const soldRows = await db
         .select({ qty: sql<number>`COALESCE(SUM(${inventoryLedger.quantityDelta}), 0)` })
         .from(inventoryLedger)
@@ -148,9 +164,8 @@ export class AnalyticsService {
       sql`${orders.channel} != 'SPONSORSHIP'`,
       sql`${orders.finalAmount} > 0`,
     ];
-    if (range.startDate) conds.push(gte(orders.createdAt, range.startDate));
-    if (range.endDate) conds.push(lte(orders.createdAt, range.endDate));
     if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    conds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
     const rows = await db
       .select({
         editionId: orderItems.editionId,
@@ -185,8 +200,7 @@ export class AnalyticsService {
   static async cashflow(range: DateRange = {}) {
     const channels = await this.byChannel(range);
     const codConds = [eq(orders.status, 'COMPLETED')];
-    if (range.startDate) codConds.push(gte(orders.createdAt, range.startDate));
-    if (range.endDate) codConds.push(lte(orders.createdAt, range.endDate));
+    codConds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
     const codRows = await db
       .select({ codStatus: orders.codStatus, total: sql<number>`COALESCE(SUM(${orders.codAmount}), 0)` })
       .from(orders)
@@ -199,8 +213,7 @@ export class AnalyticsService {
       if (r.codStatus === 'RECEIVED') codReceived = Number(r.total || 0);
     }
     const spfConds = [];
-    if (range.startDate) spfConds.push(gte(sponsorshipDrawdowns.createdAt, range.startDate));
-    if (range.endDate) spfConds.push(lte(sponsorshipDrawdowns.createdAt, range.endDate));
+    spfConds.push(...createdAtBetween(sponsorshipDrawdowns.createdAt, range.startDate, range.endDate));
     const spfRows = await db
       .select({
         value: sql<number>`COALESCE(SUM(${sponsorshipDrawdowns.drawnValue}), 0)`,
@@ -211,8 +224,7 @@ export class AnalyticsService {
     const sponsorshipDrawnValue = Number(spfRows[0]?.value || 0);
     const sponsorshipDrawnQty = Number(spfRows[0]?.qty || 0);
     const refundConds = [eq(returnOrders.status, 'COMPLETED')];
-    if (range.startDate) refundConds.push(gte(returnOrders.createdAt, range.startDate));
-    if (range.endDate) refundConds.push(lte(returnOrders.createdAt, range.endDate));
+    refundConds.push(...createdAtBetween(returnOrders.createdAt, range.startDate, range.endDate));
     const refundRows = await db
       .select({ total: sql<number>`COALESCE(SUM(${returnOrders.refundAmount}), 0)` })
       .from(returnOrders)

@@ -95,6 +95,13 @@ export class SettlementService {
     }
     if (!reference || !reference.trim()) throw new Error('Bắt buộc kèm mã tham chiếu giao dịch (reference).');
     if (!receivedBy || !receivedBy.trim()) throw new Error('Bắt buộc ghi rõ người thu tiền.');
+    // `paid_at` đi thẳng vào sổ AR và là cột người kế toán lọc theo ngày. Trước đây
+    // nhận nguyên chuỗi từ client không kiểm ⇒ gõ "hôm qua" hay "01/10/2026" là
+    // phiếu thu nằm ở ngày không tồn tại, mọi báo cáo tuổi nợ sau đó lệch. Chặn ở
+    // cửa, đúng ngày nghiệp vụ Việt Nam.
+    if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt.trim())) {
+      throw new Error(`Ngày tiền về phải có dạng YYYY-MM-DD (nhận "${paidAt}").`);
+    }
 
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
