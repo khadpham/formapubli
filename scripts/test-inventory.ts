@@ -15,12 +15,12 @@ async function runInventoryTests() {
   console.log('🧪 BẮT ĐẦU KIỂM THỬ SỔ CÁI KHO VẬN BẤT BIẾN & 3 KHO');
   console.log('🧪 ===============================================\n');
 
-  // 1. Lấy thông tin đầu sách H01 (Bệnh tưởng) và 3 kho
-  const h01 = await db.select().from(editions).where(eq(editions.code, 'H01')).limit(1);
-  if (!h01.length) {
-    throw new Error('Không tìm thấy sách H01 trong danh mục đã seed!');
+  // 1. Lấy 1 ấn bản bất kỳ đang có trong danh mục (mã SKU đổi theo đợt cập
+  // nhật danh mục, nên không hardcode mã — luôn tra động từ CSDL).
+  const [book] = await db.select().from(editions).orderBy(editions.code).limit(1);
+  if (!book) {
+    throw new Error('Danh mục ấn bản đã seed rỗng!');
   }
-  const book = h01[0];
   console.log(`📚 Sách kiểm thử: [${book.code}] ${book.title} (ISBN: ${book.isbn}, Đuôi: ${book.isbnLast4})`);
 
   const allWh = await db.select().from(warehouses);
@@ -91,19 +91,19 @@ async function runInventoryTests() {
   // 5. Test 4: Xác thực số dư trên ma trận tồn kho toàn hệ thống
   console.log('\n--- TEST 4: Xác thực số dư thời gian thực trên Ma trận 3 Kho ---');
   const matrix = await InventoryService.getStockMatrix();
-  const h01Stock = matrix.find((item) => item.code === 'H01')!;
+  const bookStock = matrix.find((item) => item.id === book.id)!;
 
-  console.log(`📊 Kết quả tồn kho thực tế của [${h01Stock.code}] ${h01Stock.title}:`);
-  console.log(`   - Kho 1 (Âu Cơ):     ${h01Stock.stockAuCo} cuốn (Kỳ vọng: ${baseAuCo + 150})`);
-  console.log(`   - Kho 2 (Quỳnh Mai): ${h01Stock.stockQuynhMai} cuốn (Kỳ vọng: ${baseQuynhMai + 800})`);
-  console.log(`   - Kho 3 (Dự phòng):  ${h01Stock.stockDuPhong} cuốn (Kỳ vọng: ${baseDuPhong})`);
-  console.log(`   - TỔNG TOÀN HỆ THỐNG: ${h01Stock.totalStock} cuốn (Kỳ vọng: ${baseAuCo + baseQuynhMai + baseDuPhong + 950})`);
+  console.log(`📊 Kết quả tồn kho thực tế của [${bookStock.code}] ${bookStock.title}:`);
+  console.log(`   - Kho 1 (Âu Cơ):     ${bookStock.stockAuCo} cuốn (Kỳ vọng: ${baseAuCo + 150})`);
+  console.log(`   - Kho 2 (Quỳnh Mai): ${bookStock.stockQuynhMai} cuốn (Kỳ vọng: ${baseQuynhMai + 800})`);
+  console.log(`   - Kho 3 (Dự phòng):  ${bookStock.stockDuPhong} cuốn (Kỳ vọng: ${baseDuPhong})`);
+  console.log(`   - TỔNG TOÀN HỆ THỐNG: ${bookStock.totalStock} cuốn (Kỳ vọng: ${baseAuCo + baseQuynhMai + baseDuPhong + 950})`);
 
   if (
-    h01Stock.stockAuCo === baseAuCo + 150 &&
-    h01Stock.stockQuynhMai === baseQuynhMai + 800 &&
-    h01Stock.stockDuPhong === baseDuPhong &&
-    h01Stock.totalStock === baseAuCo + baseQuynhMai + baseDuPhong + 950
+    bookStock.stockAuCo === baseAuCo + 150 &&
+    bookStock.stockQuynhMai === baseQuynhMai + 800 &&
+    bookStock.stockDuPhong === baseDuPhong &&
+    bookStock.totalStock === baseAuCo + baseQuynhMai + baseDuPhong + 950
   ) {
     console.log('🎉 KHỚP SỐ DƯ TUYỆT ĐỐI 100%!');
   } else {
@@ -167,7 +167,7 @@ async function runInventoryTests() {
   const cols = ['stockAuCo', 'stockQuynhMai', 'stockDuPhong', 'totalStock'] as const;
   try {
     const quarantined = await InventoryService.getBalance(book.id, whAuCo.id, 'QUARANTINE');
-    console.log(`🧪 Đã cấm [H01] tại Âu Cơ: 77 cuốn QUARANTINE (đọc lại: ${quarantined} cuốn)`);
+    console.log(`🧪 Đã cấm [${book.code}] tại Âu Cơ: 77 cuốn QUARANTINE (đọc lại: ${quarantined} cuốn)`);
     if (quarantined !== 77) {
       throw new Error('❌ Không ghi được bucket QUARANTINE — test vô nghĩa!');
     }

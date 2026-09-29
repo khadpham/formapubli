@@ -4,7 +4,8 @@
  * - DB test mặc định: file:formapubli_test.db (đổi qua TEST_DATABASE_FILE).
  * - KHÔNG BAO GIỜ chạm vào formapubli.db thật: script này tự tạo client
  *   riêng tới file test, không dùng shared `db` của ứng dụng.
- * - Full seed: 3 kho + 5 đối tác + 81 ấn bản từ data_tabs (giống seed prod)
+ * - Full seed: 3 kho + 5 đối tác + toàn bộ ấn bản trong data_tabs (88 mã HH/TP/H)
+ *   (giống seed prod)
  *   + số dư mở đầu OPENING_BALANCE 50 cuốn/ấn bản tại Kho Âu Cơ (ghi cả
  *   ledger lẫn balance để bất biến bảo toàn ledger == balance luôn đúng).
  * - Helpers parse CSV/acronym được sao chép từ scripts/seed.ts để file này
@@ -158,7 +159,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     { id: 'part-library', code: 'THU_VIEN_DOI_TAC', name: 'Thư viện & Trường học (Test)', type: 'LIBRARY', discountRate: 0.2, contactInfo: 'Test' },
   ]);
 
-  // 5. Seed 81 ấn bản từ catalog CSV (cùng logic seed prod).
+  // 5. Seed toàn bộ ấn bản từ catalog CSV (cùng logic seed prod).
   const csvPath = path.join(process.cwd(), 'data_tabs', 'sheet1_danhmuc_gid_0.csv');
   const fileContent = fs.readFileSync(csvPath, 'utf-8').replace(/^\uFEFF/, '');
   const rows = fileContent.split('\n').filter((l) => l.trim().length > 0).slice(1).map(parseCSVLine);
@@ -177,13 +178,16 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     const pubYear = parseInt((rawYear || '').replace(/[^0-9]/g, ''), 10) || null;
     const status = (statusCol || '').toLowerCase().includes('sold out') ? 'SOLD_OUT' : 'IN_STOCK';
 
+    // 2 ấn bản "Le Spleen de Paris" (HH032 bìa tím + HH042 tái bản bìa trắng) là
+    // CÙNG một tác phẩm — phải khớp đúng logic seed.ts, nếu không test DB sẽ tách
+    // thành 2 works và sai lệch với production.
     let workId = `work-${itemCode.toLowerCase()}`;
     let editionNum = 1;
-    if (itemCode === 'H36') {
-      workId = 'work-h21';
+    if (itemCode === 'HH042') {
+      workId = 'work-hh032';
       editionNum = 2;
     }
-    if (itemCode !== 'H36') {
+    if (itemCode !== 'HH042') {
       await testDb.insert(works).values({
         id: workId,
         code: `W-${itemCode}`,

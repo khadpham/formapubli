@@ -69,6 +69,12 @@ async function run() {
   process.env.AUTH_STRICT = 'true';
   process.env.AUTH_SECRET = 'formapubli-test-secret-at-least-32-chars-long!';
 
+  // Một ấn bản thật trong danh mục đã seed — mã SKU đổi theo từng đợt nên
+  // không hardcode 'ed-h01' (sẽ không còn tồn tại sau khi đổi mã).
+  const [seedEdition] = await db.select({ id: editions.id }).from(editions).limit(1);
+  if (!seedEdition) throw new Error('Test DB chưa seed danh mục ấn bản.');
+  const testEditionId = seedEdition.id;
+
   // -------------------------------------------------------------------------
   // CA 1: Không cookie -> 401 & không rò rỉ dữ liệu nhạy cảm
   // -------------------------------------------------------------------------
@@ -98,7 +104,7 @@ async function run() {
   // CA 4: Header Spoofing (Gửi x-formapubli-role: ROLE_OWNER không cookie) -> Bị vô hiệu 401
   // -------------------------------------------------------------------------
   const r4 = await post(postMovement, {
-    editionId: 'ed-h01',
+    editionId: testEditionId,
     warehouseId: 'wh-au-co',
     eventType: 'RECEIPT',
     quantityDelta: 10,
@@ -129,7 +135,7 @@ async function run() {
   const cashierLogin = await post(postLogin, { staffId: 'NV-01', passcode: '1234' });
   const cashierCookie = extractCookie(cashierLogin.headers);
   const r7 = await post(postMovement, {
-    editionId: 'ed-h01',
+    editionId: testEditionId,
     warehouseId: 'wh-au-co',
     eventType: 'RECEIPT',
     quantityDelta: 10,
@@ -182,7 +188,7 @@ async function run() {
   // -------------------------------------------------------------------------
   const orderRes = await post(postOrder, {
     warehouseId: 'wh-au-co',
-    items: [{ editionId: 'ed-h01', quantity: 1 }],
+    items: [{ editionId: testEditionId, quantity: 1 }],
     cashierId: 'HACKER_ATTEMPT',
     idempotencyKey: uniq('idem-order-auth'),
   }, { Cookie: cashierCookie });

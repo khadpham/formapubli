@@ -38,11 +38,15 @@ async function runMasterAudit() {
 
   const allEditions = await db.select().from(editions);
   const bookEditions = allEditions.filter((e) => !e.code.startsWith('BOX-'));
-  assert(bookEditions.length === 81, 'Danh mục ấn bản sách chuẩn hóa', `Có đúng ${bookEditions.length}/81 ấn bản sách (H01-H81, chưa kể SKU vỏ hộp BOX-)`);
+  // 88 = toàn bộ dòng trong data_tabs/sheet1_danhmuc_gid_0.csv (mã HH/TP/H).
+  // Gắn cứng vào con số này để bắt được lỗi seed thiếu/thừa ấn bản.
+  assert(bookEditions.length === 88, 'Danh mục ấn bản sách chuẩn hóa', `Có đúng ${bookEditions.length}/88 ấn bản sách (mã HH/TP/H, chưa kể SKU vỏ hộp BOX-)`);
 
   const allWorks = await db.select().from(works);
   const bookWorks = allWorks.filter((w) => !w.code.startsWith('W-BOX-'));
-  assert(bookWorks.length === 80, 'Danh mục tác phẩm gốc', `Có đúng ${bookWorks.length}/80 tác phẩm (H21 và H36 chung tác phẩm Baudelaire, chưa kể tác phẩm vỏ hộp)`);
+  // 87 = 88 ấn bản trừ 1, vì 2 bản "Le Spleen de Paris" (HH032 bìa tím +
+  // HH042 tái bản bìa trắng) là CÙNG một tác phẩm gốc.
+  assert(bookWorks.length === 87, 'Danh mục tác phẩm gốc', `Có đúng ${bookWorks.length}/87 tác phẩm (HH032 và HH042 chung tác phẩm Le Spleen de Paris, chưa kể tác phẩm vỏ hộp)`);
 
   const allWarehouses = await db.select().from(warehouses);
   const warehouseCodes = allWarehouses.map((w) => w.code);
@@ -111,7 +115,7 @@ async function runMasterAudit() {
   // -------------------------------------------------------------
   console.log('\n--- PHẦN 3: KIỂM TOÁN CHẶN LỖI XUẤT KHO ---');
 
-  const testEdition = allEditions[0]; // H01 - Bệnh tưởng
+  const testEdition = allEditions[0]; // ấn bản đầu tiên trong danh mục đã seed
   const khoAuCo = allWarehouses.find((w) => w.code === 'KHO_AU_CO')!;
   const currentAuCoStock = await InventoryService.getBalance(testEdition.id, khoAuCo.id, 'NEW');
 
@@ -161,7 +165,7 @@ async function runMasterAudit() {
   }
   assert(blockedInvalidQty, 'Từ chối tạo đơn hàng có số lượng <= 0');
 
-  // Test Bán hàng thực tế: 1 cuốn H01 tại Kho Âu Cơ
+  // Test Bán hàng thực tế: 1 cuốn đầu tiên của danh mục tại Kho Âu Cơ
   const initialStock = await InventoryService.getBalance(testEdition.id, khoAuCo.id, 'NEW');
   const retailOrder = await OrderService.createOrder({
     warehouseId: khoAuCo.id,

@@ -5,7 +5,7 @@ assertIsolatedTestDb('test-barcode-engine');
 
 /**
  * AUTOMATED TEST SUITE: IN-APP BARCODE & ISBN RESOLVER ENGINE
- * Kiểm thử tính năng nhận diện mã vạch EAN-13 / ISBN-13 và mapping vào 81 đầu sách
+ * Kiểm thử tính năng nhận diện mã vạch EAN-13 / ISBN-13 và mapping vào toàn bộ đầu sách
  */
 async function testBarcodeEngine() {
   console.log('📦 =======================================================');
@@ -45,42 +45,51 @@ async function testBarcodeEngine() {
   }
 
   // TEST 1: Quét mã vạch chuẩn 13 số liền EAN-13
-  const h01 = resolveBarcode('9786043687507');
+  // ISBN là giá trị CỐ ĐỊNH của bản in (không đổi khi đổi mã SKU) → giữ nguyên,
+  // chỉ đổi phần assert mã/tên sang mã hiện hành trong danh mục.
+  const benhTuong = resolveBarcode('9786043687507');
   assert(
-    h01 !== undefined && h01.code === 'H01',
-    'Nhận diện mã vạch EAN-13 chuẩn (9786043687507 ➔ H01)',
-    `Tác phẩm: [${h01?.code}] ${h01?.title}`
+    benhTuong !== undefined && benhTuong.title === 'Bệnh tưởng',
+    'Nhận diện mã vạch EAN-13 chuẩn (9786043687507 ➔ Bệnh tưởng)',
+    `Tác phẩm: [${benhTuong?.code}] ${benhTuong?.title}`
   );
 
   // TEST 2: Quét mã vạch có dấu gạch nối (Format in ấn trên sách)
-  const h02 = resolveBarcode('978-604-368-749-1');
+  const nguoiBienLan = resolveBarcode('978-604-368-749-1');
   assert(
-    h02 !== undefined && h02.code === 'H02',
-    'Khử định dạng gạch nối thành công (978-604-368-749-1 ➔ H02)',
-    `Tác phẩm: [${h02?.code}] ${h02?.title}`
+    nguoiBienLan !== undefined && nguoiBienLan.title === 'Người biển lận',
+    'Khử định dạng gạch nối thành công (978-604-368-749-1 ➔ Người biển lận)',
+    `Tác phẩm: [${nguoiBienLan?.code}] ${nguoiBienLan?.title}`
   );
 
   // TEST 3: Quét theo 4 số cuối ISBN (Fast 4-digit barcode scanner)
-  const h03 = resolveBarcode('7484');
+  const truongGia = resolveBarcode('7484');
   assert(
-    h03 !== undefined && h03.code === 'H03',
-    'Nhận diện theo 4 số cuối ISBN (7484 ➔ H03)',
-    `Tác phẩm: [${h03?.code}] ${h03?.title}`
+    truongGia !== undefined && truongGia.title === 'Trưởng giả học làm sang',
+    'Nhận diện theo 4 số cuối ISBN (7484 ➔ Trưởng giả học làm sang)',
+    `Tác phẩm: [${truongGia?.code}] ${truongGia?.title}`
   );
 
-  // TEST 4: Quét theo mã SKU sản phẩm (H81)
-  const h81 = resolveBarcode('H81');
+  // TEST 4: Quét theo mã SKU sản phẩm — lấy 1 ấn bản thật trong danh mục
+  // rồi quét chính mã đó (mã SKU đổi theo từng đợt nên không hardcode).
+  const skuTarget = allEditions[allEditions.length - 1];
+  const bySku = resolveBarcode(skuTarget.code);
   assert(
-    h81 !== undefined && h81.code === 'H81',
-    'Nhận diện theo mã SKU (H81 ➔ Nhà tiên tri)',
-    `Tác phẩm: [${h81?.code}] ${h81?.title}`
+    bySku !== undefined && bySku.id === skuTarget.id,
+    `Nhận diện theo mã SKU (${skuTarget.code} ➔ ${skuTarget.title})`,
+    `Tác phẩm: [${bySku?.code}] ${bySku?.title}`
   );
 
-  // TEST 5: Quét mã vạch trùng ISBN tái bản (H21 và H36 dùng chung ISBN Baudelaire)
-  const baudelaire = resolveBarcode('9786044737690');
+  // TEST 5: Quét mã vạch trùng ISBN tái bản (2 bản "Le Spleen de Paris" dùng
+  // chung ISBN 9786044737690). Mã SKU đã đổi nên tra tập mã từ chính CSDL.
+  const sharedIsbn = '9786044737690';
+  const sharedEditions = allEditions.filter((e) => e.isbn === sharedIsbn);
+  const baudelaire = resolveBarcode(sharedIsbn);
   assert(
-    baudelaire !== undefined && (baudelaire.code === 'H21' || baudelaire.code === 'H36'),
-    'Xử lý trường hợp tái bản chung ISBN (9786044737690 ➔ H21/H36)',
+    sharedEditions.length === 2 &&
+      baudelaire !== undefined &&
+      sharedEditions.some((e) => e.id === baudelaire.id),
+    `Xử lý trường hợp tái bản chung ISBN (${sharedIsbn} ➔ ${sharedEditions.map((e) => e.code).join(' / ')})`,
     `Tác phẩm: [${baudelaire?.code}] ${baudelaire?.title}`
   );
 
