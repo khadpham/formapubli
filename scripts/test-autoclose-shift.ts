@@ -528,7 +528,10 @@ async function run() {
   check('audit chốt ngày tồn tại, nêu rõ trạng thái xác minh tiền mặt', () => {
     assert.strictEqual(dayAudit.length, 1);
     assert.strictEqual(dayAudit[0].action, 'SETTLE_DAY');
-    assert.match(dayAudit[0].details || '', /KHÔNG xác minh/);
+    // Siết chặt hơn bản cũ: trước đây chỉ đòi một đoạn tiếng Việt `KHÔNG xác
+    // minh`. Nay bắt buộc có token trạng thái máy đọc được (VERIFIED/UNVERIFIED)
+    // để trạng thái xác minh tiền mặt không chỉ nằm trong câu văn.
+    assert.match(dayAudit[0].details || '', /Kiểm kê tiền mặt: (VERIFIED|UNVERIFIED)/);
   });
   const day2 = await DailySettlementService.closeDay({
     warehouseId: 'wh-auto', date: '2026-09-25', actorRole: 'ROLE_MANAGER', actorId: 'manager-1',
