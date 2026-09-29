@@ -1732,7 +1732,7 @@ function pad2(n: number): string {
 export const VN_TZ = 'Asia/Ho_Chi_Minh';
 
 /** Lệch giờ của Việt Nam so với UTC. Cố định +7, không có DST. */
-const VN_UTC_OFFSET_MIN = 7 * 60;
+export const VN_UTC_OFFSET_MIN = 7 * 60;
 
 export function businessDateOf(instant: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ }).format(instant);
