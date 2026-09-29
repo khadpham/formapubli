@@ -13,6 +13,8 @@ import { desc, eq } from 'drizzle-orm';
 import { signSession, SESSION_COOKIE_NAME } from '../src/lib/auth-session';
 import { POST as postLogin } from '../src/app/api/auth/login/route';
 import { assertIsolatedTestDb } from './test-guard';
+import fs from 'node:fs';
+import path from 'node:path';
 
 assertIsolatedTestDb('test-discount-guard');
 
@@ -83,7 +85,7 @@ async function run() {
   const testEditionId = seeded[0].id;
   guardEditionId = testEditionId;
   let passed = 0;
-  const total = 13;
+  const total = 25;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -168,22 +170,63 @@ async function run() {
     `status=${r.status} auditHit=${mgrAuditHit}`
   );
 
-  // 9-10. Env MANAGER_PIN_HASHES KHÔNG còn là đường thoát cho đơn chiết khấu.
-  // PIN vẫn còn dùng ở 2 cổng khác (đơn gõ bù >7 ngày, phiếu đổi/trả quá hạn),
-  // nên lib/manager-pin.ts và env này GIỮ NGUYÊN — chỉ đường chiết khấu bị gỡ.
-  const { hashPinForEnv } = await import('../src/lib/manager-pin');
-  const prevEnv = process.env.MANAGER_PIN_HASHES;
-  process.env.MANAGER_PIN_HASHES = await hashPinForEnv('4321');
-  try {
-    r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '4321' }), 'ROLE_CASHIER');
-    ok('PIN hợp lệ theo env vẫn bị chặn ở đơn chiết khấu', r.status === 403, `status=${r.status}`);
-
-    r = await postOrder(baseBody({ discountRate: 0.35, managerPin: '9999' }), 'ROLE_CASHIER');
-    ok('PIN legacy (9999) bị chặn', r.status === 403, `status=${r.status}`);
-  } finally {
-    if (prevEnv === undefined) delete process.env.MANAGER_PIN_HASHES;
-    else process.env.MANAGER_PIN_HASHES = prevEnv;
+  // 9-10. KHÔNG còn PIN quản lý nào trong hệ thống (gỡ 2026-09-29).
+  // Trước đây còn 2 cổng PIN: đơn gõ bù >7 ngày và phiếu đổi/trả quá hạn.
+  // Cả hai đều là ngõ cụt (không UI nào gửi `managerPin` ⇒ PIN luôn sai), nên
+  // thay bằng kiểm tra VAI TRÒ. `src/lib/manager-pin.ts` đã bị xoá.
+  // Gửi `managerPin` trong body phải bị bỏ qua hoàn toàn — không mở được cửa nào.
+  for (const pin of ['4321', '9999', '1234', '0000']) {
+    r = await postOrder(baseBody({ discountRate: 0.35, managerPin: pin }), 'ROLE_CASHIER');
+    ok(
+      `PIN ${pin} không mở được đường chiết khấu`,
+      r.status === 403,
+      `status=${r.status}`
+    );
   }
+  const pinGone = !fs.existsSync(path.resolve(process.cwd(), 'src/lib/manager-pin.ts'));
+  ok('lib/manager-pin.ts đã bị xoá — không còn đường dùng PIN', pinGone, 'file còn tồn tại');
+  for (const f of ['src/app/api/orders/route.ts', 'src/app/api/returns/route.ts']) {
+    const src = fs.readFileSync(path.resolve(process.cwd(), f), 'utf8');
+    ok(`${f} không còn verify PIN`, !/verifyManagerPinRateLimited\(/.test(src), 'còn gọi hàm verify PIN');
+    ok(
+      `${f} không còn đọc tham số override không tồn tại trong mã`,
+      !/\bbody\.expectWindowOverride\b/.test(src),
+      'còn đọc body.expectWindowOverride (không client nào gửi)'
+    );
+  }
+
+  // 11. Gõ bù > 7 ngày: chặn theo VAI TRÒ, không phải PIN (gỡ 2026-09-29).
+  // Đây là lớp kiểm soát thật sự sau khi bỏ PIN — phải giữ nguyên.
+  const old = new Date(Date.now() - 9 * 86400000).toISOString();
+  r = await postOrder(baseBody({ createdAt: old }), 'ROLE_CASHIER');
+  ok(
+    'Thu ngân gõ bù > 7 ngày bị chặn',
+    r.status === 403,
+    `status=${r.status}`
+  );
+  ok(
+    'Thông báo gõ bù nói rõ phải nhờ Quản lý, không nói nhập PIN',
+    /Quản lý|Quan ly/.test(r.json?.error || '') && !/PIN/i.test(r.json?.error || ''),
+    `error=${r.json?.error}`
+  );
+  r = await postOrder(baseBody({ createdAt: old, managerPin: '4321' }), 'ROLE_CASHIER');
+  ok(
+    'Có PIN đi kèm vẫn bị chặn — PIN không phải lối thoát',
+    r.status === 403,
+    `status=${r.status}`
+  );
+  r = await postOrder(baseBody({ createdAt: old }), 'ROLE_MANAGER');
+  ok(
+    'Quản lý vẫn tạo được đơn gõ bù',
+    r.status === 200 && r.json?.success === true,
+    `status=${r.status}`
+  );
+  const backdateAudit = await db
+    .select()
+    .from(auditLogs)
+    .where(eq(auditLogs.action, 'BACKDATE_DENIED'))
+    .limit(1);
+  ok('Chặn gõ bù có ghi audit BACKDATE_DENIED', backdateAudit.length > 0, 'không có dòng audit');
 
   console.log(`\n🎉 HOÀN TẤT: ${passed}/${total} BÀI TEST DISCOUNT GUARD ${passed === total ? 'ĐẠT 100%' : 'CÓ LỖI'}!`);
   if (passed !== total) process.exit(1);

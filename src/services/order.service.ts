@@ -71,7 +71,9 @@ export interface CreateOrderParams {
   // Bước 1: confirmImmediately=false → đơn PENDING (giữ chỗ ATP, chưa trừ kho).
   // POS/hội chợ giữ mặc định true (COMPLETED như cũ). Web/social truyền false.
   confirmImmediately?: boolean;
-  // P2-10: true khi đã có PIN quản lý / quyền override cho đơn gõ bù > 7 ngày
+  // P2-10: quyền ghi ngày quá khứ. Route đã chặn theo VAI TRÒ trước khi gọi tới
+  // đây (thu ngân 403, Quản lý/Owner đi tiếp), nên lớp guard này chỉ là lưới an
+  // toàn thứ hai với cùng một quy tắc. Không còn PIN quản lý (đã gỡ 2026-09-29).
   backdateApproved?: boolean;
   // ĐÃ LOẠI BỎ (chỉ đạo Phase 0): isOfflineSync / allowOverdraft KHÔNG còn hiệu lực.
   // Mọi đơn đều validate ATP nghiêm. Giữ 2 field để tương thích API/POS cũ (Lane A dọn route sau).
@@ -301,7 +303,7 @@ export class OrderService {
       }
       const ageDays = (Date.now() - ts) / 86400000;
       if (ageDays > BACKDATE_LIMIT_DAYS && !params.backdateApproved) {
-        throw AppError.forbidden(`Đơn gõ bù quá ${BACKDATE_LIMIT_DAYS} ngày cần mã PIN Quản lý.`);
+        throw AppError.forbidden(`Đơn gõ bù quá ${BACKDATE_LIMIT_DAYS} ngày: chỉ Quản lý hoặc Owner được tạo.`);
       }
     }
 

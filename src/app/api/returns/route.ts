@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReturnService } from '@/services/return.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
-import { verifyManagerPinRateLimited } from '@/lib/manager-pin';
 import { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +13,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/returns { action, ... }:
  * - REQUEST: { orderId, returnType, reason, targetWarehouseId, inventoryDisposition,
  *              items: [{editionId, quantity, unitRefund?}], refundAmount?, cashboxSessionId?,
- *              note?, idempotencyKey?, managerPin? (khi quá hạn đổi/trả) }
+ *              note?, idempotencyKey? }
  * - APPROVE: { returnId }
  * - COMPLETE: { returnId, exchangeItems?: [{editionId, quantity}] }
  * - REJECT: { returnId, rejectNote? }
@@ -22,7 +21,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/returns?orderId=&status= — tra cứu phiếu.
  *
  * Phân quyền: ROLE_TAX không được mutate. APPROVE/COMPLETE/REJECT/VOID chỉ
- * ROLE_OWNER/ROLE_MANAGER. Cashier quá hạn window bắt buộc managerPin.
+ * ROLE_OWNER/ROLE_MANAGER. Cửa sổ trả hàng do ReturnService giữ nguyên — không
+ * có đường override cho thu ngân (đã gỡ 2026-09-29, xem chú thích bên trong).
  */
 
 function isPrivileged(role: string) {
@@ -87,21 +87,17 @@ export async function POST(req: NextRequest) {
     };
 
     if (action === 'REQUEST') {
-      // Cashier quá hạn window: bắt buộc PIN quản lý (pattern hard-cap discount).
-      // PIN sai quá 5 lần / 15 phút -> khóa (chống vét mã qua route này).
-      const providedPin = `${body.managerPin ?? ''}`;
-      const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
-      if (pinCheck.locked) {
-        return NextResponse.json({ success: false, error: 'Mã PIN quản lý tạm khóa 15 phút do nhập sai nhiều lần.' }, { status: 429 });
-      }
-      const bypassWindow = isPrivileged(userRole) || pinCheck.ok;
-      if (!isPrivileged(userRole) && body.expectWindowOverride && !bypassWindow) {
-        await recordAuditLog({
-          action: 'RETURN_REQUESTED', actorRole: userRole, actorId: actorHeader,
-          resource: '/api/returns', details: `Từ chối phiếu quá hạn không PIN (đơn ${body.orderId}).`,
-        });
-        return NextResponse.json({ success: false, error: 'Phiếu quá hạn đổi/trả. Yêu cầu mã PIN Quản lý!' }, { status: 403 });
-      }
+      // Gỡ nhánh PIN quản lý (2026-09-29).
+      //
+      // Nhánh cũ chỉ chạy khi client gửi `expectWindowOverride` — mà KHÔNG client
+      // nào gửi tham số đó (grep toàn src/ chỉ còn đúng dòng kiểm tra này). Nên nó
+      // là code chết: tính năng "cho thu ngân trả hàng quá hạn bằng PIN" chưa
+      // bao giờ tồn tại trên UI.
+      //
+      // Chủ sở hữu xác nhận: dự án không dùng cơ chế trả hàng, không cần trả
+      // hàng quá hạn ⇒ giữ nguyên cửa sổ trả hàng của ReturnService, không thêm
+      // cơ chế duyệt, không thêm PIN. Xoá hẳn để code khỏi mô tả một tính năng
+      // không tồn tại (đã gây hiểu nhầm là còn "cổng PIN" cần xử lý).
       const result = await ReturnService.createRequest({
         id: body.id,
         returnCode: body.returnCode,
@@ -117,7 +113,10 @@ export async function POST(req: NextRequest) {
         actorContext,
         idempotencyKey: body.idempotencyKey,
         note: body.note,
-        bypassWindow,
+        // Quản lý/Owner vẫn bypass được cửa sổ trả hàng như trước. Thu ngân thì
+        // không — trước đây nhánh PIN cho phép, nhưng PIN không bao giờ đúng nên
+        // thực tế đã là không cho phép từ lâu. Giữ nguyên hành vi quan sát được.
+        bypassWindow: isPrivileged(userRole),
         items: Array.isArray(body.items) ? body.items.map((it: any) => ({
           orderItemId: it.orderItemId,
           editionId: it.editionId,

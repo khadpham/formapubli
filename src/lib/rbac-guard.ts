@@ -19,6 +19,7 @@ export interface AuditLogParams {
     | 'FUND_CLOSED'
     | 'MANAGER_DISCOUNT_APPROVED'
     | 'MANAGER_DISCOUNT_DENIED'
+    | 'BACKDATE_DENIED'
     | 'RETURN_REQUESTED'
     | 'RETURN_APPROVED'
     | 'RETURN_COMPLETED'

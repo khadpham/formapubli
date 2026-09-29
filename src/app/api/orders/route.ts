@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
 import { enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
-import { verifyManagerPinRateLimited } from '@/lib/manager-pin';
-import { requireSessionRole, extractClientIp } from '@/lib/auth-session';
+import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
@@ -12,9 +11,10 @@ import { eq } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 // ---------------------------------------------------------------------------
-// Server-side Discount Hard-cap (chống thu ngân tự ý chiết khấu sâu).
-// Trần thu ngân: 20%. Vượt trần bắt buộc có mã PIN quản lý phê duyệt.
-// PIN xác thực bằng hash (manager-pin.ts + env MANAGER_PIN_HASHES).
+// Server-side Discount Hard-cap (chặn thu ngân tự ý chiết khấu sâu).
+// Trần thu ngân: 20%. Vượt trần bắt buộc có Quản lý phê duyệt — KHÔNG phải PIN.
+// (Nhánh PIN đã gỡ 2026-09-29: không UI nào gửi managerPin nên thu ngân bị kẹt
+//  với lỗi không gỡ được. Xem phần đơn gõ bù > 7 ngày ở dưới.)
 // ---------------------------------------------------------------------------
 const MAX_CASHIER_DISCOUNT_RATE = 0.2;
 
@@ -219,11 +219,9 @@ export async function POST(req: NextRequest) {
       bundles,
       isOfflineSync,
       allowOverdraft,
-      managerPin,
-      managerApprovalCode,
-       discountApprovalId,
-       moneyReceived,
-       isGift,
+      discountApprovalId,
+      moneyReceived,
+      isGift,
       giftReason,
       confirmImmediately,
     } = body;
@@ -397,7 +395,7 @@ export async function POST(req: NextRequest) {
       if (!verifiedApprovalId) {
         // P1 GỠ 2026-09-29: bỏ nhánh rẽ PIN quản lý. Nhánh đó chưa bao giờ chạy
         // được — client không có UI nhập PIN nào, `managerPin` luôn undefined nên
-        // verifyManagerPinRateLimited luôn false ⇒ thu ngân bị kẹt với lỗi không
+        // verify luon false => thu ngân bi ket, loi khong gỡ duoc
         // gỡ được. Một đường duyệt duy nhất: quyết định của Quản lý.
         await recordAuditLog({
           action: 'MANAGER_DISCOUNT_DENIED',
@@ -423,26 +421,38 @@ export async function POST(req: NextRequest) {
     const isFairOfflineSync = Boolean(isOfflineSync && channel === 'FAIR_EVENT');
     const safeAllowOverdraft = Boolean((isFairOfflineSync || isPrivilegedRole) && allowOverdraft);
 
-    // P2-10: đơn gõ bù > 7 ngày — thu ngân phải có PIN quản lý (privileged được miễn)
-    let backdateApproved = isPrivilegedRole;
+    // P2-10 → 2026-09-29: gỡ nhánh PIN quản lý, giữ đúng lớp kiểm soát.
+    //
+    // Trước đây: đơn gõ bù > 7 ngày thì thu ngân phải có PIN quản lý. Nhưng KHÔNG
+    // có UI nào gửi `managerPin` (grep toàn src/ chỉ còn 3 file server) ⇒
+    // `verifyManagerPinRateLimited` luôn false ⇒ thu ngân bị kẹt với lỗi
+    // "Yêu cầu mã PIN Quản lý!" mà không có cách nào gỡ ra. Đây là ngõ cụt,
+    // không phải lớp kiểm soát.
+    //
+    // Kiểm soát thật sự nằm ở VAI TRÒ: thu ngân không được gõ bù, Quản lý/Owner
+    // được. Nên nhánh này chỉ cần một kiểm tra vai trò + thông báo nói rõ phải
+    // làm gì, không cần PIN, không cần rate-limit, không cần bảng duyệt.
+    // Service (order.service.ts, BACKDATE_LIMIT_DAYS) vẫn chặn lần hai như một
+    // lưới an toàn — cả hai lớp cùng một quy tắc.
     if (createdAt) {
       const ts = new Date(createdAt).getTime();
       if (!Number.isNaN(ts) && Date.now() - ts > 7 * 86400000 && !isPrivilegedRole) {
-        const providedPin = `${managerPin ?? managerApprovalCode ?? ''}`;
-        const pinCheck = await verifyManagerPinRateLimited(providedPin, `${actorHeader}:${extractClientIp(req)}`);
-        if (pinCheck.locked) {
-          return NextResponse.json(
-            { success: false, code: 'RATE_LIMITED', error: 'Mã PIN quản lý tạm khóa 15 phút do nhập sai nhiều lần.' },
-            { status: 429 }
-          );
-        }
-        if (!pinCheck.ok) {
-          return NextResponse.json(
-            { success: false, code: 'FORBIDDEN', error: 'Đơn gõ bù quá 7 ngày. Yêu cầu mã PIN Quản lý!' },
-            { status: 403 }
-          );
-        }
-        backdateApproved = true;
+        await recordAuditLog({
+          action: 'BACKDATE_DENIED',
+          actorRole: userRole,
+          actorId: actorHeader,
+          resource: '/api/orders',
+          details: `Từ chối đơn gõ bù quá 7 ngày (${createdAt}) — thu ngân không có quyền ghi ngày quá khứ.`,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'FORBIDDEN',
+            error:
+              'Đơn gõ bù quá 7 ngày: chỉ Quản lý hoặc Owner được tạo. Hãy nhờ Quản lý đăng nhập tạo lại đơn này.',
+          },
+          { status: 403 }
+        );
       }
     }
 
@@ -512,8 +522,10 @@ export async function POST(req: NextRequest) {
       note,
       // Bước 1: web/social truyền confirmImmediately:false → đơn PENDING giữ chỗ ATP
       confirmImmediately: confirmImmediately !== undefined ? Boolean(confirmImmediately) : true,
-      // P2-10: cờ duyệt gõ bù > 7 ngày (đã check PIN ở trên)
-      backdateApproved,
+      // Quyền ghi ngày quá khứ: đã chặn theo vai trò ở trên (thu ngân 403,
+      // Quản lý/Owner đi tiếp). Truyền `true` để lớp guard BACKDATE_LIMIT_DAYS
+      // trong service không chặn lần hai thứ đã hợp lệ.
+      backdateApproved: true,
       isOfflineSync: Boolean(isOfflineSync),
       allowOverdraft: safeAllowOverdraft,
 
