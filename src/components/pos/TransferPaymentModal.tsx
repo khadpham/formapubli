@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, Clock, X } from 'lucide-react';
+import { Camera, Clock, Eye, X } from 'lucide-react';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import type { PaymentProofPhoto } from '@/lib/offline-db';
@@ -125,6 +125,8 @@ export function TransferPaymentModal({
   const [remainingMs, setRemainingMs] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  /** Bật xem lại ảnh đã lưu: cashier phải tự thấy được mình vừa chụp gì. */
+  const [isProofVisible, setIsProofVisible] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   /** Chặn hai lần lưu trong cùng tick: state bất đồng bộ chưa kịp set. */
   const savingRef = useRef(false);
@@ -132,6 +134,22 @@ export function TransferPaymentModal({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  /**
+   * Object URL của ảnh đã lưu. Thu hồi mỗi khi blob đổi (chụp lại) và khi
+   * unmount — không thì mỗi lần bấm "Xem ảnh" rò một URL trong RAM.
+   */
+  const proofBlob = session?.paymentProof?.blob ?? null;
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!proofBlob) {
+      setProofUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(proofBlob);
+    setProofUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [proofBlob]);
 
   // Đếm ngược thuần client, không ghi hạn lên server. `setInterval` bị throttle
   // khi tab chạy nền (điện thoại bị khoá màn hình, cashier đổi app), nên phải
@@ -307,9 +325,31 @@ export function TransferPaymentModal({
           {shownError ? <p className="text-[11px] text-rose-600 font-medium">{shownError}</p> : null}
           <p className="text-[11px] font-bold text-slate-700">Chụp ảnh xác nhận</p>
           {session.paymentProof ? (
-            <p className="text-[11px] text-emerald-700 font-medium">
-              Đã lưu ảnh xác nhận lúc {new Date(session.paymentProof.capturedAt).toLocaleString('vi-VN')}.
-            </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsProofVisible((v) => !v)}
+                  aria-expanded={isProofVisible}
+                  aria-label={isProofVisible ? 'Ẩn ảnh xác nhận' : 'Xem ảnh xác nhận đã chụp'}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  {isProofVisible ? 'Ẩn ảnh' : 'Xem ảnh'}
+                </button>
+                <p className="text-[11px] text-emerald-700 font-medium">
+                  Đã lưu ảnh xác nhận lúc {new Date(session.paymentProof.capturedAt).toLocaleString('vi-VN')}.
+                </p>
+              </div>
+              {isProofVisible && proofUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={proofUrl}
+                  alt="Ảnh xác nhận đã chụp"
+                  className="w-full max-h-[40vh] object-contain rounded-xl border border-slate-200 bg-slate-50"
+                />
+              ) : null}
+            </div>
           ) : (
             <p className="text-[11px] text-slate-500 font-medium">Cần chụp ảnh màn hình khách chuyển trước khi xác nhận.</p>
           )}
