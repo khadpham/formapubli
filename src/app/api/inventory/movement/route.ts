@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, assertAssignedWarehouse } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    // Ràng buộc kho được gán: thủ kho gán kho A không bút toán kho B (chốt chặn
+    // server, client sửa payload cũng lách không được).
+    assertAssignedWarehouse(session, warehouseId);
     const delta = typeof quantityDelta === 'number' ? quantityDelta : Number(`${quantityDelta}`.trim());
     if (!Number.isFinite(delta) || !Number.isInteger(delta) || delta === 0) {
       return NextResponse.json(

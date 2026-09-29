@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, assertAssignedWarehouse } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DeliveryOrderService } from '@/services/delivery-order.service';
@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
       autoDispatch,
       idempotencyKey,
     } = body;
+
+    // Ràng buộc kho được gán: chỉ được lập/xuất phiếu xuất từ kho của mình.
+    assertAssignedWarehouse(session, fromWarehouseId);
 
     const actorContext = {
       staffId: session.actorId,

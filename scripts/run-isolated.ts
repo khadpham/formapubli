@@ -106,6 +106,7 @@ const ALL_SUITES = [
   'scripts/test-reader-persona.ts',
   'scripts/test-login-accounts.ts',
   'scripts/test-actor-binding.ts',
+  'scripts/test-rbac-audit.ts',
   'scripts/drill-go-live.ts',
   // SUITE CUỐI: tạo ấn bản AB-* và bán chạy thật trong DB test dùng chung, nên
   // phải chạy SAU test-monthly-digest — digest lấy top 5 ấn bản bán chạy, thêm

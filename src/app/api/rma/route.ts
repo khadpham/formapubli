@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RmaService } from '@/services/rma.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole, resolveActorId } from '@/lib/auth-session';
+import { requireSessionRole, resolveActorId, assertAssignedWarehouse } from '@/lib/auth-session';
 
 import { handleApiError } from '@/lib/api-response';
 
@@ -13,14 +13,20 @@ const VALID_ACTIONS = ['HOLD_IN_QUARANTINE', 'RETURN_TO_SUPPLIER', 'WRITE_OFF_SC
 
 export async function GET(request: NextRequest) {
   try {
-    await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
+    const session = await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
     const { searchParams } = new URL(request.url);
     const warehouseId = searchParams.get('warehouseId') || undefined;
+    // Ràng buộc kho được gán: thủ kho gán kho A không đọc được phiếu RMA kho B.
+    // `warehouseId ?? assigned` — client bỏ tham số thì ép về kho của mình thay
+    // vì biến thành "xem tất cả" (fail-closed).
+    const assigned = `${session.assignedWarehouseId || ''}`.trim();
+    const scopeId = warehouseId || assigned || undefined;
+    assertAssignedWarehouse(session, scopeId);
     const status = searchParams.get('status') || undefined;
     const editionId = searchParams.get('editionId') || undefined;
 
     const tickets = await RmaService.listTickets({
-      warehouseId,
+      warehouseId: scopeId,
       status,
       editionId,
     });
@@ -99,6 +105,8 @@ export async function POST(request: NextRequest) {
     if (!VALID_REASONS.includes(defectReason)) {
       return NextResponse.json({ error: `defectReason chỉ nhận: ${VALID_REASONS.join(' | ')}.` }, { status: 400 });
     }
+    // Ràng buộc kho được gán: lập RMA ở kho khác = bút toán tồn kho của người khác.
+    assertAssignedWarehouse(session, warehouseId);
     const safeSource = sourceCondition || 'NEW';
     if (safeSource !== 'NEW' && safeSource !== 'NONE') {
       return NextResponse.json({ error: 'sourceCondition chỉ nhận: NEW | NONE.' }, { status: 400 });

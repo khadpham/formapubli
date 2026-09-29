@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TransferService, DEFAULT_STALE_HOURS } from '@/services/transfer.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, assertAssignedWarehouse, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -85,6 +85,9 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      // Ràng buộc kho được gán: chỉ được xuất hàng TỪ kho của mình. Kho nhận
+      // (`to`) là kho người khác nên không ràng — chỉ chặn phía gửi (fail-closed).
+      assertAssignedWarehouse(session, fromWarehouseId);
       const result = await TransferService.dispatch({
         fromWarehouseId,
         toWarehouseId,
