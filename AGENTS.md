@@ -52,6 +52,25 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
   Đã mất nhiều lượt debug vì tưởng repo hỏng. Phải dùng:
   `npm install --include=dev`
   Sau đó kiểm `Test-Path node_modules\typescript\package.json` phải True.
+- **CÓ THỂ CHẠY SONG SONG 2 AGENT TRÊN CÙNG MÁY. Đã xảy ra sự cố thật.**
+  Agent khác sửa `src/components/pos/TransferPaymentModal.tsx` lúc tôi đang làm
+  việc, và `npm run deploy` của tôi **đã nuốt code chưa commit của họ lên
+  production** (`dbf1dd94`). Không phải do `git commit` — mà do `build`/`deploy`
+  đọc **working tree**, không đọc git.
+  Quy tắc bắt buộc từ 2026-09-29:
+  - Coordinator làm việc ở worktree riêng `D:\Data Project\formapubli-orch`
+    (nhánh `orch/plan-b`). Không bao giờ sửa trong `D:\Data Project\formapubli`.
+  - **Chỉ deploy khi working tree nguồn của lệnh deploy SẠCH.** Chạy
+    `git status --porcelain` ngay trước `npm run deploy`; nếu có dòng lạ thuộc
+    việc người khác thì **dừng**, không deploy.
+  - `git add` luôn ghi rõ từng file, **không** `-A`, **không** `commit -a`.
+  - Không dừng/kill `next dev` của agent khác. `.next` là thư mục riêng theo
+    worktree nên build của mình không đụng của họ — đã kiểm chứng.
+  - Muốn bảo hiểm code chưa commit của agent khác: lưu `git diff -- <file>` ra
+    ngoài repo, **không** commit hộ, **không** stash (stash sẽ gỡ file khỏi
+    working tree của họ và làm hỏng công việc đang dở).
+- **Deploy là việc của coordinator, không tự ý chạy.** Chỉ deploy khi cây nguồn
+  sạch, tsc sạch, build sạch, và test liên quan xanh — rồi báo version ID.
 - File watcher của `next dev` trên máy này hay bị trễ/hỏng khi có nhiều worktree. Nếu sửa file mà
   log không in `Compiled`, **restart dev server** thay vì chờ.
 - NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps
