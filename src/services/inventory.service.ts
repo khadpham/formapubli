@@ -116,6 +116,13 @@ export class InventoryService {
     if (quantityDelta === 0) {
       throw AppError.invalid('Độ biến động tồn kho (quantityDelta) phải khác 0.');
     }
+    // Sổ cái kho là bằng SỐ CUỐN: số thập phân làm physical_quantity lẻ
+    // (10 -> 11.5) và mọi phép so sánh tồn/ATP về sau lệch. Chặn ở đây (hàm
+    // dùng chung) thay vì ở từng caller — NaN cũng bị chặn vì NaN không phải
+    // số nguyên.
+    if (!Number.isInteger(quantityDelta)) {
+      throw AppError.invalid(`Độ biến động tồn kho phải là số nguyên (nhận ${quantityDelta}).`);
+    }
 
     const executeWork = async (tx: any) => {
       // 1. Ghi bút toán vào Sổ cái bất biến (Append-Only) trước để sinh ledgerId và ràng buộc kiểm toán

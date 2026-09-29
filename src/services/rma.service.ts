@@ -57,8 +57,8 @@ export class RmaService {
       notes,
     } = params;
 
-    if (quantity <= 0) {
-      throw new Error('Số lượng sách lỗi/cách ly phải lớn hơn 0.');
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error('Số lượng sách lỗi/cách ly phải là số nguyên lớn hơn 0.');
     }
 
       const ticketId = `RMA-${new Date().toISOString().substring(0, 10).replace(/-/g, '')}-${crypto.randomUUID().substring(0, 6).toUpperCase()}`;
@@ -152,7 +152,14 @@ export class RmaService {
   }
 
   /**
-   * Xử lý giải tỏa phiếu RMA sau khi có kết luận kiểm định
+   * Xử lý giải tỏa phiếu RMA sau khi có kết luận kiểm định.
+   *
+   * TOÀN BỘ (bút toán kho + cập nhật trạng thái phiếu) nằm trong MỘT
+   * transaction. Trước đây các bước chạy rời nhau: `REPAIRED_RESTOCK` ghi
+   * bút toán 1 (trừ QUARANTINE) xong mới ghi bút toán 2 (cộng NEW) rồi mới
+   * update phiếu. Lỗi giữa chừng ⇒ tồn QUARANTINE đã bị trừ vĩnh viễn còn
+   * phiếu vẫn QUARANTINED, và lần gọi lại chết vì không còn tồn để trừ ⇒ mất
+   * hàng không thể ghi nhận lại. Đó là lỗi "lỗi giữa chừng để dữ liệu lệch".
    */
   static async resolveTicket(params: ResolveRmaParams) {
     const { ticketId, action, actorId, notes } = params;
@@ -172,74 +179,96 @@ export class RmaService {
       throw new Error(`Phiếu RMA [${ticketId}] đã được giải quyết từ trước.`);
     }
 
-    // Thực hiện bút toán kho tùy theo hướng giải quyết:
-    if (action === 'WRITE_OFF_SCRAP') {
-      // Tiêu hủy phế liệu -> Trừ khỏi QUARANTINE
-      await InventoryService.recordMovement({
-        editionId: ticket.editionId,
-        warehouseId: ticket.warehouseId,
-        eventType: 'ADJUSTMENT',
-        quantityDelta: -ticket.quantity,
-        condition: ticket.quarantineCondition as any,
-        documentRef: ticket.id,
-        correlationId: ticket.id,
-        actorId,
-        note: `[RMA Tiêu Hủy] Xuất hủy phế liệu theo quyết định kiểm định. ${notes || ''}`,
-      });
-    } else if (action === 'RETURN_TO_SUPPLIER') {
-      // Xuất trả Nhà in / Nhà cung cấp -> Trừ khỏi QUARANTINE
-      await InventoryService.recordMovement({
-        editionId: ticket.editionId,
-        warehouseId: ticket.warehouseId,
-        eventType: 'ADJUSTMENT', // Xuất điều chỉnh giảm để trả đối tác
-        quantityDelta: -ticket.quantity,
+    return await db.transaction(async (tx) => {
+      // Conditional update CHỐT trạng thái trước: ai cũng thấy phiếu đã xử lý
+      // ngay khi vào tx, và nếu bút toán hỏng thì cả nhóm rollback.
+      // 'INSPECTING' chỉ tồn tại trong write transaction (SQLite một-writer) và
+      // bị rollback theo — không có dòng nào mang trạng thái này sau commit,
+      // nên không rò sang listTickets.
+      const claim: any = await tx.run(sql`
+        UPDATE rma_tickets SET status = 'INSPECTING'
+        WHERE id = ${ticketId} AND status = 'QUARANTINED'
+      `);
+      if (claim.rowsAffected !== 1) {
+        throw new Error(`Phiếu RMA [${ticketId}] đã được giải từ giao dịch khác.`);
+      }
 
-        condition: ticket.quarantineCondition as any,
-        documentRef: ticket.id,
-        correlationId: ticket.id,
-        actorId,
-        note: `[RMA Trả NXB/Nhà In] Xuất trả nhà in/đối tác bù hàng. ${notes || ''}`,
-      });
-    } else if (action === 'REPAIRED_RESTOCK') {
-      // Đã sửa chữa / đóng lại bìa màng co -> Trả về NEW
-      await InventoryService.recordMovement({
-        editionId: ticket.editionId,
-        warehouseId: ticket.warehouseId,
-        eventType: 'ADJUSTMENT',
-        quantityDelta: -ticket.quantity,
-        condition: ticket.quarantineCondition as any,
-        documentRef: ticket.id,
-        correlationId: ticket.id,
-        actorId,
-        note: `[RMA Phục Hồi] Chuyển từ cách ly về tồn NEW sau khi xử lý.`,
-      });
+      // Thực hiện bút toán kho tùy theo hướng giải quyết:
+      if (action === 'WRITE_OFF_SCRAP') {
+        // Tiêu hủy phế liệu -> Trừ khỏi QUARANTINE
+        await InventoryService.recordMovement({
+          editionId: ticket.editionId,
+          warehouseId: ticket.warehouseId,
+          eventType: 'ADJUSTMENT',
+          quantityDelta: -ticket.quantity,
+          condition: ticket.quarantineCondition as any,
+          documentRef: ticket.id,
+          correlationId: ticket.id,
+          actorId,
+          idempotencyKey: `idem-rma-${ticketId}-scrap`,
+          tx,
+          note: `[RMA Tiêu Hủy] Xuất hủy phế liệu theo quyết định kiểm định. ${notes || ''}`,
+        });
+      } else if (action === 'RETURN_TO_SUPPLIER') {
+        // Xuất trả Nhà in / Nhà cung cấp -> Trừ khỏi QUARANTINE
+        await InventoryService.recordMovement({
+          editionId: ticket.editionId,
+          warehouseId: ticket.warehouseId,
+          eventType: 'ADJUSTMENT', // Xuất điều chỉnh giảm để trả đối tác
+          quantityDelta: -ticket.quantity,
+          condition: ticket.quarantineCondition as any,
+          documentRef: ticket.id,
+          correlationId: ticket.id,
+          actorId,
+          idempotencyKey: `idem-rma-${ticketId}-supplier`,
+          tx,
+          note: `[RMA Trả NXB/Nhà In] Xuất trả nhà in/đối tác bù hàng. ${notes || ''}`,
+        });
+      } else if (action === 'REPAIRED_RESTOCK') {
+        // Đã sửa chữa / đóng lại bìa màng co -> Trả về NEW
+        await InventoryService.recordMovement({
+          editionId: ticket.editionId,
+          warehouseId: ticket.warehouseId,
+          eventType: 'ADJUSTMENT',
+          quantityDelta: -ticket.quantity,
+          condition: ticket.quarantineCondition as any,
+          documentRef: ticket.id,
+          correlationId: ticket.id,
+          actorId,
+          idempotencyKey: `idem-rma-${ticketId}-restock-out`,
+          tx,
+          note: `[RMA Phục Hồi] Chuyển từ cách ly về tồn NEW sau khi xử lý.`,
+        });
 
-      await InventoryService.recordMovement({
-        editionId: ticket.editionId,
-        warehouseId: ticket.warehouseId,
-        eventType: 'ADJUSTMENT',
-        quantityDelta: ticket.quantity,
-        condition: 'NEW',
-        documentRef: ticket.id,
-        correlationId: ticket.id,
-        actorId,
-        note: `[RMA Phục Hồi] Nhập lại tồn NEW sẵn sàng mở bán.`,
-      });
-    }
+        await InventoryService.recordMovement({
+          editionId: ticket.editionId,
+          warehouseId: ticket.warehouseId,
+          eventType: 'ADJUSTMENT',
+          quantityDelta: ticket.quantity,
+          condition: 'NEW',
+          documentRef: ticket.id,
+          correlationId: ticket.id,
+          actorId,
+          idempotencyKey: `idem-rma-${ticketId}-restock-in`,
+          tx,
+          note: `[RMA Phục Hồi] Nhập lại tồn NEW sẵn sàng mở bán.`,
+        });
+      }
 
-    const newStatus = action === 'WRITE_OFF_SCRAP' ? 'SCRAPPED' : 'RESOLVED';
-    const [updated] = await db
-      .update(rmaTickets)
-      .set({
-        resolutionAction: action,
-        status: newStatus,
-        resolvedAt: new Date().toISOString(),
-        notes: notes ? `${ticket.notes || ''}\n[Resolution]: ${notes}`.trim() : ticket.notes,
-      })
-      .where(eq(rmaTickets.id, ticketId))
-      .returning();
+      const newStatus = action === 'WRITE_OFF_SCRAP' ? 'SCRAPPED' : 'RESOLVED';
+      const [updated] = await tx
+        .update(rmaTickets)
+        .set({
+          resolutionAction: action,
+          status: newStatus,
+          resolvedAt: new Date().toISOString(),
+          notes: notes ? `${ticket.notes || ''}\n[Resolution]: ${notes}`.trim() : ticket.notes,
+        })
+        .where(eq(rmaTickets.id, ticketId))
+        .returning();
 
-    return updated;
+      return updated;
+    });
   }
 
   /**

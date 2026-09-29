@@ -46,63 +46,73 @@ export interface PickListResult {
 export class AllocationService {
   /**
    * Tạo hoặc cập nhật hạn ngạch sách bàn giao cho từng quầy/bàn bán tại hội chợ ("Chia Mâm")
+   *
+   * all-or-nothing: trước đây mỗi dòng là một lệnh riêng ngoài transaction, nên
+   * dòng thứ N lỗi (ví dụ editionId không tồn tại) để lại N-1 dòng đã ghi ⇒
+   * bàn quầy có hạn ngạch nửa vời, không rollback được.
    */
   static async allocateBooksToCounter(params: AllocateBooksParams) {
     const { warehouseId, counterName, cashboxSessionId, allocations } = params;
 
-    const results = [];
-    for (const item of allocations) {
-      if (item.allocatedQuantity <= 0) continue;
-
-      // Tìm allocation đang active cho bàn và edition này
-      const existing = await db
-        .select()
-        .from(counterAllocations)
-        .where(
-          and(
-            eq(counterAllocations.warehouseId, warehouseId),
-            eq(counterAllocations.counterName, counterName),
-            eq(counterAllocations.editionId, item.editionId),
-            eq(counterAllocations.status, 'ACTIVE')
-          )
-        )
-        .limit(1);
-
-      if (existing.length > 0) {
-        // Cập nhật tăng hạn ngạch
-        const updated = await db
-          .update(counterAllocations)
-          .set({
-            allocatedQuantity: existing[0].allocatedQuantity + item.allocatedQuantity,
-            cashboxSessionId: cashboxSessionId || existing[0].cashboxSessionId,
-            notes: item.notes || existing[0].notes,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(counterAllocations.id, existing[0].id))
-          .returning();
-        results.push(updated[0]);
-      } else {
-        // Thêm mới
-        const id = `alloc-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`;
-        const inserted = await db
-          .insert(counterAllocations)
-          .values({
-            id,
-            warehouseId,
-            counterName,
-            cashboxSessionId,
-            editionId: item.editionId,
-            allocatedQuantity: item.allocatedQuantity,
-            soldQuantity: 0,
-            status: 'ACTIVE',
-            notes: item.notes,
-          })
-          .returning();
-        results.push(inserted[0]);
-      }
+    if (!Array.isArray(allocations) || allocations.length === 0) {
+      return [];
     }
 
-    return results;
+    return await db.transaction(async (tx) => {
+      const results = [];
+      for (const item of allocations) {
+        if (!(Number(item.allocatedQuantity) > 0)) continue;
+
+        // Tìm allocation đang active cho bàn và edition này
+        const existing = await tx
+          .select()
+          .from(counterAllocations)
+          .where(
+            and(
+              eq(counterAllocations.warehouseId, warehouseId),
+              eq(counterAllocations.counterName, counterName),
+              eq(counterAllocations.editionId, item.editionId),
+              eq(counterAllocations.status, 'ACTIVE')
+            )
+          )
+          .limit(1);
+
+        if (existing.length > 0) {
+          // Cập nhật tăng hạn ngạch
+          const updated = await tx
+            .update(counterAllocations)
+            .set({
+              allocatedQuantity: existing[0].allocatedQuantity + item.allocatedQuantity,
+              cashboxSessionId: cashboxSessionId || existing[0].cashboxSessionId,
+              notes: item.notes || existing[0].notes,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(counterAllocations.id, existing[0].id))
+            .returning();
+          results.push(updated[0]);
+        } else {
+          // Thêm mới
+          const id = `alloc-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`;
+          const inserted = await tx
+            .insert(counterAllocations)
+            .values({
+              id,
+              warehouseId,
+              counterName,
+              cashboxSessionId,
+              editionId: item.editionId,
+              allocatedQuantity: item.allocatedQuantity,
+              soldQuantity: 0,
+              status: 'ACTIVE',
+              notes: item.notes,
+            })
+            .returning();
+          results.push(inserted[0]);
+        }
+      }
+
+      return results;
+    });
   }
 
   /**
@@ -144,14 +154,27 @@ export class AllocationService {
   }
 
   /**
-   * Kiểm tra hạn ngạch còn lại trên bàn quầy trước khi thu ngân xuất bán
+   * Kiểm tra hạn ngạch còn lại trên bàn quầy trước khi thu ngân xuất bán.
+   *
+   * `warehouseId` là BẮT BUỘC: `counterName` chỉ là chuỗi tự do ("Bàn 1"),
+   * nhiều kho hội chợ dùng lại cùng tên. Bỏ kho khỏi điều kiện lọc thì bàn
+   * "Bàn 1" ở kho hội chợ số 2 đọc/nhập số của bàn "Bàn 1" ở kho số 1.
    */
-  static async checkCounterQuota(counterName: string, editionId: string, requestedQty: number) {
+  static async checkCounterQuota(
+    counterName: string,
+    editionId: string,
+    requestedQty: number,
+    warehouseId: string
+  ) {
+    if (!warehouseId || !warehouseId.trim()) {
+      throw new Error('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
+    }
     const allocs = await db
       .select()
       .from(counterAllocations)
       .where(
         and(
+          eq(counterAllocations.warehouseId, warehouseId),
           eq(counterAllocations.counterName, counterName),
           eq(counterAllocations.editionId, editionId),
           eq(counterAllocations.status, 'ACTIVE')
@@ -166,7 +189,7 @@ export class AllocationService {
         remaining: 0,
         allocated: 0,
         sold: 0,
-        warning: `Sách chưa được phân bổ ("chia mâm") cho bàn quầy [${counterName}]. Cần tiếp tế từ kho đệm.`,
+        warning: `Sách chưa được phân bổ ("chia mâm") cho bàn quầy [${counterName}] tại kho [${warehouseId}]. Cần tiếp tế từ kho đệm.`,
       };
     }
 
@@ -187,14 +210,21 @@ export class AllocationService {
   }
 
   /**
-   * Ghi nhận số lượng đã bán vào hạn ngạch bàn quầy
+   * Ghi nhận số lượng đã bán vào hạn ngạch bàn quầy (khoá theo kho — xem
+   * checkCounterQuota). Trả về số dòng hạn ngạch thực sự được cập nhật để
+   * caller biết có dồn số vào nhầm bàn hay không.
    */
   static async recordCounterSales(
     counterName: string,
-    items: Array<{ editionId: string; quantity: number }>
-  ) {
+    items: Array<{ editionId: string; quantity: number }>,
+    warehouseId: string
+  ): Promise<number> {
+    if (!warehouseId || !warehouseId.trim()) {
+      throw new Error('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
+    }
+    let touched = 0;
     for (const item of items) {
-      await db
+      const upd: any = await db
         .update(counterAllocations)
         .set({
           soldQuantity: sql`${counterAllocations.soldQuantity} + ${item.quantity}`,
@@ -202,12 +232,15 @@ export class AllocationService {
         })
         .where(
           and(
+            eq(counterAllocations.warehouseId, warehouseId),
             eq(counterAllocations.counterName, counterName),
             eq(counterAllocations.editionId, item.editionId),
             eq(counterAllocations.status, 'ACTIVE')
           )
         );
+      touched += upd.rowsAffected || 0;
     }
+    return touched;
   }
 
   /**

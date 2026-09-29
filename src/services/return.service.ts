@@ -1035,7 +1035,15 @@ export class ReturnService {
   }
 
   static async list(filters: { orderId?: string; status?: string } = {}) {
-    const all = await db.select().from(returnOrders).orderBy(sql`${returnOrders.createdAt} DESC`).limit(200);
-    return all.filter((r) => (!filters.orderId || r.orderId === filters.orderId) && (!filters.status || r.status === filters.status));
+    // Lọc TRONG SQL rồi mới limit. Trước đây lấy `limit(200)` toàn bảng rồi
+    // filter bằng JS: đơn có hơn 200 phiếu thì phiếu cần tìm nằm ngoài 200
+    // dòng đầu bị mất ⇒ GET /api/returns?orderId=... trả về danh sách rỗng
+    // dù phiếu tồn tại (sai số liệu trên UI, không có bất kỳ cảnh báo nào).
+    const conds: any[] = [];
+    if (filters.orderId) conds.push(eq(returnOrders.orderId, filters.orderId));
+    if (filters.status) conds.push(eq(returnOrders.status, filters.status));
+    const base = db.select().from(returnOrders);
+    const query = conds.length > 0 ? base.where(and(...conds)) : base;
+    return await query.orderBy(sql`${returnOrders.createdAt} DESC`).limit(200);
   }
 }

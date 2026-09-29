@@ -67,7 +67,8 @@ async function runD3D4Verification() {
   const quotaCheck1 = await AllocationService.checkCounterQuota(
     counterName,
     testEdition.id,
-    10
+    10,
+    testWarehouse.id
   );
 
   assert(quotaCheck1.hasAllocation === true, 'Bàn quầy nhận diện đúng hạn ngạch đã chia');
@@ -77,12 +78,13 @@ async function runD3D4Verification() {
   // 2. Ghi nhận bán 15 cuốn
   await AllocationService.recordCounterSales(counterName, [
     { editionId: testEdition.id, quantity: 15 },
-  ]);
+  ], testWarehouse.id);
 
   const quotaCheck2 = await AllocationService.checkCounterQuota(
     counterName,
     testEdition.id,
-    40
+    40,
+    testWarehouse.id
   );
 
   assert(quotaCheck2.sold === 15, 'Số lượng đã bán ghi nhận chính xác 15 cuốn');

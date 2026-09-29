@@ -14,6 +14,26 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
 import { WarehouseService } from './warehouse.service';
+import { canonicalHash } from '../lib/transfer-fingerprint';
+
+/**
+ * Đọc envelope idempotency `{fp, res}` đã lưu. Hàng cũ (trước khi có fp) lưu
+ * thẳng payload ⇒ coi như legacy và trả về (không phá dữ liệu đang chạy).
+ * fp lệch ⇒ IDEMPOTENCY_CONFLICT, KHÔNG trả kết quả của lần gọi trước.
+ */
+function readIdemEnvelope<T>(responseJson: string, fingerprint: string, key: string): { res: T } {
+  let envelope: any = null;
+  try { envelope = JSON.parse(responseJson); } catch { envelope = null; }
+  if (envelope && typeof envelope === 'object' && 'fp' in envelope) {
+    if (envelope.fp !== fingerprint) {
+      throw AppError.idempotency(
+        `IDEMPOTENCY_CONFLICT: Key "${key}" đã dùng cho một thao tác khác (nội dung khác).`
+      );
+    }
+    return { res: envelope.res as T };
+  }
+  return { res: (envelope ?? null) as T };
+}
 
 export interface DeliveryItemInput {
   editionId: string;
@@ -57,6 +77,30 @@ export class DeliveryOrderService {
       throw AppError.invalid('Phiếu xuất kho phải có ít nhất một ấn bản');
     }
 
+    // VALIDATE TẠI BIÊN (service, không phải route): trước đây items đi thẳng
+    // vào công thức tiền và vào `physical_quantity - item.quantity` của
+    // dispatchAndLock. Số lượng ÂM làm tồn TĂNG (trigger 0027/0029 chỉ chặn
+    // tồn âm, không bắt được tồn tăng sai), số lượng thập phân làm tồn lẻ,
+    // NaN làm subtotal/finalAmount = NaN. Đây là ranh giới tin cậy duy nhất
+    // cho cả route lẫn mọi caller khác.
+    const cleanItems: DeliveryItemInput[] = items.map((it) => {
+      const editionId = `${it?.editionId ?? ''}`.trim();
+      if (!editionId) throw AppError.invalid('Dòng hàng thiếu editionId.');
+      const qty = typeof it.quantity === 'number' ? it.quantity : Number(`${it.quantity ?? ''}`.trim());
+      if (!Number.isInteger(qty) || qty <= 0) {
+        throw AppError.invalid(`Số lượng xuất của ấn bản ${editionId} phải là số nguyên > 0.`);
+      }
+      const cover = Number(it.unitCoverPrice);
+      const selling = Number(it.unitSellingPrice);
+      if (!Number.isFinite(cover) || cover < 0) {
+        throw AppError.invalid(`Đơn giá bìa của ấn bản ${editionId} phải là số không âm.`);
+      }
+      if (!Number.isFinite(selling) || selling < 0) {
+        throw AppError.invalid(`Đơn giá bán của ấn bản ${editionId} phải là số không âm.`);
+      }
+      return { editionId, quantity: qty, unitCoverPrice: cover, unitSellingPrice: selling };
+    });
+
     // Kiểm tra kho xuất tồn tại
     const wh = await txOrDb
       .select()
@@ -77,11 +121,11 @@ export class DeliveryOrderService {
       throw AppError.invalid(`Đối tác ${partnerId} không tồn tại`);
     }
 
-    const subtotal = items.reduce(
+    const subtotal = cleanItems.reduce(
       (sum, item) => sum + item.quantity * item.unitCoverPrice,
       0
     );
-    const finalAmount = items.reduce(
+    const finalAmount = cleanItems.reduce(
       (sum, item) => sum + item.quantity * item.unitSellingPrice,
       0
     );
@@ -111,7 +155,7 @@ export class DeliveryOrderService {
 
     await txOrDb.insert(deliveryOrders).values(newOrder);
 
-    const itemRows = items.map((item) => ({
+    const itemRows = cleanItems.map((item) => ({
       id: crypto.randomUUID(),
       deliveryOrderId: orderId,
       editionId: item.editionId,
@@ -149,6 +193,12 @@ export class DeliveryOrderService {
       throw AppError.invalid('Bắt buộc có Idempotency-Key khi xuất kho');
     }
 
+    // Fingerprint bắt buộc cho replay: cùng key + PHIẾU KHÁC là xung đột,
+    // không phải replay. Trước đây nhánh replay trả thẳng JSON đã lưu nên
+    // dùng lại key cho phiếu B trả về mã PXK + trạng thái của phiếu A —
+    // client hiểu là B đã xuất trong khi B vẫn là DRAFT.
+    const fingerprint = canonicalHash({ op: 'DISPATCH', deliveryOrderId, actorId: actorContext.staffId });
+
     // Kiểm tra idempotency trước khi vào transaction
     const existingIdem = await db
       .select()
@@ -157,7 +207,8 @@ export class DeliveryOrderService {
       .limit(1);
 
     if (existingIdem.length > 0 && existingIdem[0].responseJson) {
-      return JSON.parse(existingIdem[0].responseJson);
+      const replay = readIdemEnvelope<any>(existingIdem[0].responseJson, fingerprint, idempotencyKey);
+      return replay.res;
     }
 
     return await withDbRetry(async () => {
@@ -200,23 +251,17 @@ export class DeliveryOrderService {
         }
 
         // 2. Re-validate ATP tồn kho
+        //    PHẢI là ATP (tồn khả dụng), không phải tồn vật lý: tồn vật lý còn
+        //    phần đang GIỮ cho đơn online PENDING. Trước đây đọc thẳng
+        //    physical_quantity nên xuất sỉ ăn mất tồn của đơn khách đang chờ
+        //    (đối chiếu: InventoryService.transfer + TransferService.dispatch
+        //    đều dùng OrderService.getATP).
+        const { OrderService } = await import('./order.service');
         for (const item of items) {
-          const balances = await tx
-            .select()
-            .from(stockBalances)
-            .where(
-              and(
-                eq(stockBalances.editionId, item.editionId),
-                eq(stockBalances.warehouseId, order.fromWarehouseId),
-                eq(stockBalances.condition, 'NEW')
-              )
-            )
-            .limit(1);
-
-          const currentQty = balances[0]?.physicalQuantity ?? 0;
-          if (currentQty < item.quantity) {
+          const atp = await OrderService.getATP(item.editionId, order.fromWarehouseId, tx);
+          if (atp < item.quantity) {
             throw AppError.atp(
-              `Ấn bản ${item.editionId} không đủ tồn kho tại kho xuất (Cần: ${item.quantity}, Có: ${currentQty})`
+              `Ấn bản ${item.editionId} không đủ tồn khả dụng tại kho xuất (Cần: ${item.quantity}, Có: ${atp})`
             );
           }
         }
@@ -296,7 +341,7 @@ export class DeliveryOrderService {
         await tx.insert(idempotencyKeys).values({
           key: idempotencyKey,
           scope: 'pxk-create',
-          responseJson: JSON.stringify(responseData),
+          responseJson: JSON.stringify({ fp: fingerprint, res: responseData }),
           createdAt: nowIso,
         });
 
@@ -324,6 +369,12 @@ export class DeliveryOrderService {
       throw AppError.invalid('Bắt buộc có Idempotency-Key khi thực hiện đảo bút toán');
     }
 
+    // Cùng lý do dispatchAndLock: replay phải khớp fingerprint, nếu không thì
+    // key dùng lại cho phiếu khác sẽ trả về phiếu đảo của phiếu cũ.
+    const fingerprint = canonicalHash({
+      op: 'REVERSE', deliveryOrderId, actorId: actorContext.staffId, reason: `${reason ?? ''}`.trim(),
+    });
+
     const existingIdem = await db
       .select()
       .from(idempotencyKeys)
@@ -331,7 +382,8 @@ export class DeliveryOrderService {
       .limit(1);
 
     if (existingIdem.length > 0 && existingIdem[0].responseJson) {
-      return JSON.parse(existingIdem[0].responseJson);
+      const replay = readIdemEnvelope<any>(existingIdem[0].responseJson, fingerprint, idempotencyKey);
+      return replay.res;
     }
 
     return await withDbRetry(async () => {
@@ -457,7 +509,7 @@ export class DeliveryOrderService {
         await tx.insert(idempotencyKeys).values({
           key: idempotencyKey,
           scope: 'pxk-reverse',
-          responseJson: JSON.stringify(responseData),
+          responseJson: JSON.stringify({ fp: fingerprint, res: responseData }),
           createdAt: nowIso,
         });
 
