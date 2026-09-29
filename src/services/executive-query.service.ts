@@ -1,6 +1,6 @@
 import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances } from '@/db';
 import { ForecastService, RunoutLevel } from './forecast.service';
-import { OrderService, businessDateOf } from './order.service';
+import { OrderService } from './order.service';
 import { InventoryService } from './inventory.service';
 import { removeAccents } from '@/lib/vietnamese';
 import { eq, desc, sql, and, gte, inArray, ne } from 'drizzle-orm';
@@ -489,9 +489,13 @@ export class ExecutiveQueryService {
     const titleOf = (r: (typeof catalog)[number]) => r.editionTitle || r.workTitle || '';
 
     // Doanh so 30 ngay theo edition (cho top tac gia / top sach).
-    // Cutoff dang SPACE (SQLite CURRENT_TIMESTAMP) — ISO 'T' se lech mat don trong ngay.
+    // So sanh qua `datetime()` (chuan hoa ca hai ho timestamp: ISO 'T' do app ghi
+    // va ' ' do SQLite CURRENT_TIMESTAMP ghi) thay vi so CHUOI thuan.
+    // Loi truoc: cutoff dang ' ' ma don dang 'T' thi moi dong ISO cung NGAY voi
+    // cutoff deu lon hon cutoff (vi 'T' > ' ') ⇒ don 30 ngay 8 gio tuoi van
+    // loot vao bao cao "30 ngay"; cua so lech toi da 24 gio.
+    const cutoff = new Date(Date.now() - windowDays * 24 * 3600 * 1000).toISOString();
     // Loai tang/tai tro/0d nhu salesByEdition de bestseller khong bi thoi phong.
-    const cutoff = new Date(Date.now() - windowDays * 24 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ');
     const salesRows = await db
       .select({
         editionId: orderItems.editionId,
@@ -503,7 +507,7 @@ export class ExecutiveQueryService {
       .where(
         and(
           eq(orders.status, 'COMPLETED'),
-          gte(orders.createdAt, cutoff),
+          sql`datetime(${orders.createdAt}) >= datetime(${cutoff})`,
           sql`${orders.discountRate} < 1`,
           sql`${orders.channel} != 'SPONSORSHIP'`,
           sql`${orders.finalAmount} > 0`
@@ -663,24 +667,27 @@ export class ExecutiveQueryService {
       startDate: cutoff,
     });
 
-    // Lấy chi tiết kênh bán
+    // Chi tiet kenh ban. Phai dung DUNG bo loc cua OrderService.getSalesSummary
+    // (status COMPLETED + created_at >= cutoff + bo SPONSORSHIP) roi them loc
+    // fiscalScope. Truoc day thieu `channel != 'SPONSORSHIP'` nen tong cac kenh
+    // KHONG khop tong bao cao dinh kem no: 1 don tai tro lam lech 1 don so voi
+    // totalOrders (va lech tien neu don do co doanh thu).
+    const breakdownConds = [
+      eq(orders.status, 'COMPLETED'),
+      gte(orders.createdAt, cutoff),
+      sql`${orders.channel} != 'SPONSORSHIP'`,
+    ];
+    if (fiscalScope !== 'ALL') breakdownConds.push(eq(orders.fiscalScope, fiscalScope));
     const orderRows = await db
       .select({
         channel: orders.channel,
         finalAmount: orders.finalAmount,
-        fiscalScope: orders.fiscalScope,
       })
       .from(orders)
-      .where(
-        and(
-          eq(orders.status, 'COMPLETED'),
-          gte(orders.createdAt, cutoff)
-        )
-      );
+      .where(and(...breakdownConds));
 
     const channelBreakdown: Record<string, { count: number; revenue: number }> = {};
     for (const row of orderRows) {
-      if (fiscalScope !== 'ALL' && row.fiscalScope !== fiscalScope) continue;
       const ch = row.channel || 'OTHER';
       if (!channelBreakdown[ch]) channelBreakdown[ch] = { count: 0, revenue: 0 };
       channelBreakdown[ch].count += 1;
@@ -774,23 +781,29 @@ export class ExecutiveQueryService {
       cashDiscrepancy: number | null;
       openedAt: string | null;
       closedAt: string | null;
-      discrepancyStatus: 'BALANCED' | 'OVER' | 'SHORT' | 'OPEN';
+      discrepancyStatus: 'BALANCED' | 'OVER' | 'SHORT' | 'OPEN' | 'UNVERIFIED';
     }>;
     reconciliationNotice: string;
   }> {
     const { sessionId, date } = params;
 
-    let query = db.select().from(cashboxSessions);
-    let rows = await query.orderBy(desc(cashboxSessions.openedAt)).limit(20);
-
+    // `date` là ngày nghiệp vụ (người dùng hỏi copilot bằng tiếng Việt: "hôm
+    // nay", "ngày 28/9"), còn `opened_at` là UTC. Điều kiện PHẢI nằm trong SQL:
+    // trước đây lấy 20 ca mới nhất RỒI MỚI lọc tay trong JS, nên hỏi một ngày
+    // cũ (ngoài 20 ca gần nhất) trả về rỗng — im lặng báo "không có ca nào"
+    // trong khi ca đó có thật. `datetime()` đọc được cả ISO lẫn CURRENT_TIMESTAMP.
+    const conds = [];
     if (sessionId) {
-      rows = rows.filter((r) => r.id === sessionId);
+      conds.push(eq(cashboxSessions.id, sessionId));
     } else if (date) {
-      // `date` là ngày nghiệp vụ (người dùng hỏi copilot bằng tiếng Việt: "hôm
-      // nay", "ngày 28/9"), còn `opened_at` là UTC. `startsWith` so NGÀY UTC nên
-      // lệch 7 tiếng: ca mở lúc 01:00 giờ VN không bao giờ khớp ngày hôm nay.
-      rows = rows.filter((r) => !!r.openedAt && businessDateOf(new Date(r.openedAt)) === date);
+      conds.push(sql`substr(datetime(${cashboxSessions.openedAt}, '+7 hours'), 1, 10) = ${date}`);
     }
+    const rows = await db
+      .select()
+      .from(cashboxSessions)
+      .where(conds.length > 0 ? and(...conds) : undefined)
+      .orderBy(desc(cashboxSessions.openedAt))
+      .limit(20);
 
     const openRow = rows.find((r) => r.status === 'OPEN');
     const activeSession = openRow
@@ -807,14 +820,22 @@ export class ExecutiveQueryService {
       : null;
 
     const recentSessions = rows.map((r) => {
-      const disc = r.cashDiscrepancy ?? 0;
-      let discrepancyStatus: 'BALANCED' | 'OVER' | 'SHORT' | 'OPEN' = 'BALANCED';
+      // Ca chốt TỰ ĐỘNG ghi cash_discrepancy = NULL vì KHÔNG ai đếm két
+      // (xem CashboxService.autoCloseSession: closingCashActual = NULL,
+      // discrepancyVerified = false). Báo "Cân bằng" cho ca đó là khẳng định
+      // một sự thật chưa ai kiểm chứng — cấm. Không đọc được số thì báo chưa
+      // xác minh, không suy diễn thành khớp / không khớp.
+      let discrepancyStatus: 'BALANCED' | 'OVER' | 'SHORT' | 'OPEN' | 'UNVERIFIED';
       if (r.status === 'OPEN') {
         discrepancyStatus = 'OPEN';
-      } else if (disc > 0) {
+      } else if (r.cashDiscrepancy == null) {
+        discrepancyStatus = 'UNVERIFIED';
+      } else if (r.cashDiscrepancy > 0) {
         discrepancyStatus = 'OVER';
-      } else if (disc < 0) {
+      } else if (r.cashDiscrepancy < 0) {
         discrepancyStatus = 'SHORT';
+      } else {
+        discrepancyStatus = 'BALANCED';
       }
 
       return {

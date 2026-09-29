@@ -50,9 +50,11 @@ async function run() {
   // 1. Utils tháng/id + tháng sai ném lỗi.
   //
   // Ranh giới tháng là GIỜ VIỆT NAM: tháng 2/2026 bắt đầu 00:00 VN ngày 1/2,
-  // tức 17:00 UTC NGÀY 31/1, và kết thúc 23:59 VN ngày 28/2 = 16:59 UTC ngày 28/2.
-  // Trước đây test đòi `startDate.startsWith('2026-02-01')` — tức UTC thuần —
-  // tức nó đang BẢO VỆ chính cái lỗi lệch 7 tiếng này.
+  // tức 17:00 UTC NGÀY 31/1, và kết thúc 23:59:59.999 VN ngày 28/2
+  // = 16:59:59.999 UTC ngày 28/2. Trước đây test đòi `startDate.startsWith('2026-02-01')`
+  // — tức UTC thuần — tức nó đang BẢO VỆ chính cái lỗi lệch 7 tiếng này.
+  // `end` phải là 23:59:59.999 chứ không phải 23:59:00: `lte` là so sánh bao
+  // hàm, lấy 23:59:00 là MẤT 60 giây cuối ngày — đơn 23:59:30 rơi khỏi tháng.
   const r = monthRangeOf(2026, 2);
   let invalid = false;
   try {
@@ -61,9 +63,9 @@ async function run() {
     invalid = true;
   }
   ok(
-    '1. monthRange theo giờ VN (17:00 UTC hôm trước) + tháng 13 ném lỗi',
+    '1. monthRange theo giờ VN (17:00 UTC hôm trước) + phủ trọn phút cuối + tháng 13 ném lỗi',
     r.startDate === '2026-01-31T17:00:00.000Z' &&
-      r.endDate === '2026-02-28T16:59:00.000Z' &&
+      r.endDate === '2026-02-28T16:59:59.999Z' &&
       digestIdOf(2026, 1) === 'DIGEST-2026-01' &&
       invalid,
     `start=${r.startDate} end=${r.endDate}`

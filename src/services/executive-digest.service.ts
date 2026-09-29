@@ -37,7 +37,10 @@ export function monthRangeOf(year: number, month: number): MonthRange {
   const pad = (n: number) => String(n).padStart(2, '0');
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const start = cutoffInstantOf(`${year}-${pad(month)}-01`, '00:00');
-  const end = cutoffInstantOf(`${year}-${pad(month)}-${pad(lastDay)}`, '23:59');
+  // Mốc CUỐI phải phủ trọn phút cuối ngày: `lte(created_at, 23:59:00)` loại mất
+  // đơn trong 60 giây cuối ngày (23:59:00–23:59:59) — tức mất tiền đầu tháng sau
+  // khỏi digest tháng này. `lte` là so sánh bao hàm nên lấy 23:59:59.999.
+  const end = new Date(cutoffInstantOf(`${year}-${pad(month)}-${pad(lastDay)}`, '23:59').getTime() + 60_000 - 1);
   return { year, month, startDate: start.toISOString(), endDate: end.toISOString() };
 }
 
@@ -71,14 +74,19 @@ export interface MonthlyDigest {
 }
 
 async function topEditions(range: { startDate: string; endDate: string }, topN = 5): Promise<TopEditionRow[]> {
+  // Một câu duy nhất: JOIN sẵn bảng editions. Trước đây mỗi dòng top lại tra
+  // riêng bảng editions (N+1) — cùng một dữ liệu thì lấy bằng 1 câu.
   const rows = await db
     .select({
       editionId: orderItems.editionId,
+      code: editions.code,
+      title: editions.title,
       qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
       revenue: sql<number>`COALESCE(SUM(${orderItems.totalAmount}), 0)`,
     })
     .from(orderItems)
     .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .leftJoin(editions, eq(orderItems.editionId, editions.id))
     .where(
       and(
         eq(orders.status, 'COMPLETED'),
@@ -89,20 +97,13 @@ async function topEditions(range: { startDate: string; endDate: string }, topN =
     .groupBy(orderItems.editionId)
     .orderBy(desc(sql`COALESCE(SUM(${orderItems.quantity}), 0)`))
     .limit(Math.max(1, Math.min(20, topN)));
-  const out: TopEditionRow[] = [];
-  for (const r of rows) {
-    const meta = (
-      await db.select({ code: editions.code, title: editions.title }).from(editions).where(eq(editions.id, r.editionId)).limit(1)
-    )[0];
-    out.push({
-      editionId: r.editionId,
-      code: meta?.code || '?',
-      title: meta?.title || null,
-      qty: Number(r.qty || 0),
-      revenue: Number(r.revenue || 0),
-    });
-  }
-  return out;
+  return rows.map((r) => ({
+    editionId: r.editionId,
+    code: r.code || '?',
+    title: r.title || null,
+    qty: Number(r.qty || 0),
+    revenue: Number(r.revenue || 0),
+  }));
 }
 
 export class ExecutiveDigestService {

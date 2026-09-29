@@ -18,12 +18,97 @@ import {
   CalendarCheck,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
+import { parseDbTimestamp } from '@/lib/db-timestamp';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { LiveFairMonitorModal } from '@/components/dashboard/LiveFairMonitorModal';
 
 interface ExecutiveDashboardProps {
   currentRole: UserRole;
   onNavigateTab: (tab: string) => void;
+}
+
+export interface DayRevenue {
+  key: string;
+  label: string;
+  total: number;
+}
+
+// Mọi cột thời gian trong DB là UTC; ngày/giờ người dùng đọc là giờ Việt Nam
+// (UTC+7, không DST). `parseDbTimestamp` đọc được CẢ HAI họ timestamp đang
+// cùng tồn tại (ISO 'T' do app ghi và ' ' do SQLite CURRENT_TIMESTAMP ghi).
+const VN_TZ = 'Asia/Ho_Chi_Minh';
+const vnDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ });
+const vnHmFmt = new Intl.DateTimeFormat('en-GB', { timeZone: VN_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+
+/** Ngày nghiệp vụ VN (YYYY-MM-DD) của một mốc thời gian, null nếu dữ liệu hỏng. */
+export function vnBusinessDay(value: string | Date | null | undefined): string | null {
+  const d = value instanceof Date ? value : parseDbTimestamp(value);
+  return d && !Number.isNaN(d.getTime()) ? vnDayFmt.format(d) : null;
+}
+
+/** Lùi/trượt một ngày nghiệp vụ (số ngày âm = về quá khứ). Không phụ thuộc múi giờ máy. */
+function shiftVnDay(day: string, deltaDays: number): string {
+  const [y, mo, d] = day.split('-').map(Number);
+  const t = new Date(Date.UTC(y, mo - 1, d + deltaDays));
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+}
+
+/**
+ * Gom doanh thu 7 ngày nghiệp vụ gần nhất.
+ *
+ * TRƯỚC ĐÂY gom theo `toISOString().slice(0,10)` — tức NGÀY UTC — trong khi
+ * nhãn cột lấy theo ngày máy/người dùng. Hai lịch lệch nhau 7 tiếng nên cột
+ * "hôm nay" hụt trọn ca 00:00–07:00 và nuốt luôn 17:00–24:00 của hôm qua:
+ * đơn 06:30 sáng 10/3 (UTC 23:30 ngày 9/3) rơi vào cột "9/3", cột "10/3" hiện
+ * 0 đ. Nay cả khoá lẫn nhãn đều theo GIỜ VIỆT NAM.
+ */
+export function buildLast7DaysRevenue(orders: any[], now: Date = new Date()): DayRevenue[] {
+  const today = vnBusinessDay(now) || vnDayFmt.format(new Date());
+  const days: DayRevenue[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const key = shiftVnDay(today, -i);
+    const [, mm, dd] = key.split('-');
+    days.push({ key, label: `${Number(dd)}/${Number(mm)}`, total: 0 });
+  }
+  const map = new Map(days.map((d) => [d.key, d]));
+  for (const o of orders as any[]) {
+    const bucket = map.get(vnBusinessDay(o?.createdAt) || '');
+    if (bucket) bucket.total += Number(o?.finalAmount || 0);
+  }
+  return days;
+}
+
+export interface FiscalSplit {
+  tax: number;
+  internal: number;
+  taxPct: number;
+  internalPct: number;
+  total: number;
+}
+
+/**
+ * Tách cơ cấu Sổ Thuế vs Sổ Nội bộ cho biểu đồ vòng.
+ *
+ * `internalPct` = 100 − `taxPct` thay vì tự làm tròn: làm tròn từng phần có thể
+ * ra 1% + 100% = 101% (vòng tròn vẽ chồng) hoặc 99% (hở khoảng trống).
+ */
+export function buildFiscalSplit(summary: any): FiscalSplit {
+  const tax = Number(summary?.officialTax?.revenue || 0);
+  const internal = Number(summary?.internalManagement?.revenue || 0);
+  const total = tax + internal;
+  if (total <= 0) return { tax: 0, internal: 0, taxPct: 0, internalPct: 0, total: 0 };
+  const taxPct = Math.round((tax / total) * 100);
+  return { tax, internal, taxPct, internalPct: 100 - taxPct, total };
+}
+
+/** Giờ Việt Nam trong bảng "Đơn Hàng Gần Đây" — trước đây in thẳng UTC. */
+export function formatOrderTime(createdAt: string | null | undefined): string {
+  const day = vnBusinessDay(createdAt);
+  if (!day) return '—';
+  const [, mm, dd] = day.split('-');
+  const time = vnHmFmt.format(parseDbTimestamp(createdAt)!);
+  return `${dd}/${mm} ${time}`;
 }
 
 export function ExecutiveDashboard({
@@ -97,38 +182,11 @@ export function ExecutiveDashboard({
   // render thẻ — cả hai đều ngoài phạm vi sửa của phiên này.
 
   // Ticket 4: 3 chart SVG nhẹ tính từ orders/summary đã fetch — không lib, không API mới.
-  const last7Days = React.useMemo(() => {
-    const days: Array<{ key: string; label: string; total: number }> = [];
-    const now = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const key = d.toISOString().slice(0, 10);
-      days.push({ key, label: `${d.getDate()}/${d.getMonth() + 1}`, total: 0 });
-    }
-    const map = new Map(days.map((d) => [d.key, d]));
-    for (const o of orders as any[]) {
-      const k = (o.createdAt || '').slice(0, 10);
-      const bucket = map.get(k);
-      if (bucket) bucket.total += Number(o.finalAmount || 0);
-    }
-    return days;
-  }, [orders]);
+  const last7Days = React.useMemo(() => buildLast7DaysRevenue(orders), [orders]);
 
   const maxDayTotal = Math.max(1, ...last7Days.map((d) => d.total));
 
-  const fiscalSplit = React.useMemo(() => {
-    const tax = Number(summary?.officialTax?.revenue || 0);
-    const internal = Number(summary?.internalManagement?.revenue || 0);
-    const total = tax + internal;
-    if (total <= 0) return { tax: 0, internal: 0, taxPct: 0, internalPct: 0, total: 0 };
-    return {
-      tax,
-      internal,
-      taxPct: Math.round((tax / total) * 100),
-      internalPct: Math.round((internal / total) * 100),
-      total,
-    };
-  }, [summary]);
+  const fiscalSplit = React.useMemo(() => buildFiscalSplit(summary), [summary]);
 
   const topOrders = React.useMemo(() => {
     return [...(orders as any[])]
@@ -622,7 +680,7 @@ export function ExecutiveDashboard({
                       )}
                     </td>
                     <td className="p-3.5 text-slate-400 text-[11px] font-mono">
-                      {ord.createdAt?.slice(0, 16).replace('T', ' ')}
+                      {formatOrderTime(ord.createdAt)}
                     </td>
                   </tr>
                 ))

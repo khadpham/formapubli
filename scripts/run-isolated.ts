@@ -100,6 +100,7 @@ const ALL_SUITES = [
   'scripts/test-copilot-regressions.ts',
   'scripts/test-voice-order.ts',
   'scripts/test-monthly-digest.ts',
+  'scripts/test-executive-reporting.ts',
   'scripts/test-reader-persona.ts',
   'scripts/test-login-accounts.ts',
   'scripts/test-actor-binding.ts',
