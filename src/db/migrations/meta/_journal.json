@@ -67,7 +67,7 @@
     {
       "idx": 9,
       "version": "6",
-      "when": 1789246330486,
+      "when": 1789247201000,
       "tag": "0009_consignment_settlements",
       "breakpoints": true
     },
@@ -179,14 +179,14 @@
     {
       "idx": 25,
       "version": "7",
-      "when": 1790526639860,
+      "when": 1790600001000,
       "tag": "0025_notification_dismissals",
       "breakpoints": true
     },
     {
       "idx": 26,
       "version": "7",
-      "when": 1790526700000,
+      "when": 1790600002000,
       "tag": "0026_notification_dismissal_expiry",
       "breakpoints": true
     }

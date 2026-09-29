@@ -145,6 +145,10 @@ Cố ý tách riêng vì đụng đối soát két + biên bản ký pháp lý: 
 | `parseDbTimestamp(...)!` non-null assertion có thể ném `TypeError` trong transaction | `daily-settlement.service.ts:402-404` |
 | `date` không validate; `_` trong tham số là ký tự đại diện `LIKE` | `daily-settlement/route.ts:36`, `:364` |
 
+> **Cập nhật 2026-09-29:** xem mục "Những gì bỏ khỏi phạm vi B" ở cuối mục 2. Toàn bộ
+> 6 mục người dùng từng yêu cầu đã bị loại (không đếm sách thật, hoặc trùng tính năng
+> đã có). B giờ chỉ còn **sửa 8 lỗi thật**, không thêm tính năng nào.
+
 ### 6 phần người dùng đã yêu cầu
 
 1. Giờ bán chạy nhất
@@ -155,10 +159,51 @@ Cố ý tách riêng vì đụng đối soát két + biên bản ký pháp lý: 
 6. **Lưu số đếm kiểm kê thật** — hiện chỉ là state trình duyệt, không tới `closeDay`.
    Bản in hiện là ảnh chụp dữ liệu **chưa lưu**.
 
-### Cố ý KHÔNG làm trong B
+### QUYẾT ĐỊNH 2026-09-29 — mục "Lưu số đếm kiểm kê": KHÔNG LÀM
 
-Top sản phẩm + giờ bán chạy trong monitor (đã có ở báo cáo ngày) · ATP nhiều kho
-(đã có ở Ma trận kho) · đơn quà tặng trong ngày (đã có ở báo cáo ngày) · xuất CSV.
+Chủ sở hữu xác nhận: **cuối ngày không đếm sách thật.** Cách họ tính tồn cuối ngày là
+`tồn trong kho − số lượng bán ra` — đó **chính là** cột `theoreticalStock` mà báo cáo
+chốt ngày đã tính sẵn. Không có kiểm kê thật thì ô "Thực đếm" không bao giờ lệch khớp
+với thực tế, chỉ là chiếc ô nhập giả.
+
+⇒ Không làm mục này. Không thêm bảng, không thêm route, không cho nó đi vào
+`closeDay` / biên bản ký pháp lý.
+
+**Việc còn treo:** tab 2 "Kiểm Kê Tồn Sách" trong `DailyFairSettlementModal.tsx`
+vẫn hiện ô nhập "Thực đếm" mà **không lưu gì cả** (chỉ là `useState`). Có thể:
+- **(a)** Ẩn/xoá tab 2 + phần kiểm kê trong biên bản bàn giao — gọn nhất
+- **(b)** Giữ nguyên, chỉ sửa nhãn thành "Tồn lý thuyết (chưa kiểm kê)" để không ai tưởng có thật
+
+**Chưa làm** — chủ sở hữu bảo ưu tiên việc khác trước. Trong lúc chờ, cần nhớ: ai
+mở báo cáo chốt ngày và thấy ô nhập thì **tưởng đã kiểm kê** — đó là rủi ro hiểu nhầm,
+nên xử lý (b) trước (a) khi có thời gian.
+
+### Những gì bỏ khỏi phạm vi B (2026-09-29)
+
+| Mục | Lý do |
+|---|---|
+| Lưu số đếm kiểm kê | Không đếm thật — xem quyết định trên |
+| Danh sách từng đơn + chi tiết sách | `PendingOrdersView` đã hiện đơn; làm lại là dựng thứ hai |
+| Giờ bán chạy nhất | Đã nằm trong Modal Trạng Thái Hội Chợ (Kế hoạch A) |
+| ATP nhiều kho | Đã có ở Ma trận kho |
+| Đơn quà tặng trong ngày | Đã có ở báo cáo chốt ngày |
+| Xuất CSV | Chưa ai yêu cầu |
+
+**Còn lại trong B — đều là sửa lỗi thật, không phải thêm tính năng:**
+
+| Lỗi | Vị trí | Vì sao quan trọng |
+|---|---|---|
+| Nút "Chốt Ngày" **không chốt gì** | `DailyFairSettlementModal.tsx` | Nút ghi "Chốt Ngày" nhưng chỉ mở báo cáo read-only. Người dùng tưởng đã chốt. |
+| **COD rơi vào nhóm không ai render** → tiền biến mất | `daily-settlement.service.ts:89-92` + UI | Tiền thật không hiện trong báo cáo |
+| `expectedCashTotal` cộng cột luôn = 0 khi ca mở | `daily-settlement.service.ts:156` | Sai số tiền két |
+| `cashVariance = null` khi còn ca mở → dòng đối soát bị ẩn | `:163-165` | Ẩn chính dòng cần kiểm nhất |
+| `openShiftAlerts` tính rồi **không màn hình nào đọc** | `daily-settlement/route.ts:59` | Cảnh báo ca treo không bao giờ hiện |
+| Ngày UTC lệch ngày VN ở 3 chỗ; cron dùng giờ VN | `:51, :108, :136, :447, :466` | 2 khung ngày ⇒ báo cáo lệch KPI |
+| `parseDbTimestamp(...)!` non-null assertion | `:402-404` | Có thể ném `TypeError` giữa transaction |
+| `date` không validate; `_` là ký tự đại diện `LIKE` | `route.ts:36`, `:364` | `2026-02-30` qua được; tên kho chứa `_` khớp lung tung |
+
+**Đã xử lý ở Kế hoạch A:** `expectedCashLive` (giờ A đúng, B đang sai — dùng A làm
+chuẩn) · `date` có validate thật (`isRealDate`) · giờ cắt chốt chống quá giờ.
 
 ### Phụ thuộc chéo với A
 
@@ -176,7 +221,7 @@ Top sản phẩm + giờ bán chạy trong monitor (đã có ở báo cáo ngày
 | P1b — 2 cổng PIN: gõ bù >7 ngày, phiếu đổi/trả quá hạn | **CHỜ USER QUYẾT.** Không tự xoá — xoá là mất kiểm soát |
 | P8 — đơn mồ côi `ORD-20260928-B768A09233642AFF` | **CHỜ USER XÁC NHẬN** |
 | P3b — dead code nhánh QR + ô OTP 4 số trong `DiscountApprovalModal` | Thấp, rảnh tay làm |
-| P6 — `meta/_journal.json` có `when` **không đơn điệu** (`0008 > 0009`, `0024 > 0025/0026`) | **"Bẫy chết người"** — `drizzle-kit migrate` sẽ bỏ qua im lặng 3 migration. Chưa sửa |
+| P6 — `meta/_journal.json` có `when` **không đơn điệu** | **ĐÃ SỬA** (commit `760fb67` sau). Migrator drizzle chỉ chạy migration khi `when` > max(`created_at`) đã có trong DB ⇒ `0009`, `0025`, `0026` bị **bỏ qua im lặng**. Đã sửa `when` cho tăng dần + khoá bằng test `test-cp3-migrations` (M-JOURNAL). |
 | P6 — `EXPECTED_TABLES` thiếu mọi đối tượng sau `0015` | Chưa sửa |
 | P6 — `check_stock_non_negative` không migration nào tạo ⇒ không có trên prod | Chưa sửa |
 | Token Cloudflare `cfut_…` còn trong git history (5 commit) | **CẦN THU HỒI Ở CLOUDFLARE.** Chưa làm |

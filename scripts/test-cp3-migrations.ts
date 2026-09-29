@@ -256,11 +256,52 @@ async function probeUniquesAndLinks() {
   c.close();
 }
 
+/**
+ * Journal phai DON DIEU TANG DAN theo thu tu mang.
+ *
+ * Migrator cua drizzle (node_modules/drizzle-orm/libsql/migrator.js) loc:
+ *   const dbMigrations = SELECT ... ORDER BY created_at DESC LIMIT 1;  // doc MOT lan
+ *   for (const m of migrations)
+ *     if (!lastDbMigration || Number(lastDbMigration[2]) < m.folderMillis) { chay(m) }
+ *
+ * => Migration chi chay khi `when` cua no LON HON max(created_at) da co trong DB.
+ * Neu `when` khong don dieu, migration sau co `when` nho hon bi BO QUA IM LANG:
+ * khong bao loi, khong bao gio chay duoc.
+ *
+ * Da gap that: 0009 (when < 0008) va 0025/0026 (when < 0024). Da sua 2026-09-29.
+ * Test nay khoa lai de khong quay lai.
+ */
+function probeJournalOrder() {
+  console.log('--- M-JOURNAL: `when` phai tang dan theo thu tu mang ---');
+  const jp = path.resolve(process.cwd(), 'src/db/migrations/meta/_journal.json');
+  const j = JSON.parse(fs.readFileSync(jp, 'utf8'));
+  ok('journal doc duoc', Array.isArray(j.entries) && j.entries.length > 0, `entries=${j.entries?.length}`);
+
+  let prev: number | null = null;
+  const offenders: string[] = [];
+  for (const e of j.entries) {
+    const w = Number(e.when);
+    if (!Number.isFinite(w)) { offenders.push(`${e.tag} (when khong phai so: ${e.when})`); continue; }
+    if (prev !== null && w <= prev) offenders.push(`${e.tag} (when=${w} <= truoc=${prev})`);
+    prev = w;
+  }
+  ok('`when` tang dan nghiem ngat theo thu tu journal', offenders.length === 0, offenders.join(' | '));
+
+  const badIdx = j.entries.filter((e: any, i: number) => e.idx !== i).map((e: any, i: number) => `${e.tag} idx=${e.idx} tai vi tri ${i}`);
+  ok('idx lien tuc tu 0 va dung vi tri', badIdx.length === 0, badIdx.join(' | '));
+
+  const missing = j.entries
+    .filter((e: any) => !fs.existsSync(path.resolve(process.cwd(), 'src/db/migrations', `${e.tag}.sql`)))
+    .map((e: any) => e.tag);
+  ok('moi tag trong journal deu co file .sql', missing.length === 0, missing.join(' | '));
+}
+
 async function main() {
   console.log('CP3-B1 MIGRATION PROBES — 0016 (khong goi drizzle-kit generate)');
   await probeFresh();
   await probeUpgrade();
   await probeUniquesAndLinks();
+  probeJournalOrder();
   console.log('=========================================================================');
   if (failures.length > 0) {
     console.error(`❌ CP3-B1 MIGRATIONS: ${failures.length} assertion do:\n - ${failures.join('\n - ')}`);
