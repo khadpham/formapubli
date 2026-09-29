@@ -172,16 +172,25 @@ async function main() {
     'khối in phải có `display: block !important` để đè thắng class `hidden` của Tailwind'
   );
   ok(
-    /body\s*>\s*\*\s*\{[^}]*overflow:\s*visible\s*!important/.test(printCss),
-    'phải nới `overflow: visible` cho các khung cha trong @media print'
+    /#printable-settlement-report[^}]*\{[^}]*visibility:\s*visible\s*!important/.test(printCss),
+    'biên bản phải được ép `visibility: visible` để không bị ẩn với phần còn lại'
+  );
+  // Phần ẩn nội dung KHÁC phải GỠ KHỎI LUỒNG, không chỉ ẩn bằng `visibility`.
+  // Nếu chỉ `visibility: hidden` thì nội dung ẩn VẪN CHIẾM CHỖ trong luồng in
+  // ⇒ trình duyệt in ra hàng chục trang TRẮNG nối sau biên bản. Review độc lập đã
+  // chỉ ra đúng điểm này khi quy tắc `body > * { overflow/max-height/height }`
+  // ép lên mọi con của body mà không loại chúng khỏi luồng.
+  ok(
+    /body\s*>\s*\*:not\(:has\(#printable-settlement-report\)\)\s*\{[^}]*display:\s*none\s*!important/.test(printCss),
+    'phải `display: none` mọi nhánh của body KHÔNG chứa biên bản, để không sinh trang trắng'
   );
   ok(
-    /body\s*>\s*\*\s*\{[^}]*max-height:\s*none\s*!important/.test(printCss),
-    'phải nới `max-height: none` cho các khung cha trong @media print'
+    /#printable-settlement-report\s*\{[^}]*overflow:\s*visible\s*!important/.test(printCss),
+    'bản thân biên bản phải `overflow: visible` khi in'
   );
   ok(
-    /body\s*>\s*\*\s*\{[^}]*height:\s*auto\s*!important/.test(printCss),
-    'phải nới `height: auto` cho các khung cha trong @media print'
+    /#printable-settlement-report\s*\{[^}]*max-height:\s*none\s*!important/.test(printCss),
+    'bản thân biên bản phải `max-height: none` khi in'
   );
   ok(
     /\.no-print\s*\{\s*display:\s*none\s*!important/.test(printCss),
