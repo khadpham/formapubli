@@ -1,7 +1,7 @@
 # KẾ HOẠCH — Kế hoạch A (nợ còn lại) + Kế hoạch B (chưa viết spec)
 
 - **Ngày:** 2026-09-29
-- **Căn cứ:** `main` = `57c833e` (đã deploy prod worker `4c45dec8-85d6-4de0-a3de-94347184977c`)
+- **Căn cứ:** `main` = `5ae656f` (đã deploy prod worker `f3820029-9ab7-4b7e-ab74-90fb5dd7d005`)
 - **Spec Kế hoạch A:** `docs/superpowers/specs/2026-09-29-live-fair-monitor-design.md`
 - **Tracker P0–P8:** `docs/superpowers/plans/2026-09-29-open-work-corrected-plan.md`
 
@@ -57,25 +57,47 @@ còn hạn), rồi bấm nút **Huỷ** thật trong modal.
 Đã khôi phục `formapubli.db` về nguyên trạng sau khi thử
 (backup: `%TEMP%\opencode\formapubli.db.bak-before-a55`).
 
-### PHÁT HIỆN MỚI — kho hội chợ ATP KHÔNG trừ đơn đang giữ chỗ
+### PHÁT HIỆN MỚI — kho hội chợ ATP KHÔNG trừ đơn đang giữ chỗ — **ĐÃ SỬA, ĐÃ DEPLOY**
 
-`OrderService.getBatchATP` (`order.service.ts:1152-1155`) **thoát sớm** với kho
-`warehouseType = 'FAIR_EVENT'`:
+`OrderService.getBatchATP` thoát sớm với kho `warehouseType = 'FAIR_EVENT'`:
 
 ```ts
-if (wh?.warehouseType === 'FAIR_EVENT') {
-  for (const id of ids) out.set(id, balMap.get(id) || 0);   // ← tồn vật lý, KHÔNG trừ giữ chỗ
+if (wh?.warehouseType === 'FAIR_EVENT') {   // order.service.ts:1152 (đã xoá)
+  for (const id of ids) out.set(id, balMap.get(id) || 0);   // tồn vật lý, KHÔNG trừ giữ chỗ
   return out;
 }
 ```
 
-Nhánh này nằm **trước** truy vấn `held` ở `:1165`. Đo thật: 5 cuốn tồn, 2 cuốn
-đang giữ chỗ bởi đơn chuyển khoản còn hạn ⇒ **ATP vẫn = 5, không phải 3**.
+Nhánh này nằm **trước** truy vấn `held` ở `:1165`.
 
-⇒ Ở kho hội chợ, bán 3 cuốn cho 3 khách chờ chuyển khoản đều được ⇒ **bán vượt tồn**.
-Phạm vi chưa rõ: `OrderService.createOrder` có tự chặn riêng hay không, cần kiểm
-thêm trước khi kết luận là lỗi. **CHƯA SỬA** — nằm ngoài Kế hoạch A, cần quyết
-riêng vì đổi semantics ATP là việc lớn.
+**Lý do ghi trong doc là sai.** Doc `:1118-1123` giải thích: *"API giữ chỗ online từ chối
+kho hội chợ bằng 422 nên không cần trừ"*. Giả định đó đã lệch thực tế: **quầy tại kho
+hội chợ tạo đơn chuyển khoản `PENDING_CONFIRMATION` ngay tại chính kho đó** (đã kiểm
+end-to-end ở A5.5). Đơn đó giữ hàng thật nhưng không được trừ.
+
+**Hệ quả đo được:** 5 cuốn tồn + 1 đơn quầy giữ 5 cuốn ⇒ ATP = **5**, không phải 0.
+`createOrder` (`:754`) dùng chính số ATP sai đó để chặn (`atp < qty`) ⇒ **chặn không
+có tác dụng ⇒ bán vượt tồn**.
+
+**Sửa (commit `5ae656f`, deploy `f3820029`):** bỏ nhánh thoát sớm. Mọi loại kho đều
+tính `ATP = physical NEW − Σ(đơn PENDING còn hạn giữ chỗ)`. Tiền thuộc về đơn, không
+phụ thuộc loại kho. Biến `wh` không còn dùng nên bỏ (giảm thêm 1 query mỗi lần tính ATP).
+
+Sau sửa, đo lại: 5 tồn, 10 giữ chỗ ⇒ ATP = **−5** ⇒ đơn quầy thứ hai bị chặn đúng.
+
+**Test khoá hồi quy:** `scripts/test-fair-atp-hold.ts` (7 assertion, DB riêng)
+- P1 kho vật lý: 5 − 5 = 0
+- P2 kho hội chợ: 5 − 5 = 0 (trước khi sửa là 5)
+- P3 đơn quầy thứ hai bị chặn
+- P4 khoá nhanh thoát sớm đã xoá, trỏ về suite này
+
+**Hồi quy:** 75/75 suite trong `run-isolated.ts` xanh. `test-s4-settlement` vấp một
+lần khi chạy 75 suite liền mạch, chạy riêng **5/5 xanh** — là flake dưới tải đã ghi ở
+tracker, không phải do thay đổi này.
+
+**Không ảnh hưởng kho khác:** chỉ kho có `warehouseType = 'FAIR_EVENT'`. Nhiều suite
+tạo đơn tại `wh-au-co` với `channel = 'FAIR_EVENT'`, nhưng kho đó là `PHYSICAL_MAIN`
+— đã trừ giữ chỗ sẵn. Cần phân biệt `channel` (kênh bán) với `warehouseType` (loại kho).
 
 ### 6 lỗi đã sửa (commit `57c833e`)
 
@@ -168,10 +190,10 @@ Top sản phẩm + giờ bán chạy trong monitor (đã có ở báo cáo ngày
 
 | Bước | Việc | Trạng thái |
 |---|---|---|
-| 1 | A-1 … A-6 + test nguồn 41 + test runtime 39 | ✅ xong, deploy `57c833e` |
+| 1 | A-1 … A-6 + test nguồn 41 + test runtime 39 | ✅ xong, deploy `4c45dec8` |
 | 2 | A5.3 chạy 8 suite hồi quy | ✅ 8/8 |
-| 3 | A5.5 nghịch thử tiền thật trên dev | ✅ đạt (trừ kiểm ATP — xem phát hiện mới) |
-| 4 | Dọn worktree/branch đã merge (giữ nguyên mọi thứ dirty) | đã được user duyệt |
-| 5 | Viết **spec Kế hoạch B** rồi mới code | B đụng đối soát két, cần duyệt trước |
-| 6 | Quyết ATP kho hội chợ (bán vượt tồn) | **CHỜ USER** |
-| 7 | P1b, P8, P6-journal — cần user quyết hoặc xác nhận | **CHỜ USER** |
+| 3 | A5.5 nghịch thử tiền thật trên dev | ✅ đạt |
+| 4 | Phát hiện ATP kho hội chợ bán vượt tồn | ✅ đã sửa + deploy `f3820029`, 75/75 suite xanh |
+| 5 | Dọn git | ✅ worktree 29 → 15 · local branch 56 → 19 · remote branch 32 → 2 (giữ `main` + 1 nhánh chưa merge) |
+| 6 | Viết **spec Kế hoạch B** rồi mới code | B đụng đối soát két, cần duyệt trước |
+| 7 | P1b, P8, P6-journal | **CHỜ USER** |
