@@ -68,6 +68,11 @@ export function DailyFairSettlementModal({
   // nói rõ chưa kiểm kê, để không ai tưởng đã đếm.
   const [stocktakeNote, setStocktakeNote] = useState('');
   const [mounted, setMounted] = useState(false);
+  // Lý do chặn in, hiện ra màn hình. Trước đây handlePrint gọi window.print()
+  // vô điều kiện nên bấm lúc chưa tải xong (hoặc tải lỗi) ra đúng MỘT TRANG
+  // TRẮNG — người dùng tưởng máy in hỏng. Giữ thông báo ở state để nói rõ
+  // vì sao không in, thay vì im lặng cho ra trang trắng.
+  const [printNotice, setPrintNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -140,9 +145,27 @@ export function DailyFairSettlementModal({
     }
   }, [isOpen, currentWarehouseId, selectedDate]);
 
+  // Đã có số liệu rồi thì lý do chặn in ở lần trước không còn đúng nữa → xoá.
+  useEffect(() => {
+    if (data) setPrintNotice(null);
+  }, [data]);
+
   if (!isOpen) return null;
 
   const handlePrint = () => {
+    if (isLoading) {
+      setPrintNotice('Báo cáo đang được tải, chờ tải xong rồi hãy in.');
+      return;
+    }
+    if (loadError) {
+      setPrintNotice(`Chưa in được: ${loadError} Bấm nút tải lại rồi in lại.`);
+      return;
+    }
+    if (!data) {
+      setPrintNotice('Chưa có số liệu để in. Bấm nút tải lại rồi thử lại.');
+      return;
+    }
+    setPrintNotice(null);
     window.print();
   };
 
@@ -184,6 +207,9 @@ export function DailyFairSettlementModal({
             visibility: visible;
           }
           #printable-settlement-report {
+            /* Lớp "hidden" (display:none) của Tailwind đè lên "print:block" tuỳ
+               thứ tự CSS. Tự ép hiện để không bao giờ phụ thuộc thứ tự đó. */
+            display: block !important;
             position: absolute;
             left: 0;
             top: 0;
@@ -191,6 +217,16 @@ export function DailyFairSettlementModal({
             background: white !important;
             padding: 0 !important;
             margin: 0 !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+          }
+          /* Nới mọi khung gốc (app root + backdrop của modal). Chúng vẫn giữ
+             overflow và max-height lúc in, và đó là thứ cắt mất biên bản. */
+          body > * {
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
           }
           .no-print {
             display: none !important;
@@ -263,6 +299,26 @@ export function DailyFairSettlementModal({
             </button>
           </div>
         </div>
+
+        {/* Báo lý do chặn in. `no-print` để không lọt vào chính bản in. */}
+        {printNotice && (
+          <div
+            role="alert"
+            className="no-print shrink-0 flex items-start gap-2 px-3 sm:px-6 py-2 bg-amber-50 border-b border-amber-300"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+            <p className="text-xs font-bold text-amber-900 flex-1">{printNotice}</p>
+            <button
+              type="button"
+              onClick={() => setPrintNotice(null)}
+              title="Tắt thông báo"
+              aria-label="Tắt thông báo chặn in"
+              className="shrink-0 px-2 py-0.5 rounded-lg border border-amber-400 bg-white text-amber-800 text-[11px] font-bold hover:bg-amber-100 cursor-pointer"
+            >
+              Tắt
+            </button>
+          </div>
+        )}
 
         {/* Tab Navigation (ẩn khi in) — cuộn ngang gọn trên mobile, không tràn khung */}
         <div className="no-print px-3 sm:px-6 pt-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
@@ -782,11 +838,13 @@ export function DailyFairSettlementModal({
         {/* ============================================================== */}
         {/* NỘI DUNG BIÊN BẢN CHỐT CA KHỔ A4 (CHỈ HIỂN THỊ KHI IN window.print) */}
         {/* ============================================================== */}
-        {data && (
-          <div
-            id="printable-settlement-report"
-            className="hidden print:block bg-white p-8 text-slate-900 text-[12px] leading-relaxed font-serif"
-          >
+        {data && createPortal(
+          <div id="printable-settlement-report" className="hidden print:block bg-white p-8 text-slate-900 text-[12px] leading-relaxed font-serif">
+            {/* Khối in PHẢI createPortal riêng xuống `document.body`. Nằm trong
+                khung modal `overflow-hidden max-h-[92vh]` thì lúc in khung cha
+                cắt mất toàn bộ biên bản, window.print() ra trang trắng — đúng
+                triệu chứng "bấm In không hiện gì". Ở đây nó là ANH EM của
+                backdrop, không nằm trong khung cắt nào. */}
             {/* Header doanh nghiệp */}
             <div className="flex justify-between items-start border-b border-slate-400 pb-3 mb-4">
               <div>
@@ -922,7 +980,8 @@ export function DailyFairSettlementModal({
                 <p className="font-bold text-slate-800">................................</p>
               </div>
             </div>
-          </div>
+            </div>,
+          document.body
         )}
       </div>
     </div>,
