@@ -22,6 +22,7 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
 import { stockOfWarehouse } from '@/lib/warehouse-stock';
 import { generateUUIDv7 } from '@/lib/uuidv7';
+import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 
 /** Số lượng mặc định khi quản lý chỉ copy cột tên sách từ Excel sang. */
 const DEFAULT_PASTE_QUANTITY = 5;
@@ -223,16 +224,19 @@ export function BatchTransferModal({
 
   // Tìm sách để thêm vào danh sách chuyển
   const filteredBooksToAdd = useMemo(() => {
-    if (!searchBookTerm.trim()) return [];
-    const q = searchBookTerm.toLowerCase().trim();
+    const q = searchBookTerm.trim();
+    if (!q) return [];
     const existingIds = new Set(lines.map((l) => l.editionId));
     return books
       .filter(
         (b) =>
           !existingIds.has(b.id) &&
-          (b.title.toLowerCase().includes(q) ||
-            b.code.toLowerCase().includes(q) ||
-            (b.isbnLast4 && b.isbnLast4.includes(q)))
+          // Dùng helper tìm tiếng Việt có sẵn thay vì `.toLowerCase().includes()`.
+          // Bản cũ chỉ khớp khi gõ ĐÚNG dấu, nên gõ "doramon" không ra "Đờrămôn" —
+    // người dùng gõ tiếng Việt không dấu là chịu không tìm được.
+          // `matchesAnyVietnameseField` bỏ dấu hai bên và null-safe, nên bản ghi
+          // thiếu `isbnLast4` cũng không làm hỏng render.
+          matchesAnyVietnameseField(q, [b.title, b.code, b.isbnLast4])
       )
       .slice(0, 8);
   }, [books, searchBookTerm, lines]);
@@ -865,7 +869,7 @@ export function BatchTransferModal({
                   <input
                     ref={bookSearchRef}
                     type="text"
-                    onFocus={() => filteredBooksToAdd.length > 0 && setIsSuggestOpen(true)}
+                    onFocus={() => setIsSuggestOpen(true)}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setIsSuggestOpen(false);
                       // Enter chọn dòng đầu tiên, nhưng KHÔNG được nuốt phím khi
@@ -877,7 +881,18 @@ export function BatchTransferModal({
                       }
                     }}
                     value={searchBookTerm}
-                    onChange={(e) => setSearchBookTerm(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSearchBookTerm(v);
+                      // PHẢI mở danh sách gợi ý khi gõ. Bản cũ chỉ gán từ khoá ở
+                      // đây, còn chỗ DUY NHẤT mở dropdown là `onFocus` và nó lại
+                      // bị chặn bởi "phải có kết quả" — mà lúc focus ô còn trống nên
+                      // chưa có kết quả nào. Kết quả là có vòng luẩn quẩn: mở cần
+                      // kết quả, kết quả cần gõ, gõ không mở. Người dùng gõ mãi mà
+                      // danh sách không bao giờ hiện, tưởng ô tìm kiếm hỏng.
+                      // Effect ở trên vẫn tự đóng khi không còn kết quả nào.
+                      if (v.trim()) setIsSuggestOpen(true);
+                    }}
                     placeholder="Gõ tên sách, SKU hoặc 4 số cuối ISBN để thêm vào phiếu..."
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />

@@ -415,10 +415,42 @@ export function PosCheckoutTerminal({
   /** ID đơn offline đang mở phiên chuyển khoản (dùng để đổi trạng thái sau khi lưu ảnh). */
   const [transferOfflineOrderId, setTransferOfflineOrderId] = useState<string | null>(null);
   /**
-   * resetPostCheckoutState nằm trong handleCheckout; các handler phiên chuyển
-   * khoản cần gọi lại nó nên lưu qua ref thay vì nhân bản logic.
+   * Reset giỏ sau khi chốt đơn. Từng nằm bên trong `handleCheckout` và chỉ được
+   * gán ref TẠI ĐÂY, nên sau khi F5 (phiên chuyển khoản được khôi phục từ cache mà
+   * `handleCheckout` chưa từng chạy) `postCheckoutResetRef.current` vẫn là `null`.
+   * Bấm Xác nhận/Huỷ gọi `?.()` vào `null` ⇒ `activeOrderCode` KHÔNG đổi ⇒ đơn kế
+   * gửi trùng `idempotencyKey` của đơn cũ ⇒ server trả về chính đơn cũ với
+   * `isDuplicate`. Bán lại đúng giỏ cũ chỉ tạo 1 dòng đơn và trừ kho 1 lần, còn
+   * khách nhận sách 2 lần. Nay hàm ở phạm vi component và ref gán vô điều kiện mỗi
+   * render, nên luôn có sẵn.
+   *
+   * Các handler phiên chuyển khoản cần gọi lại hàm này nên đi qua ref, khỏi nhân
+   * bản logic.
    */
   const postCheckoutResetRef = useRef<(() => void) | null>(null);
+  const resetPostCheckoutState = () => {
+    setIsMobileCheckoutSheetOpen(false);
+    setIsScannerOpen(false);
+    setAmbiguousMatches(null);
+    setCart([]);
+    setNote('');
+    setQrSnapshot(null);
+    setIsGift(false);
+    setDiscountRate(0);
+    setIsApprovalPending(false);
+    setIsDiscountApprovalModalOpen(false);
+    setPendingDiscountRate(null);
+    setPendingApprovalRequestId(null);
+    setApprovedDiscountRequestId(null);
+    setIsManagerOverride(false);
+    setCustomerName('Khách lẻ vãng lai');
+    setFiscalScope('INTERNAL_MANAGEMENT');
+    setPaymentMethod('CASH');
+    setGiftReason('');
+    setCustomDiscountInput('');
+    setActiveOrderCode(createOrderCode());
+  };
+  postCheckoutResetRef.current = resetPostCheckoutState;
   const checkoutLockRef = useRef(false);
   /**
    * Khoá bằng ref chứ không bằng `isTransferSubmitting`: state cập nhật bất đồng
@@ -922,11 +954,18 @@ export function PosCheckoutTerminal({
       setIsCloseShiftModalOpen(false);
       setClosingCashActualInput('');
       setShiftNoteInput('');
-     } catch (err: any) {
-       if (operationRequestId === cashboxRequestRef.current) {
-         setActiveSession(null);
-         setErrorMessage('Lỗi chốt ca: ' + err.message);
-       }
+    } catch (err: any) {
+      if (operationRequestId === cashboxRequestRef.current) {
+        // KHÔNG được setActiveSession(null) ở đây mà không hỏi lại server.
+        // Chốt ca thất bại thì ca vẫn OPEN; mà xoá state ở client thì POS hiện
+        // "két chưa mở" trong khi két thật vẫn mở. Từ đó mọi đơn tiền mặt gửi đi
+        // mang `cashboxSessionId: activeSession?.id` = undefined, server ghi
+        // cashboxSessionId = null, và calculateSessionStats lọc theo sessionId nên
+        // BỎ SÓT chính các đơn đó ⇒ expectedCash thấp hơn thực tế ⇒ chốt ca ghi sai
+        // số chênh lệch. Hỏi lại server là nguồn sự thật duy nhất.
+        fetchActiveCashboxSession().catch(() => {});
+        setErrorMessage('Lỗi chốt ca: ' + err.message);
+      }
     } finally {
        if (operationRequestId === cashboxRequestRef.current) setIsSubmittingSession(false);
     }
@@ -1500,30 +1539,6 @@ export function PosCheckoutTerminal({
      const orderTimestamp = new Date().toISOString();
      const idempotencyKey = `idem-${activeOrderCode}`;
     const orderCode = activeOrderCode;
-    const resetPostCheckoutState = () => {
-       setIsMobileCheckoutSheetOpen(false);
-       setIsScannerOpen(false);
-       setAmbiguousMatches(null);
-       setCart([]);
-      setNote('');
-      setQrSnapshot(null);
-      setIsGift(false);
-      setDiscountRate(0);
-      setIsApprovalPending(false);
-      setIsDiscountApprovalModalOpen(false);
-      setPendingDiscountRate(null);
-      setPendingApprovalRequestId(null);
-      setApprovedDiscountRequestId(null);
-      setIsManagerOverride(false);
-      setCustomerName('Khách lẻ vãng lai');
-      setFiscalScope('INTERNAL_MANAGEMENT');
-      setPaymentMethod('CASH');
-      setGiftReason('');
-      setCustomDiscountInput('');
-      setActiveOrderCode(createOrderCode());
-    };
-    postCheckoutResetRef.current = resetPostCheckoutState;
-
     // Helper lưu ngoại tuyến vào IndexedDB
     const fallbackToOffline = async (reason?: string) => {
       // S-01 (S-OFFLINE, quyết định đã chốt): cashier chỉ tạo đơn offline mới

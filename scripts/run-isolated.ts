@@ -61,6 +61,8 @@ const ALL_SUITES = [
     'scripts/test-pos-cashier-name.ts',
     'scripts/test-stock-non-negative.ts',
     'scripts/test-sales-ledger-vn-day.ts',
+    'scripts/test-batch-transfer-search.ts',
+    'scripts/test-pos-money-integrity.ts',
   'scripts/test-forecast.ts',
   'scripts/test-royalties.ts',
   'scripts/test-returns.ts',
