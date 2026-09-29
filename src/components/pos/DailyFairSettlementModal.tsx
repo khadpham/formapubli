@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Receipt,
@@ -41,6 +41,11 @@ export function DailyFairSettlementModal({
   currentRole = 'ROLE_CASHIER',
 }: DailyFairSettlementModalProps) {
   const [data, setData] = useState<any | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Số thứ tự request. Mỗi lần tải tăng 1; response về muộn (số nhỏ hơn số
+  // hiện tại) bị bỏ. Trước đây không có: đổi ngày 29 → 28, nếu response 29 về
+  // sau nó setData ghi đè ⇒ biên bản mang số liệu ngày 29 nhưng đóng dấu ngày 28.
+  const requestSeqRef = useRef(0);
   const [isLoading, setIsLoading] = useState(false);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
   const [warehouseList, setWarehouseList] = useState<any[]>([]);
@@ -98,20 +103,34 @@ export function DailyFairSettlementModal({
   }, [isOpen]);
 
   const fetchSettlement = async () => {
+    const seq = ++requestSeqRef.current;
+    setIsLoading(true);
+    setLoadError(null);
     try {
-      setIsLoading(true);
       const res = await fetch(
         `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}&date=${encodeURIComponent(selectedDate)}`,
         { headers: { 'x-formapubli-role': currentRole } }
       );
-      const json = await res.json();
-      if (json.success) {
-        setData(json.data);
+      const json = await res.json().catch(() => null);
+      if (seq !== requestSeqRef.current) return; // response cũ → bỏ, không ghi đè
+      // Phải kiểm cả res.ok lẫn json.success. Trước đây chỉ có
+      // `if (json.success)` không có else: lỗi 403/500 rơi vào nhánh `!data` và
+      // hiện thành "Không có dữ liệu" — thông báo sai, và `data` cũ của ngày
+      // trước vẫn còn trong state nên màn hình hiện số ngày khác dưới nhãn
+      // ngày mới. Xoá `data` khi lỗi để không bao giờ in nhầm.
+      if (!res.ok || !json?.success) {
+        setData(null);
+        setLoadError(json?.error || `Báo cáo không tải được (mã lỗi ${res.status}).`);
+        return;
       }
+      setData(json.data);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
+      setData(null);
+      setLoadError('Mất kết nối khi tải báo cáo chốt ngày.');
       console.error('Lỗi tải báo cáo chốt ngày hội chợ:', err);
     } finally {
-      setIsLoading(false);
+      if (seq === requestSeqRef.current) setIsLoading(false);
     }
   };
 
@@ -137,6 +156,11 @@ export function DailyFairSettlementModal({
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
   );
+  // Ngày in ra LUÔN là ngày của số liệu (`data.reportDate` do API trả), không
+  // phải ngày đang chọn trên ô date. Ô date là ý định của người dùng; `reportDate`
+  // mới là ngày mà số tiền/số sách thuộc về. Lệch hai thứ này chính là lúc biên bản
+  // bàn giao cho kế toán mang số tiện của ngày này dưới dấu ngày khác.
+  const shownReportDate = data?.reportDate || selectedDate;
   // Không có số đếm thực tế nữa (xem chú thích state ở trên) ⇒ không còn "chênh
   // lệch" để hiển thị. Giữ `totalTheoreticalBooks` vì bản in bàn giao vẫn cần tổng
   // tồn lý thuyết. Cố ý KHÔNG in 0 cho phần kiểm kê: số 0 là hẹn số bịa.
@@ -192,7 +216,7 @@ export function DailyFairSettlementModal({
               <p className="text-[11px] sm:text-xs text-slate-400 truncate">
                 Kho: <strong className="text-white">{activeWarehouseName}</strong>
                 <span className="hidden sm:inline"> | </span>
-                <span className="ml-1 sm:ml-0">Ngày: <span className="font-mono text-amber-300">{selectedDate}</span></span>
+                <span className="ml-1 sm:ml-0">Ngày: <span className="font-mono text-amber-300">{shownReportDate}</span></span>
               </p>
             </div>
           </div>
@@ -310,9 +334,18 @@ export function DailyFairSettlementModal({
               <p className="text-xs font-bold">Đang tổng hợp số liệu ca bán hàng và kiểm kê kho...</p>
             </div>
           ) : !data ? (
-            <div className="py-16 text-center text-slate-400 text-xs">
-              Không có dữ liệu báo cáo cho ngày đã chọn.
-            </div>
+            loadError ? (
+              <div className="py-16 text-center text-xs">
+                <XCircle className="w-7 h-7 mx-auto mb-3 text-rose-500" />
+                <p className="font-bold text-rose-700">Không tải được báo cáo</p>
+                <p className="text-slate-500 mt-1">{loadError}</p>
+                <p className="text-slate-400 mt-3">Bấm nút tải lại để thử lần nữa.</p>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-slate-400 text-xs">
+                Không có dữ liệu báo cáo cho ngày đã chọn.
+              </div>
+            )
           ) : (
             <>
               {/* TAB 1: DOANH SỐ & ĐỐI SOÁT KÉT TIỀN */}
@@ -764,11 +797,11 @@ export function DailyFairSettlementModal({
                   Gian hàng / Địa điểm: <strong>{data.warehouse?.name}</strong> ({data.warehouse?.code})
                 </p>
                 <p className="font-sans text-[11px] text-slate-600">
-                  Ngày kết toán: <strong>{selectedDate}</strong>
+                  Ngày kết toán: <strong>{data.reportDate}</strong>
                 </p>
               </div>
               <div className="text-right font-sans text-[11px] text-slate-600">
-                <p className="font-bold text-slate-800">BIÊN BẢN SỐ: BB-{selectedDate.replace(/-/g, '')}</p>
+                <p className="font-bold text-slate-800">BIÊN BẢN SỐ: BB-{data.reportDate.replace(/-/g, '')}</p>
                 <p className="italic">Lập lúc: {new Date().toLocaleTimeString('vi-VN')} ngày {new Date().toLocaleDateString('vi-VN')}</p>
               </div>
             </div>
