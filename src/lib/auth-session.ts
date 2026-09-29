@@ -922,6 +922,33 @@ export async function requireSessionRole(req: Request, allowed: UserRole[]): Pro
   return sess;
 }
 
+/**
+ * Ràng buộc kho được gán — CHỐT CHẶN Ở SERVER cho mọi route ghi tồn/tiền.
+ *
+ * NGUYÊN NHÂN GỐC (auditB 2026-09-30): ràng buộc này trước đây được copy-paste
+ * riêng trong `orders` và `cashbox`, còn `inventory/movement`, `transfers`,
+ * `delivery-orders` thì KHÔNG có. Kết quả: thủ kho được gán kho Âu Cơ vẫn bút
+ * toán / xuất phiếu ở kho Quỳnh Mai — chứng minh bằng gọi thật route
+ * (scripts/test-rbac-audit.ts, case F2 trước khi vá trả 200).
+ *
+ * Nay đặt ở đây để mọi route gọi chung một chỗ. Kho `null` = tự do (giữ nguyên
+ * hành vi cũ cho tài khoản không được gán kho).
+ */
+export function assertAssignedWarehouse(
+  sess: SessionPayload,
+  warehouseId: string | null | undefined,
+  opts: { allowRead?: string[] } = {}
+): void {
+  const assigned = `${sess.assignedWarehouseId || ''}`.trim();
+  if (!assigned) return; // Không được gán kho -> không giới hạn (hành vi cũ).
+  const target = `${warehouseId || ''}`.trim();
+  if (target && target === assigned) return;
+  // Một số route nhận nhiều kho (chuyển kho: gửi + nhận). `allowRead` là danh
+  // sách kho hợp lệ khác — chỉ dùng khi nghiệp vụ thật sự cần.
+  if (opts.allowRead?.some((w) => `${w || ''}`.trim() === target)) return;
+  throw new AuthError(403, 'Bạn được phân công phụ trách một kho khác. Không thể thao tác kho này.');
+}
+
 import type { ActorContext } from '@/services/actor-context';
 
 export interface RequestIdentity {
