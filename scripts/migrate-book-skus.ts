@@ -150,6 +150,27 @@ async function run() {
   const isDryRun = process.argv.includes('--dry-run');
   console.log(`📦 Bắt đầu tiến trình Migration mã sách SKU... [Chế độ: ${isDryRun ? 'DRY-RUN (chỉ kiểm tra)' : 'THỰC THI THẬT'}]`);
 
+  // CHỐT AN TOÀN: từ chối ghi vào DB TỪ XA trừ khi có cờ tường minh.
+  // Script này đổi mã của 81 ấn bản và nạp 7 cuốn mới — chạy nhầm là mất dữ liệu
+  // danh mục production. Đây là cùng quy tắc đã áp cho `migrate-fresh.ts` và
+  // `seed.ts` (mục P6 của kế hoạch); bản gốc của script thiếu nên thêm vào đây.
+  const url = process.env.DATABASE_URL || '';
+  const isLocal = url.includes('.db') || url.startsWith('file:');
+  const allowRemote = process.env.ALLOW_REMOTE_SKU_MIGRATION === 'true';
+  if (!isLocal && !isDryRun && !allowRemote) {
+    throw new Error(
+      'TỪ CHỐI: DATABASE_URL trỏ tới DB từ xa. Để ghi production phải đặt ' +
+        'ALLOW_REMOTE_SKU_MIGRATION=true, hoặc chạy --dry-run để xem trước.'
+    );
+  }
+  if (!isLocal) {
+    console.log(
+      allowRemote && !isDryRun
+        ? '⚠️  ĐANG GHI VÀO DB TỪ XA — thao tác này không hoàn tác được.'
+        : '🔍 Chế độ dry-run trên DB từ xa: không ghi gì.'
+    );
+  }
+
   // 1. Kiểm tra trạng thái hiện tại của database
   const currentEditions = await db.select().from(editions);
   console.log(`📊 Tổng số ấn bản hiện có trong DB: ${currentEditions.length}`);
