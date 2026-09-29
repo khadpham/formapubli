@@ -1,5 +1,4 @@
 import { db, editions, inventoryLedger, orders, stockBalances, warehouses } from '../db';
-import { InventoryService } from './inventory.service';
 import { eq, and, or, sql, inArray, isNull } from 'drizzle-orm';
 
 /**
@@ -88,7 +87,13 @@ export class ForecastService {
       .where(
         and(
           inArray(inventoryLedger.eventType, ['DISPATCH_SALE', 'CONSIGNMENT_SOLD']),
-          sql`${inventoryLedger.recordedAt} >= ${cutoff}`,
+          // FIX-08b + P2-12 (KIỂM ĐỊNH 30/09): `recorded_at` tồn tại CẢ HAI họ —
+          // SQLite CURRENT_TIMESTAMP 'YYYY-MM-DD HH:mm:ss' (mặc định CSDL) và ISO
+          // 'YYYY-MM-DDTHH:mm:ss.sssZ' (app ghi tay ở delivery-order.service).
+          // So CHUỖI THÔ giữa hai họ là vô nghĩa: ' ' (0x20) < 'T' (0x54) nên mọi
+          // dòng ISO kể cả trước mốc đều ">= cutoff" ⇒ vận tốc bán thừa ⇒ DoI
+          // sai ⇒ đề xuất in sai. `datetime()` của SQLite chuẩn hoá được cả hai.
+          sql`datetime(${inventoryLedger.recordedAt}) >= datetime(${cutoff})`,
           or(
             isNull(orders.id),
             and(
@@ -103,18 +108,36 @@ export class ForecastService {
     return new Map(rows.map((r) => [r.editionId, Number(r.qty ?? 0)]));
   }
 
-  /** Tồn khả dụng: NEW mọi kho trừ transit (warehouseId lọc riêng nếu cần). */
+  /**
+   * Tồn khả dụng: NEW mọi kho trừ transit (warehouseId lọc riêng nếu cần).
+   *
+   * Dùng `warehouseType = 'IN_TRANSIT'` thay vì so id cứng `wh-in-transit`:
+   * kho trung chuyển mới tạo sau này cũng phải bị trừ, không thể chỉ trừ đúng
+   * một id đã biết trước.
+   */
+  static async availableStockByEdition(warehouseId?: string): Promise<Map<string, number>> {
+    const rows = await db
+      .select({
+        editionId: stockBalances.editionId,
+        qty: sql<number>`COALESCE(SUM(${stockBalances.physicalQuantity}), 0)`,
+      })
+      .from(stockBalances)
+      .innerJoin(warehouses, eq(stockBalances.warehouseId, warehouses.id))
+      .where(
+        and(
+          eq(stockBalances.condition, 'NEW'),
+          warehouseId
+            ? eq(stockBalances.warehouseId, warehouseId)
+            : sql`${warehouses.warehouseType} != 'IN_TRANSIT'`
+        )
+      )
+      .groupBy(stockBalances.editionId);
+    return new Map(rows.map((r) => [r.editionId, Number(r.qty ?? 0)]));
+  }
+
+  /** Tồn khả dụng của MỘT ấn bản (vẫn 1 truy vấn, không vòng kho). */
   static async availableStock(editionId: string, warehouseId?: string): Promise<number> {
-    if (warehouseId) {
-      return InventoryService.getBalance(editionId, warehouseId, 'NEW');
-    }
-    const allWh = await db.select({ id: warehouses.id }).from(warehouses);
-    let total = 0;
-    for (const wh of allWh) {
-      if (wh.id === 'wh-in-transit') continue;
-      total += await InventoryService.getBalance(editionId, wh.id, 'NEW');
-    }
-    return total;
+    return (await this.availableStockByEdition(warehouseId)).get(editionId) ?? 0;
   }
 
   static async forecastEdition(
@@ -155,12 +178,18 @@ export class ForecastService {
   ): Promise<{ items: ForecastItem[]; summary: Record<RunoutLevel, number> }> {
     const allEditions = await db.select().from(editions);
     const sales = await this.salesByEdition(windowDays);
+    // FIX-08c (KIỂM ĐỊNH 30/09): trước đây vòng từng ấn bản gọi availableStock,
+    // mà availableStock lại vòng bảng `warehouses` + getBalance từng kho ⇒ 354
+    // truy vấn cho 88 ấn bản × 4 kho (N+1 nặng, và `getStockMatrix` kiểu này đã
+    // làm kho hội chợ "không bao giờ có số liệu" trong đợt trước). Nay gom
+    // toàn bộ tồn trong MỘT truy vấn GROUP BY.
+    const stock = await this.availableStockByEdition(warehouseId);
 
     const items: ForecastItem[] = [];
     for (const ed of allEditions) {
       const soldQty = sales.get(ed.id) ?? 0;
       const vSale = soldQty / windowDays;
-      const totalStock = await this.availableStock(ed.id, warehouseId);
+      const totalStock = stock.get(ed.id) ?? 0;
       const doi = computeDoI(totalStock, vSale);
       const item: ForecastItem = {
         editionId: ed.id,

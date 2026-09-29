@@ -1,5 +1,5 @@
 import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
-import { eq, and, gte, lte, sql, like } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, like, inArray } from 'drizzle-orm';
 import { businessDateOf, VN_UTC_OFFSET_MIN } from './order.service';
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
@@ -10,10 +10,31 @@ export interface DateRange {
   endDate?: string;
 }
 
+/**
+ * So sánh mốc thời gian AN TOÀN cho cột text đang chứa CẢ HAI họ timestamp.
+ *
+ * Mọi cột thời gian trong CSDL đều là text và đang tồn tại song song:
+ *   - SQLite `CURRENT_TIMESTAMP` -> 'YYYY-MM-DD HH:mm:ss'   (dùng khi app KHÔNG
+ *     truyền createdAt, ví dụ SponsorshipService.draw tại sponsorship.service.ts:113)
+ *   - ISO của app               -> 'YYYY-MM-DDTHH:mm:ss.sssZ' (order.service.ts:563)
+ *
+ * So CHUỖI THÔ giữa hai họ là vô nghĩa: byte 0x20 (' ') < 0x54 ('T') nên
+ *   - mọi dòng ISO trong ngày đều ">= cutoff" dù thực ra đã qua mốc,
+ *   - mọi dòng SQLite lại luôn "<= cutoff" dù thực ra còn trong kỳ.
+ * `datetime()` của SQLite chuẩn hoá được cả hai họ về cùng một định dạng.
+ * Chuẩn này khớp gotcha 7 trong docs/superpowers/plans/2026-09-25-handoff-state.md.
+ */
+function tsGte(col: any, bound: string) {
+  return sql`datetime(${col}) >= datetime(${bound})`;
+}
+function tsLte(col: any, bound: string) {
+  return sql`datetime(${col}) <= datetime(${bound})`;
+}
+
 function rangeConds(table: typeof orders, range: DateRange) {
   const conds = [eq(table.status, 'COMPLETED')];
-  if (range.startDate) conds.push(gte(table.createdAt, range.startDate));
-  if (range.endDate) conds.push(lte(table.createdAt, range.endDate));
+  if (range.startDate) conds.push(tsGte(table.createdAt, range.startDate));
+  if (range.endDate) conds.push(tsLte(table.createdAt, range.endDate));
   return and(...conds);
 }
 
@@ -71,7 +92,7 @@ export class AnalyticsService {
         })
         .from(orderItems)
         .innerJoin(orders, eq(orderItems.orderId, orders.id))
-        .where(and(eq(orders.status, 'COMPLETED'), gte(orders.createdAt, from), lte(orders.createdAt, to)))
+        .where(and(eq(orders.status, 'COMPLETED'), tsGte(orders.createdAt, from), tsLte(orders.createdAt, to)))
         .groupBy(orderItems.editionId);
       const map = new Map<string, { qty: number; revenue: number }>();
       for (const r of rows) map.set(r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) });
@@ -108,32 +129,57 @@ export class AnalyticsService {
   /** Ký gửi đa điểm: mỗi kho wh-consign-* đang giữ bao nhiêu + đã bán kỳ này. */
   static async consignment(range: DateRange = {}) {
     const whs = await db.select().from(warehouses).where(like(warehouses.id, 'wh-consign-%'));
-    const out = [];
-    for (const wh of whs) {
-      const bals = await db.select().from(stockBalances).where(eq(stockBalances.warehouseId, wh.id));
-      const heldQty = bals.reduce((s, b) => s + (b.physicalQuantity || 0), 0);
-      const conds = [eq(inventoryLedger.warehouseId, wh.id), eq(inventoryLedger.eventType, 'CONSIGNMENT_SOLD')];
-      if (range.startDate) conds.push(gte(inventoryLedger.recordedAt, range.startDate));
-      if (range.endDate) conds.push(lte(inventoryLedger.recordedAt, range.endDate));
-      const soldRows = await db
-        .select({ qty: sql<number>`COALESCE(SUM(${inventoryLedger.quantityDelta}), 0)` })
-        .from(inventoryLedger)
-        .where(and(...conds));
+    if (whs.length === 0) return [];
+    // Số truy vấn cố định (3) bất kể bao nhiêu kho ký gửi và bao nhiêu SKU.
+    // Trước đây: mỗi kho × mỗi dòng tồn lại một SELECT editions ⇒ 3 kho × 60 SKU
+    // là 127 truy vấn cho một bảng điều khiển read-only.
+    const bals = await db
+      .select({
+        warehouseId: stockBalances.warehouseId,
+        editionId: stockBalances.editionId,
+        qty: stockBalances.physicalQuantity,
+        coverPrice: editions.coverPrice,
+      })
+      .from(stockBalances)
+      .leftJoin(editions, eq(stockBalances.editionId, editions.id))
+      .where(inArray(stockBalances.warehouseId, whs.map((w) => w.id)));
+
+    const soldConds = [inArray(inventoryLedger.warehouseId, whs.map((w) => w.id)), eq(inventoryLedger.eventType, 'CONSIGNMENT_SOLD')];
+    if (range.startDate) soldConds.push(tsGte(inventoryLedger.recordedAt, range.startDate));
+    if (range.endDate) soldConds.push(tsLte(inventoryLedger.recordedAt, range.endDate));
+    const soldRows = await db
+      .select({
+        warehouseId: inventoryLedger.warehouseId,
+        qty: sql<number>`COALESCE(SUM(${inventoryLedger.quantityDelta}), 0)`,
+      })
+      .from(inventoryLedger)
+      .where(and(...soldConds))
+      .groupBy(inventoryLedger.warehouseId);
+    const soldByWh = new Map(soldRows.map((r) => [r.warehouseId, Math.abs(Number(r.qty || 0))]));
+
+    const agg = new Map<string, { heldQty: number; heldValue: number; skuCount: number }>();
+    for (const wh of whs) agg.set(wh.id, { heldQty: 0, heldValue: 0, skuCount: 0 });
+    for (const b of bals) {
+      const slot = agg.get(b.warehouseId);
+      if (!slot) continue;
+      const qty = Number(b.qty || 0);
+      slot.heldQty += qty;
       // Giá trị tồn theo giá bìa (ước tính quản trị)
-      let heldValue = 0;
-      for (const b of bals) {
-        const ed = await db.select({ coverPrice: editions.coverPrice }).from(editions).where(eq(editions.id, b.editionId)).limit(1);
-        heldValue += (b.physicalQuantity || 0) * (ed[0]?.coverPrice || 0);
-      }
-      out.push({
+      slot.heldValue += qty * Number(b.coverPrice || 0);
+      if (qty > 0) slot.skuCount++;
+    }
+
+    const out = whs.map((wh) => {
+      const slot = agg.get(wh.id)!;
+      return {
         warehouseId: wh.id,
         warehouseName: wh.name,
-        heldQty,
-        heldValue,
-        soldQty: Math.abs(Number(soldRows[0]?.qty || 0)),
-        skuCount: bals.filter((b) => (b.physicalQuantity || 0) > 0).length,
-      });
-    }
+        heldQty: slot.heldQty,
+        heldValue: slot.heldValue,
+        soldQty: soldByWh.get(wh.id) ?? 0,
+        skuCount: slot.skuCount,
+      };
+    });
     return out.sort((a, b) => b.heldValue - a.heldValue);
   }
 
@@ -148,8 +194,8 @@ export class AnalyticsService {
       sql`${orders.channel} != 'SPONSORSHIP'`,
       sql`${orders.finalAmount} > 0`,
     ];
-    if (range.startDate) conds.push(gte(orders.createdAt, range.startDate));
-    if (range.endDate) conds.push(lte(orders.createdAt, range.endDate));
+    if (range.startDate) conds.push(tsGte(orders.createdAt, range.startDate));
+    if (range.endDate) conds.push(tsLte(orders.createdAt, range.endDate));
     if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
     const rows = await db
       .select({
@@ -185,8 +231,8 @@ export class AnalyticsService {
   static async cashflow(range: DateRange = {}) {
     const channels = await this.byChannel(range);
     const codConds = [eq(orders.status, 'COMPLETED')];
-    if (range.startDate) codConds.push(gte(orders.createdAt, range.startDate));
-    if (range.endDate) codConds.push(lte(orders.createdAt, range.endDate));
+    if (range.startDate) codConds.push(tsGte(orders.createdAt, range.startDate));
+    if (range.endDate) codConds.push(tsLte(orders.createdAt, range.endDate));
     const codRows = await db
       .select({ codStatus: orders.codStatus, total: sql<number>`COALESCE(SUM(${orders.codAmount}), 0)` })
       .from(orders)
@@ -199,8 +245,8 @@ export class AnalyticsService {
       if (r.codStatus === 'RECEIVED') codReceived = Number(r.total || 0);
     }
     const spfConds = [];
-    if (range.startDate) spfConds.push(gte(sponsorshipDrawdowns.createdAt, range.startDate));
-    if (range.endDate) spfConds.push(lte(sponsorshipDrawdowns.createdAt, range.endDate));
+    if (range.startDate) spfConds.push(tsGte(sponsorshipDrawdowns.createdAt, range.startDate));
+    if (range.endDate) spfConds.push(tsLte(sponsorshipDrawdowns.createdAt, range.endDate));
     const spfRows = await db
       .select({
         value: sql<number>`COALESCE(SUM(${sponsorshipDrawdowns.drawnValue}), 0)`,
@@ -211,8 +257,8 @@ export class AnalyticsService {
     const sponsorshipDrawnValue = Number(spfRows[0]?.value || 0);
     const sponsorshipDrawnQty = Number(spfRows[0]?.qty || 0);
     const refundConds = [eq(returnOrders.status, 'COMPLETED')];
-    if (range.startDate) refundConds.push(gte(returnOrders.createdAt, range.startDate));
-    if (range.endDate) refundConds.push(lte(returnOrders.createdAt, range.endDate));
+    if (range.startDate) refundConds.push(tsGte(returnOrders.createdAt, range.startDate));
+    if (range.endDate) refundConds.push(tsLte(returnOrders.createdAt, range.endDate));
     const refundRows = await db
       .select({ total: sql<number>`COALESCE(SUM(${returnOrders.refundAmount}), 0)` })
       .from(returnOrders)

@@ -82,13 +82,28 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
     );
   }, [items, search]);
 
+  // API trả summary theo ĐÚNG key RunoutLevel: RED_ALERT / YELLOW_WARNING /
+  // HEALTHY_NORMAL, và summary được tính TRÊN TOÀN DANH MỤC (trước khi lọc mức
+  // và trước khi cắt limit). Trước đây đọc summary.total/.red/.yellow — cả ba
+  // đều undefined ⇒ dòng chân bảng rơi về items.length (số dòng ĐÃ LỌC) và
+  // in sai "Tổng N ấn bản • RED 0 • YELLOW 0" mỗi khi bật bộ lọc mức.
+  const summaryTotal = summary
+    ? Number(summary.RED_ALERT || 0) + Number(summary.YELLOW_WARNING || 0) + Number(summary.HEALTHY_NORMAL || 0)
+    : null;
   const counts = useMemo(() => {
+    if (summary) {
+      return {
+        red: Number(summary.RED_ALERT || 0),
+        yellow: Number(summary.YELLOW_WARNING || 0),
+        healthy: Number(summary.HEALTHY_NORMAL || 0),
+      };
+    }
     return {
       red: items.filter((i) => i.level === 'RED_ALERT').length,
       yellow: items.filter((i) => i.level === 'YELLOW_WARNING').length,
       healthy: items.filter((i) => i.level === 'HEALTHY_NORMAL').length,
     };
-  }, [items]);
+  }, [items, summary]);
 
   const handleExport = () => {
     const header = 'code,title,cover_price,sold_qty,v_sale,total_stock,doi_days,level,suggested_reprint_qty';
@@ -242,7 +257,7 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
         )}
         {summary && (
           <p className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100">
-            Tổng {summary.total ?? items.length} ấn bản • RED {summary.red ?? counts.red} • YELLOW {summary.yellow ?? counts.yellow} • Lead 30 + Buffer 15 + An toàn 60 = ×105
+            Tổng {summaryTotal ?? items.length} ấn bản • RED {counts.red} • YELLOW {counts.yellow} • Lead 30 + Buffer 15 + An toàn 60 = ×105
           </p>
         )}
       </div>
