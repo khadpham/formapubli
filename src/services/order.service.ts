@@ -1557,12 +1557,8 @@ export class OrderService {
     if (cashierId) {
       conditions.push(eq(orders.cashierId, cashierId));
     }
-    if (startDate) {
-      conditions.push(gte(orders.createdAt, startDate));
-    }
-    if (endDate) {
-      conditions.push(lte(orders.createdAt, endDate));
-    }
+    // Ngày trần = NGÀY NGHIỆP VỤ VN; ISO đầy đủ = mốc UTC (xem createdAtBetween).
+    conditions.push(...createdAtBetween(orders.createdAt, startDate, endDate));
 
     if (conditions.length > 0) {
       return await db
@@ -1736,6 +1732,49 @@ export const VN_UTC_OFFSET_MIN = 7 * 60;
 
 export function businessDateOf(instant: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ }).format(instant);
+}
+
+const BARE_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Điều kiện lọc `created_at` theo khoảng ngày, hiểu đúng ngày nghiệp vụ Việt Nam.
+ *
+ * `created_at` luôn là UTC, còn mọi nút "HÔM NAY / 7 NGÀY / 30 NGÀY" người dùng
+ * bấm đều nghĩa là ngày VIỆT NAM. Trước đây caller gửi `toISOString().slice(0,10)`
+ * — tức NGÀY UTC — rồi ta so chuỗi thô. Hậu quả: báo cáo hôm nay thiếu trọn
+ * ca 00:00–07:00 và lại nuốt đơn 17:00–24:00 của hôm qua. Người dùng đối chiếu
+ * sổ với két thì lệch, và không có màn hình nào chỉ ra lệch ở đâu.
+ *
+ * Phân biệt hai quy ước đang lẫn lộn trong codebase bằng DẠNG của tham số:
+ *   · 'YYYY-MM-DD' trần  = NGÀY NGHIỆP VỤ → so ngày VN của `created_at`,
+ *     bao trọn cả ngày, không lệch 7 tiếng, và không lỗ với việc cột lưu
+ *     hai họ timestamp (SQLite CURRENT_TIMESTAMP 'YYYY-MM-DD HH:mm:ss' và ISO
+ *     'YYYY-MM-DDTHH:mm:ssZ' mà app ghi) — vì `datetime()` nhận được cả hai.
+ *   · chuỗi dài hơn (ISO đầy đủ) = MỐC THỜI GIAN UTC → so thô như trước, giữ
+ *     nguyên hành vi cho `TopEditionsPanel` và `executive-query` vốn truyền
+ *     `toISOString()`.
+ */
+export function createdAtBetween(
+  col: any,
+  startDate?: string | null,
+  endDate?: string | null
+) {
+  const conds = [];
+  if (startDate) {
+    conds.push(
+      BARE_DAY.test(startDate)
+        ? sql`substr(datetime(${col}, '+7 hours'), 1, 10) >= ${startDate}`
+        : gte(col, startDate)
+    );
+  }
+  if (endDate) {
+    conds.push(
+      BARE_DAY.test(endDate)
+        ? sql`substr(datetime(${col}, '+7 hours'), 1, 10) <= ${endDate}`
+        : lte(col, endDate)
+    );
+  }
+  return conds;
 }
 
 /**

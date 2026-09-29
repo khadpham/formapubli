@@ -90,23 +90,29 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // Xử lý chuyển đổi Preset ngày
   const handleDatePresetChange = (preset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM') => {
     setDatePreset(preset);
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    // Ngày VIỆT NAM, và gửi dạng TRẦN 'YYYY-MM-DD'. Trước đây dùng
+    // `toISOString().slice(0,10)` tức NGÀY UTC, nên nút "HÔM NAY" thiếu trọn ca
+    // 00:00–07:00 và lại tính nhầm đơn sau 17:00 của hôm qua. API đọc ngày trần
+    // là ngày nghiệp vụ (xem `createdAtBetween` trong order.service), nên phải bỏ
+    // hậu tố 'T23:59:59' — có nó thì cả hai đầu rơi về nhánh so mốc UTC cũ.
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
 
     if (preset === 'ALL') {
       setStartDate('');
       setEndDate('');
     } else if (preset === 'TODAY') {
       setStartDate(todayStr);
-      setEndDate(todayStr + 'T23:59:59');
+      setEndDate(todayStr);
     } else if (preset === 'WEEK') {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const weekAgo = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+        .format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
       setStartDate(weekAgo);
-      setEndDate(todayStr + 'T23:59:59');
+      setEndDate(todayStr);
     } else if (preset === 'MONTH') {
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const monthAgo = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+        .format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
       setStartDate(monthAgo);
-      setEndDate(todayStr + 'T23:59:59');
+      setEndDate(todayStr);
     }
   };
 
@@ -389,7 +395,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               <input
                 type="date"
                 value={endDate.slice(0, 10)}
-                onChange={(e) => setEndDate(e.target.value ? e.target.value + 'T23:59:59' : '')}
+                onChange={(e) => setEndDate(e.target.value)}
                 className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
