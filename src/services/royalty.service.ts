@@ -240,16 +240,45 @@ export class RoyaltyService {
     };
   }
 
+  /**
+   * Danh sách hợp đồng, lọc vòng đời TRONG SQL rồi mới `limit`.
+   *
+   * Trước đây `limit` chạy trên tập ĐÃ SẮP XẾP rồi mới lọc vòng đời ở JS ⇒
+   * hợp đồng ACTIVE nằm ngoài `limit` biến mất im lặng. Đã quan sát thật:
+   * 2 hợp đồng MỚI NHẤT đều TERMINATED/EXPIRED ⇒ `listContracts('ACTIVE', 2)`
+   * trả về 0 dòng, UI hiện "Chưa có hợp đồng ACTIVE nào" trong khi vẫn có HĐ
+   * đang hiệu lực. Đây cũng là chỗ "limit cắt rồi mới cộng" mà báo cáo phải khớp.
+   */
   static async listContracts(lifecycle?: ContractLifecycle, limit = 100) {
-    const all = await db
-      .select()
-      .from(rightsContracts)
-      .orderBy(desc(rightsContracts.createdAt))
-      .limit(limit);
-    const withLife = all.map((c) => ({
-      ...c,
-      lifecycle: deriveLifecycle(c.terminated, c.expirationDate),
-    }));
-    return lifecycle ? withLife.filter((c) => c.lifecycle === lifecycle) : withLife;
+    // Ngày nghiệp vụ VN, đúng như `deriveLifecycle` dùng — lọc SQL và gán nhãn
+    // phải cùng một đồng hồ, nếu không sẽ lệch ở khung 00:00–07:00 VN.
+    const today = businessDateOf(new Date());
+    const conds = [];
+    if (lifecycle === 'TERMINATED') {
+      conds.push(sql`${rightsContracts.terminated} IS 1`);
+    } else if (lifecycle === 'EXPIRED') {
+      conds.push(
+        sql`${rightsContracts.terminated} IS NOT 1 AND ${rightsContracts.expirationDate} < ${today}`
+      );
+    } else if (lifecycle === 'ACTIVE') {
+      conds.push(
+        sql`${rightsContracts.terminated} IS NOT 1 AND ${rightsContracts.expirationDate} >= ${today}`
+      );
+    }
+
+    const all = conds.length
+      ? await db
+          .select()
+          .from(rightsContracts)
+          .where(and(...conds))
+          .orderBy(desc(rightsContracts.createdAt))
+          .limit(limit)
+      : await db
+          .select()
+          .from(rightsContracts)
+          .orderBy(desc(rightsContracts.createdAt))
+          .limit(limit);
+
+    return all.map((c) => ({ ...c, lifecycle: deriveLifecycle(c.terminated, c.expirationDate, today) }));
   }
 }

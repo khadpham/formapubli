@@ -19,23 +19,23 @@ import { parseDbTimestamp } from '../lib/db-timestamp';
 import { withDbRetry } from '../lib/db-retry';
 
 /**
- * Điều kiện "nằm trong ngày nghiệp vụ Việt Nam" cho một cột timestamp.
+ * ─Éiß╗üu kiß╗çn "nß║▒m trong ng├áy nghiß╗çp vß╗Ñ Viß╗çt Nam" cho mß╗Öt cß╗Öt timestamp.
  *
- * `created_at`/`opened_at` luôn là UTC: app ghi `new Date().toISOString()` và mặc
- * định cột của SQLite là `CURRENT_TIMESTAMP` (cũng UTC). Còn `targetDate` là ngày
- * nghiệp vụ VN. Ngày VN D = 17:00 UTC hôm trước → 17:00 UTC hôm D.
+ * `created_at`/`opened_at` lu├┤n l├á UTC: app ghi `new Date().toISOString()` v├á mß║╖c
+ * ─æß╗ïnh cß╗Öt cß╗ºa SQLite l├á `CURRENT_TIMESTAMP` (c┼⌐ng UTC). C├▓n `targetDate` l├á ng├áy
+ * nghiß╗çp vß╗Ñ VN. Ng├áy VN D = 17:00 UTC h├┤m tr╞░ß╗¢c ΓåÆ 17:00 UTC h├┤m D.
  *
- * KHÔNG dùng `LIKE 'YYYY-MM-DD%'` cho việc này: tiền tố 10 ký tự chỉ cho biết
- * NGÀY UTC, không cho biết giờ. Lọc một mốc thì mất 7 tiếng đầu; lọc hai mốc
- * (D-1 và D) thì lấy THỪA 7 tiếng cuối — cả hai đều sai tiền.
+ * KH├öNG d├╣ng `LIKE 'YYYY-MM-DD%'` cho viß╗çc n├áy: tiß╗ün tß╗æ 10 k├╜ tß╗▒ chß╗ë cho biß║┐t
+ * NG├ÇY UTC, kh├┤ng cho biß║┐t giß╗¥. Lß╗ìc mß╗Öt mß╗æc th├¼ mß║Ñt 7 tiß║┐ng ─æß║ºu; lß╗ìc hai mß╗æc
+ * (D-1 v├á D) th├¼ lß║Ñy THß╗¬A 7 tiß║┐ng cuß╗æi ΓÇö cß║ú hai ─æß╗üu sai tiß╗ün.
  *
- * Cách đúng: đổi sang ngày VN ngay trong SQL rồi so bằng. `datetime()` của SQLite
- * nhận CẢ HAI họ timestamp đang cùng tồn tại trong DB — 'YYYY-MM-DD HH:MM:SS'
- * (CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' (app) — nên một biểu thức
- * này phủ cả hai. Việt Nam cố định UTC+7, không DST nên `+7 hours` là hằng số.
+ * C├ích ─æ├║ng: ─æß╗òi sang ng├áy VN ngay trong SQL rß╗ôi so bß║▒ng. `datetime()` cß╗ºa SQLite
+ * nhß║¡n Cß║ó HAI hß╗ì timestamp ─æang c├╣ng tß╗ôn tß║íi trong DB ΓÇö 'YYYY-MM-DD HH:MM:SS'
+ * (CURRENT_TIMESTAMP) v├á ISO 'YYYY-MM-DDTHH:MM:SSZ' (app) ΓÇö n├¬n mß╗Öt biß╗âu thß╗⌐c
+ * n├áy phß╗º cß║ú hai. Viß╗çt Nam cß╗æ ─æß╗ïnh UTC+7, kh├┤ng DST n├¬n `+7 hours` l├á hß║▒ng sß╗æ.
  *
- * Đánh đổi: không dùng được index trên cột timestamp. Cách `LIKE` cũng vậy (tiền
- * tố có `%` nên index bị bỏ), nên không mất gì so với trước.
+ * ─É├ính ─æß╗òi: kh├┤ng d├╣ng ─æ╞░ß╗úc index tr├¬n cß╗Öt timestamp. C├ích `LIKE` c┼⌐ng vß║¡y (tiß╗ün
+ * tß╗æ c├│ `%` n├¬n index bß╗ï bß╗Å), n├¬n kh├┤ng mß║Ñt g├¼ so vß╗¢i tr╞░ß╗¢c.
  */
 function vnDayEquals(col: any, vnDay: string) {
   return sql`substr(datetime(${col}, '+7 hours'), 1, 10) = ${vnDay}`;
@@ -49,13 +49,13 @@ export interface DailySettlementFilter {
 
 export class DailySettlementService {
   /**
-   * Tạo báo cáo tổng hợp chốt ngày hội chợ & đối soát kiểm kê (Sprint 4).
+   * Tß║ío b├ío c├ío tß╗òng hß╗úp chß╗æt ng├áy hß╗Öi chß╗ú & ─æß╗æi so├ít kiß╗âm k├¬ (Sprint 4).
    */
   static async getDailyFairSettlement(filter: DailySettlementFilter, txOrDb: any = db) {
     const { warehouseId, sessionId } = filter;
     const targetDate = filter.date || businessDateOf(new Date());
 
-    // 1. Kiểm tra kho tồn tại
+    // 1. Kiß╗âm tra kho tß╗ôn tß║íi
     const whRows = await txOrDb
       .select()
       .from(warehouses)
@@ -63,11 +63,11 @@ export class DailySettlementService {
       .limit(1);
 
     if (whRows.length === 0) {
-      throw AppError.invalid(`Không tìm thấy kho ${warehouseId}`);
+      throw AppError.invalid(`Kh├┤ng t├¼m thß║Ñy kho ${warehouseId}`);
     }
     const warehouse = whRows[0];
 
-    // 2. Tra cứu các đơn hàng hợp lệ trong ngày tại kho
+    // 2. Tra cß╗⌐u c├íc ─æ╞ín h├áng hß╗úp lß╗ç trong ng├áy tß║íi kho
     const orderConditions = [
       eq(orders.warehouseId, warehouseId),
       eq(orders.status, 'COMPLETED'),
@@ -83,7 +83,7 @@ export class DailySettlementService {
       .from(orders)
       .where(and(...orderConditions));
 
-    // 3. Tính toán số liệu tài chính & cơ cấu thanh toán
+    // 3. T├¡nh to├ín sß╗æ liß╗çu t├ái ch├¡nh & c╞í cß║Ñu thanh to├ín
     let grossSales = 0;
     let totalDiscount = 0;
     let netSales = 0;
@@ -116,12 +116,12 @@ export class DailySettlementService {
     }
 
     const averageDiscountRate = grossSales > 0 ? totalDiscount / grossSales : 0;
-    const isDiscountRateWarning = averageDiscountRate > 0.20; // Cảnh báo nếu CK bình quân > 20%
+    const isDiscountRateWarning = averageDiscountRate > 0.20; // Cß║únh b├ío nß║┐u CK b├¼nh qu├ón > 20%
 
-    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%)
+    // 4. Tra cß╗⌐u danh s├ích ─æ╞ín duyß╗çt chiß║┐t khß║Ñu ─æß║╖c biß╗çt (>= 20%)
     const overCapOrders = dayOrders.filter((ord: any) => (ord.discountRate || 0) >= 0.2);
 
-    // Bổ sung thông tin phê duyệt từ discount_approval_requests nếu có
+    // Bß╗ò sung th├┤ng tin ph├¬ duyß╗çt tß╗½ discount_approval_requests nß║┐u c├│
     const approvalRows = await txOrDb
       .select()
       .from(discountApprovalRequests)
@@ -149,14 +149,21 @@ export class DailySettlementService {
         finalAmount: ord.finalAmount,
         createdAt: ord.createdAt,
         approvalMethod: appr?.approvalMethod || 'DIRECT_OVERRIDE',
-        approvedBy: appr?.approvedBy || 'Quản lý quầy',
+        approvedBy: appr?.approvedBy || 'Quß║ún l├╜ quß║ºy',
       };
     });
 
-    // 5. Đối soát ca két tiền (Cashbox Sessions)
+    // 5. ─Éß╗æi so├ít ca k├⌐t tiß╗ün (Cashbox Sessions)
+    //
+    // PHß║áM VI CA = c├íc ca C├ô Mß║╢T trong ng├áy nghiß╗çp vß╗Ñ D, tß╗⌐c mß╗ƒ kh├┤ng sau D v├á
+    // (c├▓n mß╗ƒ, hoß║╖c ─æ├│ng kh├┤ng tr╞░ß╗¢c D). Tr╞░ß╗¢c ─æ├óy lß╗ìc `opened_at Γêê D` ΓçÆ mß╗Öt ca
+    // mß╗ƒ 23:30 h├┤m tr╞░ß╗¢c rß╗ôi b├ín xuy├¬n nß╗¡a ─æ├¬m v├áo D biß║┐n mß║Ñt khß╗Åi b├ío c├ío D:
+    // doanh sß╗æ tiß╗ün mß║╖t trong ng├áy c├│ 400.000 nh╞░ng `expectedCashTotal` = 0, tß╗⌐c
+    // b├ío c├ío tß╗▒ m├óu thuß║½n vß╗¢i ch├¡nh d├▓ng doanh sß╗æ ngay cß║ính n├│.
     const sessionConditions = [
       eq(cashboxSessions.warehouseId, warehouseId),
-      vnDayEquals(cashboxSessions.openedAt, targetDate),
+      sql`substr(datetime(${cashboxSessions.openedAt}, '+7 hours'), 1, 10) <= ${targetDate}`,
+      sql`(${cashboxSessions.status} = 'OPEN' OR ${cashboxSessions.closedAt} IS NULL OR substr(datetime(${cashboxSessions.closedAt}, '+7 hours'), 1, 10) >= ${targetDate})`,
     ];
     if (sessionId) {
       sessionConditions.push(eq(cashboxSessions.id, sessionId));
@@ -167,35 +174,22 @@ export class DailySettlementService {
       .from(cashboxSessions)
       .where(and(...sessionConditions));
 
-    let openingCashTotal = 0;
-    let closingCashActualTotal = 0;
-    let expectedCashTotal = 0;
-    let hasOpenSession = false;
-    let openSessionCount = 0;
-
-    // Tiền mặt bán TRONG TỪNG CA, gom theo cashboxSessionId.
+    // Tiß╗ün mß║╖t thu TRONG Tß╗¬NG CA, gom theo cashboxSessionId.
     //
-    // Tiền mặt thu TRONG TỪNG CA, gom theo cashboxSessionId.
-    //
-    // KHÔNG dùng cột `totalCashSales`: đó là bản chốt lúc đóng ca nên LUÔN = 0
-    // khi ca còn mở ⇒ "tiền kỳ vọng" thấp hơn thực tế, đối chiếu ngay với dòng
-    // "doanh số tiền mặt" bên cạnh thì mâu thuẫn. Cùng định nghĩa đã dùng ở
+    // KH├öNG d├╣ng cß╗Öt `totalCashSales`: ─æ├│ l├á bß║ún chß╗æt l├║c ─æ├│ng ca n├¬n LU├öN = 0
+    // khi ca c├▓n mß╗ƒ ΓçÆ "tiß╗ün kß╗│ vß╗ìng" thß║Ñp h╞ín thß╗▒c tß║┐, ─æß╗æi chiß║┐u ngay vß╗¢i d├▓ng
+    // "doanh sß╗æ tiß╗ün mß║╖t" b├¬n cß║ính th├¼ m├óu thuß║½n. C├╣ng ─æß╗ïnh ngh─⌐a ─æ├ú d├╣ng ß╗ƒ
     // GET /api/pos/live-monitor (2026-09-29).
     //
-    // GIỚI HẠN ĐÃ BIẾT, ghi ra đây để không ai hiểu nhầm là đã xử lý xong:
-    // `dayOrders` lọc theo ngày nghiệp vụ, nên một ca MỞ từ hôm qua và bán xuyên
-    // nửa đêm sẽ không có mặt trong `dayOrders` ⇒ `openingCash` của ca đó không
-    // được cộng vào tổng. Sửa đúng cần lấy `sessions` theo
-    // `businessDateOf(openedAt) <= targetDate` và lấy tiền theo tập đơn của từng ca,
-    // không lấy từ `dayOrders` — việc này để riêng vì đụng đối soát két.
-    //
-    // GHI CHÚ: ca CLOSED cộng `s.expectedCash` (phạm vi CẢ CA), ca OPEN cộng
-    // `openingCash + tiền trong ngày` (phạm vi TRONG NGÀY). Hai phạm vi khác nhau
-    // cộng chung một tổng — xem lại khi chuẩn hoá đối soát két.
+    // ─Éß╗ïnh ngh─⌐a Mß╗ÿT cho mß╗ìi ca (─æ├ú bß╗Å kiß╗âu cß╗Öng chung hai phß║ím vi ß╗ƒ bß║ún c┼⌐):
+    //   kß╗│ vß╗ìng trong ng├áy D cß╗ºa mß╗Öt ca = tiß╗ün b├án giao ─æß║ºu ca + tiß╗ün mß║╖t b├ín
+    //   TRONG NG├ÇY D cß╗ºa ch├¡nh ca ─æ├│.
+    // Nhß╗¥ vß║¡y `expectedCashTotal` lu├┤n bß║▒ng Tß╗öNG c├íc d├▓ng `expectedCashLive` m├á
+    // UI hiß╗çn, v├á ca n├áo k├⌐o sang ng├áy mai c┼⌐ng kh├┤ng l├ám ng├áy D d├¡nh tiß╗ün mai.
     const cashBySession = new Map<string, number>();
     for (const ord of dayOrders as any[]) {
-      // So khớp case: dòng 82 dùng `(ord.paymentMethod || 'CASH').toUpperCase()`.
-      // Lệch case một chữ là mất tiền mặt khỏi két.
+      // So khß╗¢p case: d├▓ng 82 d├╣ng `(ord.paymentMethod || 'CASH').toUpperCase()`.
+      // Lß╗çch case mß╗Öt chß╗» l├á mß║Ñt tiß╗ün mß║╖t khß╗Åi k├⌐t.
       if ((ord.paymentMethod || 'CASH').toUpperCase() !== 'CASH') continue;
       if (!ord.cashboxSessionId) continue;
       cashBySession.set(
@@ -204,28 +198,59 @@ export class DailySettlementService {
       );
     }
 
-    for (const s of sessions) {
+    let openingCashTotal = 0;
+    let closingCashActualTotal = 0;
+    let expectedCashTotal = 0;
+    let hasOpenSession = false;
+    let openSessionCount = 0;
+    // Sß╗æ ca C├ô mß║╖t trong ng├áy m├á ta KH├öNG ─Éß╗ª C─éN Cß╗¿ ─æß╗â kß║┐t luß║¡n lß╗çch k├⌐t.
+    let unreconcilableCount = 0;
+    let canReconcile = sessions.length > 0;
+
+    const sessionRows = sessions.map((s: any) => {
+      const dayExpected = (s.openingCash || 0) + (cashBySession.get(s.id) || 0);
       openingCashTotal += s.openingCash || 0;
+      expectedCashTotal += dayExpected;
+
+      const counted = s.status !== 'OPEN' && s.closingCashActual !== null;
+      if (counted) closingCashActualTotal += s.closingCashActual;
+
+      // Sß╗æ tiß╗ün thß╗▒c ─æß║┐m (l├║c chß╗æt ca) v├á sß╗æ kß╗│ vß╗ìng trong ng├áy phß║úi C├ÖNG PHß║áM
+      // VI th├¼ mß╗¢i d├ím kß║┐t luß║¡n lß╗çch. Kh├┤ng c├╣ng phß║ím vi xß║úy ra khi:
+      //  ┬╖ ca ch╞░a ai ─æß║┐m (chß╗æt tß╗▒ ─æß╗Öng) ΓçÆ KH├öNG biß║┐t c├▓n bao nhi├¬u, tuyß╗çt ─æß╗æi
+      //    kh├┤ng ─æ╞░ß╗úc bß╗ïa ra "Thiß║┐u k├⌐t: -X" (─æ├ú xß║úy ra: ca ─æ├│ng tß╗▒ ─æß╗Öng cho
+      //    `closingCashActual = NULL` bß╗ï cß╗Öng th├ánh 0 ΓçÆ b├ío thiß║┐u nguy├¬n ca).
+      //  ┬╖ ca c├│ ─æ╞ín v╞░ß╗út bi├¬n ng├áy D (─æß╗ông bß╗Ö offline / nhß║¡p lß║íi) ΓçÆ `expected_cash`
+      //    ghi l├║c chß╗æt phß╗º cß║ú ─æ╞ín ngo├ái ng├áy D.
+      const sameScope =
+        counted &&
+        Number.isFinite(Number(s.expectedCash)) &&
+        Math.abs(Number(s.expectedCash) - dayExpected) <= 0.01;
+      if (!sameScope) {
+        unreconcilableCount += 1;
+        canReconcile = false;
+      }
       if (s.status === 'OPEN') {
         hasOpenSession = true;
         openSessionCount += 1;
-        expectedCashTotal += (s.openingCash || 0) + (cashBySession.get(s.id) || 0);
-      } else {
-        closingCashActualTotal += s.closingCashActual || 0;
-        expectedCashTotal += s.expectedCash || 0;
       }
-    }
+      return { s, dayExpected, reconcilable: sameScope };
+    });
 
-    // `cashVariance` giữ nguyên contract (null khi còn ca mở) nhưng KHÔNG được
-    // để dòng đối soát biến mất âm thầm. Hai trường mới cho UI biết cần nói
-    // gì: số ca còn mở, và "chưa thể đối soát" thay vì trắng trơn.
-    const cashVariance = sessions.length > 0 && !hasOpenSession
-      ? closingCashActualTotal - expectedCashTotal
-      : null;
+    // `cashVariance` giß╗» nguy├¬n contract (null khi ch╞░a ─æß╗º c─ân cß╗⌐) nh╞░ng KH├öNG
+    // ─æ╞░ß╗úc ─æß╗â d├▓ng ─æß╗æi so├ít biß║┐n mß║Ñt ├óm thß║ºm. Hai tr╞░ß╗¥ng mß╗¢i cho UI biß║┐t cß║ºn
+    // n├│i g├¼: sß╗æ ca c├▓n mß╗ƒ, v├á sß╗æ ca kh├┤ng thß╗â ─æß╗æi so├ít.
+    const cashVariance = canReconcile ? closingCashActualTotal - expectedCashTotal : null;
 
-    // 6. Top ấn phẩm bán chạy trong ngày tại kho
+    // 6. Top ß║Ñn phß║⌐m b├ín chß║íy trong ng├áy tß║íi kho
     const orderIds = dayOrders.map((o: any) => o.id);
     let topSellers: any[] = [];
+    // L╞░ß╗úng b├ín theo ß║Ñn bß║ún TR├èN TO├ÇN Bß╗ÿ ─æ╞ín trong ng├áy ΓÇö KH├öNG phß║úi tr├¬n 10 d├▓ng
+    // `topSellers`. Tr╞░ß╗¢c ─æ├óy `soldMap` dß╗▒ng lß║íi tß╗½ `topSellers` ─æ├ú `.slice(0,10)`
+    // ΓçÆ mß╗ìi ß║Ñn bß║ún ngo├ái top 10 hiß╗çn `soldToday = 0` trong bß║úng ─æß╗æi so├ít tß╗ôn, d├╣
+    // n├│ c├│ b├ín thß║¡t. ─É├óy l├á cß╗Öt "─É├ú b├ín POS" trong bi├¬n bß║ún kiß╗âm k├¬ b├án giao cho
+    // kß║┐ to├ín ΓçÆ b├ío thiß║┐u h├áng, kh├┤ng phß║úi lß╗ùi l├ám tr├▓n.
+    const soldQtyAll = new Map<string, number>();
 
     if (orderIds.length > 0) {
       const lineItems = await txOrDb
@@ -246,7 +271,7 @@ export class DailySettlementService {
       const sellerAgg = new Map<string, any>();
       for (const item of lineItems) {
         const edId = item.editionId;
-        const title = item.editionTitle || item.workTitle || item.editionCode || 'Ấn phẩm';
+        const title = item.editionTitle || item.workTitle || item.editionCode || 'ß║ñn phß║⌐m';
         if (!sellerAgg.has(edId)) {
           sellerAgg.set(edId, {
             editionId: edId,
@@ -260,6 +285,7 @@ export class DailySettlementService {
         const record = sellerAgg.get(edId);
         record.soldCopies += item.quantity;
         record.soldRevenue += item.totalAmount;
+        soldQtyAll.set(edId, (soldQtyAll.get(edId) || 0) + item.quantity);
       }
 
       topSellers = Array.from(sellerAgg.values())
@@ -267,7 +293,7 @@ export class DailySettlementService {
         .slice(0, 10);
     }
 
-    // 7. Đối soát tồn sách hội chợ (Stock Reconciliation)
+    // 7. ─Éß╗æi so├ít tß╗ôn s├ích hß╗Öi chß╗ú (Stock Reconciliation)
     const balances = await txOrDb
       .select({
         editionId: stockBalances.editionId,
@@ -288,10 +314,7 @@ export class DailySettlementService {
         )
       );
 
-    const soldMap = new Map<string, number>();
-    for (const seller of topSellers) {
-      soldMap.set(seller.editionId, seller.soldCopies);
-    }
+    const soldMap = soldQtyAll;
 
     const inventoryReconciliation = balances
       .filter((b: any) => b.physicalQuantity > 0 || soldMap.has(b.editionId))
@@ -350,25 +373,27 @@ export class DailySettlementService {
         expectedCashTotal,
         closingCashActualTotal,
         cashVariance,
-        // Ca còn mở ⇒ chưa thể đối soát tiền két. UI dùng 2 trường này để hiện
-        // "Còn N ca chưa đóng — chưa thể đối soát" thay vì ẩn dòng chênh lệch.
-        cashVariancePending: hasOpenSession,
+        // Ca c├▓n mß╗ƒ, hoß║╖c ca ch╞░a ai ─æß║┐m k├⌐t ΓçÆ ch╞░a thß╗â ─æß╗æi so├ít tiß╗ün k├⌐t. UI d├╣ng
+        // c├íc tr╞░ß╗¥ng n├áy ─æß╗â hiß╗çn "C├▓n N ca ch╞░a ─æ├│ng / M ca ch╞░a c├│ tiß╗ün thß╗▒c ─æß║┐m
+        // ΓÇö ch╞░a thß╗â ─æß╗æi so├ít" thay v├¼ ß║⌐n d├▓ng ch├¬nh lß╗çch hoß║╖c bß╗ïa ra con sß╗æ.
+        cashVariancePending: !canReconcile,
         openSessionCount,
-        sessions: sessions.map((s: any) => ({
+        unreconcilableSessionCount: unreconcilableCount,
+        sessions: sessionRows.map(({ s, dayExpected, reconcilable }: any) => ({
           id: s.id,
           cashierId: s.cashierId,
           openingCash: s.openingCash,
           closingCashActual: s.closingCashActual,
           expectedCash: s.expectedCash,
           cashDiscrepancy: s.cashDiscrepancy,
-          // Ca còn MỞ thì `expectedCash` trong DB là NULL (chỉ ghi lúc chốt ca), nên
-          // không hiển thị được. `expectedCashLive` là con số đúng ngay lúc này:
-          // bàn giao đầu ca + tiền mặt đã bán trong chính ca đó. Đây cũng là con
-          // số mà tổng `expectedCashTotal` cộng lên.
-          expectedCashLive:
-            s.status === 'OPEN'
-              ? (s.openingCash || 0) + (cashBySession.get(s.id) || 0)
-              : (s.expectedCash ?? 0),
+          // Ca c├▓n Mß╗₧ th├¼ `expectedCash` trong DB l├á NULL (chß╗ë ghi l├║c chß╗æt ca), n├¬n
+          // kh├┤ng hiß╗ân thß╗ï ─æ╞░ß╗úc. `expectedCashLive` l├á con sß╗æ ─æ├║ng ngay l├║c n├áy v├á
+          // theo ─æ├║ng Mß╗ÿT ─æß╗ïnh ngh─⌐a cho mß╗ìi ca (b├án giao ─æß║ºu ca + tiß╗ün mß║╖t b├ín
+          // trong ng├áy) ΓÇö ─æ├óy c┼⌐ng l├á con sß╗æ m├á tß╗òng `expectedCashTotal` cß╗Öng l├¬n.
+          expectedCashLive: dayExpected,
+          // false = ch╞░a ─æß╗º c─ân cß╗⌐ ─æß╗æi chiß║┐u ca n├áy (ch╞░a ─æß║┐m tiß╗ün, hoß║╖c sß╗æ ─æß║┐m
+          // v├á sß╗æ kß╗│ vß╗ìng kh├┤ng c├╣ng phß║ím vi ng├áy).
+          reconcilable,
           status: s.status,
           notes: s.notes,
           openedAt: s.openedAt,
@@ -384,12 +409,12 @@ export class DailySettlementService {
     };
   }
 
-  /** Khoá duy nhất của bản ghi chốt ngày: đúng 1 lần / ngày / kho. */
+  /** Kho├í duy nhß║Ñt cß╗ºa bß║ún ghi chß╗æt ng├áy: ─æ├║ng 1 lß║ºn / ng├áy / kho. */
   static dayCloseKey(warehouseId: string, date: string): string {
     return `day-close:${warehouseId}:${date}`;
   }
 
-  /** Đọc bản ghi chốt ngày đã có (null nếu ngày đó chưa chốt). */
+  /** ─Éß╗ìc bß║ún ghi chß╗æt ng├áy ─æ├ú c├│ (null nß║┐u ng├áy ─æ├│ ch╞░a chß╗æt). */
   static async getDayCloseRecord(warehouseId: string, date: string, txOrDb: any = db) {
     return (await DailySettlementService.readDayClose(warehouseId, date, txOrDb))?.res ?? null;
   }
@@ -409,15 +434,15 @@ export class DailySettlementService {
   }
 
   /**
-   * CHỐT NGÀY — đánh dấu ngày nghiệp vụ đã quyết toán, đúng 1 lần / ngày / kho.
+   * CHß╗ÉT NG├ÇY ΓÇö ─æ├ính dß║Ñu ng├áy nghiß╗çp vß╗Ñ ─æ├ú quyß║┐t to├ín, ─æ├║ng 1 lß║ºn / ng├áy / kho.
    *
-   * - Idempotent: gọi lại y hệt trả về đúng bản ghi cũ (isDuplicate), không
-   *   ghi thêm bản ghi/audit. Gọi lại với nội dung khác → từ chối, vì một ngày
-   *   không thể có hai bản chốt khác nhau.
-   * - Không bịa tiền: ca nào không ai đếm thì closingCashActual = NULL và bản
-   *   ghi ghi rõ cashVerification = 'UNVERIFIED'.
-   * - Không bỏ rơi đơn: đơn chờ thanh toán chặn chốt ngày; đơn tạo offline
-   *   chưa đồng bộ được liệt kê trong unsettledOrders chứ không bị giấu đi.
+   * - Idempotent: gß╗ìi lß║íi y hß╗çt trß║ú vß╗ü ─æ├║ng bß║ún ghi c┼⌐ (isDuplicate), kh├┤ng
+   *   ghi th├¬m bß║ún ghi/audit. Gß╗ìi lß║íi vß╗¢i nß╗Öi dung kh├íc ΓåÆ tß╗½ chß╗æi, v├¼ mß╗Öt ng├áy
+   *   kh├┤ng thß╗â c├│ hai bß║ún chß╗æt kh├íc nhau.
+   * - Kh├┤ng bß╗ïa tiß╗ün: ca n├áo kh├┤ng ai ─æß║┐m th├¼ closingCashActual = NULL v├á bß║ún
+   *   ghi ghi r├╡ cashVerification = 'UNVERIFIED'.
+   * - Kh├┤ng bß╗Å r╞íi ─æ╞ín: ─æ╞ín chß╗¥ thanh to├ín chß║╖n chß╗æt ng├áy; ─æ╞ín tß║ío offline
+   *   ch╞░a ─æß╗ông bß╗Ö ─æ╞░ß╗úc liß╗çt k├¬ trong unsettledOrders chß╗⌐ kh├┤ng bß╗ï giß║Ñu ─æi.
    */
   static async closeDay(
     params: {
@@ -431,7 +456,7 @@ export class DailySettlementService {
     txOrDb: any = db
   ) {
     const warehouseId = params.warehouseId;
-    if (!warehouseId) throw AppError.invalid('Thiếu kho (warehouseId).');
+    if (!warehouseId) throw AppError.invalid('Thiß║┐u kho (warehouseId).');
     const date = params.date || businessDateOf(new Date());
     const key = DailySettlementService.dayCloseKey(warehouseId, date);
     const fingerprint = JSON.stringify({
@@ -445,20 +470,20 @@ export class DailySettlementService {
     if (prior) {
       if (prior.fp === fingerprint) return { ...prior.res, isDuplicate: true as const };
       throw AppError.idempotency(
-        `Ngày ${date} tại kho ${warehouseId} đã chốt rồi (bản ghi ${key}). Không thể chốt lại với nội dung khác.`
+        `Ng├áy ${date} tß║íi kho ${warehouseId} ─æ├ú chß╗æt rß╗ôi (bß║ún ghi ${key}). Kh├┤ng thß╗â chß╗æt lß║íi vß╗¢i nß╗Öi dung kh├íc.`
       );
     }
 
     return withDbRetry(() =>
       db.transaction(async (tx) => {
-        // Đọc lại trong transaction: đua hai lần chốt ngày thì chỉ một lần thắng.
+        // ─Éß╗ìc lß║íi trong transaction: ─æua hai lß║ºn chß╗æt ng├áy th├¼ chß╗ë mß╗Öt lß║ºn thß║»ng.
         const raced = await tx.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, key)).limit(1);
         if (raced.length > 0) {
           let env: any = null;
           try { env = JSON.parse(raced[0].responseJson || 'null'); } catch { env = null; }
           if (env?.fp === fingerprint && env?.res) return { ...env.res, isDuplicate: true as const };
           throw AppError.idempotency(
-            `Ngày ${date} tại kho ${warehouseId} đã chốt rồi (bản ghi ${key}). Không thể chốt lại với nội dung khác.`
+            `Ng├áy ${date} tß║íi kho ${warehouseId} ─æ├ú chß╗æt rß╗ôi (bß║ún ghi ${key}). Kh├┤ng thß╗â chß╗æt lß║íi vß╗¢i nß╗Öi dung kh├íc.`
           );
         }
 
@@ -467,14 +492,14 @@ export class DailySettlementService {
           .from(cashboxSessions)
           .where(and(eq(cashboxSessions.warehouseId, warehouseId), eq(cashboxSessions.status, 'OPEN')));
 
-        // Chỉ các ca thuộc ngày nghiệp vụ <= ngày đang chốt mới liên quan.
-        // opened_at đọc qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP là UTC
-        // không múi giờ, đọc bằng new Date() lệch 7 tiếng ở GMT+7.
+        // Chß╗ë c├íc ca thuß╗Öc ng├áy nghiß╗çp vß╗Ñ <= ng├áy ─æang chß╗æt mß╗¢i li├¬n quan.
+        // opened_at ─æß╗ìc qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP l├á UTC
+        // kh├┤ng m├║i giß╗¥, ─æß╗ìc bß║▒ng new Date() lß╗çch 7 tiß║┐ng ß╗ƒ GMT+7.
         //
-        // KHÔNG dùng `parseDbTimestamp(...)!`: hàm trả null khi timestamp hỏng (dữ
-        // liệu cũ / sửa tay), và non-null assertion ở đây biến null thành TypeError
-        // giữa transaction — lỗi khó hiểu, có thể làm hỏng cả lần chốt ngày. Ca có
-        // opened_at hỏng thì bỏ qua, y như các guard khác trong codebase.
+        // KH├öNG d├╣ng `parseDbTimestamp(...)!`: h├ám trß║ú null khi timestamp hß╗Ång (dß╗»
+        // liß╗çu c┼⌐ / sß╗¡a tay), v├á non-null assertion ß╗ƒ ─æ├óy biß║┐n null th├ánh TypeError
+        // giß╗»a transaction ΓÇö lß╗ùi kh├│ hiß╗âu, c├│ thß╗â l├ám hß╗Ång cß║ú lß║ºn chß╗æt ng├áy. Ca c├│
+        // opened_at hß╗Ång th├¼ bß╗Å qua, y nh╞░ c├íc guard kh├íc trong codebase.
         const relevant: any[] = openSessions.filter((s: any) => {
           if (!s.openedAt) return false;
           const opened = parseDbTimestamp(s.openedAt);
@@ -490,7 +515,7 @@ export class DailySettlementService {
               sessionId: s.id,
               actorRole: params.actorRole,
               actorId: params.actorId,
-              reason: `Chốt ngày ${date} tự động cho ca quá giờ.`,
+              reason: `Chß╗æt ng├áy ${date} tß╗▒ ─æß╗Öng cho ca qu├í giß╗¥.`,
             },
             tx
           );
@@ -501,8 +526,8 @@ export class DailySettlementService {
           .select({ id: cashboxSessions.id, openedAt: cashboxSessions.openedAt })
           .from(cashboxSessions)
           .where(and(eq(cashboxSessions.warehouseId, warehouseId), eq(cashboxSessions.status, 'OPEN')));
-        // opened_at hỏng → KHÔNG giấu: coi như chặn chốt ngày để người có mặt
-        // xử lý, thay vì đóng ngày khi chưa biết ca đó thuộc ngày nào.
+        // opened_at hß╗Ång ΓåÆ KH├öNG giß║Ñu: coi nh╞░ chß║╖n chß╗æt ng├áy ─æß╗â ng╞░ß╗¥i c├│ mß║╖t
+        // xß╗¡ l├╜, thay v├¼ ─æ├│ng ng├áy khi ch╞░a biß║┐t ca ─æ├│ thuß╗Öc ng├áy n├áo.
         const blocking = stillOpen.filter((s: any) => {
           const opened = parseDbTimestamp(s.openedAt);
           if (opened === null) return true;
@@ -510,16 +535,16 @@ export class DailySettlementService {
         });
         if (blocking.length > 0) {
           throw AppError.conflict(
-            `Chưa thể chốt ngày ${date} tại kho ${warehouseId}: còn ${blocking.length} ca két chưa chốt ` +
-              `(${blocking.map((b: any) => b.id).join(', ')}). Vui lòng chốt ca trước khi chốt ngày.`
+            `Ch╞░a thß╗â chß╗æt ng├áy ${date} tß║íi kho ${warehouseId}: c├▓n ${blocking.length} ca k├⌐t ch╞░a chß╗æt ` +
+              `(${blocking.map((b: any) => b.id).join(', ')}). Vui l├▓ng chß╗æt ca tr╞░ß╗¢c khi chß╗æt ng├áy.`
           );
         }
 
-        // P2 SỬA 2026-09-29: chỉ đơn PENDING **CÒN HẠN** mới chặn chốt ngày.
-        // Trước đây chặn mọi dòng PENDING kể cả đã quá hạn 25 giờ ⇒ một đơn
-        // chuyển khoản quầy hết hạn 30 phút chặn vô hạn, không tự giải phóng
-        // được. Dùng đúng quy tắc hạn của OrderService (payment_expires_at nếu
-        // có, không thì TTL 48h) thay vì so trạng thái thô.
+        // P2 Sß╗¼A 2026-09-29: chß╗ë ─æ╞ín PENDING **C├ÆN Hß║áN** mß╗¢i chß║╖n chß╗æt ng├áy.
+        // Tr╞░ß╗¢c ─æ├óy chß║╖n mß╗ìi d├▓ng PENDING kß╗â cß║ú ─æ├ú qu├í hß║ín 25 giß╗¥ ΓçÆ mß╗Öt ─æ╞ín
+        // chuyß╗ân khoß║ún quß║ºy hß║┐t hß║ín 30 ph├║t chß║╖n v├┤ hß║ín, kh├┤ng tß╗▒ giß║úi ph├│ng
+        // ─æ╞░ß╗úc. D├╣ng ─æ├║ng quy tß║»c hß║ín cß╗ºa OrderService (payment_expires_at nß║┐u
+        // c├│, kh├┤ng th├¼ TTL 48h) thay v├¼ so trß║íng th├íi th├┤.
         const pendingRows = await tx
           .select({
             id: orders.id,
@@ -532,19 +557,19 @@ export class DailySettlementService {
             and(
             eq(orders.warehouseId, warehouseId),
             eq(orders.status, 'PENDING_CONFIRMATION'),
-            // Ngày VIỆT NAM, dùng đúng helper của chính file này. Trước đây là
-            // `like(createdAt, date%)` — tức so NGÀY UTC, lệch 7 tiếng.
-            // Hậu quả: đơn chuyển khoản 00:00–07:00 giờ VN của ngày đang chốt
-            // rơi vào ngày UTC HÔM TRƯỚC nên VÔ HÌNH ở đây, và ca có thể bị
-            // chốt trong khi vẫn còn đơn chờ thanh toán chưa xong.
+            // Ng├áy VIß╗åT NAM, d├╣ng ─æ├║ng helper cß╗ºa ch├¡nh file n├áy. Tr╞░ß╗¢c ─æ├óy l├á
+            // `like(createdAt, date%)` ΓÇö tß╗⌐c so NG├ÇY UTC, lß╗çch 7 tiß║┐ng.
+            // Hß║¡u quß║ú: ─æ╞ín chuyß╗ân khoß║ún 00:00ΓÇô07:00 giß╗¥ VN cß╗ºa ng├áy ─æang chß╗æt
+            // r╞íi v├áo ng├áy UTC H├öM TR╞»ß╗ÜC n├¬n V├ö H├îNH ß╗ƒ ─æ├óy, v├á ca c├│ thß╗â bß╗ï
+            // chß╗æt trong khi vß║½n c├▓n ─æ╞ín chß╗¥ thanh to├ín ch╞░a xong.
             vnDayEquals(orders.createdAt, date)
             )
           );
         const livePending = pendingRows.filter((o: any) => !OrderService.isPendingExpired(o));
         if (livePending.length > 0) {
           throw AppError.conflict(
-            `Chưa thể chốt ngày ${date}: còn ${livePending.length} đơn chờ thanh toán ` +
-              `(${livePending.map((o: any) => o.orderCode).join(', ')}). Hãy xác nhận hoặc hủy trước.`
+            `Ch╞░a thß╗â chß╗æt ng├áy ${date}: c├▓n ${livePending.length} ─æ╞ín chß╗¥ thanh to├ín ` +
+              `(${livePending.map((o: any) => o.orderCode).join(', ')}). H├úy x├íc nhß║¡n hoß║╖c hß╗ºy tr╞░ß╗¢c.`
           );
         }
 
@@ -600,13 +625,13 @@ export class DailySettlementService {
             actorId: params.actorId,
             resource: '/api/pos/daily-settlement',
             details:
-              `Chốt ngày ${date} tại kho ${warehouseId}: doanh thu thuần ${record.netSales} đ, ` +
-              `${record.totalOrdersCount} đơn. Kiểm kê tiền mặt: ${cashVerification}` +
+              `Chß╗æt ng├áy ${date} tß║íi kho ${warehouseId}: doanh thu thuß║ºn ${record.netSales} ─æ, ` +
+              `${record.totalOrdersCount} ─æ╞ín. Kiß╗âm k├¬ tiß╗ün mß║╖t: ${cashVerification}` +
               (unverifiedSessions.length > 0
-                ? ` — các ca ${unverifiedSessions.join(', ')} KHÔNG có số tiền thực đếm nên chênh lệch KHÔNG xác minh.`
+                ? ` ΓÇö c├íc ca ${unverifiedSessions.join(', ')} KH├öNG c├│ sß╗æ tiß╗ün thß╗▒c ─æß║┐m n├¬n ch├¬nh lß╗çch KH├öNG x├íc minh.`
                 : '.') +
               (record.unsettledOrders.length > 0
-                ? ` Đơn chưa quyết toán (không bị bỏ rơi): ${record.unsettledOrders.map((o: any) => o.orderCode).join(', ')}.`
+                ? ` ─É╞ín ch╞░a quyß║┐t to├ín (kh├┤ng bß╗ï bß╗Å r╞íi): ${record.unsettledOrders.map((o: any) => o.orderCode).join(', ')}.`
                 : '')
                 .slice(0, 500),
             ipAddress: 'local',

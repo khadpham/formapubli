@@ -1,6 +1,6 @@
 import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like, inArray } from 'drizzle-orm';
-import { businessDateOf, VN_UTC_OFFSET_MIN } from './order.service';
+import { businessDateOf, createdAtBetween, VN_UTC_OFFSET_MIN } from './order.service';
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
 // (orders/order_items/ledger). Không copy ngày→tuần→tháng, không bảng mới.
@@ -11,30 +11,26 @@ export interface DateRange {
 }
 
 /**
- * So sánh mốc thời gian AN TOÀN cho cột text đang chứa CẢ HAI họ timestamp.
+/**
+ * So khớp ngày nghiệp vụ VIỆT NAM cho mọi truy vấn báo cáo ở đây.
  *
- * Mọi cột thời gian trong CSDL đều là text và đang tồn tại song song:
- *   - SQLite `CURRENT_TIMESTAMP` -> 'YYYY-MM-DD HH:mm:ss'   (dùng khi app KHÔNG
- *     truyền createdAt, ví dụ SponsorshipService.draw tại sponsorship.service.ts:113)
- *   - ISO của app               -> 'YYYY-MM-DDTHH:mm:ss.sssZ' (order.service.ts:563)
+ * Nguyên nhân gốc (3 agent review độc lập đều tìm ra ở các file khác nhau):
+ * cột thời gian trong CSDL là `text` và đang chứa SONG SONG hai họ timestamp —
+ * SQLite `CURRENT_TIMESTAMP` sinh `'YYYY-MM-DD HH:mm:ss'`, còn app ghi ISO
+ * `'YYYY-MM-DDTHH:mm:ss.sssZ'`. So CHUỖI THÔ giữa hai họ là vô nghĩa, vì
+ * byte 0x54 ('T') > 0x20 (' '):
+ *   - `lte(created_at, '2026-11-10')` loại mất MỌI đơn sau 00:00 ngày đó,
+ *   - `gte(created_at, '2026-11-10')` loại mất 7 tiếng đầu ngày.
+ * Đo thật trên một ngày có dữ liệu: báo cáo trả 0 đơn / 0 đ trong khi sổ doanh
+ * số cùng ngày trả đúng — hai báo cáo, một dữ liệu, hai con số.
  *
- * So CHUỖI THÔ giữa hai họ là vô nghĩa: byte 0x20 (' ') < 0x54 ('T') nên
- *   - mọi dòng ISO trong ngày đều ">= cutoff" dù thực ra đã qua mốc,
- *   - mọi dòng SQLite lại luôn "<= cutoff" dù thực ra còn trong kỳ.
- * `datetime()` của SQLite chuẩn hoá được cả hai họ về cùng một định dạng.
- * Chuẩn này khớp gotcha 7 trong docs/superpowers/plans/2026-09-25-handoff-state.md.
+ * Dùng lại `createdAtBetween` của `order.service` (helper ĐÃ CÓ sẵn) thay vì
+ * viết lần thứ ba. Nó tự phân biệt ngày trần (so ngày nghiệp vụ +7 giờ) với mốc
+ * ISO đầy đủ (so mốc UTC).
  */
-function tsGte(col: any, bound: string) {
-  return sql`datetime(${col}) >= datetime(${bound})`;
-}
-function tsLte(col: any, bound: string) {
-  return sql`datetime(${col}) <= datetime(${bound})`;
-}
-
 function rangeConds(table: typeof orders, range: DateRange) {
   const conds = [eq(table.status, 'COMPLETED')];
-  if (range.startDate) conds.push(tsGte(table.createdAt, range.startDate));
-  if (range.endDate) conds.push(tsLte(table.createdAt, range.endDate));
+  conds.push(...createdAtBetween(table.createdAt, range.startDate, range.endDate));
   return and(...conds);
 }
 
@@ -92,7 +88,10 @@ export class AnalyticsService {
         })
         .from(orderItems)
         .innerJoin(orders, eq(orderItems.orderId, orders.id))
-        .where(and(eq(orders.status, 'COMPLETED'), tsGte(orders.createdAt, from), tsLte(orders.createdAt, to)))
+        // Cửa sổ tuần là MỐC UTC (`mondayOf().toISOString()`) nên `createdAtBetween`
+        // tự dùng nhánh so mốc UTC. Không được so chuỗi thô: cột này có cả dòng
+        // SQLite (' ') lẫn dòng ISO ('T'), mà 'T' > ' ' nên so thô là sai.
+        .where(and(eq(orders.status, 'COMPLETED'), ...createdAtBetween(orders.createdAt, from, to)))
         .groupBy(orderItems.editionId);
       const map = new Map<string, { qty: number; revenue: number }>();
       for (const r of rows) map.set(r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) });
@@ -129,6 +128,7 @@ export class AnalyticsService {
   /** Ký gửi đa điểm: mỗi kho wh-consign-* đang giữ bao nhiêu + đã bán kỳ này. */
   static async consignment(range: DateRange = {}) {
     const whs = await db.select().from(warehouses).where(like(warehouses.id, 'wh-consign-%'));
+<<<<<<< HEAD
     if (whs.length === 0) return [];
     // Số truy vấn cố định (3) bất kể bao nhiêu kho ký gửi và bao nhiêu SKU.
     // Trước đây: mỗi kho × mỗi dòng tồn lại một SELECT editions ⇒ 3 kho × 60 SKU
@@ -145,8 +145,7 @@ export class AnalyticsService {
       .where(inArray(stockBalances.warehouseId, whs.map((w) => w.id)));
 
     const soldConds = [inArray(inventoryLedger.warehouseId, whs.map((w) => w.id)), eq(inventoryLedger.eventType, 'CONSIGNMENT_SOLD')];
-    if (range.startDate) soldConds.push(tsGte(inventoryLedger.recordedAt, range.startDate));
-    if (range.endDate) soldConds.push(tsLte(inventoryLedger.recordedAt, range.endDate));
+    soldConds.push(...createdAtBetween(inventoryLedger.recordedAt, range.startDate, range.endDate));
     const soldRows = await db
       .select({
         warehouseId: inventoryLedger.warehouseId,
@@ -194,9 +193,8 @@ export class AnalyticsService {
       sql`${orders.channel} != 'SPONSORSHIP'`,
       sql`${orders.finalAmount} > 0`,
     ];
-    if (range.startDate) conds.push(tsGte(orders.createdAt, range.startDate));
-    if (range.endDate) conds.push(tsLte(orders.createdAt, range.endDate));
     if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    conds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
     const rows = await db
       .select({
         editionId: orderItems.editionId,
@@ -231,8 +229,7 @@ export class AnalyticsService {
   static async cashflow(range: DateRange = {}) {
     const channels = await this.byChannel(range);
     const codConds = [eq(orders.status, 'COMPLETED')];
-    if (range.startDate) codConds.push(tsGte(orders.createdAt, range.startDate));
-    if (range.endDate) codConds.push(tsLte(orders.createdAt, range.endDate));
+    codConds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
     const codRows = await db
       .select({ codStatus: orders.codStatus, total: sql<number>`COALESCE(SUM(${orders.codAmount}), 0)` })
       .from(orders)
@@ -245,8 +242,7 @@ export class AnalyticsService {
       if (r.codStatus === 'RECEIVED') codReceived = Number(r.total || 0);
     }
     const spfConds = [];
-    if (range.startDate) spfConds.push(tsGte(sponsorshipDrawdowns.createdAt, range.startDate));
-    if (range.endDate) spfConds.push(tsLte(sponsorshipDrawdowns.createdAt, range.endDate));
+    spfConds.push(...createdAtBetween(sponsorshipDrawdowns.createdAt, range.startDate, range.endDate));
     const spfRows = await db
       .select({
         value: sql<number>`COALESCE(SUM(${sponsorshipDrawdowns.drawnValue}), 0)`,
@@ -257,8 +253,7 @@ export class AnalyticsService {
     const sponsorshipDrawnValue = Number(spfRows[0]?.value || 0);
     const sponsorshipDrawnQty = Number(spfRows[0]?.qty || 0);
     const refundConds = [eq(returnOrders.status, 'COMPLETED')];
-    if (range.startDate) refundConds.push(tsGte(returnOrders.createdAt, range.startDate));
-    if (range.endDate) refundConds.push(tsLte(returnOrders.createdAt, range.endDate));
+    refundConds.push(...createdAtBetween(returnOrders.createdAt, range.startDate, range.endDate));
     const refundRows = await db
       .select({ total: sql<number>`COALESCE(SUM(${returnOrders.refundAmount}), 0)` })
       .from(returnOrders)

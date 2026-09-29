@@ -7,20 +7,27 @@ import { UserRole } from '@/lib/roles';
 export function BundleRoyaltyPanels({ currentRole }: { currentRole: UserRole }) {
   const [bundles, setBundles] = useState<any[]>([]);
   const [royalties, setRoyalties] = useState<any[]>([]);
-  const [royaltyBlocked, setRoyaltyBlocked] = useState(false);
+  // Phân biệt "bị chặn quyền" với "tải lỗi" và "chưa có dữ liệu". Trước đây mọi
+  // lỗi (403, 500, mất mạng) đều rơi vào `catch` và hiện "bị chặn 403" — một
+  // chẩn đoán sai khiến người dùng đi tìm vấn đề quyền trong khi server đã chết.
+  const [bundleError, setBundleError] = useState<string | null>(null);
+  const [royaltyError, setRoyaltyError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/bundles')
       .then((r) => r.json())
-      .then((d) => d.success && setBundles(d.data || []))
-      .catch(() => {});
+      .then((d) => {
+        if (d.success) setBundles(d.data || []);
+        else setBundleError(d.error || 'Không tải được danh sách combo.');
+      })
+      .catch(() => setBundleError('Không kết nối được máy chủ — kiểm tra mạng rồi tải lại trang.'));
     fetch('/api/royalties?lifecycle=ACTIVE', { headers: { 'x-formapubli-role': currentRole } })
       .then((r) => r.json())
       .then((d) => {
         if (d.success) setRoyalties(d.data || []);
-        else setRoyaltyBlocked(true);
+        else setRoyaltyError(d.error || 'Không tải được danh sách hợp đồng bản quyền.');
       })
-      .catch(() => setRoyaltyBlocked(true));
+      .catch(() => setRoyaltyError('Không kết nối được máy chủ — kiểm tra mạng rồi tải lại trang.'));
   }, [currentRole]);
 
   return (
@@ -31,7 +38,9 @@ export function BundleRoyaltyPanels({ currentRole }: { currentRole: UserRole }) 
           <h3 className="text-sm font-extrabold text-slate-900">Combo / Boxset đang bán</h3>
           <span className="ml-auto text-[10px] text-slate-400">read-only • bottleneck ở POS sprint sau</span>
         </div>
-        {bundles.length === 0 ? (
+        {bundleError ? (
+          <p className="p-4 text-xs text-rose-700">Không tải được combo — {bundleError}</p>
+        ) : bundles.length === 0 ? (
           <p className="p-4 text-xs text-slate-400">Chưa định nghĩa combo nào (tạo qua POST /api/bundles).</p>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -56,8 +65,8 @@ export function BundleRoyaltyPanels({ currentRole }: { currentRole: UserRole }) 
           <h3 className="text-sm font-extrabold text-slate-900">Bản quyền & Nhuận bút</h3>
           <span className="ml-auto text-[10px] text-slate-400">Owner/Manager</span>
         </div>
-        {royaltyBlocked ? (
-          <p className="p-4 text-xs text-slate-400">Vai trò hiện tại bị chặn 403 ở /api/royalties.</p>
+        {royaltyError ? (
+          <p className="p-4 text-xs text-rose-700">Không tải được hợp đồng bản quyền — {royaltyError}</p>
         ) : royalties.length === 0 ? (
           <p className="p-4 text-xs text-slate-400">Chưa có hợp đồng ACTIVE nào.</p>
         ) : (

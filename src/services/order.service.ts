@@ -1840,18 +1840,24 @@ export function createdAtBetween(
   endDate?: string | null
 ) {
   const conds = [];
+  // Ngày trần YYYY-MM-DD = NGÀY NGHIỆP VỤ VIỆT NAM: so ngày của `col` đã cộng +7.
   if (startDate) {
     conds.push(
       BARE_DAY.test(startDate)
         ? sql`substr(datetime(${col}, '+7 hours'), 1, 10) >= ${startDate}`
-        : gte(col, startDate)
+        // Mốc ISO đầy đủ = MỐC UTC, nên phải so giá trị THỜI GIAN chứ không so
+        // chuỗi. Cột `text` trong CSDL đang chứa song song hai họ: SQLite
+        // CURRENT_TIMESTAMP ('YYYY-MM-DD HH:mm:ss') và ISO của app ('...THH:mm...Z').
+        // 'T' (0x54) > ' ' (0x20) nên `gte(col, iso)` coi MỌI dòng SQLite trong
+        // kỳ là "lớn hơn" mốc ⇒ lọc sai. `datetime()` chuẩn hoá được cả hai họ.
+        : sql`datetime(${col}) >= datetime(${startDate})`
     );
   }
   if (endDate) {
     conds.push(
       BARE_DAY.test(endDate)
         ? sql`substr(datetime(${col}, '+7 hours'), 1, 10) <= ${endDate}`
-        : lte(col, endDate)
+        : sql`datetime(${col}) <= datetime(${endDate})`
     );
   }
   return conds;
