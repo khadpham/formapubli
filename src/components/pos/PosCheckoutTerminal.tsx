@@ -2472,7 +2472,7 @@ export function PosCheckoutTerminal({
             type="text"
             placeholder={
               isListening
-                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
                 : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
             }
             value={searchQuery}
@@ -2558,8 +2558,8 @@ export function PosCheckoutTerminal({
               onBlur={() => setIsInputFocused(false)}
               placeholder={
                 isListening
-                  ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
-                  : 'Gõ tên không dấu (truong, benh), mã (H01), 4 số cuối (7507)...'
+                  ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
+                  : 'Gõ tên không dấu (truong, benh), mã (HH001/TP0006), 4 số cuối (7507)...'
               }
               className={`w-full pl-10 pr-32 py-3 bg-white border rounded-2xl text-sm font-medium outline-none shadow-sm min-h-[48px] transition-all ${
                 isListening
@@ -2657,7 +2657,7 @@ export function PosCheckoutTerminal({
                   Đang thu âm giọng nói tiếng Việt:
                 </span>
                 <span className="text-[11px] text-rose-200 font-medium hidden sm:inline">
-                  Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "H01", "7507")
+                  Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "HH001", "7507")
                 </span>
               </div>
               <button

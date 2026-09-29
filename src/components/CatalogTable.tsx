@@ -199,7 +199,7 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
             type="text"
             placeholder={
               isListening
-                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
                 : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
             }
             value={searchTerm}
@@ -265,7 +265,7 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
             type="text"
             placeholder={
               isListening
-                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, H01)'
+                ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
                 : 'Tra cứu tức thì: Gõ tên không dấu (vd: truong, benh), 4 số cuối ISBN (7507), mã tắt (bt) hoặc bấm Micro...'
             }
             value={searchTerm}
@@ -321,7 +321,7 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
                 Đang thu âm giọng nói tiếng Việt:
               </span>
               <span className="text-[11px] text-rose-200 font-medium hidden sm:inline">
-                Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "H01", "7507")
+                Hãy nói to rõ tên sách hoặc mã SKU (ví dụ: "Bệnh tưởng", "HH001", "7507")
               </span>
             </div>
             <button

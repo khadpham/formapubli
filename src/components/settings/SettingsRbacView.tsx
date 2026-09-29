@@ -506,7 +506,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Quy chuẩn mã sách:</span>
-                <span className="font-mono font-bold text-slate-900">ISBN-13 & SKU H01-H81</span>
+                <span className="font-mono font-bold text-slate-900">ISBN-13 & SKU HH / TP</span>
               </div>
             </div>
           </div>
