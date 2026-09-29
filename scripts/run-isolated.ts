@@ -105,6 +105,10 @@ const ALL_SUITES = [
   'scripts/test-login-accounts.ts',
   'scripts/test-actor-binding.ts',
   'scripts/drill-go-live.ts',
+  // SUITE CUỐI: tạo ấn bản AB-* và bán chạy thật trong DB test dùng chung, nên
+  // phải chạy SAU test-monthly-digest — digest lấy top 5 ấn bản bán chạy, thêm
+  // dòng của suite này sẽ đẩy ấn bản của suite đó ra khỏi top 5.
+  'scripts/test-analytics-doanhso.ts',
 ];
 
 function suiteShortName(p: string): string {

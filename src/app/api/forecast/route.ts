@@ -39,7 +39,16 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
-    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : 200;
+    const rawLimit = searchParams.get('limit');
+    const limit = rawLimit !== null ? parseInt(rawLimit, 10) : 200;
+    // `parseInt('abc')` = NaN và `slice(0, NaN)` = [] ⇒ trước đây ?limit=abc (hoặc
+    // limit=0/-1) trả về 0 dòng mà KHÔNG báo lỗi, người dùng tưởng hết dữ liệu.
+    if (!Number.isFinite(limit) || limit < 1 || limit > 1000) {
+      return NextResponse.json(
+        { success: false, error: 'limit phải là số nguyên từ 1 đến 1000.' },
+        { status: 400 }
+      );
+    }
 
     const result = await ForecastService.forecastAll(windowDays, warehouseId, level, limit);
     return NextResponse.json({
