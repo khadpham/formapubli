@@ -193,12 +193,34 @@ async function main() {
         shell: false,
       });
     }
-    const res = spawnSync(command, cmdArgs, {
+    // Một suite có thể CHẾT Ở TẦNG NATIVE (0xC0000005 ACCESS_VIOLATION) sau khi
+    // đã in "PASS" — tiến trình bị Windows hạ giữa lúc thoát. Đây KHÔNG phải
+    // lỗi logic: cùng một suite chạy riêng thì xanh, và mỗi lần lại một suite
+    // khác chết (đã quan sát: test-order-guards lần 1, test-transfer-payment-flow
+    // lần 2). Phân biệt bằng CHÍNH DẤU HIỆU này rồi chạy lại đúng một lần:
+    //   - chết native  → thử lại 1 lần, chết lần nữa mới báo đỏ
+    //   - assertion đỏ  → KHÔNG thử lại, đỏ là thật
+    const NATIVE_CRASH = new Set([3221225477, 3221226505, 1073741819, 139]);
+    let res = spawnSync(command, cmdArgs, {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: suiteDb },
       stdio: 'inherit',
       shell: false,
     });
+    if (NATIVE_CRASH.has(res.status ?? -1)) {
+      console.error(`\n⚠ ${suite} chết ở tầng native (exit ${res.status}) — KHÔNG phải lỗi logic. Chạy lại 1 lần.`);
+      res = spawnSync(command, cmdArgs, {
+        cwd: process.cwd(),
+        env: { ...process.env, DATABASE_URL: suiteDb },
+        stdio: 'inherit',
+        shell: false,
+      });
+      if (res.status === 0) {
+        console.error(`✅ ${suite} chạy lại thì xanh — xác nhận là chết tầng native, không phải lỗi.`);
+        continue;
+      }
+      console.error(`⚠ ${suite} chết cả lần thứ hai (exit ${res.status}).`);
+    }
     if (res.status !== 0) {
       failed = res.status ?? 1;
       failedSuites.push({ suite, status: res.status });
