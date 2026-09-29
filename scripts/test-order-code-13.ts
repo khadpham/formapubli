@@ -121,6 +121,61 @@ async function run() {
   console.log(`\n=== MÃ ĐƠN 13 KÝ TỰ: ${checks} assertions PASS ===`);
 }
 
+// -----------------------------------------------------------------------------
+// CA CHỐNG "TEST XANH NHƯNG TÍNH NĂNG CHẾT"
+//
+// Lần đầu tôi viết test này chỉ lặp lại logic cấp số bằng SQL thuần, nên nó
+// XANH trong khi POS thực tế vẫn gửi `orderCode` tự sinh 29 ký tự lên server,
+// khiến `params.orderCode` luôn có giá trị và bộ đếm KHÔNG BAO GIỜ chạy. Test
+// pass, tính năng chết — đúng loại false-green tệ nhất: nó làm tôi tin là đã xong.
+//
+// Ca dưới đây kiểm tra ở đúng tầng: client KHÔNG được gửi orderCode, và server
+// phải tự cấp mã. Đọc source để bắt, vì hành vi này nằm ở ranh giới client↔server.
+function testClientDoesNotBypassServerAllocation() {
+  const fs2 = require('node:fs') as typeof import('node:fs');
+  const path2 = require('node:path') as typeof import('node:path');
+  const root = path2.resolve(process.cwd());
+  const pos = fs2
+    .readFileSync(path2.join(root, 'src/components/pos/PosCheckoutTerminal.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+    .join('\n');
+  const svc = fs2.readFileSync(path2.join(root, 'src/services/order.service.ts'), 'utf8');
+
+  // Mọi body POST /api/orders phải bỏ trường `orderCode`. Dùng regex bắt đúng
+  // khu vực gửi đi, không nhầm với chỗ khai báo offline.
+  const online = (pos.match(/fetch\('\/api\/orders',[\s\S]{0,900}?\n\s*\}\);/g) || []).filter(
+    (b) => !/order\.orderCode/.test(b)
+  );
+  ok(online.length >= 1, 'phải tìm được body POST /api/orders');
+  for (const b of online) {
+    ok(
+      !/\n\s*orderCode,/.test(b),
+      'body POST /api/orders KHÔNG được gửi orderCode — client sinh mã sẽ chặn bộ đếm DB'
+    );
+  }
+
+  // Server phải thật sự có nhánh tự cấp mã.
+  ok(
+    /params\.orderCode \|\| \(await allocateOrderCode/.test(svc),
+    'order.service phải tự cấp mã khi client không gửi (params.orderCode || allocateOrderCode)'
+  );
+
+  // createOrder phải trả cashierId, nếu không phiếu in mất dòng "Thu ngân:"
+  // khi tên thật chưa tải xong (mạng chậm ở hội chợ).
+  // Cắt CỬA SỔ trước `isDuplicate` vì `cashierId` nằm TRƯỚC nó trong object
+  // (lần đầu tôi cắt từ `isDuplicate` trở đi nên không thấy, test đỏ oan).
+  const at = svc.indexOf('isDuplicate: false');
+  ok(at > 0, 'phải tìm thấy khối return của createOrder');
+  const ret = svc.slice(Math.max(0, at - 1200), at);
+  ok(/cashierId:/.test(ret), 'createOrder phải trả cashierId cho phiếu in');
+}
+
 run()
-  .then(() => process.exit(0))
+  .then(() => {
+    testClientDoesNotBypassServerAllocation();
+    console.log(`\n=== MÃ ĐƠN 13 KÝ TỰ (+ chống false-green): ${checks} assertions PASS ===`);
+    process.exit(0);
+  })
   .catch((e) => { console.error('\n❌ THẤT BẠI:', e.message); process.exit(1); });

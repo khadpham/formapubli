@@ -199,12 +199,17 @@ export function DailyFairSettlementModal({
       {/* CSS ẩn mọi thứ khác khi in khổ A4 (Print Stylesheet) */}
       <style jsx global>{`
         @media print {
-          body * {
-            visibility: hidden;
+          /* GỠ KHỎI LUỒNG mọi nhánh không chứa biên bản, chứ không chỉ ẩn nó.
+             Nếu chỉ dùng "visibility: hidden" thì nội dung ẩn VẪN CHIẾM CHỖ ⇒
+             trình duyệt in ra hàng chục trang TRẮNG nối sau biên bản.
+             :has() loại đúng nhánh chứa biên bản (portal của nó nằm thẳng con
+             của body). */
+          body > *:not(:has(#printable-settlement-report)) {
+            display: none !important;
           }
           #printable-settlement-report,
           #printable-settlement-report * {
-            visibility: visible;
+            visibility: visible !important;
           }
           #printable-settlement-report {
             /* Lớp "hidden" (display:none) của Tailwind đè lên "print:block" tuỳ
@@ -217,13 +222,6 @@ export function DailyFairSettlementModal({
             background: white !important;
             padding: 0 !important;
             margin: 0 !important;
-            overflow: visible !important;
-            max-height: none !important;
-            height: auto !important;
-          }
-          /* Nới mọi khung gốc (app root + backdrop của modal). Chúng vẫn giữ
-             overflow và max-height lúc in, và đó là thứ cắt mất biên bản. */
-          body > * {
             overflow: visible !important;
             max-height: none !important;
             height: auto !important;

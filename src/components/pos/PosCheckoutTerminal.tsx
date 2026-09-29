@@ -1793,10 +1793,16 @@ export function PosCheckoutTerminal({
         const response = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: orderUuid,
-            orderCode,
-            idempotencyKey,
+        body: JSON.stringify({
+          id: orderUuid,
+          // KHÔNG gửi `orderCode` lên. Server cấp mã 13 ký tự bằng bộ đếm
+          // NGUYÊN TẢ ở DB (bắt buộc: hội chợ có nhiều máy POS, mỗi máy tự đếm
+          // thì hai máy cùng tạo đơn đầu ngày sẽ ra trùng mã, mà order_code là
+          // UNIQUE nên đơn của máy sau KHÔNG GHI ĐƯỢC). Trước đây client gửi mã
+          // tự sinh 29 ký tự ⇒ `params.orderCode` luôn có giá trị ⇒ bộ đếm
+          // không bao giờ chạy và tính năng này là code chết.
+          // Mã thật lấy từ `resData.data.orderCode` ở bên dưới.
+          idempotencyKey,
             createdAt: orderTimestamp,
             warehouseId: selectedWarehouseId,
             channel,
@@ -2865,7 +2871,15 @@ export function PosCheckoutTerminal({
                 là đường ra nhanh nhất tới 4 cuốn đó mà không cần gõ tìm kiếm. */}
             <button
               type="button"
-              onClick={() => setShowSpecialBooks((v) => !v)}
+              onClick={() => {
+                const next = !showSpecialBooks;
+                setShowSpecialBooks(next);
+                // Nhóm đặc biệt và từ khoá tìm kiếm trước đó được ghép AND, nên bấm
+                // nút khi đang gõ dở sẽ ra "Danh mục (0)" — thu ngân ở hội chợ tưởng
+                // danh mục hỏng. Bật nhóm thì XOÁ từ khoá cho khớp trực giác
+                // "tôi bấm xem 4 cuốn này".
+                if (next) setSearchQuery('');
+              }}
               aria-pressed={showSpecialBooks}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                 showSpecialBooks
@@ -3165,14 +3179,23 @@ export function PosCheckoutTerminal({
                     className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <select
+                    disabled={isCartFrozen}
+                    aria-label="Mẫu đối tượng khách"
                     onChange={(e) => {
                       // POS chỉ dành cho BÁN LẺ (đặc biệt ở hội chợ). Đại lý sỉ và
                       // doanh nghiệp đã có luồng XUẤT KHO riêng nên không để ở đây —
                       // mẫu cũ "Đại lý sỉ Đình Lễ (-40%) [Cần PIN]" và "Doanh nghiệp
                       // (Xuất VAT)" chỉ làm thu ngân bấm nhầm ở chỗ không đúng chỗ.
+                      //
+                      // Mọi thay đổi chiết khấu PHẢI đi qua `handleRequestDiscount`
+                      // như mọi đường khác. Gọi thẳng `setDiscountRate` như bản cũ
+                      // là BYPASS: khi yêu cầu duyệt đã được duyệt, bấm sang "Khách
+                      // lẻ" đổi `discountRate` nhưng vẫn giữ `discountApprovalId`
+                      // cũ ⇒ server băm lại hash giỏ, thấy lệch, trả 409 "Giỏ
+                      // hàng đã bị thay đổi sau khi được duyệt" ⇒ KHÔNG BÁN ĐƯỢC.
                       if (e.target.value === 'LE') {
                         setCustomerName('Khách lẻ');
-                        setDiscountRate(0);
+                        handleRequestDiscount(0);
                         setFiscalScope('INTERNAL_MANAGEMENT');
                       } else if (e.target.value === 'CHIEU_KHAU') {
                         setCustomerName('Khách chiết khấu');
@@ -3180,7 +3203,7 @@ export function PosCheckoutTerminal({
                         setFiscalScope('INTERNAL_MANAGEMENT');
                       }
                     }}
-                    className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
+                    className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="">-- Mẫu đối tượng --</option>
                     <option value="LE">Khách lẻ (0%)</option>

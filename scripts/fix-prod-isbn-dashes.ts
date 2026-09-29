@@ -21,6 +21,10 @@ const env = Object.fromEntries(
     })
 );
 
+import { requireProdWriteConsent } from './prod-write-guard';
+
+  // Ghi production: phải bật cờ tường minh, xem scripts/prod-write-guard.ts.
+  requireProdWriteConsent('fix-prod-isbn-dashes.ts');
 async function main() {
   const db = createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
   const q = async (sql: string, ...a: any[]) => (await db.execute({ sql, args: a })).rows;
@@ -71,3 +75,4 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((e) => { console.error('\n❌', e.message); process.exit(1); });
+

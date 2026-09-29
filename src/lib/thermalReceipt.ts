@@ -71,14 +71,17 @@ export function printThermalReceipt(
   const headerFontSize = isK57 ? '12px' : '13px';
   const titleFontSize = isK57 ? '10px' : '11px';
 
+  // KHÔNG có nhánh else suy đoán tên kho. Trước đây kho lạ (kho hội chợ) bị in
+  // nhầm thành "Kho Âu Cơ" — cùng lớp lỗi đã sửa ở modal mở két. Trên phiếu
+  // bán hàng thì sai tên kho là sai chỗ giao hàng, tức mất tiền thật.
+  // In mã kho thay vì bịa tên: người đọc phiếu nhìn thấy đúng mã và tra được.
+  const KNOWN_WAREHOUSE_NAMES: Record<string, string> = {
+    'wh-au-co': 'Kho 1 - Âu Cơ',
+    'wh-du-phong': 'Kho 3 - Hội Chợ',
+    'wh-quynh-mai': 'Kho 2 - Quỳnh Mai',
+  };
   const warehouseName =
-    order.warehouseId === 'wh-au-co'
-      ? 'Kho 1 - Âu Cơ'
-      : order.warehouseId === 'wh-du-phong'
-      ? 'Kho 3 - Hội Chợ'
-      : order.warehouseId === 'wh-quynh-mai'
-      ? 'Kho 2 - Quỳnh Mai'
-      : 'Kho Âu Cơ';
+    KNOWN_WAREHOUSE_NAMES[order.warehouseId || ''] || `Kho ${order.warehouseId || 'không rõ'}`;
 
   const paymentName =
     order.paymentMethod === 'CASH'
@@ -95,7 +98,7 @@ export function printThermalReceipt(
       ? order.qrDataUrl
       : null;
   const cashier = resolveCashierLabel(order.cashierId, order.cashierName || cashierName);
-  const customer = order.customerName || 'Khách vãng lai';
+  const customer = order.customerName || 'Khách lẻ';
 
   const printableItems = Array.isArray(order.items) ? order.items : [];
   const itemsHtml = printableItems

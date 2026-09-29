@@ -33,6 +33,10 @@ const stmt = raw
   .join('\n')
   .trim();
 
+import { requireProdWriteConsent } from './prod-write-guard';
+
+  // Ghi production: phải bật cờ tường minh, xem scripts/prod-write-guard.ts.
+  requireProdWriteConsent('apply-0027-prod.ts');
 async function main() {
   const db = createClient({ url, authToken: token });
 
@@ -77,3 +81,4 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((e) => { console.error('\n❌', e.message); process.exit(1); });
+

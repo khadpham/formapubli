@@ -928,6 +928,11 @@ export class OrderService {
          return {
           orderId,
           orderCode,
+          // Trả về `cashierId` để PHIẾU IN có dòng "Thu ngân:". Trước đây
+          // response không có trường này, mà `resolveCashierLabel` cần
+          // `cashierId` làm dự phòng khi tên thật chưa tải xong (mạng chậm ở hội
+          // chợ) ⇒ phiếu in ra KHÔNG có dòng thu ngân, im lặng, khó phát hiện.
+          cashierId: effCashierId,
           warehouseId,
           customerName,
           subtotal: calculatedSubtotal,

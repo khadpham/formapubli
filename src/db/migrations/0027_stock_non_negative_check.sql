@@ -24,6 +24,9 @@
 -- `delivery-order.service.ts:236` trừ `physical_quantity - item.quantity` không có
 -- chặn âm — đúng lỗ hổng mà trigger này phải bịt. Kiểm tra ứng dụng ở
 -- `inventory.service.ts:167` và `:537` vẫn giữ nguyên (báo lỗi thân thiện hơn).
+-- Bản gốc chỉ có `BEFORE UPDATE`. Bổ sung thêm `BEFORE INSERT` ở migration
+-- `0029` vì 0027 ĐÃ áp lên production: sửa file đã chạy sẽ khiến DB cũ và DB
+-- mới lệch nhau. Bài học: migration đã áp thì giữ nguyên, thêm migration mới.
 CREATE TRIGGER IF NOT EXISTS check_stock_non_negative
 BEFORE UPDATE ON stock_balances
 FOR EACH ROW WHEN NEW.physical_quantity < 0
