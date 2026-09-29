@@ -348,7 +348,27 @@ assert.match(modal, /onTerminalRef/);
 assert.match(modal, /onTerminalRef\.current\?\.\('EXPIRED', req\.id\)/);
 assert.match(modal, /itemsKey/);
 assert.match(modal, /const generation = requestGenerationRef\.current/);
-assert.match(modal, /if \(generation === requestGenerationRef\.current\) setOtpError/);
+// Chặn đua response: mọi cập nhật state phải so `generation` để response cũ từ
+// yêu cầu trước không ghi đè. Trước đây dòng này kiểm trong `handleVerifyManagerOtp`
+// — hàm đã gỡ cùng nhánh QR/OTP chết — nên nó kiểm một thứ không tồn tại.
+// Nay kiểm ở đường ĐI SỐNG: hỏi server lúc tạo yêu cầu và lúc poll.
+assert.match(
+  modal,
+  /if \(isMounted && generation === requestGenerationRef\.current\)/,
+  'đường đi sống phải chặn đua response bằng requestGenerationRef'
+);
+assert.match(
+  modal,
+  /if \(generation === requestGenerationRef\.current\)/,
+  'đường poll phải chặn đua response bằng requestGenerationRef'
+);
+// Nhánh QR/OTP không bao giờ tới được (endpoint chỉ nhận ROLE_CASHIER) nên không
+// được để lại mảnh vỡ của nó trong modal.
+assert.doesNotMatch(
+  modal,
+  /handleVerifyManagerOtp|qrContainerRef|BrowserQRCodeSvgWriter/,
+  'modal không được còn code của nhánh QR/OTP đã gỡ'
+);
 // Mã khẩn cấp đã gỡ: modal không được còn gửi phương thức mà server từ chối.
 assert.doesNotMatch(modal, /OFFLINE_EMERGENCY/, 'Modal không được còn gửi OFFLINE_EMERGENCY');
 assert.doesNotMatch(modal, /EMG-/, 'Modal không được còn lời hứa mã khẩn cấp EMG-');

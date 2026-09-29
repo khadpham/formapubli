@@ -121,7 +121,8 @@ async function main() {
   const onlyArg = args.find((a) => a.startsWith('--only='));
   // --continue: suite lỗi (kể cả crash native) không dừng cả chuỗi, để còn suite
   // phía sau vẫn chạy; cuối chuỗi liệt kê suite lỗi và exit code khác 0.
-  const keepGoing = args.includes('--continue');
+  // Mặc định chạy hết chuỗi rồi mới tổng kết. Xem vòng lặp bên dưới để biết vì sao.
+  const stopFirst = args.includes('--stop-first');
   const suites = onlyArg
     ? ALL_SUITES.filter((s) =>
         onlyArg
@@ -182,13 +183,17 @@ async function main() {
     });
     if (res.status !== 0) {
       failed = res.status ?? 1;
-      if (keepGoing) {
-        failedSuites.push({ suite, status: res.status });
-        console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Tiếp tục (--continue).`);
-        continue;
+      failedSuites.push({ suite, status: res.status });
+      // Một suite chết ở tầng native SAU khi đã in "PASS" vẫn trả exit ≠ 0. Nếu
+      // dừng chuỗi ngay, ta mất thông tin về phần chưa chạy và tưởng code hỏng
+      // đúng ở chỗ đó. Vì vậy mặc định chạy HẾT rồi tổng kết; `--stop-first` giữ
+      // lại hành vi cũ khi thật sự cần dừng sớm (ví dụ đang săn một lỗi).
+      if (stopFirst) {
+        console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Dừng chuỗi (--stop-first).`);
+        break;
       }
-      console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Dừng chuỗi.`);
-      break;
+      console.error(`❌ Suite ${suite} thất bại (exit ${res.status}). Tiếp tục, sẽ tổng kết cuối.`);
+      continue;
     }
   }
 
@@ -210,8 +215,9 @@ async function main() {
     console.error(`\n❌ ${failedSuites.length}/${suites.length} SUITES THẤT BẠI:`);
     for (const item of failedSuites) console.error(`   - ${item.suite} (exit ${item.status})`);
   }
+  console.log(`\n📊 Đã chạy ${suites.length} suite.`);
   if (failed !== 0) process.exit(failed);
-  console.log(`\n🎉 TOÀN BỘ ${suites.length} SUITES CÁCH LY ĐẠT!`);
+  console.log(`🎉 TOÀN BỘ ${suites.length} SUITES CÁCH LY ĐẠT!`);
 }
 
 main().catch((err) => {

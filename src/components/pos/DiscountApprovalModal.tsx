@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ShieldAlert,
-  QrCode,
   CheckCircle2,
   XCircle,
   Clock,
@@ -12,7 +11,6 @@ import {
   X,
   RefreshCw,
 } from 'lucide-react';
-import { BrowserQRCodeSvgWriter } from '@zxing/library';
 import { UserRole } from '@/lib/roles';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 
@@ -59,21 +57,12 @@ export function DiscountApprovalModal({
   cancelError,
 }: DiscountApprovalModalProps) {
   const [requestId, setRequestId] = useState<string | null>(null);
-  const [shortCode, setShortCode] = useState<string>('');
-  const [qrToken, setQrToken] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [status, setStatus] = useState<'LOADING' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'ERROR'>('LOADING');
   const [rejectedReason, setRejectedReason] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
 
-  // Tab: chỉ còn Online (QR/ShortCode) — mã khẩn cấp ngoại tuyến đã gỡ.
-  const [activeTab, setActiveTab] = useState<'ONLINE'>('ONLINE');
-  const [managerOtpInput, setManagerOtpInput] = useState('');
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [otpError, setOtpError] = useState<string | null>(null);
-
-  const qrContainerRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const approvalTimerRef = useRef<NodeJS.Timeout | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
@@ -132,9 +121,6 @@ export function DiscountApprovalModal({
      setStatus('LOADING');
     setErrorMessage(null);
     setRejectedReason(null);
-      setManagerOtpInput('');
-      setOtpError(null);
-      setIsVerifyingOtp(false);
       const requestController = new AbortController();
      requestAbortRef.current = requestController;
      const requestTimeout = window.setTimeout(() => requestController.abort(), 15000);
@@ -162,8 +148,6 @@ export function DiscountApprovalModal({
           const req = json.data;
           setRequestId(req.id);
           onRequestCreatedRef.current?.(req.id);
-          setShortCode(req.shortCode || orderCode.slice(-4).toUpperCase());
-          setQrToken(req.qrToken || '');
           setExpiresAt(req.expiresAt);
           setStatus('PENDING');
 
@@ -197,24 +181,7 @@ export function DiscountApprovalModal({
     };
   }, [isOpen, orderCode, warehouseId, requestedDiscountRate, itemsKey]);
 
-  // 2. Render mã QR bằng BrowserQRCodeSvgWriter khi có qrToken
-  useEffect(() => {
-    if (!qrToken || !qrContainerRef.current || activeTab !== 'ONLINE') return;
-    try {
-      const writer = new BrowserQRCodeSvgWriter();
-      const svg = writer.write(qrToken, 160, 160);
-      svg.setAttribute('class', 'w-full h-full rounded-xl');
-      qrContainerRef.current.innerHTML = '';
-      qrContainerRef.current.appendChild(svg);
-    } catch {
-      // Fallback nếu không render được SVG
-      if (qrContainerRef.current) {
-        qrContainerRef.current.innerHTML = `<div class="p-4 text-xs text-slate-400 text-center font-mono break-all">${qrToken.slice(0, 32)}...</div>`;
-      }
-    }
-  }, [qrToken, activeTab]);
-
-  // 3. Hỏi server một lần rồi mới tin. Tách riêng vì cả ĐẾM LÙI và POLLING đều
+  // 2. Hỏi server một lần rồi mới tin. Tách riêng vì cả ĐẾM LÙI và POLLING đều
   //    cần, và P5 (2026-09-29) chính là do chúng tách rời: đồng hồ về 0 thì
   //    client tự khai EXPIRED mà không hỏi lại, nên một yêu cầu được Quản lý
   //    duyệt đúng trong ~2.5 giây cuối bị rơi dù server đã APPROVED.
@@ -306,54 +273,6 @@ export function DiscountApprovalModal({
     return () => clearInterval(timer);
   }, [requestId, status]);
 
-
-  // 5. Xử lý nhập mã cấp phép / OTP từ Quản lý (Đảo chiều luồng OTP)
-  const handleVerifyManagerOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!requestId) return;
-    const generation = requestGenerationRef.current;
-    const code = managerOtpInput.trim().toUpperCase();
-    if (!code) {
-      setOtpError('Vui lòng nhập mã cấp phép / OTP từ Quản lý.');
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    setOtpError(null);
-    try {
-      const res = await fetch(`/api/pos/discount-approvals/${requestId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'APPROVE',
-          method: 'SHORTCODE_BOUND',
-          shortCode: code,
-        }),
-      });
-
-       const json = await res.json();
-       if (generation !== requestGenerationRef.current) return;
-       if (!res.ok || !json.success) {
-         throw new Error(json.message || 'Mã cấp phép không chính xác hoặc đã hết hạn.');
-      }
-
-      setStatus('APPROVED');
-      if (approvalTimerRef.current) clearTimeout(approvalTimerRef.current);
-       approvalTimerRef.current = setTimeout(() => {
-         if (generation !== requestGenerationRef.current) return;
-         onApprovedRef.current({
-          requestId,
-          rate: requestedDiscountRate,
-          method: 'SHORTCODE_BOUND',
-        });
-        onCloseRef.current();
-      }, 1000);
-     } catch (err: any) {
-       if (generation === requestGenerationRef.current) setOtpError(err.message || 'Mã cấp phép không hợp lệ.');
-     } finally {
-       if (generation === requestGenerationRef.current) setIsVerifyingOtp(false);
-    }
-  };
 
   // 6. Xử lý nhập mã khẩn cấp ngoại tuyến — ĐÃ GỠ 2026-09-29.
   // Lý do: không có bảng mã nào tồn tại, service từ chối phương thức này nên mọi
@@ -500,129 +419,21 @@ export function DiscountApprovalModal({
           </div>
         )}
 
-        {/* Trạng thái PENDING: Tab Online vs Offline */}
+        {/* Trạng thái PENDING: thu ngân chỉ được chờ.
+            Trước đây đây là `currentRole === 'ROLE_CASHIER' ? (chờ) : (form QR/OTP)`.
+            Nhánh QR/OTP KHÔNG BAO GIỜ chạy: `status` chỉ thành PENDING sau khi POST
+            thành công, mà endpoint đó chỉ nhận ROLE_CASHIER
+            (api/pos/discount-approvals/route.ts:58) — nên CASHIER ⟹ đúng nhánh
+            "chờ". `currentRole` lấy từ phiên đăng nhập, không có bộ chuyển vai trò
+            ở client. Giao diện duyệt thật nằm ở ManagerApprovalDrawer.
+            Nhánh chết đã gỡ cùng state/effect/handler của nó. */}
         {status === 'PENDING' && (
           <div className="space-y-4">
-            {currentRole === 'ROLE_CASHIER' ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-amber-900">
-                <Clock className="mx-auto h-8 w-8 text-amber-600" />
-                <p className="mt-2 text-sm font-extrabold">Đang chờ Quản lý phê duyệt</p>
-                <p className="mt-1 text-xs">Chỉ Quản lý hoặc Chủ quầy mới có thể duyệt yêu cầu này.</p>
-              </div>
-            ) : (
-              <>
-            {/* Tabs chọn cách duyệt — chỉ còn 1-chạm / mã 4 số.
-                Luồng "mã khẩn cấp ngoại tuyến" đã bị gỡ khỏi service: không có
-                bảng mã nào tồn tại, nên lời hứa "1 trong 5 mã trong ngày" là bịa.
-                Giữ nút lại chỉ tạo nút luôn trả lỗi. */}
-            <div className="flex bg-slate-100 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setActiveTab('ONLINE')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
-                  activeTab === 'ONLINE'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Mã OTP / 1-Chạm (Online)
-              </button>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-amber-900">
+              <Clock className="mx-auto h-8 w-8 text-amber-600" />
+              <p className="mt-2 text-sm font-extrabold">Đang chờ Quản lý phê duyệt</p>
+              <p className="mt-1 text-xs">Chỉ Quản lý hoặc Chủ quầy mới có thể duyệt yêu cầu này.</p>
             </div>
-
-            {/* TAB 1: ONLINE (Nhập mã Quản lý cấp / Chờ Duyệt 1-chạm) */}
-            {activeTab === 'ONLINE' && (
-              <div className="space-y-3.5 text-center">
-                {/* Form nhập mã cấp phép từ Quản lý */}
-                <form
-                  onSubmit={handleVerifyManagerOtp}
-                  className="bg-amber-500/10 border-2 border-amber-400/80 rounded-2xl p-3.5 text-left space-y-2.5 shadow-sm"
-                >
-                  <div>
-                    <label className="text-xs font-black uppercase tracking-wider text-amber-900 block">
-                      Nhập mã cấp phép / OTP từ Quản lý:
-                    </label>
-                    <p className="text-[11px] text-amber-700 mt-0.5">
-                      Xin mã phê duyệt từ Quản lý trực tiếp tại gian hàng hoặc qua điện thoại
-                    </p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      id="pos-approval-otp-input"
-                      type="text"
-                      maxLength={8}
-                      autoFocus
-                      value={managerOtpInput}
-                      onChange={(e) => {
-                        setManagerOtpInput(e.target.value.toUpperCase());
-                        setOtpError(null);
-                      }}
-                      placeholder="Mã 4 số (VD: 4821)..."
-                      className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl font-mono text-center text-base font-black tracking-widest text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isVerifyingOtp || !managerOtpInput.trim()}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5 shrink-0"
-                    >
-                      {isVerifyingOtp ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang kiểm tra...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Mở Khóa Đơn
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {otpError && (
-                    <div className="text-xs text-rose-600 font-bold flex items-center gap-1 pt-0.5">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{otpError}</span>
-                    </div>
-                  )}
-                </form>
-
-                {/* Hoặc chờ duyệt 1-chạm từ xa */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 text-slate-600 text-left">
-                    <RefreshCw className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
-                    <div>
-                      <span className="font-bold block text-slate-800">Hoặc chờ Duyệt 1-chạm từ xa</span>
-                      <span className="text-[10px] text-slate-400 block">Quản lý bấm duyệt trên máy, quầy sẽ tự động mở</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-slate-500 font-bold text-[11px] shrink-0 bg-white px-2 py-1 rounded-lg border border-slate-200">
-                    <Clock className="w-3 h-3 text-amber-600" />
-                    <span>{timeFormatted}</span>
-                  </div>
-                </div>
-
-                {/* Quét mã QR nếu Quản lý đứng gần quầy */}
-                <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-left">
-                  <div className="text-[11px] text-slate-500 pl-1">
-                    <span className="font-bold text-slate-700 block">Quét QR duyệt nhanh:</span>
-                    <span>Quản lý dùng camera quét mã bên cạnh</span>
-                  </div>
-                  <div ref={qrContainerRef} className="w-14 h-14 bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0 flex items-center justify-center" />
-                </div>
-              </div>
-            )}
-
-            {/* Footer Buttons */}
-            <div className="pt-1 flex gap-2">
-              <button
-                type="button"
-                onClick={dismiss}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
-              >
-                Hủy Yêu Cầu &amp; Đóng
-              </button>
-            </div>
-              </>
-            )}
           </div>
         )}
       </div>

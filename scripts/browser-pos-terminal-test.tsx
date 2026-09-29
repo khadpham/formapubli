@@ -388,31 +388,37 @@ async function runTestSuite() {
   const giftBtn12 = findButton('100%');
   if (!giftBtn12) throw new Error('Test 12 Failed: Cannot find gift 100% button!');
   giftBtn12.click();
-  await waitFor(() => !!document.getElementById('pos-approval-otp-input'), 2000, 'form OTP của modal duyệt');
-
-  setInputValue(document.getElementById('pos-approval-otp-input') as HTMLInputElement, '4821');
-  const unlockBtn = findButton('Mở Khóa Đơn');
-  if (!unlockBtn) throw new Error('Test 12 Failed: Cannot find "Mở Khóa Đơn" button!');
-  unlockBtn.click();
+  // Phiên của test là ROLE_CASHIER (đặt ở trên, và không đổi). Endpoint
+  // /api/pos/discount-approvals CHỈ nhận ROLE_CASHIER, nên modal hiện đúng hộp
+  // "Đang chờ Quản lý phê duyệt"; form QR/OTP từng nằm ở nhánh `else` và không
+  // bao giờ render được. Bản cũ của test này đòi `#pos-approval-otp-input` rồi
+  // gõ mã 4821 — tức nó kiểm một nhánh chết và không thể pass từ trước khi sửa.
+  // Nay kiểm đúng hành vi thật: giỏ bị khoá chờ quyết định của Quản lý, và
+  // không có ô nhập OTP nào lọt ra cho thu ngân.
   await waitFor(
-    () => `${document.getElementById('pos-cart-frozen-banner')?.textContent || ''}`.includes('đã duyệt'),
+    () => !!document.getElementById('pos-approval-otp-input'),
+    400,
+    'thu ngân KHÔNG được thấy ô nhập OTP (nhánh đã gỡ)'
+  ).then(
+    () => { throw new Error('Test 12 Failed: Lộ ô nhập OTP cho thu ngân — nhánh chết đã quay lại!'); },
+    () => { /* đúng: không có ô OTP */ }
+  );
+  await waitFor(
+    () => (document.body.textContent || '').includes('Đang chờ Quản lý phê duyệt'),
     3000,
-    'banner chuyển sang trạng thái đã duyệt'
+    'modal chờ Quản lý phê duyệt'
   );
 
   const minus12 = document.querySelector('button[aria-label="Giảm số lượng"]') as HTMLButtonElement | null;
   if (!minus12?.disabled) {
-    throw new Error('Test 12 Failed: Sau khi duyệt, sửa giỏ PHẢI vẫn bị khóa để giữ đúng phê duyệt!');
+    throw new Error('Test 12 Failed: Khi chờ duyệt, sửa giỏ PHẢI bị khóa để giữ đúng phê duyệt!');
   }
   const checkout12 = document.getElementById('btn-desktop-checkout') as HTMLButtonElement | null;
   if (!checkout12) throw new Error('Test 12 Failed: Cannot find desktop checkout button (#btn-desktop-checkout)!');
-  if (checkout12.disabled) {
-    throw new Error('Test 12 Failed: Sau khi duyệt, nút chốt đơn PHẢI bật lại (không chặn bán)!');
+  if (!checkout12.disabled) {
+    throw new Error('Test 12 Failed: Khi chờ duyệt, nút chốt đơn phải bị khoá (đơn chưa được phê duyệt)!');
   }
-  if (findButton('Mở lại mã')) {
-    throw new Error('Test 12 Failed: Đã duyệt thì KHÔNG được mời tạo yêu cầu duyệt mới ("Mở lại mã")!');
-  }
-  log('✓ [Test 12] PASS: Sau khi duyệt, giỏ vẫn khóa để giữ phê duyệt và nút chốt đơn được bật');
+  log('✓ [Test 12] PASS: Chờ duyệt thì giỏ bị khoá, không lộ ô OTP, thu ngân chỉ được chờ');
 
   // 13. F5: Chuyển khoản/QR phải xác nhận TAY "Đã nhận tiền" trước khi gửi đơn
   log('\n--- Test 13: chuyển khoản/QR cần xác nhận tay "Đã nhận tiền" ---');
