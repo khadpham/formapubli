@@ -46,6 +46,7 @@ const ALL_SUITES = [
   'scripts/test-batch-paste-ui.ts',
   'scripts/test-pos-header-layout.ts',
   'scripts/test-pos-qr-content.ts',
+  'scripts/test-pos-bank-qr-gallery.ts',
     'scripts/test-warehouse-panel-ui.ts',
     'scripts/test-warehouse-stock.ts',
     'scripts/test-batch-atp-limit.ts',

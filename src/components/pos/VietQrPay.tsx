@@ -2,12 +2,68 @@
 
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { generateVietQRPayload } from '@/lib/vietqr';
+import { generateVietQRPayload, normalizeVietqrContent } from '@/lib/vietqr';
 import { readBankAccountsCache, writeBankAccountsCache } from '@/lib/bank-account-cache';
 import { resolveTransferContent, hasTransferTemplate, DEFAULT_TRANSFER_TEMPLATE } from '@/lib/transfer-content';
 
 type BankAccount = { id: string; label: string; bankBin: string; accountNo: string; accountName?: string | null };
 export type BankAccountSource = 'NETWORK' | 'CACHE' | 'NONE';
+
+export interface BankAccountDecision {
+  source: BankAccountSource;
+  accounts: BankAccount[];
+  defaultId: string;
+  cachedAt: number | null;
+  /**
+   * Server ĐÃ trả lời và nói không còn tài khoản nào dùng được. Khác hẳn với
+   * "không tải được" (mất mạng / HTTP lỗi) — thu ngân phải được báo khác.
+   */
+  serverSaysEmpty: boolean;
+}
+
+/**
+ * NGUỒN TÀI KHOẢN NGÂN HÀNG — quyết định thuần, không I/O, để test được.
+ *
+ * VÌ SAO phải tách "hỏng" với "thành công và rỗng": `listBankAccounts` chỉ lấy
+ * `isActive === true`, nên danh sách rỗng đúng lúc MỌI tài khoản nhận đã bị
+ * ngưng (ngân hàng đóng tài khoản). Trước đây nhánh này cũng rơi về cache 24h
+ * ⇒ POS mã hoá tài khoản ĐÃ ĐÓNG vào mã QR và khách chuyển tiền vào tài khoản
+ * chết. Cache chỉ được ghi ở nhánh có dữ liệu, nên cache còn đó là tài khoản
+ * TỪNG hoạt động — dùng lại nó sau khi server nói "không còn" là sai.
+ */
+export function decideBankAccounts(input: {
+  /** false = mất mạng / HTTP lỗi / body hỏng. */
+  fetchOk: boolean;
+  networkAccounts: BankAccount[] | null;
+  networkDefaultId?: string | null;
+  cachedAccounts: BankAccount[] | null;
+  cachedDefaultId?: string | null;
+  cachedAt?: number | null;
+}): BankAccountDecision {
+  const cached = input.cachedAccounts && input.cachedAccounts.length > 0 ? input.cachedAccounts : null;
+  if (!input.fetchOk) {
+    return cached
+      ? {
+          source: 'CACHE',
+          accounts: cached,
+          defaultId: input.cachedDefaultId || cached[0].id,
+          cachedAt: input.cachedAt ?? null,
+          serverSaysEmpty: false,
+        }
+      : { source: 'NONE', accounts: [], defaultId: '', cachedAt: null, serverSaysEmpty: false };
+  }
+  const list = input.networkAccounts ?? [];
+  if (list.length === 0) {
+    return { source: 'NONE', accounts: [], defaultId: '', cachedAt: null, serverSaysEmpty: true };
+  }
+  return {
+    source: 'NETWORK',
+    accounts: list,
+    defaultId: input.networkDefaultId || list[0].id,
+    cachedAt: null,
+    serverSaysEmpty: false,
+  };
+}
 
 export function VietQrPay({
   warehouseId,
@@ -104,6 +160,7 @@ export function VietQrPay({
   const [payload, setPayload] = useState('');
   const [source, setSource] = useState<BankAccountSource>('NONE');
   const [cachedAt, setCachedAt] = useState<number | null>(null);
+  const [serverSaysEmpty, setServerSaysEmpty] = useState(false);
   const reqRef = useRef(0);
   const onQrRef = useRef(onQr);
   const onSourceRef = useRef(onSource);
@@ -112,53 +169,58 @@ export function VietQrPay({
   useEffect(() => { onSourceRef.current = onSource; }, [onSource]);
   useEffect(() => { onCachedAtRef.current = onCachedAt; }, [onCachedAt]);
 
-  // Ưu tiên mạng; chỉ fallback sang cache 24h khi fetch hỏng. Không có nguồn nào
-  // → source NONE + onQr(null) để cha không bao giờ hiện QR cũ.
+  // Ưu tiên mạng; CHỈ fallback sang cache 24h khi thật sự không tải được. Server
+  // trả lời rồi mà danh sách rỗng là quyết định thật, không phải sự cố — quyết
+  // định đó nằm trong `decideBankAccounts`. Không có nguồn nào → source NONE +
+  // onQr(null) để cha không bao giờ hiện QR cũ.
   useEffect(() => {
     let alive = true;
-    const applySource = (next: BankAccountSource, cached: number | null) => {
+    const apply = (d: BankAccountDecision) => {
       if (!alive) return;
-      setSource(next);
-      setCachedAt(cached);
-      onSourceRef.current?.(next);
-      onCachedAtRef.current?.(cached);
+      setList(d.accounts);
+      setSelectedId(d.defaultId);
+      setServerSaysEmpty(d.serverSaysEmpty);
+      setSource(d.source);
+      setCachedAt(d.cachedAt);
+      onSourceRef.current?.(d.source);
+      onCachedAtRef.current?.(d.cachedAt);
+    };
+    const readCached = () => {
+      const cached = readBankAccountsCache(warehouseId);
+      return {
+        cachedAccounts: cached?.accounts ?? null,
+        cachedDefaultId: cached?.defaultId ?? null,
+        cachedAt: cached?.cachedAt ?? null,
+      };
     };
     fetch(`/api/bank-accounts?warehouseId=${encodeURIComponent(warehouseId)}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((j) => {
         if (!alive) return;
-        const l: BankAccount[] = Array.isArray(j?.data?.list) ? j.data.list : [];
-        if (l.length === 0) {
-          const cached = readBankAccountsCache(warehouseId);
-          if (cached && cached.accounts.length > 0) {
-            setList(cached.accounts);
-            setSelectedId(cached.defaultId || cached.accounts[0]?.id || '');
-            applySource('CACHE', cached.cachedAt);
-            return;
-          }
-          setList([]);
-          setSelectedId('');
-          applySource('NONE', null);
-          return;
+        const networkAccounts: BankAccount[] = Array.isArray(j?.data?.list) ? j.data.list : [];
+        // Chỉ ghi cache khi CÓ tài khoản: cache rỗng sẽ làm "chưa từng có tài
+        // khoản" trùng với "đã bị ngưng hết", hợp đồng ở `decideBankAccounts`
+        // mất hết ý nghĩa.
+        if (networkAccounts.length > 0) {
+          writeBankAccountsCache({
+            warehouseId,
+            cachedAt: Date.now(),
+            defaultId: j?.data?.default?.id || networkAccounts[0].id,
+            accounts: networkAccounts,
+          });
         }
-        const defaultId = j?.data?.default?.id || l[0]?.id || '';
-        writeBankAccountsCache({ warehouseId, cachedAt: Date.now(), defaultId, accounts: l });
-        setList(l);
-        setSelectedId(defaultId);
-        applySource('NETWORK', null);
+        apply(
+          decideBankAccounts({
+            fetchOk: true,
+            networkAccounts,
+            networkDefaultId: j?.data?.default?.id ?? null,
+            ...readCached(),
+          })
+        );
       })
       .catch(() => {
         if (!alive) return;
-        const cached = readBankAccountsCache(warehouseId);
-        if (cached && cached.accounts.length > 0) {
-          setList(cached.accounts);
-          setSelectedId(cached.defaultId || cached.accounts[0]?.id || '');
-          applySource('CACHE', cached.cachedAt);
-          return;
-        }
-        setList([]);
-        setSelectedId('');
-        applySource('NONE', null);
+        apply(decideBankAccounts({ fetchOk: false, networkAccounts: null, ...readCached() }));
       });
     return () => { alive = false; };
   }, [warehouseId]);
@@ -171,13 +233,19 @@ export function VietQrPay({
       onQrRef.current?.(null);
       return;
     }
-    const p = generateVietQRPayload({ bankBin: acc.bankBin, accountNo: acc.accountNo, amount, content });
+    // ĐÓNG BĂNG đúng chuỗi đã mã hoá. `generateVietQRPayload` tự chuẩn hoá
+    // (bỏ dấu, bỏ ký tự lạ, cắt còn 23) nhưng `content` có thể là bản gõ tay
+    // dài hơn 23. Đóng băng bản thô ⇒ đơn mang nội dung mà ngân hàng không
+    // bao giờ ghi, mọi đơn gõ tay dài đều lệch đối soát. Chuẩn hoá idempotent
+    // nên chuỗi này đưa vào payload không đổi một byte nào.
+    const qrContent = normalizeVietqrContent(content);
+    const p = generateVietQRPayload({ bankBin: acc.bankBin, accountNo: acc.accountNo, amount, content: qrContent });
     setPayload(p);
     QRCode.toDataURL(p, { width: 280, margin: 1 })
       .then((url) => {
         if (req !== reqRef.current) return;
         setQrUrl(url);
-        onQrRef.current?.({ dataUrl: url, payload: p, accountNo: acc.accountNo, content });
+        onQrRef.current?.({ dataUrl: url, payload: p, accountNo: acc.accountNo, content: qrContent });
       })
       .catch(() => { if (req !== reqRef.current) return; setQrUrl(''); onQrRef.current?.(null); });
     // `locked` nằm trong deps: lúc đơn vừa tạo, mã đơn và số lượng có thể KHÔNG
@@ -228,9 +296,11 @@ export function VietQrPay({
         <div className="text-[11px] text-slate-500">
           {list.length
             ? 'Đang sinh QR offline…'
-            : source === 'CACHE'
-              ? 'Cache tài khoản đã hết hạn — cần mạng để tải lại, hãy dùng tiền mặt.'
-              : 'Chưa có tài khoản nhận — thêm ở bảng bank_accounts.'}
+            : serverSaysEmpty
+              ? 'Kho không còn tài khoản nhận nào đang hoạt động — bật lại ở Quản Lý Kho, hoặc thu tiền mặt.'
+              : source === 'CACHE'
+                ? 'Cache tài khoản đã hết hạn — cần mạng để tải lại, hãy dùng tiền mặt.'
+                : 'Chưa có tài khoản nhận — thêm ở bảng bank_accounts.'}
         </div>
       )}
     </div>
