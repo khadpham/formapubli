@@ -241,7 +241,13 @@ assert.doesNotMatch(reset, /setApprovedPin\(null\)/, 'POS không được còn s
 assert.doesNotMatch(pos, /approvedPin/, 'POS không được còn tham chiếu approvedPin');
 assert.match(reset, /setIsManagerOverride\(false\)/);
 assert.match(reset, /setActiveOrderCode\(createOrderCode\(\)\)/);
-assert.match(reset, /setCustomerName\('Khách lẻ vãng lai'\)/);
+// POS chỉ bán lẻ nên tên mặc định là "Khách lẻ" (trước đây là "Khách lẻ vãng lai").
+assert.match(reset, /setCustomerName\('Khách lẻ'\)/);
+assert.doesNotMatch(
+  reset,
+  /vãng lai/,
+  'reset giỏ không được gán lại tên "vãng lai" — POS chỉ bán lẻ, mặc định là "Khách lẻ"'
+);
 assert.match(reset, /setFiscalScope\('INTERNAL_MANAGEMENT'\)/);
 assert.match(reset, /setPaymentMethod\('CASH'\)/);
 assert.match(reset, /setGiftReason\(''\)/);
