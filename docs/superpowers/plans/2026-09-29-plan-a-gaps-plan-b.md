@@ -1,5 +1,14 @@
 # KẾ HOẠCH — Kế hoạch A (nợ còn lại) + Kế hoạch B (chưa viết spec)
 
+> **Trạng thái 29/09: Kế hoạch A ĐÃ XONG VÀ ĐÃ DEPLOY.** Kế hoạch B đã triển
+> khai phần lớn và đã vào `main`. File này giữ lại làm lịch sử quyết định.
+> **Việc còn tồn đọng KHÔNG nằm ở đây** — nó nằm ở
+> `2026-09-25-handoff-state.md` mục 7D. Chi tiết lớp lỗi ngày nghiệp vụ (11 lỗi)
+> và 12 lỗi POS đã sửa: mục 7A + 7B của handoff-state.
+>
+> Mốc khi viết file này: `main` = `5ae656f`, prod `f3820029`. Mốc hiện tại:
+> `main` = `0326e73`, prod `2a33c690`, 87/87 suite xanh.
+
 - **Ngày:** 2026-09-29
 - **Căn cứ:** `main` = `5ae656f` (đã deploy prod worker `f3820029-9ab7-4b7e-ab74-90fb5dd7d005`)
 - **Spec Kế hoạch A:** `docs/superpowers/specs/2026-09-29-live-fair-monitor-design.md`
@@ -15,7 +24,7 @@ Khi nào tài liệu và trí nhớ lệch nhau, tài liệu là chuẩn.
 
 ---
 
-## 1. Kế hoạch A — Modal Trạng Thái Hội Chợ — TRẠNG THÁI
+## 1. Kế hoạch A — Modal Trạng Thái Hội Chợ — ĐÃ XONG, ĐÃ DEPLOY
 
 ### Đã xong (đã deploy `ae51c53`)
 

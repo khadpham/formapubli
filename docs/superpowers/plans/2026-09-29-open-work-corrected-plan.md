@@ -247,9 +247,29 @@ Handoff §1 đã kết luận **KHÔNG nên xây UI quét QR** — tôi đồng 
 
 ---
 
-## P3b — THẤP. Dọn dead code còn lại (CHƯA LÀM)
+## P3b — THẤP. ~~Dọn dead code còn lại~~ **ĐÃ LÀM 2026-09-29**
 
-`DiscountApprovalModal.tsx`: nhánh QR (render effect + markup + `qrContainerRef` + import `@zxing/library`) và ô OTP 4 số. Cùng với các doc cũ `2026-09-22-pos-warehouse-refactor-design*.md` và `KICH_BAN_DIEN_TAP_GO_LIVE_HOI_CHO.md` còn mô tả "quản lý đọc mã `EMG-`" — nay không còn đúng.
+Gỡ **191 dòng** trong `DiscountApprovalModal.tsx`: nhánh QR/OTP không bao giờ
+render. Bằng chứng (không phải suy đoán): `status` chỉ thành `PENDING` sau khi
+POST thành công, mà `api/pos/discount-approvals/route.ts:58` **chỉ nhận
+`ROLE_CASHIER`**, còn `currentRole` lấy từ cookie và không có bộ chuyển vai trò ở
+client ⇒ `currentRole === 'ROLE_CASHIER'` luôn đúng ⇒ nhánh `else` chết.
+
+Đã gỡ: 2 import (`QrCode`, `BrowserQRCodeSvgWriter`), state `shortCode`/`qrToken`/
+`activeTab`/`managerOtpInput`/`isVerifyingOtp`/`otpError`, ref `qrContainerRef`,
+effect vẽ QR, `handleVerifyManagerOtp` (47 dòng), cả nhánh `else` (113 dòng).
+551 → 437 dòng. Giao diện duyệt thật nằm ở `ManagerApprovalDrawer`, không đụng tới.
+
+**Hai test phải SỬA TRƯỚC khi xoá** (nếu không sẽ fail khó hiểu):
+- `smoke-mobile-role-navigation.ts:351` assert trong hàm đã xoá → chuyển sang
+  assert chặn đua response ở **đường đi sống**, thêm assert cấm mảnh vỡ còn sót.
+- `browser-pos-terminal-test.tsx` **Test 12** đòi ô OTP cho phiên `ROLE_CASHIER`
+  ⇒ test này **không thể pass từ trước khi sửa**. Đã viết lại theo hành vi thật,
+  nhưng **chưa chạy được** (nằm ngoài `run-isolated` và ngoài `package.json`).
+
+Các doc cũ `2026-09-22-pos-warehouse-refactor-design*.md` và
+`KICH_BAN_DIEN_TAP_GO_LIVE_HOI_CHO.md` còn mô tả "quản lý đọc mã `EMG-`" — nay
+không còn đúng.
 
 ---
 
@@ -276,7 +296,33 @@ Handoff §1 đã kết luận **KHÔNG nên xây UI quét QR** — tôi đồng 
 - 10 script `apply-migration-0005..0014.ts` trỏ `DATABASE_URL` là ghi thẳng, không hỏi. Chúng là script một-lần đã dùng xong; thêm guard vào 10 file là diff lớn cho rủi ro thấp.
 - `EXPECTED_TABLES` trong `migrate-remote.ts` thiếu mọi đối tượng sau `0015` ⇒ một lần chạy "thành công" có thể thiếu schema.
 - `meta/_journal.json` có `when` **không đơn điệu** (`0008 > 0009`, `0024 > 0025/0026`) ⇒ `drizzle-kit migrate` sẽ **bỏ qua im lặng** 3 migration đó. **Đây mới là bẫy chết người** khi "sửa bằng cách trỏ drizzle vào prod". Cần `drizzle-kit generate` lại journal hoặc vá thứ tự.
-- `check_stock_non_negative` (`schema.ts:195`) không migration nào tạo ⇒ không có trên prod.
+- ~~`check_stock_non_negative` (`schema.ts:195`) không migration nào tạo ⇒ không có trên prod.~~ **ĐÃ XỬ LÝ 2026-09-29** — xem dưới.
+
+### P6 bổ sung — trigger chặn tồn kho âm (ĐÃ LÀM 2026-09-29)
+
+`check_stock_non_negative` trong `schema.ts` là `check()` của Drizzle mà **không
+`.sql` nào sinh ra**, snapshot dừng ở `0014` ⇒ production có **0 trigger**. Đã đọc
+prod trực tiếp để xác nhận. Lỗ thổng thật: `delivery-order.service.ts` trừ
+`physical_quantity - item.quantity` **không chặn âm**.
+
+Đã thêm migration `0027_stock_non_negative_check` (một trigger
+`BEFORE UPDATE ... WHEN physical_quantity < 0 -> RAISE(ABORT)`), `when` =
+`1790600003000`, **không snapshot** — đúng quy ước từ `0015`. Dùng trigger chứ
+không sửa bảng vì SQLite không `ADD CONSTRAINT` mà `migrate-fresh` chạy **không
+transaction, không rollback** — hỏng giữa chừng là mất bảng.
+
+**Đã áp tay lên Turso**: 405 dòng tồn kho, **0 dòng âm**, trigger đã có sau khi
+áp, dữ liệu không đổi. Nhớ `npm run deploy` **không** chạy migration.
+
+Bốn điều kiện đã viết trong chính file migration (đừng phá):
+1. `when` phải CAO HƠN entry trước, nếu không drizzle bỏ qua im lặng.
+2. `idx: 27`, không snapshot.
+3. Trigger phải là **MỘT khối**, không `statement-breakpoint` bên trong.
+4. `IF NOT EXISTS` — vận hành tay không có bảng `__drizzle_migrations`.
+
+**Bẫy đã dính:** comment trong file migration viết nguyên văn chuỗi
+`--> statement-breakpoint` thì `migrate-fresh.ts` **cắt đôi** `CREATE TRIGGER`
+giữa chừng. Không được viên chuỗi tách câu đó vào bất kỳ file `.sql` nào.
 
 
 ## P7 — THẤP. ~~Sửa 4 dòng sai trong handoff~~ **ĐÃ LÀM 2026-09-29**
@@ -285,9 +331,23 @@ Handoff §1 đã kết luận **KHÔNG nên xây UI quét QR** — tôi đồng 
 - `2026-09-28-handoff-pending-work.md:91`: sửa mục QR — ghi rõ thu ngân **cũng không thấy** QR.
 - `2026-09-28-master-bug-summary.md`: gạch item 4 (`getStockMatrix`, đã sửa ở `084a50e`) + sửa item 2 và 3 theo kết luận kiểm chứng.
 
-## P8 — THẤP. Đơn mồ côi (CHỜ USER)
+## P8 — THẤP. ~~Đơn mồ côi~~ **ĐÃ XOÁ 2026-09-29**
 
-Dev có `ORD-20260928-B768A09233642AFF` (`wh-au-co`, hết hạn 25 giờ, `cashbox_session_id = NULL` nên huỷ được). Dev **không có** bản ghi chốt ngày `2026-09-28` cho cả 3 kho — khớp với P2. Prod chưa quét; cần bạn xác nhận trước khi tôi đụng.
+Hóa ra **không phải 1 đơn mồ côi** như handoff cũ ghi. `staff_accounts` chỉ còn
+một tài khoản (`ADMIN-01`), còn **74 đơn `COMPLETED` trị giá 9.228.600đ** trỏ
+tới `cashier_id` không tồn tại (`staff-admin`, `User-ROLE_CASHIER`,
+`User-ROLE_OWNER`, …). `User-ROLE_CASHIER` là **chuỗi vai trò giả** — POS đã từng
+ghi tên giả thẳng vào dữ liệu.
+
+**Kiểm cả hai nơi trước khi ghi**: **production sạch** (8 tài khoản, 19 đơn, 0 mồ
+côi). Chỉ DB **dev** bị ảnh hưởng. Backup 48 KB ở
+`%TEMP%\opencode\orphan-orders-DEV-*.json` trước khi xoá.
+
+Đã xoá: dev còn **3 đơn hợp lệ**, 0 đơn mồ côi. Script tái lập:
+`scripts/purge-orphan-orders.ts` (mặc định chỉ đọc, cần `--apply`).
+
+Bài học: **đừng tin mô tả của chính mình ở lượt trước** — handoff cũ ghi "đơn mồ
+côi" và tôi đã suýt xoá 9,2 triệu tiền thật.
 
 ---
 
@@ -298,23 +358,33 @@ Dev có `ORD-20260928-B768A09233642AFF` (`wh-au-co`, hết hạn 25 giờ, `cash
 
 ---
 
-## Thứ tự đề xuất
+## Thứ tự đề xuất — CẬP NHẬT 29/09 (sau đợt sửa lớn)
 
 | Bước | Việc | Trạng thái |
 |---|---|---|
 | 0 | P0 — `CRON_SECRET` = **401** | ✅ đo xong — **cần bạn set secret** |
-| 1 | P3 — gỡ `OFFLINE_EMERGENCY` + cửa sổ OTP + tab mã khẩn cấp | ✅ xong |
-| 2 | P4 — thống nhất ATP giữa service và pos-catalog | ✅ xong |
+| 1 | P3 — gỡ `OFFLINE_EMERGENCY` + cửa sổ OTP | ✅ xong |
+| 2 | P4 — thống nhất ATP service ↔ pos-catalog | ✅ xong |
 | 3 | P7 — sửa dòng sai trong 3 file doc | ✅ xong |
 | 4 | P1(a) — gỡ ngõ cụt PIN ở đơn chiết khấu | ✅ xong |
-| 5 | P0 — set `CRON_SECRET` rồi verify 200 | **CHỜ BẠN** (1 lệnh) |
-| 6 | P1b — quyết 2 cổng PIN còn lại (gõ bù, đổi/trả) | **CHỜ BẠN QUYẾT** |
-| 7 | P2 — cron dọn đơn hết hạn + CI phải fail thật | **phải xong TRƯỚC khi bật cron** |
-| 8 | P8 — dọn đơn mồ côi | **CHỜ BẠN xác nhận** |
-| 9 | P5 — race timer client 2.5s | — |
-| 10 | P6 — chặn script migrate/seed nguy hiểm | — |
-| 11 | P3b — dọp dead code QR/OTP còn lại | thấp, làm khi rảnh tay |
-| 12 | Kế hoạch A — modal Trạng Thái Hội Chợ | spec đã viết, chờ duyệt |
+| 5 | P1b — 2 cổng PIN còn lại | ✅ **ĐÃ GỠ HẾT** (backdate >7 ngày nay theo vai trò) |
+| 6 | P2 — cron dọn đơn hết hạn | ✅ xong (+ sửa lệch 7h trong `listUnclosed`) |
+| 7 | P5 — race timer client 2.5s | ✅ xong |
+| 8 | P6 — chặn script migrate/seed | ✅ xong (+ trigger `0027` áp tay lên prod) |
+| 9 | P3b — dọn dead code QR/OTP | ✅ xong, 191 dòng |
+| 10 | P8 — dọn đơn mồ côi | ✅ xong (chỉ dev; **prod sạch**) |
+| 11 | Kế hoạch A — modal Trạng Thái Hội Chợ | ✅ xong + đã deploy |
+| 12 | **Lớp lỗi ngày nghiệp vụ (11 lỗi)** | ✅ xong — xem mục 7 của `2026-09-25-handoff-state.md` |
+| 13 | **12 lỗi POS** | ✅ xong, 112 assertion mới |
+| 14 | Xoá token Cloudflare khỏi git history | **CHỜ BẠN** (phải thu hồi ở Cloudflare) |
+| 15 | Nghiệm thu iPhone | **CHỜ BẠN** — hệ thống chưa vận hành thật |
+| 16 | Chạy tay `browser-pos-terminal-test.tsx` Test 12 | **CHỜ BẠN** (nằm ngoài runner) |
+| 17 | Biểu đồ `ExecutiveDashboard` gom nhóm ngày UTC | chưa sửa — biết nhưng chưa tự kiểm chứng |
+
+**Còn lại đúng 4 việc, và 3 trong số đó là việc của bạn, không phải của agent.**
+
+**Xác minh hiện tại** (`0326e73`): `npx tsc --noEmit` sạch · **87/87 suite xanh**,
+`EXIT=0`, chạy trọn một mạch. `formapubli.db` production nguyên vẹn 100%.
 
 **Xác minh sau P1/P3/P4/P7:** `npx tsc --noEmit` sạch · **10/10 suite xanh**: `smoke-mobile-role-navigation`, `test-s3-discount-approval`, `test-s2-pos-catalog`, `test-discount-guard` (13/13), `test-discount-checkout-atomic`, `test-order-guards`, `test-pos-report-permissions`, `test-transfer-payment-flow`, `test-order-sales`, `test-p0-verification`. Chưa commit — chờ bạn yêu cầu.
 
