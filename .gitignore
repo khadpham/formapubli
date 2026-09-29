@@ -40,3 +40,10 @@ __pycache__/
 
 certificates
 .wrangler/
+
+# Báo cáo sinh tự động. File này ghi lại `timestamp` và số liệu chạy lúc đó, nên
+# mỗi lần chạy `eval-executive-ai.ts` là đổi → commit nó chỉ tạo nhiễu diff, và
+# làm bẩn cây thư mục mỗi lần chạy test (vi phạm quy tắc "deploy chỉ khi cây
+# sạch"). Sinh ra thì giữ, nhưng không theo dõi trong git.
+eval-executive-ai-report.json
+reports/
