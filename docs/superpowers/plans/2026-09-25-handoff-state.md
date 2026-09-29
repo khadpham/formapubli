@@ -20,15 +20,13 @@
 ## 2. Trạng thái production (đang chạy BETA)
 
 - URL: **https://book.formaform.vn** (+ formapubli.phamkha9x.workers.dev).
-- main = **`0326e73`**, deploy version **`2a33c690`**, **87/87 suite xanh** (`EXIT=0`).
-- Migration **`0027_stock_non_negative_check`** đã viết VÀ **đã áp thủ công lên
-  Turso**: trước đó `schema.ts` khai báo `check('check_stock_non_negative')` nhưng
-  không `.sql` nào sinh ra nó, production có **0 trigger**. Nay có trigger
-  `BEFORE UPDATE ... WHEN physical_quantity < 0 -> RAISE(ABORT)`. Cần nhớ:
-  `npm run deploy` **KHÔNG chạy migration** và app không tự migrate lúc khởi
-  động — migration phải áp tay bằng `scripts/apply-0027-prod.ts` (mặc định chỉ
-  đọc, cần `--apply`).
-- Còn lại từ đợt trước: S-01 rollout đã bật, gate 20/20 PASS, 1 row
+- main = **`9355dc0`**, deploy version **`54deb7cf`**, **90/90 suite xanh** (`EXIT=0`).
+- Migration đã áp tay lên Turso: **`0027`** (trigger chặn tồn kho âm khi UPDATE),
+  **`0028`** (bảng `daily_order_counters` cho mã đơn 13 ký tự),
+  **`0029`** (trigger chặn tồn kho âm khi INSERT — 0027 chỉ chặn UPDATE).
+  Nhớ: `npm run deploy` **KHÔNG** chạy migration và app không tự migrate lúc khởi
+  động — migration phải áp tay, và **ÁP TRƯỚC** khi deploy nếu code cần nó.
+- **Còn lại từ đợt trước**: S-01 rollout đã bật, gate 20/20 PASS, 1 row
   `GATE-W2-*` SUPERSEDED còn trong DB prod (audit trail, vô hại).
 - **Rollout S-01 HOÀN TẤT (bước 2 đã bật 25/09 sáng)**: secret
   `SESSION_LEASE_ENFORCE=true` — enforce gate 9/9 PASS (login/lease/heartbeat/
@@ -217,13 +215,33 @@ LƯU Ý SỰ CỐ ĐÃ XẢY RA: thiếu `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` 
     `when` nhỏ hơn bản ghi cuối. Migration mới phải lấy `when` CAO HƠN entry
     trước, và chỉ cần `.sql` + entry trong `meta/_journal.json` (snapshot đã dừng
     ở `0014`; từ `0015` trở đi không có snapshot — giữ đúng quy ước đó). Entry
-    mới nhất hiện là `0027` (`when = 1790600003000`).
+    mới nhất hiện là `0029` (`when = 1790600005000`).
     `migrate-fresh.ts` tách file theo đúng chuỗi `-->` + `statement-breakpoint`
     rồi `execute()` **từng khối một lần**: trigger `BEGIN...END` phải nằm trong
     MỘT khối, và **không được viết nguyên văn chuỗi tách câu đó trong comment**
     (đã dính lần: comment của chính tôi cắt đôi `CREATE TRIGGER`).
     `migrateFresh` **không idempotent** (migration `0000` dùng `CREATE TABLE` trần)
     nên đừng chạy lại toàn bộ để kiểm `IF NOT EXISTS` — chạy riêng câu lệnh.
+    **Migration đã áp lên production thì KHÔNG được sửa file đó** — phải thêm
+    migration mới. Đã dính lần: tôi sửa `0027` để thêm trigger `BEFORE INSERT`,
+    phải hoàn nguyên và tạo `0029` thay thế.
+11. ⚠️ **FALSE-GREEN TEST — loại nguy hiểm nhất, đã dính một lần.**
+    `test-order-code-13.ts` ban đầu chỉ **lặp lại logic cấp số bằng SQL thuần**,
+    không gọi hàm thật. Test XANH, đã commit, đã deploy, đã tạo bảng trên
+    production — trong khi **POS vẫn gửi `orderCode` tự sinh lên server**, nên
+    `params.orderCode` luôn có giá trị ⇒ bộ đếm **không bao giờ chạy** ⇒ tính năng
+    là code chết và mục tiêu của user chưa bao giờ đạt tới. Chỉ khi chạy 2 subagent
+    review độc lập mới phát hiện ra.
+    Nguyên tắc: **test phải đi qua đúng ranh giới mà hành vi nằm ở đó.** "Client có
+    gửi mã lên không" là hành vi ở ranh giới client↔server, thì phải kiểm ở đó,
+    không kiểm lại logic SQL. Và khi nghi ngờ, **chạy thật trên production rồi đọc
+    lại dữ liệu**, đừng tin dòng "thành công" mà script in ra. Mẫu chống lỗi này
+    đã thêm vào chính file test đó.
+12. **Script ghi production phải có chốt.** Nhiều script trong `scripts/` đọc
+    thẳng `TURSO_*` từ `.env` nên chạy là ghi production. Có
+    `scripts/prod-write-guard.ts` → `requireProdWriteConsent()`, bắt buộc
+    `ALLOW_PROD_WRITE=true`. Cùng quy ước với `ALLOW_REMOTE_MIGRATE` và
+    `ALLOW_REMOTE_SKU_MIGRATION`. **Script ghi DB mới phải gọi hàm này ở đầu.**
 
 ## 7. Đợt sửa 29/09 — đã xong, không cần làm lại
 
@@ -275,10 +293,57 @@ Hiển thị / thường:
 - Tên thu ngân trong modal mở két: in ra chuỗi vai trò giả + tên kho. Nay chỉ hiện
   `fullName` từ `/api/auth/me` (POS **đã** gọi endpoint này, chỉ bị bỏ qua).
 
-### D. Việc còn lại / cần kiểm bằng tay
+### D. Rà soát toàn bằng 2 subagent review (29/09, sau khi deploy mã đơn)
+
+Chạy 2 review **độc lập** bằng `kilo run` (một agent soi commit mới, một agent soi
+hệ thống rộng). Cả hai đều tự xác minh bằng cách chạy thử, không tin lời khai.
+
+**Lỗi nghiêm trọng nhất — mã đơn 13 ký tự chưa bao giờ chạy trên POS.**
+POS gửi `orderCode` tự sinh lên server, mà server dùng
+`params.orderCode || allocateOrderCode(...)` ⇒ bộ đếm không bao giờ chạy. Đã
+loại `orderCode` khỏi body POST đơn online (đường offline giữ nguyên vì đơn
+offline phải có mã ngay). Chi tiết về false-green test ở gotcha số 11.
+
+Đã sửa thêm:
+- `createOrder` trả `cashierId` ⇒ phiếu in không còn mất dòng "Thu ngân" khi
+  `/api/auth/me` chậm.
+- Mẫu khách "Khách lẻ" đi qua `handleRequestDiscount` (trước gọi thẳng
+  `setDiscountRate` ⇒ bypass chốt duyệt ⇒ 409 không bán được), `disabled` khi
+  giỏ đang chờ duyệt.
+- Bấm "Sách đặc biệt" thì xoá từ khoá đang gõ (trước ghép AND ⇒ "Danh mục (0)").
+- CSS in biên bản: `display: none` cho nhánh không chứa biên bản, thay cho quy
+  tắc cũ chỉ nới `overflow/max-height` mà **không gỡ khỏi luồng** ⇒ sinh hàng
+  chục trang trắng phía sau.
+- Trigger `BEFORE INSERT` cho tồn kho âm (migration `0029`, đã áp + thử chèn
+  số âm trên Turso để chứng minh bị chặn).
+- Phiếu in: kho lạ không còn bị in nhầm thành "Kho Âu Cơ"; còn sót
+  "Khách vãng lai" đã đổi.
+
+### E. Dữ liệu production (giai đoạn dựng bộ sách — số liệu sẽ còn đổi)
+
+Theo yêu cầu user: **mã SKU và số lượng tồn SẼ CÒN THAY ĐỔI NHIỀU LẦN NỮA.**
+Đừng xem số liệu hiện tại là dữ liệu thật.
+
+- 88 ấn bản; `H85` "Đốt kho" **đã khoá** (`is_active = 0`) vì ISBN sai 14 số;
+  dùng `TP104` "Đốt kho" bản đúng thay thế. `pos-catalog.service.ts` có
+  `if (e.isActive === false) continue` nên khoá là thật, POS không hiện.
+- Mỗi đầu sách **1000 cuốn ở mỗi kho** (87 cuốn còn hoạt động × 5 kho = 435.000).
+- Mã cũ `H01`–`H81` đã đổi thành `HH001`/`TP0004`/…; 7 sách mới là `H82`–`H88`.
+- 4 ISBN có dấu gạch đã bỏ dấu (quét mã vạch trước đó KHÔNG khớp được).
+- `editions.id` giữ nguyên khi đổi mã ⇒ lịch sử đơn không đứt liên kết.
+
+**Bài học từ việc đổi mã**: test phải tra mã hiện hành từ CSDL, không hardcode
+`H01` — nếu không lần sau đổi mã là vỡ tiếp. Và `setup-test-db.ts` có một case
+đặc biệt (`HH032`/`HH042` chung tác phẩm) mà chính người đổi mã đã bỏ sót.
+
+### F. Việc còn lại / cần kiểm bằng tay
 - `scripts/browser-pos-terminal-test.tsx` **Test 12 đã viết lại nhưng chưa chạy
   được** (nằm ngoài `run-isolated` và ngoài `package.json`). Cần chạy tay.
 - Chưa nghiệm thu thật trên iPhone: POS luồng chuyển khoản, tải ảnh, camera quét,
   chốt ca. Hệ thống **chưa vận hành thật** nên chưa có dữ liệu thật để đối chiếu.
 - Biểu đồ `ExecutiveDashboard` gom nhóm theo ngày UTC (lệch nhãn cột cuối, không mất
   dòng) — biết nhưng **chưa sửa** vì chưa tự kiểm chứng.
+- **`H85` cần ISBN 13 số thật** nếu muốn mở lại; hiện đã khoá, dùng `TP104`.
+- `npm run build` có lúc báo lỗi TypeScript mà `npx tsc --noEmit` đã báo sạch
+  (script tôi viết sai cách gọi `execute`). **Luôn chạy `npm run build` trước khi
+  deploy**, không chỉ dựa vào `tsc`.

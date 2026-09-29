@@ -374,14 +374,32 @@ côi" và tôi đã suýt xoá 9,2 triệu tiền thật.
 | 9 | P3b — dọn dead code QR/OTP | ✅ xong, 191 dòng |
 | 10 | P8 — dọn đơn mồ côi | ✅ xong (chỉ dev; **prod sạch**) |
 | 11 | Kế hoạch A — modal Trạng Thái Hội Chợ | ✅ xong + đã deploy |
-| 12 | **Lớp lỗi ngày nghiệp vụ (11 lỗi)** | ✅ xong — xem mục 7 của `2026-09-25-handoff-state.md` |
+| 12 | **Lớp lỗi ngày nghiệp vụ (11 lỗi)** | ✅ xong — xem mục 7A của `2026-09-25-handoff-state.md` |
 | 13 | **12 lỗi POS** | ✅ xong, 112 assertion mới |
 | 14 | Xoá token Cloudflare khỏi git history | **CHỜ BẠN** (phải thu hồi ở Cloudflare) |
 | 15 | Nghiệm thu iPhone | **CHỜ BẠN** — hệ thống chưa vận hành thật |
 | 16 | Chạy tay `browser-pos-terminal-test.tsx` Test 12 | **CHỜ BẠN** (nằm ngoài runner) |
 | 17 | Biểu đồ `ExecutiveDashboard` gom nhóm ngày UTC | chưa sửa — biết nhưng chưa tự kiểm chứng |
+| 18 | **Rà soát toàn bằng 2 subagent review** | ✅ xong — tìm ra 1 lỗi nghiêm trọng + 3 lỗi cao, đã sửa hết |
+| 19 | Mã đơn 13 ký tự | ✅ xong — **nhưng phải sửa lần 2**, xem mục 7D |
+| 20 | Trigger chặn tồn kho âm khi INSERT | ✅ xong (migration `0029`, đã áp) |
+| 21 | `H85` cần ISBN 13 số thật | **CHỜ BẠN** — hiện đã khoá, dùng `TP104` |
 
-**Còn lại đúng 4 việc, và 3 trong số đó là việc của bạn, không phải của agent.**
+**Còn lại đúng 5 việc, và 4 trong số đó là việc của bạn, không phải của agent.**
+
+## Bẫy đã dính — FALSE-GREEN TEST (đọc trước khi viết test cho tính năng mới)
+
+Mã đơn 13 ký tự đã được commit, deploy, tạo bảng trên production — nhưng **chưa
+bao giờ chạy trên POS**. POS gửi `orderCode` tự sinh lên server, mà server dùng
+`params.orderCode || allocateOrderCode(...)` nên bộ đếm không bao giờ chạy.
+
+Nguyên nhân: test đầu tiên của tôi **chỉ lặp lại logic SQL**, không gọi hàm thật,
+nên nó XANH. Hai subagent review độc lập mới phát hiện.
+
+Suy ra quy tắc: **hành vi nằm ở đâu thì test phải đi qua đúng chỗ đó.** "Client có
+gửi mã lên không" là hành vi ở ranh giới client↔server, không phải ở tầng SQL.
+Và khi nghi ngờ, chạy thật trên production rồi đọc lại dữ liệu — đừng tin dòng
+"✅ thành công" mà script in ra.
 
 **Xác minh hiện tại** (`0326e73`): `npx tsc --noEmit` sạch · **87/87 suite xanh**,
 `EXIT=0`, chạy trọn một mạch. `formapubli.db` production nguyên vẹn 100%.
