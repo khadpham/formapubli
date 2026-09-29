@@ -16,6 +16,7 @@ import { setupTestDb, TEST_DB_FILE } from './setup-test-db';
 const ALL_SUITES = [
   'scripts/smoke-mobile-role-navigation.ts',
   'scripts/test-discount-guard.ts',
+  'scripts/test-manager-approval-drawer.ts',
   'scripts/test-discount-checkout-atomic.ts',
   'scripts/test-p0-verification.ts',
   'scripts/test-inventory.ts',
