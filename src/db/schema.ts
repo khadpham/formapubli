@@ -729,3 +729,15 @@ export const notificationDismissals = sqliteTable('notification_dismissals', {
   expiresIdx: index('idx_notif_dismiss_expires').on(table.expiresAt),
 }));
 
+/**
+ * Bộ đếm số phiếu theo ngày — sinh mã đơn 13 ký tự (`ORD` + `YYMMDD` + base36 4).
+ *
+ * Phải nằm ở DB chứ không đếm ở máy: hội chợ có nhiều máy POS, mỗi máy tự đếm
+ * từ 0001 sẽ sinh trùng mã, mà `orders.order_code` là UNIQUE nên đơn sẽ không
+ * ghi được. Xem migration `0028_daily_order_counters.sql`.
+ */
+export const dailyOrderCounters = sqliteTable('daily_order_counters', {
+  day: text('day').primaryKey(), // 'YYYY-MM-DD' theo ngày nghiệp vụ Việt Nam
+  lastSeq: integer('last_seq').notNull().default(0),
+});
+
