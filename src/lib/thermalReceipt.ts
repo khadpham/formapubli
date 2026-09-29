@@ -8,6 +8,8 @@
  * 3. Native support for K80 (80mm continuous roll) and K57 (57mm mini roll) paper widths.
  */
 
+import { COMPANY_HOTLINE } from './companyInfo';
+
 export type PaperPreset = 'K80' | 'K57';
 
 export interface PrintableReceiptOrder {
@@ -23,6 +25,7 @@ export interface PrintableReceiptOrder {
   totalQuantity: number;
   date?: string;
   cashierId?: string;
+  cashierName?: string;
   note?: string;
   isOffline?: boolean;
   qrDataUrl?: string | null;
@@ -36,11 +39,20 @@ export interface PrintableReceiptOrder {
   }>;
 }
 
+/**
+ * Nhãn dòng "Thu ngân:" trên phiếu.
+ * Thứ tự ưu tiên: TÊN THẬT → mã nhân viên → rỗng (bỏ hẳn dòng, KHÔNG in chuỗi giả).
+ */
+export function resolveCashierLabel(cashierId?: string, cashierName?: string): string {
+  return (cashierName || '').trim() || (cashierId || '').trim();
+}
+
 export function printThermalReceipt(
   order: PrintableReceiptOrder,
   preset: PaperPreset = 'K80',
   currentRole: string = 'ROLE_OWNER',
-  receiptFooterText: string = 'Cảm ơn Quý khách & Hẹn gặp lại!'
+  receiptFooterText: string = 'Cảm ơn Quý khách & Hẹn gặp lại!',
+  cashierName: string = ''
 ): void {
   if (typeof window === 'undefined') return;
 
@@ -82,7 +94,7 @@ export function printThermalReceipt(
     order.qrDataUrl.length <= 2_000_000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(order.qrDataUrl)
       ? order.qrDataUrl
       : null;
-  const cashier = order.cashierId || `User-${currentRole}`;
+  const cashier = resolveCashierLabel(order.cashierId, order.cashierName || cashierName);
   const customer = order.customerName || 'Khách vãng lai';
 
   const printableItems = Array.isArray(order.items) ? order.items : [];
@@ -173,7 +185,7 @@ export function printThermalReceipt(
         <div class="text-center">
           <div style="font-size: ${headerFontSize}; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">FORMAPUBLI OS</div>
           <div style="font-size: 9px; font-weight: 500;">HỆ THỐNG XUẤT BẢN & PHÁT HÀNH SÁCH</div>
-          <div style="font-size: 9px;">Hotline: 098.xxx.xxxx | Hà Nội</div>
+          <div style="font-size: 9px;">Hotline: ${COMPANY_HOTLINE} | Hà Nội</div>
           <div class="divider-solid"></div>
           <div style="font-size: ${baseFontSize}; font-weight: 800; text-transform: uppercase;">PHIẾU BÁN HÀNG & GIAO KHO</div>
           <div style="font-size: 9px; font-style: italic;">
@@ -185,7 +197,11 @@ export function printThermalReceipt(
 
         <div class="row"><span>Số phiếu:</span><span class="bold" style="font-family: monospace;">${escapeHtml(order.orderCode)}</span></div>
         <div class="row"><span>Thời gian:</span><span>${escapeHtml(orderDate)}</span></div>
-        <div class="row"><span>Thu ngân:</span><span>${escapeHtml(cashier)}</span></div>
+        ${
+          cashier
+            ? `<div class="row"><span>Thu ngân:</span><span>${escapeHtml(cashier)}</span></div>`
+            : ''
+        }
         <div class="row"><span>Khách hàng:</span><span class="bold">${escapeHtml(customer)}</span></div>
         <div class="row"><span>Kho xuất:</span><span>${escapeHtml(warehouseName)}</span></div>
         <div class="row"><span>Hình thức:</span><span class="bold">${escapeHtml(paymentName)}</span></div>
@@ -254,7 +270,7 @@ export function printThermalReceipt(
 
         <div class="text-center" style="margin-top: 8px; font-size: 9px; line-height: 1.4;">
           <div>${escapeHtml(safeReceiptFooterText)}</div>
-          <div style="font-size: 8px; color: #444; margin-top: 2px;">Mọi thắc mắc về đơn hàng xin liên hệ hotline CSKH</div>
+          <div style="font-size: 8px; color: #444; margin-top: 2px;">Mọi thắc mắc về đơn hàng xin liên hệ hotline CSKH ${COMPANY_HOTLINE}</div>
           <div style="margin-top: 6px; font-family: monospace; font-size: 8px; letter-spacing: 2px;">*** ${escapeHtml(order.orderCode)} ***</div>
         </div>
       </div>

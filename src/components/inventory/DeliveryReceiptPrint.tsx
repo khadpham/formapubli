@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { BrowserQRCodeSvgWriter } from '@zxing/library';
+import { COMPANY_HOTLINE } from '@/lib/companyInfo';
 
 export interface DeliveryOrderItemDetail {
   id: string;
@@ -228,7 +229,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                   Địa chỉ: 177 Phố Huế, P. Phố Huế, Q. Hai Bà Trưng, Hà Nội
                 </p>
                 <p className="font-sans text-[11px] text-slate-600">
-                  Hotline: 0988.xxx.xxx | Email: contact@formapubli.vn
+                  Hotline: {COMPANY_HOTLINE} | Email: contact@formapubli.vn
                 </p>
                 <p className="font-sans text-[11px] text-slate-600">
                   Kho xuất:{' '}
