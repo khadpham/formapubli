@@ -104,21 +104,35 @@ export function PaymentPhotoGallery({
     return previewUrls[photo.id];
   };
 
+  const fileNameOf = (photo: PaymentProofPhoto) => `payment-${photo.orderCode}-${photo.capturedAt}.jpg`;
+
+  /**
+   * Tải ảnh xuống THẬT.
+   *
+   * Tách khỏi `sharePhoto` vì `navigator.canShare({ files })` đúng trên MỌI
+   * iPhone và Android Chrome: nút "Tải ảnh xuống" mà rẽ vào share sheet thì
+   * phải thao tác Share → Save Image mới lưu được, thu ngân tưởng nút hỏng.
+   */
+  const downloadPhoto = (photo: PaymentProofPhoto) => {
+    if (!isPhotoInScope(photo, scope)) return;
+    const url = URL.createObjectURL(photo.blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileNameOf(photo);
+    anchor.click();
+    // Revoke phải trễ: Safari/Firefox huỷ download nếu URL bị thu hồi ngay
+    // sau click() trước khi trình duyệt đọc blob.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
   const sharePhoto = async (photo: PaymentProofPhoto) => {
     if (!isPhotoInScope(photo, scope)) return;
-    const file = new File([photo.blob], `payment-${photo.orderCode}-${photo.capturedAt}.jpg`, { type: 'image/jpeg' });
+    const file = new File([photo.blob], fileNameOf(photo), { type: 'image/jpeg' });
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: `Thanh toán ${photo.orderCode}` });
       return;
     }
-    // Revoke phải trễ: Safari/Firefox huỷ download nếu URL bị thu hồi ngay
-    // sau click() trước khi trình duyệt đọc blob.
-    const url = URL.createObjectURL(photo.blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = file.name;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    downloadPhoto(photo);
   };
 
   const removePhoto = async (photo: PaymentProofPhoto) => {
@@ -213,7 +227,7 @@ export function PaymentPhotoGallery({
                   <button
                     type="button"
                     aria-label="Tải ảnh xuống"
-                    onClick={() => { sharePhoto(photo); }}
+                    onClick={() => { downloadPhoto(photo); }}
                     className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition"
                   >
                     <Download className="w-3.5 h-3.5" />
