@@ -57,6 +57,15 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
   việc, và `npm run deploy` của tôi **đã nuốt code chưa commit của họ lên
   production** (`dbf1dd94`). Không phải do `git commit` — mà do `build`/`deploy`
   đọc **working tree**, không đọc git.
+  ⚠️ **`git worktree remove` ĐI THEO JUNCTION — ĐÃ MẤT `node_modules` THẬT.**
+    Worktree agent tạo bằng `New-Item -ItemType Junction` trỏ tới
+    `formapubli-orch/node_modules` để khỏi cài lại. Khi `git worktree remove
+    --force` xoá worktree, nó xoá **cả nội dung thật sau junction**, không chỉ
+    link ⇒ mất sạch `node_modules` của trụ chính. Đã dính một lần lúc dọn 12
+    worktree, phải `npm install --include=dev` lại từ đầu (mất nhiều phút).
+    **Cách đúng: copy thật, hoặc cài riêng từng worktree.** Nếu buộc dùng
+    junction để tiết kiệm, phải `cmd /c rmdir <link>` (rdmdir trên junction chỉ
+    gỡ link) **trước**, rồi mới `git worktree remove`.
   Quy tắc bắt buộc từ 2026-09-29:
   - Coordinator làm việc ở worktree riêng `D:\Data Project\formapubli-orch`
     (nhánh `orch/plan-b`). Không bao giờ sửa trong `D:\Data Project\formapubli`.
@@ -71,6 +80,15 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
     working tree của họ và làm hỏng công việc đang dở).
 - **Deploy là việc của coordinator, không tự ý chạy.** Chỉ deploy khi cây nguồn
   sạch, tsc sạch, build sạch, và test liên quan xanh — rồi báo version ID.
+- ⚠️ **KHÔNG BAO GIỜ xoá remote branch bằng danh sách tính tự động.**
+  Đã dính: `git branch -r --merged main` trả về cả `origin/main` và lệnh
+  `git push origin --delete main` chạy thật. May là GitHub chặn nhánh mặc định,
+  nhưng lỗi lại bị `2>&1 | Out-Null` nuốt nên tưởng đã xoá xong — nếu remote
+  cho phép, đây là mất nhánh chính.
+  Quy tắc: (1) **luôn loại `main`/`master` khỏi danh sách**, kể cả khi chúng xuất
+  hiện; (2) **không nuốt lỗi** khi xoá — phải thấy kết quả từng lệnh; (3) sau khi
+  xoá, kiểm lại bằng `git ls-remote --heads origin` (**đây mới là sự thật**, cache
+  cục bộ có thể đã cũ).
 - File watcher của `next dev` trên máy này hay bị trễ/hỏng khi có nhiều worktree. Nếu sửa file mà
   log không in `Compiled`, **restart dev server** thay vì chờ.
 - NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps
