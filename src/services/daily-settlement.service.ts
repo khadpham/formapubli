@@ -30,7 +30,7 @@ export class DailySettlementService {
    */
   static async getDailyFairSettlement(filter: DailySettlementFilter, txOrDb: any = db) {
     const { warehouseId, sessionId } = filter;
-    const targetDate = filter.date || new Date().toISOString().slice(0, 10);
+    const targetDate = filter.date || businessDateOf(new Date());
 
     // 1. Kiểm tra kho tồn tại
     const whRows = await txOrDb
@@ -400,7 +400,7 @@ export class DailySettlementService {
   ) {
     const warehouseId = params.warehouseId;
     if (!warehouseId) throw AppError.invalid('Thiếu kho (warehouseId).');
-    const date = params.date || new Date().toISOString().slice(0, 10);
+    const date = params.date || businessDateOf(new Date());
     const key = DailySettlementService.dayCloseKey(warehouseId, date);
     const fingerprint = JSON.stringify({
       warehouseId,

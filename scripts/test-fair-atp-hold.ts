@@ -105,10 +105,17 @@ async function run() {
     'Phai tro ve suite khoa hien loi nay de trinh xoa nham'
   );
 
-  // Dọn dẹp: bảo đảm không đụng DB thật.
-  const real = await createClient({ url: 'file:formapubli.db' });
-  const cnt = (await real.execute({ sql: `SELECT COUNT(*) n FROM warehouses WHERE id='wh-fair'`, args: [] })).rows[0].n;
-  ok(Number(cnt) === 0, 'DB thật không bị dính dữ liệu thử');
+  // Dọn dẹp: bảo đảm không đụng DB thật. File `formapubli.db` là gitignore nên có
+  // trên máy chính, không có trong worktree khác — thiếu file thì không có gì để
+  // kiểm, bỏ qua cho đúng thay vì báo lỗi.
+  const devDb = path.resolve(process.cwd(), 'formapubli.db');
+  if (fs.existsSync(devDb) && fs.statSync(devDb).size > 0) {
+    const real = await createClient({ url: 'file:formapubli.db' });
+    const cnt = (await real.execute({ sql: `SELECT COUNT(*) n FROM warehouses WHERE id='wh-fair'`, args: [] })).rows[0].n;
+    ok(Number(cnt) === 0, 'DB thật không bị dính dữ liệu thử');
+  } else {
+    console.log('   (bỏ qua kiểm tra DB thật: file formapubli.db không có ở worktree này)');
+  }
 
   console.log(`\n=== FAIR ATP: ${checks} assertions PASS ===`);
 }

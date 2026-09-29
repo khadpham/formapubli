@@ -1716,15 +1716,41 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** Ngày (YYYY-MM-DD) theo giờ máy chủ — "ngày nghiệp vụ" của một ca. */
+/**
+ * Ngày nghiệp vụ (YYYY-MM-DD) theo GIỜ VIỆT NAM — KHÔNG theo múi giờ máy chủ.
+ *
+ * Trước đây dùng `getFullYear/getMonth/getDate()` tức múi giờ của máy đang chạy.
+ * Đó là lỗi thật: Cloudflare Workers luôn chạy UTC còn máy dev là GMT+7, nên
+ * CÙNG một đoạn code trả về ngày khác nhau giữa production và máy dev — trong
+ * khung 00:00-07:00 giờ VN. Ngày nghiệp vụ là khái niệm kế toán của Việt Nam, phải
+ * cố định theo múi giờ Việt Nam ở mọi môi trường.
+ *
+ * `en-CA` cho ra đúng định dạng YYYY-MM-DD. Cùng cách với `vnToday()` ở
+ * GET /api/pos/live-monitor và hàm `d(back)` ở cron auto-close — ba nơi này giờ
+ * cùng một định nghĩa.
+ */
+export const VN_TZ = 'Asia/Ho_Chi_Minh';
+
+/** Lệch giờ của Việt Nam so với UTC. Cố định +7, không có DST. */
+const VN_UTC_OFFSET_MIN = 7 * 60;
+
 export function businessDateOf(instant: Date): string {
-  return `${instant.getFullYear()}-${pad2(instant.getMonth() + 1)}-${pad2(instant.getDate())}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ }).format(instant);
 }
 
+/**
+ * Dựng thời điểm từ GIỜ VIỆT NAM (ngày nghiệp vụ + giờ cắt chốt).
+ *
+ * `new Date(y, mo-1, d, h, m)` dùng múi giờ của máy chủ, nên trên Cloudflare
+ * (UTC) mốc 23:59 thành 23:59 UTC = 06:59 VN hôm sau ⇒ ngày bị coi là quá hạn
+ * sớm 7 tiếng. Dựng thẳng từ số giây UTC rồi trừ 7 giờ cho nhất quán.
+ */
 function cutoffInstantOf(businessDate: string, cutoff: string): Date {
   const [y, mo, d] = businessDate.split('-').map(Number);
   const p = parseCutoff(cutoff)!;
-  return new Date(y, mo - 1, d, p.h, p.m, 0, 0);
+  return new Date(
+    Date.UTC(y, mo - 1, d, p.h, p.m, 0, 0) - VN_UTC_OFFSET_MIN * 60_000
+  );
 }
 
 /**

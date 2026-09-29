@@ -199,7 +199,47 @@ async function run() {
 
   console.log('✓ Doanh số và phân bổ thanh toán khớp 100%');
 
-  // [Case 1b] TIỀN MẶT KỲ VỌNG khi ca còn MỞ (2026-09-29)
+  // [Case 1c] Ngày nghiệp vụ KHÔNG được phụ thuộc múi giờ máy chủ (2026-09-29)
+  //
+  // Lỗi thật: `businessDateOf` dùng `getDate()` tức múi giờ của máy đang chạy.
+  // Cloudflare Workers luôn UTC, máy dev là GMT+7 ⇒ cùng code trả ngày khác nhau
+  // giữa production và dev trong khung 00:00-07:00 giờ VN. Ngày nghiệp vụ là khái
+  // niệm kế toán VN, phải cố định ở mọi môi trường.
+  console.log('\n[Case 1c] Ngày nghiệp vụ theo giờ Việt Nam, không theo máy chủ');
+  const { businessDateOf, VN_TZ } = await import('../src/services/order.service');
+  assert.strictEqual(VN_TZ, 'Asia/Ho_Chi_Minh', 'hằng múi giờ phải là Asia/Ho_Chi_Minh');
+
+  // 2026-09-28T20:00:00Z = 03:00 ngày 29 theo giờ VN.
+  const crossMidnight = new Date('2026-09-28T20:00:00Z');
+  assert.strictEqual(
+    businessDateOf(crossMidnight), '2026-09-29',
+    '03:00 giờ VN ngày 29 phải ra ngày 29, không phải 28 (UTC)'
+  );
+  // 2026-09-28T16:00:00Z = 23:00 ngày 28 theo giờ VN.
+  assert.strictEqual(
+    businessDateOf(new Date('2026-09-28T16:00:00Z')), '2026-09-28',
+    '23:00 giờ VN ngày 28 phải ra ngày 28'
+  );
+  // 2026-09-28T17:00:00Z = 00:00 ngày 29 — ranh giới đúng 00:00 VN.
+  assert.strictEqual(
+    businessDateOf(new Date('2026-09-28T17:00:00Z')), '2026-09-29',
+    '00:00 giờ VN phải sang ngày mới'
+  );
+  // Chạy lại với TZ môi trường khác: kết quả phải KHÔNG đổi.
+  const originalTz = process.env.TZ;
+  const seen: string[] = [];
+  for (const tz of ['UTC', 'America/New_York', 'Asia/Tokyo', '']) {
+    if (tz === '') delete process.env.TZ; else process.env.TZ = tz;
+    const v = businessDateOf(crossMidnight);
+    if (seen.indexOf(v) === -1) seen.push(v);
+  }
+  if (originalTz === undefined) delete process.env.TZ; else process.env.TZ = originalTz;
+  assert.strictEqual(
+    seen.length, 1,
+    `businessDateOf phải cho CÙNG kết quả ở mọi TZ, thấy ${seen.join(' | ')}`
+  );
+  console.log('✓ Ngày nghiệp vụ nhất quán ở mọi múi giờ máy');
+
   //
   // Lỗi đã sửa: vòng lặp đối soát két cộng `openingCash + s.totalCashSales` cho ca
   // OPEN. `totalCashSales` là bản chốt lúc đóng ca nên LUÔN = 0 khi ca còn mở ⇒
