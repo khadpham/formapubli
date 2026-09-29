@@ -135,7 +135,41 @@ async function run() {
   const list2 = (await res2.json())?.data?.unclosed || [];
   ok(!list2.some((x: any) => x.warehouse === 'KHO_A' && x.date === d2), 'KHO_A ngay da chot roi thi khong con trong danh sach');
 
-  console.log('\n[P5] Fail-closed: sai secret van 401');
+  console.log('\n[P5] Ca DANG MO keo dai qua ngay sau => ngay do van phai chot');
+  // Ca mở ở d3 và vẫn OPEN. Vậy d3, d2 (và mọi ngày tới hôm nay) đều còn phát
+  // sinh của kho này, dù không có đơn nào. Bỏ qua trường hợp này thì báo cáo báo
+  // xanh trong lúc két còn mở — "xanh giả".
+  await raw.execute({
+    sql: `INSERT INTO warehouses (id,code,name,warehouse_type,is_active,is_sellable_on_pos,created_at)
+          VALUES ('wh-e','KHO_E','Kho E','FAIR_EVENT',1,1,?)`,
+    args: [`${vnDay(60)} 00:00:00`],
+  });
+  await raw.execute({
+    sql: `INSERT INTO cashbox_sessions (id,warehouse_id,cashier_id,opening_cash,status,opened_at)
+          VALUES ('cs-e','wh-e','C-U',0,'OPEN',?)`,
+    args: [`${d3} 08:00:00`],
+  });
+  const resE: any = await GET(new Request('http://localhost/api/cron/auto-close?unclosed=1&days=10', {
+    headers: { Authorization: 'Bearer test-secret-unclosed' },
+  }) as any);
+  const listE = (await resE.json())?.data?.unclosed || [];
+  const eDays = listE.filter((x: any) => x.warehouse === 'KHO_E').map((x: any) => x.date);
+  console.log(`   KHO_E biet thieu chot o ${eDays.length} ngay: ${eDays.join(', ')}`);
+  ok(eDays.length > 0, 'ca OPEN phai lam cac ngay sau no cung phai chot');
+  ok(eDays.includes(d2), `ngay ${d2} phai bi bat chot vi ca van mo`);
+  ok(eDays.includes(d3), `ngay ${d3} phai bi bat chot (ngay mo ca)`);
+  ok(eDays.every((x: string) => x >= d3), 'khong bat chot o ngay TRUOCC khi mo ca');
+
+  // Đóng ca ⇒ các ngày đó hết "kéo dài", trừ ngày đã có đơn.
+  await raw.execute({ sql: `UPDATE cashbox_sessions SET status='CLOSED' WHERE id='cs-e'`, args: [] });
+  const resE2: any = await GET(new Request('http://localhost/api/cron/auto-close?unclosed=1&days=10', {
+    headers: { Authorization: 'Bearer test-secret-unclosed' },
+  }) as any);
+  const eDays2 = ((await resE2.json())?.data?.unclosed || []).filter((x: any) => x.warehouse === 'KHO_E').map((x: any) => x.date);
+  ok(!eDays2.includes(d2), `sau khi dong ca, ngay ${d2} het phai chot`);
+  ok(eDays2.includes(d3), `ngay ${d3} van phai chot (co don cua ca)`);
+
+  console.log('\n[P6] Fail-closed: sai secret van 401');
   const res3 = await GET(new Request('http://localhost/api/cron/auto-close?unclosed=1', {
     headers: { Authorization: 'Bearer sai-secret' },
   }) as any);

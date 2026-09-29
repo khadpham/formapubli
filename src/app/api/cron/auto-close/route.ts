@@ -133,13 +133,18 @@ async function listUnclosed(days: number) {
   // ai bán gì vẫn phải "chốt" — tức báo cáo xanh giả rồi lại đỏ.
   //
   // "Có phát sinh" = ngày đó kho đó có ít nhất MỘT dòng dữ liệu vận động:
-  //   · orders.created_at        (bán, kể cả đơn chuyển khoản đang chờ tiền)
-  //   · cashbox_sessions.opened_at (mở ca = có dòng tiền, kể cả 0 đơn)
+  //  · orders.created_at        (bán, kể cả đơn chuyển khoản đang chờ tiền)
+  //  · cashbox_sessions.opened_at (mở ca = có dòng tiền, kể cả 0 đơn)
+  //  · ca ĐANG MỞ kéo dài qua ngày này. Rất quan trọng: ca mở 08-00 ngày 27 và
+  //    treo tới sáng 28 thì opened_at nằm ở ngày 27, nhưng ngày 28 vẫn có
+  //    phát sinh (tiền vẫn trong két). Bỏ qua trường hợp này thì báo cáo báo
+  //    xanh trong lúc két còn mở — đúng "xanh giả" mà endpoint này sinh ra để
+  //    chống.
   // substr(...,1,10) an toàn vì created_at có hai họ trong DB: 'YYYY-MM-DD HH:MM:SS'
   // (SQLite CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' — 10 ký tự đầu là
   // ngày ở cả hai, cùng lý do dùng LIKE 'YYYY-MM-DD%' ở daily-settlement.
   // Đây là endpoint chẩn đoán, gọi tay bằng ?unclosed=1, KHÔNG nằm trong
-  // workflow nhiệm vụ tự động nên thêm 2 truy vấn là không đáng kể.
+  // workflow nhiệm vụ tự động nên thêm vài truy vấn là không đáng kể.
   const active = new Set<string>();
   const dayRange = (col: any) =>
     sql`${col} >= ${`${firstDay} 00:00:00`} AND ${col} <= ${`${lastDay} 23:59:59`}`;
@@ -153,6 +158,21 @@ async function listUnclosed(days: number) {
     .where(dayRange(cashboxSessions.openedAt));
   for (const r of [...orderDays, ...shiftDays]) {
     if (r.wh && r.day) active.add(`${r.wh}::${r.day}`);
+  }
+  // Ca còn mở ⇒ mọi ngày từ ngày mở ca tới hôm nay đều "còn phát sinh".
+  const openShifts = await db
+    .select({
+      wh: cashboxSessions.warehouseId,
+      openedDay: sql<string | null>`substr(${cashboxSessions.openedAt}, 1, 10)`,
+    })
+    .from(cashboxSessions)
+    .where(eq(cashboxSessions.status, 'OPEN'));
+  for (const s of openShifts) {
+    if (!s.wh || !s.openedDay) continue;
+    for (let back = span; back >= 1; back--) {
+      const day = d(back);
+      if (day >= s.openedDay) active.add(`${s.wh}::${day}`);
+    }
   }
 
   const unclosed: { warehouse: string; date: string }[] = [];
