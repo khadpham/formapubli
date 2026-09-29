@@ -53,6 +53,7 @@ const ALL_SUITES = [
   'scripts/test-autoclose-shift.ts',
   'scripts/test-cron-auto-close.ts',
   'scripts/test-payment-photo-contract.ts',
+  'scripts/test-photo-write-gate.ts',
     'scripts/test-live-monitor.ts',
     'scripts/test-live-monitor-runtime.ts',
     'scripts/test-fair-atp-hold.ts',

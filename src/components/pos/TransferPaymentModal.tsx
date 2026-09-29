@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, Clock, Eye, X } from 'lucide-react';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { createPhotoWriteGate } from '@/lib/photo-write-gate';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import type { PaymentProofPhoto } from '@/lib/offline-db';
 
@@ -130,6 +131,8 @@ export function TransferPaymentModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   /** Chặn hai lần lưu trong cùng tick: state bất đồng bộ chưa kịp set. */
   const savingRef = useRef(false);
+  /** Cổng thứ tự ghi ảnh: lần ghi kẹt không được đè ảnh của lần ghi mới hơn. */
+  const writeGateRef = useRef(createPhotoWriteGate());
 
   useEffect(() => {
     setMounted(true);
@@ -181,36 +184,47 @@ export function TransferPaymentModal({
     const file = input.files?.[0];
     input.value = '';
     if (!file || !session || savingRef.current) return;
+    // Mỗi lần chụp là một thế hệ: lần chụp sau làm lần đang chạy mất hiệu lực.
+    const gen = writeGateRef.current.begin();
     savingRef.current = true;
     setIsSaving(true);
     setCaptureError(null);
     // Chốn treo: nếu ghi xuống IndexedDB kẹt (iOS dồn bộ nhớ, ITP), modal không
     // được đứng "Đang lưu ảnh..." mãi. Mở khoá + báo lỗi; lần ghi vẫn chạy nền
     // và nếu nó xong sau đó thì ảnh vẫn được gắn vào phiên như bình thường.
+    // NHƯNG nếu cashier đã chụp lại (thế hệ mới) thì lần cũ chỉ được bỏ, tuyệt
+    // đối không ghi đè ảnh mới — xem createPhotoWriteGate.
     const watchdog = setTimeout(() => {
+      if (!writeGateRef.current.isCurrent(gen)) return;
       savingRef.current = false;
       setIsSaving(false);
       setCaptureError('Lưu ảnh quá lâu. Đơn chưa được xác nhận. Hãy thử lại.');
     }, CAPTURE_SAVE_TIMEOUT_MS);
     try {
-      await onUsePhoto({
-        id: `proof-${generateUUIDv7()}`,
-        orderCode: session.orderCode,
-        warehouseId: session.warehouseId,
-        cashierId,
-        amount: session.amount,
-        paymentMethod: session.paymentMethod,
-        capturedAt: new Date().toISOString(),
-        blob: await normalizeCapture(file),
-        syncState: 'LOCAL_ONLY',
+      await writeGateRef.current.run(gen, async () => {
+        await onUsePhoto({
+          id: `proof-${generateUUIDv7()}`,
+          orderCode: session.orderCode,
+          warehouseId: session.warehouseId,
+          cashierId,
+          amount: session.amount,
+          paymentMethod: session.paymentMethod,
+          capturedAt: new Date().toISOString(),
+          blob: await normalizeCapture(file),
+          syncState: 'LOCAL_ONLY',
+        });
       });
     } catch (err) {
+      // Lần đã bị thay thế: im lặng, lần mới đang lo UI.
+      if (!writeGateRef.current.isCurrent(gen)) return;
       if (err instanceof CaptureError) setCaptureError(err.message);
       else setCaptureError('Lưu ảnh thất bại, đơn chưa được xác nhận. Hãy thử lại.');
     } finally {
-      savingRef.current = false;
-      setIsSaving(false);
       clearTimeout(watchdog);
+      if (writeGateRef.current.isCurrent(gen)) {
+        savingRef.current = false;
+        setIsSaving(false);
+      }
     }
   };
 

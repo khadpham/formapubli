@@ -9,7 +9,14 @@ const VOICE_MAX_SECONDS = 120;
 
 interface SmartOrderParserProps {
   books: Array<{ id: string; code: string; title: string; author?: string | null }>;
-  /** Team wire: POST /api/orders { channel:'RETAIL_ONLINE_SOCIAL', confirmImmediately:false, ... } */
+  /**
+   * Team wire: POST /api/orders { channel:'RETAIL_ONLINE_SOCIAL', confirmImmediately:false, ... }
+   *
+   * PHẢI NÉM LỖI khi không nạp được giỏ. Hợp đồng này là điều kiện để con xoá
+   * form: cha gọi từ `handleParserOrder` (PosCheckoutTerminal) hiện chỉ `return`
+   * ở mọi nhánh hỏng, không throw — nên `await` luôn resolve và con tưởng đã
+   * tạo đơn xong, xoá sạch chat/số lượng trong khi giỏ không đổi.
+   */
   onCreateOrder: (payload: {
     customerName: string;
     phone?: string;
