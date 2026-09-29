@@ -30,7 +30,7 @@ async function main() {
     ips.add(m ? m[1] : 'KHONG-TIM-THAY-IP');
   }
   console.log(`So IP phan biet duoc: ${ips.size}`);
-  console.log('Gia tri IP tim thay:', [...ips].join(', '));
+  console.log('Gia tri IP tim thay:', Array.from(ips).join(', '));
   if (ips.has('127.0.0.1')) {
     console.log('\nCo bucket 127.0.0.1. Kiem tra xem no CO PHAI LICH SU (cu) hay dang xay ra:');
     const loopback = (await db.execute(
