@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { db, editions, orderItems, orders } from '../db';
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { AnalyticsService } from './analytics.service';
-import { OrderService } from './order.service';
+import { OrderService, cutoffInstantOf } from './order.service';
 import { ForecastService } from './forecast.service';
 import {
   callGeminiJsonRaw,
@@ -28,8 +28,16 @@ export function monthRangeOf(year: number, month: number): MonthRange {
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
     throw new Error(`Tháng không hợp lệ: ${year}-${month}`);
   }
-  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+  // Ranh giới tháng theo GIỜ VIỆT NAM, không phải UTC.
+  //
+  // `Date.UTC(...)` cho tháng Kế Toán VN = [ngày 1 00:00 VN, ngày cuối 23:59 VN),
+  // tức [K-1 17:00 UTC, K 16:59 UTC). Trước đây lấy ranh giới UTC thuần nên thiếu
+  // 7 giờ đầu tháng và lấy thừa 7 giờ cuối tháng — doanh thu tháng bị lệch.
+  // Dùng `cutoffInstantOf` sẵn có để không dựng mốc thủ công lần nữa.
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const start = cutoffInstantOf(`${year}-${pad(month)}-01`, '00:00');
+  const end = cutoffInstantOf(`${year}-${pad(month)}-${pad(lastDay)}`, '23:59');
   return { year, month, startDate: start.toISOString(), endDate: end.toISOString() };
 }
 

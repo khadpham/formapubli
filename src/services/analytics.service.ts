@@ -1,5 +1,6 @@
 import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like } from 'drizzle-orm';
+import { businessDateOf, VN_UTC_OFFSET_MIN } from './order.service';
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
 // (orders/order_items/ledger). Không copy ngày→tuần→tháng, không bảng mới.
@@ -16,13 +17,22 @@ function rangeConds(table: typeof orders, range: DateRange) {
   return and(...conds);
 }
 
-/** Thứ 2 đầu tuần hiện tại (giờ server), ISO string để so sánh createdAt. */
+/**
+ * Thứ 2 đầu tuần hiện tại (giờ VIỆT NAM), ISO string để so sánh `created_at`.
+ *
+ * Trước đây dùng `getDay`/`setHours`/`setDate` — tức GIỜ CỦA MÁY CHỦ. Máy chủ
+ * dev chạy GMT+7 còn Cloudflare Workers chạy UTC, nên cùng một ngày mà "tuần
+ * này" lệch nhau 7 tiếng giữa dev và production: cùng dữ liệu, hai kết quả khác
+ * nhau, và không ai hiểu vì sao. Dựng thẳng từ ngày nghiệp vụ VN rồi trừ 7 giờ.
+ */
 function mondayOf(offsetWeeks = 0): Date {
-  const d = new Date();
-  const day = (d.getDay() + 6) % 7; // Mon=0
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - day + offsetWeeks * 7);
-  return d;
+  const now = new Date();
+  // Ngày nghiệp vụ VN hôm nay.
+  const vnDay = businessDateOf(now);
+  const [y, mo, d] = vnDay.split('-').map(Number);
+  // getUTCDay trên mốc đã dịch +7h là đúng ngày VN ⇒ Thứ 2 = 0.
+  const dow = (new Date(Date.UTC(y, mo - 1, d)).getUTCDay() + 6) % 7;
+  return new Date(Date.UTC(y, mo - 1, d - dow + offsetWeeks * 7) - VN_UTC_OFFSET_MIN * 60_000);
 }
 
 export class AnalyticsService {

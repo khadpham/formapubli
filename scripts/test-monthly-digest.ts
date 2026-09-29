@@ -48,6 +48,11 @@ async function run() {
   console.log('📧 MONTHLY EXECUTIVE DIGEST 5.5 (DB cách ly, stub mạng)');
 
   // 1. Utils tháng/id + tháng sai ném lỗi.
+  //
+  // Ranh giới tháng là GIỜ VIỆT NAM: tháng 2/2026 bắt đầu 00:00 VN ngày 1/2,
+  // tức 17:00 UTC NGÀY 31/1, và kết thúc 23:59 VN ngày 28/2 = 16:59 UTC ngày 28/2.
+  // Trước đây test đòi `startDate.startsWith('2026-02-01')` — tức UTC thuần —
+  // tức nó đang BẢO VỆ chính cái lỗi lệch 7 tiếng này.
   const r = monthRangeOf(2026, 2);
   let invalid = false;
   try {
@@ -56,8 +61,12 @@ async function run() {
     invalid = true;
   }
   ok(
-    '1. monthRange/digestId chuẩn, tháng 13 ném lỗi',
-    r.startDate.startsWith('2026-02-01') && r.endDate.startsWith('2026-02-28') && digestIdOf(2026, 1) === 'DIGEST-2026-01' && invalid
+    '1. monthRange theo giờ VN (17:00 UTC hôm trước) + tháng 13 ném lỗi',
+    r.startDate === '2026-01-31T17:00:00.000Z' &&
+      r.endDate === '2026-02-28T16:59:00.000Z' &&
+      digestIdOf(2026, 1) === 'DIGEST-2026-01' &&
+      invalid,
+    `start=${r.startDate} end=${r.endDate}`
   );
 
   // 2. Digest nhất quán cấu trúc + phản ánh đúng đơn thật vừa tạo.

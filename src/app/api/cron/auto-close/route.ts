@@ -120,7 +120,14 @@ async function listUnclosed(days: number) {
   const lastDay = d(1);
 
   const all = await db
-    .select({ id: warehouses.id, code: warehouses.code, createdAt: warehouses.createdAt })
+    .select({
+      id: warehouses.id,
+      code: warehouses.code,
+      // Ngày SINH kho theo giờ VN, tính thẳng trong SQL. `day` ở vòng lặp bên
+      // dưới là ngày VN, còn `created_at` là UTC, nên so thẳng hai chuỗi thô sẽ
+      // lệch 7 tiếng: kho sinh lúc 02:00 VN bị coi là đã tồn tại từ hôm trước.
+      bornDay: sql<string | null>`substr(datetime(${warehouses.createdAt}, '+7 hours'), 1, 10)`,
+    })
     .from(warehouses);
   const closedKeys = await db
     .select({ key: idempotencyKeys.key })
@@ -193,8 +200,11 @@ async function listUnclosed(days: number) {
     for (const w of all) {
       if (closed.has(`day-close:${w.id}:${day}`)) continue;
       // Kho chưa tồn tại vào ngày đó thì không thể có phát sinh.
-      const born = w.createdAt ? String(w.createdAt).slice(0, 10) : null;
-      if (born && born > day) { skippedNoActivity++; continue; }
+      // `bornDay` đã là ngày VN (tính ở truy vấn kho), nên so thẳng với `day`.
+      // Chỉ ảnh hưởng bộ đếm `skippedNoActivity` — đường `active.has()` bên dưới
+      // vẫn chặn đúng — nhưng để hai mốc trong cùng hàm lệch nhau thì báo cáo ra
+      // số sai rồi ta lại tin theo số đó.
+      if (w.bornDay && w.bornDay > day) { skippedNoActivity++; continue; }
       if (!active.has(`${w.id}::${day}`)) { skippedNoActivity++; continue; }
       unclosed.push({ warehouse: w.code, date: day });
     }

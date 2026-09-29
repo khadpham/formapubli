@@ -1784,7 +1784,7 @@ export function createdAtBetween(
  * (UTC) mốc 23:59 thành 23:59 UTC = 06:59 VN hôm sau ⇒ ngày bị coi là quá hạn
  * sớm 7 tiếng. Dựng thẳng từ số giây UTC rồi trừ 7 giờ cho nhất quán.
  */
-function cutoffInstantOf(businessDate: string, cutoff: string): Date {
+export function cutoffInstantOf(businessDate: string, cutoff: string): Date {
   const [y, mo, d] = businessDate.split('-').map(Number);
   const p = parseCutoff(cutoff)!;
   return new Date(

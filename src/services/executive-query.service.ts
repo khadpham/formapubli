@@ -1,6 +1,6 @@
 import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances } from '@/db';
 import { ForecastService, RunoutLevel } from './forecast.service';
-import { OrderService } from './order.service';
+import { OrderService, businessDateOf } from './order.service';
 import { InventoryService } from './inventory.service';
 import { removeAccents } from '@/lib/vietnamese';
 import { eq, desc, sql, and, gte, inArray, ne } from 'drizzle-orm';
@@ -786,7 +786,10 @@ export class ExecutiveQueryService {
     if (sessionId) {
       rows = rows.filter((r) => r.id === sessionId);
     } else if (date) {
-      rows = rows.filter((r) => r.openedAt?.startsWith(date));
+      // `date` là ngày nghiệp vụ (người dùng hỏi copilot bằng tiếng Việt: "hôm
+      // nay", "ngày 28/9"), còn `opened_at` là UTC. `startsWith` so NGÀY UTC nên
+      // lệch 7 tiếng: ca mở lúc 01:00 giờ VN không bao giờ khớp ngày hôm nay.
+      rows = rows.filter((r) => !!r.openedAt && businessDateOf(new Date(r.openedAt)) === date);
     }
 
     const openRow = rows.find((r) => r.status === 'OPEN');

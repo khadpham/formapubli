@@ -1,7 +1,7 @@
 import { db, editions, orderItems, orders, stockBalances, works } from '../db';
 import { and, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
-import { OrderService, PENDING_TTL_HOURS } from './order.service';
+import { OrderService, PENDING_TTL_HOURS, businessDateOf } from './order.service';
 import { WarehouseService } from './warehouse.service';
 
 export interface PosCatalogLine {
@@ -27,12 +27,17 @@ export class PosCatalogService {
       throw AppError.invalid(`Kho ${warehouseId} không tồn tại hoặc đã ngưng hoạt động.`);
     }
 
-    // Đầu ngày VN (UTC+7) dạng ISO để lọc đơn hôm nay — đơn lưu createdAt UTC.
-    // ponytail: hardcode +7, tham số hóa khi bán ngoài VN.
-    const now = Date.now();
-    const vn = new Date(now + 7 * 3600_000);
-    const vnMidnightUtcMs = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - 7 * 3600_000;
-    const dayStartIso = new Date(vnMidnightUtcMs).toISOString();
+    // "Hôm nay" = NGÀY VIỆT NAM, lọc thẳng trong SQL.
+    //
+    // Trước đây dựng mốc 00:00 VN thành ISO ('2026-09-28T17:00:00.000Z') rồi so
+    // chuỗi thô. Sai ở chỗ cột `created_at` đang lưu HAI họ timestamp: app ghi
+    // ISO, còn SQLite CURRENT_TIMESTAMP ghi 'YYYY-MM-DD HH:mm:ss'. Khi so chuỗi,
+    // '2026-09-28 20:00:00' < '2026-09-28T17:00:00.000Z' vì ' ' < 'T', nên dòng
+    // định dạng SQLite bị loại — mà đó lại đúng là đơn 03:00 VN hôm nay, phải
+    // tính. `substr(datetime(...,'+7 hours'),1,10)` nhận được cả hai họ nên
+    // không còn phụ thuộc định dạng lưu, và bỏ luôn 3 dòng toán học múi giờ dễ
+    // sai ở trên.
+    const todayVn = businessDateOf(new Date());
 
     const soldRows = await db
       .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
@@ -42,7 +47,7 @@ export class PosCatalogService {
         and(
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'COMPLETED'),
-          gte(orders.createdAt, dayStartIso)
+          sql`substr(datetime(${orders.createdAt}, '+7 hours'), 1, 10) = ${todayVn}`
         )
       )
       .groupBy(orderItems.editionId);

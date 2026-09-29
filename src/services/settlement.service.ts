@@ -1,6 +1,7 @@
 import { db, consignmentStatements, consignmentPayments } from '../db';
 import { withDbRetry } from '../lib/db-retry';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { businessDateOf } from './order.service';
 
 /**
  * THU TIỀN CÔNG NỢ KÝ GỬI (CONSIGNMENT SETTLEMENT).
@@ -23,7 +24,9 @@ export interface StatementBalance {
 }
 
 function receiptCode(): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  // Số phiếu là thứ người dùng đọc, nên phải theo ngày VN: trước đây lấy ngày UTC
+  // thì phiếu nhận lúc 01:00 VN lại mang số của hôm qua.
+  const date = businessDateOf(new Date()).replace(/-/g, '');
   const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
   return `PT-${date}-${rand}`;
 }
@@ -82,7 +85,9 @@ export class SettlementService {
     notes?: string;
   }) {
     const { statementId, amount, paymentMethod, reference, receivedBy, cashboxSessionId, notes } = params;
-    const paidAt = params.paidAt || new Date().toISOString().slice(0, 10);
+    // `paid_at` là NGÀY TIỀN VỀ (ngày nghiệp vụ), xem schema.ts. Mặc định trước đây
+    // lấy ngày UTC, nên khoản thu lúc 00:00–07:00 VN bị ghi nhận vào HÔM TRƯỚC.
+    const paidAt = params.paidAt || businessDateOf(new Date());
 
     if (!amount || amount <= 0) throw new Error('Số tiền thu phải lớn hơn 0.');
     if (paymentMethod !== 'CASH' && paymentMethod !== 'BANK_TRANSFER') {

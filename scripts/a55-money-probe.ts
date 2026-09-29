@@ -100,7 +100,11 @@ async function main() {
     .from(schema.orders)
     .where(and(eq(schema.orders.status, 'PENDING_CONFIRMATION'), eq(schema.orders.warehouseId, WH)));
   const report: any = await DailySettlementService.getDailyFairSettlement({ warehouseId: WH, date: vnDate }).catch((e: any) => ({ err: e.message }));
-  const rev = report?.err ? `LOI: ${report.err}` : (report?.financials?.revenue ?? report?.totals?.revenue ?? null);
+  // `financials` của getDailyFairSettlement có `netSales`, KHÔNG có `revenue`
+  // (xem daily-settlement.service.ts). Đọc `revenue` trả về undefined ⇒ probe báo
+  // "thiếu doanh thu" dù dữ liệu có đủ, tức công cụ kiểm tiền báo động giả.
+  const fin = (report as any)?.financials;
+  const rev = report?.err ? `LOI: ${report.err}` : (fin?.netSales ?? (report as any)?.totals?.netSales ?? null);
 
   console.log(`\n--- ${MODE.toUpperCase()} ---`);
   console.log(`ATP ấn bản ${ed} tại ${WH}: ${atp}  (5 - ${QTY} đang giữ chỗ = 3 nếu đúng)`);
