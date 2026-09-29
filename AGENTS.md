@@ -31,8 +31,8 @@ This repository is configured with two always-on frameworks:
 The user tests on a real phone. A localhost-only dev server is useless to them.
 
 - Always start the dev server with `npm run dev:lan` (`next dev -H 0.0.0.0`), never bare `npm run dev`.
-- Always report the LAN URL, not just `localhost`. LAN IP on this machine: `192.168.1.246` (Ethernet).
-- Give the user both: `http://localhost:3000` for the desktop, `http://192.168.1.246:3000` for the phone.
+- Always report the LAN URL, not just `localhost`. LAN IP on this machine: `192.168.0.6` (Wi-Fi). MÁY CÓ THỂ ĐỔI IP — chạy `Get-NetIPAddress -AddressFamily IPv4` để lấy IP hiện tại, đừng dùng IP cũ trong tài liệu.
+- Give the user both: `http://localhost:3000` for the desktop, `http://192.168.0.6:3000` for the phone.
 - Never assume a UI fix is verified until it is measured in a real browser (`orca eval` / `orca screenshot`).
   A green source-level test suite has already shipped an invisible dropdown once; the assertion was green and
   the menu was 6597px below the viewport.
@@ -167,3 +167,4 @@ The following skills are installed in `.agents/skills/` and `skills/`:
 14. `verification-before-completion`: Rigorous verification (build, tests, edge cases) before completion.
 15. `writing-plans`: Write structured, actionable multi-step implementation plans.
 16. `writing-skills`: Design and package reusable agent skills.
+
