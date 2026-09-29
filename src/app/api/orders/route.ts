@@ -5,6 +5,7 @@ import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
+import { AppError } from '@/services/app-error';
 import { db, orders, warehouses, staffAccounts } from '@/db';
 import { eq } from 'drizzle-orm';
 
@@ -513,7 +514,16 @@ export async function POST(req: NextRequest) {
       discountRate: giftFlag ? 1 : (discountRate !== undefined ? parseFloat(discountRate) : 0),
       paymentMethod: paymentMethod || 'CASH',
       fiscalScope: safeFiscalScope,
-      vatRate: vatRate !== undefined ? parseFloat(vatRate) : 0,
+      vatRate: (() => {
+        // vatRate là `text`→`real` trong DB và CHƯA được dùng vào bất kỳ phép
+        // tính tiền nào, nhưng parseFloat("abc") = NaN ⇒ libsql ném lỗi driver
+        // ⇒ 500 thay vì 400. Chặn ở biên: chỉ nhận số hữu hạn trong [0, 1].
+        const v = vatRate !== undefined && vatRate !== null && `${vatRate}` !== '' ? parseFloat(vatRate) : 0;
+        if (!Number.isFinite(v) || v < 0 || v > 1) {
+          throw AppError.invalid('Thuế suất VAT không hợp lệ (phải nằm trong khoảng 0 - 1, VD: 0.05).');
+        }
+        return v;
+      })(),
       vatInvoiceRequired: giftFlag ? false : Boolean(vatInvoiceRequired),
       vatInvoiceCode: giftFlag ? undefined : vatInvoiceCode,
       cashierId: actorHeader,
@@ -536,7 +546,19 @@ export async function POST(req: NextRequest) {
         ? pricedItems.map((it: any) => ({ ...it, unitDiscountRate: 1 }))
         : pricedItems,
       bundles: Array.isArray(bundles)
-        ? bundles.map((b: any) => ({ bundleId: b.bundleId, quantity: parseInt(b.quantity ?? 0, 10) }))
+        ? bundles.map((b: any) => ({
+            bundleId: b.bundleId,
+            // KHÔNG parseInt ở biên HTTP — cùng quy tắc CP3-B1.2 đã áp cho
+            // /api/transfers: "1.5" phải tới service NGUYÊN VẸN để bị từ chối.
+            // parseInt("1.9") = 1 ⇒ khách đặt 1,9 bộ chỉ bị tính 1 bộ, mất tiền
+            // và sai tồn kho. Chuỗi số nguyên vẫn được nhận như trước.
+            quantity:
+              typeof b.quantity === 'number'
+                ? b.quantity
+                : typeof b.quantity === 'string' && b.quantity.trim() !== ''
+                  ? Number(b.quantity.trim())
+                  : 0,
+          }))
         : undefined,
       // A1-H: phê duyệt đã verify ở trên → service tiêu thụ NGUYÊN TỬ trong
       // cùng transaction tạo đơn (fail → rollback, không ghi đơn/không trừ kho).

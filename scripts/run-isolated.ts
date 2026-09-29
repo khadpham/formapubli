@@ -76,6 +76,8 @@ const ALL_SUITES = [
   'scripts/test-royalties.ts',
   'scripts/test-returns.ts',
   'scripts/test-auditA-kho-vanchuyen.ts',
+  'scripts/test-auditC-money.ts',
+  'scripts/test-auditC-nplus1.ts',
   'scripts/test-online-orders.ts',
   'scripts/test-smart-parser.ts',
   'scripts/test-shipments.ts',

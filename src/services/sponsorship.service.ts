@@ -1,7 +1,7 @@
 import { db, orders, orderItems, editions, sponsorshipFunds, sponsorshipDrawdowns } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 
 // Bước 4 — Quỹ Tài trợ: tiền cọc INTERNAL (SPONSORSHIP_DEPOSIT), không VAT lúc nhận.
@@ -87,6 +87,8 @@ export class SponsorshipService {
     const cover = edRows[0].coverPrice || 0;
     const drawnValue = quantity * cover;
 
+    // Báo sớm cho thu ngân (nhanh, thân thiện) — nhưng KHÔNG phải chốt chặn.
+    // Chốt chặn thật nằm trong transaction (UPDATE có điều kiện bên dưới).
     if (fund.quotaType === 'CAPPED' && drawnValue > (fund.balanceRemaining || 0)) {
       throw new Error(`Vượt hạn mức quỹ: còn ${(fund.balanceRemaining || 0).toLocaleString('vi-VN')}đ, cần ${drawnValue.toLocaleString('vi-VN')}đ.`);
     }
@@ -109,6 +111,21 @@ export class SponsorshipService {
 
     await withDbRetry(async () => {
       await db.transaction(async (tx) => {
+        // ĐỌC LẠI QUỸ BẰNG CHÍNH `tx` — bản đọc ở ngoài (getFund) là ảnh chụp cũ.
+        // Trước đây phép trừ số dư tính từ ảnh chụp đó nên hai lần rút chạy song
+        // song (bấm hai tay, F5, hoặc API lặp) đều vượt hạn mức rồi CÙNG ghi đè
+        // nhau: sách đã ra kho 2 lần, sổ quỹ chỉ giảm 1 lần. Đo được trước khi
+        // sửa: balance 72.000đ → 36.000đ trong khi 2 drawdown × 36.000đ đã ghi.
+        const fundRows = await tx
+          .select()
+          .from(sponsorshipFunds)
+          .where(eq(sponsorshipFunds.id, fundId))
+          .limit(1);
+        if (fundRows.length === 0) throw new Error('Không tìm thấy quỹ tài trợ.');
+        const fundTx = fundRows[0];
+        if (fundTx.status === 'CLOSED') {
+          throw new Error(`Quỹ đang ở trạng thái ${fundTx.status}, không rút được.`);
+        }
         const subtotal = drawnValue;
         await tx.insert(orders).values({
           id: orderId,
@@ -162,13 +179,37 @@ export class SponsorshipService {
           drawnValue,
           drawnBy,
         });
-        const newBalance = fund.quotaType === 'CAPPED' ? (fund.balanceRemaining || 0) - drawnValue : 0;
-        await tx.update(sponsorshipFunds).set({
-          balanceRemaining: newBalance,
-          totalDrawnQty: (fund.totalDrawnQty || 0) + quantity,
-          totalDrawnValue: (fund.totalDrawnValue || 0) + drawnValue,
-          status: fund.quotaType === 'CAPPED' && newBalance <= 0 ? 'EXHAUSTED' : fund.status,
-        }).where(eq(sponsorshipFunds.id, fundId));
+        // Trừ quỹ NGAY TRONG `tx` bằng UPDATE CÓ ĐIỀU KIỆN: số dư phải còn
+        // ≥ giá trị rút, và hai tổng phải CỘNG DỒN bằng SQL chứ không gán từ
+        // ảnh chụp — gán từ ảnh chụp là mất tiền của mỗi đợt rút chạy song song.
+        const capped = fundTx.quotaType === 'CAPPED';
+        const res: any = await tx
+          .update(sponsorshipFunds)
+          .set({
+            balanceRemaining: capped
+              ? sql`${sponsorshipFunds.balanceRemaining} - ${drawnValue}`
+              : sql`${sponsorshipFunds.balanceRemaining}`,
+            totalDrawnQty: sql`${sponsorshipFunds.totalDrawnQty} + ${quantity}`,
+            totalDrawnValue: sql`${sponsorshipFunds.totalDrawnValue} + ${drawnValue}`,
+            // CASE đọc `balance_remaining` TRƯỚC cập nhật (SQLite tính mọi vế SET
+            // trên bản ghi gốc) nên đây chính là số dư còn lại sau lần rút này.
+            status: capped
+              ? sql`CASE WHEN ${sponsorshipFunds.balanceRemaining} - ${drawnValue} <= 0 THEN 'EXHAUSTED' ELSE ${sponsorshipFunds.status} END`
+              : sql`${sponsorshipFunds.status}`,
+          })
+          .where(
+            capped
+              ? and(eq(sponsorshipFunds.id, fundId), gte(sponsorshipFunds.balanceRemaining, drawnValue))
+              : and(eq(sponsorshipFunds.id, fundId), sql`${sponsorshipFunds.status} <> 'CLOSED'`)
+          );
+        if (res.rowsAffected !== 1) {
+          // Đợt rút song song đã giành số dư trước (hoặc quỹ vừa cạn) ⇒ rollback
+          // trọn vẹn: không đơn, không bút toán kho, không dòng drawdown.
+          const cur = fundTx.balanceRemaining || 0;
+          throw new Error(
+            `Vượt hạn mức quỹ: còn ${cur.toLocaleString('vi-VN')}đ, cần ${drawnValue.toLocaleString('vi-VN')}đ.`
+          );
+        }
       });
     });
 

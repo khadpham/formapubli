@@ -242,6 +242,26 @@ async function main() {
     returnId: ridB, actorStaffId: 'cp3x-cashier', actorRole: 'ROLE_MANAGER', idempotencyKey: `${k}-doneB`,
   })).success);
 
+  // 7b. HOÀN TIỀN MẶT thật trên đơn CASH (s1) -> COMPLETED, hoàn 90.000.
+  // SỐ MẶT ĐÚNG: reqA (cùng dòng s1[0]) đã VOIDED nên quota giữ chỗ đã nhả.
+  // Không có case này thì phương trình két không có vế "trừ hoàn" nào để kiểm.
+  const reqC = await runSolo(url, 'request', {
+    orderId: (s1.data as any).orderId, returnType: 'REFUND', reason: 'CUSTOMER_CHANGE_MIND',
+    targetWarehouseId: 'wh-au-co', inventoryDisposition: 'RESTOCK',
+    refundAmount: 0, actorStaffId: 'cp3r-cashier', actorRole: 'ROLE_CASHIER',
+    idempotencyKey: `${k}-reqC`, cashboxSessionId: sessId,
+    items: [{ orderItemId: s1Lines[0].id, quantity: 1 }],
+  });
+  ok('R-REC request C (hoan tien MAT tren don CASH)', reqC.success, reqC.error);
+  if (!reqC.success) return;
+  const ridC = (reqC.data as any).returnId;
+  ok('R-REC approve C', (await runSolo(url, 'approve', {
+    returnId: ridC, actorStaffId: 'cp3r-mgr', actorRole: 'ROLE_MANAGER', idempotencyKey: `${k}-apprC`,
+  })).success);
+  ok('R-REC complete C', (await runSolo(url, 'complete', {
+    returnId: ridC, actorStaffId: 'cp3r-cashier', actorRole: 'ROLE_MANAGER', idempotencyKey: `${k}-doneC`,
+  })).success);
+
   // ---------- Đối soát (nguồn độc lập: CashboxService + AnalyticsService
   // đọc cùng DB probe qua DATABASE_URL khởi chạy) ----------
   // Chạy suite này với DATABASE_URL=file:formapubli_test_cp3_REC4.db để các
@@ -274,31 +294,39 @@ async function main() {
   ok('R-REC nen DB: subtotal/discount/collected', grossSubtotal === 400000 && discounts === 20000 && collected === 380000,
     `sub=${grossSubtotal} disc=${discounts} collect=${collected}`);
 
-  // 1. Két (nguồn độc lập CashboxService): cash sales đã trừ hoàn.
-  // reqB trên đơn BANK giá đủ (hoàn 100.000) — reqA đã void nên không tính.
+  // 1. Két (nguồn độc lập CashboxService).
+  // HỢP ĐỒNG SỬA 2026-09-30 (audit C): chỉ HOÀN của đơn gốc trả bằNG TIỀN MẶT
+  // mới trừ két. reqB là hoàn của đơn BANK (100.000) — tiền đó vào tài khoản
+  // ngân hàng, hoàn cũng qua ngân hàng, CHƯA TỪNG nằm trong két; trừ vào két là
+  // bịa thêm một khoản tiền mặt (đo trước khi sửa: totalCashSales = 0 − 100.000
+  // = −100.000, tức két báo ÂM). reqA (CASH) đã void nên không tính; reqC
+  // (CASH, COMPLETED, 90.000) mới là vế "trừ hoàn" thật.
   const stats: any = await CashboxService.calculateSessionStats(sessId);
-  ok('R-REC ket: cash sales 180.000 − hoan 100.000 = 80.000',
-    stats.totalCashSales === 80000 && stats.totalRefunds === 100000,
+  ok('R-REC ket: chi tru hoan TIEN MAT — 180.000 − 90.000 = 90.000',
+    stats.totalCashSales === 90000 && stats.totalRefunds === 90000,
     `cash=${stats.totalCashSales} refunds=${stats.totalRefunds}`);
-  ok('R-REC expected cash mo + thu − hoan = 1.080.000',
-    1000000 + stats.totalCashSales === 1080000);
+  ok('R-REC expected cash mo + thu − hoan = 1.090.000',
+    1000000 + stats.totalCashSales === 1090000);
+  ok('R-REC ket: hoan CHUYEN KHOAN (reqB, 100.000) KHONG tru ket',
+    stats.totalCashSales !== 80000 && stats.totalCashSales >= 0,
+    `cash=${stats.totalCashSales} (nếu bị trừ oan sẽ là 80.000 hoặc âm)`);
 
   // 2. Thẻ kho bảo toàn + không âm.
   ok('R-REC the kho bao toan (ledger == balance)', ledSum === balSum, `ledger=${ledSum} balance=${balSum}`);
   ok('R-REC khong ton am', negRows.every((r: any) => (r.physicalQuantity as number) >= 0));
 
-  // 3. VOIDED không giảm DT; net DB = 380.000 − 100.000 = 280.000
-  // (reqB trên đơn BANK giá đủ; reqA đã void nên loại).
+  // 3. VOIDED không giảm DT; net DB = 380.000 − (90.000 CASH + 100.000 BANK) = 190.000
+  // (reqA đã void nên loại; reqB BANK và reqC CASH đều giữ lại).
   const dbNet = collected - completedRefunds;
-  ok('R-REC VOIDED khong giam doanh thu', voidedCount === 1 && completedRefunds === 100000,
+  ok('R-REC VOIDED khong giam doanh thu', voidedCount === 1 && completedRefunds === 190000,
     `voided=${voidedCount} completedRefunds=${completedRefunds}`);
-  ok('R-REC net DB = 280.000', dbNet === 280000, `net=${dbNet}`);
+  ok('R-REC net DB = 190.000', dbNet === 190000, `net=${dbNet}`);
 
   // 4. Analytics minh bạch 2 trường (contract Lane A thống nhất):
-  // salesRevenue = gross (380.000), netRevenue = net sau hoàn (280.000).
+  // salesRevenue = gross (380.000), netRevenue = net sau hoàn (190.000).
   const cf: any = await AnalyticsService.cashflow();
   ok('R-REC analytics salesRevenue thay gross 380.000', cf.salesRevenue === 380000, `salesRevenue=${cf.salesRevenue}`);
-  ok('R-REC analytics netRevenue khop net 280.000 (refund-aware)',
+  ok('R-REC analytics netRevenue khop net 190.000 (refund-aware)',
     cf.netRevenue === dbNet,
     `netRevenue=${cf.netRevenue} net=${dbNet}`);
 

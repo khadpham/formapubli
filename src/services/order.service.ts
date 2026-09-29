@@ -753,12 +753,21 @@ export class OrderService {
         }
 
         // B2. Tính toán & Kiểm tra ATP nguyên tử bên trong Transaction
-        for (const [editionId, qty] of Array.from(needTotal.entries())) {
-          const atp = await this.getATP(editionId, warehouseId, tx);
-          if (atp < qty) {
-            throw AppError.atp(
-              `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
-            );
+        // BATCH (2 câu cố định thay vì 2 câu/dòng): `getATP` chính là
+        // `getBatchATP([id])` nên ngữ nghĩa y hệt, chỉ gom lại. Đo trước khi
+        // sửa (bọc client.execute): đơn 10 dòng = 77 câu, biên 7 câu/dòng —
+        // Workers free plan chỉ có 50 subrequest/lần gọi, tức đơn ≥ 7 dòng là
+        // 500 "Too many subrequests" ⇒ KHÔNG chốt được đơn. Xem
+        // scripts/test-auditC-nplus1.ts.
+        {
+          const atpMap = await this.getBatchATP(Array.from(needTotal.keys()), warehouseId, tx);
+          for (const [editionId, qty] of Array.from(needTotal.entries())) {
+            const atp = atpMap.get(editionId) ?? 0;
+            if (atp < qty) {
+              throw AppError.atp(
+                `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
+              );
+            }
           }
         }
 
@@ -867,49 +876,53 @@ export class OrderService {
           createdAt,
         });
 
-        // B4: Ghi nhận các dòng sản phẩm của đơn hàng
-        let lineIdx = 0;
-        for (const item of preparedItems) {
-          const lineValues: Record<string, unknown> = {
-            id: item.id,
-            orderId,
-            editionId: item.editionId,
-            quantity: item.quantity,
-            unitCoverPrice: item.unitCoverPrice,
-            unitDiscountRate: item.unitDiscountRate,
-            unitSellingPrice: item.unitSellingPrice,
-            totalAmount: item.totalAmount,
-          };
-          if (item.bundleId != null) lineValues.bundleId = item.bundleId;
-          if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;
-          await tx.insert(orderItems).values(lineValues as any);
+        // B4: Ghi nhận các dòng sản phẩm của đơn hàng — MỘT câu INSERT cho cả
+        // đơn thay vì 1 câu/dòng (đo trước: 5 câu/dòng, xem B2). Cùng
+        // transaction, cùng thứ tự chỉ số `lineIdx` ⇒ idempotency key bút toán
+        // kho y hệt, không đổi hợp đồng với `confirmOrder`/đối soát.
+        await tx.insert(orderItems).values(
+          preparedItems.map((item) => {
+            const lineValues: Record<string, unknown> = {
+              id: item.id,
+              orderId,
+              editionId: item.editionId,
+              quantity: item.quantity,
+              unitCoverPrice: item.unitCoverPrice,
+              unitDiscountRate: item.unitDiscountRate,
+              unitSellingPrice: item.unitSellingPrice,
+              totalAmount: item.totalAmount,
+            };
+            if (item.bundleId != null) lineValues.bundleId = item.bundleId;
+            if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;
+            return lineValues as any;
+          })
+        );
 
-          // Đơn PENDING chỉ giữ chỗ ATP — KHÔNG sinh bút toán kho
-          if (isPending) {
-            lineIdx++;
-            continue;
-          }
-
+        // Đơn PENDING chỉ giữ chỗ ATP — KHÔNG sinh bút toán kho.
+        if (!isPending) {
           // B5: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
-          await InventoryService.recordMovement({
-            editionId: item.editionId,
-            warehouseId,
-            eventType: 'DISPATCH_SALE',
-            quantityDelta: -item.quantity,
-            condition: 'NEW',
-            documentRef: orderCode,
-            note: item.bundleId
-              ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
-              : isGift
-              ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
-              : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
-            actorId: effCashierId,
-            correlationId: orderId,
-            idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
-            tx,
-          });
-           lineIdx++;
-         }
+          let lineIdx = 0;
+          for (const item of preparedItems) {
+            await InventoryService.recordMovement({
+              editionId: item.editionId,
+              warehouseId,
+              eventType: 'DISPATCH_SALE',
+              quantityDelta: -item.quantity,
+              condition: 'NEW',
+              documentRef: orderCode,
+              note: item.bundleId
+                ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
+                : isGift
+                ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
+                : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
+              actorId: effCashierId,
+              correlationId: orderId,
+              idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
+              tx,
+            });
+            lineIdx++;
+          }
+        }
 
          if (params.requiredAudit?.length) {
            await tx.insert(auditLogs).values(
@@ -1357,16 +1370,18 @@ export class OrderService {
         const lines = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 
         // 6. Gộp nhu cầu theo edition & kiểm tra tồn trong transaction
+        // ATP gom BATCH (2 câu cố định) vì lý do subrequest nêu ở createOrder B2.
         const ownNeed = new Map<string, number>();
         for (const ln of lines) {
           ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
         }
+        const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
         for (const [editionId, qty] of Array.from(ownNeed.entries())) {
           const bal = await InventoryService.getBalance(editionId, ord.warehouseId, 'NEW', tx);
           if (bal < qty) {
             throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${editionId} còn ${bal}, cần ${qty}.`);
           }
-          const atp = await this.getATP(editionId, ord.warehouseId, tx);
+          const atp = atpMap.get(editionId) ?? 0;
           if (atp + qty < qty) {
             throw AppError.atp(
               `Hết hàng khả dụng để duyệt (ATP ${atp} đã bị đơn khác giữ): ${editionId} cần ${qty}.`
@@ -2071,11 +2086,22 @@ export class CashboxService {
     }
 
     // FIX-09: trừ tiền hoàn (phiếu COMPLETED cùng ca) khỏi két — chốt ca khỏi lệch.
-    // Chỉ tính hoàn tiền mặt: hoàn chuyển khoản đối soát ngân hàng riêng (SETTLE_COD pattern).
+    // CHỈ tính hoàn của đơn gốc trả bằng TIỀN MẶT: hoàn chuyển khoản/QR đối soát
+    // ngân hàng riêng, tiền đó chưa từng nằm trong két nên trừ vào két là BỎA
+    // thêm một khoản tiền mặt. `return_orders.cashbox_session_id` do CLIENT gửi
+    // và `createRequest` (return.service.ts:315) ghi thẳng, kể cả khi đơn gốc
+    // trả bằng chuyển khoản — nên phải lọc theo `orders.payment_method` thật.
     const refunds = await txOrDb
       .select({ refundAmount: returnOrders.refundAmount })
       .from(returnOrders)
-      .where(and(eq(returnOrders.cashboxSessionId, sessionId), eq(returnOrders.status, 'COMPLETED')));
+      .innerJoin(orders, eq(returnOrders.orderId, orders.id))
+      .where(
+        and(
+          eq(returnOrders.cashboxSessionId, sessionId),
+          eq(returnOrders.status, 'COMPLETED'),
+          eq(orders.paymentMethod, 'CASH')
+        )
+      );
     let totalRefunds = 0;
     for (const r of refunds) totalRefunds += r.refundAmount || 0;
     totalCashSales -= totalRefunds;
