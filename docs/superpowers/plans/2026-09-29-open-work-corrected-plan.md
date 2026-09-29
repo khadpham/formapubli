@@ -384,8 +384,30 @@ côi" và tôi đã suýt xoá 9,2 triệu tiền thật.
 | 19 | Mã đơn 13 ký tự | ✅ xong — **nhưng phải sửa lần 2**, xem mục 7D |
 | 20 | Trigger chặn tồn kho âm khi INSERT | ✅ xong (migration `0029`, đã áp) |
 | 21 | `H85` cần ISBN 13 số thật | **CHỜ BẠN** — hiện đã khoá, dùng `TP104` |
+| 22 | **Rà soát lớp quản lý: dashboard, doanh số, chốt ca, royalty, kho, phân quyền** | ✅ xong — 5 agent, 40+ lỗi thật |
+| 23 | Chặn 500 "Too many subrequests" (đơn ≥ 7 dòng) | ✅ xong — 77 → 7 câu |
+| 24 | Vá leo thang đặc quyền ghi kho (4 route) | ✅ xong — 403 |
+| 25 | Dọn 12 worktree + prune 21 nhánh + 42 MB DB test | ✅ xong — 9 tag `archive/*` giữ mọi commit |
 
-**Còn lại đúng 5 việc, và 4 trong số đó là việc của bạn, không phải của agent.**
+**Còn lại đúng 6 việc nghiệp vụ, và 4 trong số đó cần BẠN quyết** — agent tự quyết
+sẽ đoán sai nghiệp vụ. Xem mục **0c** của `2026-09-25-handoff-state.md`.
+
+## Bắt được ngay trong vòng rà soát 30/09 (nên đọc để tin test hơn tin mình)
+
+- **RMA mất hàng vĩnh viễn:** bút toán kho chạy ngoài transaction. Chứng minh bằng
+  fault-injection: 6 cuốn vào QUARANTINE rồi commit, phiếu vẫn `QUARANTINED`, và
+  **lần gọi lại chết luôn** — 6 cuốn hàng thật biến mất khỏi sổ cái.
+- **Xuất sỉ ăn tồn đang giữ cho đơn online:** tồn vật lý 5 nhưng ATP = 0 (đơn khách
+  đang giữ 5) ⇒ xuất sỉ vẫn thành công, đơn khách không bao giờ xác nhận được.
+- **Tồn ảo từ số lượng âm:** `quantity: -5` lọt vào phiếu xuất ⇒ kho **cộng thêm 5
+  cuốn**. Trigger chặn tồn âm không bắt được vì dòng ghi là số **dương**.
+- **Replay idempotency trả nhầm phiếu:** dùng lại cùng một key cho phiếu B ⇒ trả mã
+  `PXK-2026-0002` của phiếu A, phiếu B vẫn là DRAFT, HTTP 200.
+- **Mất tiền do `parseInt`:** `parseInt("1.9") = 1` ⇒ khách đặt 1,9 bộ chỉ bị tính 1
+  bộ. Cùng lớp lỗi đã có quy tắc ở `/api/transfers`, ở `/api/orders` thì quên.
+
+**Bài học chung:** lỗi nguy hiểm nhất không nằm ở chỗ sai, mà ở chỗ **hệ thống
+tự tin là đúng**. Test xanh, số liệu khớp, UI hiển thị đẹp — vẫn mất tiền thật.
 
 ## Bẫy đã dính — FALSE-GREEN TEST (đọc trước khi viết test cho tính năng mới)
 

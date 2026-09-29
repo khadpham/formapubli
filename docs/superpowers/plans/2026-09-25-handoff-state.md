@@ -1,12 +1,116 @@
-# HANDOFF — Trạng thái toàn bộ dự án (cập nhật 29/09/2026, sau đợt sửa lỗi ngày + POS)
+# HANDOFF — Trạng thái toàn bộ dự án (cập nhật 30/09/2026, sau 5 agent rà soát toàn diện)
 
 > Tài liệu này cho MỌI session mới (agent B tiếp theo, A, C, hoặc người) đọc
 > đầu tiên để khôi phục ngữ cảnh. Đọc kèm: `docs/superpowers/plans/2026-09-24-pos-hardening-abc-master-plan.md`
 > (kế hoạch gốc 11 bugs + S-01) và `git log`.
 >
+> **MỐC 30/09 — rà soát toàn diện 5 agent, 40+ lỗi thật.** Người dùng hỏi thẳng
+> rằng phần doanh số / dashboard / quản lý **chưa** được kiểm. Vòng này chia theo
+> từng lớp chức năng, mỗi agent vừa review vừa viết test gọi code thật.
+> `main` = `05cf5fb`, deploy `f9e53b70`, **97/97 suite xanh**. Chi tiết ở mục 0b,
+> việc còn lại cần owner quyết ở mục 0c.
+>
 > **MỐC 29/09 — sửa xong đợt lớn:** quét toàn bộ lỗi "ngày nghiệp vụ VN so với
 > mốc UTC" (11 lỗi) + 12 lỗi POS (tiền thật và hiển thị). Xem mục 7 ở cuối tài
 > liệu. Nếu bạn đọc mục 2 và thấy commit cũ, đây là nguyên nhân.
+
+## 0b. Đợt rà soát toàn diện 30/09 — 5 agent, 40+ lỗi thật
+
+Câu hỏi của người dùng: *"còn tab doanh số, các báo cáo dashboard, cấp độ quản
+lý thì sao? bạn đã kiểm thử tất cả chưa?"* — Câu trả lời trung thực: **chưa**.
+Review trước chỉ soi POS + toàn vẹn dữ liệu. Vòng này chia 5 agent theo từng lớp
+chức năng, mỗi agent vừa review vừa viết test gọi code thật trên DB test.
+
+| Lớp | Lỗi |
+|---|---|
+| Báo cáo quản trị / dashboard | 9 |
+| Phân tích doanh số / dự báo | 7 |
+| Chốt ca / royalty / dòng tiền | 8 |
+| Kho / vận chuyển / trả hàng | 9 |
+| Phân quyền / đăng nhập | 1 lỗ hổng leo thang đặc quyền |
+
+### Nguyên nhân gốc chung: so CHUỖI THÔ giữa hai họ timestamp
+
+Cột thời gian trong CSDL là `text` và đang chứa **song song**:
+- SQLite `CURRENT_TIMESTAMP` → `'YYYY-MM-DD HH:mm:ss'`
+- ISO của app → `'YYYY-MM-DDTHH:mm:ss.sssZ'`
+
+Byte `0x54` (`'T'`) > `0x20` (`' '`) nên so chuỗi thô hỏng ở **cả hai đầu**:
+`lte(col,'2026-11-10')` loại mất mọi đơn **sau 00:00**; `gte(col,'2026-11-10')`
+loại mất **7 tiếng đầu** ngày. Đo thật trên một ngày có dữ liệu: báo cáo trả
+**0 đơn / 0 đ** trong khi sổ doanh số cùng ngày trả đúng **4 đơn / 1.110.000 đ**.
+
+Đã vá **tại gốc** trong `createdAtBetween` (order.service) — hàm dùng chung của cả
+hệ thống — thay vì để mỗi file viết lại một bản riêng.
+
+### Vòng dò vô hạn trên Cloudflare Workers (không test nào bắt được)
+
+Đo bằng cách bọc `client.execute` của libsql:
+
+| Hàm | Trước | Sau |
+|---|---|---|
+| `OrderService.createOrder` (đơn 10 dòng) | **77** câu | 7 (biên 4/dòng) |
+| `ForecastService.forecastAll` | **354** câu | 3 |
+| `AnalyticsService.consignment` | **127** câu | 3 |
+
+Workers free plan chỉ cho **50 subrequest** mỗi request ⇒ **đơn ≥ 7 dòng là 500
+"Too many subrequests", không chốt được đơn**. Lỗi chặn bán hàng thật.
+
+`TransferService.receive` còn ~9 câu/dòng (186 câu / phiếu 20 dòng). Chưa gom lô
+được vì phụ thuộc 5 suite CP3; tạm chặn ở biên bằng lỗi tiếng Việt có hướng dẫn
+tách phiếu, thay vì để lỗi 500 thô.
+
+### Tiền mặt qua nửa đêm — trước đây mất sạch
+
+Ca mở 23:30 hôm trước, bán lúc 00:30 hôm nay **biến mất khỏi báo cáo**: tiền két
+kỳ vọng = 0 trong khi dòng doanh số tiền mặt = 400.000 ⇒ báo cáo tự mâu thuẫn.
+Sau khi sửa: 700.000 (300.000 bàn giao + 400.000 bán trong ngày).
+
+### Bảo mật
+
+- **Đã vá — leo thang đặc quyền:** `assignedWarehouseId` mới chỉ được copy-paste ở
+  2 route. Thủ kho gán `wh-au-co` vẫn ghi bút toán được kho khác qua 4 route
+  (movement, transfers, delivery-orders, rma). Nay tất cả trả 403, kiểm bằng gọi
+  route thật.
+- **Đã kiểm chứng, KHÔNG phải lỗ hổng:** `getAuthSecret()` trả secret hardcode
+  trong git nếu thiếu cấu hình. Hỏi Cloudflare: `AUTH_SECRET`, `AUTH_STRICT`,
+  `NODE_ENV`, `MANAGER_PIN_HASHES`, `MANAGER_PIN_SALT` **đều đã đặt** ⇒ nhánh đó
+  không reachable. `CRON_SECRET` cũng đã có (docs cũ ghi "chưa set" là thông tin cũ).
+- **Đã kiểm chứng, KHÔNG có rủi ro DoS:** nghi ngờ `TRUST_PROXY=direct` làm mọi
+  thiết bị chung IP `127.0.0.1` ⇒ 10 lần quên mật khẩu là khoá cả hệ thống. Đọc
+  bảng bucket production: có **10 IP thật** của Việt Nam; bucket `127.0.0.1` có mốc
+  24/09 (lịch sử) còn IP thật có mốc 29/09. `cf-connecting-ip` đang đọc đúng.
+
+### Ba lần tôi tự làm hỏng việc — ghi lại để không lặp
+
+1. **Mutation test báo động giả.** Regex PowerShell sai ⇒ file không hề đổi, nhưng
+   script in "đã phá fix" và `exit=1` khiến tôi tưởng test bắt được lỗi. Bài học:
+   **xác nhận trên đĩa rằy file ĐÃ đổi** trước khi tin kết quả.
+2. **Khôi phục file bằng `git show ... | Out-String`** làm hỏng tiếng Việt trong
+   `daily-settlement.service.ts` và commit luôn vào repo. May là
+   `test-autoclose-shift` bắt được. Quét toàn repo bằng chữ ký `╗ ║ ╚ ╝ ß ΓÇ`:
+   đúng 1 file bị ảnh hưởng. Luôn dùng `git checkout <commit> -- <file>`.
+3. **`git branch -r --merged main` trả về cả `origin/main`** ⇒ lệnh xoá remote chạy
+   thật. May GitHub chặn nhánh mặc định và lỗi bị `| Out-Null` nuốt nên tưởng đã
+   xong. Xác minh bằng `git ls-remote --heads origin`: `refs/heads/main` còn nguyên.
+
+## 0c. Việc CÒN LẠI — cần owner quyết, agent tự quyết sẽ sai nghiệp vụ
+
+1. **`AllocationService.checkCounterQuota` / `recordCounterSales` không có caller
+   nào.** Hạn ngạch "chia mâm" không bao giờ được kiểm lúc bán, `soldQuantity`
+   không tăng ⇒ cột **"còn lại" trên UI luôn bằng "đã chia" — số ảo**. Sửa đúng
+   việc là nối vào luồng bán (rủi ro cao), nên chỉ vá rò kho rồi báo lại.
+2. **3 hàm `AllocationService` còn lại không cộng/trừ `stock_balances`** — nếu bàn
+   quầy bán thật thì cùng một cuốn vẫn bán được ở quầy lẫn ở kho.
+3. **`shipment.updateStatus`** cho phép `RETURNED`/`FAILED` → `CREATED` mà **không
+   hoàn kho**: đơn đã bán bị trả vận chuyển thì tồn không về kho.
+4. **PIN/mật khẩu mặc định trong `auth-session.ts`** nằm sau cờ strict (fail-closed,
+   production không dùng) nhưng `scripts/seed.ts` ghi chúng vào DB. Phải đổi trước
+   go-live thật.
+5. **`royaltyStatement` dùng giá bìa hiện hành**, không phải giá tại ngày bán — là
+   quyết định kế toán cần owner xác nhận.
+6. **Route đọc `/api/transfers` và `/api/delivery-orders` chưa giới hạn theo kho**
+   (đã chặn phía ghi).
 
 ## 1. Vai trò & luật phối hợp (đang hiệu lực)
 
@@ -20,7 +124,7 @@
 ## 2. Trạng thái production (đang chạy BETA)
 
 - URL: **https://book.formaform.vn** (+ formapubli.phamkha9x.workers.dev).
-- main = **`9355dc0`**, deploy version **`54deb7cf`**, **90/90 suite xanh** (`EXIT=0`).
+- main = **`05cf5fb`**, deploy version **`f9e53b70`**, **97/97 suite xanh** (`EXIT=0`).
 - Migration đã áp tay lên Turso: **`0027`** (trigger chặn tồn kho âm khi UPDATE),
   **`0028`** (bảng `daily_order_counters` cho mã đơn 13 ký tự),
   **`0029`** (trigger chặn tồn kho âm khi INSERT — 0027 chỉ chặn UPDATE).
