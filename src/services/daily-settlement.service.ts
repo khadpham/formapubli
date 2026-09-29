@@ -148,18 +148,45 @@ export class DailySettlementService {
     let closingCashActualTotal = 0;
     let expectedCashTotal = 0;
     let hasOpenSession = false;
+    let openSessionCount = 0;
+
+    // Tiền mặt bán TRONG TỪNG CA, gom theo cashboxSessionId.
+    //
+    // Không dùng cột `totalCashSales`: đó là bản chốt lúc đóng ca nên LUÔN = 0
+    // khi ca còn mở ⇒ "tiền kỳ vọng" thấp hơn thực tế, đối chiếu ngay với dòng
+    // "doanh số tiền mặt" bên cạnh thì mâu thuẫn. Cùng định nghĩa đã dùng ở
+    // GET /api/pos/live-monitor (2026-09-29).
+    //
+    // Cũng KHÔNG lọc theo ngày ở đây: tiền thuộc về ca chứ không thuộc lịch, nên
+    // ca qua nửa đêm vẫn phải tính đủ cả hai mốc ngày. Điều kiện lọc theo ngày
+    // đã áp dụng ở `dayOrders` phía trên và áp dụng cho cả ca này luôn — ca mở
+    // sau nửa đêm sẽ không có đơn nào trong `dayOrders`, nên tiền của nó đóng góp
+    // 0, đúng với báo cáo trong ngày.
+    const cashBySession = new Map<string, number>();
+    for (const ord of dayOrders as any[]) {
+      if (ord.paymentMethod !== 'CASH') continue;
+      if (!ord.cashboxSessionId) continue;
+      cashBySession.set(
+        ord.cashboxSessionId,
+        (cashBySession.get(ord.cashboxSessionId) || 0) + (ord.finalAmount || 0)
+      );
+    }
 
     for (const s of sessions) {
       openingCashTotal += s.openingCash || 0;
       if (s.status === 'OPEN') {
         hasOpenSession = true;
-        expectedCashTotal += (s.openingCash || 0) + (s.totalCashSales || 0);
+        openSessionCount += 1;
+        expectedCashTotal += (s.openingCash || 0) + (cashBySession.get(s.id) || 0);
       } else {
         closingCashActualTotal += s.closingCashActual || 0;
         expectedCashTotal += s.expectedCash || 0;
       }
     }
 
+    // `cashVariance` giữ nguyên contract (null khi còn ca mở) nhưng KHÔNG được
+    // để dòng đối soát biến mất âm thầm. Hai trường mới cho UI biết cần nói
+    // gì: số ca còn mở, và "chưa thể đối soát" thay vì trắng trơn.
     const cashVariance = sessions.length > 0 && !hasOpenSession
       ? closingCashActualTotal - expectedCashTotal
       : null;
@@ -291,6 +318,10 @@ export class DailySettlementService {
         expectedCashTotal,
         closingCashActualTotal,
         cashVariance,
+        // Ca còn mở ⇒ chưa thể đối soát tiền két. UI dùng 2 trường này để hiện
+        // "Còn N ca chưa đóng — chưa thể đối soát" thay vì ẩn dòng chênh lệch.
+        cashVariancePending: hasOpenSession,
+        openSessionCount,
         sessions: sessions.map((s: any) => ({
           id: s.id,
           cashierId: s.cashierId,
@@ -298,6 +329,14 @@ export class DailySettlementService {
           closingCashActual: s.closingCashActual,
           expectedCash: s.expectedCash,
           cashDiscrepancy: s.cashDiscrepancy,
+          // Ca còn MỞ thì `expectedCash` trong DB là NULL (chỉ ghi lúc chốt ca), nên
+          // không hiển thị được. `expectedCashLive` là con số đúng ngay lúc này:
+          // bàn giao đầu ca + tiền mặt đã bán trong chính ca đó. Đây cũng là con
+          // số mà tổng `expectedCashTotal` cộng lên.
+          expectedCashLive:
+            s.status === 'OPEN'
+              ? (s.openingCash || 0) + (cashBySession.get(s.id) || 0)
+              : (s.expectedCash ?? 0),
           status: s.status,
           notes: s.notes,
           openedAt: s.openedAt,
@@ -399,9 +438,16 @@ export class DailySettlementService {
         // Chỉ các ca thuộc ngày nghiệp vụ <= ngày đang chốt mới liên quan.
         // opened_at đọc qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP là UTC
         // không múi giờ, đọc bằng new Date() lệch 7 tiếng ở GMT+7.
-        const relevant: any[] = openSessions.filter(
-          (s: any) => s.openedAt && businessDateOf(parseDbTimestamp(s.openedAt)!) <= date
-        );
+        //
+        // KHÔNG dùng `parseDbTimestamp(...)!`: hàm trả null khi timestamp hỏng (dữ
+        // liệu cũ / sửa tay), và non-null assertion ở đây biến null thành TypeError
+        // giữa transaction — lỗi khó hiểu, có thể làm hỏng cả lần chốt ngày. Ca có
+        // opened_at hỏng thì bỏ qua, y như các guard khác trong codebase.
+        const relevant: any[] = openSessions.filter((s: any) => {
+          if (!s.openedAt) return false;
+          const opened = parseDbTimestamp(s.openedAt);
+          return opened !== null && businessDateOf(opened) <= date;
+        });
         const autoClosedSessions: string[] = [];
         for (const s of relevant) {
           if (!params.autoCloseOpenShifts) break;

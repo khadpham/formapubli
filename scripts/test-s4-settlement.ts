@@ -199,6 +199,75 @@ async function run() {
 
   console.log('✓ Doanh số và phân bổ thanh toán khớp 100%');
 
+  // [Case 1b] TIỀN MẶT KỲ VỌNG khi ca còn MỞ (2026-09-29)
+  //
+  // Lỗi đã sửa: vòng lặp đối soát két cộng `openingCash + s.totalCashSales` cho ca
+  // OPEN. `totalCashSales` là bản chốt lúc đóng ca nên LUÔN = 0 khi ca còn mở ⇒
+  // "tiền kỳ vọng" thấp hơt thực tế, mâu thuẫn với dòng "doanh số tiền mặt" ngay
+  // bên cạnh. Định nghĩa đúng (giống GET /api/pos/live-monitor): tiền thuộc về CA,
+  // gom theo cashboxSessionId, KHÔNG lọc theo lịch.
+  console.log('\n[Case 1b] Tiền mặt kỳ vọng khi ca còn mở');
+  await db.insert(schema.staffAccounts).values({
+    staffId: 'CASH-S4', fullName: 'Thu ngân S4', role: 'ROLE_CASHIER',
+    passcodeHash: 'v2$100000$' + '0'.repeat(64), salt: 'salt-s4', isActive: true, sessionVersion: 1,
+  });
+  await db.insert(schema.cashboxSessions).values({
+    id: 'sess-open-a', warehouseId: 'wh-fair-s4', cashierId: 'CASH-S4',
+    openingCash: 500000, status: 'OPEN', openedAt: `${todayIso} 02:00:00`,
+  });
+  // Hai ca CÙNG thu ngân, cùng kho, cùng mở: mỗi ca phải ra tổng riêng.
+  await db.insert(schema.cashboxSessions).values({
+    id: 'sess-open-b', warehouseId: 'wh-fair-s4', cashierId: 'CASH-S4',
+    openingCash: 200000, status: 'OPEN', openedAt: `${todayIso} 02:00:00`,
+  });
+  const mkOrder = async (id: string, code: string, sess: string, amount: number, ts: string) => {
+    await db.insert(schema.orders).values({
+      id, orderCode: code, idempotencyKey: 'k-' + id, warehouseId: 'wh-fair-s4',
+      cashierId: 'CASH-S4', cashboxSessionId: sess, status: 'COMPLETED', paymentMethod: 'CASH',
+      subtotal: amount, totalAmount: amount, finalAmount: amount,
+      discountAmount: 0, discountRate: 0, createdAt: ts, completedAt: ts,
+    } as any);
+  };
+  await mkOrder('o-open-a', 'ORD-OPEN-A', 'sess-open-a', 100000, `${todayIso} 09:00:00`);
+  await mkOrder('o-open-b', 'ORD-OPEN-B', 'sess-open-b', 300000, `${todayIso} 10:00:00`);
+
+  const rOpen = await DailySettlementService.getDailyFairSettlement(
+    { warehouseId: 'wh-fair-s4', date: todayIso }, db
+  );
+  const openById = new Map<string, any>(
+    rOpen.cashboxReconciliation.sessions.map((s: any) => [s.id, s])
+  );
+  assert.ok(openById.has('sess-open-a') && openById.has('sess-open-b'), 'phải thấy cả 2 ca đang mở');
+  // Tiền kỳ vọng = openingCash + tiền mặt bán trong CHÍNH ca đó.
+  assert.strictEqual(
+    Number(openById.get('sess-open-a')?.expectedCashLive), 600000,
+    'Ca A: 500.000 bàn giao + 100.000 bán trong ca = 600.000 (KHÔNG phải 500.000)'
+  );
+  assert.strictEqual(
+    Number(openById.get('sess-open-b')?.expectedCashLive), 500000,
+    'Ca B: 200.000 bàn giao + 300.000 bán trong ca = 500.000 (KHÔNG phải 200.000)'
+  );
+  assert.notStrictEqual(
+    Number(openById.get('sess-open-a')?.expectedCashLive),
+    Number(openById.get('sess-open-b')?.expectedCashLive),
+    'Hai ca của cùng thu ngân phải ra hai số KHÁC nhau — trùng là đã gom sai'
+  );
+
+  // Dòng chênh lệch không được biến mất im lặng khi còn ca mở.
+  assert.strictEqual(
+    rOpen.cashboxReconciliation.cashVariance, null,
+    'cashVariance giữ null khi còn ca mở (không đổi contract)'
+  );
+  assert.strictEqual(
+    rOpen.cashboxReconciliation.cashVariancePending, true,
+    'cashVariancePending phải true để UI nói "chưa thể đối soát" thay vì ẩn dòng'
+  );
+  assert.ok(
+    Number(rOpen.cashboxReconciliation.openSessionCount) >= 2,
+    'openSessionCount phải đếm số ca còn mở'
+  );
+  console.log('✓ Tiền mặt kỳ vọng tính đúng từng ca, dòng đối soát không biến mất');
+
   // [Case 2] Cảnh báo chiết khấu bình quân ngày (Ngưỡng an toàn 20%)
   console.log('\n[Case 2] Giám sát tỷ lệ chiết khấu bình quân ngày');
   // 200.000 / 1.400.000 = ~14.28% <= 20% -> Nằm trong hạn mức an toàn, không cảnh báo

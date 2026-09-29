@@ -43,6 +43,28 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // `date` đi thẳng vào `LIKE '${date}%'` bên trong service. Hai rủi ro:
+    //  · không kiểm ngày có thật ⇒ 2026-02-30 trả 200 với số liệu rỗng
+    //  · `_` và `%` là ký tự đại diện của LIKE ⇒ người gọi tự dựng được mẫu
+    //    khớp lung tung. Chặn ngay tại cửa, không đợi tới service.
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return NextResponse.json(
+        { success: false, code: 'BAD_DATE', error: `Ngày "${date}" không hợp lệ. Cần dạng YYYY-MM-DD.` },
+        { status: 400 }
+      );
+    }
+    if (date) {
+      const d = new Date(`${date}T00:00:00Z`);
+      // Date.parse cuộn 30/2 thành 2/3 (ISO chỉ ràng buộc ngày 01-31) nên phải so
+      // ngược chuỗi thay vì chỉ kiểm NaN.
+      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== date) {
+        return NextResponse.json(
+          { success: false, code: 'BAD_DATE', error: `Ngày "${date}" không tồn tại.` },
+          { status: 400 }
+        );
+      }
+    }
+
     const data = await DailySettlementService.getDailyFairSettlement({
       warehouseId,
       date,

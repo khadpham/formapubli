@@ -227,10 +227,10 @@ export function ExecutiveDashboard({
             <button
               onClick={() => setIsSettlementModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer shrink-0"
-              title="Xem báo cáo chốt ngày & kiểm kê kho đã chọn"
+              title="Xem báo cáo chốt ngày. Ngày được máy chốt tự động lúc 23:59, nút này không chốt ngày."
             >
               <CalendarCheck className="w-3.5 h-3.5" />
-              Chốt Ngày
+              Báo Cáo Ngày
             </button>
           </div>
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (

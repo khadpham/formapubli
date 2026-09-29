@@ -48,8 +48,11 @@ export function DailyFairSettlementModal({
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activeTab, setActiveTab] = useState<'FINANCIALS' | 'STOCKTAKE' | 'DISCOUNT'>('FINANCIALS');
 
-  // Lưu số đếm thực tế của từng đầu sách khi đóng thùng (editionId -> actualCount)
-  const [actualCounts, setActualCounts] = useState<Record<string, number>>({});
+  // Số đếm thực tế KHÔNG được lưu ở đâu: chỉ nằm trong useState này, không có
+  // lệnh nào gửi đi. Chủ sở hữu đã quyết định (2026-09-29): cuối ngày không đếm
+  // sách thật, tồn tính bằng "tồn trong kho − số bán" — đúng bằng cột
+  // theoreticalStock mà API đã trả sẵn. Nên bỏ ô nhập, chỉ hiện tồn lý thuyết và
+  // nói rõ chưa kiểm kê, để không ai tưởng đã đếm.
   const [stocktakeNote, setStocktakeNote] = useState('');
   const [mounted, setMounted] = useState(false);
 
@@ -96,12 +99,6 @@ export function DailyFairSettlementModal({
       const json = await res.json();
       if (json.success) {
         setData(json.data);
-        // Tự động điền số đếm thực tế bằng số lý thuyết ban đầu
-        const initialCounts: Record<string, number> = {};
-        for (const item of json.data.inventoryReconciliation || []) {
-          initialCounts[item.editionId] = item.theoreticalStock;
-        }
-        setActualCounts(initialCounts);
       }
     } catch (err) {
       console.error('Lỗi tải báo cáo chốt ngày hội chợ:', err);
@@ -118,14 +115,6 @@ export function DailyFairSettlementModal({
 
   if (!isOpen) return null;
 
-  const handleActualCountChange = (editionId: string, val: string) => {
-    const num = parseInt(val, 10);
-    setActualCounts((prev) => ({
-      ...prev,
-      [editionId]: isNaN(num) ? 0 : Math.max(0, num),
-    }));
-  };
-
   const handlePrint = () => {
     window.print();
   };
@@ -140,11 +129,11 @@ export function DailyFairSettlementModal({
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
   );
-  const totalActualBooks = (data?.inventoryReconciliation || []).reduce(
-    (sum: number, it: any) => sum + (actualCounts[it.editionId] ?? it.theoreticalStock ?? 0),
-    0
-  );
-  const totalBookVariance = totalActualBooks - totalTheoreticalBooks;
+  // Không có số đếm thực tế nữa (xem chú thích state ở trên) ⇒ tổng "thực đếm"
+  // chính là tổng lý thuyết và chênh lệch luôn bằng 0. Giữ biến để phần biên
+  // bản bàn giao và bảng bên dưới không phải đổi cấu trúc.
+  const totalActualBooks = totalTheoreticalBooks;
+  const totalBookVariance = 0;
 
   return createPortal(
     <div
@@ -473,6 +462,38 @@ export function DailyFairSettlementModal({
                           )}
                         </div>
                       )}
+
+                      {/* Trước đây dòng chênh lệch BỊ ẨN im lặng khi còn ca mở — đúng dòng
+                          cần kiểm nhất lại biến mất. Giờ nói rõ vì sao chưa đối soát được. */}
+                      {data.cashboxReconciliation?.cashVariance === null && (
+                        <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
+                          <span className="font-bold text-amber-800">
+                            Kết quả đối soát chênh lệch két:
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold">
+                            Chưa thể đối soát — còn{' '}
+                            {(data.cashboxReconciliation?.openSessionCount || 0) || 1} ca chưa đóng
+                          </span>
+                        </div>
+                      )}
+
+                      {/* openShiftAlerts do API trả sẵn (route daily-settlement gắn vào data)
+                          nhưng trước đây không màn hình nào đọc. Ca treo là nguyên nhân
+                          ngày không chốt được, nên phải thấy được. */}
+                      {Array.isArray(data.openShiftAlerts) && data.openShiftAlerts.length > 0 && (
+                        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-1.5">
+                          <p className="text-xs font-extrabold text-rose-800 flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4" />
+                            Ca chưa đóng — ngày chưa thể chốt
+                          </p>
+                          {data.openShiftAlerts.map((s: any, i: number) => (
+                            <p key={i} className="text-[11px] text-rose-700 font-mono">
+                              {s.warehouseName || s.warehouseId} · {s.cashierName || s.cashierId} · mở lúc{' '}
+                              {s.openedAt}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -506,21 +527,25 @@ export function DailyFairSettlementModal({
 
                   {/* Bảng sách kiểm kê */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <p className="px-3 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900">
+                      Cột “Kiểm kê thực tế” chưa có dữ liệu: hệ thống chưa lưu số đếm, và
+                      quy trình hiện tại không đếm sách cuối ngày. Số tồn dùng để đối chiếu là
+                      <strong> tồn lý thuyết</strong> = tồn trong kho − số đã bán.
+                    </p>
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
                           <th className="p-3 w-10 text-center">#</th>
                           <th className="p-3">Ấn phẩm sách</th>
                           <th className="p-3 text-right">Đã bán</th>
-                          <th className="p-3 text-center">Tồn máy (Lý thuyết)</th>
-                          <th className="p-3 text-center w-32">Thực đếm (Kệ)</th>
+                          <th className="p-3 text-center">Tồn lý thuyết</th>
+                          <th className="p-3 text-center w-32">Kiểm kê thực tế</th>
                           <th className="p-3 text-center w-28">Chênh lệch</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {data.inventoryReconciliation?.map((it: any, idx: number) => {
-                          const actual = actualCounts[it.editionId] ?? it.theoreticalStock;
-                          const diff = actual - it.theoreticalStock;
+                          const actual = it.theoreticalStock;
 
                           return (
                             <tr key={it.editionId} className="hover:bg-slate-50">
@@ -539,25 +564,11 @@ export function DailyFairSettlementModal({
                               <td className="p-3 text-center font-mono font-bold text-slate-900 bg-slate-50/50">
                                 {it.theoreticalStock}
                               </td>
-                              <td className="p-3 text-center">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={actual}
-                                  onChange={(e) => handleActualCountChange(it.editionId, e.target.value)}
-                                  className="w-20 px-2 py-1 text-center font-bold font-mono border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
+                              <td className="p-3 text-center font-mono text-slate-400">
+                                {actual}
                               </td>
                               <td className="p-3 text-center">
-                                {diff === 0 ? (
-                                  <span className="font-bold text-emerald-600 font-mono">Khớp (0)</span>
-                                ) : diff > 0 ? (
-                                  <span className="font-bold text-blue-600 font-mono">+{diff} (Thừa)</span>
-                                ) : (
-                                  <span className="font-bold text-rose-600 font-mono bg-rose-50 px-1.5 py-0.5 rounded">
-                                    {diff} (Thất thoát)
-                                  </span>
-                                )}
+                                <span className="font-bold text-slate-400 font-mono">Chưa kiểm kê</span>
                               </td>
                             </tr>
                           );
@@ -799,14 +810,13 @@ export function DailyFairSettlementModal({
                     <th className="border border-slate-900 p-1.5 text-left">Tên tác phẩm / Ấn phẩm</th>
                     <th className="border border-slate-900 p-1.5 w-16 text-right">Đã bán POS</th>
                     <th className="border border-slate-900 p-1.5 w-20 text-center">Tồn máy tính</th>
-                    <th className="border border-slate-900 p-1.5 w-20 text-center">Thực đếm kệ</th>
+                    <th className="border border-slate-900 p-1.5 w-20 text-center">Kiểm kê</th>
                     <th className="border border-slate-900 p-1.5 w-24 text-center">Chênh lệch</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.inventoryReconciliation?.map((it: any, idx: number) => {
-                    const actual = actualCounts[it.editionId] ?? it.theoreticalStock;
-                    const diff = actual - it.theoreticalStock;
+                    const actual = it.theoreticalStock;
                     return (
                       <tr key={it.editionId}>
                         <td className="border border-slate-900 p-1 text-center font-mono">{idx + 1}</td>
@@ -814,9 +824,9 @@ export function DailyFairSettlementModal({
                         <td className="border border-slate-900 p-1 font-medium">{it.title}</td>
                         <td className="border border-slate-900 p-1 text-right font-mono">{it.soldToday || 0}</td>
                         <td className="border border-slate-900 p-1 text-center font-mono font-bold">{it.theoreticalStock}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono font-bold">{actual}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono">
-                          {diff === 0 ? 'Khớp (0)' : diff > 0 ? `+${diff}` : `${diff}`}
+                        <td className="border border-slate-900 p-1 text-center font-mono">{actual}</td>
+                        <td className="border border-slate-900 p-1 text-center font-mono text-slate-400">
+                          Chưa kiểm kê
                         </td>
                       </tr>
                     );

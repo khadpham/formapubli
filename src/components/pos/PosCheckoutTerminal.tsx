@@ -2330,16 +2330,20 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Kiểm Kê Hội Chợ (#3-UI button: chỉ Owner & Manager) */}
+          {/* Nút Mở Báo Cáo Chốt Ngày & Đối Soát Két (#3-UI button: chỉ Owner & Manager).
+              Nhãn cố ý KHÔNG ghi "Chốt Ngày": nút này chỉ mở báo cáo read-only,
+              không chốt ngày. Ngày do máy chốt tự động lúc 23:59 (cron), hoặc
+              Quản lý chạy thủ công qua /api/cron/auto-close. Ghi sai nhãn khiến
+              người dùng tưởng đã chốt xong. */}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
               onClick={() => setIsSettlementModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition cursor-pointer min-h-[40px]"
-              title="Báo cáo chốt ngày & Đối soát kiểm kê"
+              title="Xem báo cáo chốt ngày và đối soát két. Ngày do máy chốt tự động lúc 23:59, nút này không chốt ngày."
             >
               <CalendarCheck className="w-4 h-4" />
-              <span>Chốt Ngày</span>
+              <span>Báo Cáo Ngày</span>
             </button>
           )}
     </div>
