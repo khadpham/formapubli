@@ -156,14 +156,22 @@ export function PosCheckoutTerminal({
   // (server cũng chặn, đây là lớp thứ hai để UX rõ ràng).
   const [lockedWarehouseId, setLockedWarehouseId] = useState<string | null>(null);
   const [lockedWarehouseName, setLockedWarehouseName] = useState<string>('');
+  // Tên thật của thu ngân đang đăng nhập. Lấy từ /api/auth/me (session đã có sẵn
+  // fullName) thay vì dựng chuỗi từ vai trò — dựng từ vai trò ra chuỗi giả như
+  // "User-ROLE_CASHIER" và lẫn tên kho, thu ngân không biết ca đang mở là của ai.
+  const [cashierFullName, setCashierFullName] = useState<string>('');
 
   useEffect(() => {
     let alive = true;
     fetch('/api/auth/me', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
+        if (!alive) return;
+        // Tên phải lấy TRƯỚC khi rẽ nhánh kho: một thu ngân chưa được gán kho vẫn
+        // có tên, và đó đúng là ca cần nhận. Rẽ sớm ở đây là mất tên.
+        setCashierFullName(j?.data?.fullName || '');
         const wid = j?.data?.assignedWarehouseId;
-        if (!alive || !wid) return;
+        if (!wid) return;
         setLockedWarehouseId(wid);
         setSelectedWarehouseId(wid);
         fetch(`/api/warehouses?all=true`, { cache: 'no-store' })
@@ -3559,8 +3567,11 @@ export function PosCheckoutTerminal({
                 <label className="text-xs font-bold text-slate-600 block mb-1">
                   Thu ngân nhận ca:
                 </label>
-                <div className="px-3 py-2 bg-slate-100 rounded-xl text-xs font-mono font-bold text-slate-800">
-                  User-{currentRole} - {selectedWarehouseId === 'wh-du-phong' ? 'Kho Hội chợ' : 'Kho Âu Cơ'}
+                {/* Chỉ TÊN THẬT của thu ngân. Trước đây in
+                    `User-{currentRole} - Kho Âu Cơ`: vừa là chuỗi vai trò giả, vừa
+                    lẫn tên kho — thu ngân không xác định được ca là của ai. */}
+                <div className="px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-800">
+                  {cashierFullName || actorId || 'Chưa đăng nhập'}
                 </div>
               </div>
 
