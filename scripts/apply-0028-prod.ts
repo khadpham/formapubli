@@ -55,7 +55,8 @@ async function main() {
     args: ['1970-01-01'],
   });
   const second = Number(test2.rows[0].last_seq);
-  await db.execute(`DELETE FROM daily_order_counters WHERE day = ?`, ['1970-01-01']);
+  // libsql client nhận `{ sql, args }`, không nhận 2 đối số riêng như `execute(sql, args)`.
+  await db.execute({ sql: `DELETE FROM daily_order_counters WHERE day = ?`, args: ['1970-01-01'] });
   console.log(`Cơ chế cấp số trên Turso: lần 1 -> ${first}, lần 2 -> ${second}`);
   if (first !== 1 || second !== 2) throw new Error('Cơ chế cấp số KHÔNG đúng trên Turso.');
 
