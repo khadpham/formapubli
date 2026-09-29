@@ -1,5 +1,6 @@
 import { db, rightsContracts, editions, inventoryLedger } from '../db';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { businessDateOf } from './order.service';
 
 /**
  * SỔ BẢN QUYỀN & NHUẬN BÚT (RIGHTS & ROYALTIES LEDGER) — chỉ đọc ledger.
@@ -14,6 +15,18 @@ import { eq, and, desc, sql, inArray } from 'drizzle-orm';
  */
 export const QUOTA_WARN_ABSOLUTE = 200;
 export const QUOTA_WARN_RATIO = 0.1;
+
+/**
+ * `recorded_at` trong kho là UTC; `effective_date`/`expiration_date` của hợp
+ * đồng là NGÀY VIỆT NAM. Lọc "sự kiện có nằm trong hạn hợp đồng không" bằng cách
+ * đổi `recorded_at` sang ngày VN ngay trong SQL rồi so trên chuỗi YYYY-MM-DD —
+ * bao trọn cả hai đầu, không lệch 7 tiếng, và nhận được cả hai họ timestamp đang
+ * cùng tồn tại (SQLite CURRENT_TIMESTAMP 'YYYY-MM-DD HH:mm:ss' và ISO
+ * 'YYYY-MM-DDTHH:mm:ssZ' mà app ghi). Việt Nam cố định UTC+7, không DST.
+ */
+function vnDayBetween(col: any, fromDay: string, toDay: string) {
+  return sql`substr(datetime(${col}, '+7 hours'), 1, 10) BETWEEN ${fromDay} AND ${toDay}`;
+}
 
 export type ContractLifecycle = 'ACTIVE' | 'EXPIRED' | 'TERMINATED';
 
@@ -43,7 +56,10 @@ export interface RoyaltyStatement {
 export function deriveLifecycle(
   terminated: boolean | null | undefined,
   expirationDate: string,
-  nowIso: string = new Date().toISOString().slice(0, 10)
+  // Mặc định lấy NGÀY VIỆT NAM. Trước đây lấy `toISOString().slice(0,10)` = ngày
+  // UTC, nên từ 00:00–07:00 VN một hợp đồng hết hạn "hôm nay" vẫn hiện ACTIVE
+  // thêm 7 tiếng. Vẫn nhận tham số để test tự điều khiển được thời gian.
+  nowIso: string = businessDateOf(new Date())
 ): ContractLifecycle {
   if (terminated) return 'TERMINATED';
   if (expirationDate < nowIso) return 'EXPIRED';
@@ -114,8 +130,18 @@ export class RoyaltyService {
   }
 
   /** Tổng in trong thời hạn hợp đồng (mọi kho, mốc recordedAt).
-   *  Hậu tố ' 2' ở cận trên để bao trọn ngày expiration ('YYYY-MM-DD 2' lớn
-   *  hơn mọi timestamp 'YYYY-MM-DD HH:mm:ss' trong ngày đó khi so chuỗi). */
+   *
+   *  `effective_date`/`expiration_date` là NGÀY HỢP ĐỒNG theo giờ VN; `recorded_at`
+   *  là UTC. Trước đây so chuỗi trần, và cái "hậu tố ' 2' để bao trọn ngày" trong
+   *  comment là SAI:
+   *    · '2026-12-31 23:59:59' <= '2026-12-31 2' là FALSE ⇒ mất 22 giờ cuối ngày
+   *      hết hạn, chỉ giữ lại 00:00–01:59.
+   *    · Dòng ISO ('2026-12-31T02:00:00.000Z') bị loại HẾT cả ngày, vì so chuỗi
+   *      thì 'T' > ' ' nên '2026-12-31T...' > '2026-12-31 2'.
+   *  Hai lỗi đều làm royalty bị TRẾU, tức tác giả mất tiền.
+   *
+   *  Nay lọc theo NGÀY VN của chính `recorded_at`, nên bao trọn cả ngày hết hạn,
+   *  xử lý được cả hai họ timestamp, và lệch 7 tiếng cũng được bù đúng. */
   static async printedInTerm(contractId: string): Promise<number> {
     const c = (
       await db.select().from(rightsContracts).where(eq(rightsContracts.id, contractId)).limit(1)
@@ -123,7 +149,6 @@ export class RoyaltyService {
     if (!c) throw new Error(`Không tìm thấy hợp đồng ${contractId}.`);
     const editionIds = await this.editionIdsOfWork(c.workId);
     if (editionIds.length === 0) return 0;
-    const upperBound = `${c.expirationDate} 2`;
     const rows = await db
       .select({ qty: sql<number>`COALESCE(SUM(${inventoryLedger.quantityDelta}), 0)` })
       .from(inventoryLedger)
@@ -131,8 +156,7 @@ export class RoyaltyService {
         and(
           inArray(inventoryLedger.editionId, editionIds),
           inArray(inventoryLedger.eventType, ['RECEIPT', 'OPENING_BALANCE']),
-          sql`${inventoryLedger.recordedAt} >= ${c.effectiveDate}`,
-          sql`${inventoryLedger.recordedAt} <= ${upperBound}`
+          vnDayBetween(inventoryLedger.recordedAt, c.effectiveDate, c.expirationDate)
         )
       );
     return Number(rows[0]?.qty ?? 0);
@@ -167,7 +191,6 @@ export class RoyaltyService {
     let soldQty = 0;
     let coverRevenue = 0;
     if (editionIds.length > 0) {
-      const upperBound = `${c.expirationDate} 2`;
       const rows = await db
         .select({
           editionId: inventoryLedger.editionId,
@@ -178,8 +201,11 @@ export class RoyaltyService {
           and(
             inArray(inventoryLedger.editionId, editionIds),
             inArray(inventoryLedger.eventType, ['DISPATCH_SALE', 'CONSIGNMENT_SOLD']),
-            sql`${inventoryLedger.recordedAt} >= ${c.effectiveDate}`,
-            sql`${inventoryLedger.recordedAt} <= ${upperBound}`
+            // Cùng lý do printedInTerm: ngày hợp đồng là ngày VN, recorded_at là
+            // UTC, và so chuỗi trần làm mất ngày hết hạn.
+            // Cùng lý do printedInTerm: ngày hợp đồng là ngày VN, recorded_at là
+            // UTC, và so chuỗi trần làm mất ngày hết hạn.
+            vnDayBetween(inventoryLedger.recordedAt, c.effectiveDate, c.expirationDate)
           )
         )
         .groupBy(inventoryLedger.editionId);

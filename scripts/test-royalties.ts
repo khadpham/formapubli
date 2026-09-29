@@ -1,4 +1,4 @@
-import { db, works, editions } from '../src/db';
+import { db, works, editions, inventoryLedger } from '../src/db';
 import { InventoryService } from '../src/services/inventory.service';
 import { OrderService } from '../src/services/order.service';
 import { RoyaltyService, deriveLifecycle } from '../src/services/royalty.service';
@@ -125,6 +125,64 @@ async function runRoyaltyTests() {
     quotaC.printed === printedCBefore + 4600 && ratioC <= 0.1 && quotaC.quotaWarning === true,
     'Còn ~8% quota bật QUOTA_WARNING theo tỉ lệ',
     `remaining=${quotaC.remaining}`
+  );
+
+  // TEST 5b: Ranh giới NGÀY HẾT HẠN — chỗ code cũ làm mất tiền tác giả.
+  //
+  // `expiration_date` là NGÀY VIỆT NAM nhưng `recorded_at` là UTC. Code cũ so
+  // chuỗi với cận trên `'${expirationDate} 2'`:
+  //   · '2026-12-31 23:59:59' <= '2026-12-31 2' là FALSE ⇒ mất 22 giờ cuối ngày.
+  //   · Dòng ISO bị loại HẾT cả ngày, vì so chuỗi thì 'T' > ' '.
+  // Các test trên dùng `2099-12-31` nên không bao giờ chạm ranh giới này và mọi
+  // thứ đều xanh; đây là ca riêng chạm đúng chỗ hỏng.
+  const cEdge = await RoyaltyService.createContract({
+    contractNumber: `HD-BQ-EDGE-${Date.now().toString().slice(-5)}`,
+    workId: workC.id, licensorName: 'Tác giả ranh giới', royaltyRate: 0.1,
+    printQuota: 1000, effectiveDate: '2026-12-01', expirationDate: '2026-12-31',
+    createdBy: 'manager-test',
+  });
+  const printedEdgeBefore = (await RoyaltyService.quotaStatus(cEdge.contractId)).printed;
+  const edEdge = await edOf(workC.id);
+  // Ba mốc trên NGÀY HẾT HẠN, mỗi mốc 10 đơn vị:
+  //   · 22:00 giờ VN hôm trước = 15:00 UTC hôm trước  → ngày UTC khác ngày VN
+  //   · 03:00 giờ VN 31/12   = 20:00 UTC 30/12        → ngày UTC khác ngày VN
+  //   · 23:30 giờ VN 31/12   = 16:30 UTC 31/12        → cùng ngày, giờ muộn
+  for (const recordedAt of ['2026-12-30T15:00:00.000Z', '2026-12-30T20:00:00.000Z', '2026-12-31T16:30:00.000Z']) {
+    await db.insert(inventoryLedger).values({
+      id: `led-edge-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      editionId: edEdge.id, warehouseId: 'wh-au-co',
+      eventType: 'RECEIPT', quantityDelta: 10, condition: 'NEW',
+      documentRef: 'ROYALTY-EDGE', actorId: 'test-runner',
+      idempotencyKey: `roy-edge-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      recordedAt,
+    } as any);
+  }
+  const printedEdge = (await RoyaltyService.quotaStatus(cEdge.contractId)).printed;
+  ok(
+    printedEdge === printedEdgeBefore + 30,
+    'NGÀY HẾT HẠN phải tính trọn cả 3 mốc (gồm 2 mốc lệch 7 tiếng về ngày UTC)',
+    `trước=${printedEdgeBefore} sau=${printedEdge} (cần +30)`
+  );
+
+  // TEST 5c: Cùng ranh giới đó nhưng ở `royaltyStatement` — hàm tính TIỀN thật.
+  // 30 ấn chỉ chạm quota, nên không ai nhận ra mất tiền. Ở đây ta bán 30 cuốn ở
+  // ngày hết hạn rồi đòi royalty phải khớp; code cũ trả thiếu vì dòng ISO 23:30
+  // giờ VN bị `<= 'ngày 2'` loại mất.
+  for (const recordedAt of ['2026-12-30T15:00:00.000Z', '2026-12-30T20:00:00.000Z', '2026-12-31T16:30:00.000Z']) {
+    await db.insert(inventoryLedger).values({
+      id: `led-edge-sale-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      editionId: edEdge.id, warehouseId: 'wh-au-co',
+      eventType: 'DISPATCH_SALE', quantityDelta: -10, condition: 'NEW',
+      documentRef: 'ROYALTY-EDGE-SALE', actorId: 'test-runner',
+      idempotencyKey: `roy-edge-sale-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      recordedAt,
+    } as any);
+  }
+  const stmtEdge = await RoyaltyService.royaltyStatement(cEdge.contractId);
+  ok(
+    stmtEdge.soldQty === 30,
+    'royaltyStatement phải tính trọn lượng bán ở NGÀY HẾT HẠN (tiền tác giả)',
+    `soldQty=${stmtEdge.soldQty} payable=${stmtEdge.payable} (cần soldQty 30)`
   );
 
   // TEST 5: Vòng đời EXPIRED + TERMINATED + filter.
