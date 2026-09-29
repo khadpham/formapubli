@@ -81,6 +81,21 @@ export interface TransferPaymentSession {
   expiresAt?: string;
   qrSnapshot: TransferQrSnapshot;
   paymentProof?: PaymentProofPhoto | null;
+  /**
+   * Danh sách mặc hàng ĐÃ ĐÓNG BĂNG kèm phiên.
+   *
+   * Phiếu thu in ra từ `completedOrder`, mà `finalAmount`/`totalQuantity` lấy từ
+   * phiên này nhưng `items`/`subtotal`/`discountAmount` lại lấy từ GIỎ ĐANG SỐNG.
+   * Nên sau khi F5 giữa chừng lúc chờ chuyển khoản, giỏ là rỗng trong khi phiên
+   * còn nguyên ⇒ phiếu in TỔNG TIỀN đúng nhưng bảng dòng sách rỗng và mất dòng
+   * "Tạm tính". Đóng băng danh sách vào chính phiên thì phiếu luôn khớp với đơn
+   * đã tạo, dù thu ngân có sửa giỏ sau đó hay không.
+   *
+   * Tuỳ chọn vì phiên cũ lưu trong cache từ trước khi có trường này.
+   */
+  items?: Array<{ editionId: string; code: string; title: string; quantity: number; price: number }>;
+  subtotal?: number;
+  discountAmount?: number;
 }
 
 export interface TransferPaymentModalProps {

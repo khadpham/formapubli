@@ -124,6 +124,15 @@ export interface CachedTransferSession {
    * là "đã có ảnh". POS nạp `paymentProofId` từ IndexedDB rồi mới gán vào phiên.
    */
   paymentProof: null;
+  /**
+   * Danh sách mặc hàng + TổNG TIỀN đã đóng băng cùng phiên. Tuỳ chọn vì phiên
+   * cũ lưu trước khi có các trường này. Giữ lại để phiếu thu in ra được cả
+   * dòng sách sau khi F5, khi giỏ đang sống đã rỗng — xem `items` trong
+   * `TransferPaymentSession`.
+   */
+  items?: Array<{ editionId: string; code: string; title: string; quantity: number; price: number }>;
+  subtotal?: number;
+  discountAmount?: number;
 }
 
 function sessionKey(warehouseId: string): string {

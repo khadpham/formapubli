@@ -344,6 +344,11 @@ export function PosCheckoutTerminal({
         expiresAt: cached.expiresAt,
         qrSnapshot: cached.qrSnapshot,
         paymentProof,
+        // Phiên cũ lưu trước khi có các trường này thì để undefined; chỗ in
+        // phiếu sẽ rơi về giỏ đang sống như trước.
+        items: cached.items,
+        subtotal: cached.subtotal,
+        discountAmount: cached.discountAmount,
       });
       setTransferOfflineOrderId(cached.mode === 'OFFLINE' ? cached.orderId ?? null : null);
       setTransferErrorMessage(
@@ -1069,10 +1074,16 @@ export function PosCheckoutTerminal({
     // Tìm toàn bộ các ấn bản trùng khớp trong danh mục 81 sách
     const matchedBooks = books.filter((b) => {
       const cleanIsbn = b.isbn ? b.isbn.replace(/[^0-9X]/gi, '') : '';
+      // Khớp 4 số cuối CHỈ hợp lệ khi mã quét ĐÚNG 4 ký tự. Trước đây điều kiện
+      // này nằm trong `||` vô điều kiện, nên quét ISBN-13 của một cuốn KHÔNG có
+      // trong danh mục, tình cờ trùng 4 số cuối với đúng một cuốn trong danh
+      // mục ⇒ thẻ ấn bản đó vào giỏ, trừ sai tồn kho và tính tiền theo GIÁ của
+      // cuốn khác. Mã đầy đủ mà không khớp thì phải là không khớp.
+      const last4Only = cleanScanned.length === 4 && b.isbnLast4 && cleanScanned === b.isbnLast4;
       return (
         cleanIsbn === cleanScanned ||
         b.code.toLowerCase() === scannedCode.toLowerCase() ||
-        (b.isbnLast4 && cleanScanned.endsWith(b.isbnLast4))
+        last4Only
       );
     });
 
@@ -1751,6 +1762,13 @@ export function PosCheckoutTerminal({
             content: '',
             orderQuantity: Number(resData.data?.totalQuantity ?? totalCopies),
           },
+          // Đóng băng danh sách mặc hàng và TổNG TIỀN vào chính phiên. Xem giải
+          // thích ở `items` trong TransferPaymentSession: nếu không, phiếu thu in
+          // `items` từ GIỎ ĐANG SỐNG, mà giỏ rỗng sau khi F5 ⇒ phiếu có tổng
+          // tiền đúng nhưng không có dòng sách nào.
+          items: cart.map((c) => ({ editionId: c.editionId, code: c.code, title: c.title, quantity: c.quantity, price: c.coverPrice })),
+          subtotal,
+          discountAmount: isGift ? subtotal : discountAmount,
         };
         setTransferSession(session);
         // Ảnh đã chụp xong và đơn đã có: gắn ảnh vào CHÍNH đơn này. Nút Xác nhận
@@ -1984,12 +2002,22 @@ export function PosCheckoutTerminal({
         // từ PHIÊN ĐÃ ĐÓNG BĂNG (đúng bằng số lúc tạo đơn) + số của giỏ.
         finalAmount: session.amount,
         totalQuantity: session.qrSnapshot.orderQuantity ?? totalCopies,
-        subtotal,
-        discountAmount: isGift ? subtotal : discountAmount,
+        // Danh sách sách và TỔNG TIỀN lấy từ PHIÊN ĐÃ ĐÓNG BĂNG, không phải từ
+        // giỏ đang sống. Sau khi F5 giữa chừng lúc chờ chuyển khoản, giỏ đã rỗng
+        // còn phiên vẫn giữ đơn đúng ⇒ bản cũ in ra tổng tiền ĐÚNG nhưng bảng
+        // dòng sách RỖNG và mất dòng "Tạm tính". Phiên cũ không có `items` thì
+        // rơi về giỏ như trước.
+        items: session.items && session.items.length > 0 ? [...session.items] : [...cart],
+        subtotal: session.items && session.items.length > 0 ? session.subtotal ?? subtotal : subtotal,
+        discountAmount:
+          session.items && session.items.length > 0
+            ? session.discountAmount ?? (isGift ? subtotal : discountAmount)
+            : isGift
+              ? subtotal
+              : discountAmount,
         warehouseId: session.warehouseId,
         fiscalScope,
         customerName,
-        items: [...cart],
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
         date: new Date().toLocaleString('vi-VN'),
@@ -2333,7 +2361,14 @@ export function PosCheckoutTerminal({
                 <button
                   type="button"
                   onClick={() => {
-                    setClosingCashActualInput(String(activeSession.expectedCash || activeSession.openingCash || 0));
+                    // KHÔNG điền sẵn `expectedCash` vào ô "tiền thực đếm". Bản cũ
+                    // điền sẵn, nên thu ngân bấm thẳng "Khóa Két & Kết Ca" là
+                    // closingCashActual === expectedCash ⇒ chênh lệch LUÔN 0 đ.
+                    // Đó là vô hiệu hoá tầng kiểm soát tiền mặt: ca nào cũng
+                    // "khớp", kể cả ca thiếu tiền thật. Ô phải để trống để thu
+                    // ngân tự BẤM SỐ TIỀN ĐẾM TAY. Server nhận nguyên giá trị này
+                    // và không có lớp nào phát hiện nếu ta tự điền hộ.
+                    setClosingCashActualInput('');
                     setIsCloseShiftModalOpen(true);
                   }}
                   className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm ml-1"
@@ -3704,6 +3739,10 @@ export function PosCheckoutTerminal({
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Tiền mặt thực tế đếm được trong két:
                 </label>
+                <p className="text-[11px] text-amber-700 font-semibold mb-1.5">
+                  Đếm tiền trong két rồi tự nhập. Không dùng số của hệ thống — chênh
+                  lệch luôn 0 đ thì ca nào cũng "khớp", kể cả ca thiếu tiền thật.
+                </p>
                 <div className="relative">
                   <input
                     type="number"
@@ -4057,3 +4096,4 @@ export function PosCheckoutTerminal({
     </div>
   );
 }
+
