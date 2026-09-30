@@ -571,15 +571,26 @@ export function PosCheckoutTerminal({
     setIsScannerOpen(true);
   };
   // Nút "Xem Giỏ & Thanh Toán" trong module máy quét (30/09): đóng camera rồi đi
-  // thẳng bước thanh toán, khỏi phải tắt máy quét rồi bấm lại ở màn POS.
+  // thẳng tới hộp "Chi tiết Đơn hàng & Thanh toán" — ĐÚNG hộp mà nút giỏ xanh ở
+  // màn POS mở, KHÔNG phải chốt thẳng. Lần trước tôi nối vào
+  // `handleCheckoutButtonClick` nên nó bỏ qua hộp này và quay về màn POS.
+  //
+  // Hộp đó là `lg:hidden` (chỉ dọc), nên trên desktop không có ⇒ dùng đường thanh
+  // toán thẳng của POS để không bấm lênh mà không thấy gì.
   //
   // PHẢI CHỜ MỘT NHỊP mới gọi: `handleCheckout` từ chối chạy khi `isScannerOpen`
   // còn true, mà `setIsScannerOpen(false)` là bất đồng bộ — gọi thẳng trong cùng
   // lần bấm thì vẫn thấy `isScannerOpen === true` và im lặng bỏ qua. Chờ một nhịp
-  // để React render lại, effect dọn camera chạy, rồi mới vào thanh toán.
+  // để React render lại, effect dọn camera chạy, rồi mới mở hộp.
   const goToCheckoutFromScanner = () => {
     setIsScannerOpen(false);
-    setTimeout(() => handleCheckoutButtonClick(), 0);
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+        handleCheckoutButtonClick();
+      } else {
+        setIsMobileCheckoutSheetOpen(true);
+      }
+    }, 0);
   };
 
   // Đang chờ Quản lý duyệt (chặn cả chốt đơn) vs giỏ bị khóa để sửa: chờ duyệt HOẶC

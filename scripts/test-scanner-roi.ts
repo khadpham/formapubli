@@ -186,13 +186,38 @@ ok(!/facingMode === 'environment' \? 'Camera Sau'/.test(src),
 ok(/onGoToCheckout=\{goToCheckoutFromScanner\}/.test(pos)
    && /cartCount=\{totalCopies\}/.test(pos),
    '37. POS truyền đúng callback và số cuốn (totalCopies, không phải cart.length)');
-ok(/handleCheckoutButtonClick\(\)/.test(pos)
-   && /const goToCheckoutFromScanner = \(\) => \{[\s\S]{0,200}handleCheckoutButtonClick/.test(pos),
-   '38. Đi qua handleCheckoutButtonClick để kế thừa đủ điều kiện kiểm soát (không tự mở modal)');
-ok(/const goToCheckoutFromScanner = \(\) => \{\s*setIsScannerOpen\(false\);\s*setTimeout\(\(\) => handleCheckoutButtonClick\(\), 0\);/.test(pos),
-   '39. Đóng scanner TRƯỚC, chờ một nhịp rồi mới thanh toán');
-ok(/isScannerOpen,/.test(pos) && /isScannerOpen \|\|/.test(pos),
-   '40. handleCheckout có chặn khi scanner còn mở — nếu thiếu bước chờ, bấm nút sẽ im lặng');
+// PHẢI khoanh đúng hàm: nút giỏ xanh ở màn POS cũng gọi
+// `setIsMobileCheckoutSheetOpen(true)`, nên khớp cả file sẽ xanh dù hàm của máy
+// quét đã không mở hộp nữa (đã dính đúng lỗi này một lần).
+const goStart = pos.indexOf('const goToCheckoutFromScanner = () => {');
+// Cắt theo cặp ngoặc ngoài cùng để không phụ thuộc câu chữ comment phía sau.
+let goEnd = -1;
+if (goStart > 0) {
+  let depth = 0;
+  for (let i = pos.indexOf('{', goStart); i < pos.length; i++) {
+    if (pos[i] === '{') depth++;
+    else if (pos[i] === '}') {
+      depth--;
+      if (depth === 0) { goEnd = i + 1; break; }
+    }
+  }
+}
+ok(goStart > 0 && goEnd > goStart && goEnd - goStart < 1200,
+   '37b. Khoanh đúng hàm điều hướng của nút giỏ trong máy quét (cắt theo cặp ngoặc)');
+const goToCheckout = goStart > 0 && goEnd > goStart ? pos.slice(goStart, goEnd) : '';
+ok(/setIsMobileCheckoutSheetOpen\(true\)/.test(goToCheckout)
+   && /Chi tiết Đơn hàng & Thanh toán/.test(pos),
+   '38. Nút giỏ mở ĐÚNG hộp "Chi tiết Đơn hàng & Thanh toán" (cùng hộp nút giỏ xanh ở màn POS mở), không phải chốt thẳng');
+ok(/window\.matchMedia\('\(min-width: 1024px\)'\)\.matches/.test(goToCheckout)
+   && /handleCheckoutButtonClick\(\)/.test(goToCheckout),
+   '39. Hộp đó chỉ hiện trên dọc (lg:hidden) ⇒ desktop phải rơi về đường thanh toán thẳng, không bấm lệnh mà thấy không');
+ok(/setIsScannerOpen\(false\)/.test(goToCheckout) && /setTimeout/.test(goToCheckout),
+   '40. Đóng scanner TRƯỚC, chờ một nhịp rồi mới mở hộp thanh toán');
+ok(/isScannerOpen \|\|/.test(pos),
+   '41. handleCheckout có chặn khi scanner còn mở — nếu thiếu bước chờ, bấm nút sẽ im lặng');
+ok(/\{isMobileCheckoutSheetOpen && mounted && createPortal\(/.test(pos)
+   && /lg:hidden/.test(pos.slice(pos.indexOf('{isMobileCheckoutSheetOpen && mounted'))),
+   '42. Hộp thanh toán thật sự tồn tại và là bản dọc — nút giỏ bám đúng hộp đang dùng');
 
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
 if (failures > 0) process.exit(1);
