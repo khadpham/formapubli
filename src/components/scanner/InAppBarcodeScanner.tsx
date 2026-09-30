@@ -141,18 +141,28 @@ export function InAppBarcodeScanner({
     }
   };
 
-  // Một tiếng ngắn. Dải 2.8 kHz cố ý: tiếng nói trong hội chợ đặt năng lượng lớn
-  // nhất quanh 500 Hz – 2 kHz nên âm báo ở 880–1760 Hz của bản cũ bị bóp chết;
-  // dải 2–4 kHz vượt qua tiếng ồn tốt hơn hẳn.
-  const chirp = (ctx: AudioContext, at: number, freq: number, dur: number) => {
+  // Một tiếng báo, quét tần số TĂNG DẦN để có cả "thân" lẫn "rõ".
+  //
+  // VÌ SAO KHÔNG DÙNG MỘT TẦN SỐ:
+  //  · Loa điện thoại rất nhỏ, cỡ 12–15 mm. Nó **gần như không tái tạo được
+  //    tần số trên ~2–3 kHz** ⇒ tiếng thuần 2.8 kHz trên điện thoại nghe MỎNG và
+  //    nhỏ dù máy vẫn "đúng tần số". Đó là lý do dải 2–4 kHz (gợi ý của tôi ở
+  //    lượt trước) KHÔNG đủ trên phần cứng này.
+  //  · Nhưng tần số quá thấp lại bị tiếng nói 500 Hz–2 kHz bóp chết.
+  //  ⇒ Quét từ ~1.1 kHz lên ~2.9 kHz: đầu tiếng có thân (loa phát được), cuối
+  //    tiếng có độ rõ (xuyên qua tiếng ồn). Đây là cách loa tản thể thường làm.
+  const chirp = (ctx: AudioContext, at: number, fromHz: number, toHz: number, dur: number) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'square';
-    osc.frequency.setValueAtTime(freq, at);
-    // Hình chữ nhạt bằng hàm mũ: bùng nhanh (bắt đầu ngay) rồi tắt mềm, tránh
-    // tiếng "bụp" gây giật mình trong lúc thu ngân đang bận.
+    osc.frequency.setValueAtTime(fromHz, at);
+    osc.frequency.exponentialRampToValueAtTime(toHz, at + dur);
+    // Hình chữ nhạt bằng hàm mũ: bùng gần như tức thì (bắt đầu ngay, không bị
+    // bỏ sót khi thu ngân quét nhanh) rồi tắt mềm để không "bụp" gây giật.
+    // 0.95 — sát trần trước khi bị cắt/khếch. Nâng cao hơn chỉ làm méo tiếng.
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(0.6, at + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.95, at + 0.006);
+    gain.gain.setValueAtTime(0.95, at + dur * 0.75);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -165,11 +175,11 @@ export function InAppBarcodeScanner({
     if (!ctx) return;
     try {
       const t = ctx.currentTime + 0.01;
-      // HAI tiếng ngắn thay vì một tiếng dài: tai người nhận ra "kêu-kêu" (2 nhịp)
-      // rõ hơn một tiếng kéo dài khi đang nghe tiếng ồn, và tổng thời lượng vẫn
-      // ngắn (~190 ms) nên không làm chậm thao tác quét liên tục.
-      chirp(ctx, t, 2800, 0.07);
-      chirp(ctx, t + 0.12, 2800, 0.07);
+      // HAI tiếng, mỗi tiếng 190 ms quét 1.1 → 2.9 kHz, nghỉ 110 ms giữa hai tiếng.
+      // Tổng ~490 ms: đủ dài để nhận ra giữa tiếng ồn mà vẫn không làm chậm
+      // thao tác quét liên tục (thu ngân quét liên tiếp vài quyển mỗi phút).
+      chirp(ctx, t, 1100, 2900, 0.19);
+      chirp(ctx, t + 0.30, 1100, 2900, 0.19);
     } catch {
       /* im lặng: không được làm hỏng luồng quét vì loa */
     }

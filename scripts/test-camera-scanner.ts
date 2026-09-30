@@ -236,12 +236,25 @@ async function main() {
     assert.match(src, /addEventListener\('touchstart', unlock/);
     assert.match(src, /state === 'suspended'[\s\S]{0,120}resume\(\)/);
   });
-  await check('sound: tần số nằm trên 2 kHz để xuyên tiếng ồn hội chợ', async () => {
-    const freqs = Array.from(src.matchAll(/chirp\(ctx, t(?:\s*\+\s*[\d.]+)?,\s*(\d+)/g)).map((m) => Number(m[1]));
-    assert.ok(freqs.length >= 2, `phải có ít nhất 2 nhịp bíp, thực tế ${freqs.length}`);
-    for (const f of freqs) {
-      assert.ok(f >= 2000, `tần số ${f} Hz quá thấp, bị tiếng nói 500Hz-2kHz bóp chết`);
+  await check('sound: quét tần số có CẢ thân (thấp) lẫn độ rõ (cao) — loa điện thoại không phát được 2.8kHz thuần', async () => {
+    // Loa điện thoại 12–15mm gần như không tái tạo được >2–3 kHz ⇒ tiếng thuần
+    // 2.8kHz nghe MỎNG dù đúng tần số. Phải quét từ dải thấp lên dải cao.
+    const calls = Array.from(src.matchAll(/chirp\(ctx, t(?:\s*\+\s*[\d.]+)?,\s*(\d+),\s*(\d+),\s*([\d.]+)\)/g));
+    assert.ok(calls.length >= 2, `phải có ít nhất 2 nhịp bíp, thực tế ${calls.length}`);
+    for (const c of calls) {
+      const from = Number(c[1]);
+      const to = Number(c[2]);
+      const dur = Number(c[3]);
+      assert.ok(from < 1500, `đầu tiếng phải ở dải thấp (loa phát được), thực tế ${from}Hz`);
+      assert.ok(to >= 2500, `cuối tiếng phải ở dải cao để xuyên tiếng ồn, thực tế ${to}Hz`);
+      assert.ok(to > from, 'tần số phải TĂNG dần trong tiếng bíp');
+      assert.ok(dur >= 0.15, `tiếng phải đủ dài (>=150ms) để nghe rõ, thực tế ${dur * 1000}ms`);
     }
+  });
+  await check('sound: âm lượng sát trần (>=0.9) nhưng không méo', async () => {
+    const m = src.match(/exponentialRampToValueAtTime\(0\.(\d+), at \+ 0\.00/);
+    assert.ok(m, 'phải tìm thấy đỉnh gain');
+    assert.ok(Number(m![1]) >= 90, `gain đỉnh phải >= 0.9, thực tế 0.${m![1]}`);
   });
   await check('sound: rung nhiều nhịp (điện thoại thường cầm tay, không nhìn màn hình)', async () => {
     const vib = src.match(/navigator\.vibrate\?\.\(\[([\d,\s]+)\]\)/);
