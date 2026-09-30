@@ -421,9 +421,20 @@ export function PosCheckoutTerminal({
     return () => window.clearTimeout(timer);
   }, [completedOrder, autoPrintOnCheckout, paperPreset, currentRole, receiptFooterText, cashierFullName]);
 
+  // Mốc chờ cho lệnh ghi két tiền (30/09). Mạng hội chợ chập chờn, `fetch` không
+  // mốc chờ sẽ treo vô hạn và khoá nút "Khóa Két & Kết Ca" ở "Đang chốt...".
+  const CASHBOX_WRITE_TIMEOUT_MS = 30_000;
+
   // QUẢN LÝ KÉT TIỀN CA THU NGÂN (Cashbox Session)
   const [activeSession, setActiveSession] = useState<any | null>(null);
+  // Token cho LỆNH GHI (mở/đóng ca). Lệnh ghi mới làm mất hiệu lực lệnh ghi cũ.
   const cashboxRequestRef = useRef(0);
+  // Token RIÊNG cho lệnh đọc. 30/09: trước đây lệnh đọc dùng chung token với
+  // lệnh ghi, nên một lần tải ca chạy nền có thể vô hiệu hoá lệnh đóng ca đang
+  // chờ ⇒ lệnh ghi thoát sớm ở nhánh "đã bị vượt", mà `finally` lại chỉ dọn cờ
+  // khi token vẫn khớp ⇒ cờ "đang chốt" mắc vĩnh viễn, nút bấm không bao giờ
+  // hồi. Tách token là vá đúng chỗ gốc.
+  const cashboxReadRef = useRef(0);
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
   const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
   const [openingCashInput, setOpeningCashInput] = useState('0');
@@ -558,6 +569,17 @@ export function PosCheckoutTerminal({
     if (isTransferOverlayOpen) return;
     setIsMobileCheckoutSheetOpen(false);
     setIsScannerOpen(true);
+  };
+  // Nút "Xem Giỏ & Thanh Toán" trong module máy quét (30/09): đóng camera rồi đi
+  // thẳng bước thanh toán, khỏi phải tắt máy quét rồi bấm lại ở màn POS.
+  //
+  // PHẢI CHỜ MỘT NHỊP mới gọi: `handleCheckout` từ chối chạy khi `isScannerOpen`
+  // còn true, mà `setIsScannerOpen(false)` là bất đồng bộ — gọi thẳng trong cùng
+  // lần bấm thì vẫn thấy `isScannerOpen === true` và im lặng bỏ qua. Chờ một nhịp
+  // để React render lại, effect dọn camera chạy, rồi mới vào thanh toán.
+  const goToCheckoutFromScanner = () => {
+    setIsScannerOpen(false);
+    setTimeout(() => handleCheckoutButtonClick(), 0);
   };
 
   // Đang chờ Quản lý duyệt (chặn cả chốt đơn) vs giỏ bị khóa để sửa: chờ duyệt HOẶC
@@ -863,18 +885,18 @@ export function PosCheckoutTerminal({
 
   // Tải thông tin ca két tiền hiện tại của thu ngân
   const fetchActiveCashboxSession = async () => {
-    const requestId = ++cashboxRequestRef.current;
+    const requestId = ++cashboxReadRef.current;
     try {
        const res = await fetch(`/api/cashbox?cashierId=${encodeURIComponent(cashierActorId)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
       const data = await res.json();
-      if (requestId !== cashboxRequestRef.current) return;
+      if (requestId !== cashboxReadRef.current) return;
       if (data.success && data.data && data.data.warehouseId === selectedWarehouseId) {
         setActiveSession(data.data);
       } else {
         setActiveSession(null);
       }
     } catch (err) {
-      if (requestId === cashboxRequestRef.current) console.warn('Chưa thể tải phiên két tiền:', err);
+      if (requestId === cashboxReadRef.current) console.warn('Chưa thể tải phiên két tiền:', err);
     }
   };
 
@@ -935,10 +957,14 @@ export function PosCheckoutTerminal({
     const operationRequestId = ++cashboxRequestRef.current;
     setIsSubmittingSession(true);
     setErrorMessage(null);
+    // Cùng lý do như `handleCloseShift`: bắt buộc có mốc chờ, và luôn trả cờ.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CASHBOX_WRITE_TIMEOUT_MS);
     try {
       const res = await fetch('/api/cashbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           action: 'OPEN',
            warehouseId: selectedWarehouseId,
@@ -960,10 +986,15 @@ export function PosCheckoutTerminal({
      } catch (err: any) {
        if (operationRequestId === cashboxRequestRef.current) {
          setActiveSession(null);
-         setErrorMessage('Lỗi mở ca két tiền: ' + err.message);
+         setErrorMessage(
+           err?.name === 'AbortError'
+             ? 'Mạng quá chậm, mở ca quá thời gian chờ. Bấm lại để thử, hoặc kiểm tra mạng.'
+             : 'Lỗi mở ca két tiền: ' + (err?.message || 'không rõ nguyên nhân.')
+         );
        }
      } finally {
-       if (operationRequestId === cashboxRequestRef.current) setIsSubmittingSession(false);
+       clearTimeout(timeoutId);
+       setIsSubmittingSession(false);
      }
    };
 
@@ -973,6 +1004,11 @@ export function PosCheckoutTerminal({
     const operationRequestId = ++cashboxRequestRef.current;
     setIsSubmittingSession(true);
     setErrorMessage(null);
+    // 30/09: `fetch` không có mốc chờ ⇒ ở hội chợ mạng yếu/rớt, request treo
+    // mãi thì `await` không bao giờ trả về, `finally` không chạy, nút kẹt ở
+    // "Đang chốt..." vĩnh viễn. Bắt buộc có mốc chờ và báo lỗi rõ ràng.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CASHBOX_WRITE_TIMEOUT_MS);
     try {
       const closingVal = parseFloat(closingCashActualInput);
       if (isNaN(closingVal) || closingVal < 0) {
@@ -981,6 +1017,7 @@ export function PosCheckoutTerminal({
       const res = await fetch('/api/cashbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           action: 'CLOSE',
           sessionId: activeSession.id,
@@ -1009,10 +1046,18 @@ export function PosCheckoutTerminal({
         // BỎ SÓT chính các đơn đó ⇒ expectedCash thấp hơn thực tế ⇒ chốt ca ghi sai
         // số chênh lệch. Hỏi lại server là nguồn sự thật duy nhất.
         fetchActiveCashboxSession().catch(() => {});
-        setErrorMessage('Lỗi chốt ca: ' + err.message);
+        setErrorMessage(
+          err?.name === 'AbortError'
+            ? 'Mạng quá chậm, chốt ca quá thời gian chờ. Ca vẫn đang mở — bấm lại để thử, hoặc kiểm tra mạng.'
+            : 'Lỗi chốt ca: ' + (err?.message || 'không rõ nguyên nhân.')
+        );
       }
     } finally {
-       if (operationRequestId === cashboxRequestRef.current) setIsSubmittingSession(false);
+      clearTimeout(timeoutId);
+      // Luôn trả lại cờ: nó do LỆNH GHI này bật lên, thì lệnh ghi này phải tự tắt.
+      // Trước đây chỉ tắt khi token còn khớp, nên khi lệnh bị vượt token thì nút
+      // kẹt "Đang chốt..." mãi mãi và thu ngân không đóng được ca.
+      setIsSubmittingSession(false);
     }
   };
 
@@ -3718,6 +3763,8 @@ export function PosCheckoutTerminal({
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScan={handleBarcodeScan}
+        onGoToCheckout={goToCheckoutFromScanner}
+        cartCount={totalCopies}
       />
 
       {/* 1.1: Modal Dán Chat Khách (Smart Parser FB/Zalo → nạp giỏ) */}
@@ -3863,6 +3910,16 @@ export function PosCheckoutTerminal({
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Lỗi chốt ca PHẢI hiện ngay TRONG modal. Bản `errorMessage` ở ngoài
+                nằm sau lớp phủ z-[70] nên thu ngân không thấy gì cả, tưởng app
+                treo (30/09). */}
+            {errorMessage && (
+              <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
 
             {/* Bảng tổng hợp số liệu ca bán hàng */}
             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2 text-xs">

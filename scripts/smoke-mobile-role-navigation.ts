@@ -429,7 +429,10 @@ assert.match(pos, /operationRequestId !== cashboxRequestRef\.current/);
 assert.match(pos, /setActiveSession\(null\);\s*addToCartAbortRef\.current\?\.abort/);
 assert.match(pos, /setIsSubmittingSession\(false\);\s*setActiveSession\(null\)/);
 assert.match(pos, /cashboxRequestRef/);
-assert.match(pos, /requestId !== cashboxRequestRef\.current/);
+// 30/09: lệnh ĐỌC ca phải tự có token riêng. Trước đây nó dùng chung
+// `cashboxRequestRef` với lệnh ghi, nên một lần tải ca nền vô hiệu hoá lệnh ghi
+// đang chờ ⇒ nút "Khóa Két & Kết Ca" kẹt "Đang chốt..." vĩnh viễn.
+assert.match(pos, /requestId !== cashboxReadRef\.current/);
 assert.match(pos, /data\.warehouseId === selectedWarehouseId/);
 assert.match(pos, /setActiveSession\(null\);\s*fetchActiveCashboxSession\(\)/);
 assert.match(pos, /cashboxSessionId: order\.cashboxSessionId/);

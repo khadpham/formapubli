@@ -9,7 +9,7 @@ import {
   X,
   Zap,
   ZapOff,
-  RotateCw,
+  ShoppingCart,
   CheckCircle2,
   AlertCircle,
   Volume2,
@@ -20,6 +20,10 @@ interface InAppBarcodeScannerProps {
   isOpen: boolean;
   onClose: () => void;
   onScan: (scannedCode: string) => void;
+  /** Mở thẳng bước thanh toán. Bấm ở đây sẽ tự đóng camera trước. */
+  onGoToCheckout?: () => void;
+  /** Số cuốn trong giỏ — hiện trên nút xanh để thu ngân biết còn bao nhiêu. */
+  cartCount?: number;
 }
 
 /**
@@ -140,6 +144,8 @@ export function InAppBarcodeScanner({
   isOpen,
   onClose,
   onScan,
+  onGoToCheckout,
+  cartCount = 0,
 }: InAppBarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -148,7 +154,9 @@ export function InAppBarcodeScanner({
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  // Máy quét luôn dùng camera sau (đã bỏ nút chuyển trước/sau 30/09), nên không
+  // cần setter — giữ cố định cho vòng lặp camera không đổi hướng ngoài ý muốn.
+  const [facingMode] = useState<'environment' | 'user'>('environment');
   const [hasTorch, setHasTorch] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
@@ -946,10 +954,16 @@ export function InAppBarcodeScanner({
         </div>
 
         {/* Controls Bar */}
-        <div className="p-3 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-center gap-2.5">
+        {/* Thanh nút: hàng 1 là nút phụ, hàng 2 là nút CHÍNH (xanh) — thu ngân
+            nhìn là thấy ngay bước thanh toán. Nút chuyển ống trước/sau đã bỏ
+            (30/09): máy quét luôn dùng camera sau, nút đó chỉ chiếm chỗ. */}
+        <div className="p-3 bg-slate-900/95 border-t border-slate-800 flex flex-col gap-2.5">
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
           {hasTorch && (
             <button
+              type="button"
               onClick={toggleTorch}
+              aria-label={isTorchOn ? 'Tắt đèn flash' : 'Bật đèn flash'}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 isTorchOn
                   ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
@@ -962,6 +976,7 @@ export function InAppBarcodeScanner({
           )}
 
           <button
+            type="button"
             onClick={toggleZoom}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
               zoomLevel === 2
@@ -975,24 +990,8 @@ export function InAppBarcodeScanner({
             {zoomLevel === 2 ? 'Zoom 2x' : 'Zoom 1x'}
           </button>
 
-          <button
-            onClick={() => {
-              const nextMode = facingMode === 'environment' ? 'user' : 'environment';
-              setFacingMode(nextMode);
-              setSelectedCameraId('');
-              try {
-                window.localStorage.removeItem(CAMERA_ID_KEY);
-              } catch {
-                // bỏ qua
-              }
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors"
-          >
-            <RotateCw className="w-4 h-4" />
-            {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}
-          </button>
-
-          {/* Camera Lens Selector khi điện thoại có nhiều camera */}
+          {/* Chọn ống kính khi điện thoại có nhiều camera (quan trọng cho zoom:
+              iPhone có ống tele, chọn đúng ống là nét nhất). */}
           {availableCameras.length > 1 && (
             <select
               value={selectedCameraId}
@@ -1016,6 +1015,28 @@ export function InAppBarcodeScanner({
               ))}
             </select>
           )}
+          </div>
+
+          {/* NÚT CHÍNH: Xem Giỏ & Thanh Toán. Màu xanh GIỐNG HỆT nút cùng ý nghĩa
+              ở màn POS, để thu ngân không phải nhìn chỗ khác mới biết bấm đâu. */}
+          <button
+            type="button"
+            id="btn-scanner-go-checkout"
+            onClick={() => {
+              stopCamera();
+              onGoToCheckout?.();
+            }}
+            disabled={!onGoToCheckout || cartCount === 0}
+            aria-label={
+              cartCount === 0
+                ? 'Giỏ hàng đang trống, chưa thanh toán được'
+                : `Xem giỏ và thanh toán, ${cartCount} cuốn trong giỏ`
+            }
+            className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-sm font-extrabold shadow-md shadow-emerald-950/30 flex items-center justify-center gap-2 min-h-[50px] active:scale-95 transition-all disabled:opacity-40 disabled:active:scale-100 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <ShoppingCart className="w-5 h-5" />
+            {cartCount === 0 ? 'Giỏ Hàng Trống' : `Xem Giỏ & Thanh Toán (${cartCount} cuốn)`}
+          </button>
         </div>
       </div>
     </div>,

@@ -163,6 +163,37 @@ ok(/BarcodeFormat\.EAN_13, zxing\.BarcodeFormat\.EAN_8,/.test(dec)
    '28. Danh sách định dạng ZXING đủ EAN-13 + EAN-8 + Code 128');
 ok(/focusMode: 'continuous'/.test(src), '29. Vẫn giữ focus liên tục');
 
+// --- Nút Xem Giỏ & Thanh Toán trong máy quét (30/09) ---
+const pos = readFileSync('src/components/pos/PosCheckoutTerminal.tsx', 'utf8');
+
+ok(/id="btn-scanner-go-checkout"/.test(src), '30. Máy quét có nút Xem Giỏ & Thanh Toán');
+ok(/from-emerald-500 to-teal-600/.test(src),
+   '31. Nút giỏ MÀU XANH đúng kiểu nút giỏ ở màn POS (cùng gradient emerald→teal)');
+ok(/<ShoppingCart className="w-5 h-5" \/>/.test(src)
+   && /Xem Giỏ & Thanh Toán \(\$\{cartCount\} cuốn\)/.test(src),
+   '32. Có icon giỏ và hiện số cuốn trong giỏ');
+ok(/disabled=\{!onGoToCheckout \|\| cartCount === 0\}/.test(src)
+   && /Giỏ Hàng Trống/.test(src),
+   '33. Giỏ trống thì nút khoá, không bấm nhầm được');
+ok(/onClick=\{\(\) => \{\s*stopCamera\(\);\s*onGoToCheckout\?\.\(\);\s*\}\}/.test(src),
+   '34. Bấm nút sẽ tắt camera TRƯỚC rồi mới đi thanh toán');
+ok(!/RotateCw/.test(src) && !/Camera Sau/.test(src),
+   '35. Đã bỏ nút Camera Sau/Trước (máy quét luôn dùng camera sau)');
+ok(!/facingMode === 'environment' \? 'Camera Sau'/.test(src),
+   '36. Không còn nhãn chuyển camera trong UI');
+
+// --- POS nối đúng, và ĐI QUA ĐƯỜNG CÓ KIỂM SOÁT ---
+ok(/onGoToCheckout=\{goToCheckoutFromScanner\}/.test(pos)
+   && /cartCount=\{totalCopies\}/.test(pos),
+   '37. POS truyền đúng callback và số cuốn (totalCopies, không phải cart.length)');
+ok(/handleCheckoutButtonClick\(\)/.test(pos)
+   && /const goToCheckoutFromScanner = \(\) => \{[\s\S]{0,200}handleCheckoutButtonClick/.test(pos),
+   '38. Đi qua handleCheckoutButtonClick để kế thừa đủ điều kiện kiểm soát (không tự mở modal)');
+ok(/const goToCheckoutFromScanner = \(\) => \{\s*setIsScannerOpen\(false\);\s*setTimeout\(\(\) => handleCheckoutButtonClick\(\), 0\);/.test(pos),
+   '39. Đóng scanner TRƯỚC, chờ một nhịp rồi mới thanh toán');
+ok(/isScannerOpen,/.test(pos) && /isScannerOpen \|\|/.test(pos),
+   '40. handleCheckout có chặn khi scanner còn mở — nếu thiếu bước chờ, bấm nút sẽ im lặng');
+
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
 if (failures > 0) process.exit(1);
 console.log('\n✅ Máy quét: zoom phóng cảnh, khung quét bất biến, xem hết màn hình, không quét nhầm QR.');
