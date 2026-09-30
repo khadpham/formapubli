@@ -74,6 +74,26 @@ export function InAppBarcodeScanner({
 
   useEffect(() => {
     if (!isOpen) return;
+    // Trình duyệt di động chỉ cho phát tiếng sau một USER GESTURE. Mở khoá ngay ở
+    // lần chạm/phím đầu tiên vào khung scanner — nhờ vậy bíp đầu tiên cũng ra tiếng.
+    // `once: true` để gỡ listener sau lần đầu, không giữ listener vô ích.
+    const unlock = () => {
+      ensureAudio();
+    };
+    const el = modalRef.current;
+    el?.addEventListener('pointerdown', unlock, { once: true });
+    el?.addEventListener('touchstart', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      el?.removeEventListener('pointerdown', unlock);
+      el?.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         stopCamera();
@@ -88,30 +108,70 @@ export function InAppBarcodeScanner({
   const lockedCodeRef = useRef<string | null>(null); // Mã đang bị khóa trong khung hình
   const framesWithoutBarcodeRef = useRef<number>(0); // Đếm số frame liên tiếp không thấy mã để reset lock
 
-  // 1. Web Audio API Beep Synthesizer (Chuẩn âm thanh quầy thu ngân siêu thị)
-  const playBeepSound = () => {
+  // 1. BÍP BÁO ĐÃ NHẬN BARCODE — tổng hợp bằng Web Audio, KHÔNG dùng file âm.
+  //
+  // VÌ SAO KHÔNG TẠO AudioContext MỚI MỖI LẦN BÍP (lỗi đã có trong bản cũ):
+  //   `new AudioContext()` mỗi lần quét là thói quen sai trên mobile. iOS giới
+  //   hạn số AudioContext đồng thời, và context sinh ra NGOÀI user gesture thường
+  //   rơi vào trạng thái "suspended" ⇒ bíp vài lần là mất tiếng hẳn. Đó là lý do
+  //   thu ngân báo "tiếng bé / không nghe thấy" chứ KHÔNG phải vì gain thấp — nên
+  //   chỉ tăng `gain` sẽ không sửa được. Nay dùng MỘT context cho cả phiên.
+  //
+  //   Mở khoá âm thanh bằng chính user gesture: lần chạm đầu tiên vào khung
+  //   scanner (hoặc phím) sẽ `resume()` context. Đây là cách duy nhất trình duyệt
+  //   di động cho phép phát tiếng mà không cần xin quyền riêng.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const ensureAudio = () => {
+    if (typeof window === 'undefined') return null;
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContextClass) return;
-      const ctx = new AudioContextClass();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      if (!AudioContextClass) return null;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioContextClass();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        void audioCtxRef.current.resume().catch(() => {
+          /* chưa có gesture — lần chạm sau sẽ mở khoá */
+        });
+      }
+      return audioCtxRef.current;
+    } catch {
+      return null;
+    }
+  };
 
-      osc.type = 'sine';
-      // Double chirp (880Hz -> 1760Hz) cực kỳ trong trẻo và dễ chịu
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.08);
+  // Một tiếng ngắn. Dải 2.8 kHz cố ý: tiếng nói trong hội chợ đặt năng lượng lớn
+  // nhất quanh 500 Hz – 2 kHz nên âm báo ở 880–1760 Hz của bản cũ bị bóp chết;
+  // dải 2–4 kHz vượt qua tiếng ồn tốt hơn hẳn.
+  const chirp = (ctx: AudioContext, at: number, freq: number, dur: number) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, at);
+    // Hình chữ nhạt bằng hàm mũ: bùng nhanh (bắt đầu ngay) rồi tắt mềm, tránh
+    // tiếng "bụp" gây giật mình trong lúc thu ngân đang bận.
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.6, at + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + dur + 0.01);
+  };
 
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-    } catch (e) {
-      // Audio not permitted or error
+  const playBeepSound = () => {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    try {
+      const t = ctx.currentTime + 0.01;
+      // HAI tiếng ngắn thay vì một tiếng dài: tai người nhận ra "kêu-kêu" (2 nhịp)
+      // rõ hơn một tiếng kéo dài khi đang nghe tiếng ồn, và tổng thời lượng vẫn
+      // ngắn (~190 ms) nên không làm chậm thao tác quét liên tục.
+      chirp(ctx, t, 2800, 0.07);
+      chirp(ctx, t + 0.12, 2800, 0.07);
+    } catch {
+      /* im lặng: không được làm hỏng luồng quét vì loa */
     }
   };
 
@@ -446,10 +506,13 @@ export function InAppBarcodeScanner({
     lastScannedTimeRef.current = now;
     setLastScanned(cleanCode);
 
-    // Kêu bíp & rung haptic rõ rệt báo hiệu đã chốt đơn
+    // Bíp = ĐÃ NHẬN barcode. Rung mạnh hơn vì ở hội chờ điện thoại thường cầm tay
+    // hoặc để trong túi, mắt không nhìn thẳng vào màn hình → rung là kênh báo
+    // tin cậy hơn mắt. Nhiều nhịp để phân biệt với tin nhắn/điện thoại khác rung.
+    // Lưu ý: iOS KHÔNG hỗ trợ `navigator.vibrate` ⇒ iPhone hoàn toàn dựa vào tiếng.
     playBeepSound();
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate?.([80, 50, 80]);
+      navigator.vibrate?.([45, 55, 45, 55, 140]);
     }
 
     // Hiệu ứng viền xanh nhấp nháy

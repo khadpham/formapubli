@@ -198,5 +198,57 @@ async function main() {
     });
   }
   console.log(`Camera scanner: ${passed}/${passed} checks passed (real decoder pixels, simulated camera).`);
+
+  // ==========================================================================
+  // ÂM BÁO SCANNER — kiểm CẤU TRÚC, không phải chứng minh hành vi.
+  //
+  // PHẢI NÓI RÕ: không thể unit-test Web Audio mà không có trình duyệt thật.
+  // Vì vậy phần này chỉ canh ĐÚNG NHỮNG GÌ đã hỏng lần trước, chứ không phải
+  // chứng minh "bíp sẽ nghe thấy". Chứng minh cái đó cần điện thoại thật ở hội
+  // chợ — người dùng tự nghiệm thu phần đó.
+  //
+  // Lỗi gốc đã sửa: `new AudioContext()` được gọi LẠT mỗi lần bíp. Trên mobile
+  // điều đó làm context rơi vào "suspended" và mất tiếng sau vài lần quét, nên
+  // thu ngân nghe tiếng bé. Tăng `gain` không sửa được cái này.
+  // ==========================================================================
+  // Dùng lại hằng `path` đã có sẵn ở đầu file (trỏ đúng file này) — không import
+  // `node:path` vì tên `path` đã bị biến cục bộ này che mất.
+  const src = readFileSync(path, 'utf8');
+  const realNewContexts = (src.split('new AudioContextClass()') as string[]).length - 1;  await check('sound: AudioContext được LƯU VÀO REF (tạo 1 lần, dùng lại — không tạo mới mỗi lần bíp)', async () => {
+    // Đếm số chỗ tạo KHÔNG đủ: bản cũ cũng chỉ có đúng 1 chỗ `new AudioContextClass()`,
+    // chỉ là nó nằm thẳng trong `playBeepSound` nên chạy mỗi lần bíp. Bất biến thật là
+    // context phải được GHI VÀO REF rồi tái dùng — nếu không có dòng gán ref này
+    // thì chắc chắn là tạo mới mỗi lần và bản này sẽ vỡ.
+    assert.equal(realNewContexts, 1, `phải có đúng 1 chỗ tạo, thực tế ${realNewContexts}`);
+    assert.match(
+      src,
+      /audioCtxRef\.current\s*=\s*new AudioContextClass\(\)/,
+      'phải ghi context vào ref để tái sử dụng giữa các lần bíp'
+    );
+    assert.match(
+      src,
+      /if \(!audioCtxRef\.current \|\| audioCtxRef\.current\.state === 'closed'\)/,
+      'phải kiểm ref đã có chưa trước khi tạo mới'
+    );
+  });
+  await check('sound: context được resume trong user gesture (pointerdown/touchstart)', async () => {
+    assert.match(src, /addEventListener\('pointerdown', unlock/);
+    assert.match(src, /addEventListener\('touchstart', unlock/);
+    assert.match(src, /state === 'suspended'[\s\S]{0,120}resume\(\)/);
+  });
+  await check('sound: tần số nằm trên 2 kHz để xuyên tiếng ồn hội chợ', async () => {
+    const freqs = Array.from(src.matchAll(/chirp\(ctx, t(?:\s*\+\s*[\d.]+)?,\s*(\d+)/g)).map((m) => Number(m[1]));
+    assert.ok(freqs.length >= 2, `phải có ít nhất 2 nhịp bíp, thực tế ${freqs.length}`);
+    for (const f of freqs) {
+      assert.ok(f >= 2000, `tần số ${f} Hz quá thấp, bị tiếng nói 500Hz-2kHz bóp chết`);
+    }
+  });
+  await check('sound: rung nhiều nhịp (điện thoại thường cầm tay, không nhìn màn hình)', async () => {
+    const vib = src.match(/navigator\.vibrate\?\.\(\[([\d,\s]+)\]\)/);
+    assert.ok(vib, 'phải rung khi nhận barcode');
+    const parts = vib![1].split(',').map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n));
+    assert.ok(parts.length >= 5, `rung phải nhiều nhịp để phân biệt, thực tế ${parts.length} nhịp`);
+  });
+  console.log(`Scanner sound (cấu trúc): ${passed}/? checks — cần điện thoại thật để chứng minh hành vi.`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
