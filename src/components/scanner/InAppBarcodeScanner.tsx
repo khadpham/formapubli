@@ -72,25 +72,37 @@ export function InAppBarcodeScanner({
     setMounted(true);
   }, []);
 
+  // MỞ KHOÁ ÂM THANH — phải bắt ở WINDOW, không bắt ở modal.
+  //
+  // LÝ DO (review 30/09 — lỗi nghiêm trọng, chỉ lộ trên iPhone):
+  //   Bản trước gắn listener vào `modalRef.current`. Nhưng modal CHƯA TỒN TẠI cho
+  //   tới khi `openScanner()` đã chạy xong ⇒ lúc thu ngân bấm nút "Quét mã" thì
+  //   chưa có modal để bắt chạm ⇒ listener không chạy ⇒ `AudioContext` được tạo
+  //   ra NGOÀI user gesture ⇒ WebKit giữ nó ở "suspended" và từ chối `resume()`
+  //   ⇒ **im lặng cho tới khi thu ngân chạm vào trong modal**. Mà iPhone không
+  //   rung ⇒ mất hẳn kênh báo. Đây đúng là triệu chứng mà commit này định sửa.
+  //
+  //   Cách sửa: bắt ở `window` và đăng ký NGAY khi component mount (component luôn
+  //   được render trong POS) — không phụ thuộc `isOpen`, không `once`. Nhờ vậy lần
+  //   chạm vào nút "Quét mã" chính là gesture thật và mở khoá được.
   useEffect(() => {
-    if (!isOpen) return;
-    // Trình duyệt di động chỉ cho phát tiếng sau một USER GESTURE. Mở khoá ngay ở
-    // lần chạm/phím đầu tiên vào khung scanner — nhờ vậy bíp đầu tiên cũng ra tiếng.
-    // `once: true` để gỡ listener sau lần đầu, không giữ listener vô ích.
     const unlock = () => {
       ensureAudio();
     };
-    const el = modalRef.current;
-    el?.addEventListener('pointerdown', unlock, { once: true });
-    el?.addEventListener('touchstart', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('touchstart', unlock);
+    window.addEventListener('keydown', unlock);
     return () => {
-      el?.removeEventListener('pointerdown', unlock);
-      el?.removeEventListener('touchstart', unlock);
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchstart', unlock);
       window.removeEventListener('keydown', unlock);
+      // Đóng context khi rời khỏi POS (đổi route) để không để lại context sống.
+      const ctx = audioCtxRef.current;
+      audioCtxRef.current = null;
+      if (ctx && ctx.state !== 'closed') void ctx.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -175,11 +187,10 @@ export function InAppBarcodeScanner({
     if (!ctx) return;
     try {
       const t = ctx.currentTime + 0.01;
-      // HAI tiếng, mỗi tiếng 190 ms quét 1.1 → 2.9 kHz, nghỉ 110 ms giữa hai tiếng.
-      // Tổng ~490 ms: đủ dài để nhận ra giữa tiếng ồn mà vẫn không làm chậm
-      // thao tác quét liên tục (thu ngân quét liên tiếp vài quyển mỗi phút).
-      chirp(ctx, t, 1100, 2900, 0.19);
-      chirp(ctx, t + 0.30, 1100, 2900, 0.19);
+      // MỘT tiếng duy nhất = MỘT cuốn đã quét. Yêu cầu của thu ngân: hai tiếng
+      // dễ gây nhầm là quét 2 cuốn. Nên: một tiếng, quét 1.1 → 2.9 kHz, dài 260 ms
+      // (dài hơn từng tiếng trước đó là 190 ms) để vẫn nổi bật khi chỉ còn một nhịp.
+      chirp(ctx, t, 1100, 2900, 0.26);
     } catch {
       /* im lặng: không được làm hỏng luồng quét vì loa */
     }
@@ -521,8 +532,16 @@ export function InAppBarcodeScanner({
     // tin cậy hơn mắt. Nhiều nhịp để phân biệt với tin nhắn/điện thoại khác rung.
     // Lưu ý: iOS KHÔNG hỗ trợ `navigator.vibrate` ⇒ iPhone hoàn toàn dựa vào tiếng.
     playBeepSound();
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate?.([45, 55, 45, 55, 140]);
+    // Rung PHẢI bọc riêng: `navigator.vibrate` nằm trên đường chính, nếu nó ném
+    // lỗi (một số trình duyệt chặn) thì `onScan()` bên dưới KHÔNG chạy ⇒ sách đã
+    // khoá trong `lockedCodeRef` mà không vào giỏ ⇒ thu ngân phải quét lại.
+    // Bíp vốn đã bọc try/catch với đúng lý do này; rung trước đây thì không.
+    try {
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate?.([45, 55, 45, 55, 140]);
+      }
+    } catch {
+      /* im lặng: rung là kênh phụ, không được chặn việc thêm sách vào giỏ */
     }
 
     // Hiệu ứng viền xanh nhấp nháy

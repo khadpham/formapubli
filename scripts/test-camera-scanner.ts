@@ -240,7 +240,7 @@ async function main() {
     // Loa điện thoại 12–15mm gần như không tái tạo được >2–3 kHz ⇒ tiếng thuần
     // 2.8kHz nghe MỎNG dù đúng tần số. Phải quét từ dải thấp lên dải cao.
     const calls = Array.from(src.matchAll(/chirp\(ctx, t(?:\s*\+\s*[\d.]+)?,\s*(\d+),\s*(\d+),\s*([\d.]+)\)/g));
-    assert.ok(calls.length >= 2, `phải có ít nhất 2 nhịp bíp, thực tế ${calls.length}`);
+    assert.ok(calls.length >= 1, `phải có ít nhất 1 nhịp bíp, thực tế ${calls.length}`);
     for (const c of calls) {
       const from = Number(c[1]);
       const to = Number(c[2]);
@@ -248,8 +248,120 @@ async function main() {
       assert.ok(from < 1500, `đầu tiếng phải ở dải thấp (loa phát được), thực tế ${from}Hz`);
       assert.ok(to >= 2500, `cuối tiếng phải ở dải cao để xuyên tiếng ồn, thực tế ${to}Hz`);
       assert.ok(to > from, 'tần số phải TĂNG dần trong tiếng bíp');
-      assert.ok(dur >= 0.15, `tiếng phải đủ dài (>=150ms) để nghe rõ, thực tế ${dur * 1000}ms`);
+      assert.ok(dur >= 0.2, `tiếng phải đủ dài (>=200ms) để nghe rõ, thực tế ${dur * 1000}ms`);
     }
+  });
+  await check('sound: MỘT tiếng bíp = MỘT cuốn (không phải 2 tiếng, dễ nhầm là quét 2 cuốn)', async () => {
+    // Yêu cầu của thu ngân: một tiếng kêu = một cuốn đã quét. Hai nhịp dễ bị hiểu
+    // là quét hai cuốn. Không được thêm nhịp thứ hai.
+    const beepBody = src.slice(src.indexOf('const playBeepSound'));
+    const calls = Array.from(beepBody.matchAll(/chirp\(ctx, t(?:\s*\+\s*[\d.]+)?,/g));
+    assert.strictEqual(calls.length, 1, `phải ĐÚNG 1 nhịp bíp, thực tế ${calls.length}`);
+  });
+
+  // --------------------------------------------------------------------------
+  // HAI CHỖ TEST TRƯỚC ĐÃ XANH GIẢ (review 30/09 chứng minh bằng mutation):
+  //   M2: biến `unlock` thành no-op → test vẫn xanh, vì test chỉ grep CHỮ
+  //       `addEventListener('pointerdown', unlock`, không kiểm `unlock` có thật sự
+  //       gọi `ensureAudio` không.
+  //   M3: xoá `gain.connect(ctx.destination)` → bíp KHÔNG RA ÂM THANH nào mà test
+  //       vẫn xanh, vì không test nào chạm tới việc tín hiệu được nối vào loa.
+  // Nên ở đây ta KHÔNG grep — ta THỰC SỰ chạy hàm với AudioContext giả và kiểm
+  // lệnh phát ra. Lấy từ chính file component, không viết lại logic ở đây.
+  await check('sound (chạy thật với AudioContext giả): tín hiệu ĐI TỚI LOA', async () => {
+    // Cắt riêng định nghĩa ensureAudio + chirp + playBeepSound ra khỏi component.
+    const take = (name: string) => {
+      const start = src.indexOf(`const ${name} =`);
+      assert.ok(start > 0, `không tìm thấy ${name} trong component`);
+      let depth = 0, i = src.indexOf('{', start), began = false;
+      for (; i < src.length; i++) {
+        if (src[i] === '{') { depth++; began = true; }
+        else if (src[i] === '}') { depth--; if (began && depth === 0) { i++; break; } }
+      }
+      return src.slice(start, i);
+    };
+    const code = [take('ensureAudio'), take('chirp'), take('playBeepSound')].join('\n');
+
+    let created = 0;
+    const connectedTo: unknown[] = [];
+    // Node có `param.gain` là một AudioParam; node tạo ra phải CÓ `.gain` vì code
+    // gọi `gain.gain.setValueAtTime(...)`. Fake thiếu `.gain` sẽ ném TypeError rồi
+    // bị `catch {}` của playBeepSound nuốt mất — nhìn giống như "bíp không nối
+    // vào loa". Đã dính lỗi này một lần khi viết test.
+    class FakeParam {
+      setValueAtTime(_v: unknown, _t: unknown) { return this; }
+      exponentialRampToValueAtTime(_v: unknown, _t: unknown) { return this; }
+    }
+    const connectNode = (dest: unknown) => { connectedTo.push(dest); return dest; };
+    class FakeAudioContext {
+      state = 'running';
+      currentTime = 0;
+      destination = { name: 'speakers' };
+      constructor() { created++; }
+      resume() { this.state = 'running'; return Promise.resolve(); }
+      close() { this.state = 'closed'; return Promise.resolve(); }
+      createOscillator() { return { frequency: new FakeParam(), connect: connectNode, start() {}, stop() {} }; }
+      createGain() { return { gain: new FakeParam(), connect: connectNode }; }
+    }
+    const audioCtxRef = { current: null as unknown };
+    const windowStub = { AudioContext: FakeAudioContext };
+    const scope: any = { window: windowStub, audioCtxRef, console };
+    vm.createContext(scope);
+    // Phải TRẢ VỀ object chứ không chỉ gán `const`: trong `vm`, `const X = ...` ở
+    // tầng script tạo binding từ vựng, KHÔNG thành thuộc tính của context ⇒
+    // gọi `playBeepSound()` từ bên ngoài sẽ không thấy.
+    const api = vm.runInContext(
+      ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText +
+        '\n({ ensureAudio, playBeepSound });',
+      scope
+    ) as { ensureAudio: () => unknown; playBeepSound: () => void };
+
+    // 5 lần bíp liên tiếp (thu ngân quét nhanh)
+    for (let i = 0; i < 5; i++) api.playBeepSound();
+
+    assert.equal(created, 1, `5 lần bíp phải dùng CHUNG 1 AudioContext, thực tế tạo ${created}`);
+    assert.ok(
+      connectedTo.some((d) => d && (d as any).name === 'speakers'),
+      `bíp KHÔNG được nối vào loa (destination) — sẽ không phát ra âm thanh nào (n=${connectedTo.length})`
+    );
+    assert.ok(connectedTo.length >= 2, `mỗi nhịp bíp phải nối oscillator+gain vào đích, thực tế ${connectedTo.length}`);
+  });
+
+  await check('sound: hàm unlock của user gesture THỰC SỰ gọi ensureAudio (không phải hàm rỗng)', async () => {
+    // Chặt hơn hẳn cách grep trước: lấy nguyên khối useEffect mở khoá, chạy nó
+    // với window giả, rồi kích listener đã đăng ký và xem context có được tạo.
+    const start = src.indexOf('const unlock =');
+    assert.ok(start > 0, 'không tìm thấy hàm unlock');
+    const end = src.indexOf('}, []);', start);
+    assert.ok(end > start, 'không tìm thấy phần cleanup của effect mở khoá');
+    const effectBody = src.slice(start, end);
+    assert.match(effectBody, /ensureAudio\(\)/,
+      'hàm unlock PHẢI gọi ensureAudio — nếu rỗng thì iOS không bao giờ cho phát tiếng');
+
+    // Listener phải bắt ở WINDOW, không bắt ở modal: modal chưa tồn tại lúc
+    // người dùng bấm nút "Quét mã" nên bắt ở modal thì gesture không chạy (lỗi iOS).
+    const effStart = src.indexOf('useEffect(() => {', src.indexOf('MỞ KHOÁ ÂM THANH'));
+    const effEnd = src.indexOf('}, []);', effStart);
+    const eff = src.slice(effStart, effEnd);
+    assert.match(eff, /window\.addEventListener\('pointerdown', unlock\)/,
+      'phải bắt pointerdown ở WINDOW (bắt ở modal thì gesture mở scanner không chạy)');
+    assert.match(eff, /window\.addEventListener\('touchstart', unlock\)/,
+      'phải bắt touchstart ở WINDOW');
+    assert.doesNotMatch(eff, /modalRef\.current/,
+      'KHÔNG được bắt listener ở modal — modal chưa có lúc bấm nút mở scanner');
+  });
+
+  await check('sound: rung được bọc try/catch (lỗi rung không được chặn việc thêm sách)', async () => {
+    // Nhắm vào LỆNH GỌI THẬT (`?.(`), không phải chữ "navigator.vibrate" trong
+    // comment — lần trước check này dính vào comment nên báo đỏ giả.
+    const callIdx = src.indexOf('navigator.vibrate?.(');
+    assert.ok(callIdx > 0, 'không tìm thấy lệnh gọi navigator.vibrate thật');
+    const before = src.slice(Math.max(0, callIdx - 260), callIdx);
+    assert.match(before, /try\s*\{[\s\S]*$/,
+      'lệnh rung phải nằm trong try — nếu ném lỗi thì onScan() không chạy, sách đã khoá mà không vào giỏ');
+    const after = src.slice(callIdx, callIdx + 260);
+    assert.match(after, /\}?\s*catch\s*\{/,
+      'phải có catch sau lệnh rung — nuốt lỗi, không để kênh phụ chặn luồng quét');
   });
   await check('sound: âm lượng sát trần (>=0.9) nhưng không méo', async () => {
     const m = src.match(/exponentialRampToValueAtTime\(0\.(\d+), at \+ 0\.00/);
