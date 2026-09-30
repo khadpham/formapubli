@@ -51,10 +51,19 @@ export async function POST(req: NextRequest) {
       const {
         contractNumber, workId, licensorId, licensorName, royaltyRate,
         printQuota, advanceAmount, effectiveDate, expirationDate, createdBy, notes,
+        royaltyBasis,
       } = body;
       if (!contractNumber || !workId || royaltyRate === undefined || !printQuota || !effectiveDate || !expirationDate) {
         return NextResponse.json(
-          { success: false, error: 'Thiếu mã HĐ, tác phẩm, royalty_rate, print_quota hoặc thời hạn.' },
+          { success: false, error: 'Thiếu mã HD, tác phẩm, royalty_rate, print_quota hoặc thời hạn.' },
+          { status: 400 }
+        );
+      }
+      // Cơ sở tính tiền: bỏ trống = NET_SOLD (tiền thực thu sau chiết khấu).
+      // Chặn sớm ở cổng HTTP để client nhận 400 kèm hướng dẫn thay vì 500.
+      if (royaltyBasis !== undefined && !['NET_SOLD', 'COVER_PRICE'].includes(royaltyBasis)) {
+        return NextResponse.json(
+          { success: false, error: 'royalty_basis chỉ chấp nhận NET_SOLD hoặc COVER_PRICE.' },
           { status: 400 }
         );
       }
@@ -68,6 +77,7 @@ export async function POST(req: NextRequest) {
         advanceAmount: advanceAmount !== undefined ? parseFloat(advanceAmount) : 0,
         effectiveDate,
         expirationDate,
+        royaltyBasis,
         // Chống mạo danh: strict ép người ký = session (bỏ createdBy client).
         createdBy: resolveActorId(session, createdBy),
         notes,
@@ -78,7 +88,8 @@ export async function POST(req: NextRequest) {
         actorRole: userRole,
         actorId: effCreatedBy,
         resource: '/api/royalties',
-        details: `Ký hợp đồng bản quyền ${contractNumber} (quota ${printQuota}, rate ${royaltyRate}).`,
+        details: `Ký hợp đồng bản quyền ${contractNumber} (quota ${printQuota}, rate ${royaltyRate}, ` +
+          `cơ sở ${royaltyBasis || 'NET_SOLD'}).`,
       });
       return NextResponse.json({ success: true, data: result });
     }

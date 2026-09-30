@@ -210,6 +210,13 @@
       "when": 1790600005000,
       "tag": "0029_stock_non_negative_insert",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790600006000,
+      "tag": "0030_royalty_basis",
+      "breakpoints": true
     }
   ],
   "version": "7"
