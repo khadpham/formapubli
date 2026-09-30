@@ -78,6 +78,13 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
   - Muốn bảo hiểm code chưa commit của agent khác: lưu `git diff -- <file>` ra
     ngoài repo, **không** commit hộ, **không** stash (stash sẽ gỡ file khỏi
     working tree của họ và làm hỏng công việc đang dở).
+- ⚠️ **Luôn truyền `workdir` khi chạy lệnh trong worktree.** Đã dính **2 lần**
+  trong một ngày: gọi `Test-Path 'node_modules\...'` mà không kèm `workdir` ⇒
+  PowerShell chạy ở thư mục gốc của session (`D:\Data Project\formapubli`, vốn
+  chưa bao giỜ có `node_modules`) ⇒ báo "KHÔNG" ⇒ tưởng `node_modules` bị mất
+  trong khi nó vẫn nguyên. Một lần khác là shell trả về **không có output gì cả**,
+  dễ bị hiểu là treo. Kiểm tra đường dẫn nào đó thì dùng **đường dẫn tuyệt đối**
+  để không phụ thuộc CWD.
 - **Deploy là việc của coordinator, không tự ý chạy.** Chỉ deploy khi cây nguồn
   sạch, tsc sạch, build sạch, và test liên quan xanh — rồi báo version ID.
 - ⚠️ **KHÔNG BAO GIỜ xoá remote branch bằng danh sách tính tự động.**
