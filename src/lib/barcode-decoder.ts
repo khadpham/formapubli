@@ -25,9 +25,14 @@ async function createSoftwareDecoder(): Promise<BarcodeDecoder> {
   const zxing = await import('@zxing/library');
   const reader = new zxing.MultiFormatReader();
   const hints = new Map<import('@zxing/library').DecodeHintType, unknown>([
+    // CHỈ mã vạch sách, KHÔNG quét QR (30/09 — người dùng báo quét nhầm mã khác).
+    // Mọi sách đều là EAN-13 (mẫu trong test: 5901234123457) hoặc Code 128 trên
+    // tem. Ở hội chợ thì QR xuất hiện khắp nơi (poster, tấm triển lãm, mã của
+    // người bán khác) và nó LUÔN giải mã dễ hơn mã vạch ⇒ gây quét nhầm.
+    // Scanner chỉ dùng ở POS bán sách, không dùng chỗ nào cần QR.
     [zxing.DecodeHintType.POSSIBLE_FORMATS, [
       zxing.BarcodeFormat.EAN_13, zxing.BarcodeFormat.EAN_8,
-      zxing.BarcodeFormat.CODE_128, zxing.BarcodeFormat.QR_CODE,
+      zxing.BarcodeFormat.CODE_128,
     ]],
     [zxing.DecodeHintType.TRY_HARDER, true],
   ]);
@@ -73,7 +78,10 @@ export async function createBarcodeDecoder(
   try {
     if (Native) {
       const supported = await withTimeout(Native.getSupportedFormats());
-      const formats = ['ean_13', 'ean_8', 'code_128', 'qr_code'].filter(format => supported.includes(format));
+      // KHÔNG kèm định dạng QR (30/09). Đây là danh sách cho BỘ GIẢI MÃ NATIVE,
+      // tức đường đi thật trên Chrome/Chromium Android — bỏ QR ở hàng ZXing phía
+      // trên KHÔNG đủ, vì native được ưu tiên và sẽ quét trọn cả buổi.
+      const formats = ['ean_13', 'ean_8', 'code_128'].filter(format => supported.includes(format));
       if (formats.includes('ean_13')) native = new Native({ formats });
     }
   } catch {

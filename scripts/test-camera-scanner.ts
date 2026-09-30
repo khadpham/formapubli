@@ -88,9 +88,25 @@ async function main() {
   const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let effect = '';
   const cameraFunctions: string[] = [];
+  // ROI helper phải nạp vào CẢ HAI harness: `startCamera`/`stopCamera` (camera*)
+  // và `mount()` (script = effect). Chỉ thêm vào một chỗ thì chỗ kia hỏng.
+  const roiHelpers: string[] = [];
   function visit(node: ts.Node) {
     if (ts.isVariableDeclaration(node) && ['startCamera', 'stopCamera'].includes(node.name.getText(source))) {
       cameraFunctions.push(`const ${node.getText(source)};`);
+    }
+    // ROI (30/09): vòng quét gọi roiRect/roiToVideoFrame. `vm` chỉ có đúng những
+    // gì ta đưa vào, nên thiếu chúng sẽ ném ReferenceError BÊ TRONG catch của vòng
+    // quét ⇒ mất mã mà không báo lỗi ⇒ test xanh GIẢ. Phải nạp thật.
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some(d => ['ROI_BY_ZOOM', 'ROI_DECODE_WIDTH'].includes(d.name.getText(source)))) {
+      cameraFunctions.push(node.getText(source).replace(/\bexport\s+/g, ''));
+      roiHelpers.push(node.getText(source).replace(/\bexport\s+/g, ''));
+    }
+    if (ts.isFunctionDeclaration(node) && ['roiRect', 'visibleVideoRect', 'roiToVideoFrame'].includes(node.name?.getText(source) ?? '')) {
+      // Bỏ `export ` — `vm` chạy script thuần, không phải module.
+      const text = node.getText(source).replace(/^export\s+/, '');
+      cameraFunctions.push(text);
+      roiHelpers.push(text);
     }
     if (ts.isCallExpression(node) && node.expression.getText(source) === 'useEffect') {
       const callback = node.arguments[0] as ts.ArrowFunction;
@@ -100,14 +116,20 @@ async function main() {
   }
   visit(source);
   assert.ok(effect, 'Find the real camera scanning effect');
-  const script = ts.transpileModule(`function runEffect() ${effect}`, {
+  const script = ts.transpileModule(roiHelpers.join('\n') + `\nfunction runEffect() ${effect}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
   }).outputText;
+  // Vòng quét nuốt lỗi trong try/catch nên thiếu phụ thuộc chỉ ra "không tìm
+  // thấy mã" chứ không phải crash — hỏng mà tưởng xanh. Phải nạp đủ phụ thuộc.
   function mount(factory = createBarcodeDecoder) {
     let tick: (() => Promise<void>) | undefined;
     const codes: string[] = [];
     const statuses: string[] = [];
     const errors: Array<string | null> = [];
+    // Vòng quét nuốt lỗi trong try/catch và chỉ hiện thông báo chung ⇒ một
+    // `ReferenceError` trông y hệt "không thấy mã". Gom cảnh báo lại để hỏng
+    // phải lên tiếng, không giả xanh.
+    const warnings: string[] = [];
     const scope = {
     createBarcodeDecoder: factory,
     window: {}, isOpen: true, startCamera() {}, stopCamera() {},
@@ -120,11 +142,12 @@ async function main() {
     setScannerError: (error: string | null) => errors.push(error),
     handleBarcodeFound: (code: string) => codes.push(code),
     setTimeout(fn: () => Promise<void>) { tick = fn; return 1; },
-    clearTimeout() { tick = undefined; }, console: { warn() {} },
+    clearTimeout() { tick = undefined; },
+    console: { warn(...a: unknown[]) { warnings.push(a.map(String).join(' ')); } },
     };
     vm.createContext(scope);
     const close = vm.runInContext(script + '\nrunEffect();', scope) as () => void;
-    return { close, codes, statuses, errors, hasTimer: () => Boolean(tick),
+    return { close, codes, statuses, errors, warnings, hasTimer: () => Boolean(tick),
       async next() { const current = tick; tick = undefined; await current?.(); },
     };
   }
@@ -141,7 +164,7 @@ async function main() {
       cameraRequestRef: { current: 0 }, streamRef: { current: null }, videoRef: { current: null },
       didPostPermissionRescanRef: { current: false }, availableCameras: [{ label: 'Back Camera' }],
       zoomLevelRef: { current: 1 },
-      setErrorMessage() {}, setHasPermission() {}, setHasTorch() {}, setHasOpticalZoom() {}, setSelectedCameraId() {}, console,
+      setErrorMessage() {}, setHasPermission() {}, setHasTorch() {}, setSelectedCameraId() {}, console,
     };
     const js = ts.transpileModule(cameraFunctions.join('\n') + '\n({startCamera, stopCamera});', { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     vm.createContext(scope);
@@ -158,6 +181,7 @@ async function main() {
     const scanner = mount();
     await flush();
     assert.equal(scanner.codes[0], '5901234123457', 'A camera frame must decode even when BarcodeDetector is absent');
+    assert.deepEqual(scanner.warnings, [], 'Một frame hợp lệ không được phép cảnh báo gì (nuốt lỗi ở vòng quét = hỏng mà tưởng xanh)');
     assert.equal(scanner.statuses.at(-1), 'ready');
     scanner.close();
     assert.equal(scanner.hasTimer(), false);
