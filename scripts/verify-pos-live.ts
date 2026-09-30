@@ -22,10 +22,14 @@
 import { readFileSync } from 'node:fs';
 
 const BASE = process.env.POS_BASE_URL || 'http://localhost:3000';
-if (!/^http:\/\/(localhost|127\.0\.0\.1)/.test(BASE)) {
-  console.error('❌ Từ chối chạy: POS_BASE_URL phải là localhost (không ghi vào production).');
+if (!/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)/.test(BASE)) {
+  console.error('❌ Từ chối chạy: POS_BASE_URL phải là localhost hoặc IP LAN của máy.');
   process.exit(1);
 }
+// Dev server HTTPS dùng CHỨNG THƯ TỰ KÝ (`npm run dev:https`), Node từ chối
+// chứng thư đó. Tắt kiểm tra TLS CHỈ khi trỏ vào địa chỉ LAN/localhost ở trên —
+// đây là máy dev của chính bạn, không phải production. Script chỉ ĐỌC dữ liệu.
+if (BASE.startsWith('https://')) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 function devPasscodeFor(staffId: string): string | null {
   const src = readFileSync('src/lib/auth-session.ts', 'utf8');

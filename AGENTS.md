@@ -28,6 +28,19 @@ This repository is configured with two always-on frameworks:
 
 ## 0. Dev Server = LAN, Always
 
+- ⚠️ **MUỐN TEST CAMERA / MÁY QUÉT MÃ THÌ PHẢI DÙNG `npm run dev:https`,
+  KHÔNG PHẢI `dev:lan`.** Đây là điều tôi đã bỏ sót và người dùng phải nhắc:
+  trình duyệt **chỉ cấp `getUserMedia` ở secure context**, tức `https://` hoặc
+  `http://localhost`. Mở dev bằng IP LAN (`http://192.168.x.x`) thì **camera không
+  bật được** ⇒ test scanner trên điện thoại là vô nghĩa.
+  · `npm run dev:https` = Next dev + `--experimental-https` với cert tự ký trong
+    `certificates/`.
+  · Trình duyệt **sẽ báo chứng thư không đáng tin** → bấm **Nâng cao → Vẫn truy cập**,
+    nếu không camera vẫn không được.
+  · **IP đổi theo DHCP** ⇒ cert cũ không khớp. Chạy `npm run cert:make` để sinh lại
+    (tự đọc IP LAN hiện tại, tự tìm `openssl`, tự thêm IP vào SAN).
+  · `certificates/` đã gitignore — chứa private key, **tuyệt đối không commit**.
+
 The user tests on a real phone. A localhost-only dev server is useless to them.
 
 - Always start the dev server with `npm run dev:lan` (`next dev -H 0.0.0.0`), never bare `npm run dev`.

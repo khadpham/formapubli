@@ -15,9 +15,9 @@ async function main() {
   const missing: string[] = [];
   for (const m of migs) {
     const sqlTxt = fs.readFileSync(`${dir}/${m}`, 'utf8');
-    const tables = [...sqlTxt.matchAll(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?(\w+)/gi)].map(
-      (x) => x[1]
-    );
+    const tables = Array.from(
+      sqlTxt.matchAll(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?(\w+)/gi)
+    ).map((x) => x[1]);
     if (tables.length && !tables.every((x) => have.has(x))) {
       missing.push(`${m} -> thiếu: ${tables.filter((x) => !have.has(x)).join(', ')}`);
     }

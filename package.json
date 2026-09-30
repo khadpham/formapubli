@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:lan": "next dev -H 0.0.0.0",
+    "dev:https": "next dev -H 0.0.0.0 -p 3000 --experimental-https --experimental-https-key ./certificates/localhost-key.pem --experimental-https-cert ./certificates/localhost.pem",
+    "cert:make": "node scripts/make-dev-cert.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
