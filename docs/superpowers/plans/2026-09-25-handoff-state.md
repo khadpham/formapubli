@@ -4,12 +4,15 @@
 > đầu tiên để khôi phục ngữ cảnh. Đọc kèm: `docs/superpowers/plans/2026-09-24-pos-hardening-abc-master-plan.md`
 > (kế hoạch gốc 11 bugs + S-01) và `git log`.
 >
+> **MỐC 30/09 (vòng 2) — thanh toán + royalty:** owner xác nhận mô hình hội chợ
+> (1 kho, 1 quầy, tồn = nhập − bán, không chia mâm). Rà lớp thanh toán: 3 lỗi
+> tiền thật + 1 lỗi QR mang sai tiền tôi tự sửa. Sửa royalty theo chiết khấu thật.
+> `main` = `f715395`, **100/100 suite xanh**. Xem mục **0d**, phần còn treo ở **0c**.
+>
 > **MỐC 30/09 — rà soát toàn diện 5 agent, 40+ lỗi thật.** Người dùng hỏi thẳng
 > rằng phần doanh số / dashboard / quản lý **chưa** được kiểm. Vòng này chia theo
 > từng lớp chức năng, mỗi agent vừa review vừa viết test gọi code thật.
-> `main` = `8665225`, commit đã deploy `d828262` (Cloudflare version
-> `f9e53b70-161f-4e02-b84d-1483d7da7bb4`), **97/97 suite xanh**. Chi tiết ở mục 0b,
-> việc còn lại cần owner quyết ở mục 0c.
+> Chi tiết ở mục **0b**.
 >
 > **MỐC 29/09 — sửa xong đợt lớn:** quét toàn bộ lỗi "ngày nghiệp vụ VN so với
 > mốc UTC" (11 lỗi) + 12 lỗi POS (tiền thật và hiển thị). Xem mục 7 ở cuối tài
@@ -95,23 +98,111 @@ Sau khi sửa: 700.000 (300.000 bàn giao + 400.000 bán trong ngày).
    thật. May GitHub chặn nhánh mặc định và lỗi bị `| Out-Null` nuốt nên tưởng đã
    xong. Xác minh bằng `git ls-remote --heads origin`: `refs/heads/main` còn nguyên.
 
+## 0d. Đợt thanh toán + royalty (30/09, sau 0c)
+
+Sau khi owner xác nhận mô hình **mỗi hội chợ = 1 kho, 1 quầy, tồn = nhập − bán,
+không đếm lại, không chia mâm** ⇒ chạy tiếp 2 agent theo đúng thứ tự ưu tiên owner
+đã nêu: POS → kho → doanh thu → báo cáo.
+
+### Lớp thanh toán — 3 lỗi tiền thật
+
+1. **Kênh `SPONSORSHIP` lọt vào đường bán hàng.** `channel` do client gửi nên thu
+   ngân gửi kênh này được: đơn `COMPLETED` nhưng **mất khỏi doanh số** (doanh số
+   1.749.832 vs tổng đơn 1.785.832 — thiếu đúng 36.000) và **lách trọn guard ca
+   két quầy**. Chặn tại `createOrder` nên mọi caller kể cả offline sync đều qua.
+2. **Hoàn tiền mặt bùng sang két kho khác.** `ReturnService.complete` chỉ so két
+   với `targetWarehouseId` do *client* gửi ⇒ hoàn 36.000đ ở kho A làm **két B có
+   `expectedCash` = −36.000đ (âm)**. Nay két hoàn phải thuộc kho xuất của đơn gốc.
+3. **Đơn PENDING quầy không replay được.** Server tự gắn ca OPEN rồi lại so
+   `cashboxSessionId` với `null` của client ⇒ **409 ở mọi lần F5 / mạng lỗi** dù
+   payload y hệt.
+
+Ngoài ra phát hiện nhưng **không tự sửa** (cần owner quyết): đơn tiền mặt chốt
+ngay ở kênh quầy không bắt buộc có ca két — vá sẽ phá đồng bộ offline.
+
+### Lỗi TÔI tự sửa: QR mang sai số tiền đơn
+
+`PosCheckoutTerminal` dùng `amount: finalAmount` — số **client** tính từ giá bìa
+nạp trong giỏ. Giá danh mục đổi là QR in ra **một con số khác hẳn đơn đã tạo**.
+Đo thật: **QR 151.470đ trong khi đơn 168.300đ**. Khách chuyển thiếu/tải, hệ thống
+đã ghi nhận đơn đủ tiền. Mọi trường khác trong phiên đó (`orderId`, `orderCode`,
+`totalQuantity`) đều lấy từ server — tiền cũng phải vậy. Đã sửa cả `subtotal` và
+`discountAmount` trên cùng màn hình thu.
+
+### Royalty: cơ sở tính
+
+Sửa đúng như owner giải thích: **giá bìa giữ nguyên, chỉ chiết khấu đổi** — vậy
+lỗi không phải "giá bìa đổi" mà là **bỏ qua chiết khấu** ⇒ royalty thổi phồng ~10%.
+
+- Thêm `royalty_basis` trên hợp đồng: `'NET_SOLD'` (mặc định, lấy
+  `order_items.totalAmount` = tiền thực thu) hoặc `'COVER_PRICE'` (hợp đồng trả
+  theo giá bìa). Bảng kê trả kèm **nhãn cơ sở** để đối chiếu với đối tác không
+  phải đoán.
+- Đo thật: đơn 10 cuốn × 100.000 chiết khấu 10% ⇒ trước 100.000, sau **90.000**;
+  chênh lệch **100.000 = đúng `discount_amount` trong sổ cái**.
+- Migration **`0030_royalty_basis`** đã áp production. Production **chưa có hợp
+  đồng nào** nên không cần sửa tay.
+- Agent tự phát hiện bản đầu của nó có bug: đơn tài trợ rơi vào nhánh "không có
+  dòng đơn" và bị lấp giá bìa ⇒ **3 cuốn tài trợ ra 360.000đ nhận bút oan**.
+
+### Xung đột giữa hai agent — và cách xử lý
+
+`test-royalty-basis` tạo đơn tài trợ bằng cách ép `channel: 'SPONSORSHIP'` vào
+`createOrder` — **đúng cái đường agent thanh toán vừa chặn**. Test sai, không phải
+code sai. Sửa bằng `SponsorshipService.createFund` + `.draw` (đường hợp lệ), và thêm
+assertion `R3.0` chứng minh `createOrder` **thật sự chặn** kênh đó.
+
+### Phân quyền phía đọc
+
+`assertAssignedWarehouse` chỉ chặn phía **ghi**. Phía **đọc** không thể "chặn", phải
+lọc ⇒ thêm `filterByAssignedWarehouse` + `assertReadWarehouse` và áp cho
+`GET /api/transfers`, `GET /api/delivery-orders`. Kiểm bằng `test-read-scope.ts`
+(10 assertion gọi thật route handler, có mutation test).
+
+### ĐÍNH CHÍNH một điều tôi đã nói sai
+
+Tôi đã báo bạn: *"cột còn lại trên UI luôn bằng đã chia — số ảo"*. Kiểm lại thì
+**chỉ một UI gọi `/api/allocations` và nó dùng `mode=picklist`**. Cột đó **không hiện
+ở màn hình nào**. `counter_allocations` có **0 dòng** trên production. Đúng là **code
+chết**, nhưng **không phải lỗi người dùng thấy**. Không cần xoá gấp; để dọn khi có
+việc liên quan.
+
+### Trạng thái
+
+`main` = `f715395`, commit đã deploy, Cloudflare version
+`83ef8b7b-c486-4faf-860f-1b8aea36146c`, **100/100 suite xanh**, `tsc` sạch.
+
 ## 0c. Việc CÒN LẠI — cần owner quyết, agent tự quyết sẽ sai nghiệp vụ
 
-1. **`AllocationService.checkCounterQuota` / `recordCounterSales` không có caller
-   nào.** Hạn ngạch "chia mâm" không bao giờ được kiểm lúc bán, `soldQuantity`
-   không tăng ⇒ cột **"còn lại" trên UI luôn bằng "đã chia" — số ảo**. Sửa đúng
-   việc là nối vào luồng bán (rủi ro cao), nên chỉ vá rò kho rồi báo lại.
-2. **3 hàm `AllocationService` còn lại không cộng/trừ `stock_balances`** — nếu bàn
-   quầy bán thật thì cùng một cuốn vẫn bán được ở quầy lẫn ở kho.
-3. **`shipment.updateStatus`** cho phép `RETURNED`/`FAILED` → `CREATED` mà **không
-   hoàn kho**: đơn đã bán bị trả vận chuyển thì tồn không về kho.
-4. **PIN/mật khẩu mặc định trong `auth-session.ts`** nằm sau cờ strict (fail-closed,
-   production không dùng) nhưng `scripts/seed.ts` ghi chúng vào DB. Phải đổi trước
-   go-live thật.
-5. **`royaltyStatement` dùng giá bìa hiện hành**, không phải giá tại ngày bán — là
-   quyết định kế toán cần owner xác nhận.
-6. **Route đọc `/api/transfers` và `/api/delivery-orders` chưa giới hạn theo kho**
-   (đã chặn phía ghi).
+> **Đã xử lý xong ở đợt 0d:** mục 1 (chia mâm — xác nhận là code chết, **không
+> hiện trên UI**, để dọn sau), mục 4 (PIN mặc định — production fail-closed, đã
+> xác minh secret thật, rủi ro thấp, để sau), mục 5 (royalty — đã sửa xong với
+> `royalty_basis`), mục 6 (route đọc theo kho — đã vá + test).
+
+1. **`shipment.updateStatus` cho phép `RETURNED`/`FAILED` → `CREATED` mà không hoàn
+   kho.** Đơn đã bán bị trả vận chuyển thì tồn không về kho.
+   **Khuyến nghị của tôi: KHÔNG tự động hoàn kho.** Sách có thể hỏng/lạc trên đường,
+   cộng lại tồn là sai. Sửa đúng là **cấm đi ngược trạng thái** (tiền đã thu rồi,
+   không được tạo phiếu giao mới cho hàng có thể đang ở kho chuyển) và bắt buộc đi
+   qua quy trình trả hàng.
+2. **Đơn tiền mặt chốt ngay ở kênh quầy không bắt buộc có ca két.** Đo được đơn
+   `COMPLETED` với `cashbox_session_id = NULL`, không thuộc ca nào.
+   **Khuyến nghị: chấp nhận**, vì vá sẽ phá đồng bộ đơn offline tạo khi ca đã đóng.
+   Có 2 assertion `K1/K2` canh để đỏ lên nếu sau này bạn quyết định siết.
+3. **Bán ký gửi không có dòng `order_items`** ⇒ royalty lấp bằng giá bìa và đếm ra
+   `soldQtyUnpriced`. Hệ thống bản lĩnh không bị trả ít. Cần bạn quyết ký gửi có
+   tính theo tiền thực thu không.
+4. **`royaltyBasis` mặc định `NET_SOLD` cho mọi hợp đồng.** Production chưa có hợp
+   đồng nào nên chưa cần sửa. Khi tạo hợp đồng thật: hợp đồng nào ký **trả theo
+   giá bìa** thì đặt `royalty_basis = 'COVER_PRICE'`.
+5. **PIN/mật khẩu mặc định trong `auth-session.ts`** nằm sau cờ strict (production
+   không dùng — đã xác minh `MANAGER_PIN_HASHES` đã đặt trên Cloudflare) nhưng
+   `scripts/seed.ts` ghi chúng vào DB. Phải đổi trước go-live thật.
+6. **`POST /api/auth/logout` không thu hồi token phía server** — dùng lại cookie cũ
+   vẫn 200 tới hết 12h. Không tự sửa vì cần bảng session (đổi nghiệp vụ).
+7. **`TransferService.receive` còn ~9 truy vấn/dòng** (186 câu / phiếu 20 dòng).
+   Đã chặn 20 dòng/lần ở biên để tránh 500 thô; nâng cấp thật là gom lô SQL như
+   `getBatchATP`.
 
 ## 1. Vai trò & luật phối hợp (đang hiệu lực)
 
@@ -125,10 +216,10 @@ Sau khi sửa: 700.000 (300.000 bàn giao + 400.000 bán trong ngày).
 ## 2. Trạng thái production (đang chạy BETA)
 
 - URL: **https://book.formaform.vn** (+ formapubli.phamkha9x.workers.dev).
-- main = **`8665225`**, commit được deploy = **`d828262`**, Cloudflare version
-  **`f9e53b70-161f-4e02-b84d-1483d7da7bb4`**, **97/97 suite xanh** (`EXIT=0`).
-  (Hai mã khác nhau: `8665225` là commit, `f9e53b70…` là *version ID* của
-  Cloudflare — nó **không** phải commit SHA.)
+- main = **`f715395`**, Cloudflare version
+  **`83ef8b7b-c486-4faf-860f-1b8aea36146c`**, **100/100 suite xanh** (`EXIT=0`).
+  (Hai mã khác nhau: commit SHA là `f715395`; `83ef8b7b…` là *version ID* của
+  Cloudflare — nó **không** phải commit.)
 - Migration đã áp tay lên Turso: **`0027`** (trigger chặn tồn kho âm khi UPDATE),
   **`0028`** (bảng `daily_order_counters` cho mã đơn 13 ký tự),
   **`0029`** (trigger chặn tồn kho âm khi INSERT — 0027 chỉ chặn UPDATE).
