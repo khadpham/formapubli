@@ -96,7 +96,23 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
   hiện; (2) **không nuốt lỗi** khi xoá — phải thấy kết quả từng lệnh; (3) sau khi
   xoá, kiểm lại bằng `git ls-remote --heads origin` (**đây mới là sự thật**, cache
   cục bộ có thể đã cũ).
-- File watcher của `next dev` trên máy này hay bị trễ/hỏng khi có nhiều worktree. Nếu sửa file mà
+4. **Quy tắc 1–4:** nghiệm thu chưa xong cho tới khi có bằng chứng ở đúng tầng mà
+   lỗi sống. Lỗi sống ở `src/` thì `npx tsc --noEmit` là bằng chứng tầng 1; lỗi
+   chạy lúc deploy thì `npm run build` là tầng 2; lỗi hiện ra ngoài qua HTTP thì
+   **phải gọi HTTP thật** — tầng 3 là `npx tsx scripts/verify-pos-live.ts` (đăng
+   nhập thật, gọi API thật, tạo 1 đơn thật, kiểm mã 13 ký tự + tồn + báo cáo).
+   Nó bắt được một lỗi mà 100 suite không bắt: dev DB thiếu migration ⇒ **mọi
+   đơn trả 500**. Chạy script này sau mỗi đợt sửa POS/kho/báo cáo.
+5. **`formapubli.db` (DB dev cục bộ) có thể TỤT HẬU so với production.** Nó không
+   tự migrate. Kiểm bằng `npx tsx scripts/check-dev-db-schema.ts`; vá bằng
+   `npx tsx scripts/fix-dev-db-schema.ts` (tự sao lưu `.bak`, tự kiểm tra trước
+   khi chạy). Thiếu bảng ⇒ **tạo đơn trả 500**, và thiếu trigger ⇒ **tồn âm lọt
+   qua trong lúc bạn đang sửa**.
+6. **Lấy cấu trúc DDL TỪ FILE MIGRATION, không tự viết.** Tôi tự viết `CREATE
+   TABLE daily_order_counters (business_date …)` trong khi code tìm cột `day` ⇒
+   vẫn 500 sau khi "đã vá". Phải mở `src/db/migrations/00XX_*.sql` và copy
+   nguyên văn.
+- **File watcher của `next dev` trên máy này hay bị trễ/hỏng khi có nhiều worktree. Nếu sửa file mà
   log không in `Compiled`, **restart dev server** thay vì chờ.
 - NEVER run `next build` while `next dev` is running: the build overwrites `.next/`, the dev server keeps
   serving the old asset manifest, every CSS/JS 404s and the user gets a completely unstyled page.
