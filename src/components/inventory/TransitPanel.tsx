@@ -125,7 +125,7 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
       <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
           <Truck className="w-4 h-4 text-indigo-600" />
-          Hàng Đang Đi Đường (wh-in-transit) — R + D + L = X
+          Hàng Đang Di Đường - Số Nhận Phải Khớp Số Gửi Đi
         </div>
         <button onClick={fetchList} className="p-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

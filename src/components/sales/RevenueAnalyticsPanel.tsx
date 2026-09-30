@@ -105,7 +105,7 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
     const watermarked = appendExportWatermark(baseCsv, rawObjects, {
       actorId: 'revenue-analytics',
       actorRole: currentRole,
-      reportName: 'BAO CAO NGUON DOANH THU & DONG TIEN (BAN LE / DAI LY / ONLINE / TANG)',
+      reportName: 'Báo cáo nguồn doanh thu & dòng tiền (bán lẻ / đại lý / online / tặng)',
       fiscalScope: 'ALL',
     });
     const blob = new Blob(['\uFEFF' + watermarked], { type: 'text/csv;charset=utf-8;' });
@@ -145,7 +145,7 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition"
           >
             <Download className="w-3.5 h-3.5" />
-            Xuất Excel/CSV (hash)
+            Xuất Excel/CSV
           </button>
         </div>
       </div>

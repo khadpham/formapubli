@@ -111,6 +111,7 @@ const ALL_SUITES = [
   'scripts/test-login-accounts.ts',
   'scripts/test-actor-binding.ts',
   'scripts/test-rbac-audit.ts',
+  'scripts/test-dashboard-ui-text.ts',
   'scripts/test-read-scope.ts',
   'scripts/drill-go-live.ts',
   // SUITE CUỐI: tạo ấn bản AB-* và bán chạy thật trong DB test dùng chung, nên

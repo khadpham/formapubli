@@ -1196,7 +1196,7 @@ export function StockOverviewMatrix({
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Sổ Cái Kho Bất Biến (Append-Only Ledger) — Nghiêm Cấm Sửa/Xóa Lịch Sử
+              Sổ Cái Kho Bất Biến — Nghiêm Cấm Sửa/Xóa Lịch Sử
             </div>
             <span className="text-xs text-slate-400">Thời gian thực</span>
           </div>

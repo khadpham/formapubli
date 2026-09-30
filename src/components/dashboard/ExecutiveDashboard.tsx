@@ -123,21 +123,33 @@ export function ExecutiveDashboard({
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [isLiveMonitorOpen, setIsLiveMonitorOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [stockSummary, setStockSummary] = useState<{
+    titlesWithStock: number;
+    totalUnits: number;
+    totalSkus: number;
+    warehouseCount: number;
+    warehouseNames: string[];
+  } | null>(null);
   const [selectedSettlementWarehouseId, setSelectedSettlementWarehouseId] = useState<string>('wh-du-phong');
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const [orderRes] = await Promise.all([
+      const [orderRes, stockRes] = await Promise.all([
         // no-store: bấm "Làm mới" phải đọc server thật, không phải bản cache
         // của trình duyệt (dynamic route nhưng client fetch vẫn bị HTTP cache).
         fetch('/api/orders?fiscalScope=ALL', { cache: 'no-store' }),
+        // Số liệu tồn kho. Trước đây thẻ "Tồn Kho" hiển thị CHỮ VIẾT CỨNG
+        // "81 Đầu Sách" + "(3 Kho)" + tên kho viết thẳng, nên không bao giờ đúng.
+        fetch('/api/analytics?view=stock-summary', { cache: 'no-store' }),
       ]);
       const orderData = await orderRes.json();
+      const stockData = await stockRes.json();
 
       if (orderData.success) {
         setOrders(orderData.orders || []);
         setSummary(orderData.summary || null);
+        setStockSummary(stockData?.success ? stockData.data : null);
         setLastUpdatedAt(new Date().toLocaleTimeString('vi-VN'));
       }
     } catch (err) {
@@ -349,21 +361,23 @@ export function ExecutiveDashboard({
           </p>
         </div>
 
-        {/* Tổng Tồn Kho 3 Địa điểm */}
+        {/* Tổng Tồn Kho Vật Lý — số liệu lấy THẬT từ API, không ghi cứng. */}
         <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Tồn Kho Vật Lý (3 Kho)
+              Tồn Kho Vật Lý ({stockSummary?.warehouseCount ?? 0} Kho)
             </span>
             <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <Boxes className="w-5 h-5" />
             </div>
           </div>
           <p className="text-2xl font-extrabold text-slate-900 mt-2 font-mono">
-            81 Đầu Sách
+            {stockSummary ? stockSummary.titlesWithStock : '…'} Đầu Sách
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Kho 1 Âu Cơ | Kho 2 Quỳnh Mai | Kho 3 Hội Chợ
+            {stockSummary
+              ? `${stockSummary.totalUnits.toLocaleString('vi-VN')} cuốn · ${stockSummary.warehouseNames.join(' · ')}`
+              : 'Đang tải…'}
           </p>
         </div>
 
@@ -394,7 +408,7 @@ export function ExecutiveDashboard({
             <div>
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-indigo-600" />
-                Phân Tách Dòng Tiền Sổ Kép (Dual Projection Architecture)
+                Phân Tách Dòng Tiền Sổ Kép
               </h3>
               <p className="text-xs text-slate-500">
                 Minh bạch tách bạch giữa Doanh thu Thuế chính thức và Doanh thu Thực tế Nội bộ
@@ -413,7 +427,7 @@ export function ExecutiveDashboard({
             <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
-                  Sổ Kế Toán Thuế (Official VAT)
+                  Sổ Kế Toán Thuế
                 </span>
                 <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
                   Sạch 100%
@@ -438,7 +452,7 @@ export function ExecutiveDashboard({
             <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-indigo-800 uppercase tracking-wide">
-                  Sổ Quản Trị Thực Tế (Internal)
+                  Sổ Quản Trị Thực Tế
                 </span>
                 <span className="text-[10px] bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded-full font-bold">
                   Bảo Mật

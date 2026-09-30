@@ -326,7 +326,7 @@ export function ManagerApprovalDrawer({
         {/* Ô duyệt nhanh bằng 4 số ShortCode */}
         <div className="p-4 bg-amber-500/10 border-b border-amber-200/60 space-y-2">
           <label className="text-[11px] font-bold text-amber-900 uppercase tracking-wider block">
-            ⚡ Duyệt nhanh bằng đuôi 4 số (ShortCode):
+            ⚡ Duyệt nhanh bằng đuôi 4 số:
           </label>
           <div className="flex gap-2">
             <input

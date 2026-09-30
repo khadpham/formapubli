@@ -255,7 +255,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
             {/* Theme Mode */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-700 block">
-                Chế Độ Màu (Theme Mode):
+                Chế Độ Màu:
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
@@ -288,7 +288,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
             {/* Table Density */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-700 block">
-                Mật Độ Hiển Thị Bảng (Table Density):
+                Mật Độ Hiển Thị Bảng:
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button

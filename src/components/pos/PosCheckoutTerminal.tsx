@@ -848,7 +848,7 @@ export function PosCheckoutTerminal({
 
     const handleOffline = () => {
       setIsOnline(false);
-      setSyncToast('🔴 Mất kết nối mạng! Chuyển sang chế độ bán hàng ngoại tuyến (Offline-First).');
+      setSyncToast('🔴 Mất kết nối mạng! Chuyển sang chế độ bán hàng ngoại tuyến.');
       setTimeout(() => setSyncToast(null), 5000);
     };
 

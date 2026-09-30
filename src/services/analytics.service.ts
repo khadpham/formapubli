@@ -53,6 +53,53 @@ function mondayOf(offsetWeeks = 0): Date {
 }
 
 export class AnalyticsService {
+  /**
+   * Tổng quan tồn kho vật lý — thẻ "Tồn Kho" trên bảng quản trị tổng quan.
+   *
+   * VÌ SAO CÓ HÀM NÀY (30/09): thẻ đó trước đây hiển thị CHỮ VIẾT CỨNG
+   * `81 Đầu Sách`, kèm `(3 Kho)` và tên kho viết thẳng — trong khi production có
+   * 5 kho. Tức bảng quản trị **nói dối người dùng**, và không bao giờ tự cập nhật.
+   *
+   * Chỉ tính ấn bản `is_active` (ấn bản bị khoá như H85 không hiện ở POS thì cũng
+   * không nên được báo là hàng đang bán được), và chỉ kho `is_active`.
+   */
+  static async stockSummary() {
+    const rows = await db
+      .select({
+        titlesWithStock: sql<number>`COUNT(DISTINCT ${stockBalances.editionId})`,
+        totalUnits: sql<number>`COALESCE(SUM(${stockBalances.physicalQuantity}), 0)`,
+      })
+      .from(stockBalances)
+      .innerJoin(editions, eq(stockBalances.editionId, editions.id))
+      .innerJoin(warehouses, eq(stockBalances.warehouseId, warehouses.id))
+      .where(
+        and(
+          sql`${stockBalances.physicalQuantity} > 0`,
+          sql`${editions.isActive} = 1`,
+          sql`${warehouses.isActive} = 1`
+        )
+      );
+
+    const [skus] = await db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(editions)
+      .where(sql`${editions.isActive} = 1`);
+
+    const whs = await db
+      .select({ id: warehouses.id, name: warehouses.name })
+      .from(warehouses)
+      .where(sql`${warehouses.isActive} = 1`)
+      .orderBy(warehouses.name);
+
+    return {
+      titlesWithStock: Number(rows[0]?.titlesWithStock || 0),
+      totalUnits: Number(rows[0]?.totalUnits || 0),
+      totalSkus: Number(skus?.n || 0),
+      warehouseCount: whs.length,
+      warehouseNames: whs.map((w) => w.name),
+    };
+  }
+
   /** Doanh thu + số đơn theo kênh (COMPLETED). SPONSORSHIP hiện 0đ nhưng vẫn liệt kê minh bạch. */
   static async byChannel(range: DateRange = {}) {
     const rows = await db
