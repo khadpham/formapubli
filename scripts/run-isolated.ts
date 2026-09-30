@@ -74,6 +74,7 @@ const ALL_SUITES = [
     'scripts/test-order-code-13.ts',
   'scripts/test-forecast.ts',
   'scripts/test-royalties.ts',
+  'scripts/test-royalty-basis.ts',
   'scripts/test-returns.ts',
   'scripts/test-auditA-kho-vanchuyen.ts',
   'scripts/test-auditC-money.ts',

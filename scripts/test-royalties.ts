@@ -34,10 +34,36 @@ async function runRoyaltyTests() {
   const edB = await edOf(workB.id);
 
   // Hợp đồng A: còn hiệu lực dài, quota 2000, rate 10%, tạm ứng 50k.
+  //
+  // `royaltyBasis: 'COVER_PRICE'` — KHAI BÁO ĐÚNG Ý ĐỊNH của suite này: nó kiểm
+  // công thức "bán × GIÁ BÌA × rate". Trước khi có cột `royalty_basis`, mọi hợp
+  // đồng đều ngầm dùng giá bìa nên assertion này luôn xanh; nay mặc định là
+  // NET_SOLD (tiền thực thu sau chiết khấu), và suite chạy trên DB dùng chung —
+  // nơi các suite trước đã để lại đơn có chiết khấu trên cùng ấn bản — thì
+  // `accrued` theo tiền thực thu KHÔNG còn bằng `round(coverRevenue × rate)`.
+  // Đó không phải hỏng, đó là hành vi MỚI ĐÚNG; suite này giữ nguyên assertion
+  // của công thức giá bìa và khai báo rõ nó muốn kiểm cái đó. Công thức
+  // NET_SOLD được kiểm ở scripts/test-royalty-basis.ts.
   const cA = await RoyaltyService.createContract({
     contractNumber: `HD-BQ-TEST-${Date.now().toString().slice(-5)}`,
     workId: workA.id,
     licensorName: 'Tác giả Test A',
+    royaltyRate: 0.1,
+    printQuota: 2000,
+    advanceAmount: 50000,
+    effectiveDate: '2020-01-01',
+    expirationDate: '2099-12-31',
+    createdBy: 'manager-test',
+    royaltyBasis: 'COVER_PRICE',
+  });
+
+  // HỢP ĐỒNG B: CÙNG tác phẩm, CÙNG dữ liệu bán, nhưng để mặc định NET_SOLD.
+  // Dùng để chứng minh trên CHÍNH dữ liệu của suite này rằng hai cơ sở cho ra
+  // hai con số khác nhau đúng bằng tổng tiền chiết khấu.
+  const cANet = await RoyaltyService.createContract({
+    contractNumber: `HD-BQ-NET-${Date.now().toString().slice(-5)}`,
+    workId: workA.id,
+    licensorName: 'Tác giả Test A (net)',
     royaltyRate: 0.1,
     printQuota: 2000,
     advanceAmount: 50000,
@@ -72,16 +98,43 @@ async function runRoyaltyTests() {
   );
 
   // TEST 2: Nhuận bút tăng đúng +20 cuốn: bán × giá bìa × 10% − tạm ứng, floor 0.
+  // (HĐ A khai báo COVER_PRICE — xem giải thích ở chỗ tạo hợp đồng.)
   const stmtA = await RoyaltyService.royaltyStatement(cA.contractId);
   const coverA = edA.coverPrice ?? 0;
   const expectedAccrued = Math.round(stmtA.coverRevenue * 0.1);
   ok(
-    stmtA.soldQty === soldBefore + 20 &&
-    stmtA.coverRevenue === stmtA.soldQty * coverA &&
-    stmtA.accrued === expectedAccrued &&
-    stmtA.payable === Math.max(0, expectedAccrued - 50000),
+    stmtA.royaltyBasis === 'COVER_PRICE' &&
+      stmtA.basisRevenue === stmtA.coverRevenue &&
+      stmtA.soldQty === soldBefore + 20 &&
+      stmtA.coverRevenue === stmtA.soldQty * coverA &&
+      stmtA.accrued === expectedAccrued &&
+      stmtA.payable === Math.max(0, expectedAccrued - 50000),
     'Nhuận bút đúng công thức (bán × bìa × rate − tạm ứng, floor 0)',
-    `bán ${stmtA.soldQty}, doanh thu bìa ${stmtA.coverRevenue}, phát sinh ${stmtA.accrued}, phải trả ${stmtA.payable}`
+    `cơ sở=${stmtA.royaltyBasis}, bán ${stmtA.soldQty}, doanh thu bìa ${stmtA.coverRevenue}, ` +
+      `phát sinh ${stmtA.accrued}, phải trả ${stmtA.payable}`
+  );
+
+  // TEST 2b: CÙNG dữ liệu, hợp đồng để mặc định NET_SOLD.
+  // Chứng minh ngay trên dữ liệu của suite này: nếu DB có đơn chiết khấu thì
+  // royalty theo tiền thực thu NHỎ HƠN, và chênh lệch đúng bằng tổng chiết khấu.
+  const stmtNet = await RoyaltyService.royaltyStatement(cANet.contractId);
+  const discountGap = stmtNet.coverRevenue - stmtNet.basisRevenue;
+  ok(
+    stmtNet.royaltyBasis === 'NET_SOLD' &&
+      stmtNet.soldQty === stmtA.soldQty &&
+      stmtNet.basisRevenue <= stmtNet.coverRevenue &&
+      (discountGap === 0 || stmtNet.accrued < stmtA.accrued),
+    'Mặc định NET_SOLD: cùng lượng bán, doanh thu ≤ giá bìa, phát sinh ≤ HĐ giá bìa',
+    `NET_SOLD: basisRevenue=${stmtNet.basisRevenue}, coverRevenue=${stmtNet.coverRevenue}, ` +
+      `chênh(chiết khấu)=${discountGap}, phát sinh=${stmtNet.accrued} ` +
+      `(${discountGap > 0 ? 'NHỎ HƠN' : 'bằng'} HĐ giá bìa ${stmtA.accrued})`
+  );
+  ok(
+    discountGap === 0
+      ? stmtNet.basisRevenue === stmtNet.coverRevenue
+      : stmtNet.accrued === Math.round(stmtNet.basisRevenue * 0.1),
+    'Chênh lệch giữa hai cơ sở CHÍNH LÀ tổng tiền chiết khấu, không phải lỗi làm tròn',
+    `cover − net = ${discountGap}; accrued NET_SOLD = ${stmtNet.accrued} = round(${stmtNet.basisRevenue} × 0.1)`
   );
 
   // TEST 3: Cảnh báo tuyệt đối (còn <= 200).

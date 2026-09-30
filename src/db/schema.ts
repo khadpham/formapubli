@@ -367,6 +367,11 @@ export const rightsContracts = sqliteTable('rights_contracts', {
   royaltyRate: real('royalty_rate').notNull(), // 0.08 - 0.12 giá bìa
   printQuota: integer('print_quota').notNull(), // Số cuốn được phép in tối đa
   advanceAmount: real('advance_amount').notNull().default(0), // Tạm ứng trừ dần
+  // Cơ sở tính nhuận bút: 'NET_SOLD' (tiền thực thu sau chiết khấu — mặc định)
+  // hoặc 'COVER_PRICE' (lượng bán × giá bìa hiện hành, cho HĐ ghi rõ trả theo
+  // giá bìa). Trước khi có cột này, mọi HĐ đều nhân với giá bìa ⇒ khách chiết
+  // khấu 10% thì tác giả vẫn nhận nhuận bút trên 100% giá bìa.
+  royaltyBasis: text('royalty_basis').notNull().default('NET_SOLD'),
   effectiveDate: text('effective_date').notNull(), // YYYY-MM-DD
   expirationDate: text('expiration_date').notNull(), // YYYY-MM-DD (thường +5 năm)
   terminated: integer('terminated', { mode: 'boolean' }).default(false), // Chấm dứt trước hạn

@@ -1,0 +1,20 @@
+-- Cơ sở tính nhuận bút cho từng hợp đồng bản quyền.
+--
+-- VÌ SAO CẦN: `royaltyStatement` trước đây luôn tính
+--   doanh thu = SUM(lượng bán trong hạn) × `editions.cover_price` (GIÁ BÌA HIỆN HÀNH)
+-- nên khách mua chiết khấu 10% vẫn khiến tác giả nhận nhuận bút trên 100% giá
+-- bìa ⇒ royalty thổi phồng ~10%. Mặc định mới là 'NET_SOLD': lấy
+-- `order_items.total_amount` (giá bán sau chiết khấu × số lượng) — đúng tiền
+-- thực thu nằm trong sổ cái.
+--
+-- 'COVER_PRICE' giữ hành vi cũ cho hợp đồng ghi rõ "trả nhuận bút theo giá bìa".
+-- Bảng kê trả về `royaltyBasis` + nhãn tiếng Việt để khi đối chiếu với đối tác
+-- không phải đoán.
+--
+-- Giá trị mặc định áp cho MỌI hợp đồng đang tồn tại trên production: đây là
+-- điều chỉnh đúng theo nghiệp vụ (trả trên tiền thực thu), và HĐ nào thật sự
+-- trả theo giá bìa thì owner sửa cột này thành 'COVER_PRICE'.
+--
+-- `when` của entry journal phải CAO HƠN `0029` (1790600005000) — drizzle bỏ qua
+-- im lặng entry có `when` nhỏ hơn bản ghi cuối.
+ALTER TABLE `rights_contracts` ADD `royalty_basis` text DEFAULT 'NET_SOLD' NOT NULL;

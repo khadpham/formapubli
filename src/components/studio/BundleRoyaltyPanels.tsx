@@ -77,6 +77,11 @@ export function BundleRoyaltyPanels({ currentRole }: { currentRole: UserRole }) 
                 <p className="text-[11px] text-slate-500">
                   {c.licensorName || ''} • rate {Math.round(Number(c.royaltyRate || 0) * 100)}% • quota {c.printQuota ?? '—'}
                 </p>
+                {/* Cơ sở tính tiền: mặc định NET_SOLD (tiền thực thu sau chiết khấu).
+                    Hiện rõ để khi đối chiếu bảng kê với tác giả không phải đoán. */}
+                <p className="text-[11px] text-amber-700">
+                  Cơ sở: {c.royaltyBasis === 'COVER_PRICE' ? 'Giá bìa' : 'Tiền thực thu (sau chiết khấu)'}
+                </p>
               </div>
             ))}
           </div>
