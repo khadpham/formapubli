@@ -57,6 +57,7 @@ async function run() {
   const { RoyaltyService, ROYALTY_BASIS_LABEL, ROYALTY_BASIS_OPTIONS, ROYALTY_BASES } =
     await import('../src/services/royalty.service');
   const { OrderService } = await import('../src/services/order.service');
+  const { SponsorshipService } = await import('../src/services/sponsorship.service');
   const { sql, eq } = await import('drizzle-orm');
 
   const WH = 'wh-roy';
@@ -247,13 +248,44 @@ async function run() {
   // ======================================================================
   console.log('\n=== R3. Bộ lọc kênh SPONSORSHIP + trạng thái đơn ===');
   const cSpon = await mkContract('ROY-HD-SPON', 'wk-sponsor', 0.1);
-  // Đơn tài trợ: final 0đ, kéo từ quỹ. KHÔNG phải doanh số bán.
-  await OrderService.createOrder({
-    warehouseId: WH, customerName: 'Quỹ tài trợ',
-    channel: 'SPONSORSHIP', fiscalScope: 'INTERNAL_MANAGEMENT', cashierId: 'ROY-CASHIER',
-    items: [{ editionId: 'ed-s1', quantity: 3 }],
+
+  // Đơn tài trợ phải sinh qua `SponsorshipService.draw`, KHÔNG đẩy
+  // `channel: 'SPONSORSHIP'` vào `OrderService.createOrder`. Agent pay (30/09)
+  // đã chứng minh đường cũ là lỗ hổng: thu ngân gửi kênh SPONSORSHIP làm đơn
+  // BIẾN MẤT khỏi doanh số và lách trọn guard ca két. Nay `createOrder` chặn
+  // kênh này — và test này chính là bằng chứng cho thấy bất biến đó có thật.
+  let blockedByGuard = false;
+  try {
+    await OrderService.createOrder({
+      warehouseId: WH, customerName: 'Quỹ tài trợ',
+      channel: 'SPONSORSHIP', fiscalScope: 'INTERNAL_MANAGEMENT', cashierId: 'ROY-CASHIER',
+      items: [{ editionId: 'ed-s1', quantity: 3 }],
+      idempotencyKey: 'roy-basis-sponsor-illegal',
+    });
+  } catch {
+    blockedByGuard = true;
+  }
+  ok(
+    blockedByGuard,
+    'R3.0 createOrder CHẶN kênh SPONSORSHIP (đơn tài trợ chỉ sinh qua quỹ)'
+  );
+
+  const fundSpon = await SponsorshipService.createFund({
+    sponsorName: 'Nhà tài trợ test royalty',
+    amountReceived: 5_000_000,
+    quotaType: 'CAPPED',
+    quotaLimit: 5_000_000,
+    createdBy: 'ROY-CASHIER',
+  });
+  await SponsorshipService.draw({
+    fundId: fundSpon.fundId,
+    editionId: 'ed-s1',
+    warehouseId: WH,
+    quantity: 3,
+    drawnBy: 'ROY-CASHIER',
     idempotencyKey: 'roy-basis-sponsor-1',
   });
+
   const stSpon = await RoyaltyService.royaltyStatement(cSpon.contractId);
   const sponSummary = await OrderService.getSalesSummary({ channel: 'SPONSORSHIP' });
   const allSummary = await OrderService.getSalesSummary({});
