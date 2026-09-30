@@ -1574,9 +1574,15 @@ export function PosCheckoutTerminal({
     : isDigitalCheckout
       ? 'Chụp ảnh xác nhận'
       : 'THANH TOÁN & KHẤU TRỪ KHO';
-  const checkoutSubmittingLabel = isDigitalCheckout
-    ? 'Đang tạo đơn chờ xác nhận...'
-    : 'Đang khấu trừ kho & tạo đơn...';
+  // Tiến trình trong lúc chốt đơn (30/09). Trước đây nút chỉ hiện một dòng
+  // chữ suốt thời gian chờ ⇒ thu ngân tưởng app treo. Giờ nói rõ đang làm gì.
+  const [checkoutStep, setCheckoutStep] = useState<string | null>(null);
+
+  const checkoutSubmittingLabel = checkoutStep
+    ? checkoutStep
+    : isDigitalCheckout
+      ? 'Đang tạo đơn chờ xác nhận...'
+      : 'Đang khấu trừ kho & tạo đơn...';
   const mobileCheckoutButtonLabel = isGift
     ? checkoutButtonLabel
     : isDigitalCheckout
@@ -1649,17 +1655,37 @@ export function PosCheckoutTerminal({
 
     // 1.0: chốt chặn ATP lần cuối (giữ chỗ có thể tăng sau khi thêm giỏ).
     // Quản lý đã duyệt PIN được vượt (chịu trách nhiệm đối soát), server vẫn guard tồn vật lý.
+    //
+    // 30/09: TRƯỚC đây vòng lặp gọi `/api/atp` MỘT LẦN CHO TỪNG CUỐN, nối tiếp.
+    // Đơn 12 cuốn = 12 vòng mạng, mỗi vòng lại vài câu DB xa ⇒ thu ngân đứng
+    // chờ nhiều giây, và nút chỉ hiện một dòng chữ nên tưởng treo. Nay tra CẢ GIỎ
+    // trong 1 vòng (`editionIds`). Cùng lúc đó hiện tiến trình để thấy nó còn
+    // chạy.
+    setCheckoutStep('Đang kiểm tra tồn kho…');
     try {
-      for (const item of cart) {
-        const res = await fetch(`/api/atp?editionId=${encodeURIComponent(item.editionId)}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`);
+      const ids = Array.from(new Set(cart.map((item) => item.editionId).filter(Boolean)));
+      if (ids.length > 0) {
+        const res = await fetch(
+          `/api/atp?editionIds=${encodeURIComponent(ids.join(','))}&warehouseId=${encodeURIComponent(selectedWarehouseId)}`
+        );
         const json = await res.json();
-        if (json.success && item.quantity > json.data.atp && !isManagerOverride) {
-          checkoutLockRef.current = false;
-          setIsSubmitting(false);
-          setErrorMessage(
-            `Sách [${item.code}] vượt tồn khả dụng (${item.quantity} > ${json.data.atp}, có ${json.data.held} cuốn giữ chỗ online). Cần Quản lý duyệt PIN để vượt.`
+        if (json.success && Array.isArray(json.data?.items) && !isManagerOverride) {
+          const atpById = new Map<string, number>(
+            json.data.items.map((it: { editionId: string; atp: number }) => [it.editionId, Number(it.atp) || 0])
           );
-          return;
+          const blocked = cart.find(
+            (item) => item.quantity > (atpById.get(item.editionId) ?? 0)
+          );
+          if (blocked) {
+            const row = json.data.items.find((it: { editionId: string }) => it.editionId === blocked.editionId);
+            checkoutLockRef.current = false;
+            setIsSubmitting(false);
+            setCheckoutStep(null);
+            setErrorMessage(
+              `Sách [${blocked.code}] vượt tồn khả dụng (${blocked.quantity} > ${atpById.get(blocked.editionId) ?? 0}, có ${row?.held ?? 0} cuốn giữ chỗ online). Cần Quản lý duyệt PIN để vượt.`
+            );
+            return;
+          }
         }
       }
     } catch {
@@ -1674,6 +1700,7 @@ export function PosCheckoutTerminal({
     if (!isGift && isDigitalPayment && !captureFile) {
       checkoutLockRef.current = false;
       setIsSubmitting(false);
+      setCheckoutStep(null);
       setErrorMessage(NEED_PROOF_MESSAGE);
       return;
     }
@@ -1839,12 +1866,14 @@ export function PosCheckoutTerminal({
       }
       checkoutLockRef.current = false;
       setIsSubmitting(false);
+      setCheckoutStep(null);
       return;
     }
 
     // A2. Chuyển khoản/QR có mạng: tạo đơn PENDING trước (confirmImmediately:false),
     // rồi mở modal QR. Thu ngân chụp ảnh và xác nhận ở handleConfirmTransfer.
     if (!isGift && isDigitalPayment) {
+      setCheckoutStep('Đang tạo đơn…');
       try {
         const response = await fetch('/api/orders', {
           method: 'POST',
@@ -1950,18 +1979,20 @@ export function PosCheckoutTerminal({
       } finally {
         checkoutLockRef.current = false;
         setIsSubmitting(false);
+        setCheckoutStep(null);
       }
       return;
     }
 
     // B. Nếu có mạng: Thử gửi lên Máy chủ qua REST API
+    setCheckoutStep('Đang tạo đơn…');
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-           id: orderUuid,
-           orderCode,
+        body: JSON.stringify({
+          id: orderUuid,
+          orderCode,
            idempotencyKey,
            createdAt: orderTimestamp,
            warehouseId: selectedWarehouseId,
@@ -2027,6 +2058,7 @@ export function PosCheckoutTerminal({
     } finally {
       checkoutLockRef.current = false;
       setIsSubmitting(false);
+      setCheckoutStep(null);
     }
   };
 

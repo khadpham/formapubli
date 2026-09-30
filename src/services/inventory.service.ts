@@ -89,6 +89,43 @@ export class InventoryService {
   }
 
   /**
+   * Tồn vật lý của N ấn bản trong 1 câu — anh/chị em của `getBalance`.
+   *
+   * 30/09: POS chốt đơn cần tra ATP cho cả giỏ. Trước đây gọi `/api/atp` MỘT
+   * LẦN cho TỪNG cuốn nối tiếp ⇒ đơn 12 cuốn = 12 vòng mạng, mỗi vòng lại vài
+   * câu DB xa ⇒ thu ngân đứng chờ nhiều giây. `getBatchATP` đã gộp được phía
+   * giữ chỗ; hàm này gộp nốt phía tồn vật lý để tra cả hai trong 2 câu.
+   */
+  static async getBatchBalance(
+    editionIds: string[],
+    warehouseId: string,
+    condition: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE' = 'NEW',
+    txOrDb: any = db
+  ): Promise<Map<string, number>> {
+    const ids = Array.from(new Set(editionIds.filter(Boolean)));
+    const out = new Map<string, number>();
+    if (ids.length === 0) return out;
+    const rows = await txOrDb
+      .select({
+        editionId: stockBalances.editionId,
+        qty: stockBalances.physicalQuantity,
+      })
+      .from(stockBalances)
+      .where(
+        and(
+          inArray(stockBalances.editionId, ids),
+          eq(stockBalances.warehouseId, warehouseId),
+          eq(stockBalances.condition, condition)
+        )
+      );
+    for (const r of rows) out.set(`${r.editionId}`, Number(r.qty || 0));
+    // Ấn bản chưa có dòng tồn = 0, để tra ATP không phải phân biệt "thiếu" với
+    // "bằng 0" (cả hai đều là không bán được).
+    for (const id of ids) if (!out.has(id)) out.set(id, 0);
+    return out;
+  }
+
+  /**
    * Ghi nhận một biến động vào Sổ cái bất biến (Append-Only) và cập nhật Bảng cân đối tồn kho tức thời.
    * Chặn tuyệt đối việc xuất âm kho (Negative Stock Prevention).
    */
