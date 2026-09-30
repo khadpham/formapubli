@@ -198,6 +198,23 @@ export class OrderService {
     if (!VALID_PAYMENTS.includes(paymentMethod)) {
       throw AppError.invalid(`Phương thức thanh toán không hợp lệ: ${paymentMethod}.`);
     }
+    // Kênh SPONSORSHIP là kênh RÚT QUỸ, không phải kênh bán hàng: chỉ
+    // SponsorshipService.draw được ghi (nó tự INSERT, finalAmount = 0 vì tiền
+    // đã thu sẵn từ nhà tài trợ). Trước khi chặn, `channel` do CLIENT gửi nên
+    // đường bán hàng nhận được kênh này, và hậu quả kép:
+    //  (1) MỘT ĐƠN TIỀN MẶT thật bị `getSalesSummary` (và forecast, executive,
+    //      analytics — tất cả đều lọc `channel != 'SPONSORSHIP'`) loại khỏi
+    //      doanh số: tiền nằm trong két nhưng không có mặt trong báo cáo.
+    //  (2) `isCounterChannel()` = false nên lách trọn bộ guard ca két của
+    //      kênh quầy (B2a mở ca, B2c quá giờ chốt ngày) — bán tiền mặt ở
+    //      hội chợ mà không cần mở ca, `cashbox_session_id` = NULL.
+    // Chặn ở service (không phải route) vì đây là nơu mọi caller — kể cả
+    // đồng bộ offline và caller nội bộ — đều phải đi qua.
+    if (channel === 'SPONSORSHIP') {
+      throw AppError.invalid(
+        'Kênh SPONSORSHIP do Quỹ tài trợ quản lý, không dùng để bán hàng. Rút sách tài trợ dùng luồng Quỹ tài trợ.'
+      );
+    }
     if (params.idempotencyKey) {
       const existingPre = await withDbRetry(async () => {
         return await db
@@ -1026,7 +1043,46 @@ export class OrderService {
 
     const dbCashbox = ord.cashboxSessionId || null;
     const wantCashbox = want.cashboxSessionId || null;
-    if (dbCashbox !== wantCashbox) {
+    // Client KHÔNG gửi phiên két ⇒ server tự gắn ca OPEN của chính thu ngân tại
+    // đúng kho (xem khối B2a, chỉ khi đơn PENDING ở kênh quầy). Khi đó
+    // `ord.cashboxSessionId` là giá trị DO SERVER chọn, mà request replay lại
+    // không có gì để so ⇒ so thô bất đối xứng và mọi lần thử lại (F5, mạng lỗi)
+    // đều nhận 409 thay vì đúng đơn cũ. Đo được: PENDING quầy không gửi session
+    // → tạo lại cùng payload ⇒ "phiên két khác (cbs-… vs null)" dù nội dung
+    // đơn y hệt. CHỈ bỏ qua đúng trường hợp đó: đơn PENDING kênh quầy mà ca đó
+    // do server tự gắn (đã kiểm vẫn OPEN + đúng thu ngân + đúng kho). Mọi trường
+    // hợp khác — kể cả "đơn đã chốt mà replay bỏ session" — vẫn so chặt như cũ.
+    if (dbCashbox === wantCashbox) {
+      // Khớp (kể cả cả hai null) — không có gì để soi.
+    } else if (
+      wantCashbox === null &&
+      dbCashbox !== null &&
+      ord.status === 'PENDING_CONFIRMATION' &&
+      isCounterChannel(ord.channel)
+    ) {
+      // Server tự gắn: hợp lệ khi ca đó vẫn OPEN và thuộc đúng thu ngân/đúng kho —
+      // các điều kiện đó đã bị chặn ở B1/B2a khi ghi đơn đầu tiên.
+      const sessRows = await txOrDb
+        .select({
+          status: cashboxSessions.status,
+          warehouseId: cashboxSessions.warehouseId,
+          cashierId: cashboxSessions.cashierId,
+        })
+        .from(cashboxSessions)
+        .where(eq(cashboxSessions.id, dbCashbox))
+        .limit(1);
+      const s = sessRows[0];
+      if (
+        !s ||
+        s.status !== 'OPEN' ||
+        s.warehouseId !== ord.warehouseId ||
+        s.cashierId !== (want.effCashierId || null)
+      ) {
+        throw AppError.idempotency(
+          `Idempotency-Key đã gắn với đơn ${ord.orderCode} nhưng phiên két server tự gắn (${dbCashbox}) không còn hợp lệ.`
+        );
+      }
+    } else {
       throw AppError.idempotency(
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có phiên két khác (${dbCashbox} vs ${wantCashbox}).`
       );

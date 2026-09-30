@@ -671,6 +671,18 @@ export class ReturnService {
                   `STATE_CONFLICT: Két ${sess.id} thuộc kho ${sess.warehouseId}, không khớp kho trả ${header.targetWarehouseId} — rollback toàn bộ.`
                 );
               }
+              // Tiền hoàn phải bớt đúng ở KÉT ĐÃ THU TIỀN, tức két của kho
+              // xuất đơn gốc. `targetWarehouseId` do CLIENT gửi và có thể là kho
+              // khác (trả sách về kho nào tuỳ chọn của người lập phiếu) nên
+              // kiểm tra so với nó không đủ: đo được trước khi sửa — đơn 36.000đ
+              // ở kho A bị hoàn ghi vào két kho B ⇒ `expectedCash` két B = −36.000đ
+              // (âm), còn két A vẫn hiện đã bán trọn. Chốt 2 kho đều lệch.
+              if (sess.warehouseId !== origin.warehouseId) {
+                throw AppError.conflict(
+                  `STATE_CONFLICT: Tiền hoàn mặt phải trừ két kho đã thu (${origin.warehouseId}), ` +
+                    `nhưng két ${sess.id} thuộc kho ${sess.warehouseId} — rollback toàn bộ.`
+                );
+              }
               if (sess.cashierId !== effActor) {
                 throw AppError.forbidden(
                   `FORBIDDEN: Két ${sess.id} thuộc thu ngân ${sess.cashierId}, người hoàn tất ${effActor} không phải chủ sở hữu — rollback toàn bộ.`

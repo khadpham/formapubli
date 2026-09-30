@@ -13,6 +13,7 @@ import { ExecutiveQueryService } from '../src/services/executive-query.service';
 import { ExecutiveDigestService, monthRangeOf } from '../src/services/executive-digest.service';
 import { OrderService, CashboxService } from '../src/services/order.service';
 import { InventoryService } from '../src/services/inventory.service';
+import { SponsorshipService } from '../src/services/sponsorship.service';
 import {
   buildLast7DaysRevenue,
   buildFiscalSplit,
@@ -234,15 +235,21 @@ async function main() {
   // =========================================================================
   section('E. executive-query — tổng doanh thu khớp với bóc kênh');
   const [partner] = await db.select({ id: partners.id }).from(partners).limit(1);
-  // Đơn tài trợ tạo đúng như SponsorshipService.drawFromFund: kênh SPONSORSHIP,
-  // giảm 100% nên finalAmount = 0. getSalesSummary CỐ TÌNH loại kênh này, còn
-  // bóc kênh thì không ⇒ số đơn lệch 1.
-  await OrderService.createOrder({
-    warehouseId: 'wh-au-co', customerName: 'Tài trợ', cashierId: 'auditA',
-    note: 'auditA', channel: 'SPONSORSHIP', partnerId: partner?.id,
-    isGift: true, giftReason: 'auditA', discountRate: 1,
+  // Đơn tài trợ tạo đúng LUỒNG QUỸ THẬT (SponsorshipService.draw): kênh
+  // SPONSORSHIP, giảm 100% nên finalAmount = 0. getSalesSummary CỐ TÌNH loại kênh
+  // này, còn bóc kênh thì không ⇒ số đơn lệch 1.
+  //
+  // 30/09: trước đây case này dựng đơn bằng `OrderService.createOrder` với
+  // `channel: 'SPONSORSHIP'` — chính là cách lách mà LỖI 1 (đường bán hàng nhận
+  // kênh của quỹ) đã bị chặn. Đã đổi sang đúng đường ghi thật.
+  const spfFund: any = await SponsorshipService.createFund({
+    sponsorName: 'Tài trợ', amountReceived: 10_000_000, quotaType: 'CAPPED',
+    quotaLimit: 10_000_000, partnerId: partner?.id, createdBy: 'auditA', actorRole: 'ROLE_OWNER',
+  });
+  await SponsorshipService.draw({
+    fundId: spfFund.fundId, editionId: saleEdition, warehouseId: 'wh-au-co',
+    quantity: 1, drawnBy: 'auditA', actorRole: 'ROLE_OWNER',
     idempotencyKey: `auditA-sponsor-${stamp}`,
-    items: [{ editionId: saleEdition, quantity: 1 }],
   });
   const sales = await ExecutiveQueryService.querySalesSummary({ windowDays: 30, fiscalScope: 'ALL' });
   const breakdownSum = Object.values(sales.channelBreakdown).reduce((s, c) => s + c.revenue, 0);
