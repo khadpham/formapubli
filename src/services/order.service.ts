@@ -1431,19 +1431,31 @@ export class OrderService {
         for (const ln of lines) {
           ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
         }
-        const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
-        for (const [editionId, qty] of Array.from(ownNeed.entries())) {
-          const bal = await InventoryService.getBalance(editionId, ord.warehouseId, 'NEW', tx);
-          if (bal < qty) {
-            throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${editionId} còn ${bal}, cần ${qty}.`);
-          }
-          const atp = atpMap.get(editionId) ?? 0;
-          if (atp + qty < qty) {
-            throw AppError.atp(
-              `Hết hàng khả dụng để duyệt (ATP ${atp} đã bị đơn khác giữ): ${editionId} cần ${qty}.`
-            );
-          }
-        }
+    const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
+    // TỒN VẬT LÝ GỘP 1 CÂU (30/09). Trước đây gọi `getBalance` TỪNG DÒNG — mỗi
+    // dòng là 1 subrequest từ Cloudflare Worker tới Turso. Đơn 12 dòng thì riêng
+    // vòng này đã 12 subrequest, cộng `recordMovement` ~4/dòng nữa thì vượt trần
+    // 50 subrequest của Workers ⇒ Worker ném lỗi runtime thô ⇒
+    // `handleApiError` che thành "Lỗi hệ thống, vui lòng thử lại." và thu ngân
+    // không xác nhận được đơn. Gộp còn 1 câu.
+    const balMap = await InventoryService.getBatchBalance(
+      Array.from(ownNeed.keys()),
+      ord.warehouseId,
+      'NEW',
+      tx
+    );
+    for (const [editionId, qty] of Array.from(ownNeed.entries())) {
+      const bal = balMap.get(editionId) ?? 0;
+      if (bal < qty) {
+        throw AppError.atp(`KHÔNG ĐỦ TỒN để duyệt: ${editionId} còn ${bal}, cần ${qty}.`);
+      }
+      const atp = atpMap.get(editionId) ?? 0;
+      if (atp + qty < qty) {
+        throw AppError.atp(
+          `Hết hàng khả dụng để duyệt (ATP ${atp} đã bị đơn khác giữ): ${editionId} cần ${qty}.`
+        );
+      }
+    }
 
         // 7. Ghi sổ kho (DISPATCH_SALE) với idempotency key gắn correlationId
         let idx = 0;
@@ -1471,9 +1483,17 @@ export class OrderService {
           WHERE id = ${orderId} AND status = 'PENDING_CONFIRMATION'
         `);
 
-        if (updateRes.rowsAffected !== 1) {
-          throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi bởi tiến trình khác.');
-        }
+    if (updateRes.rowsAffected !== 1) {
+      // 30/09: trước đây `throw new Error('SQLITE_BUSY: ...')`. Hai hại:
+      //  1. Error thô ⇒ `handleApiError` che thành "Lỗi hệ thống, vui lòng thử lại."
+      //     ⇒ thu ngân không hiểu, không biết phải làm gì.
+      //  2. Chuỗi "SQLITE_BUSY" khiến `withDbRetry` tưởng là lỗi tạm thời và
+      //     xoay vòng 30 lần trong 15 giây vô ích trước khi ném ra.
+      // Dùng AppError.conflict: thu ngân thấy thông báo thật, không phải chờ.
+      throw AppError.conflict(
+        'Trạng thái đơn đã đổi (có tiến trình khác xử lý trước). Tải lại trang và kiểm tra lại.'
+      );
+    }
 
         // 9. Audit nguyên tử cùng transaction (id xác định → retry không nhân bản)
         await tx
@@ -1550,9 +1570,13 @@ export class OrderService {
           WHERE id = ${orderId} AND status = 'PENDING_CONFIRMATION'
         `);
 
-        if (updateRes.rowsAffected !== 1) {
-          throw new Error('SQLITE_BUSY: Trạng thái đơn hàng đã thay đổi trong khi đang hủy.');
-        }
+    if (updateRes.rowsAffected !== 1) {
+      // Xem giải thích ở confirmOrder: bỏ chữ "SQLITE_BUSY" để `withDbRetry`
+      // khỏi xoay vòng 15 giây, và dùng AppError để thu ngân thấy thông báo thật.
+      throw AppError.conflict(
+        'Trạng thái đơn đã đổi trong lúc đang hủy. Tải lại trang và kiểm tra lại.'
+      );
+    }
 
         await tx
           .insert(auditLogs)

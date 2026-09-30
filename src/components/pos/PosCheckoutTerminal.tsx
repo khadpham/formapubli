@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   CalendarCheck,
+  Clock,
   ChevronDown,
   ChevronUp,
   ScanLine,
@@ -42,6 +43,7 @@ import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { VietQrPay } from '@/components/pos/VietQrPay';
 import { PaymentPhotoGallery } from '@/components/pos/PaymentPhotoGallery';
+import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { TransferPaymentModal, CaptureError, normalizeCapture, CAPTURE_SAVE_TIMEOUT_MS, type TransferPaymentSession, type TransferQrSnapshot } from '@/components/pos/TransferPaymentModal';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { InAppBarcodeScanner } from '@/components/scanner/InAppBarcodeScanner';
@@ -436,6 +438,12 @@ export function PosCheckoutTerminal({
   // hồi. Tách token là vá đúng chỗ gốc.
   const cashboxReadRef = useRef(0);
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
+  // 30/09: màn hình "Đơn Chờ" — lối ra DUY NHẤT khi chốt ca bị chặn vì còn đơn
+  // chuyển khoản/QR chưa xác nhận. Trước đây `PendingOrdersView` đã viết đầy đủ
+  // (xem / xác nhận / huỷ) nhưng KHÔNG được gắn vào đâu cả ⇒ thu ngân bị kẹt:
+  // không xác nhận được đơn, mà chốt ca lại bị chặn vì chính đơn đó.
+  const [isPendingOrdersOpen, setIsPendingOrdersOpen] = useState(false);
+  const [pendingOrderCount, setPendingOrderCount] = useState<number | null>(null);
   const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
   const [openingCashInput, setOpeningCashInput] = useState('0');
   const [closingCashActualInput, setClosingCashActualInput] = useState('');
@@ -914,6 +922,26 @@ export function PosCheckoutTerminal({
   useEffect(() => {
     fetchActiveCashboxSession();
   }, [cashierActorId, selectedWarehouseId]);
+
+  // Badge "Đơn Chờ": đếm đơn PENDING_CONFIRMATION của kho đang chọn. Nhờ vậy thu
+  // ngân thấy ngay có đơn treo mà không cần mở màn hình nào.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/orders?status=PENDING_CONFIRMATION&warehouseId=${encodeURIComponent(selectedWarehouseId)}`, { cache: 'no-store' });
+        const json = await res.json();
+        if (cancelled) return;
+        const items = Array.isArray(json?.data) ? json.data : Array.isArray(json?.data?.items) ? json.data.items : [];
+        setPendingOrderCount(items.length);
+      } catch {
+        if (!cancelled) setPendingOrderCount(null);
+      }
+    };
+    void load();
+    const timer = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [selectedWarehouseId, isPendingOrdersOpen]);
 
   // V4.1 S2.1: nạp kho bán động 1 lần khi mở quầy (thay hardcode 3 kho)
   useEffect(() => {
@@ -2525,6 +2553,33 @@ export function PosCheckoutTerminal({
             </select>
             )}
           </div>
+
+          {/* NÚT LỐI RA: xem & huỷ đơn chuyển khoản đang treo. Không có nút này
+              thì đơn treo chặn chốt ca mà không có cách nào gỡ (30/09). */}
+          <button
+            type="button"
+            id="btn-open-pending-orders"
+            onClick={() => setIsPendingOrdersOpen(true)}
+            aria-label={
+              pendingOrderCount
+                ? `Xem ${pendingOrderCount} đơn chuyển khoản đang chờ xác nhận`
+                : 'Xem đơn chuyển khoản đang chờ xác nhận'
+            }
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer min-h-[40px] ${
+              pendingOrderCount
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+            }`}
+            title="Đơn chuyển khoản/QR đang chờ. Xác nhận hoặc hủy ở đây — nếu không, sẽ không chốt được ca."
+          >
+            <Clock className="w-4 h-4" />
+            <span>Đơn Chờ</span>
+            {pendingOrderCount ? (
+              <span className="min-w-[20px] px-1.5 py-0.5 rounded-full bg-white text-amber-700 text-[11px] font-black">
+                {pendingOrderCount}
+              </span>
+            ) : null}
+          </button>
 
           {/* Quản lý Két tiền Ca làm việc (Cashbox Shift Management) */}
           <div className="flex items-center gap-2">
@@ -4181,6 +4236,49 @@ export function PosCheckoutTerminal({
             </button>
           </div>
         </div>
+      )}
+
+      {/* MODAL: ĐƠN CHỜ XÁC NHẬN (30/09) — lối ra khi chốt ca bị chặn. */}
+      {isPendingOrdersOpen && mounted && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Đơn chuyển khoản đang chờ xác nhận"
+          className="fixed inset-0 z-[75] bg-slate-900/70 backdrop-blur-sm flex flex-col"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setIsPendingOrdersOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-t-3xl max-h-[92vh] w-full flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+              <h3 className="font-extrabold text-sm text-slate-900">Đơn Chờ Xác Nhận</h3>
+              <button
+                type="button"
+                onClick={() => setIsPendingOrdersOpen(false)}
+                aria-label="Đóng danh sách đơn chờ"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-4 py-3">
+              <PendingOrdersView currentRole={currentRole} />
+            </div>
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPendingOrdersOpen(false);
+                  fetchActiveCashboxSession();
+                }}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold"
+              >
+                Xong
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 5: MOBILE CHECKOUT BOTTOM SHEET (Bug #7) */}

@@ -114,6 +114,7 @@ const ALL_SUITES = [
   'scripts/test-scanner-roi.ts',
   'scripts/test-cashbox-close-shift.ts',
   'scripts/test-checkout-stock-batch.ts',
+  'scripts/test-confirm-unblock.ts',
   'scripts/test-dashboard-ui-text.ts',
   'scripts/test-read-scope.ts',
   'scripts/drill-go-live.ts',

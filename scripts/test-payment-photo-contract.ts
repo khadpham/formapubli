@@ -430,7 +430,15 @@ assert.doesNotMatch(transferModal, /onClose/, 'Không còn prop onClose — mọ
 // Nút X phải đi vào đúng đường huỷ, không phải đóng im lặng.
 expectMatch(transferModal, /onClick=\{onCancel\}[^>]*disabled=\{busy\}/, 'Nút X huỷ đơn và khoá khi đang bận');
 assert.match(transferModal, /onClick=\{onConfirm\}/, 'Modal gọi onConfirm');
-assert.match(transferModal, /qrSnapshot\.dataUrl/, 'Modal hiển thị QR từ snapshot');
+// 30/09: HỢP ĐỒNG ĐỔI. Người dùng: khách ĐÃ quét QR và chuyển khoản ở bước trước
+// rồi, tới modal này chỉ còn đối chiếu ẢNH CHỤP XÁC NHẬN. Hiện lại QR chỉ làm
+// màn hình dài ra và đẩy nút "Xác nhận đã nhận tiền" ra khỏi tầm nhìn. Nên bắt
+// buộc modal KHÔNG được render ảnh QR nữa — đây là chốt hành vi, không phải
+// nới lỏng kiểm tra.
+assert.doesNotMatch(transferModal, /qrSnapshot\.dataUrl/, 'Modal thanh toán KHÔNG hiển thị lại mã QR');
+assert.doesNotMatch(transferModal, /alt="QR chuyển khoản"/, 'Không còn thẻ ảnh QR trong modal');
+// …và phải bù lại bằng cuộn được, nếu không ảnh dài lại kẹt nút Xác nhận.
+assert.match(transferModal, /overflow-y-auto/, 'Thân modal cuộn được để tới được nút Xác nhận');
 assert.match(transferModal, /useModalFocusTrap/, 'Modal dùng focus trap có sẵn');
 assert.match(transferModal, /role="dialog"/, 'Modal thanh toán là dialog');
 // Confirm và chụp bị khoá khi hết hạn / đang bận / chưa có ảnh / đang lưu ảnh.

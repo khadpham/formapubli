@@ -14,6 +14,9 @@ const cases = [
   ['src/components/pos/PosCheckoutTerminal.tsx', [
     ['setCompletedOrder'], ['setAmbiguousMatches'], ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],
+    // 30/09: màn hình Đơn Chờ — lối ra khi chốt ca bị chặn. Thứ tự PHẢI khớp
+    // thứ tự backdrop trong file (modal này nằm TRƯỚC bottom sheet).
+    ['setIsPendingOrdersOpen'],
     ['setIsMobileCheckoutSheetOpen'], // #7: overlay Bottom Sheet thanh toán mobile
   ]],
 ] as const;

@@ -257,7 +257,7 @@ export function TransferPaymentModal({
         role="dialog"
         aria-modal="true"
         aria-label="Thanh toán chuyển khoản"
-        className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
+        className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <div className="min-w-0">
@@ -276,7 +276,11 @@ export function TransferPaymentModal({
           </button>
         </div>
 
-        <div className="p-4 space-y-3">
+        {/* 30/09: thân modal CUỘN ĐƯỢC. Trước đây khối này cao tự do nên ảnh xác
+            nhận dài làm nội dung tràn ra ngoài, nút "Xác nhận đã nhận tiền" ở
+            dưới bị đẩy khỏi màn hình mà KHÔNG kéo xuống được ⇒ buộc phải ẩn ảnh
+            mới bấm được. Nay vùng giữa cuộn, nút Xác nhận luôn ở đáy. */}
+        <div className="p-4 space-y-3 overflow-y-auto flex-1 min-h-0 overscroll-contain">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium">Số tiền</span>
             <span className="text-base font-black text-emerald-700 font-mono">
@@ -323,34 +327,9 @@ export function TransferPaymentModal({
           ) : null}
           {cacheLabel ? <p className="text-[10px] text-amber-600 font-medium">{cacheLabel}</p> : null}
 
-          {session.qrSnapshot.dataUrl ? (
-            <div className="flex justify-center py-1">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={session.qrSnapshot.dataUrl}
-                alt="QR chuyển khoản"
-                className="w-[200px] h-[200px] rounded-xl border border-slate-200 bg-white"
-              />
-            </div>
-          ) : bankInfoLoading ? (
-            // Tài khoản + QR đang được tải: KHÔNG báo lỗi, mọi chuyển khoản bình
-            // thường đều đi qua màn hình này.
-            <p className="text-[11px] text-slate-500 font-medium text-center">
-              Đang tải thông tin chuyển khoản...
-            </p>
-          ) : session.qrSnapshot.accountNo ? (
-            // Có tài khoản nhưng QR lỗi: vẫn chuyển khoản được theo số bên trên.
-            <p className="text-[11px] text-amber-700 font-medium text-center">
-              Không dựng được mã QR — chuyển khoản theo số tài khoản bên trên, rồi chụp ảnh xác nhận như bình thường.
-            </p>
-          ) : (
-            // Không có tài khoản nhận: cảnh báo phải đúng với màn hình, không trỏ
-            // tới "số tài khoản bên trên" vì trên kia chính là dòng này.
-            <p className="text-[11px] text-amber-700 font-medium text-center">
-              Kho này chưa có tài khoản nhận — thêm ở Quản lý tài khoản ngân hàng, hoặc thu tiền mặt.
-            </p>
-          )}
-
+          {/* 30/09: BỎ MÃ QR Ở MÀN NÀY. Khách đã quét QR và chuyển khoản ở bước
+              trước rồi; tới đây chỉ còn đối chiếu ẢNH CHỤP XÁC NHẬN. Hiện lại QR
+              chỉ làm màn hình dài ra, đẩy nút Xác nhận ra khỏi tầm nhìn. */}
           {shownError ? <p className="text-[11px] text-rose-600 font-medium">{shownError}</p> : null}
           <p className="text-[11px] font-bold text-slate-700">Chụp ảnh xác nhận</p>
           {session.paymentProof ? (
