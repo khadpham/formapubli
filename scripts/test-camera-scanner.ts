@@ -98,7 +98,7 @@ async function main() {
     // ROI (30/09): vòng quét gọi roiRect/roiToVideoFrame. `vm` chỉ có đúng những
     // gì ta đưa vào, nên thiếu chúng sẽ ném ReferenceError BÊ TRONG catch của vòng
     // quét ⇒ mất mã mà không báo lỗi ⇒ test xanh GIẢ. Phải nạp thật.
-    if (ts.isVariableStatement(node) && node.declarationList.declarations.some(d => ['ROI_BY_ZOOM', 'ROI_DECODE_WIDTH'].includes(d.name.getText(source)))) {
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some(d => ['ROI_BOX_ASPECT', 'ROI_MAX_W', 'ROI_MAX_H', 'ROI_DECODE_WIDTH'].includes(d.name.getText(source)))) {
       cameraFunctions.push(node.getText(source).replace(/\bexport\s+/g, ''));
       roiHelpers.push(node.getText(source).replace(/\bexport\s+/g, ''));
     }
@@ -136,6 +136,10 @@ async function main() {
     didPostPermissionRescanRef: { current: false }, lockedCodeRef: { current: null },
     framesWithoutBarcodeRef: { current: 0 }, lastScannedTimeRef: { current: 0 },
     zoomLevelRef: { current: 1 },
+    // Vòng quét dùng 2 ref này để lấy kích thước ô xem và hệ số phóng hiển thị.
+    // Thiếu chúng là `ReferenceError` bị nuốt trong try/catch ⇒ "không thấy mã".
+    viewSizeRef: { current: { w: width, h: height } },
+    displayScaleRef: { current: 1 },
     videoRef: { current: { readyState: 4, videoWidth: width, videoHeight: height } },
     canvasRef: { current: canvas },
     setScannerStatus: (status: string) => statuses.push(status),

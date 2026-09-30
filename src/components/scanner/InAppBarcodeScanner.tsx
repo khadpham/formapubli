@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { createBarcodeDecoder, type BarcodeDecoder } from '@/lib/barcode-decoder';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
@@ -23,31 +23,49 @@ interface InAppBarcodeScannerProps {
 }
 
 /**
- * VÙNG QUÉT (ROI) — tỉ lệ trên khung hình video, dùng CHUNG cho khung nhìn và cho
- * bộ giải mã. Nhờ vậy thứ người dùng thấy ĐÚNG là thứ máy quét.
+ * VÙNG QUÉT (ROI) — dùng CHUNG cho khung nhìn và cho bộ giải mã, nên thứ người
+ * dùng thấy ĐÚNG là thứ máy quét.
  *
  * VÌ SAO CẦN (30/09, người dùng báo): trước đây khung nhìn là ô `w-64 h-44` nhưng
  * vòng decode vẽ **toàn bộ** khung hình rồi giải mã cả khung ⇒ mã ngoài ô vẫn bị
  * bắt, quét nhầm mã khác. Nay ROI là nguồn sự thật duy nhất.
  *
- * `zoomLevel` 1 = vùng rộng (dễ bắt, hợp mã nhỏ/xa); 2 = vùng hẹp (mỗi mã chiếm
- * nhiều pixel hơn ⇒ nhạy hơn). KHÔNG đụng stream camera — lý do xem
- * docs/superpowers/plans/2026-09-30-scanner-zoom-roi-fix.md.
+ * ⚠️ ROI KHÔNG ĐỔI THEO ZOOM (sửa lại 30/09 sau khi người dùng thử thật).
+ * Lần trước tôi làm zoom = thu hẹp ROI, người dùng nói đúng: đó là "phóng to/thu
+ * nhỏ cái frame quét", KHÔNG phải zoom. Zoom phải phóng HÌNH CAMERA, còn khung quét
+ * phải giữ nguyên kích thước trên màn hình ở mọi mức zoom.
+ *
+ * Vì khung quét phải nhìn như khung ngắm, kích thước tính theo TỈ LỆ KHUNG HÌNH
+ * (`ROI_BOX_ASPECT`) chứ không phải hai phần trăm cứng — màn hình cao (dọc, full
+ * screen) và màn hàn rộng (ngang) đều ra khung cùng dáng.
  */
-export const ROI_BY_ZOOM: Record<number, { w: number; h: number }> = {
-  1: { w: 0.86, h: 0.5 },
-  2: { w: 0.5, h: 0.3 },
-};
+export const ROI_BOX_ASPECT = 1.45;
+export const ROI_MAX_W = 0.86;
+export const ROI_MAX_H = 0.62;
 
-/** Khung quét luôn CĂN GIỮA — người dùng chỉ cần đưa mã vào giữa khung. */
-export function roiRect(zoomLevel: number) {
-  const size = ROI_BY_ZOOM[zoomLevel] ?? ROI_BY_ZOOM[1];
-  return {
-    x: (1 - size.w) / 2,
-    y: (1 - size.h) / 2,
-    w: size.w,
-    h: size.h,
-  };
+export interface NormalizedRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Khung quét luôn CĂN GIỮA — người dùng chỉ cần đưa mã vào giữa khung.
+ * `elW`/`elH` là kích thước ô xem camera; hàm trả về tỉ lệ 0..1.
+ */
+export function roiRect(elW: number, elH: number): NormalizedRect {
+  if (!(elW > 0) || !(elH > 0)) return { x: 0, y: 0, w: 1, h: 1 };
+  let w = ROI_MAX_W * elW;
+  let h = w / ROI_BOX_ASPECT;
+  const maxH = ROI_MAX_H * elH;
+  if (h > maxH) {
+    h = maxH;
+    w = h * ROI_BOX_ASPECT;
+  }
+  const nw = w / elW;
+  const nh = h / elH;
+  return { x: (1 - nw) / 2, y: (1 - nh) / 2, w: nw, h: nh };
 }
 
 /**
@@ -64,21 +82,33 @@ export function visibleVideoRect(
   elW: number,
   elH: number,
   vidW: number,
-  vidH: number
-) {
+  vidH: number,
+  displayScale = 1
+): NormalizedRect {
   if (elW <= 0 || elH <= 0 || vidW <= 0 || vidH <= 0) {
     return { x: 0, y: 0, w: 1, h: 1 };
   }
   const elAspect = elW / elH;
   const vidAspect = vidW / vidH;
+  let vis: NormalizedRect;
   if (vidAspect > elAspect) {
     // Video rộng hơn khung nhìn ⇒ bị cắt hai bên.
     const w = elAspect / vidAspect;
-    return { x: (1 - w) / 2, y: 0, w, h: 1 };
+    vis = { x: (1 - w) / 2, y: 0, w, h: 1 };
+  } else {
+    // Video cao hơn khung nhìn ⇒ bị cắt trên dưới.
+    const h = vidAspect / elAspect;
+    vis = { x: 0, y: (1 - h) / 2, w: 1, h };
   }
-  // Video cao hơn khung nhìn ⇒ bị cắt trên dưới.
-  const h = vidAspect / elAspect;
-  return { x: 0, y: (1 - h) / 2, w: 1, h };
+  // Khi camera KHÔNG zoom được, ta phóng HÌNH bằng CSS `scale` quanh tâm. Lúc đó
+  // người dùng chỉ thấy phần giữa, thu nhỏ lại 1/scale. Phải thu vùng hiển thị
+  // lại thì khung quét mới tiếp tục trùng đúng vùng trên màn hình.
+  if (displayScale > 1) {
+    const w = vis.w / displayScale;
+    const h = vis.h / displayScale;
+    vis = { x: vis.x + (vis.w - w) / 2, y: vis.y + (vis.h - h) / 2, w, h };
+  }
+  return vis;
 }
 
 /**
@@ -87,13 +117,14 @@ export function visibleVideoRect(
  * "vùng máy thật sự quét".
  */
 export function roiToVideoFrame(
-  roi: { x: number; y: number; w: number; h: number },
+  roi: NormalizedRect,
   elW: number,
   elH: number,
   vidW: number,
-  vidH: number
-) {
-  const vis = visibleVideoRect(elW, elH, vidW, vidH);
+  vidH: number,
+  displayScale = 1
+): NormalizedRect {
+  const vis = visibleVideoRect(elW, elH, vidW, vidH, displayScale);
   return {
     x: vis.x + roi.x * vis.w,
     y: vis.y + roi.y * vis.h,
@@ -147,6 +178,41 @@ export function InAppBarcodeScanner({
   });
   const zoomLevelRef = useRef<number>(1);
   zoomLevelRef.current = zoomLevel;
+
+  // Máy nào zoom được bằng ràng buộc camera thì phóng hình thật; máy không đổi
+  // được thì phóng bằng CSS. Cả hai đều phóng HÌNH, không đụng khung quét.
+  const [cameraZoomWorks, setCameraZoomWorks] = useState<boolean>(false);
+  // Hệ số phóng HÌNH ĐANG HIỂN THỊ. Khi camera zoom thật thì = 1 vì khung hình
+  // đã bị thu hẹp sẵn; khi phóng bằng CSS thì = 2 để bù lại khi quy đổi toạ độ.
+  const displayScale = cameraZoomWorks || zoomLevel === 1 ? 1 : zoomLevel;
+  const displayScaleRef = useRef<number>(1);
+  displayScaleRef.current = displayScale;
+
+  // Kích thước ô xem camera, đo bằng ResizeObserver. ROI tính từ đây nên khung
+  // nhìn và bộ giải mã LUÔN dùng cùng một con số — kể cả khi xoay ngang/dọc.
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [viewSize, setViewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const viewSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
+  viewSizeRef.current = viewSize;
+  const roi = useMemo(() => roiRect(viewSize.w, viewSize.h), [viewSize]);
+
+  useEffect(() => {
+    const el = viewRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      setViewSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, [isOpen]);
 
   const [mounted, setMounted] = useState(false);
   const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
@@ -462,17 +528,22 @@ export function InAppBarcodeScanner({
         setHasTorch(false);
       }
       try {
-        // Giữ `zoom: 1` VÌ ĐÂY LÀ ĐƯỜNG ĐANG CHẠY TỐT: bản live ghim zoom 1 và
-        // người dùng xác nhận quét 1x ổn trên iPhone (30/09). Bỏ hẳn ràng buộc
-        // thì iOS có thể trả về ống siêu rộng 0.5x ⇒ mã sách nhỏ đâm vào tười.
-        // Sửa lỗi KHÔNG phải là bỏ ràng buộc, mà là KHÔNG BAO GIỜ nhảy lên 2:
-        // iOS đổi định dạng capture khi đặt zoom quang, mã vỡ hạt ⇒ không giải mã
-        // được (docs/superpowers/plans/2026-09-30-scanner-zoom-roi-fix.md).
-        // Nút "Zoom 2x" nay chỉ thu hẹp VÙNG QUÉT (`roiRect`), không đụng stream.
-        // Focus liên tục không đổi định dạng nên giữ cho nét ổn định.
-        await track.applyConstraints({ advanced: [{ zoom: 1, focusMode: 'continuous' } as any] });
+        // Mở camera ở zoom 1 (đường người dùng đã xác nhận ổn) + focus liên tục.
+        // Sau đó áp lại mức zoom đang lưu: máy nhận thì phóng ảnh thật, không
+        // nhận thì để CSS phóng (xem `toggleZoom`).
+        const caps = capabilities as { zoom?: { min: number; max: number } } | undefined;
+        let wanted: number = 1;
+        if (caps?.zoom && zoomLevelRef.current > caps.zoom.min) {
+          wanted = Math.min(zoomLevelRef.current, caps.zoom.max);
+        }
+        const applied = await track
+          .applyConstraints({ advanced: [{ zoom: wanted, focusMode: 'continuous' } as any] })
+          .then(() => true)
+          .catch(() => false);
+        if (request !== cameraRequestRef.current) return;
+        setCameraZoomWorks(applied && wanted === zoomLevelRef.current);
       } catch {
-        // máy không hỗ trợ focus: vẫn quét bình thường
+        // máy không hỗ trợ focus/zoom: vẫn quét bình thường
       }
     } catch (err: any) {
       if (request !== cameraRequestRef.current) return;
@@ -553,12 +624,30 @@ export function InAppBarcodeScanner({
     }
   };
 
-  // 4b. Đổi zoom 1x/2x — co/nới VÙNG QUÉT, KHÔNG đụng camera stream.
-  // Vì sao: iOS đổi định dạng capture khi đặt zoom quang ⇒ iPhone zoom 2x hỏng
-  // hoàn toàn. Nay 2x = vùng quét nhỏ hơn ⇒ mỗi mã chiếm nhiều pixel hơn ⇒
-  // nhạy HƠN 1x, đúng như mong đợi, và không máy nào vỡ.
-  const toggleZoom = () => {
+  // 4b. Đổi zoom 1x/2x — PHÓNG HÌNH CAMERA, không đụng khung quét.
+  //
+  // Người dùng nói rõ (30/09): zoom phải phóng cảnh camera lên. Lần trước tôi làm
+  // zoom = thu hẹp vùng đọc, đó là "phóng/thu frame quét" chứ không phải zoom.
+  //
+  // Thứ tự ưu tiên:
+  //  1. Ràng buộc zoom của camera (ảnh thật bị thu, nét nhất) — thử trước.
+  //  2. Nếu máy không nhận ràng buộc ⇒ phóng bằng CSS `scale` quanh tâm. Vẫn là
+  //     phóng hình, và `displayScale` bù lại khi quy đổi toạ độ crop.
+  // Cả hai đều GIỮ NGUYÊN khung quét trên màn hình.
+  const toggleZoom = async () => {
     const next = zoomLevel === 2 ? 1 : 2;
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track) {
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: next } as any] });
+        setCameraZoomWorks(true);
+      } catch {
+        // Máy không nhận zoom ⇒ phóng bằng CSS.
+        setCameraZoomWorks(false);
+      }
+    } else {
+      setCameraZoomWorks(false);
+    }
     setZoomLevel(next);
     zoomLevelRef.current = next;
     try {
@@ -654,21 +743,21 @@ export function InAppBarcodeScanner({
           const ctx = canvas.getContext('2d', { willReadFrequently: true });
           if (!ctx) throw new Error('Không đọc được hình ảnh từ camera.');
 
-          // CHỈ vẽ VÙNG QUÉT (ROI), rồi phóng to lên kích thước giải mã.
-          // Trước đây vẽ toàn khung hình ⇒ mã ngoài ô khung nhìn cũng bị bắt và
-          // quét nhầm. Nay khung nhìn = ROI = đúng vùng giải mã.
-          // Phóng to lúc giải mã (không phóng hình nhìn) giúp mã nhỏ/vẫn đọc được
-          // mà người dùng vẫn nhìn được TOÀN CẢNH để tự canh.
-          // Dùng cặp KÍCH THƯỚC THẬT của video. Chỉ khi phần tử đã được bố trí
-          // (clientWidth/Height > 0) mới dùng nó, và dùng CẢ HAI cùng lúc —
-          // trộn lẫn client với intrinsic sẽ ra tỉ lệ khung hình bịa đặt.
-          const laidOut = video.clientWidth > 0 && video.clientHeight > 0;
+          // CHỈ vẽ VÙNG QUÉT (ROI), rồi phóng lên kích thước giải mã.
+          // ROI LẤY TỪ `viewSize` ĐÃ ĐO — đúng bằng cái hộp người dùng thấy.
+          // `displayScale` bù lại lúc camera phóng bằng CSS: khi đó người dùng
+          // chỉ thấy phần giữa khung hình, nên vùng quét phải thu lại tương ứng.
+          // Lưu ý: zoom KHÔNG đổi `roi` — nó chỉ phóng hình, khung quét giữ
+          // nguyên kích thước trên màn hình ở mọi mức zoom.
+          const vs = viewSizeRef.current;
+          const laidOut = vs.w > 0 && vs.h > 0;
           const r = roiToVideoFrame(
-            roiRect(zoomLevelRef.current),
-            laidOut ? video.clientWidth : video.videoWidth,
-            laidOut ? video.clientHeight : video.videoHeight,
+            roiRect(vs.w, vs.h),
+            laidOut ? vs.w : video.videoWidth,
+            laidOut ? vs.h : video.videoHeight,
             video.videoWidth,
-            video.videoHeight
+            video.videoHeight,
+            displayScaleRef.current
           );
           const vw = video.videoWidth;
           const vh = video.videoHeight;
@@ -737,7 +826,7 @@ export function InAppBarcodeScanner({
       role="dialog"
       aria-modal="true"
       aria-labelledby="barcode-scanner-title"
-      className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in overflow-y-auto"
+      className="fixed inset-0 z-[70] bg-black flex flex-col animate-fade-in"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           stopCamera();
@@ -745,7 +834,7 @@ export function InAppBarcodeScanner({
         }
       }}
     >
-      <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col max-h-[95vh]">
+      <div className="bg-black text-white w-full flex-1 min-h-0 flex flex-col">
         {/* Header bar */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -776,11 +865,17 @@ export function InAppBarcodeScanner({
           </button>
         </div>
 
-        {/* Viewfinder Video Area */}
-        <div className="relative aspect-[4/3] sm:aspect-video bg-black flex items-center justify-center overflow-hidden">
+        {/* Viewfinder Video Area — CHIẾM TOÀN BỘ MÀN HÌNH (30/09: người dùng
+            muốn xem hết màn hình điện thoại khi mở camera). */}
+        <div ref={viewRef} className="relative flex-1 min-h-0 bg-black overflow-hidden">
           <video
             ref={videoRef}
             className="w-full h-full object-cover"
+            style={
+              !cameraZoomWorks && zoomLevel > 1
+                ? { transform: `scale(${zoomLevel})`, transformOrigin: 'center center' }
+                : undefined
+            }
             playsInline
             muted
             autoPlay
@@ -788,15 +883,15 @@ export function InAppBarcodeScanner({
           <canvas ref={canvasRef} className="hidden" />
 
           {/* Laser Targeting Overlay */}
-          {/* Khung quét: kích thước LẤY TỪ CÙNG HÀM ROI với bộ giải mã, nên
-              khung này luôn đúng bằng vùng thật sự quét — trước đây khung cứng
-              `w-64 h-44` còn máy quét cả khung hình nên quét nhầm mã ngoài khung. */}
+          {/* Khung quét: kích thước LẤY TỪ CHÍNH `roi` mà bộ giải mã dùng, nên
+              khung này luôn đúng bằng vùng thật sự quét. `roi` tính từ kích thước
+              ô xem đã đo, nên xoay ngang/dọc vẫn khớp. */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
             <div
-              style={{ width: `${roiRect(zoomLevel).w * 100}%`, height: `${roiRect(zoomLevel).h * 100}%` }}
-              className={`relative rounded-2xl transition-all duration-300 ${
+              style={{ width: `${roi.w * 100}%`, height: `${roi.h * 100}%` }}
+              className={`relative rounded-2xl ${
                 scanSuccessAnim
-                  ? 'border-4 border-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.8)] scale-105'
+                  ? 'border-4 border-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.8)]'
                   : 'border-2 border-indigo-400/70 shadow-[0_0_15px_rgba(99,102,241,0.3)]'
               }`}
             >
@@ -873,10 +968,11 @@ export function InAppBarcodeScanner({
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
-            title="Zoom 2x: thu hẹp vùng quét, mã nhỏ/hụt tiêu cũng dễ bắt hơn"
+            title="Zoom 2x: phóng to cảnh camera, khung quét giữ nguyên"
+            aria-label={zoomLevel === 2 ? 'Tắt zoom, về 1x' : 'Phóng cảnh camera 2 lần'}
           >
             <Camera className="w-4 h-4" />
-            {zoomLevel === 2 ? 'Zoom 2x: Bật' : 'Zoom 1x'}
+            {zoomLevel === 2 ? 'Zoom 2x' : 'Zoom 1x'}
           </button>
 
           <button

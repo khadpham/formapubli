@@ -1,20 +1,22 @@
 /**
- * CHỐT TÁI PHÁT — máy quét mã: ROI, zoom không vỡ, không quét nhầm QR.
+ * CHỐT TÁI PHÁT — máy quét mã: ZOOM PHÓNG HÌNH + khung quét bất biến.
  *
  * CHẠY: npx tsx scripts/run-isolated.ts --only=test-scanner-roi
  *
- * BỐI CẢNH (người dùng báo 30/09):
- *  · iPhone: zoom 2x ⇒ KHÔNG QUẤT ĐƯỢC. 1x thì bình thường.
- *  · Android: zoom 2x quét được nhưng kém nhạy hơn 1x.
- *  · Khung nhìn là ô chữ nhật nhưng máy quét TOÀN MÀN ⇒ quét nhầm mã khác / mã QR.
- *  · Không nhìn được toàn cảnh để tự canh vào khung.
+ * BỐI CẢNH (người dùng báo 30/09, HAI LẦN):
+ *  Lần 1: iPhone zoom 2x không quét được; khung nhìn là ô nhỏ nhưng máy quét
+ *         toàn khung ⇒ quét nhầm mã khác/QR.
+ *  Lần 2 (sau khi đã deploy & thử thật): tôi làm zoom = THU HẸP VÙNG ĐỌC.
+ *         Người dùng nói đúng — đó là "phóng to/thu nhỏ cái frame quét", KHÔNG
+ *         phải zoom. Zoom phải phóng CẢNH CAMERA, còn khung quét phải giữ
+ *         nguyên kích thước trên màn hình ở mọi mức zoom.
+ *  Yêu cầu thêm: mở camera phải xem được TOÀN BỘ màn hình điện thoại.
  *
- * Bốn nguyên nhân gốc tìm được trong code (xem kế hoạch 2026-09-30-scanner-zoom-roi-fix):
- *  G1 applyConstraints({zoom}) trên iOS đổi định dạng capture, rồi lại crop 50%
- *     lần nữa ⇒ mã quá nhỏ, không giải mã được.
- *  G2 vẽ toàn khung hình rồi giải mã cả khung, khung nhìn cứng w-64 h-44.
- *  G3 CSS scale(2) chỉ chạy khi máy KHÔNG có zoom quang ⇒ hình thu nhỏ khác nhau.
- *  G4 nạp QR_CODE vào POSSIBLE_FORMATS trong khi sách luôn là EAN.
+ * HỢP ĐỒNG ĐƯỢC CHỐT Ở ĐÂY (đổi ý thì đổi file này trước, đừng sửa âm thầm):
+ *  1. `roiRect(elW, elH)` KHÔNG nhận tham số zoom. Zoom đổi hình, không đổi ROI.
+ *  2. Khung nhìn và bộ giải mã cùng dùng MỘT `roi`, tính từ kích thước ô xem đã đo.
+ *  3. Zoom camera thật ⇒ `displayScale = 1` (khung hình đã bị thu sẵn).
+ *     Zoom bằng CSS ⇒ `displayScale = 2` để bù khi quy đổi toạ độ crop.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -37,16 +39,15 @@ function ok(cond: boolean, name: string, detail = '') {
 // Trích hàm thuần ra để CHẠY THẬT (không chép lại logic trong test — nếu chép lại
 // thì test xanh mà sản phẩm hỏng, đúng bài học gotcha 11).
 function extractPure(srcText: string): string {
-  const start = srcText.indexOf('export const ROI_BY_ZOOM');
-  assert.ok(start > 0, 'không tìm thấy ROI_BY_ZOOM trong component');
+  const start = srcText.indexOf('export const ROI_BOX_ASPECT');
+  assert.ok(start > 0, 'không tìm thấy ROI_BOX_ASPECT trong component');
   const end = srcText.indexOf('export function InAppBarcodeScanner');
   assert.ok(end > start, 'không tìm thấy phần export function InAppBarcodeScanner');
   return srcText.slice(start, end);
 }
 
-console.log('\n=== MÁY QUÉT: VÙNG QUÉT (ROI) + ZOOM KHÔNG VỠ + KHÔNG QUÉT NHẦM ===');
+console.log('\n=== MÁY QUÉT: ZOOM PHÓNG HÌNH · KHUNG QUÉT BẤT BIẾN · KHÔNG QUÉT NHẦM ===');
 
-// --- ROI ---
 // Bỏ kiểu TypeScript (giữ dạng ESNext để không sinh lệnh gán `exports`), rồi bỏ
 // từ khoá `export` vì `vm` chỉ hiểu script thuần, không phải module.
 const roiSource = ts
@@ -56,89 +57,112 @@ const roiSource = ts
   .outputText.replace(/\bexport\s+/g, '');
 const scope: any = {};
 vm.createContext(scope);
-vm.runInContext(
-  roiSource + '\n({ roiRect, roiToVideoFrame, visibleVideoRect, ROI_BY_ZOOM, ROI_DECODE_WIDTH });',
-  scope
-);
-const mod = vm.runInContext('({ roiRect, roiToVideoFrame, visibleVideoRect, ROI_BY_ZOOM, ROI_DECODE_WIDTH })', scope) as any;
+vm.runInContext(roiSource, scope);
+const roiRect = vm.runInContext('roiRect', scope) as (w: number, h: number) => any;
+const visibleVideoRect = vm.runInContext('visibleVideoRect', scope) as (...a: number[]) => any;
+const roiToVideoFrame = vm.runInContext('roiToVideoFrame', scope) as (...a: number[]) => any;
 
-const r1 = mod.roiRect(1);
-const r2 = mod.roiRect(2);
+// --- ROI hình học: căn giữa, đúng tỉ lệ, không tràn ---
+const wide = roiRect(1200, 500);   // ngang
+const tall = roiRect(390, 844);    // dọc, kiểu điện thoại full screen
+const square = roiRect(800, 800);
 
-ok(r1.w > 0 && r1.h > 0 && r1.w < 1 && r1.h < 1,
-   '1. ROI luôn là vùng nhỏ hơn khung hình (không quét tràn ra ngoài)');
+ok(wide.w > 0 && wide.h > 0 && wide.w <= 1 && wide.h <= 1,
+   '1. ROI luôn nằm trong khung hình');
 ok(
-  Math.abs((r1.x + r1.w / 2) - 0.5) < 1e-9 && Math.abs((r1.y + r1.h / 2) - 0.5) < 1e-9,
-  '2. ROI CĂN GIỮA (người dùng chỉ cần đưa mã vào giữa khung)'
+  [wide, tall, square].every(r => Math.abs((r.x + r.w / 2) - 0.5) < 1e-9
+    && Math.abs((r.y + r.h / 2) - 0.5) < 1e-9),
+  '2. ROI CĂN GIỮA ở mọi dáng màn hình (người dùng chỉ cần đưa mã vào giữa khung)'
 );
-ok(r2.w < r1.w && r2.h < r1.h,
-   '3. Zoom 2x = vùng quét HẸP HƠN 1x ⇒ mỗi mã chiếm nhiều pixel hơn ⇒ nhạy hơn',
-   `1x = ${r1.w}×${r1.h} · 2x = ${r2.w}×${r2.h}`);
-ok(mod.roiRect(99).w === r1.w, '4. Zoom lạ (99) rơi về mặc định, không nổ');
+ok(Math.abs((wide.w * 1200) / (wide.h * 500) - 1.45) < 0.01,
+   '3. Khung quét giữ tỉ lệ ~1.45 (dáng khung ngắm) khi màn hình rộng',
+   `rộng: ${(wide.w * 1200).toFixed(0)}x${(wide.h * 500).toFixed(0)}px`);
+ok(tall.h <= 0.62 + 1e-9 && tall.w <= 0.86 + 1e-9,
+   '4. Màn hình dọc cao ⇒ khung quét bị CHẶN chiều cao, không thành hộp dọc khổng lồ',
+   `dọc 390x844: ${(tall.w * 390).toFixed(0)}x${(tall.h * 844).toFixed(0)}px`);
+ok(Math.abs((tall.w * 390) / (tall.h * 844) - 1.45) < 0.01,
+   '5. Khi bị chặn, khung quét vẫn giữ tỉ lệ ~1.45 (không bị bóp méo)');
+const degenerate = roiRect(0, 0);
+ok(Number.isFinite(degenerate.x) && degenerate.w > 0,
+   '6. Kích thước 0 (chưa kịp bố trí) không làm hỏng');
 
-// --- object-cover: khung nhìn và vùng quét phải cùng hệ toạ độ ---
-// Video 1920x1080 (16:9) hiển thị trong khung 4:3 ⇒ cắt hai bên.
-const visWide = mod.visibleVideoRect(800, 600, 1920, 1080);
-ok(visWide.w < 1 && Math.abs(visWide.h - 1) < 1e-9,
-   '5. object-cover: video rộng hơn khung nhìn ⇒ nhận ra bị cắt hai bên',
-   `w=${visWide.w.toFixed(3)} h=${visWide.h}`);
-
-const fWide = mod.roiToVideoFrame(r1, 800, 600, 1920, 1080);
-ok(fWide.w < visWide.w && fWide.x > 0,
-   '6. Vùng quét nằm TRONG phần video thực sự hiển thị (không vương ra phần bị cắt)');
-
-// Trường hợp ngược: video cao hơn khung nhìn ⇒ cắt trên dưới.
-const visTall = mod.visibleVideoRect(800, 600, 720, 1280);
-ok(Math.abs(visTall.w - 1) < 1e-9 && visTall.h < 1,
-   '7. object-cover: video cao hơn khung nhìn ⇒ nhận ra bị cắt trên dưới',
-   `w=${visTall.w} h=${visTall.h.toFixed(3)}`);
-
-// Kích thước 0 (camera chưa sẵn sàng) không được ném lỗi.
-const fZero = mod.roiToVideoFrame(r1, 0, 0, 0, 0);
-ok(Number.isFinite(fZero.x) && fZero.w > 0, '8. Kích thước 0 không làm hỏng (camera chưa sẵn sàng)');
-
-// --- G1: KHÔNG còn zoom quang ---
-// Nhảy lên zoom quang 2 là thứ làm vỡ iPhone. `zoom: 1` là ĐƯỜNG ĐANG CHẠY TỐT
-// (người dùng xác nhận 1x ổn) nên được phép, và phải được ghim lại.
-ok(!/zoom:\s*2\b/.test(src) && !/zoom:\s*(?!1\b)\d/.test(src),
-   '9. KHÔNG BAO GIỜ nhảy zoom quang lên 2 — đây là nguyên nhân iPhone vỡ zoom 2x');
-ok(/applyConstraints\(\{\s*advanced:\s*\[\{\s*zoom:\s*1,/.test(src),
-   '9b. Vẫn ghim zoom: 1 (giữ nguyên đường 1x đang chạy tốt, tránh ống siêu rộng)');
-ok(!/transform:\s*'scale\(2\)'/.test(src),
-   '10. KHÔNG còn CSS scale(2) trên video — hình thu nhỏ giờ nhất quán mọi máy');
-
-// --- G2: khung nhìn lấy từ cùng hàm ROI ---
-// Phải kiểm CẢ width lẫn height: chỉ kiểm width thì ghim cứng chiều cao vẫn lọt.
-ok(/style=\{\{\s*width:\s*`\$\{roiRect\(zoomLevel\)\.w \* 100\}%`,\s*height:\s*`\$\{roiRect\(zoomLevel\)\.h \* 100\}%`/.test(src),
-   '11. Khung nhìn lấy CẢ chiều rộng lẫn chiều cao từ CHÍNH hàm ROI của bộ giải mã');
-ok(!/w-64 sm:w-72/.test(src) && !/h-44 sm:h-48/.test(src),
-   '12. Đã gỡ khung cứng w-64/h-44 (trước đó khung nhìn ≠ vùng máy quét)');
-
-// --- G3: decode crop theo ROI, không vẽ toàn khung hình ---
-ok(/roiToVideoFrame\(\s*roiRect\(zoomLevelRef\.current\)/.test(src),
-   '13. Vòng decode quy đổi ROI sang toạ độ khung hình video trước khi crop');
+// --- ROI KHÔNG ĐỤNG VÀO ZOOM (đây là chỗ lần trước làm sai) ---
+ok(!/roiRect\s*\(\s*zoom/.test(src),
+   '7. KHÔNG chỗ nào gọi roiRect(zoom…) — zoom không được thu hẹp vùng đọc');
+ok(!/ROI_BY_ZOOM/.test(src),
+   '8. Không còn bảng ROI theo zoom (nguyên nhân lần trước zoom chỉ thu frame quét)');
+ok(/style=\{\{\s*width:\s*`\$\{roi\.w \* 100\}%`,\s*height:\s*`\$\{roi\.h \* 100\}%`/.test(src),
+   '9. Khung nhìn vẽ đúng bằng `roi` mà bộ giải mã dùng (một nguồn sự thật)');
+ok(/roiToVideoFrame\(\s*roiRect\(vs\.w, vs\.h\)/.test(src),
+   '10. Bộ giải mã dùng CÙNG công thức roiRect(vs.w, vs.h) như khung nhìn');
 ok(!/zoomLevelRef\.current === 2/.test(src),
-   '14. Không còn nhánh crop 50% cứng khi zoom 2x (crop hai lần trên iPhone)');
+   '11. Không còn nhánh crop 50% cứng khi zoom 2x (iPhone bị crop hai lần)');
 
-// --- G4: không quét QR, Ở CẢ HAI ĐƯỜNG ---
-// Phải bỏ `QR_CODE` (ZXing) LẪN `'qr_code'` (BarcodeDetector native). Native được
-// ưu tiên và chạy suốt phiên trên Android — bỏ mỗi ZXing thì Android vẫn quét
-// nhầm QR. So khớp KHÔNG phân biệt hoa thường, vì lỗi này chính là do so khớp
-// phân biệt hoa thường mà lọt.
+// --- Zoom phóng HÌNH: camera thật trước, CSS sau ---
+ok(/applyConstraints\(\{ advanced: \[\{ zoom: next \} as any\] \}\)/.test(src),
+   '12. Bấm zoom sẽ đặt ràng buộc zoom của CAMERA (phóng ảnh thật)');
+ok(/setCameraZoomWorks\(true\)/.test(src) && /setCameraZoomWorks\(false\)/.test(src),
+   '13. Có nhánh dự phòng khi máy không nhận ràng buộc zoom');
+ok(/!cameraZoomWorks && zoomLevel > 1/.test(src) && /transform: `scale\(\$\{zoomLevel\}\)`/.test(src),
+   '14. Máy không zoom được ⇒ phóng HÌNH bằng CSS (vẫn là phóng cảnh, không phải thu vùng đọc)');
+ok(/const displayScale = cameraZoomWorks \|\| zoomLevel === 1 \? 1 : zoomLevel/.test(src),
+   '15. displayScale = 1 khi camera đã zoom thật, = mức zoom khi phóng bằng CSS');
+ok(/displayScaleRef\.current\s*\n?\s*,\s*\n?\s*$/m.test(src) || /roiToVideoFrame\([\s\S]{0,240}displayScaleRef\.current/.test(src),
+   '16. displayScale được truyền vào roiToVideoFrame để bù tỉ lệ khi phóng bằng CSS');
+
+// --- Toán: phóng CSS 2x thì vùng quét phải bù lại, khung trên màn hình không đổi ---
+// 800x600 ô xem, video 1920x1080 (16:9) ⇒ cover cắt hai bên.
+const v1 = visibleVideoRect(800, 600, 1920, 1080, 1);
+ok(v1.w < 1 && Math.abs(v1.h - 1) < 1e-9,
+   '17. object-cover: video rộng hơn ô xem ⇒ nhận ra bị cắt hai bên',
+   `w=${v1.w.toFixed(3)} h=${v1.h}`);
+
+const v2 = visibleVideoRect(800, 600, 1920, 1080, 2);
+ok(Math.abs(v2.w - v1.w / 2) < 1e-9 && Math.abs(v2.h - v1.h / 2) < 1e-9
+   && Math.abs((v2.x + v2.w / 2) - (v1.x + v1.w / 2)) < 1e-9,
+   '18. CSS scale 2x ⇒ chỉ thấy PHẦN GIỮA, đúng một nửa theo mỗi trục');
+
+// Quan trọng nhất: tỉ lệ ROI so với vùng nhìn phải GIỮ NGUYÊN khi phóng 2x,
+// tức là khung người dùng thấy không đổi trên màn hình.
+const r = roiRect(800, 600);
+const f1 = roiToVideoFrame(r, 800, 600, 1920, 1080, 1);
+const f2 = roiToVideoFrame(r, 800, 600, 1920, 1080, 2);
+ok(Math.abs(f1.w / v1.w - f2.w / v2.w) < 1e-9 && Math.abs(f1.h / v1.h - f2.h / v2.h) < 1e-9,
+   '19. PHÓNG 2x KHÔNG đổi tỉ lệ khung quét trên màn hình (đúng ý người dùng)',
+   `1x: ${(f1.w / v1.w * 100).toFixed(1)}% x ${(f1.h / v1.h * 100).toFixed(1)}% · 2x: ${(f2.w / v2.w * 100).toFixed(1)}% x ${(f2.h / v2.h * 100).toFixed(1)}%`);
+ok(Math.abs(f2.w - f1.w / 2) < 1e-9,
+   '20. Nhưng pixel thật trong khung hình lại TĂNG gấp đôi ⇒ mã to lên, dễ giải mã');
+
+const vTall = visibleVideoRect(800, 600, 720, 1280, 1);
+ok(Math.abs(vTall.w - 1) < 1e-9 && vTall.h < 1,
+   '21. object-cover: video cao hơn ô xem ⇒ nhận ra bị cắt trên dưới',
+   `w=${vTall.w} h=${vTall.h.toFixed(3)}`);
+const fTall = roiToVideoFrame(r, 800, 600, 720, 1280, 1);
+ok(fTall.x >= vTall.x - 1e-9 && fTall.y >= vTall.y - 1e-9
+   && fTall.x + fTall.w <= vTall.x + vTall.w + 1e-9
+   && fTall.y + fTall.h <= vTall.y + vTall.h + 1e-9,
+   '21b. Vùng quét luôn nằm TRONG phần video thực sự hiển thị, không vương ra phần bị cắt');
+
+// --- Xem TOÀN MÀN HÌNH ---
+ok(!/max-w-lg/.test(src) && !/aspect-\[4\/3\]/.test(src) && !/sm:aspect-video/.test(src),
+   '22. Đã gỡ max-w-lg và khung cố định 4:3 (trước đó chỉ chiếm một mảng nhỏ)');
+ok(/fixed inset-0 z-\[70\] bg-black flex flex-col/.test(src),
+   '23. Máy quét chiếm TOÀN MÀN HÌNH');
+ok(/ref=\{viewRef\} className="relative flex-1 min-h-0 bg-black overflow-hidden"/.test(src),
+   '24. Ô xem camera giãn hết chỗ còn lại giữa thanh tiêu đề và thanh nút');
+ok(/const measure = \(\) => \{[\s\S]{0,200}clientWidth/.test(src) && /new ResizeObserver/.test(src),
+   '25. Ô xem được đo bằng ResizeObserver nên ROI khớp cả khi xoay màn hình');
+
+// --- Vẫn giữ: focus liên tục, không quét QR ---
 ok(!/qr_code/i.test(dec),
-   '15. KHÔNG còn QR ở CẢ ZXing lẫn native (hội chợ đầy mã QR nên gây quét nhầm)');
-// Phải khớp ĐÚNG danh sách, không grep cả file: `if (formats.includes('ean_13'))`
-// cũng chứa chữ 'ean_13' nên grep rộng sẽ xanh dù native đã mất EAN-13.
+   '26. KHÔNG còn QR ở CẢ ZXing lẫn native (hội chợ đầy mã QR nên gây quét nhầm)');
 ok(/\['ean_13', 'ean_8', 'code_128'\]/.test(dec),
-   '16a. Danh sách định dạng NATIVE đủ EAN-13 + EAN-8 + Code 128');
+   '27. Danh sách định dạng NATIVE đủ EAN-13 + EAN-8 + Code 128');
 ok(/BarcodeFormat\.EAN_13, zxing\.BarcodeFormat\.EAN_8,/.test(dec)
    && /zxing\.BarcodeFormat\.CODE_128/.test(dec),
-   '16b. Danh sách định dạng ZXING đủ EAN-13 + EAN-8 + Code 128');
-
-// --- Không phá luồng cũ ---
-ok(/applyConstraints\(\{ advanced:\s*\[\{ zoom: 1, focusMode: 'continuous' \}/.test(src),
-   '17. Vẫn giữ focus liên tục (không đổi định dạng capture nên an toàn)');
+   '28. Danh sách định dạng ZXING đủ EAN-13 + EAN-8 + Code 128');
+ok(/focusMode: 'continuous'/.test(src), '29. Vẫn giữ focus liên tục');
 
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
 if (failures > 0) process.exit(1);
-console.log('\n✅ Máy quét: khung nhìn = vùng quét, zoom không vỡ, không quét nhầm QR.');
+console.log('\n✅ Máy quét: zoom phóng cảnh, khung quét bất biến, xem hết màn hình, không quét nhầm QR.');
