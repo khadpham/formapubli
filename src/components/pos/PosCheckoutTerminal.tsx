@@ -1832,7 +1832,14 @@ export function PosCheckoutTerminal({
           orderCode: resData.data?.orderCode || orderCode,
           idempotencyKey,
           warehouseId: selectedWarehouseId,
-          amount: isGift ? 0 : finalAmount,
+          // Số tiền PHẢI lấy từ server, không lấy `finalAmount` tính ở client.
+          // Client dùng giá bìa lấy lúc nạp giỏ; nếu giá danh mục đổi, hoặc máy
+          // chủ sửa giá trong lúc giỏ đang mở, QR sẽ in ra MỘT CON SỐ KHÁC với
+          // đơn đã tạo ⇒ khách chuyển khoản thiếu/tải, mà hệ thống đã ghi nhận
+          // đơn đủ tiền. Đã đo thật: QR 151.470đ trong khi đơn 168.300đ.
+          // Các trường khác trong phiên này (orderId, orderCode, totalQuantity)
+          // đã lấy từ server theo đúng nguyên tắc đó — tiền cũng phải vậy.
+          amount: isGift ? 0 : Number(resData.data?.finalAmount ?? finalAmount),
           paymentMethod,
           createdAt: orderTimestamp,
           expiresAt: resData.data?.paymentExpiresAt || undefined,
@@ -1850,8 +1857,14 @@ export function PosCheckoutTerminal({
           // `items` từ GIỎ ĐANG SỐNG, mà giỏ rỗng sau khi F5 ⇒ phiếu có tổng
           // tiền đúng nhưng không có dòng sách nào.
           items: cart.map((c) => ({ editionId: c.editionId, code: c.code, title: c.title, quantity: c.quantity, price: c.coverPrice })),
-          subtotal,
-          discountAmount: isGift ? subtotal : discountAmount,
+          // Cùng nguyên tắc với `amount`: mọi con số TIỀN trên màn hình thu
+          // phải là con số server đã ghi vào đơn, không phải số client tự tính.
+          // Nếu không, thu ngân nhìn thấy "giảm 16.830đ" trong khi đơn thật ghi
+          // khác ⇒ đối chiếu két lệch mà không ai hiểu vì sao.
+          subtotal: Number(resData.data?.subtotal ?? subtotal),
+          discountAmount: isGift
+            ? Number(resData.data?.subtotal ?? subtotal)
+            : Number(resData.data?.discountAmount ?? discountAmount),
         };
         setTransferSession(session);
         // Ảnh đã chụp xong và đơn đã có: gắn ảnh vào CHÍNH đơn này. Nút Xác nhận

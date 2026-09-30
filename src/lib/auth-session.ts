@@ -949,6 +949,42 @@ export function assertAssignedWarehouse(
   throw new AuthError(403, 'Bạn được phân công phụ trách một kho khác. Không thể thao tác kho này.');
 }
 
+/**
+ * Kho mà người gọi được phép XEM, hoặc `null` = được xem tất cả.
+ *
+ * `assertAssignedWarehouse` chặn phía GHI. Phía ĐỌC cần hàm riêng vì không thể
+ * "chặn" — phải LỌC kết quả, nếu không thủ kho kho Âu Cơ vẫn đọc được danh sách
+ * chuyển hàng / phiếu xuất của kho Quỳnh Mai.
+ *
+ * Quy tắc: một bản ghi mà người gọi "dính" vào (gửi đi, hoặc nhận vào) thì được
+ * xem — đúng nghĩa vận chuyển: thủ kho kho gửi cần thấy hàng đang trên đường đi
+ * từ kho mình, và cũng cần thấy hàng đang trả về kho mình.
+ */
+export function assertReadWarehouse(
+  sess: SessionPayload,
+  record: { fromWarehouseId?: string | null; toWarehouseId?: string | null } | null | undefined
+): void {
+  const assigned = `${sess.assignedWarehouseId || ''}`.trim();
+  if (!assigned) return;
+  if (!record) return; // Không có bản ghi -> không có gì để lọc.
+  const from = `${record.fromWarehouseId || ''}`.trim();
+  const to = `${record.toWarehouseId || ''}`.trim();
+  if (from === assigned || to === assigned) return;
+  throw new AuthError(403, 'Bạn được phân công phụ trách một kho khác. Không thể xem dữ liệu kho này.');
+}
+
+/** Lọc danh sách bản ghi theo kho được gán (xem `assertReadWarehouse`). */
+export function filterByAssignedWarehouse<T extends { fromWarehouseId?: string | null; toWarehouseId?: string | null }>(
+  sess: SessionPayload,
+  rows: T[]
+): T[] {
+  const assigned = `${sess.assignedWarehouseId || ''}`.trim();
+  if (!assigned) return rows;
+  return rows.filter(
+    (r) => `${r.fromWarehouseId || ''}`.trim() === assigned || `${r.toWarehouseId || ''}`.trim() === assigned
+  );
+}
+
 import type { ActorContext } from '@/services/actor-context';
 
 export interface RequestIdentity {

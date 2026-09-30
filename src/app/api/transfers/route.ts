@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TransferService, DEFAULT_STALE_HOURS } from '@/services/transfer.service';
 import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole, resolveRequestIdentity, assertAssignedWarehouse, AuthError } from '@/lib/auth-session';
+import { requireSessionRole, resolveRequestIdentity, assertAssignedWarehouse, assertReadWarehouse, filterByAssignedWarehouse, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -21,13 +21,14 @@ function toQty(v: unknown): number {
 // GET /api/transfers?id=TRF-... — chi tiết 1 phiếu
 export async function GET(req: NextRequest) {
   try {
-    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
+    const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
     if (id) {
       const shipment = await TransferService.getShipment(id);
+      assertReadWarehouse(session, shipment as any);
       return NextResponse.json({ success: true, data: shipment });
     }
 
@@ -37,13 +38,13 @@ export async function GET(req: NextRequest) {
       const stale = await TransferService.listStaleShipments(
         Number.isFinite(hours) ? hours : DEFAULT_STALE_HOURS
       );
-      return NextResponse.json({ success: true, data: stale });
+      return NextResponse.json({ success: true, data: filterByAssignedWarehouse(session, stale as any[]) });
     }
 
     const status = searchParams.get('status') || undefined;
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : 50;
     const list = await TransferService.listShipments(status, limit);
-    return NextResponse.json({ success: true, data: list });
+    return NextResponse.json({ success: true, data: filterByAssignedWarehouse(session, list as any[]) });
   } catch (error: any) {
     return handleApiError(error);
   }

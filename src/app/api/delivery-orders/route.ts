@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSessionRole, assertAssignedWarehouse } from '@/lib/auth-session';
+import { requireSessionRole, assertAssignedWarehouse, filterByAssignedWarehouse } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DeliveryOrderService } from '@/services/delivery-order.service';
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
-    await requireSessionRole(req, [
+    const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_WAREHOUSE',
@@ -30,7 +30,12 @@ export async function GET(req: NextRequest) {
       partnerId,
     });
 
-    return NextResponse.json({ success: true, data });
+    // Thủ kho chỉ thấy phiếu của kho mình (trước đây chỉ chặn phía GHI — xem
+    // `assertAssignedWarehouse`; phía ĐỌC bị bỏ sót nên đọc được phiếu kho khác).
+    return NextResponse.json({
+      success: true,
+      data: filterByAssignedWarehouse(session, data as any[]),
+    });
   } catch (error: any) {
     return handleApiError(error);
   }
