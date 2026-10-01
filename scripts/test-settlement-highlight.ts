@@ -98,7 +98,7 @@ async function run() {
   };
   const item = async (id: string, orderId: string, editionId: string, qty: number) => {
     await db.insert(schema.orderItems).values({
-      id, orderId, editionId, quantity: qty,
+      id, orderId, productId: editionId, editionId, quantity: qty,
       unitCoverPrice: 100000, unitSellingPrice: 90000, totalAmount: qty * 90000,
     });
   };

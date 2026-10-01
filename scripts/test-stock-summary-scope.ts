@@ -54,12 +54,12 @@ async function run() {
   ]);
 
   await seed.insert(schema.stockBalances).values([
-    { id: 'sb-scope-1', editionId: 'ed-scope-1', warehouseId: 'wh-au-co', physicalQuantity: 50, condition: 'NEW' },
-    { id: 'sb-scope-2', editionId: 'ed-scope-2', warehouseId: 'wh-au-co', physicalQuantity: 20, condition: 'NEW' },
-    { id: 'sb-scope-3', editionId: 'ed-scope-1', warehouseId: 'wh-quynh-mai', physicalQuantity: 10, condition: 'NEW' },
+    { id: 'sb-scope-1', productId: 'ed-scope-1', editionId: 'ed-scope-1', warehouseId: 'wh-au-co', physicalQuantity: 50, condition: 'NEW' },
+    { id: 'sb-scope-2', productId: 'ed-scope-2', editionId: 'ed-scope-2', warehouseId: 'wh-au-co', physicalQuantity: 20, condition: 'NEW' },
+    { id: 'sb-scope-3', productId: 'ed-scope-1', editionId: 'ed-scope-1', warehouseId: 'wh-quynh-mai', physicalQuantity: 10, condition: 'NEW' },
     // Kho đã ngưng + ấn bản đã khoá: tồn này KHÔNG được tính (giữ luật cũ).
-    { id: 'sb-scope-4', editionId: 'ed-scope-1', warehouseId: 'wh-tam-dung', physicalQuantity: 999, condition: 'NEW' },
-    { id: 'sb-scope-5', editionId: 'ed-scope-3', warehouseId: 'wh-au-co', physicalQuantity: 777, condition: 'NEW' },
+    { id: 'sb-scope-4', productId: 'ed-scope-1', editionId: 'ed-scope-1', warehouseId: 'wh-tam-dung', physicalQuantity: 999, condition: 'NEW' },
+    { id: 'sb-scope-5', productId: 'ed-scope-3', editionId: 'ed-scope-3', warehouseId: 'wh-au-co', physicalQuantity: 777, condition: 'NEW' },
   ]);
 
   const all = await AnalyticsService.stockSummary();

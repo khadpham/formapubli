@@ -80,7 +80,7 @@ async function run() {
   ]);
   for (const e of ['ed-a1', 'ed-a2', 'ed-b1', 'ed-c1']) {
     await db.insert(schema.stockBalances).values({
-      id: `sb-${e}`, editionId: e, warehouseId: WH, condition: 'NEW', physicalQuantity: 500,
+      id: `sb-${e}`, productId: e, editionId: e, warehouseId: WH, condition: 'NEW', physicalQuantity: 500,
     });
   }
 
@@ -100,7 +100,7 @@ async function run() {
     } as any);
     if (o.editionId) {
       await db.insert(schema.orderItems).values({
-        id: `it-${o.id}`, orderId: o.id, editionId: o.editionId, quantity: o.qty || 1,
+        id: `it-${o.id}`, orderId: o.id, editionId: o.editionId, productId: o.editionId, quantity: o.qty || 1,
         unitCoverPrice: o.unitPrice || 0, unitSellingPrice: o.unitPrice || 0,
         totalAmount: o.amount,
       } as any);
@@ -299,7 +299,7 @@ async function run() {
       isbnLast4: `0${100 + i}`, coverPrice: 10000, isActive: true,
     });
     await db.insert(schema.stockBalances).values({
-      id: `sb-${edId}`, editionId: edId, warehouseId: WH, condition: 'NEW', physicalQuantity: 100,
+      id: `sb-${edId}`, productId: edId, editionId: edId, warehouseId: WH, condition: 'NEW', physicalQuantity: 100,
     });
     await mkOrder({
       id: `o-top-s${i}`, code: `AUD-TOPS-${i}`, amount: 10 * i, createdAt: `${D6}T06:00:00Z`,
@@ -343,14 +343,14 @@ async function run() {
   ];
   for (const r of ledgerRows) {
     await db.insert(schema.inventoryLedger).values({
-      id: r.id, editionId: r.ed, warehouseId: WH, eventType: 'DISPATCH_SALE',
+      id: r.id, editionId: r.ed, productId: r.ed, warehouseId: WH, eventType: 'DISPATCH_SALE',
       quantityDelta: r.qty, condition: 'NEW', documentRef: 'AUD-ROY',
       actorId: 'auditc', idempotencyKey: 'k-' + r.id, recordedAt: r.ts,
     } as any);
   }
   // In trong hạn: 800 cuốn ed-a1.
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-print', editionId: 'ed-a1', warehouseId: WH, eventType: 'RECEIPT',
+    id: 'led-print', editionId: 'ed-a1', productId: 'ed-a1', warehouseId: WH, eventType: 'RECEIPT',
     quantityDelta: 800, condition: 'NEW', documentRef: 'AUD-PRINT',
     actorId: 'auditc', idempotencyKey: 'k-led-print', recordedAt: '2026-02-01T04:00:00Z',
   } as any);
@@ -408,14 +408,14 @@ async function run() {
   });
   // In 799 ⇒ còn 201 (> 200, > 10%) ⇒ KHÔNG cảnh báo.
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-warn-799', editionId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
+    id: 'led-warn-799', editionId: 'ed-c1', productId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
     quantityDelta: 799, condition: 'NEW', documentRef: 'AUD-WARN', actorId: 'auditc',
     idempotencyKey: 'k-warn-799', recordedAt: '2026-02-01T04:00:00Z',
   } as any);
   const qWarn1 = await RoyaltyService.quotaStatus(cWarn.contractId);
   // In thêm 1 ⇒ còn 200 ⇒ chạm ngưỡng tuyệt đối ⇒ cảnh báo.
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-warn-1', editionId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
+    id: 'led-warn-1', editionId: 'ed-c1', productId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
     quantityDelta: 1, condition: 'NEW', documentRef: 'AUD-WARN', actorId: 'auditc',
     idempotencyKey: 'k-warn-1', recordedAt: '2026-02-01T04:00:00Z',
   } as any);
@@ -589,7 +589,7 @@ async function run() {
   for (let i = 1; i <= 5; i++) {
     await mk(`o-top-${i}`, `AUD-TOP-${i}`, 10000 * i, '2026-11-12T04:00:00Z', 'RETAIL_OFFICE');
     await db.insert(schema.orderItems).values({
-      id: `it-top-${i}`, orderId: `o-top-${i}`, editionId: 'ed-b1', quantity: i,
+      id: `it-top-${i}`, orderId: `o-top-${i}`, editionId: 'ed-b1', productId: 'ed-b1', quantity: i,
       unitCoverPrice: 10000, unitSellingPrice: 10000, totalAmount: 10000 * i,
     } as any);
   }

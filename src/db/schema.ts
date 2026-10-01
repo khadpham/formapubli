@@ -1,6 +1,65 @@
 import { sqliteTable, text, integer, real, index, uniqueIndex, check, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
+// 0. Products / Sản phẩm — TẦNG GỐC chung cho sách và hàng hóa (migration 0031).
+//
+// VÌ SAO TÁCH RA: mô hình cũ (`works` + `editions`) giả định MỌI THỨ BÁN ĐƯỢC
+// ĐỀU LÀ SÁCH — `editions` bắt buộc có `work_id` (FK `works`), `isbn`, `isbn_last4`
+// đều NOT NULL. Món hàng hóa không có tác giả, không có ISBN.
+//
+// `products.id` CỦA SÁCH = `editions.id` (`ed-h01`) ⇒ backfill chỉ cần
+// `SET product_id = id`, không phải viết lại khóa ngoại ở nhiều bảng.
+//
+// `code` CỐ Ý NULLABLE: chỉ hàng hóa mới có mã riêng (`SP-0001`). Sách giữ mã
+// ở `editions.code` — copy sang đây sẽ tạo HAI nguồn sự thật cho cùng một SKU,
+// và `migrate-book-skus.ts` đã từng đổi `editions.code` (H01 → HH001).
+export const products = sqliteTable('products', {
+  id: text('id').primaryKey(),
+  code: text('code'), // SP-0001 cho hàng hóa; NULL cho sách (xem `editions.code`)
+  name: text('name').notNull(),
+  productKind: text('product_kind').notNull().default('BOOK'), // BOOK | GOODS
+  sellingPrice: real('selling_price').notNull().default(0), // Giá bán (giá bìa niêm yết)
+  costPrice: real('cost_price'), // Giá vốn — CỐ Ý CHƯA đưa lên UI (chốt #4)
+  barcode: text('barcode'), // EAN-13. NULL = chưa gán
+  description: text('description'),
+  isGiftItem: integer('is_gift_item', { mode: 'boolean' }).notNull().default(false), // GỢI Ý quà, KHÔNG phải rào chặn (chốt #22)
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  codeIdx: uniqueIndex('products_code_unique').on(table.code),
+}));
+
+// 0b. Promotions / promotion_gifts — chương trình khuyến mại (migration 0031).
+//
+// Mô hình BẬC THANG: các dòng `promotion_gifts` CÙNG `min_subtotal` là cùng
+// một bậc; đơn chỉ kích hoạt bậc CAO NHẤT mà đạt được (đơn 1 triệu tặng A+B+C
+// một lần, không phải 2A+2B+C). `min_subtotal` tính trên GIÁ GỐC trước chiết khấu.
+export const promotions = sqliteTable('promotions', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  startsAt: text('starts_at'), // NULL = không giới hạn
+  endsAt: text('ends_at'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const promotionGifts = sqliteTable('promotion_gifts', {
+  id: text('id').primaryKey(),
+  promotionId: text('promotion_id').notNull().references(() => promotions.id),
+  minSubtotal: real('min_subtotal').notNull(), // Mốc tiền, TÍNH TRÊN GIÁ GỐC
+  productId: text('product_id').notNull().references(() => products.id),
+  // SỐ CỐ ĐỊNH. Không bao giờ theo tỉ lệ — nếu "mua 4 tặng 1" sinh động thì quà
+  // sinh quà, đó là vòng lặp thật.
+  giftQuantity: integer('gift_quantity').notNull().default(1),
+  // KHÔNG khai `created_at`: migration 0031 không tạo cột này trên
+  // `promotion_gifts`. Khai thêm ở đây là lệch schema — drizzle sẽ sinh SQL đọc
+  // cột không tồn tại ⇒ mọi truy vấn chạm bảng này đều 500. Bắt được nhờ
+  // scripts/test-gift-forgery.ts.
+}, (table) => ({
+  lookupIdx: index('idx_promotion_gifts_lookup').on(table.promotionId, table.minSubtotal),
+  uniqueIdx: uniqueIndex('promotion_gifts_unique').on(table.promotionId, table.minSubtotal, table.productId),
+}));
+
 // 1. Works / Master Titles (Tầng 1: Tác phẩm)
 export const works = sqliteTable('works', {
   id: text('id').primaryKey(),
@@ -159,7 +218,11 @@ export const customerOwnedBooks = sqliteTable('customer_owned_books', {
 // 10. Append-Only Inventory Ledger (Sổ cái Kho Bất biến)
 export const inventoryLedger = sqliteTable('inventory_ledger', {
   id: text('id').primaryKey(),
-  editionId: text('edition_id').notNull().references(() => editions.id),
+  // 0033: `edition_id` NULLABLE — hàng hóa không có dòng `editions`.
+  editionId: text('edition_id').references(() => editions.id),
+  // 0033: NOT NULL + FK. Sách có `products.id === editions.id` nên chép thẳng từ
+  // `edition_id` khi backfill.
+  productId: text('product_id').notNull().references(() => products.id),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   ownerId: text('owner_id').references(() => partners.id), // PARTNER_FORMAPUBLI or consignment partner
   lotId: text('lot_id'), // Printing lot or batch identifier
@@ -185,13 +248,18 @@ export const inventoryLedger = sqliteTable('inventory_ledger', {
 // 11. Real-time Stock Balances (Bảng cân đối tồn kho tức thời)
 export const stockBalances = sqliteTable('stock_balances', {
   id: text('id').primaryKey(),
-  editionId: text('edition_id').notNull().references(() => editions.id),
+  // 0032: edition_id NULLABLE — hàng hóa không có dòng `editions`.
+  // Sách cũ vẫn giữ nguyên giá trị này.
+  editionId: text('edition_id').references(() => editions.id),
+  productId: text('product_id').notNull().references(() => products.id),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   condition: text('condition').default('NEW'), // NEW, MINOR_DAMAGE, DEFECTIVE, QUARANTINE
   physicalQuantity: integer('physical_quantity').notNull().default(0),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
-  bucketIdx: uniqueIndex('uq_stock_bucket').on(table.editionId, table.warehouseId, table.condition),
+  // 0032: unique chuyển sang product_id. SQLite coi NULL là khác NULL nên
+  // unique trên cột nullable không chặn trùng; product_id luôn khác NULL.
+  bucketIdx: uniqueIndex('uq_stock_bucket').on(table.productId, table.warehouseId, table.condition),
   nonNegativeCheck: check('check_stock_non_negative', sql`${table.physicalQuantity} >= 0`),
 }));
 
@@ -239,11 +307,13 @@ export const orders = sqliteTable('orders', {
   shippingStatusIdx: index('idx_orders_shipping_status').on(table.shippingStatus),
 }));
 
-// 13. Order Line Items (Chi tiết từng cuốn sách trong đơn)
+// 13. Order Line Items (Chi tiết từng sản phẩm trong đơn)
 export const orderItems = sqliteTable('order_items', {
   id: text('id').primaryKey(),
   orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
-  editionId: text('edition_id').notNull().references(() => editions.id),
+  // 0032: edition_id NULLABLE — hàng hóa không có dòng `editions`.
+  editionId: text('edition_id').references(() => editions.id),
+  productId: text('product_id').notNull().references(() => products.id),
   quantity: integer('quantity').notNull(), // Số lượng bán (> 0)
   unitCoverPrice: real('unit_cover_price').notNull(), // Giá bìa niêm yết
   unitDiscountRate: real('unit_discount_rate').default(0.0), // Chiết khấu riêng nếu có
@@ -251,10 +321,21 @@ export const orderItems = sqliteTable('order_items', {
   totalAmount: real('total_amount').notNull(), // Thành tiền = quantity * unitSellingPrice
   bundleId: text('bundle_id').references(() => seasonalBundles.id), // Combo chứa dòng này (null = bán lẻ)
   bundleQty: integer('bundle_qty'), // Số bộ combo của dòng này (null = bán lẻ)
+  // 0031: định danh dòng quà tặng. `isGiftLine` là cột CHẶN VÒNG LẶP — dòng
+  // quà không được tính vào tổng dùng để so mốc khuyến mại, kể cả quà tay
+  // (promotion_id = NULL).
+  promotionId: text('promotion_id').references(() => promotions.id),
+  isGiftLine: integer('is_gift_line', { mode: 'boolean' }).notNull().default(false),
+  isManual: integer('is_manual', { mode: 'boolean' }).notNull().default(false),
+  // B3 = (b*): quà HẾT TỒN vẫn cho thanh toán nhưng không ghi stock_balances,
+  // nên tồn quà không giảm. Không có cột này thì quà ảo không có dấu vết và
+  // báo cáo sẽ nói dối — phải tách "còn tồn" với "hết tồn".
+  isGiftShortfall: integer('is_gift_shortfall', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   orderIdIdx: index('idx_order_items_order_id').on(table.orderId),
   editionIdIdx: index('idx_order_items_edition_id').on(table.editionId),
+  productIdIdx: index('idx_order_items_product').on(table.productId),
 }));
 
 // 14. Audit Logs (Nhật ký kiểm toán truy cập Sổ Kép & Thao tác nhạy cảm)

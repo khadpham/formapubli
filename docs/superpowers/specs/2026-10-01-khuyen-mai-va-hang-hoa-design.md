@@ -1,6 +1,59 @@
 # Thiết kế: Sản phẩm hàng hóa + Khuyến mại quà tặng
 
-Ngày: 2026-10-01 · Trạng thái: **CHỜ DUYỆT** (chưa viết code)
+Ngày: 2026-10-01 · Trạng thái: **CỔNG 1 + 1b + 0032 ĐÃ ÁP PRODUCTION** (xem mục cập nhật bên dưới)
+
+---
+
+## Cập nhật 01/10/2026 — sau ca đêm
+
+> Phần còn lại của spec vẫn mô tả thiết kế như lúc viết. Đọc mục này để biết điều gì
+> **đã chạy thật**, điều gì **còn nợ**, và điều gì **đã học được**.
+
+### A. Đã chạy trên PRODUCTION
+
+| Việc | Trạng thái | Bằng chứng |
+|---|---|---|
+| Migration `0031` (3 bảng `products`/`promotions`/`promotion_gifts` + 7 cột nullable) | **ĐÃ ÁP** | `PRAGMA table_info` từng bảng |
+| Backfill `0031b` | **ĐÃ ÁP** | editions 88/88 · order_items 217/217 · inventory_ledger 1657/1657 · stock_balances 440/440 · `product_id IS NULL = 0` ở cả 4 bảng |
+| `integrity_check` | ok | — |
+| `foreign_key_check` | sạch | — |
+| Migration `0032` (dựng lại `stock_balances` + `order_items`) | **ĐÃ ÁP** | Không mất dòng |
+| Migration `0033` (dựng lại `inventory_ledger`) | **ĐÃ VIẾT, CHƯA ÁP** | — |
+| Deploy `0e2ed259-ed75-4ca5-be8f-83562ae3ed1c` | site HTTP 200 | — |
+| Deploy tiếp (sau `0033`) | **ĐANG LÀM** | — |
+
+### B. Backup + khôi phục — ĐÃ CHỨNG MINH
+
+- **Không có script backup nào trong repo làm được.** `backup-db.ts` chỉ copy file local, prod là Turso.
+  ⇒ Mục 5.2 dưới đây ("phải backup thủ công") **đã lỗi thời**.
+- Đã viết `backup-prod.ts` (chỉ đọc) + `restore-prod.ts` (có `--thuc-hien` + `ALLOW_REMOTE_TARGET`).
+- **Đã thử khôi phục THẬT vào DB rỗng** → 6/6 bảng khớp production chính xác:
+  works 87 · editions 88 · warehouses 5 · orders 79 · order_items 217 · stock_balances 440.
+  `integrity` ok, FK sạch, đủ 3 trigger.
+- Backup có đủ dữ liệu kho Hồ Gươm: 88 dòng tồn · 331 bút toán · 40 đơn · 73 dòng đơn · 5 ca két.
+
+### C. NỢ KỸ THUẬT
+
+| # | Nợ | Sự thật đã đo |
+|---|---|---|
+| C1 | `scripts/test-royalties.ts` **FLAKY, có từ TRƯỚC đêm nay** | Cùng code, cùng DB sạch, 3 lần cho EXIT = `0, 1, 1`. Chạy trên code trước đêm nay cũng `0, 1, 1`. **Không liên quan thay đổi đêm nay** |
+| C2 | Biện minh bỏ qua C1 | Production có `rights_contracts` = **0 dòng**, audit log royalty = **0 hoạt động**. Tính năng chưa ai dùng |
+| C3 | `inventory_ledger` thiếu **87 bút toán "nhập kho"** tại kho Hồ Gươm | Ledger âm **-85.494** trong khi `stock_balances` **đúng** (440 dòng, không âm). Hàng vật lý đúng; **SỔ thiếu**. Cần ghi bù |
+
+### D. Bài học đã mắc — đừng lặp lại
+
+1. **DDL phải lấy NGUYÊN VĂN từ `sqlite_master` của production.** Lần tự viết `0033` theo bản `0000` → thiếu cột `reversal_of` → `no such column`.
+2. **Không suy luận "`products.id === editions.id` cho sách nên thay `edition_id` bằng `product_id` ở mọi nơi là tương đương".** SAI — đã làm lệch số liều.
+3. **Một lần chạy test KHÔNG đủ để kết luận.** Đã chạy 1 lần thấy xanh → kết luận "sai", chạy lại thấy đỏ → kết luận "thủ phạm là X". Thực ra test flaky. **Phải chạy lặp ≥3 lần.**
+4. **`verify-pos-live.ts` KHÔNG phải "chỉ đọc"** — nó tạo đơn thật qua `POST /api/orders` (dòng 206).
+
+### E. Trạng thái Cổng 2 (bán hàng hóa)
+
+E2E **33/33 xanh** đã từng đạt. Còn nợ:
+
+- Áp `0033` lên production.
+- Kiểm lại sau deploy.
+- **Không nhập hàng hóa vào kho cho tới khi xác nhận xong.**
 
 ---
 
@@ -87,6 +140,8 @@ CREATE UNIQUE INDEX `products_barcode_unique` ON `products` (`barcode`) WHERE `b
 ```
 
 **Vì sao `products.id` của sách = `editions.id`:** không phải viết lại khóa ngoại ở `order_items` / `inventory_ledger` / `stock_balances`; migration chỉ cần `UPDATE ... SET product_id = id`. Dữ liệu lịch sử tự nhiên hợp lệ.
+
+⚠️ **Bài học đêm 01/10/2026:** đừng suy rộng rằng vì `products.id === editions.id` cho sách nên thay `edition_id` bằng `product_id` ở **mọi nơi** là tương đương. **SAI** — đã làm lệch số liều.
 
 **Vì sao `code` phải khác namespace:** sách đã chiếm `H01`, `HH042`… Hàng hóa bắt buộc tiền tố `SP-`. Nếu không, một sản phẩm tên `H01` sẽ trùng UNIQUE và chết.
 
@@ -369,7 +424,9 @@ Bản đầu nói Cổng 1 gồm cả `UPDATE order_items SET product_id = editi
 | **Cổng 1** | 3 bảng + 9 cột. **Không `UPDATE`.** | Bất kỳ lúc nào |
 | **Cổng 1b** | Backfill 4 bảng + tạo index | **Chỉ lúc kho đóng (tối)** |
 
-⚠️ **Không có script backup DB remote nào trong repo.** `scripts/backup-db.ts:9-10` chỉ copy file local và tự nói D1 có cơ chế riêng — nhưng prod là **Turso**, nên **không có đường restore nào**. Phải backup thủ công trước Cổng 1b.
+⚠️ **Không có script backup DB remote nào trong repo.** `scripts/backup-db.ts:9-10` chỉ copy file local và tự nói D1 có cơ chế riêng — nhưng prod là **Turso**.
+
+✅ **Đã giải quyết đêm 01/10/2026:** viết `backup-prod.ts` (chỉ đọc) + `restore-prod.ts` (có `--thuc-hien` + `ALLOW_REMOTE_TARGET`), và **thử khôi phục thật vào DB rỗng — 6/6 bảng khớp production chính xác.** Xem mục B ở đầu file.
 
 ### 5.3 Thứ tự index
 
@@ -593,7 +650,7 @@ Quan trọng: mọi truy vấn cho sách phải trả về **y hệt** trước 
 | 1 | `npx tsc --noEmit` |
 | 2 | `npm run build` (dừng dev server trước — `AGENTS.md` mục 3) |
 | 3 | `npx tsx scripts/run-isolated.ts` (DB file cách ly, không chạm Turso) |
-| 4 | **Áp migration `ALLOW_PROD_WRITE=true npx tsx scripts/apply-0031-prod.ts` — TRƯỚC bước 5** |
+| 4 | **Áp migration `ALLOW_PROD_WRITE=true npx tsx scripts/apply-00XX-prod.ts` — TRƯỚC bước 5** |
 | 5 | `git status --porcelain` — phải SẠCH trước khi deploy (`AGENTS.md` mục 3) |
 | 6 | `npm run deploy` |
 | 7 | `npx tsx scripts/verify-pos-live.ts` — nghiệm thu tầng 3 |
@@ -618,6 +675,11 @@ Quan trọng: mọi truy vấn cho sách phải trả về **y hệt** trước 
 
 ## 10. Cần bạn duyệt
 
-1. **Quyết định B3** — xử lý tồn âm thế nào? Tôi nghiêng (b) không ghi `stock_balances`.
-2. **Xác nhận phạm vi:** làm tới **Cổng 1** hay **Cổng 1 + 2**? Tôi khuyên Cổng 1 + 2.
+> **Đêm 01/10/2026 đã chốt:** B3 = phương án (b) — xem PHẦN 5 / MỐC 0 ở file plan.
+> Phạm vi đã chốt: **Cổng 1 + 1b + 2**. Cổng 3 dồn tới **sau hội chợ**.
+
+1. **Quyết định B3** — xử lý tồn âm thế nào? → ✅ **ĐÃ CHỐT (b)** không ghi `stock_balances`.
+2. **Xác nhận phạm vi:** làm tới **Cổng 1** hay **Cổng 1 + 2**? → ✅ **ĐÃ CHỐT 1 + 2**.
 3. Có thiếu trường nào của sản phẩm không? (đang có: mã, tên, loại, giá bán, giá vốn, mã vạch, mô tả, cờ gợi ý quà)
+
+**Còn chờ ở đợt này:** duyệt bắt đầu Cổng 3 sau hội chợ.

@@ -101,13 +101,13 @@ async function run() {
   const beforeCut = new Date(cutoff.getTime() - 2 * 3600e3);
   await db.insert(inventoryLedger).values([
     {
-      id: `ab-iso-out-${Date.now()}`, editionId: edA, warehouseId: 'wh-au-co',
+      id: `ab-iso-out-${Date.now()}`, editionId: edA, productId: edA, warehouseId: 'wh-au-co',
       eventType: 'DISPATCH_SALE', quantityDelta: -11, condition: 'NEW',
       documentRef: 'AB-ISO-NGOAI-KHOANG', actorId: 'audit-b', idempotencyKey: uniq('ab-iso'),
       effectiveAt: beforeCut.toISOString(), recordedAt: beforeCut.toISOString(),
     },
     {
-      id: `ab-sql-out-${Date.now()}`, editionId: edA, warehouseId: 'wh-au-co',
+      id: `ab-sql-out-${Date.now()}`, editionId: edA, productId: edA, warehouseId: 'wh-au-co',
       eventType: 'DISPATCH_SALE', quantityDelta: -13, condition: 'NEW',
       documentRef: 'AB-SQL-NGOAI-KHOANG', actorId: 'audit-b', idempotencyKey: uniq('ab-sql'),
       effectiveAt: beforeCut.toISOString(), recordedAt: sqlStamp(beforeCut),
@@ -124,13 +124,13 @@ async function run() {
   const insideCut = new Date(cutoff.getTime() + 2 * 3600e3);
   await db.insert(inventoryLedger).values([
     {
-      id: `ab-iso-in-${Date.now()}`, editionId: edB, warehouseId: 'wh-au-co',
+      id: `ab-iso-in-${Date.now()}`, editionId: edB, productId: edB, warehouseId: 'wh-au-co',
       eventType: 'DISPATCH_SALE', quantityDelta: -7, condition: 'NEW',
       documentRef: 'AB-ISO-TRONG-KHOANG', actorId: 'audit-b', idempotencyKey: uniq('ab-iso-in'),
       effectiveAt: insideCut.toISOString(), recordedAt: insideCut.toISOString(),
     },
     {
-      id: `ab-sql-in-${Date.now()}`, editionId: edB, warehouseId: 'wh-au-co',
+      id: `ab-sql-in-${Date.now()}`, editionId: edB, productId: edB, warehouseId: 'wh-au-co',
       eventType: 'DISPATCH_SALE', quantityDelta: -3, condition: 'NEW',
       documentRef: 'AB-SQL-TRONG-KHOANG', actorId: 'audit-b', idempotencyKey: uniq('ab-sql-in'),
       effectiveAt: insideCut.toISOString(), recordedAt: sqlStamp(insideCut),
@@ -172,7 +172,7 @@ async function run() {
   }).onConflictDoNothing();
   const transitQty = 500;
   await db.insert(stockBalances).values({
-    id: `ab-sb-transit-${edB}`, editionId: edB, warehouseId: 'ab-transit',
+    id: `ab-sb-transit-${edB}`, productId: edB, editionId: edB, warehouseId: 'ab-transit',
     condition: 'NEW', physicalQuantity: transitQty,
   });
   const stockExcl = await ForecastService.availableStock(edB);
@@ -477,7 +477,7 @@ async function run() {
     for (const e of allEditions) {
       const qty = 3;
       await db.insert(stockBalances).values({
-        id: `ab-sb-${wh}-${e.id}`, editionId: e.id, warehouseId: wh,
+        id: `ab-sb-${wh}-${e.id}`, productId: e.id, editionId: e.id, warehouseId: wh,
         condition: 'NEW', physicalQuantity: qty,
       }).onConflictDoNothing();
       expectedQty += qty;

@@ -1,4 +1,5 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs, dailyOrderCounters } from '../db';
+import { db, orders, orderItems, editions, products, promotions, promotionGifts, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs, dailyOrderCounters } from '../db';
+import { computeGifts, type PromotionCampaign } from '../lib/promotion-engine';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
@@ -17,6 +18,10 @@ export interface OrderItemInput {
   quantity: number;
   unitCoverPrice?: number;
   unitDiscountRate?: number;
+  // 0031: dòng QUÀ của chương trình "đơn đạt mốc tiền". Giá 0đ (unitDiscountRate = 1)
+  // là quyền lợi ĐÃ CẤU HÌNH, không phải thu ngân tự chiết khấu ⇒ dòng này bị miễn
+  // trần chiết khấu và KHÔNG tính vào subtotal/discountAmount của đơn.
+  isGiftLine?: boolean;
 }
 
 export type OrderChannel =
@@ -506,25 +511,111 @@ export class OrderService {
       needTotal.set(item.editionId, (needTotal.get(item.editionId) || 0) + item.quantity);
     }
 
-    // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data)
+    // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data).
+    //
+    // Tra từ BẢNG `products` (tầng gốc), KHÔNG phải `editions`. Sách đã được
+    // mirror vào `products` với `id` TRÙNG `editions.id` nên kết quả y hệt trước
+    // đây; hàng hóa thì chỉ có `products`.
+    //
+    // Trước đây tra `FROM editions` ⇒ hàng hóa không có dòng editions nên chết
+    // NGAY TẠI ĐÂY, trước cả bước kiểm ATP — đơn không tạo được. Đây là lỗi
+    // đã lên production; bằng chứng ở scripts/test-goods-sell-e2e.ts.
     const editionIds = stockCheckItems.map((i) => i.editionId);
-    const dbEditions = await withDbRetry(async () => {
+    const dbProducts = await withDbRetry(async () => {
       return await db
         .select({
-          id: editions.id,
-          code: editions.code,
-          title: editions.title,
-          coverPrice: editions.coverPrice,
+          id: products.id,
+          name: products.name,
+          coverPrice: products.sellingPrice,
+          // Lấy LUÔN ở đây vì câu này đã chạy rồi — không tốn thêm subrequest.
+          // Dùng để biết dòng này là SÁCH hay HÀNG HÓA, quyết định ghi
+          // `inventory_ledger.edition_id` là NULL hay không. Đường này gần với
+          // trần 50 subrequest của Worker nên tuyệt đối không thêm query.
+          productKind: products.productKind,
         })
-        .from(editions)
-        .where(inArray(editions.id, editionIds));
+        .from(products)
+        .where(inArray(products.id, editionIds));
     });
 
-    const editionMap = new Map(dbEditions.map((e) => [e.id, e]));
+    // Khoá theo `products.id`; giá trị vẫn là `editionId` (với sách chúng BẰNG
+    // nhau) để không phá vỡ các call site phía dưới.
+    const editionMap = new Map(dbProducts.map((e) => [e.id, e]));
 
     // 3. Tính toán dòng tiền và chi tiết đơn hàng ngoài transaction
     let calculatedSubtotal = 0;
     let calculatedFinalAmount = 0;
+
+    // Tra chương trình khuyến mại đang chạy. Đây là nguồn SỰ THẬT để xác minh
+    // dòng quà — client KHÔNG được tự quyết mình có quà.
+    // Chỉ tra khi client có gắn cờ quà, để không tốn query cho đơn thường
+    // (đường này sát trần 50 subrequest của Worker).
+    const claimedGiftIds = looseItems.filter((i) => i.isGiftLine).map((i) => i.editionId);
+    let allowedGiftProducts = new Set<string>();
+    if (claimedGiftIds.length) {
+      const campaigns = await db
+        .select()
+        .from(promotions)
+        .where(eq(promotions.isActive, true));
+      const rules = campaigns.length
+        ? await db
+            .select()
+            .from(promotionGifts)
+        : [];
+      const byCampaign = new Map(campaigns.map((c) => [c.id, c]));
+      const shaped: PromotionCampaign[] = campaigns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        isActive: c.isActive,
+        startsAt: c.startsAt,
+        endsAt: c.endsAt,
+        gifts: rules
+          .filter((r) => r.promotionId === c.id)
+          .map((r) => ({
+            minSubtotal: r.minSubtotal,
+            productId: r.productId,
+            giftQuantity: r.giftQuantity,
+          })),
+      })).filter((c) => byCampaign.has(c.id));
+
+      // eligibleBase = tổng giá GỐC của các dòng KHÔNG phải quà.
+      // Tuyệt đối không lấy `calculatedSubtotal` vì nó đã bị trừ chiết khấu, và
+      // không bao giờ lấy tổng cả đơn vì dòng quà sẽ tự đẩy tổng lên bậc kế
+      // tiếp (vòng lặp — đã tốn một đêm tìm hiểu).
+      const eligibleBase = looseItems
+        .filter((i) => !claimedGiftIds.includes(i.editionId))
+        .reduce((s, i) => {
+          const p = dbProducts.find((x) => x.id === i.editionId);
+          // PHẢI NHÂN SỐ LƯỢNG. Bản đầu chỉ cộng `coverPrice` một lần ⇒ đơn
+          // nhiều cuốn tính ra đúng bằng giá bìa của MỘT cuốn, dưới mốc ⇒
+          // quà thật cũng bị hạ. Bắt được bởi scripts/test-gift-forgery.ts.
+          return s + (p?.coverPrice || 0) * (i.quantity || 0);
+        }, 0);
+
+      // Dòng quà do người tự thêm đã qua duyệt thì được phép, kể cả khi không
+      // nằm trong cấu hình — nhưng BẮT BUỘC phải có `discountApprovalId`.
+      // Engine nhận `approvedManual` để công nhận chúng là quà hợp lệ.
+      let approvedManual: Set<string> | undefined;
+      if (params.discountApprovalId) {
+        const appr = await DiscountApprovalService.getRequest(params.discountApprovalId);
+        // Dòng hàng đã duyệt nằm trong `cartSnapshot` (JSON) của yêu cầu.
+        let snapshotItems: any[] = [];
+        try {
+          const parsed: any = JSON.parse(String((appr as any)?.cartSnapshot ?? '[]'));
+          snapshotItems = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          snapshotItems = [];
+        }
+        approvedManual = new Set(
+          snapshotItems
+            .filter((i: any) => i?.isManual === true && i?.isGiftLine === true)
+            .map((i: any) => String(i.editionId))
+        );
+      }
+
+      allowedGiftProducts = new Set(
+        computeGifts({ eligibleBase, campaigns: shaped, approvedManual }).map((g) => g.productId)
+      );
+    }
 
     const preparedItems = [
       ...looseItems.map((item) => {
@@ -533,17 +624,57 @@ export class OrderService {
         if (!edition) throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
         const coverPrice = edition.coverPrice || 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
-        const priced = priceLine(coverPrice, itemDiscountRate, item.quantity);
+        const claimedGift = Boolean(item.isGiftLine);
 
-        calculatedSubtotal += priced.subtotal;
+        // ⚠️ KHÔNG TIN CỜ `isGiftLine` TỪ CLIENT.
+        // Client gửi lên là dễ sửa: thu ngân tự gắn cờ ⇒ bán 0đ, miễn trần 20%,
+        // không cần Quản lý duyệt. Server phải tự tra `promotions` xác nhận món
+        // này THẬT SỰ nằm trong bậc mà đơn đạt tới.
+        const isGiftLine = claimedGift && allowedGiftProducts.has(item.editionId);
+
+        // Cờ client gắn mà không có trong chương trình ⇒ hạ về dòng thường,
+        // khách trả đúng giá. KHÔNG báo lỗi: người dùng không có lý do biết.
+        // `isGiftClaimedRejected` đưa vào audit để sau này điều tra.
+        let isGiftClaimedRejected = false;
+        if (claimedGift && !isGiftLine) {
+          isGiftClaimedRejected = true;
+        }
+
+        // Dòng bị hạ về thường thì giá phải đúng: chiết khấu theo đơn, không
+        // phải 1 (100%) mà client gửi lên.
+        const effectiveDiscountRate = isGiftLine
+          ? 1
+          : claimedGift
+            ? discountRate
+            : itemDiscountRate;
+        const priced = priceLine(coverPrice, effectiveDiscountRate, item.quantity);
+
+        // DÒNG QUÀ: finalAmount vẫn cộng (bằng 0 vì giá bán 0đ) nhưng KHÔNG cộng
+        // subtotal. Nếu cộng, `subtotal` và `discountAmount` của đơn mang giá bìa
+        // của món quà ⇒ báo cáo cuối ngày (daily-settlement.service.ts:101-102) báo
+        // như khách được chiết khấu 300.000đ dù không có 1đ chiết khấu nào.
+        if (!isGiftLine) {
+          calculatedSubtotal += priced.subtotal;
+        }
         calculatedFinalAmount += priced.finalAmount;
 
-        return {
+return {
           id: `oi-${generateUUIDv7()}`,
-          editionId: item.editionId,
+          // Hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, vì cột này
+          // VẪN CÒN FK `editions(id)` (nullable ≠ bỏ FK).
+          editionId: edition.productKind === 'BOOK' ? item.editionId : null,
+          productId: item.editionId,
+          // Cờ này đi xuống `recordMovementsBatch` để quyết định ghi sổ kho,
+          // thay vì tra thêm một query (đường này sát trần subrequest Worker).
+          isBook: edition.productKind === 'BOOK',
+          isGiftLine,
           quantity: item.quantity,
           unitCoverPrice: priced.coverPrice,
-          unitDiscountRate: itemDiscountRate,
+          // Lưu `effectiveDiscountRate`, KHÔNG lưu `itemDiscountRate`. Nếu lưu
+          // giá trị client gửi, một dòng quà GIẢ bị hạ xuống dòng thường vẫn
+          // mang `unit_discount_rate = 1` trong DB ⇒ báo cáo tưởng khách được
+          // chiết khấu 100%. Bắt được bởi scripts/test-gift-forgery.ts.
+          unitDiscountRate: effectiveDiscountRate,
           unitSellingPrice: priced.unitSellingPrice,
           totalAmount: priced.finalAmount,
           bundleId: undefined as string | undefined,
@@ -555,16 +686,23 @@ export class OrderService {
         calculatedSubtotal += line.quantity * line.unitCoverPrice;
         calculatedFinalAmount += line.totalAmount;
 
-        return {
-           id: `oi-${generateUUIDv7()}`,
+return {
+          id: `oi-${generateUUIDv7()}`,
           editionId: line.editionId,
+          productId: line.editionId,
+          // Dòng combo luôn là ấn bản sách.
+          isBook: true,
+          isGiftLine: false,
           quantity: line.quantity,
           unitCoverPrice: line.unitCoverPrice,
           unitDiscountRate: line.unitDiscountRate,
           unitSellingPrice: line.unitSellingPrice,
           totalAmount: line.totalAmount,
-          bundleId: line.bundleId as string | undefined,
-          bundleQty: line.bundleQty as number | undefined,
+          // PHẢI giữ `line.*` — tôi đã đổi nhầm thành `undefined` một lần, làm
+          // dòng combo mất `bundle_id` ⇒ đếm chiết khấu sai, replay combo đụng
+          // IDEMPOTENCY_CONFLICT. Bằng chứng: test-pay2-money-audit F4.
+          bundleId: line.bundleId,
+          bundleQty: line.bundleQty,
         };
       }),
     ];
@@ -583,6 +721,8 @@ export class OrderService {
 
     // 5. Ghi nhận Đơn hàng & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
     // Toàn bộ kiểm tra idempotency, phiên két, tính ATP và ghi chép nằm trong write transaction.
+    // B3: mã hàng hóa có dòng quà hết tồn — ghi ledger, KHÔNG trừ stock_balances.
+    const shortfallEditionIds = new Set<string>();
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
         // B0. Kiểm tra Idempotency bên trong Transaction với idempotencyKey đã chuẩn hóa
@@ -781,6 +921,16 @@ export class OrderService {
           for (const [editionId, qty] of Array.from(needTotal.entries())) {
             const atp = atpMap.get(editionId) ?? 0;
             if (atp < qty) {
+              // B3: dòng quà hết tồn KHÔNG chặn đơn. Chỉ miễn khi TOÀN BỘ nhu
+              // cầu của mã này đều là dòng quà đã xác minh — còn mã vừa bán
+              // thường vừa tặng quà thì vẫn chặn nếu tổng vượt tồn.
+              const giftDemand = preparedItems
+                .filter((i) => i.isGiftLine && i.productId === editionId)
+                .reduce((s, i) => s + i.quantity, 0);
+              if (giftDemand === qty) {
+                shortfallEditionIds.add(editionId);
+                continue;
+              }
               throw AppError.atp(
                 `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
               );
@@ -837,7 +987,12 @@ export class OrderService {
 
         if (params.discountApprovalId) {
           const hasUnexpectedLineDiscount = preparedItems.some(
-            (item) => Math.abs((item.unitDiscountRate ?? discountRate) - discountRate) > 0.0001
+            (item) =>
+              // DÒNG QUÀ miễn: giá 0đ là quyền lợi chương trình, không phải chiết
+              // khấu thu ngân tự bấm. So sánh nó với `discountRate` sẽ khiến mọi
+              // đơn "vừa có quà vừa cần duyệt chiết khấu" chết 409.
+              !item.isGiftLine &&
+              Math.abs((item.unitDiscountRate ?? discountRate) - discountRate) > 0.0001
           );
           if (hasUnexpectedLineDiscount) {
             throw AppError.conflict('Mức chiết khấu từng dòng không khớp yêu cầu đã được duyệt.');
@@ -850,9 +1005,12 @@ export class OrderService {
           await DiscountApprovalService.consumeApproval({
             requestId: params.discountApprovalId,
             currentItems: preparedItems
-              .filter((item) => !item.bundleId)
+              .filter((item) => !item.bundleId && !item.isGiftLine)
               .map((item) => ({
-                editionId: item.editionId,
+                // `consumeApproval` cần `products.id` để băm hash giỏ — với sách
+                // nó BẰNG `edition_id`. `edition_id` có thể NULL cho hàng hóa nên
+                // dùng `product_id` (luôn khác NULL).
+                editionId: item.productId,
                 quantity: item.quantity,
                 unitPrice: item.unitCoverPrice,
               })),
@@ -902,12 +1060,25 @@ export class OrderService {
             const lineValues: Record<string, unknown> = {
               id: item.id,
               orderId,
-              editionId: item.editionId,
+              // 0032/0033: `order_items.edition_id` nullable nhưng VẪN CÒN FK
+              // `editions(id)`. Hàng hóa không có dòng editions nên phải ghi
+              // NULL — ghi id hàng hóa vào đây là FK violation, đơn rollback.
+              editionId: item.isBook ? item.editionId : null,
+              // 0032: NOT NULL + FK `products(id)`. PHẢI dùng `item.productId`
+              // chứ không phải `item.editionId` — với hàng hóa `editionId` đã là
+              // NULL ở dòng trên, dùng nó sẽ vi phạm NOT NULL.
+              productId: item.productId,
               quantity: item.quantity,
               unitCoverPrice: item.unitCoverPrice,
               unitDiscountRate: item.unitDiscountRate,
               unitSellingPrice: item.unitSellingPrice,
               totalAmount: item.totalAmount,
+              // 0031: cột chặn vòng lặp khi tính mốc khuyến mại — phải ghi
+              // xuống DB, không chỉ giữ trong RAM.
+              isGiftLine: Boolean(item.isGiftLine),
+              // B3: quà hết tồn vẫn bán được — gắn cờ để báo cáo tách riêng.
+              isGiftShortfall:
+                Boolean(item.isGiftLine) && shortfallEditionIds.has(item.productId),
             };
             if (item.bundleId != null) lineValues.bundleId = item.bundleId;
             if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;
@@ -920,14 +1091,21 @@ export class OrderService {
           // B5: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
           let lineIdx = 0;
           for (const item of preparedItems) {
+            const shortfall =
+              Boolean(item.isGiftLine) && shortfallEditionIds.has(item.productId);
             await InventoryService.recordMovement({
-              editionId: item.editionId,
+              editionId: item.productId,
+              // 0033: hàng hóa ghi `inventory_ledger.edition_id = NULL`.
+              isBook: item.isBook !== false,
               warehouseId,
               eventType: 'DISPATCH_SALE',
               quantityDelta: -item.quantity,
               condition: 'NEW',
+              skipStockUpdate: shortfall,
               documentRef: orderCode,
-              note: item.bundleId
+              note: shortfall
+                ? `Quà hết tồn — ghi sổ xuất, KHÔNG trừ bảng cân đối (is_gift_shortfall) trong đơn ${orderCode}`
+                : item.bundleId
                 ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
                 : isGift
                 ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
@@ -1225,17 +1403,20 @@ export class OrderService {
     const out = new Map<string, number>();
     if (ids.length === 0) return out;
     const balRows = await txOrDb
-      .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
+      .select({
+        productId: stockBalances.productId,
+        qty: stockBalances.physicalQuantity,
+      })
       .from(stockBalances)
       .where(
         and(
-          inArray(stockBalances.editionId, ids),
+          inArray(stockBalances.productId, ids),
           eq(stockBalances.warehouseId, warehouseId),
           eq(stockBalances.condition, 'NEW')
         )
       );
     const balMap = new Map<string, number>();
-    for (const r of balRows) balMap.set(`${r.editionId}`, Number(r.qty || 0));
+    for (const r of balRows) balMap.set(`${r.productId}`, Number(r.qty || 0));
     // KHÔNG có nhánh riêng cho kho hội chợ nữa. Trước đây có:
     //   if (wh?.warehouseType === 'FAIR_EVENT') { out = balMap; return; }
     // với lý do ghi ở doc là "API giữ chỗ online từ chối kho hội chợ bằng 422 nên
@@ -1255,7 +1436,7 @@ export class OrderService {
     // getPendingEffectiveExpiry (một quy tắc hạn duy nhất của hệ thống).
     const held = await txOrDb
       .select({
-        editionId: orderItems.editionId,
+        productId: orderItems.productId,
         quantity: orderItems.quantity,
         createdAt: orders.createdAt,
         paymentExpiresAt: orders.paymentExpiresAt,
@@ -1264,7 +1445,7 @@ export class OrderService {
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
         and(
-          inArray(orderItems.editionId, ids),
+          inArray(orderItems.productId, ids),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
           or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoffDate))
@@ -1275,7 +1456,7 @@ export class OrderService {
     for (const row of held) {
       const expiry = this.getPendingEffectiveExpiry(row);
       if (!expiry || expiry.getTime() <= now) continue;
-      const key = `${row.editionId}`;
+      const key = `${row.productId}`;
       heldMap.set(key, (heldMap.get(key) || 0) + Number(row.quantity || 0));
     }
     for (const id of ids) out.set(id, (balMap.get(id) || 0) - (heldMap.get(id) || 0));
@@ -1429,7 +1610,11 @@ export class OrderService {
         // ATP gom BATCH (2 câu cố định) vì lý do subrequest nêu ở createOrder B2.
         const ownNeed = new Map<string, number>();
         for (const ln of lines) {
-          ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
+          // 0032: `edition_id` nullable nên không làm khóa Map được. Dùng
+          // `product_id` (NOT NULL). Với sách `product_id === edition_id` nên giá
+          // trị truyền xuống `getBatchATP` y hệt trước đây.
+          const key = ln.productId;
+          ownNeed.set(key, (ownNeed.get(key) || 0) + ln.quantity);
         }
     const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
     // TỒN VẬT LÝ GỘP 1 CÂU (30/09). Trước đây gọi `getBalance` TỪNG DÒNG — mỗi
@@ -1465,7 +1650,18 @@ export class OrderService {
     // `recordMovementsBatch` cho KẾT QUẢ Y HỆT, chỉ gom câu lệnh.
     await InventoryService.recordMovementsBatch(
       lines.map((ln) => ({
-        editionId: ln.editionId,
+        // 0032: `order_items.edition_id` nullable nên không truyền thẳng được.
+        // `product_id` NOT NULL và với sách thì BẰNG `edition_id`.
+        //
+        // 0033: `inventory_ledger.edition_id` cũng nullable. Hàng hóa KHÔNG có
+        // dòng `editions` nên phải để NULL — còn sách thì giữ nguyên để báo cáo
+        // và royalty vẫn tra được. Cờ `is_gift_line` không đủ vì quà tặng cũng
+        // có thể là sách; dùng `product_id` có trong `products` (không tốn query
+        // thêm vì đã tra ở bước 2).
+        editionId: ln.productId,
+        // 0033: hàng hóa ghi `edition_id = NULL` vào sổ kho. `order_items` chỉ
+        // giữ `product_id`; quyết định sách/hàng hóa đã có sẵn ở bước 2.
+        isBook: !ln.productId.startsWith('pr-'),
         quantityDelta: -ln.quantity,
         condition: 'NEW' as const,
       })),

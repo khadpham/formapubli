@@ -88,8 +88,8 @@ async function run() {
   ]);
   for (const e of ['ed-d1', 'ed-p1', 'ed-s1']) {
     await db.insert(schema.stockBalances).values([
-      { id: `sb-${e}`, editionId: e, warehouseId: WH, condition: 'NEW', physicalQuantity: 5000 },
-      { id: `sb-main-${e}`, editionId: e, warehouseId: WH_MAIN, condition: 'NEW', physicalQuantity: 5000 },
+      { id: `sb-${e}`, productId: e, editionId: e, warehouseId: WH, condition: 'NEW', physicalQuantity: 5000 },
+      { id: `sb-main-${e}`, productId: e, editionId: e, warehouseId: WH_MAIN, condition: 'NEW', physicalQuantity: 5000 },
     ]);
   }
 
@@ -329,7 +329,7 @@ async function run() {
   // ======================================================================
   console.log('\n=== R4. Bán ký gửi (không có đơn) — lấp giá bìa + đếm ra ===');
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-roy-consign-1', editionId: 'ed-p1', warehouseId: WH,
+    id: 'led-roy-consign-1', editionId: 'ed-p1', productId: 'ed-p1', warehouseId: WH,
     eventType: 'CONSIGNMENT_SOLD', quantityDelta: -4, condition: 'NEW',
     documentRef: 'CS-ROY-1', actorId: 'ROY-CASHIER',
     idempotencyKey: 'roy-consign-1',
@@ -381,11 +381,11 @@ async function run() {
       createdAt: ts,
     } as any);
     await db.insert(schema.orderItems).values({
-      id: `oi-roy-edge-${i}`, orderId: oid, editionId: 'ed-edge', quantity: 2,
+      id: `oi-roy-edge-${i}`, orderId: oid, editionId: 'ed-edge', productId: 'ed-edge', quantity: 2,
       unitCoverPrice: 200000, unitDiscountRate: 0.2, unitSellingPrice: 160000, totalAmount: 320000,
     } as any);
     await db.insert(schema.inventoryLedger).values({
-      id: `led-roy-edge-${i}`, editionId: 'ed-edge', warehouseId: WH,
+      id: `led-roy-edge-${i}`, editionId: 'ed-edge', productId: 'ed-edge', warehouseId: WH,
       eventType: 'DISPATCH_SALE', quantityDelta: -2, condition: 'NEW',
       documentRef: `ROY-EDGE-${i}`, actorId: 'ROY-CASHIER',
       correlationId: oid, idempotencyKey: `roy-edge-led-${i}`, recordedAt: ts,
@@ -413,11 +413,11 @@ async function run() {
     createdAt: '2026-12-31T17:00:00.000Z',
   } as any);
   await db.insert(schema.orderItems).values({
-    id: 'oi-roy-edge-out', orderId: 'ord-roy-edge-out', editionId: 'ed-edge', quantity: 100,
+    id: 'oi-roy-edge-out', orderId: 'ord-roy-edge-out', editionId: 'ed-edge', productId: 'ed-edge', quantity: 100,
     unitCoverPrice: 200000, unitDiscountRate: 0, unitSellingPrice: 200000, totalAmount: 20000000,
   } as any);
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-roy-edge-out', editionId: 'ed-edge', warehouseId: WH,
+    id: 'led-roy-edge-out', editionId: 'ed-edge', productId: 'ed-edge', warehouseId: WH,
     eventType: 'DISPATCH_SALE', quantityDelta: -100, condition: 'NEW',
     documentRef: 'ROY-EDGE-OUT', actorId: 'ROY-CASHIER',
     correlationId: 'ord-roy-edge-out', idempotencyKey: 'roy-edge-out-led',

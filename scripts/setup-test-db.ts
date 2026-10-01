@@ -27,6 +27,7 @@ import {
   discountApprovalRequests,
   deliveryOrders,
   deliveryOrderItems,
+  products,
 } from '../src/db/schema';
 import {
   DEFAULT_STAFF_ACCOUNTS,
@@ -140,6 +141,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       discountApprovalRequests,
       deliveryOrders,
       deliveryOrderItems,
+      products,
     },
   });
 
@@ -225,10 +227,20 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
 
   // 6. Số dư mở đầu: mỗi ấn bản +50 tại Kho Âu Cơ (ledger + balance song hành
   // để bất biến ledger-sum == balance luôn đúng cho kiểm toán).
+  //
+  // 0032: `stock_balances.product_id` / `order_items.product_id` NOT NULL + FK
+  // `products(id)`, và `PRAGMA foreign_keys` trên client `file:` là BẬT (đo được
+  // = 1) nên phải có dòng `products` trước khi insert.
+  //
+  // KHÔNG seed thủ công: trigger `editions_sync_products` (0032) đã tự tạo dòng
+  // `products` mirror mỗi khi một `editions` được INSERT — vì id sách trùng
+  // `editions.id`. Seed tay chỉ gây UNIQUE trùng. Bất biến được giữ ở đúng một
+  // nơi nên ấn bản tạo sau này (test hoặc vận hành) cũng tự có.
   for (const editionId of editionIds) {
     await testDb.insert(inventoryLedger).values({
       id: `led-opening-${editionId}`,
       editionId,
+      productId: editionId,
       warehouseId: 'wh-au-co',
       eventType: 'OPENING_BALANCE',
       quantityDelta: OPENING_QTY_PER_EDITION,
@@ -242,6 +254,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
     await testDb.insert(stockBalances).values({
       id: `sb-${editionId}-wh-au-co-NEW`,
       editionId,
+      productId: editionId,
       warehouseId: 'wh-au-co',
       condition: 'NEW',
       physicalQuantity: OPENING_QTY_PER_EDITION,

@@ -201,6 +201,10 @@ export class ConsignmentService {
 
         for (const bal of balances) {
           if (bal.physicalQuantity <= 0) continue;
+          // 0032: `stock_balances.edition_id` NULL = hàng hóa. Bảng ký gửi chỉ
+          // theo ấn bản (`consignment_statement_lines.edition_id` NOT NULL) nên
+          // bỏ dòng này, y hệt hành vi trước khi thêm cột `product_id`.
+          if (bal.editionId === null) continue;
           const ed = (
             await tx.select().from(editions).where(eq(editions.id, bal.editionId)).limit(1)
           )[0];

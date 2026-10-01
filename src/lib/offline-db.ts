@@ -10,6 +10,49 @@ export interface OfflineOrderItem {
   title: string;
   quantity: number;
   unitCoverPrice: number;
+  // 0031: dòng QUÀ của chương trình mốc tiền (bán 0đ). Phải sống sót từ lúc
+  // lưu IndexedDB tới lúc đồng bộ, nếu không thì lúc sync không biết dòng nào
+  // là quà và sẽ áp chiết khấu cả đơn cho nó.
+  isGiftLine?: boolean;
+  // Chiết khấu riêng của dòng (nếu có). Dòng quà luôn = 1, xem `toOfflineSyncItem`.
+  unitDiscountRate?: number;
+  promotionId?: string | null;
+}
+
+/** Payload một dòng đơn offline gửi lên `POST /api/orders`. */
+export interface OfflineSyncItem {
+  editionId: string;
+  quantity: number;
+  unitCoverPrice: number;
+  unitDiscountRate: number | undefined;
+  isGiftLine: boolean;
+  promotionId: string | null;
+}
+
+/**
+ * Dòng quà BẮT BUỘC mang `unitDiscountRate = 1` khi đồng bộ lên server.
+ *
+ * Lý do: `order.service.ts` định giá bằng `item.unitDiscountRate ?? discountRate`.
+ * Trước đây đường offline gửi `undefined` cho mọi dòng, nên dòng quà nhận chiết
+ * khấu CẢ ĐƠN (vd 10%) thay vì 100%: đơn offline 800.000đ + quà 300.000đ ghi
+ * `finalAmount` 1.040.000đ ⇒ **thu 240.000đ tiền món quà từ khách**. Đúng kịch
+ * bản hội chợ mất mạng, và nó im lặng — không ai thấy lỗi cho tới khi đối chiếu két.
+ *
+ * `wholeOrderGift` = đơn Tặng sách (BV-03): mọi dòng bán 0đ, giữ nguyên như cũ.
+ */
+export function toOfflineSyncItem(
+  item: OfflineOrderItem,
+  wholeOrderGift: boolean
+): OfflineSyncItem {
+  const isGiftLine = item.isGiftLine === true;
+  return {
+    editionId: item.editionId,
+    quantity: item.quantity,
+    unitCoverPrice: item.unitCoverPrice,
+    unitDiscountRate: isGiftLine || wholeOrderGift ? 1 : item.unitDiscountRate,
+    isGiftLine,
+    promotionId: item.promotionId ?? null,
+  };
 }
 
 export interface OfflineOrder {

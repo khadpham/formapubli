@@ -11,6 +11,43 @@ export interface CartItemInput {
   // P1a: mức giảm từng dòng tham gia hash (fallback = mức tổng đơn).
   // Không bind là lọt gian lận: giữ nguyên tổng đã duyệt, gắn 90% vào 1 dòng.
   unitDiscountRate?: number;
+  // 0031: dòng QUÀ của chương trình mốc tiền (giá bán 0đ).
+  isGiftLine?: boolean;
+  // 0031: quà thu ngân TỰ thêm — cần Quản lý duyệt, nên vẫn là phần của
+  // phê duyệt (khác quà tự động, xem `isAutoGiftLine`).
+  isManual?: boolean;
+}
+
+/**
+ * Dòng quà TỰ ĐỘNG (`is_gift_line = 1` và `is_manual = 0`): chương trình tự thêm
+ * khi đơn đạt mốc tiền. Ngoài phạm vi phê duyệt chiết khấu — không ai duyệt món
+ * quà, và nó không phải tiền khách trả — nên nó bị loại khỏi `cartHash` và khỏi
+ * phép so tổng tiền. Nếu không, mọi đơn "vừa có quà vừa cần duyệt chiết khấu" chết
+ * 409 vì hash lệch đúng bằng giá món quà.
+ *
+ * Quà TAY (`is_manual = 1`) thì ngược lại và PHẢI nằm lại trong hash + tổng
+ * tiền: nó là thứ cần người duyệt. Loại nó ra là biến "thêm quà tay sau khi duyệt"
+ * thành một đường lách duyệt không cần đụng DB.
+ */
+export function isAutoGiftLine(item: {
+  isGiftLine?: boolean;
+  isManual?: boolean;
+}): boolean {
+  return item?.isGiftLine === true && item?.isManual !== true;
+}
+
+/**
+ * Giá bìa (trước chiết khấu) của các dòng quà tự động trong `items` — đúng số
+ * tiền bị loại khỏi tổng. Dùng `priceLine` (nguồn sự thật chung) để lệch bao
+ * nhiêu cũng không vượt sai số làm tròn.
+ */
+function autoGiftSubtotal(items: CartItemInput[], fallbackRate: number): number {
+  return items.filter(isAutoGiftLine).reduce((sum, i) => {
+    const lineRate = Number.isFinite(i.unitDiscountRate as number)
+      ? (i.unitDiscountRate as number)
+      : fallbackRate;
+    return sum + priceLine(i.unitPrice, lineRate, i.quantity).subtotal;
+  }, 0);
 }
 
 export interface ActorContext {
@@ -99,6 +136,9 @@ function randomHex(byteLength: number): string {
  * - Khóa chặt theo warehouseId + orderCode để tránh đụng độ giữa các quầy/kho
  * - P1a: token mỗi dòng gồm cả mức giảm dòng (fallback = mức tổng) —
  *   không bind là lọt gian lận line-discount sau duyệt.
+ * - 0031: dòng quà TỰ ĐỘNG bị loại (xem `isAutoGiftLine`) — nó ngoài phạm vi
+ *   phê duyệt, nên có trong giỏ lúc chốt hay không cũng không được làm lệch
+ *   phê duyệt. Quà tay vẫn băm bình thường.
  */
 export function generateCanonicalCartHash(
   items: CartItemInput[],
@@ -106,7 +146,9 @@ export function generateCanonicalCartHash(
   warehouseId: string,
   orderCode: string
 ): string {
-  const sorted = [...items].sort((a, b) => a.editionId.localeCompare(b.editionId));
+  const sorted = items.filter((i) => !isAutoGiftLine(i)).sort((a, b) =>
+    a.editionId.localeCompare(b.editionId)
+  );
   const orderRateBp = Math.round(discountRate * 10000);
   const tokens = sorted.map((i) => {
     const lineRate = Number.isFinite(i.unitDiscountRate as number)
@@ -219,6 +261,10 @@ export class DiscountApprovalService {
         quantity: Math.floor(Number(item.quantity) || 0),
         unitPrice: editionPriceMap.get(`${item.editionId}`.trim()) || 0,
         unitDiscountRate: lineRate,
+        // Giữ cờ dòng quà: hash và tổng tiền phải loại quà tự động (xem
+        // `isAutoGiftLine`) — không có cờ thì không biết dòng nào là quà.
+        isGiftLine: item.isGiftLine === true,
+        isManual: item.isManual === true,
       };
     });
     if (canonicalItems.some((i) => i.quantity <= 0)) {
@@ -226,7 +272,17 @@ export class DiscountApprovalService {
     }
 
     // priceLine là nguồn sự thật chung cho cả giảm giá dòng lẫn giảm cả giỏ.
-    const pricedLines = canonicalItems.map((item) =>
+    // 0031: số tiền CHIẾT KHẤU chỉ tính trên dòng hàng bán — dòng quà tự động bị
+    // loại (nó không phải tiền khách trả, không ai duyệt nó). `order.service.ts`
+    // cũng bỏ đúng các dòng đó khỏi `calculatedSubtotal`, nên hai đầu khớp mà
+    // không cần nới sai số 0.01đ. Quà TAY vẫn tính vào đây.
+    const approvalItems = canonicalItems.filter((i) => !isAutoGiftLine(i));
+    if (approvalItems.length === 0) {
+      throw AppError.invalid(
+        'Giỏ hàng không còn dòng hàng bán để xin duyệt chiết khấu (chỉ có dòng quà).'
+      );
+    }
+    const pricedLines = approvalItems.map((item) =>
       priceLine(item.unitPrice, item.unitDiscountRate, item.quantity)
     );
     const originalAmount = pricedLines.reduce((sum, line) => sum + line.subtotal, 0);
@@ -720,7 +776,13 @@ export class DiscountApprovalService {
    */
   static async assertValidForCheckout(params: {
     requestId: string;
-    items: Array<{ editionId: string; quantity: number }>;
+    items: Array<{
+      editionId: string;
+      quantity: number;
+      unitDiscountRate?: number;
+      isGiftLine?: boolean;
+      isManual?: boolean;
+    }>;
     discountRate: number;
     warehouseId: string;
     actorId: string;
@@ -749,7 +811,13 @@ export class DiscountApprovalService {
         : [];
     const coverMap = new Map<string, number>();
     for (const r of coverRows) coverMap.set(r.id, Number(r.coverPrice || 0));
-    const canonical = params.items.map((i) => ({
+    // 0031: dòng quà tự động không thuộc phạm vi phê duyệt ⇒ băm trên tập dòng
+    // KHÔNG phải quà, đúng như `createRequest` và `consumeApproval` đã làm.
+    // Nhánh FORBIDDEN cứng bên dưới KHÔNG được nới: nó chặn tráo giỏ thật, và
+    // chỉ dòng quà TỰ ĐỘNG mới thoát được (quà tay vẫn nằm trong hash).
+    const canonical = params.items
+      .filter((i) => !isAutoGiftLine(i))
+      .map((i) => ({
       editionId: `${i.editionId || ''}`.trim(),
       quantity: Math.floor(Number(i.quantity) || 0),
       unitPrice: coverMap.get(`${i.editionId || ''}`.trim()) || 0,
@@ -807,13 +875,20 @@ export class DiscountApprovalService {
       );
     }
 
+    // 0031: dòng quà TỰ ĐỘNG ngoài phạm vi phê duyệt. `order.service.ts` đã lọc
+    // trước khi gọi, nhưng ta lọc lại ở đây để mọi call site (kể cả call site
+    // mới, ví dụ đường offline) đều đúng mà không cần nhớ quy tắc. Quà TAY vẫn
+    // ở lại: đó là thứ cần duyệt.
+    const payableItems = currentItems.filter((i) => !isAutoGiftLine(i));
+    const giftSubtotal = autoGiftSubtotal(currentItems, discountRate);
+
     // Chống tráo giỏ hàng: giỏ hàng thanh toán phải khớp 100% với giỏ đã duyệt.
     // MERGE: hash theo `request.orderCode` (mã đã khoá lúc tạo yêu cầu) chứ không
     // theo orderCode của đơn đang tạo. assertValidForCheckout() phía trên cũng
     // dùng appr.orderCode, nên hai đầu phải dùng CÙNG một mã — nếu lúc tiêu thụ
     // lấy mã đơn mới thì hash luôn lệch và mọi đơn chiết khấu đều chết.
     const currentHash = generateCanonicalCartHash(
-      currentItems,
+      payableItems,
       discountRate,
       warehouseId,
       request.orderCode
@@ -824,9 +899,19 @@ export class DiscountApprovalService {
         'Giỏ hàng đã bị thay đổi sau khi được duyệt chiết khấu. Vui lòng xin duyệt lại.'
       );
     }
+    // Dung sai 0.01đ như cũ, CỘNG thêm đúng giá trị dòng quà tự động: số tiền
+    // lúc chốt có thể đã kèm giá món quà (đơn offline, call site chưa lọc)
+    // trong khi bản ghi duyệt thì không. Lệch ĐÚNG BẰNG tiền quà là hợp lệ; lệch
+    // bất kỳ số nào khác vẫn bị chặn. Quà tay không nằm trong `giftSubtotal` nên
+    // vẫn phải khớp tuyệt đối — nếu không thì thêm quà tay là đường lách duyệt.
+    const amountMatches = (approved: number, actual: number): boolean =>
+      Math.abs(approved - actual) <= 0.01 ||
+      Math.abs(approved - (actual - giftSubtotal)) <= 0.01;
     if (
-      (originalAmount !== undefined && Math.abs(request.originalAmount - originalAmount) > 0.01) ||
-      (discountAmount !== undefined && Math.abs(request.discountAmount - discountAmount) > 0.01) ||
+      (originalAmount !== undefined && !amountMatches(request.originalAmount, originalAmount)) ||
+      (discountAmount !== undefined && !amountMatches(request.discountAmount, discountAmount)) ||
+      // finalAmount so KHÔNG nới: dòng quà bán 0đ nên nó không đổi tiền khách
+      // phải trả — lệch ở đây là lệch tiền thật.
       (finalAmount !== undefined && Math.abs(request.finalAmount - finalAmount) > 0.01)
     ) {
       throw AppError.conflict('Tổng tiền của giỏ không khớp yêu cầu đã được duyệt.');

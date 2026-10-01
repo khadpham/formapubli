@@ -38,6 +38,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
+import { computeGifts, type PromotionCampaign } from '@/lib/promotion-engine';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
@@ -72,9 +73,10 @@ import {
    updateOfflineOrderPaymentState,
    attachOfflineOrderPaymentProof,
    applySyncErrorToOfflineOrder,
-   OfflineOrder,
-   OfflinePaymentState,
-   PaymentProofPhoto,
+OfflineOrder,
+    OfflinePaymentState,
+    PaymentProofPhoto,
+    toOfflineSyncItem,
 } from '@/lib/offline-db';
 import { UserRole } from '@/lib/roles';
 import { priceLine } from '@/lib/pricing';
@@ -135,6 +137,10 @@ interface CartItem {
   coverPrice: number;
   quantity: number;
   stockAvailable: number;
+  // 0031: dòng quà của chương trình mốc tiền (bán 0đ). Đường offline PHẢI giữ
+  // cờ này tới lúc đồng bộ — mất cờ thì dòng quà bị áp chiết khấu cả đơn và
+  // đơn offline thu thiếu tiền (xem `toOfflineSyncItem`).
+  isGiftLine?: boolean;
   // 1.0: tồn khả dụng ATP tại thời điểm thêm (null = chưa tra / offline)
   atpAvailable?: number | null;
 }
@@ -307,6 +313,11 @@ export function PosCheckoutTerminal({
   const [showSpecialBooks, setShowSpecialBooks] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('Khách lẻ');
+  // Khuyến mại: chiến dịch lấy từ server (nguồn sự thật) để badge "Quà" hiện
+  // ngay khi giỏ đủ mốc. `dismissedGiftProductIds` = sản phẩm thu ngân đã bấm
+  // "Bỏ quà" — engine không tặng lại nữa.
+  const [promoCampaigns, setPromoCampaigns] = useState<PromotionCampaign[]>([]);
+  const [dismissedGiftProductIds, setDismissedGiftProductIds] = useState<ReadonlySet<string>>(new Set());
   const [discountRate, setDiscountRate] = useState(0.0);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'QR_CODE'>('CASH');
   const [fiscalScope, setFiscalScope] = useState<'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX'>('INTERNAL_MANAGEMENT');
@@ -769,12 +780,9 @@ export function PosCheckoutTerminal({
               allowOverdraft: true,
               isGift: (order as any).isGift || order.discountRate === 1,
               giftReason: (order as any).giftReason || order.note,
-              items: order.items.map((it) => ({
-                editionId: it.editionId,
-                quantity: it.quantity,
-                unitCoverPrice: it.unitCoverPrice,
-                unitDiscountRate: (order as any).isGift || order.discountRate === 1 ? 1 : undefined,
-              })),
+              items: order.items.map((it) =>
+                toOfflineSyncItem(it, Boolean((order as any).isGift) || order.discountRate === 1)
+              ),
             }),
           });
           const resData = await res.json();
@@ -1612,6 +1620,64 @@ export function PosCheckoutTerminal({
   const discountAmount = useMemo(() => pricedCart.reduce((sum, line) => sum + line.discountAmount, 0), [pricedCart]);
   const finalAmount = useMemo(() => pricedCart.reduce((sum, line) => sum + line.finalAmount, 0), [pricedCart]);
   const totalCopies = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Lấy cấu hình khuyến mại từ server (nguồn sự thật). Thất bại thì coi như
+  // không có chương trình — POS vẫn bán bình thường, chỉ không hiện quà.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/promotions', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || !json?.success) return;
+        const shaped: PromotionCampaign[] = (json.promotions || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          isActive: c.isActive,
+          startsAt: c.startsAt ?? null,
+          endsAt: c.endsAt ?? null,
+          gifts: (c.gifts || []).map((g: any) => ({
+            minSubtotal: g.minSubtotal,
+            productId: g.productId,
+            giftQuantity: g.giftQuantity,
+          })),
+        }));
+        setPromoCampaigns(shaped);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // eligibleBase = tổng giá GỐC các dòng thường (giỏ `cart` KHÔNG chứa dòng quà).
+  const giftItems = useMemo<CartItem[]>(() => {
+    const eligibleBase = cart.reduce((s, c) => s + c.coverPrice * c.quantity, 0);
+    const computed = computeGifts({
+      eligibleBase,
+      campaigns: promoCampaigns,
+      dismissed: dismissedGiftProductIds,
+    });
+    return computed
+      .map((g) => {
+        const book = books.find((b) => b.id === g.productId);
+        if (!book) return null;
+        return {
+          editionId: book.id,
+          code: book.code,
+          title: book.title,
+          coverPrice: book.coverPrice,
+          quantity: g.quantity,
+          stockAvailable: book.totalStock,
+          isGiftLine: true,
+        } as CartItem;
+      })
+      .filter(Boolean) as CartItem[];
+  }, [cart, promoCampaigns, dismissedGiftProductIds, books]);
+
+  const dismissGift = (productId: string) => {
+    setDismissedGiftProductIds((prev) => new Set([...Array.from(prev), productId]));
+  };
+
   // Nút chính đổi nhãn theo hình thức thanh toán: chuyển khoản/QR tạo đơn
   // PENDING trước rồi mới hiện QR, nên không còn nhãn "khấu trừ kho" ngay.
   const isDigitalCheckout = !isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE');
@@ -1820,12 +1886,15 @@ export function PosCheckoutTerminal({
            note: giftNote,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
-          items: cart.map((c) => ({
+          items: [...cart, ...giftItems].map((c) => ({
             editionId: c.editionId,
             code: c.code,
             title: c.title,
             quantity: c.quantity,
             unitCoverPrice: c.coverPrice,
+            // Cờ dòng quà phải đi kèm xuống IndexedDB, không thì lúc đồng bộ
+            // không còn dấu vết để bắt dòng này bán 0đ.
+            isGiftLine: c.isGiftLine === true,
           })),
           subtotal,
           discountAmount: isGift ? subtotal : discountAmount,
@@ -1948,9 +2017,13 @@ export function PosCheckoutTerminal({
             discountApprovalId: approvedDiscountRequestId || undefined,
             note,
             confirmImmediately: false,
-            items: cart.map((item) => ({
+            items: [...cart, ...giftItems].map((item) => ({
               editionId: item.editionId,
               quantity: item.quantity,
+              // Dòng quà tự động (engine): gửi cờ để server tự xác minh lại.
+              // Dòng giả bị server hạ về thường — cờ này chỉ là GỢI Ý.
+              isGiftLine: item.isGiftLine === true,
+              unitDiscountRate: item.isGiftLine === true ? 1 : undefined,
             })),
           }),
         });
@@ -1988,7 +2061,7 @@ export function PosCheckoutTerminal({
           // thích ở `items` trong TransferPaymentSession: nếu không, phiếu thu in
           // `items` từ GIỎ ĐANG SỐNG, mà giỏ rỗng sau khi F5 ⇒ phiếu có tổng
           // tiền đúng nhưng không có dòng sách nào.
-          items: cart.map((c) => ({ editionId: c.editionId, code: c.code, title: c.title, quantity: c.quantity, price: c.coverPrice })),
+          items: [...cart, ...giftItems].map((c) => ({ editionId: c.editionId, code: c.code, title: c.title, quantity: c.quantity, price: c.coverPrice })),
           // Cùng nguyên tắc với `amount`: mọi con số TIỀN trên màn hình thu
           // phải là con số server đã ghi vào đơn, không phải số client tự tính.
           // Nếu không, thu ngân nhìn thấy "giảm 16.830đ" trong khi đơn thật ghi
@@ -2039,8 +2112,22 @@ export function PosCheckoutTerminal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: orderUuid,
-          orderCode,
-           idempotencyKey,
+          // KHÔNG gửi `orderCode` lên — giống hệt nhánh chuyển khoản (:1999).
+          // Server cấp mã 13 ký tự bằng bộ đếm NGUYÊN TẢ ở DB. Bắt buộc: hội
+          // chợ có nhiều máy POS, mỗi máy tự đếm thì hai máy cùng tạo đơn đầu
+          // ngày sẽ ra trùng mã, mà `order_code` là UNIQUE nên đơn của máy sau
+          // KHÔNG GHI ĐƯỢC. Trước đây client gửi mã tự sinh 29 ký tự ⇒
+          // `params.orderCode` luôn có giá trị ⇒ bộ đếm không bao giờ chạy và
+          // tính năng này là code chết.
+          //
+          // ĐO ĐƯỢC trên production trước khi sửa: 49 đơn chuyển khoản dài 13
+          // ký tự ✅, nhưng 10 đơn TIỀN MẶT hội chợ + 3 đơn tiền mặt văn phòng
+          // vẫn dài 29 ký tự ❌, 1 đơn cũ 18 ký tự.
+          //
+          // An toàn với duyệt chiết khấu: `consumeApproval` băm hash theo
+          // `request.orderCode` (mã đã khoá lúc xin duyệt) chứ không theo mã
+          // của đơn đang tạo — xem `discount-approval.service.ts:886-894`.
+          idempotencyKey,
            createdAt: orderTimestamp,
            warehouseId: selectedWarehouseId,
            channel,
@@ -2055,10 +2142,11 @@ export function PosCheckoutTerminal({
           note,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
-          items: cart.map((item) => ({
+          items: [...cart, ...giftItems].map((item) => ({
             editionId: item.editionId,
             quantity: item.quantity,
-            unitDiscountRate: isGift ? 1 : undefined,
+            unitDiscountRate: isGift ? 1 : item.isGiftLine === true ? 1 : undefined,
+            isGiftLine: item.isGiftLine === true,
           })),
         }),
       });
@@ -3384,6 +3472,30 @@ export function PosCheckoutTerminal({
                   </div>
                 ))
               )}
+              {/* Dòng quà tự động từ chương trình — desktop */}
+              {giftItems.map((g) => (
+                <div
+                  key={`gift-${g.editionId}`}
+                  className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-2"
+                >
+                  <div className="truncate flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] font-bold text-amber-700">[{g.code}]</span>
+                      <span className="text-xs font-bold text-slate-800 truncate">{g.title}</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-extrabold">Quà</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-500">{g.quantity} × 0 đ</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Bỏ quà: ${g.title}`}
+                    onClick={() => dismissGift(g.editionId)}
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 text-[11px] font-bold hover:bg-amber-100"
+                  >
+                    Bỏ quà
+                  </button>
+                </div>
+              ))}
             </div>
 
             {/* Customer & Discount Controls */}
@@ -4467,6 +4579,26 @@ export function PosCheckoutTerminal({
                     <span className="font-mono font-bold text-slate-900 shrink-0">
                       {(item.quantity * item.coverPrice).toLocaleString('vi-VN')} đ
                     </span>
+                  </div>
+                ))}
+                {/* Dòng quà tự động từ chương trình — giá 0đ, badge "Quà", có nút Bỏ quà */}
+                {giftItems.map((g) => (
+                  <div key={`gift-${g.editionId}`} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 bg-amber-50/60 rounded-lg px-1.5">
+                    <div className="truncate flex-1 pr-2">
+                      <span className="font-bold text-slate-800 truncate block">
+                        {g.title}{' '}
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-extrabold align-middle">Quà</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">{g.quantity} × 0 đ</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => dismissGift(g.editionId)}
+                      aria-label={`Bỏ quà: ${g.title}`}
+                      className="shrink-0 px-2 py-1 rounded-lg bg-white border border-amber-300 text-amber-800 text-[10px] font-bold hover:bg-amber-100"
+                    >
+                      Bỏ quà
+                    </button>
                   </div>
                 ))}
               </div>

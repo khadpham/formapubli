@@ -58,7 +58,7 @@ async function run() {
     id: 'ed-ux', code: 'UX01', workId: 'wk-ux', title: 'Sách UX', coverPrice: 50000, isbn: '9780000000001', isbnLast4: '0001',
   } as any);
   await db.insert(schema.stockBalances).values({
-    id: 'sb-ux', editionId: 'ed-ux', warehouseId: 'wh-ux-stock', condition: 'NEW', physicalQuantity: 50,
+    id: 'sb-ux', productId: 'ed-ux', editionId: 'ed-ux', warehouseId: 'wh-ux-stock', condition: 'NEW', physicalQuantity: 50,
   });
 
   const post = (fn: any, body: any, headers: Record<string, string> = {}) =>
@@ -130,7 +130,7 @@ async function run() {
     id: 'wh-ux-zero', code: 'UX_0', name: 'Kho hội chợ đã bán hết', warehouseType: 'FAIR_EVENT', isActive: true, isSellableOnPos: true,
   });
   await db.insert(schema.stockBalances).values({
-    id: 'sb-zero', editionId: 'ed-ux', warehouseId: 'wh-ux-zero', condition: 'NEW', physicalQuantity: 0,
+    id: 'sb-zero', productId: 'ed-ux', editionId: 'ed-ux', warehouseId: 'wh-ux-zero', condition: 'NEW', physicalQuantity: 0,
   });
   const delZero = await delReq(deleteWarehouse, 'wh-ux-zero', { Cookie: mgr.cookie });
   ok('xóa kho tồn=0 (có bucket rỗng) = 200, KHÔNG lỗi FK 500', delZero.status === 200,

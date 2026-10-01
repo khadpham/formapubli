@@ -87,8 +87,8 @@ async function run() {
     { id: 'ed-h21', code: 'H21', workId: 'work-h21', title: 'Sach H21', isbn: '9780000000002', isbnLast4: '0002', coverPrice: 200000, isActive: true },
   ]);
   await db.insert(schema.stockBalances).values([
-    { id: 'sb-h01', editionId: 'ed-h01', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 100 },
-    { id: 'sb-h21', editionId: 'ed-h21', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-h01', productId: 'ed-h01', editionId: 'ed-h01', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-h21', productId: 'ed-h21', editionId: 'ed-h21', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 100 },
   ]);
 
   const baseItems = [
