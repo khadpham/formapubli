@@ -108,6 +108,25 @@ async function run() {
   }
   console.log('  -> OK: Thiết bị A cũ bị chặn hoàn toàn (Bảo vệ S-01 nguyên vẹn 100%).');
 
+  // 7. Row bị XOÁ hẳn (máy khác đăng xuất, hoặc quản lý giải phóng phiên):
+  // checkCashierLease PHẢI trả false.
+  //
+  // PHẠM VI THẬT CỦA CASE NÀY (đã mutation-test: bỏ bản vá rowsAffected thì case
+  // này VẪN xanh) — nó bảo vệ nhánh `if (!row) return false` đã có sẵn, KHÔNG
+  // phủ được bản vá `rowsAffected` trong nhánh hồi sinh. Lý do: nhánh hồi sinh
+  // chỉ chạy khi row CÒN tồn tại, nên UPDATE luôn khớp 1 dòng; chỉ khi row bị xoá
+  // đúng khoảnh khắc giữa SELECT và UPDATE (race) thì mới ra 0 dòng. Tái hiện
+  // race đó cần can thiệp giữa hai câu lệnh, test tuần tự không làm được.
+  // Bản vá rowsAffected vẫn giữ vì nó rẻ (0 dòng code thừa), đồng bộ với
+  // renewCashierLease, và đúng ở nhánh race — nhưng đừng tưởng case này phủ nó.
+  console.log('Case 7: Row phiên bị xoá hẳn (đăng xuất/giải phóng phiên) -> phải bị từ chối...');
+  await db.delete(activeSessions).where(eq(activeSessions.staffId, 'NV-01'));
+  const afterRowDeleted = await checkCashierLease('NV-01', sessionDeviceA);
+  if (afterRowDeleted) {
+    throw new Error('FAIL: Row đã bị xoá mà checkCashierLease vẫn trả true.');
+  }
+  console.log('  -> OK: Row không còn thì bị từ chối.');
+
   console.log('=== TẤT CẢ CÁC CASE ĐỀU PASS! ===');
 }
 

@@ -802,15 +802,21 @@ export async function checkCashierLease(staffId: string, sessionId?: string): Pr
 
   // S-01/iOS: Cùng phiên (sessionId khớp, chưa bị máy khác chiếm quyền):
   // Tự động hồi sinh lease khi thiết bị thức dậy (resume sau sleep/background trên iOS WebKit).
+  //
+  // PHẢI kiểm `rowsAffected === 1`, giống hệt `renewCashierLease` bên dưới.
+  // Trả `true` vô điều kiện sau khi UPDATE là lỗ an toàn: nếu row bị XOÁ (máy
+  // khác vừa đăng xuất, hoặc quản lý giải phóng phiên) trước khi lệnh UPDATE
+  // chạy, lệnh UPDATE 0 dòng mà hàm vẫn báo hợp lệ → máy cũ sống sót đúng lúc
+  // lẽ ra phải bị chặn. Đây là lớp hàng rào cuối của S-01, không được bỏ qua.
   try {
-    await db
+    const res: any = await db
       .update(activeSessions)
       .set({
         lastSeenAt: nowIso,
         leaseExpiresAt: leaseExpiryIso(Date.now()),
       })
       .where(sql`${activeSessions.staffId} = ${staffId} AND ${activeSessions.sessionId} = ${sessionId}`);
-    return true;
+    return (res?.rowsAffected ?? 0) === 1;
   } catch {
     return false;
   }

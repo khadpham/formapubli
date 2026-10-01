@@ -150,12 +150,22 @@ export function MasterAppShell({
     const timer = setInterval(beat, 5 * 60 * 1000);
     void beat(); // Stamp ngay khi vào ca để offline gate có mốc, không chờ 5 phút.
 
-    // S-01/iOS: WebKit đóng băng setInterval khi khoá máy / chuyển app.
-    // Lắng nghe visibilitychange và focus để gia hạn ngay tức thì khi mở lại màn hình.
+    // S-01/iOS: WebKit và Chrome đóng băng setInterval khi khoá máy / chuyển app.
+    // Lắng nghe visibilitychange và focus để gia hạn ngay khi mở lại màn hình —
+    // không có nó thì iOS đóng băng timer và thu ngân bị đuổi dù không máy nào
+    // tranh chấp (S-01b, xem docs/superpowers/plans/2026-09-24-pos-hardening-abc-master-plan.md §4.2).
+    //
+    // PHẢI throttle: `focus` bắn liên tục khi người dùng chuyển qua lại giữa các
+    // cửa sổ, và `visibilitychange` bắn cả khi quay lại từ app ngân hàng. Bắn
+    // request thô tới /api/auth/heartbeat mỗi lần là lãng phí (và Workers free
+    // có trần subrequest mỗi request).
+    let lastBeatAt = 0;
     const handleWakeup = () => {
-      if (document.visibilityState === 'visible') {
-        void beat();
-      }
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastBeatAt < 30_000) return;
+      lastBeatAt = now;
+      void beat();
     };
     document.addEventListener('visibilitychange', handleWakeup);
     window.addEventListener('focus', handleWakeup);
