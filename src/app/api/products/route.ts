@@ -12,6 +12,9 @@ export const dynamic = 'force-dynamic';
  * POST /api/products { code, name, sellingPrice, costPrice?, barcode?, description?, isGiftItem? }
  *
  * Chỉ Chủ sở hữu / Quản lý được nhập — thu ngân KHÔNG tạo được hàng hóa.
+ *
+ * `costPrice` KHÔNG còn được nhận: giá vốn đã chốt là chưa lộ ra lúc này.
+ * Nếu gửi lên, `ProductService.create` BỎ QUA — không lưu, không trả lại.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -36,9 +39,12 @@ export async function POST(req: NextRequest) {
     const created = await ProductService.create({
       code: body.code,
       name: body.name,
-      kind: body.kind,
+      // KHÔNG truyền `kind`: endpoint này CHỈ tạo hàng hóa. Trước đây nhận thẳng
+      // `body.kind`, nên client gửi `kind:"BOOK"` tạo ra sản phẩm `productKind='BOOK'`
+      // mà `listGoods` lọc `= 'GOODS'` ⇒ sản phẩm biến mất khỏi chính màn hình
+      // này và không sửa được nữa. Bỏ hẳn tham số, để service mặc định 'GOODS'.
       sellingPrice: body.sellingPrice ?? body.price ?? 0,
-      costPrice: body.costPrice,
+      // Không truyền `costPrice`: đã chốt không nhập giá vốn lúc này.
       barcode: body.barcode,
       description: body.description,
       isGiftItem: body.isGiftItem === true,

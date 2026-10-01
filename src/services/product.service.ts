@@ -25,6 +25,12 @@ export interface CreateProductInput {
   name: string;
   kind?: ProductKind;
   sellingPrice: number;
+  /**
+   * KHÔNG dùng — giá vốn chưa được nhập ở giai đoạn này (chốt #4).
+   * Key vẫn còn trong type để route cũ truyền `costPrice` không làm TypeScript
+   * đỏ; `create` CỐ Ý BỎ QUA nó và luôn ghi `cost_price = NULL`.
+   * Muốn mở lại: bỏ comment ở `create` + `update` và xoá dòng này.
+   */
   costPrice?: number | null;
   barcode?: string | null;
   description?: string | null;
@@ -34,12 +40,34 @@ export interface CreateProductInput {
 export interface UpdateProductInput {
   name?: string;
   sellingPrice?: number;
+  /** @see {@link CreateProductInput.costPrice} — cố ý bỏ qua. */
   costPrice?: number | null;
   barcode?: string | null;
   description?: string | null;
   isGiftItem?: boolean;
   isActive?: boolean;
 }
+
+/**
+ * DANH SÁCH CỘT ĐƯỢC PHÉP LỘ RA NGOÀI.
+ *
+ * `cost_price` CỐ Ý VẮNG MẶT (chốt #4 — giá vốn chưa lên UI). Không dùng
+ * `db.select()` không giới hạn rồi `delete row.costPrice`: SQL vẫn ĐỌC cột đó
+ * từ DB (không tiết kiệm gì) và dễ sót ở một hàm mới. Liệt kê tường minh ở đây
+ * ⇒ thêm cột nhạy cảm sau này mặc định KHÔNG lọt.
+ */
+const PUBLIC_COLUMNS = {
+  id: products.id,
+  code: products.code,
+  name: products.name,
+  productKind: products.productKind,
+  sellingPrice: products.sellingPrice,
+  barcode: products.barcode,
+  description: products.description,
+  isGiftItem: products.isGiftItem,
+  isActive: products.isActive,
+  createdAt: products.createdAt,
+} as const;
 
 /** EAN-13: 13 chữ số. Mã vạch sách (ISBN-13) cũng là EAN-13 nên không loại trừ. */
 function normalizeBarcode(raw: string | null | undefined): string | null {
@@ -137,19 +165,29 @@ export const ProductService = {
       name,
       productKind: input.kind === 'BOOK' ? 'BOOK' : 'GOODS',
       sellingPrice: assertPrice(input.sellingPrice, 'Giá bán'),
-      costPrice: input.costPrice == null ? null : assertPrice(input.costPrice, 'Giá vốn'),
+      // `input.costPrice` CỐ Ý bị bỏ qua (chốt #4). Muốn nhập giá vốn thì
+      // thay dòng này bằng:
+      //   costPrice: input.costPrice == null ? null : assertPrice(input.costPrice, 'Giá vốn'),
+      costPrice: null,
       barcode,
       description: input.description ? String(input.description).trim() : null,
       isGiftItem: input.isGiftItem ?? false,
       isActive: true,
     };
     await db.insert(products).values(row);
-    return row;
+    // Đọc lại bằng `PUBLIC_COLUMNS` để `create` trả về ĐÚNG shape của
+    // `listGoods`/`update` — không có `costPrice` lọt ra JSON.
+    const inserted = await db
+      .select(PUBLIC_COLUMNS)
+      .from(products)
+      .where(eq(products.id, row.id))
+      .limit(1);
+    return inserted[0];
   },
 
   async update(id: string, input: UpdateProductInput) {
     const existing = await db
-      .select()
+      .select(PUBLIC_COLUMNS)
       .from(products)
       .where(eq(products.id, id))
       .limit(1);
@@ -164,10 +202,11 @@ export const ProductService = {
     if (input.sellingPrice !== undefined) {
       patch.sellingPrice = assertPrice(input.sellingPrice, 'Giá bán');
     }
-    if (input.costPrice !== undefined) {
-      patch.costPrice =
-        input.costPrice === null ? null : assertPrice(input.costPrice, 'Giá vốn');
-    }
+    // `input.costPrice` CỐ Ý bị bỏ qua (chốt #4). Muốn mở lại thì bỏ comment:
+    // if (input.costPrice !== undefined) {
+    //   patch.costPrice =
+    //     input.costPrice === null ? null : assertPrice(input.costPrice, 'Giá vốn');
+    // }
     if (input.barcode !== undefined) {
       const barcode = normalizeBarcode(input.barcode);
       await assertBarcodeFree(barcode, id);
@@ -181,7 +220,11 @@ export const ProductService = {
 
     if (Object.keys(patch).length === 0) return existing[0];
     await db.update(products).set(patch).where(eq(products.id, id));
-    const after = await db.select().from(products).where(eq(products.id, id)).limit(1);
+    const after = await db
+      .select(PUBLIC_COLUMNS)
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1);
     return after[0];
   },
 
@@ -194,7 +237,7 @@ export const ProductService = {
       conds.push(or(like(products.name, q), like(products.code, q), like(products.barcode, q))!);
     }
     return db
-      .select()
+      .select(PUBLIC_COLUMNS)
       .from(products)
       .where(and(...conds))
       .orderBy(desc(products.createdAt))
@@ -210,7 +253,7 @@ export const ProductService = {
     const code = String(barcode || '').replace(/[\s-]/g, '');
     if (!/^\d{13}$/.test(code)) return [];
     return db
-      .select()
+      .select(PUBLIC_COLUMNS)
       .from(products)
       .where(and(eq(products.barcode, code), eq(products.isActive, true)))
       .limit(5);

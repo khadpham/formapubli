@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
  *
  * KHÔNG cho đổi `code` sau khi đã nhập: mã là mã vạch người bán dán lên sản
  * phẩm, đổi giữa chừng làm hàng cũ không tra được. Muốn đổi thì tạo mới.
+ *
+ * `costPrice` KHÔNG còn được nhận — xem giải thích ở `/api/products/route.ts`.
  */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -29,7 +31,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const updated = await ProductService.update(id, {
       name: body.name,
       sellingPrice: body.sellingPrice ?? body.price,
-      costPrice: body.costPrice,
+      // Không truyền `costPrice`: đã chốt không nhập giá vốn lúc này.
       barcode: body.barcode,
       description: body.description,
       isGiftItem: body.isGiftItem,

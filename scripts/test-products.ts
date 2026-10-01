@@ -13,6 +13,9 @@
  *  5. Giá âm / NaN bị chặn.
  *  6. `is_gift_item` chỉ là GỢI Ý — không chặn tạo sản phẩm thường (chốt #22).
  *  7. Không cho đổi `code` sau khi đã nhập.
+ *  8. `cost_price` (giá vốn) phải BỊ CHẶN ở mọi đường vào và KHÔNG lọt ra:
+ *     gửi lên bị bỏ qua, và không có key `costPrice` trong bất kỳ dòng trả về
+ *     nào — kể cả khi DB đã có giá vốn (chốt #4).
  */
 import assert from 'node:assert';
 import { createClient } from '@libsql/client';
@@ -74,7 +77,6 @@ async function main() {
   ok('mã lưu đúng', created.code === goodCode);
   ok('kind = GOODS', created.productKind === 'GOODS');
   ok('giá bán giữ nguyên', created.sellingPrice === 89000);
-  ok('giá vốn lưu được nhưng KHÔNG lên UI', created.costPrice === 45000);
   ok('mã vạch chuẩn hóa', created.barcode === `8930${suffix}012`);
 
   console.log('\n--- 2. Chặn mã không có tiền tố SP- ---');
@@ -170,6 +172,62 @@ async function main() {
   console.log('\n--- 10. Sách KHÔNG lẫn vào danh sách hàng hóa ---');
   const list = await ProductService.listGoods({ includeInactive: true });
   ok('không có sản phẩm kind=BOOK trong danh sách hàng hóa', list.every((p: any) => p.productKind === 'GOODS'));
+
+  // --- 11. GIÁ VỐN KHÔNG ĐƯỢC LỘ (chốt #4) ---
+  // Gửi `costPrice` lên phải bị BỎ QUA (không nhận, không ghi), và không key
+  // `costPrice` nào được trả ra — kể cả khi DB đã có giá vốn, vì đó mới là
+  // trạng thái nguy hiểm thật sự.
+  console.log('\n--- 11. cost_price không lộ ra ngoài ---');
+  const rawCost = async (id: string) => {
+    const r = await db.execute({
+      sql: 'SELECT cost_price FROM products WHERE id = ?',
+      args: [id],
+    });
+    return (r.rows[0] as any)?.cost_price ?? null;
+  };
+
+  ok(
+    'create() nhận costPrice 45000 nhưng DB vẫn NULL',
+    (await rawCost(created.id)) === null,
+    `cost_price thật: ${await rawCost(created.id)}`
+  );
+  ok('create() KHÔNG trả key costPrice', !('costPrice' in created));
+
+  const patched = await ProductService.update(created.id, {
+    name: 'Áo mưa gấp (v3)',
+    costPrice: 12345,
+  });
+  ok(
+    'update() nhận costPrice 12345 nhưng DB vẫn NULL',
+    (await rawCost(created.id)) === null,
+    `cost_price thật: ${await rawCost(created.id)}`
+  );
+  ok('update() KHÔNG trả key costPrice', !('costPrice' in patched));
+
+  // Tương lai: ai đó bật lại giá vốn và DB có giá thật ⇒ API vẫn im.
+  await db.execute({
+    sql: 'UPDATE products SET cost_price = 55555 WHERE id = ?',
+    args: [created.id],
+  });
+  ok('setup: DB đã có cost_price = 55555', (await rawCost(created.id)) === 55555);
+  const listed = await ProductService.listGoods({ includeInactive: true });
+  ok(
+    'listGoods() không có key costPrice dù DB có giá vốn',
+    listed.every((p: any) => !('costPrice' in p))
+  );
+  const scanned = await ProductService.findByBarcode(`8930${suffix}012`);
+  ok(
+    'findByBarcode() không có key costPrice dù DB có giá vốn',
+    scanned.every((p: any) => !('costPrice' in p))
+  );
+  ok(
+    'update() đọc lại cũng không có key costPrice',
+    !('costPrice' in (await ProductService.update(created.id, { name: 'Áo mưa gấp (v4)' })))
+  );
+  await db.execute({
+    sql: 'UPDATE products SET cost_price = NULL WHERE id = ?',
+    args: [created.id],
+  });
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {
