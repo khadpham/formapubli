@@ -26,6 +26,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { parseDbTimestamp } from '@/lib/db-timestamp';
+import { HourlyOrdersChart } from './HourlyOrdersChart';
 
 interface DailyFairSettlementModalProps {
   isOpen: boolean;
@@ -824,6 +825,15 @@ export function DailyFairSettlementModal({
                       </p>
                     </div>
                   </div>
+
+                  {/* Số đơn theo giờ — dùng CHUNG `hourlyInWindow`/`hourWin` với dải
+                      giờ trên bản in, nên màn hình và giấy luôn nói cùng một câu.
+                      Không query thêm: `ordersByHour` đã gom sẵn 24 bucket. */}
+                  <HourlyOrdersChart
+                    rows={hourlyInWindow}
+                    startHour={hourWin.start}
+                    endHour={hourEndShown}
+                  />
 
                   {/* Cơ cấu thanh toán (Breakdown) */}
                   <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">

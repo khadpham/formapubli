@@ -79,6 +79,8 @@ const ALL_SUITES = [
     'scripts/test-settlement-highlight.ts',
     'scripts/test-settlement-hourly.ts',
     'scripts/test-settlement-hourrange.ts',
+    'scripts/test-settlement-hourly-chart.ts',
+    'scripts/test-settlement-hourly-chart-render.ts',
     'scripts/test-pos-cashier-name.ts',
   'scripts/test-receipt-hotline-cashier.ts',
     'scripts/test-stock-non-negative.ts',
