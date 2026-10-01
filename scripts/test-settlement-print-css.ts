@@ -66,6 +66,13 @@ if (/position\s*:\s*absolute/.test(printableDecls)) {
   );
 }
 
+/** Thân CSS in (bỏ comment) — nơi duy nhất được phép khai báo quy tắc chống tràn. */
+function printCssBlock(): string {
+  const style = src.match(/<style jsx global>\{`([\s\S]*?)`\}<\/style>/);
+  if (!style) throw new Error('Không tìm thấy khối <style jsx global> — cập nhật test theo JSX mới.');
+  return style[1].replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 // --- DẢI GIỜ TRÊN BẢN IN PHẢI VẼ BẰNG SVG, KHÔNG BẰNG MÀU NỀN CSS -------------
 // Owner in ra một dải 24 cột TRỐNG: Chrome lược màu nền khi hộp thoại In để
 // "Background graphics" tắt (đang tắt), chỉ chữ và nhãn còn in. Cách chắc chắn
@@ -105,4 +112,44 @@ if (/bg-indigo-600/.test(printBody)) {
   throw new Error('LỖI: còn dải giờ vẽ bằng màu nền CSS (bg-indigo-600) trong khối in ⇒ in ra trống.');
 }
 
-console.log('OK: selector in loại trừ đúng bản in; lề lấy từ @page margin 12mm 10mm (mọi trang), padding khối in = 0, không position absolute; dải giờ vẽ bằng SVG.');
+// --- KHỐI IN KHÔNG ĐƯỢC TRÀN NGANG (Chrome bóp nhỏ CẢ TRANG) -----------------
+// SỐ ĐO (Chromium headless, media=print, khổ in 190mm = 719px, dữ liệu fixture
+// nặng — xem report task-9 để xem cách dựng lại):
+//   1. BẢNG II (đơn vượt trần chiết khấu): scrollWidth 749px vs clientWidth 719px
+//      ⇒ TRÀN 30px. Thủ phạm từng cột (đo bề rộng từ dài nhất không gãy được):
+//      cột "Thu ngân" và "Người duyệt" mỗi cột cần 264.05px vì chuỗi
+//      `nguyenvananh-theodoanhsobanhanghanghoctapxa-2026` (45 ký tự) không có
+//      khoảng trắng; tổng min-content bảng = 757.65px > 719px.
+//   2. GHI CHÚ ĐÓNG THÙNG (thẻ <p> trong khối III): người dùng gõ tay, chuỗi
+//      không gãy `Thungso1duthuongsachconnguyenbanhgoi,...` ⇒ TRÀN 42px.
+// Số đo lặp lại trên PDF thật: hệ số bóp của Chrome là 0.96 (case 1) và 0.9446
+// (case 2) — tức Chrome thu nhỏ TOÀN BỘ trang in, đúng triệu chứng owner thấy.
+//
+// VÌ SAO PHẢI `anywhere` CHỨ KHÔNG PHẢI `break-word` (đo cả hai, không đoán):
+//   `overflow-wrap: break-word` KHÔNG cắt chuỗi một từ dài hơn cả ô — tràn
+//   vẫn còn 30px/913px. Chỉ `anywhere` mới cho phép ngắt bất kỳ ký tự nào.
+// Nên test bắt buộc đúng từ khoá này, không nới thành "word-wrap gì cũng được".
+const antiOverflow = printCssBlock();
+if (!/overflow-wrap\s*:\s*anywhere/.test(antiOverflow)) {
+  throw new Error(
+    'LỖI: khối in phải có `overflow-wrap: anywhere` — đo thật cho thấy bảng đơn vượt ' +
+      'trần tràn 30px và ghi chú đóng thùng tràn 42px khiến Chrome bóp cả trang (hệ số ' +
+      '0.96 / 0.9446). `break-word` KHÔNG cứu được chuỗi một từ dài. Nhận: ' + antiOverflow.trim()
+  );
+}
+// Ô bảng trong khối in phải bọc được: cột tên/mã là nơi chuỗi dài tới.
+if (!/td[^{]*\{[^}]*overflow-wrap\s*:\s*anywhere/.test(antiOverflow)) {
+  throw new Error(
+    'LỖI: phải áp `overflow-wrap: anywhere` cho ô bảng (td/th) trong khối in — đó là ' +
+      'nơi đo được cột "Thu ngân"/"Người duyệt" cần 264px mỗi cột. Nhận: ' + antiOverflow.trim()
+  );
+}
+// Bảng và SVG không được vượt khổ in (SVG viewBox 240×46 là nội dung, co theo bề rộng).
+if (!/max-width\s*:\s*100%/.test(antiOverflow)) {
+  throw new Error(
+    'LỖI: khối in phải ép `max-width: 100%` cho bảng/SVG — bảng `w-full` vẫn có thể ' +
+      'rộng hơn khổ in khi min-content lớn hơn. Nhận: ' + antiOverflow.trim()
+  );
+}
+
+console.log('OK: selector in loại trừ đúng bản in; lề lấy từ @page margin 12mm 10mm (mọi trang), padding khối in = 0, không position absolute; dải giờ vẽ bằng SVG; khối in có overflow-wrap: anywhere + max-width: 100% chống tràn ngang.');

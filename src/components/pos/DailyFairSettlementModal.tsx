@@ -396,6 +396,26 @@ export function DailyFairSettlementModal({
           .no-print {
             display: none !important;
           }
+          /* CHỐNG TRÀN NGANG — đo thật bằng Chromium headless ở khổ in 190mm
+             (719px) với dữ liệu nặng: bảng II tràn 30px, ghi chú đóng thùng tràn
+             42px. Chrome thấy nội dung rộng hơn khổ in thì co nhỏ CẢ TRANG
+             (hệ số bóp đo được 0.96 / 0.9446) — đúng triệu chứng "cột nội dung
+             chỉ ~1/2 chiều ngang giấy, chữ teo nhỏ toàn trang".
+             PHẢI dùng "anywhere", KHÔNG dùng "break-word": chuỗi một từ dài hơn cả ô
+             (mã đơn 45 ký tự không có khoảng trắng, ghi chú gõ tay không gãy)
+             chỉ "anywhere" ngắt được; đo cả hai, "break-word" không giảm tràn chút nào. */
+          #printable-settlement-report table,
+          #printable-settlement-report svg {
+            max-width: 100%;
+          }
+          #printable-settlement-report td,
+          #printable-settlement-report th,
+          #printable-settlement-report p,
+          #printable-settlement-report div,
+          #printable-settlement-report span,
+          #printable-settlement-report strong {
+            overflow-wrap: anywhere;
+          }
           /* Biên bản gọn: mỗi khối nằm trọn trong một trang, không để trình
              duyệt cắt ngang giữa chừng (bảng dài sẽ vỡ, bản in loạn dòng). */
           #printable-settlement-report .print-block {
