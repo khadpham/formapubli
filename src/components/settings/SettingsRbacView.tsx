@@ -17,12 +17,14 @@ import {
   Landmark,
   History as HistoryIcon,
   Package,
+  Gift,
 } from 'lucide-react';
 import { UserRole, getSettingsAccess } from '@/lib/roles';
 import { StaffManager } from './StaffManager';
 import { ActivityLogView } from './ActivityLogView';
 import { BankAccountsManager } from './BankAccountsManager';
 import { GoodsCatalogManager } from '@/components/products/GoodsCatalogManager';
+import { PromotionsManager } from './PromotionsManager';
 
 interface SettingsRbacViewProps {
   sessionRole?: UserRole;
@@ -30,7 +32,7 @@ interface SettingsRbacViewProps {
 
 // 'activity' (Nhat Ky Hoat Dong) giu lai tu main; 'shortcuts' da bi go
 // tinh goc login-ux loai bo khoi Settings (contract scripts/smoke-mobile-role-navigation.ts).
-type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'appearance' | 'language' | 'sound' | 'printer';
+type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'promotions' | 'appearance' | 'language' | 'sound' | 'printer';
 
 export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   const { canManageAccounts, canManageBanks, canManagePrinter } = getSettingsAccess(sessionRole);
@@ -43,6 +45,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       if (prev === 'printer' && !canManagePrinter) return 'appearance';
       if (prev === 'activity' && !canManageAccounts) return 'appearance';
       if (prev === 'goods' && !canManageAccounts) return 'appearance';
+      if (prev === 'promotions' && !canManageAccounts) return 'appearance';
       return prev;
     });
   }, [canManageAccounts, canManageBanks, canManagePrinter]);
@@ -226,6 +229,19 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               {canManageAccounts && (
                 <button
                   type="button"
+                  onClick={() => setActiveSubTab('promotions')}
+                  aria-current={activeSubTab === 'promotions' ? 'page' : undefined}
+                  className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
+                    activeSubTab === 'promotions' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Gift className="w-4 h-4" />
+                  Khuyến Mãi
+                </button>
+              )}
+              {canManageAccounts && (
+                <button
+                  type="button"
                   onClick={() => setActiveSubTab('activity')}
                   aria-current={activeSubTab === 'activity' ? 'page' : undefined}
                   className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
@@ -250,6 +266,9 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       {activeSubTab === 'banks' && canManageBanks && (
         <BankAccountsManager sessionRole={sessionRole} />
       )}
+
+      {/* TAB: KHUYẾN MÃI */}
+      {activeSubTab === 'promotions' && canManageAccounts && <PromotionsManager />}
 
       {/* TAB: NHAT KY HOA DONG (so cai lich trinh) */}
       {activeSubTab === 'activity' && canManageAccounts && <ActivityLogView />}
