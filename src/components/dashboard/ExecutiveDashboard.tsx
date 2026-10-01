@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Activity,
   DollarSign,
@@ -146,18 +146,34 @@ export function ExecutiveDashboard({
    * donut, top 5 và đơn gần đây đều tính từ `orders`/`stockSummary` đã lọc —
    * các khối đó KHÔNG cần sửa code.
    *
-   * 'ALL' = toàn hệ thống. Được nhớ lại giữa các phiên (đọc lúc mount).
+* 'ALL' = toàn hệ thống. Được nhớ lại giữa các phiên.
+   *
+   * KHỞI TẠO LUÔN 'ALL', KHÔNG đọc localStorage trong initializer: initializer chạy
+   * cả lúc server render, nên giá trị đọc được ở client (khác 'ALL') sẽ KHÔNG khớp
+   * HTML server gửi ⇒ React báo hydration mismatch và vứt cả cây render đi (đã thấy
+   * đúng triệu chứng đó trong console). Đọc localStorage trong effect, sau khi đã
+   * biết vai trò + kho gán (xem effect bên dưới).
    */
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>(
-    () => (typeof window !== 'undefined' && localStorage.getItem('dashboard.warehouseId')) || 'ALL'
-  );
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('ALL');
   /**
    * Kho bị gán cho thu ngân (`/api/auth/me` → `assignedWarehouseId`). Khi có,
    * ép phạm vi về đúng kho của ca và KHÔNG cho chọn kho khác.
    */
   const [lockedWarehouseId, setLockedWarehouseId] = useState<string | null>(null);
-  /** Modal "Báo Cáo Ngày" luôn cần MỘT kho: khi phạm vi là 'ALL' thì lấy kho hội chợ đầu tiên (giữ hành vi cũ). */
+  /**
+   * Đã biết vai trò + kho gán hay chưa. CHƯA biết thì KHÔNG fetch số liệu: nếu
+   * fetch ngay lúc mount, thu ngân nhìn thấy một vòng số "toàn hệ thống" trước khi
+   * `/api/auth/me` kịp trả về kho của ca — tức là lộ số của kho khác trước mắt.
+   */
+  const [assignmentResolved, setAssignmentResolved] = useState(false);
+  /** Modal "Báo Cáo Ngày" luôn cần MỘT kho: khi phạm vi là toàn hệ thống thì lấy kho hội chợ đầu tiên (giữ hành vi cũ). */
   const [defaultFairWarehouseId, setDefaultFairWarehouseId] = useState<string>('wh-du-phong');
+  /**
+   * Số thứ tự request. Bấm "Làm mới" liên tiếp (hoặc đổi kho liên tiếp) sẽ có
+   * nhiều request chạy song song; response CŨ đến sau sẽ ghi đè số của response
+   * MỚI. Mẫu giống hệt `requestSeqRef` ở DailyFairSettlementModal.
+   */
+  const requestSeqRef = useRef(0);
 
   const pickWarehouse = (id: string) => {
     setSelectedWarehouseId(id);
@@ -171,6 +187,7 @@ export function ExecutiveDashboard({
   const scopeParam = selectedWarehouseId !== 'ALL' ? `&warehouseId=${encodeURIComponent(selectedWarehouseId)}` : '';
 
   const fetchDashboardData = async () => {
+    const seq = ++requestSeqRef.current;
     setLoading(true);
     try {
       const [orderRes, stockRes] = await Promise.all([
@@ -184,6 +201,7 @@ export function ExecutiveDashboard({
       const orderData = await orderRes.json();
       const stockData = await stockRes.json();
 
+      if (seq !== requestSeqRef.current) return; // response cũ → bỏ, không ghi đè
       if (orderData.success) {
         setOrders(orderData.orders || []);
         setSummary(orderData.summary || null);
@@ -191,18 +209,21 @@ export function ExecutiveDashboard({
         setLastUpdatedAt(new Date().toLocaleTimeString('vi-VN'));
       }
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       console.error('Lỗi tải dữ liệu dashboard:', err);
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
   };
 
+  // Chỉ fetch khi ĐÃ rõ vai trò + kho gán (xem `assignmentResolved`).
   useEffect(() => {
+    if (!assignmentResolved) return;
     fetchDashboardData();
-  }, [currentRole, selectedWarehouseId]);
+  }, [currentRole, selectedWarehouseId, assignmentResolved]);
 
-  // Thu ngân được gán kho thì chỉ được xem đúng kho của mình. `/api/auth/me` đã
-  // trả `assignedWarehouseId` (POS dùng đúng endpoint này) — không cần API mới.
+  // Một lệch duy nhất cho cả 2 việc: (a) đọc lựa chọn kho đã nhớ trong
+  // localStorage, (b) hỏi kho gán của thu ngân. Chạy trước mọi fetch số liệu.
   useEffect(() => {
     let alive = true;
     fetch('/api/auth/me', { cache: 'no-store' })
@@ -210,11 +231,24 @@ export function ExecutiveDashboard({
       .then((j) => {
         if (!alive) return;
         const wid = j?.data?.assignedWarehouseId;
-        if (!wid) return;
-        setLockedWarehouseId(wid);
-        setSelectedWarehouseId(wid);
+        if (wid) {
+          // Kho của ca thắng lựa chọn đã nhớ — thu ngân không tự chọn được kho khác.
+          setLockedWarehouseId(wid);
+          setSelectedWarehouseId(wid);
+          return;
+        }
+        try {
+          setSelectedWarehouseId(localStorage.getItem('dashboard.warehouseId') || 'ALL');
+        } catch {
+          setSelectedWarehouseId('ALL');
+        }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        // Dù hỏi API thất bại cũng phải mở khoá fetch, nếu không trang đứng trống
+        // vĩnh viễn với "Đang tải…" khi mạng chập chờn.
+        if (alive) setAssignmentResolved(true);
+      });
     return () => {
       alive = false;
     };
@@ -243,13 +277,15 @@ export function ExecutiveDashboard({
     loadWarehouses();
   }, []);
 
-  // Kho đã lưu có thể không còn tồn tại (xoá / ngưng hoạt động). Giữ id cũ thì
-  // mọi API trả rỗng ⇒ trang hiện "0 đơn / 0 kho" như thể hệ thống hết hàng.
-  // Vì vậy id lạ ⇒ quay về 'ALL' và ghi đè giá trị cũ trong localStorage.
+  // Kho đã lưu có thể không còn dùng được: đã xoá, HOẶC đã ngưng hoạt động
+  // (`isActive = 0`). Cả hai đều làm `/api/analytics?view=stock-summary` trả
+  // `warehouseCount = 0` ⇒ thẻ tồn kho hiện "(0 KHO)" và trang trông như hệ
+  // thống hết hàng. Trước đây chỉ bắt kho xoá nên kho ngưng lọt qua; nay kiểm
+  // cả `isActive`. Không thỏa ⇒ quay về 'ALL' và ghi đè giá trị cũ trong storage.
   useEffect(() => {
     if (warehouses.length === 0 || selectedWarehouseId === 'ALL') return;
     if (lockedWarehouseId) return; // kho gán phải còn thì server mới trả lỗi, đừng âm thầm đổi phạm vi
-    if (warehouses.some((w: any) => w.id === selectedWarehouseId)) return;
+    if (warehouses.some((w: any) => w.id === selectedWarehouseId && w.isActive)) return;
     setSelectedWarehouseId('ALL');
     try {
       localStorage.setItem('dashboard.warehouseId', 'ALL');
@@ -314,14 +350,20 @@ export function ExecutiveDashboard({
           <h2 className="text-2xl font-black mt-1 text-white tracking-tight">
             Bảng Quản Trị Vận Hành Toàn Cảnh
           </h2>
-          {/* Dòng phạm vi: mọi số bên dưới thuộc đúng kho đang chọn ở thanh nút trên cùng. */}
-          <p className="text-sm font-bold text-amber-300 mt-0.5">
+          {/* Dòng phạm vi: mọi số bên dưới thuộc đúng kho đang chọn ở thanh nút
+              trên cùng. Bản desktop nằm ở đây; bản mobile ở ngoài khối
+              `hidden md:block` (xem bên dưới) vì mobile không thấy tiêu đề ở
+              trên này — mà tên kho là thứ duy nhất cho biết số đang xem. */}
+          <p className="hidden md:block text-sm font-bold text-amber-300 mt-0.5">
             Phạm vi: {scopeWarehouseName ?? 'Tất cả kho'}
           </p>
           <p className="text-sm text-slate-300 mt-0.5 max-w-2xl">
             Giám sát toàn diện 3 Khối Cốt Lõi: Kho Hàng 3 Địa Điểm, Quầy Thu Ngân Bán Sách và Sổ Kép Tài Chính.
           </p>
         </div>
+        <p className="md:hidden text-sm font-bold text-amber-300 shrink-0">
+          Phạm vi: {scopeWarehouseName ?? 'Tất cả kho'}
+        </p>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <button
