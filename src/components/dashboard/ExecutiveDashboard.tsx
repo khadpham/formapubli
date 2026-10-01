@@ -222,8 +222,20 @@ export function ExecutiveDashboard({
     fetchDashboardData();
   }, [currentRole, selectedWarehouseId, assignmentResolved]);
 
-  // Một lệch duy nhất cho cả 2 việc: (a) đọc lựa chọn kho đã nhớ trong
-  // localStorage, (b) hỏi kho gán của thu ngân. Chạy trước mọi fetch số liệu.
+  // Đọc lựa chọn kho đã nhớ. TÁCH RIÊNG khỏi effect hỏi `/api/auth/me`: trước đây
+  // hai việc này gộp chung một effect, nên khi fetch REJECT ở tầng mạng (hoặc JSON
+  // hỏng) thì `.catch` nuốt lỗi và dòng đọc localStorage không bao giờ chạy ⇒ mất
+  // kho đã nhớ và âm thầm về 'ALL'. Ở đây không có mạng, không thể hỏng.
+  useEffect(() => {
+    try {
+      setSelectedWarehouseId(localStorage.getItem('dashboard.warehouseId') || 'ALL');
+    } catch {
+      // Storage bị chặn (Safari ẩn danh / chính sách trình duyệt) — giữ 'ALL'.
+      setSelectedWarehouseId('ALL');
+    }
+  }, []);
+
+  // Hỏi kho gán của thu ngân. Không đọc localStorage ở đây nữa.
   useEffect(() => {
     let alive = true;
     fetch('/api/auth/me', { cache: 'no-store' })
@@ -231,16 +243,10 @@ export function ExecutiveDashboard({
       .then((j) => {
         if (!alive) return;
         const wid = j?.data?.assignedWarehouseId;
+        // Kho của ca thắng lựa chọn đã nhớ — thu ngân không tự chọn được kho khác.
         if (wid) {
-          // Kho của ca thắng lựa chọn đã nhớ — thu ngân không tự chọn được kho khác.
           setLockedWarehouseId(wid);
           setSelectedWarehouseId(wid);
-          return;
-        }
-        try {
-          setSelectedWarehouseId(localStorage.getItem('dashboard.warehouseId') || 'ALL');
-        } catch {
-          setSelectedWarehouseId('ALL');
         }
       })
       .catch(() => {})
