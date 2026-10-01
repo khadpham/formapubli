@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, discountApprovalRequests, cashboxSessions, orders, staffAccounts, notificationDismissals } from '@/db';
+import { db, discountApprovalRequests, cashboxSessions, staffAccounts, notificationDismissals } from '@/db';
 import { desc, eq, and, inArray } from 'drizzle-orm';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
@@ -107,22 +107,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 2) Đơn online chờ xác nhận (quản lý + thủ kho xử lý).
-    if (isManager || session.role === 'ROLE_WAREHOUSE') {
-      const pendingOrders = await db
-        .select({ id: orders.id, code: orders.orderCode, at: orders.createdAt })
-        .from(orders)
-        .where(eq(orders.status, 'PENDING_CONFIRMATION'))
-        .orderBy(desc(orders.createdAt))
-        .limit(20);
-      for (const o of pendingOrders) {
-        items.push({
-          id: `ord-${o.id}`, kind: 'order', severity: 'warn', area: 'Đơn hàng',
-          title: `Đơn ${o.code} chờ xác nhận`, body: 'Khách đặt online, cần vào xác nhận.',
-          at: `${o.at || ''}`, href: 'sales',
-        });
-      }
-    }
+    // 2) [ĐÃ GỠ 02/10 theo quyết định chủ] Đơn chờ xác nhận KHÔNG báo nữa:
+    // đơn chờ (quầy chuyển khoản chờ ảnh, online chờ duyệt) không xin phê duyệt
+    // của ai — thu ngân tự thấy trong "Đơn Chờ" của POS mình. Báo cho quản lý/
+    // thủ kho chỉ gây ồn, sai kho (không lọc kho), sai chữ ("khách online" cho
+    // cả đơn quầy). Giữ PendingOrdersView nguyên — đó là danh sách việc của
+    // thu ngân, không phải thông báo.
 
     // 3) Ca của chính người dùng / ca đang mở (quản lý thấy hết).
     const sessionRows = await db
