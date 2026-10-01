@@ -180,8 +180,26 @@ async function main() {
   // ⇒ trình duyệt in ra hàng chục trang TRẮNG nối sau biên bản. Review độc lập đã
   // chỉ ra đúng điểm này khi quy tắc `body > * { overflow/max-height/height }`
   // ép lên mọi con của body mà không loại chúng khỏi luồng.
+  //
+  // Cập nhật 2026-10-01 (sau Task 1): selector thật là
+  // `body > *:not(:has(#printable-settlement-report)):not(#printable-settlement-report)`.
+  // Regex CŨ bắt buộc `)` ngay trước `{` nên không khớp ⇒ suite đỏ từ khi Task 1
+  // thêm mệnh đề loại trừ thứ hai. Ở đây BÓC nguyên selector + thân rule ra rồi
+  // kiểm từng mệnh đề: khớp selector mới mà KHÔNG nới lỏng — mất mệnh đề
+  // `:not(#printable-settlement-report)` thì vẫn đỏ (đó chính là lỗi in trắng).
+  const hideRule = printCss.match(
+    /body\s*>\s*\*:not\(:has\(#printable-settlement-report\)\)([^{]*)\{([^}]*)\}/
+  );
   ok(
-    /body\s*>\s*\*:not\(:has\(#printable-settlement-report\)\)\s*\{[^}]*display:\s*none\s*!important/.test(printCss),
+    !!hideRule,
+    'phải có selector `body > *:not(:has(#printable-settlement-report))…` gỡ mọi nhánh khác khỏi luồng in'
+  );
+  ok(
+    !!hideRule && /:not\(#printable-settlement-report\)/.test(hideRule[1]),
+    'selector ẩn khi in phải loại trừ #printable-settlement-report — thiếu nó thì :has() thắng `display: block` và in ra trang TRẮNG'
+  );
+  ok(
+    !!hideRule && /display:\s*none\s*!important/.test(hideRule[2]),
     'phải `display: none` mọi nhánh của body KHÔNG chứa biên bản, để không sinh trang trắng'
   );
   ok(
