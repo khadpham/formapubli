@@ -1,16 +1,23 @@
-import { db, editions, orderItems, orders, stockBalances, works } from '../db';
+import { db, editions, orderItems, orders, stockBalances, works, products } from '../db';
 import { and, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { OrderService, PENDING_TTL_HOURS, businessDateOf } from './order.service';
 import { WarehouseService } from './warehouse.service';
 
 export interface PosCatalogLine {
+  /**
+   * Khóa dòng sản phẩm. Với sách = `editions.id` (`ed-h01`); với hàng hóa =
+   * `products.id` (`pr-…`). Tên cột giữ nguyên để không phá hợp đồng với POS.
+   */
   editionId: string;
+  productKind: 'BOOK' | 'GOODS';
   code: string;
   title: string;
   author: string;
   isbn: string;
   isbnLast4: string;
+  /** Mã vạch EAN-13 — hàng hóa quét mã này. Sách để '' nếu chưa gán. */
+  barcode: string;
   coverPrice: number;
   /** Năm phát hành — POS sắp xếp "Cũ → Mới / Mới → Cũ" theo trường này. Có thể null. */
   publicationYear: number | null;
@@ -62,20 +69,31 @@ export class PosCatalogService {
     // hàng hóa vì `edition_id` NULL.
     for (const r of soldRows) soldMap.set(r.productId, Number(r.qty || 0));
 
+    // NGUỒN LÀ `products` (tầng gốc), LEFT JOIN `editions` + `works` để lấy
+    // metadata sách. Sách đã được mirror vào `products` với `id` TRÙNG
+    // `editions.id` (migration 0031b), nên một câu này trả CẢ sách lẫn hàng
+    // hóa. Trước đây lấy `FROM editions INNER JOIN works` — hàng hóa không có
+    // dòng `editions` nên biến mất khỏi lưới quét mã, thứ lỗi "không báo lỗi,
+    // chỉ thiếu dòng".
     const all = await db
       .select({
-        id: editions.id,
-        code: editions.code,
-        title: editions.title,
+        id: products.id,
+        productKind: products.productKind,
+        code: products.code,
+        title: products.name,
+        coverPrice: products.sellingPrice,
+        barcode: products.barcode,
+        isActive: products.isActive,
+        // Sách mới có; hàng hóa để NULL.
         isbn: editions.isbn,
         isbnLast4: editions.isbnLast4,
-        coverPrice: editions.coverPrice,
         publicationYear: editions.publicationYear,
-        isActive: editions.isActive,
         author: works.author,
+        editionCode: editions.code,
       })
-      .from(editions)
-      .innerJoin(works, eq(editions.workId, works.id));
+      .from(products)
+      .leftJoin(editions, eq(editions.id, products.id))
+      .leftJoin(works, eq(works.id, editions.workId));
 
     // Batch ATP (BV hiệu năng): gom physical NEW + giữ chỗ PENDING theo lô,
     // đúng semantics OrderService.getATP (fair = physical, còn lại trừ giữ chỗ).
@@ -91,7 +109,10 @@ export class PosCatalogService {
             .from(stockBalances)
             .where(
               and(
-                inArray(stockBalances.editionId, ids),
+                // `product_id`, KHÔNG phải `edition_id`: hàng hóa có
+                // `edition_id = NULL` nên lọc theo nó là mất sạch tồn hàng hóa
+                // ⇒ ATP = 0 ⇒ POS báo hết hàng oan. Với sách hai cột BẰNG nhau.
+                inArray(stockBalances.productId, ids),
                 eq(stockBalances.warehouseId, warehouseId),
                 eq(stockBalances.condition, 'NEW')
               )
@@ -110,7 +131,8 @@ export class PosCatalogService {
             .innerJoin(orders, eq(orderItems.orderId, orders.id))
             .where(
               and(
-                inArray(orderItems.editionId, ids),
+                // `product_id` — xem giải thích ở truy vấn `stock_balances` phía trên.
+                inArray(orderItems.productId, ids),
                 eq(orders.warehouseId, warehouseId),
                 eq(orders.status, 'PENDING_CONFIRMATION'),
                 // Prefilter rộng (siêu tập) — y hệt OrderService.getBatchATP.
@@ -147,12 +169,19 @@ export class PosCatalogService {
       if (e.isActive === false) continue;
       const physical = balMap.get(e.id) || 0;
       items.push({
+        // `editionId` giữ nguyên tên để không phá vỡ hợp đồng với POS và các
+        // test hiện có, nhưng giá trị giờ là `products.id` — với sách thì BẰNG
+        // `editions.id` (chốt #2 spec), với hàng hóa thì là `pr-…`.
         editionId: e.id,
-        code: e.code,
-        title: e.title || e.code,
-        author: e.author,
-        isbn: e.isbn,
-        isbnLast4: e.isbnLast4,
+        productKind: e.productKind === 'GOODS' ? 'GOODS' : 'BOOK',
+        code: e.code || e.editionCode || '',
+        title: e.title || e.code || e.editionCode || '',
+        // Hàng hóa không có tác giả/ISBN — để '' thay vì null để UI không in
+        // chữ "null" ra giữa quầy.
+        author: e.author || '',
+        isbn: e.isbn || '',
+        isbnLast4: e.isbnLast4 || '',
+        barcode: e.barcode || '',
         coverPrice: e.coverPrice || 0,
         publicationYear: e.publicationYear ?? null,
         // getATP đã khóa chốt theo loại kho (fair = physical, chính trừ giữ chỗ).

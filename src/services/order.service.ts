@@ -1228,17 +1228,20 @@ export class OrderService {
     const out = new Map<string, number>();
     if (ids.length === 0) return out;
     const balRows = await txOrDb
-      .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
+      .select({
+        productId: stockBalances.productId,
+        qty: stockBalances.physicalQuantity,
+      })
       .from(stockBalances)
       .where(
         and(
-          inArray(stockBalances.editionId, ids),
+          inArray(stockBalances.productId, ids),
           eq(stockBalances.warehouseId, warehouseId),
           eq(stockBalances.condition, 'NEW')
         )
       );
     const balMap = new Map<string, number>();
-    for (const r of balRows) balMap.set(`${r.editionId}`, Number(r.qty || 0));
+    for (const r of balRows) balMap.set(`${r.productId}`, Number(r.qty || 0));
     // KHÔNG có nhánh riêng cho kho hội chợ nữa. Trước đây có:
     //   if (wh?.warehouseType === 'FAIR_EVENT') { out = balMap; return; }
     // với lý do ghi ở doc là "API giữ chỗ online từ chối kho hội chợ bằng 422 nên
@@ -1258,7 +1261,7 @@ export class OrderService {
     // getPendingEffectiveExpiry (một quy tắc hạn duy nhất của hệ thống).
     const held = await txOrDb
       .select({
-        editionId: orderItems.editionId,
+        productId: orderItems.productId,
         quantity: orderItems.quantity,
         createdAt: orders.createdAt,
         paymentExpiresAt: orders.paymentExpiresAt,
@@ -1267,7 +1270,7 @@ export class OrderService {
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
         and(
-          inArray(orderItems.editionId, ids),
+          inArray(orderItems.productId, ids),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
           or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoffDate))
@@ -1278,7 +1281,7 @@ export class OrderService {
     for (const row of held) {
       const expiry = this.getPendingEffectiveExpiry(row);
       if (!expiry || expiry.getTime() <= now) continue;
-      const key = `${row.editionId}`;
+      const key = `${row.productId}`;
       heldMap.set(key, (heldMap.get(key) || 0) + Number(row.quantity || 0));
     }
     for (const id of ids) out.set(id, (balMap.get(id) || 0) - (heldMap.get(id) || 0));
