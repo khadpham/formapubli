@@ -1,15 +1,14 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
-**Ngày:** 02/10/2026 · **Trạng thái:** CỔNG 3 XONG CẢ LÕI + UI + B3 + DUYỆT TAY + BÁO CÁO, CHƯA DEPLOY · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
+**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `55a82ca4` · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
 |---|---|
 | Repo gốc | `D:\Data Project\formapubli` |
 | **Worktree đang làm** | `D:\Data Project\formapubli-promo` |
-| Branch | `feat/khuyen-mai-san-pham` |
-| HEAD | `3185edb` (lúc bàn giao là `b9e2a92` — đã thêm 8 commit) |
-| Số commit chưa merge vào `main` | **17** |
-| Production version đang chạy | `b8ad7643-ec6d-44ac-80e3-d66fd6838213` (code chưa đổi; chỉ nạp thêm dữ liệu SP-001..004) |
+| Branch | `main` (đã merge `feat/khuyen-mai-san-pham` — merge commit `1d95371`, push origin xác nhận) |
+| HEAD | `1d95371` + docs sau deploy |
+| Production version đang chạy | `55a82ca4-7233-4a81-a1f7-73daf29700e3` (deploy tối 02/10, site trả trang đăng nhập bình thường) |
 
 > **NGƯỜI ĐỌC PHẢI LÀM ĐƯỢC NGAY, KHÔNG PHẢI SUY LUẬN.** Mọi con số dưới đây là số đo được, không phải ước lượng. Lệnh copy chạy được nguyên văn.
 
@@ -24,8 +23,8 @@
 | **Cổng 3 — server** | ✅ 5 lỗi đã sửa, 5 test khoá lại (20/20, 20/20, 21/21, 12/12) + B3 quà hết tồn (7/7) + nối `approvedManual` (8.3) | Nút "Tặng thêm" trong giỏ POS chưa có | Client có thể gửi cờ quà giả — **đã chặn** |
 | **Cổng 3 — UI** | ✅ Màn hình cài đặt mốc (Cài Đặt → Khuyến Mãi) + giỏ POS tự hiện badge "Quà" + nút "Bỏ quà" (desktop + mobile) | Nút "Tặng thêm" | Không — UI chỉ đọc/gợi ý, server tự xác minh lại |
 | **Cổng 3 — báo cáo quà** | ✅ `GET /api/reports/gifts` + panel tách còn tồn / hết tồn | — | Không |
-| **Cổng 3 — deploy** | — | 🔴 **CHƯA DEPLOY** (cả nhánh, 17 commit) | Deploy sớm = 2 lỗi lên production (đã xảy ra 1 lần) |
-| **Test suite** | 124/125 xanh | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
+| **Cổng 3 — deploy** | ✅ **ĐÃ DEPLOY tối 02/10** (`55a82ca4`, từ merge `1d95371`) | Nghiệm thu quét SP thật chưa làm (cần máy thật) | Rollback sẵn sàng: `npx wrangler rollback <id>` |
+| **Test suite** | 124/125 xanh (+ tsc 0 + build sạch trên đúng cây deploy, kèm suite `test-autoclose-shift` của main) | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
 | **Sổ kho** | `stock_balances` ĐÚNG (440 dòng, 0 âm) | 🔴 ledger Hồ Gươm lệch **87 bút toán RECEIPT** (để sau hội chợ) | Hàng vật lý đúng; **thiếu sổ, không thiếu hàng** |
 | **Hàng hóa mẫu prod** | ✅ SP-001..004 (Bookmark 5k, Móc khoá 15k, Gói quà 50k, Túi Tote 150k), mỗi món 100 cái × 2 kho (Hồ Gươm + ĐH Hà Nội), 8 bút toán OPENING_BALANCE khớp 8 dòng tồn | Chưa bán được (chờ deploy code) | Không — dữ liệu tượng trưng, chủ duyệt |
 | **Backup** | ✅ `backup-prod.ts` + `restore-prod.ts`, đã khôi phục thật 6/6 bảng khớp | — | Trước đây KHÔNG có script backup Turso |
@@ -381,7 +380,7 @@ Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút to�
 | 3 | B3 (8.2) → duyệt tay (8.3) → báo cáo (8.4) | ✅ XONG, mỗi mục có test riêng xanh |
 | 4 | Nạp hàng mẫu SP-001..004 lên prod (8.6) | ✅ XONG — đọc lại prod khớp 4 SP + 8 dòng tồn 100 + 8 bút toán |
 | 5 | Chạy `npm run build` + full `run-isolated` LẠI sau `3185edb` | ✅ XONG tối 02/10 — build sạch, 124/125 (chỉ đỏ flaky royalty) |
-| 6 | **Chủ duyệt deploy** | ⏳ CHỜ — merge 17 commit vào `main` + `npm run deploy` + rollback sẵn sàng |
-| 7 | Nghiệm thu tầng 3 trên prod: quét SP-001..004 ra đơn thật | ⏳ Sau deploy |
+| 6 | **Chủ duyệt deploy** | ✅ DUYỆT + DEPLOY tối 02/10 — merge `1d95371`, push origin xác nhận, `npm run deploy` → `55a82ca4`, site sống |
+| 7 | Nghiệm thu tầng 3 trên prod: quét SP-001..004 ra đơn thật | ⏳ Sáng mai, máy thật (chưa làm — cố ý không tạo đơn rác tối nay) |
 | 8 | Mục 8.5 ghi bù sổ kho Hồ Gươm | **Chạy khi kho đóng (sau hội chợ)** |
 | 9 | Báo "xanh" để mở lộ trình cửa sổ | Sau bước 7 |
