@@ -66,6 +66,7 @@ const ALL_SUITES = [
     'scripts/test-settlement-print.ts',
     'scripts/test-settlement-print-css.ts',
     'scripts/test-settlement-highlight.ts',
+    'scripts/test-settlement-hourly.ts',
     'scripts/test-pos-cashier-name.ts',
   'scripts/test-receipt-hotline-cashier.ts',
     'scripts/test-stock-non-negative.ts',

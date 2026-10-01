@@ -340,6 +340,28 @@ export class DailySettlementService {
         }
       : null;
 
+    // 6c. Dải 24 giờ bán hàng trong ngày, theo GIỜ VIỆT NAM — dải cột cao điểm
+    // trên bản in. Gom từ `dayOrders` đã có sẵn, KHÔNG thêm query nào.
+    //
+    // KHÔNG cắt chuỗi `created_at` (`slice(11,13)`) và KHÔNG so chuỗi timestamp:
+    // DB đang có HAI họ — 'YYYY-MM-DDTHH:MM:SSZ' (app ghi `toISOString()`) và
+    // 'YYYY-MM-DD HH:MM:SS' (`CURRENT_TIMESTAMP` của SQLite, cũng UTC). Cắt
+    // chuỗi ra giờ UTC ⇒ dải cao điểm lệch 7 tiếng so với giờ người đọc thấy
+    // trên mọi mốc giờ khác của biên bản. `parseDbTimestamp` chuẩn hoá cả hai
+    // họ về UTC, rồi cộng đúng hằng số UTC+7 (Việt Nam không DST).
+    //
+    // Luôn trả đủ 24 mốc, giờ không bán = 0: dải cột trên bản in phải đều 24 cột,
+    // thiếu mốc là hụt cột.
+    const ordersByHour = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0, sales: 0 }));
+    for (const ord of dayOrders as any[]) {
+      const created = parseDbTimestamp(ord.createdAt);
+      if (!created || Number.isNaN(created.getTime())) continue;
+      const vnHour = Math.floor((created.getTime() + VN_UTC_OFFSET_MIN * 60_000) / 3_600_000) % 24;
+      const bucket = ordersByHour[vnHour];
+      bucket.orders += 1;
+      bucket.sales += ord.finalAmount || 0;
+    }
+
     // 7. Đối soát tồn sách hội chợ (Stock Reconciliation)
     const balances = await txOrDb
       .select({
@@ -453,6 +475,7 @@ export class DailySettlementService {
       },
       topSellers,
       highlight,
+      ordersByHour,
       inventoryReconciliation,
     };
   }
