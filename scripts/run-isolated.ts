@@ -20,6 +20,7 @@ const ALL_SUITES = [
   'scripts/test-discount-checkout-atomic.ts',
   'scripts/test-p0-verification.ts',
   'scripts/test-inventory.ts',
+  'scripts/test-products.ts',
   'scripts/test-s1-batch-transfer.ts',
   'scripts/test-s2-pos-catalog.ts',
   'scripts/test-s3-schema.ts',
