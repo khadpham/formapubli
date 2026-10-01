@@ -1,6 +1,6 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
-**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `55a82ca4` · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
+**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `f812a1df` (mốc 0đ + settings UI) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
 |---|---|
@@ -8,7 +8,7 @@
 | **Worktree đang làm** | `D:\Data Project\formapubli-promo` |
 | Branch | `main` (đã merge `feat/khuyen-mai-san-pham` — merge commit `1d95371`, push origin xác nhận) |
 | HEAD | `1d95371` + docs sau deploy |
-| Production version đang chạy | `55a82ca4-7233-4a81-a1f7-73daf29700e3` (deploy tối 02/10, site trả trang đăng nhập bình thường) |
+| Production version đang chạy | `f812a1df-828b-44fb-bd99-c682999daac4` (deploy tối 02/10 lần 2: mốc 0đ + settings UI; site trả trang đăng nhập bình thường) |
 
 > **NGƯỜI ĐỌC PHẢI LÀM ĐƯỢC NGAY, KHÔNG PHẢI SUY LUẬN.** Mọi con số dưới đây là số đo được, không phải ước lượng. Lệnh copy chạy được nguyên văn.
 
@@ -21,7 +21,7 @@
 | **Hàng hóa** | ✅ Đầy đủ: bảng `products`, API, UI Cài Đặt → Quản trị → Hàng Hóa, E2E **33/33** | Chưa bán được trên production (code bán chưa deploy) | Migration đã lên production nhưng code bán hàng hóa **chưa deploy** |
 | **Cổng 3 — engine** | ✅ Hàm thuần khiết, mô hình bậc thang, `test-promotion-engine` **32/32** | — | Không |
 | **Cổng 3 — server** | ✅ 5 lỗi đã sửa, 5 test khoá lại (20/20, 20/20, 21/21, 12/12) + B3 quà hết tồn (7/7) + nối `approvedManual` (8.3) | Nút "Tặng thêm" trong giỏ POS chưa có | Client có thể gửi cờ quà giả — **đã chặn** |
-| **Cổng 3 — UI** | ✅ Màn hình cài đặt mốc (Cài Đặt → Khuyến Mãi) + giỏ POS tự hiện badge "Quà" + nút "Bỏ quà" (desktop + mobile) | Nút "Tặng thêm" | Không — UI chỉ đọc/gợi ý, server tự xác minh lại |
+| **Cổng 3 — UI** | ✅ Màn hình cài đặt mốc (Cài Đặt → Khuyến Mãi, chủ đã tự tìm thấy) + mốc 0đ "đơn bất kỳ" (engine 37/37) + giỏ POS badge "Quà"/"Bỏ quà"/"Tặng thêm · chờ duyệt" | Nút "Tặng thêm" nằm nhánh riêng CHƯA deploy | Không — UI chỉ đọc/gợi ý, server tự xác minh lại |
 | **Cổng 3 — báo cáo quà** | ✅ `GET /api/reports/gifts` + panel tách còn tồn / hết tồn | — | Không |
 | **Cổng 3 — deploy** | ✅ **ĐÃ DEPLOY tối 02/10** (`55a82ca4`, từ merge `1d95371`) | Nghiệm thu quét SP thật chưa làm (cần máy thật) | Rollback sẵn sàng: `npx wrangler rollback <id>` |
 | **Test suite** | 124/125 xanh (+ tsc 0 + build sạch trên đúng cây deploy, kèm suite `test-autoclose-shift` của main) | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
