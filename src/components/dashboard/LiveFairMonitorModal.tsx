@@ -101,6 +101,12 @@ export function LiveFairMonitorModal({
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Kho đang chọn MỚI NHẤT, đọc được từ bên trong callback đã cũ. Gán lúc render
+  // là đủ: chỉ cần đúng ở thời điểm response về, mà mọi response đều về sau
+  // commit của lần render đã gán.
+  const warehouseIdRef = useRef(warehouseId);
+  warehouseIdRef.current = warehouseId;
+
   // Drawer duyệt chiết khấu cũng render ra document.body, cùng cấp với modal
   // monitor. useModalFocusTrap chỉ đánh dấu inert lên #app-main-content, không
   // đụng tới monitor ⇒ Tab trong drawer nhảy được xuống modal dưới. Phải tự
@@ -127,10 +133,13 @@ export function LiveFairMonitorModal({
   }, []);
 
   const load = useCallback(async () => {
+    // Kho của LẦN NẠP NÀY. Phải chụp lại vì `load` đóng bằng `warehouseId` lúc tạo:
+    // so trong closure là so với chính nó, luôn bằng ⇒ vô dụng.
+    const scope = warehouseId;
     try {
       // Có kho đang chọn thì giới hạn phạm vi 1 kho, khác hẳn URL cũ (TẤT CẢ).
-      const url = warehouseId
-        ? `/api/pos/live-monitor?warehouseId=${encodeURIComponent(warehouseId)}`
+      const url = scope
+        ? `/api/pos/live-monitor?warehouseId=${encodeURIComponent(scope)}`
         : '/api/pos/live-monitor';
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) {
@@ -139,6 +148,10 @@ export function LiveFairMonitorModal({
       }
       const j = await res.json();
       if (!aliveRef.current) return;
+      // Fetch kho cũ về sau khi đã đổi kho: BỎ, đừng set state. `aliveRef` không
+      // chặn được chuyện này — nó chỉ đổi khi ĐÓNG modal, còn đổi kho thì modal
+      // vẫn mở ⇒ không có state nào báo là lần nạp này đã lỗi thời.
+      if (scope !== warehouseIdRef.current) return;
       setData(j.data);
       setLastUpdatedAt(new Date().toISOString());
       setIsStale(false);
@@ -146,6 +159,7 @@ export function LiveFairMonitorModal({
       backoffRef.current = 0;
     } catch (e: any) {
       if (!aliveRef.current) return;
+      if (scope !== warehouseIdRef.current) return; // lỗi của kho cũ không liên quan kho mới
       setError(e?.message || 'Không tải được trạng thái.');
       // Mạng hội chợ yếu: giãn dần thay vì dội 10 giây/lần cho tới khi hết pin.
       backoffRef.current = Math.min(backoffRef.current + 1, BACKOFF_MS.length - 1);

@@ -206,4 +206,22 @@ ok(
 );
 ok(/Quá hạn/.test(modal), 'Đơn quá hạn phải nói rõ, không im lặng');
 
+// --- 9. Fix F1 (2026-10-01): lọc theo kho, nhưng CHỈ kho hội chợ, và lỗi phải hiện ----
+// Server CỐ Ý 400 khi `?warehouseId=` không phải kho hội chợ đang hoạt động
+// (route.ts:87-96, đã pin bằng runtime P8). Dev DB toàn PHYSICAL_MAIN nên nếu
+// client gửi id kho vô điều kiện thì modal mở ra là 400 — và lỗi mà không có
+// nhánh render nào thì thân modal TRẮNG, người dùng tưởng treo.
+ok(
+  /warehouses\.some\(\(w: any\) => w\.id === selectedWarehouseId && w\.warehouseType === 'FAIR_EVENT'\)/.test(dash),
+  'Chỉ được gửi warehouseId khi kho đang chọn là FAIR_EVENT — kho vận vật vật lý phải rơi về phạm vi TẤT CẢ'
+);
+ok(
+  /warehouseId=\{liveMonitorWarehouseId\}/.test(dash) && !/warehouseId=\{selectedWarehouseId/.test(dash),
+  'Modal phải nhận liveMonitorWarehouseId (đã qua gate), KHÔNG gửi thẳng selectedWarehouseId'
+);
+ok(
+  /\{!data && error && \(/.test(modal) && /Không tải được trạng thái\{scopeLabel\}/.test(modal) && /Tải lại/.test(modal),
+  'Modal phải render khối lỗi (nêu kho + lý do + nút Tải lại) khi !data && error — thân modal không được trắng'
+);
+
 console.log(`\n=== TRẠNG THÁI HỘI CHỢ: ${checks} assertions PASS ===`);
