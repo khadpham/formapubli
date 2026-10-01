@@ -76,8 +76,8 @@ ok(
   'phiếu thu phải ưu tiên danh sách đã đóng băng trong phiên, rơi về giỏ khi phiên cũ không có'
 );
 ok(
-  /items: \[\.\.\.cart, \.\.\.giftItems\]\.map\(/.test(pos),
-  'phải đóng băng danh sách mặc hàng (cả dòng thường lẫn dòng quà) vào phiên lúc tạo đơn'
+  /items: \[\.\.\.cart, \.\.\.giftItems, \.\.\.manualGiftLines\]\.map\(/.test(pos),
+  'phải đóng băng danh sách mặc hàng (thường + quà tự động + quà tay) vào phiên lúc tạo đơn'
 );
 
 console.log(`\n=== BA LỖI POS ĐÃ XÁC MINH: ${checks} assertions PASS ===`);

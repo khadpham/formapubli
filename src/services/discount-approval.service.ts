@@ -1,4 +1,4 @@
-import { db, discountApprovalRequests, editions, warehouses } from '../db';
+import { db, discountApprovalRequests, editions, products, warehouses } from '../db';
 import { and, desc, eq, gt, inArray, lte, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { hashString } from '../lib/export-hash';
@@ -229,21 +229,29 @@ export class DiscountApprovalService {
     if (!items || items.length === 0) {
       throw AppError.invalid('Giỏ hàng không được để trống khi xin duyệt chiết khấu');
     }
-    if (requestedDiscountRate <= 0 || requestedDiscountRate > 1.0) {
+    // Quà TAY đi kèm đơn không chiết khấu: cho phép rate = 0, nhưng BẮT BUỘC
+    // phải có ít nhất 1 dòng quà tay — nếu không rate 0 nghĩa là "không xin
+    // gì cả" và yêu cầu duyệt là dòng rác không ai dọn.
+    const hasManualGift = items.some((i) => i?.isManual === true && i?.isGiftLine === true);
+    if (requestedDiscountRate < 0 || requestedDiscountRate > 1.0 || (!hasManualGift && requestedDiscountRate <= 0)) {
       throw AppError.invalid('Tỷ lệ chiết khấu yêu cầu không hợp lệ (phải từ > 0% đến 100%)');
     }
 
     // A1-H: chuẩn hóa giá bìa từ DB (bỏ qua unitPrice client gửi — client có
-    // thể khai sai để lừa số tiền duyệt). Hash + số tiền duyệt tính trên giá
-    // chuẩn này; route checkout recompute y hệt để khớp.
+    // thể khai sai để lừa số tiền duyệt). Tra từ `products` (tầng gốc), KHÔNG
+    // phải `editions`: hàng hóa không có dòng editions nên tra đó là chết ngay
+    // với "Ấn bản không tồn tại" — đúng lỗi đã tốn một đêm ở order.service.
+    // Sách có `products.id === editions.id` và trigger giữ giá khớp nên kết
+    // quả y hệt. Hash + số tiền duyệt tính trên giá chuẩn này; route checkout
+    // recompute y hệt để khớp.
     const editionIds = Array.from(new Set(items.map((i) => `${i.editionId || ''}`.trim()).filter(Boolean)));
     if (editionIds.length === 0) {
       throw AppError.invalid('Giỏ hàng thiếu mã ấn bản hợp lệ.');
     }
     const editionRows = await txOrDb
-      .select({ id: editions.id, coverPrice: editions.coverPrice })
-      .from(editions)
-      .where(inArray(editions.id, editionIds));
+      .select({ id: products.id, coverPrice: products.sellingPrice })
+      .from(products)
+      .where(inArray(products.id, editionIds));
     const editionPriceMap = new Map<string, number>(
       editionRows.map((edition: { id: string; coverPrice: number }) => [edition.id, Number(edition.coverPrice)])
     );
@@ -255,6 +263,13 @@ export class DiscountApprovalService {
       const lineRate = item.unitDiscountRate ?? requestedDiscountRate;
       if (!Number.isFinite(lineRate) || lineRate < 0 || lineRate > 1) {
         throw AppError.invalid(`Mức giảm dòng ${item.editionId} phải nằm trong khoảng 0 - 100%.`);
+      }
+      // Quà tay là TẶNG MIỄN PHÍ, không phải "giảm một phần": bắt buộc rate 1.
+      // Nếu cho rate lẻ (vd 10%), số tiền duyệt và số tiền đơn (server ép quà
+      // đã duyệt về 0đ) lệch nhau ⇒ mọi đơn quà tay chết 409 ở consumeApproval
+      // mà không ai hiểu vì sao.
+      if (item.isManual === true && item.isGiftLine === true && lineRate !== 1) {
+        throw AppError.invalid(`Dòng quà tặng thêm ${item.editionId} phải miễn phí 100% (không giảm một phần).`);
       }
       return {
         editionId: `${item.editionId}`.trim(),
@@ -802,12 +817,14 @@ export class DiscountApprovalService {
       throw AppError.forbidden('Phê duyệt thuộc về thu ngân khác.');
     }
     const editionIds = Array.from(new Set(params.items.map((i) => `${i.editionId || ''}`.trim()).filter(Boolean)));
+    // Tra `products` (tầng gốc) như `createRequest` — hàng hóa không có dòng
+    // `editions`, tra đó là quà tay hàng hóa chết oan ở bước verify.
     const coverRows =
       editionIds.length > 0
         ? await db
-            .select({ id: editions.id, coverPrice: editions.coverPrice })
-            .from(editions)
-            .where(inArray(editions.id, editionIds))
+            .select({ id: products.id, coverPrice: products.sellingPrice })
+            .from(products)
+            .where(inArray(products.id, editionIds))
         : [];
     const coverMap = new Map<string, number>();
     for (const r of coverRows) coverMap.set(r.id, Number(r.coverPrice || 0));
@@ -881,6 +898,23 @@ export class DiscountApprovalService {
     // ở lại: đó là thứ cần duyệt.
     const payableItems = currentItems.filter((i) => !isAutoGiftLine(i));
     const giftSubtotal = autoGiftSubtotal(currentItems, discountRate);
+    // Quà TAY nằm trong số tiền duyệt (quản lý thấy đúng giá trị cho đi) nhưng
+    // KHÔNG nằm trong tiền đơn (đơn không cộng giá quà — luật chống nhiễm tiền).
+    // Đọc giá trị quà tay từ chính `cartSnapshot` đã duyệt (giá DB lúc duyệt),
+    // không tốn thêm query trong transaction chật subrequest này.
+    let manualGiftSubtotal = 0;
+    try {
+      const snap: any[] = JSON.parse(String((request as any)?.cartSnapshot ?? '[]'));
+      if (Array.isArray(snap)) {
+        for (const s of snap) {
+          if (s?.isManual === true && s?.isGiftLine === true) {
+            manualGiftSubtotal += Number(s?.unitPrice || 0) * Math.floor(Number(s?.quantity || 0));
+          }
+        }
+      }
+    } catch {
+      manualGiftSubtotal = 0;
+    }
 
     // Chống tráo giỏ hàng: giỏ hàng thanh toán phải khớp 100% với giỏ đã duyệt.
     // MERGE: hash theo `request.orderCode` (mã đã khoá lúc tạo yêu cầu) chứ không
@@ -902,11 +936,14 @@ export class DiscountApprovalService {
     // Dung sai 0.01đ như cũ, CỘNG thêm đúng giá trị dòng quà tự động: số tiền
     // lúc chốt có thể đã kèm giá món quà (đơn offline, call site chưa lọc)
     // trong khi bản ghi duyệt thì không. Lệch ĐÚNG BẰNG tiền quà là hợp lệ; lệch
-    // bất kỳ số nào khác vẫn bị chặn. Quà tay không nằm trong `giftSubtotal` nên
-    // vẫn phải khớp tuyệt đối — nếu không thì thêm quà tay là đường lách duyệt.
+    // bất kỳ số nào khác vẫn bị chặn. Quà tay NGƯỢC LẠI: bản ghi duyệt CÓ giá
+    // quà tay mà tiền đơn KHÔNG (luật chống nhiễm tiền) ⇒ chấp nhận lệch đúng
+    // bằng `manualGiftSubtotal`. Thêm quà tay sau duyệt vẫn chết vì hash lệch.
     const amountMatches = (approved: number, actual: number): boolean =>
       Math.abs(approved - actual) <= 0.01 ||
-      Math.abs(approved - (actual - giftSubtotal)) <= 0.01;
+      Math.abs(approved - (actual - giftSubtotal)) <= 0.01 ||
+      Math.abs(approved - manualGiftSubtotal - actual) <= 0.01 ||
+      Math.abs(approved - giftSubtotal - manualGiftSubtotal - actual) <= 0.01;
     if (
       (originalAmount !== undefined && !amountMatches(request.originalAmount, originalAmount)) ||
       (discountAmount !== undefined && !amountMatches(request.discountAmount, discountAmount)) ||

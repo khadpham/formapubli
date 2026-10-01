@@ -151,6 +151,12 @@ interface ParserImportSnapshot {
   note: string;
 }
 
+/** Quà TAY ("Tặng thêm") — thu ngân tự chọn, quản lý duyệt trong cùng yêu cầu duyệt. */
+interface ManualGift {
+  editionId: string;
+  quantity: number;
+}
+
 interface PosCheckoutTerminalProps {
   books: BookItem[];
   currentRole: UserRole;
@@ -526,6 +532,8 @@ export function PosCheckoutTerminal({
     setIsScannerOpen(false);
     setAmbiguousMatches(null);
     setCart([]);
+    setManualGifts([]);
+    setManualGiftPick('');
     setNote('');
     setQrSnapshot(null);
     setIsGift(false);
@@ -1678,6 +1686,68 @@ export function PosCheckoutTerminal({
     setDismissedGiftProductIds((prev) => new Set([...Array.from(prev), productId]));
   };
 
+  // Quà TAY ("Tặng thêm"): thu ngân tự chọn món ngoài chương trình. Không tự
+  // bán 0đ được — phải đi qua duyệt quản lý (discountApprovalId); server chỉ
+  // công nhận dòng nào nằm trong snapshot đã duyệt (approvedManual).
+  const [manualGifts, setManualGifts] = useState<ManualGift[]>([]);
+  const [manualGiftPick, setManualGiftPick] = useState('');
+  const addManualGift = () => {
+    const book = books.find((b) => b.id === manualGiftPick);
+    if (!book || isInteractionLocked) return;
+    setManualGifts((prev) => {
+      const ex = prev.find((g) => g.editionId === book.id);
+      if (ex) return prev.map((g) => (g.editionId === book.id ? { ...g, quantity: g.quantity + 1 } : g));
+      return [...prev, { editionId: book.id, quantity: 1 }];
+    });
+    setManualGiftPick('');
+  };
+  const removeManualGift = (editionId: string) => {
+    if (isInteractionLocked) return;
+    setManualGifts((prev) => prev.filter((g) => g.editionId !== editionId));
+  };
+  const resolveManualGift = (g: ManualGift) => {
+    const book = books.find((b) => b.id === g.editionId);
+    return book ? { ...g, code: book.code, title: book.title, coverPrice: book.coverPrice } : null;
+  };
+  // Quà tay ở dạng dòng giỏ (giá 0đ khi hiển thị) để tái dùng cho cả gửi đơn
+  // online/offline lẫn badge trong giỏ. Server KHÔNG tin cờ này — chỉ công
+  // nhận dòng nằm trong yêu cầu đã duyệt (approvedManual).
+  const manualGiftLines = useMemo<CartItem[]>(
+    () =>
+      manualGifts
+        .map((g) => {
+          const b = books.find((x) => x.id === g.editionId);
+          if (!b) return null;
+          return {
+            editionId: b.id,
+            code: b.code,
+            title: b.title,
+            coverPrice: b.coverPrice,
+            quantity: g.quantity,
+            stockAvailable: b.totalStock,
+            isGiftLine: true,
+          } as CartItem;
+        })
+        .filter(Boolean) as CartItem[],
+    [manualGifts, books]
+  );
+  // Dòng quà tay gửi kèm đơn online/offline: server tự xác minh lại qua
+  // approvedManual, dòng không duyệt bị hạ về giá thường (không báo lỗi).
+  const manualGiftOrderLines = useMemo(
+    () =>
+      manualGifts.map((g) => ({
+        editionId: g.editionId,
+        quantity: g.quantity,
+        unitDiscountRate: 1,
+        isGiftLine: true,
+      })),
+    [manualGifts]
+  );
+  const clearManualGifts = () => {
+    setManualGifts([]);
+    setManualGiftPick('');
+  };
+
   // Nút chính đổi nhãn theo hình thức thanh toán: chuyển khoản/QR tạo đơn
   // PENDING trước rồi mới hiện QR, nên không còn nhãn "khấu trừ kho" ngay.
   const isDigitalCheckout = !isGift && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE');
@@ -1886,7 +1956,7 @@ export function PosCheckoutTerminal({
            note: giftNote,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
-          items: [...cart, ...giftItems].map((c) => ({
+          items: [...cart, ...giftItems, ...manualGiftLines].map((c) => ({
             editionId: c.editionId,
             code: c.code,
             title: c.title,
@@ -2017,7 +2087,7 @@ export function PosCheckoutTerminal({
             discountApprovalId: approvedDiscountRequestId || undefined,
             note,
             confirmImmediately: false,
-            items: [...cart, ...giftItems].map((item) => ({
+            items: [...cart, ...giftItems, ...manualGiftLines].map((item) => ({
               editionId: item.editionId,
               quantity: item.quantity,
               // Dòng quà tự động (engine): gửi cờ để server tự xác minh lại.
@@ -2061,7 +2131,7 @@ export function PosCheckoutTerminal({
           // thích ở `items` trong TransferPaymentSession: nếu không, phiếu thu in
           // `items` từ GIỎ ĐANG SỐNG, mà giỏ rỗng sau khi F5 ⇒ phiếu có tổng
           // tiền đúng nhưng không có dòng sách nào.
-          items: [...cart, ...giftItems].map((c) => ({ editionId: c.editionId, code: c.code, title: c.title, quantity: c.quantity, price: c.coverPrice })),
+          items: [...cart, ...giftItems, ...manualGiftLines].map((c) => ({ editionId: c.editionId, code: c.code, title: c.title, quantity: c.quantity, price: c.coverPrice })),
           // Cùng nguyên tắc với `amount`: mọi con số TIỀN trên màn hình thu
           // phải là con số server đã ghi vào đơn, không phải số client tự tính.
           // Nếu không, thu ngân nhìn thấy "giảm 16.830đ" trong khi đơn thật ghi
@@ -2128,7 +2198,7 @@ export function PosCheckoutTerminal({
           note,
           isGift,
           giftReason: isGift ? giftReason.trim() || note.trim() : undefined,
-          items: [...cart, ...giftItems].map((item) => ({
+          items: [...cart, ...giftItems, ...manualGiftLines].map((item) => ({
             editionId: item.editionId,
             quantity: item.quantity,
             unitDiscountRate: isGift ? 1 : item.isGiftLine === true ? 1 : undefined,
@@ -2660,6 +2730,7 @@ export function PosCheckoutTerminal({
                      addToCartAbortRef.current = null;
                     setSelectedWarehouseId(e.target.value);
                 setCart([]); // Reset giỏ khi đổi kho để đảm bảo tồn kho
+                clearManualGifts(); // Quà tay gắn tồn kho cũ — phải gỡ cùng giỏ
               }}
               className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer min-h-[40px]"
             >
@@ -3327,7 +3398,7 @@ export function PosCheckoutTerminal({
                 <button
                   type="button"
                    disabled={isInteractionLocked || pendingAddToCartCountRef.current > 0}
-                    onClick={() => !isInteractionLocked && pendingAddToCartCountRef.current === 0 && setCart([])}
+                    onClick={() => !isInteractionLocked && pendingAddToCartCountRef.current === 0 && (setCart([]), clearManualGifts())}
                   className="text-xs text-rose-600 hover:text-rose-800 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Xóa giỏ
@@ -3484,6 +3555,54 @@ export function PosCheckoutTerminal({
               ))}
             </div>
 
+              {/* Quà TAY ("Tặng thêm") — thu ngân tự chọn, phải qua duyệt quản lý */}
+              {manualGiftLines.map((g) => (
+                <div
+                  key={`manual-${g.editionId}`}
+                  className="p-2.5 rounded-xl bg-violet-50/70 border border-violet-200 flex items-center justify-between gap-2"
+                >
+                  <div className="truncate flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] font-bold text-violet-700">[{g.code}]</span>
+                      <span className="text-xs font-bold text-slate-800 truncate">{g.title}</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[9px] font-extrabold">Tặng thêm · chờ duyệt</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-500">{g.quantity} × 0 đ (sau duyệt)</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Gỡ quà tặng thêm: ${g.title}`}
+                    onClick={() => removeManualGift(g.editionId)}
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-violet-300 text-violet-800 text-[11px] font-bold hover:bg-violet-100"
+                  >
+                    Gỡ
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-stretch gap-1.5">
+                <select
+                  value={manualGiftPick}
+                  onChange={(e) => setManualGiftPick(e.target.value)}
+                  aria-label="Chọn món tặng thêm"
+                  className="flex-1 min-w-0 px-2 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white"
+                >
+                  <option value="">Tặng thêm món…</option>
+                  {books.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.title} — {(b.coverPrice || 0).toLocaleString('vi-VN')} đ
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addManualGift}
+                  disabled={!manualGiftPick}
+                  aria-label="Thêm quà tặng thêm"
+                  className="shrink-0 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-xs font-bold"
+                >
+                  Tặng thêm
+                </button>
+              </div>
             {/* Customer & Discount Controls */}
             <div className="pt-2 border-t border-slate-100 space-y-3">
               <div>
@@ -4367,11 +4486,23 @@ export function PosCheckoutTerminal({
          originalAmount={subtotal}
          discountAmount={pendingDiscountRate !== null ? approvalDiscountAmount : discountAmount}
          finalAmount={pendingDiscountRate !== null ? approvalFinalAmount : finalAmount}
-         items={cart.map((item) => ({
-          editionId: item.editionId,
-          quantity: item.quantity,
-          unitPrice: item.coverPrice,
-        }))}
+          items={[
+            ...cart.map((item) => ({
+              editionId: item.editionId,
+              quantity: item.quantity,
+              unitPrice: item.coverPrice,
+            })),
+            // Quà TAY đi cùng yêu cầu duyệt — server ép miễn phí 100% và chỉ
+            // công nhận khi đúng yêu cầu này được duyệt (approvedManual).
+            ...manualGiftLines.map((g) => ({
+              editionId: g.editionId,
+              quantity: g.quantity,
+              unitPrice: g.coverPrice,
+              unitDiscountRate: 1,
+              isGiftLine: true,
+              isManual: true,
+            })),
+          ]}
         onRequestCreated={setPendingApprovalRequestId}
         onApproved={(data) => {
           if (!pendingApprovalRequestId || pendingApprovalRequestId !== data.requestId) return;
@@ -4589,6 +4720,49 @@ export function PosCheckoutTerminal({
                 ))}
               </div>
 
+                {manualGiftLines.map((g) => (
+                  <div key={`manual-${g.editionId}`} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 bg-violet-50/60 rounded-lg px-1.5">
+                    <div className="truncate flex-1 pr-2">
+                      <span className="font-bold text-slate-800 truncate block">
+                        {g.title}{' '}
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[9px] font-extrabold align-middle">Tặng thêm</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">{g.quantity} × 0 đ (sau duyệt)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeManualGift(g.editionId)}
+                      aria-label={`Gỡ quà tặng thêm: ${g.title}`}
+                      className="shrink-0 px-2 py-1 rounded-lg bg-white border border-violet-300 text-violet-800 text-[10px] font-bold hover:bg-violet-100"
+                    >
+                      Gỡ
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-stretch gap-1.5 py-1">
+                  <select
+                    value={manualGiftPick}
+                    onChange={(e) => setManualGiftPick(e.target.value)}
+                    aria-label="Chọn món tặng thêm"
+                    className="flex-1 min-w-0 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none"
+                  >
+                    <option value="">Tặng thêm món…</option>
+                    {books.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.title} — {(b.coverPrice || 0).toLocaleString('vi-VN')} đ
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addManualGift}
+                    disabled={!manualGiftPick}
+                    aria-label="Thêm quà tặng thêm"
+                    className="shrink-0 px-3 py-2 rounded-xl bg-violet-600 disabled:opacity-40 text-white text-xs font-bold"
+                  >
+                    Tặng thêm
+                  </button>
+                </div>
               {/* Payment selector */}
               <div>
                 <label className="text-[11px] font-bold text-slate-500 block mb-1">

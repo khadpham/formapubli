@@ -551,6 +551,9 @@ export class OrderService {
     // (đường này sát trần 50 subrequest của Worker).
     const claimedGiftIds = looseItems.filter((i) => i.isGiftLine).map((i) => i.editionId);
     let allowedGiftProducts = new Set<string>();
+    // Quà tay đã duyệt (theo `discountApprovalId`) — dùng ở cả engine lẫn
+    // `consumeApproval` phía dưới nên khai ở scope hàm, không phải trong `if`.
+    const approvedManualSet = new Set<string>();
     if (claimedGiftIds.length) {
       const campaigns = await db
         .select()
@@ -610,6 +613,7 @@ export class OrderService {
             .filter((i: any) => i?.isManual === true && i?.isGiftLine === true)
             .map((i: any) => String(i.editionId))
         );
+        for (const id of Array.from(approvedManual)) approvedManualSet.add(id);
       }
 
       allowedGiftProducts = new Set(
@@ -1005,7 +1009,10 @@ return {
           await DiscountApprovalService.consumeApproval({
             requestId: params.discountApprovalId,
             currentItems: preparedItems
-              .filter((item) => !item.bundleId && !item.isGiftLine)
+              // Quà TỰ ĐỘNG loại (consumeApproval tự lọc lại); quà TAY giữ lại
+              // kèm cờ để hash khớp với lúc duyệt — lọc mất là mọi đơn quà tay
+              // chết 409 dù đã duyệt đúng.
+              .filter((item) => !item.bundleId && (!item.isGiftLine || approvedManualSet.has(item.productId)))
               .map((item) => ({
                 // `consumeApproval` cần `products.id` để băm hash giỏ — với sách
                 // nó BẰNG `edition_id`. `edition_id` có thể NULL cho hàng hóa nên
@@ -1013,6 +1020,9 @@ return {
                 editionId: item.productId,
                 quantity: item.quantity,
                 unitPrice: item.unitCoverPrice,
+                unitDiscountRate: item.unitDiscountRate,
+                isGiftLine: Boolean(item.isGiftLine),
+                isManual: Boolean(item.isGiftLine) && approvedManualSet.has(item.productId),
               })),
             discountRate,
             warehouseId,
