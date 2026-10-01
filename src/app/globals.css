@@ -116,4 +116,23 @@ body {
   }
 }
 
+/* ==========================================================================
+   BIÊN BẢN CHỐT NGÀY — KHỔ A4
+   Đặt SAU khung 80mm ở trên, trong CHÍNH file này, là cách duy nhất chắc chắn
+   thắng: @page không nhận selector (nên không thể scope theo phần tử), và các
+   @page cùng độ đặc hiệu thì thứ tự trong file quyết định. Đặt trong component
+   (DailyFairSettlementModal) không đảm bảo được — style của component không
+   chắc đứt sau globals.css trong <head>; đo thật trên trang đang chạy cho thấy
+   lề bị mất sạch (biên bản sát mép trái, dính đỉnh từ trang 2).
+   Hệ quả có chủ ý: phiếu nhiệt 80mm cũng nhận lề này (nội dung còn 60mm, vẫn
+   in được trên máy K80). Muốn phiếu nhiệt không lề thì phải bọc khối 80mm
+   trong @media riêng theo trạng thái in, xem ghi chú ở #thermal-receipt-print.
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+}
+
 

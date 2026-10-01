@@ -22,30 +22,52 @@ if (!/:not\(#printable-settlement-report\)/.test(m[1])) {
 // vào câu chú thích trong component có chữ "@page { margin }" ⇒ đọc nhầm CSS.
 const pageRule = src.match(/@page\s*\{([^}]*\bsize\s*:[^}]*)\}/);
 if (!pageRule) throw new Error('Không tìm thấy quy tắc @page — cần giữ khổ A4 portrait.');
-if (!/margin:\s*12mm\s+10mm\s*;/.test(pageRule[1])) {
+// LỀ THẬT đặt bằng PADDING của khối in, không dựa vào @page margin: đo thật trên
+// trang đang chạy cho thấy @page của component không thắng được khối 80mm trong
+// globals.css (biên bản sát mép trái, dính đỉnh từ trang 2) dù cùng thứ tự và
+// có !important. Padding-left/right lặp ở MỌI trang; padding-top chỉ ở trang đầu
+// nên lề trên các trang sau do padding-top của từng .print-block đảm nhiệm.
+if (!/margin:\s*0\s*!important/.test(pageRule[1])) {
   throw new Error(
-    'LỖI: @page phải đặt `margin: 12mm 10mm` — đây là lề thật của MỌI trang. ' +
-      'padding của #printable chỉ hiện ở trang đầu (theo chuẩn fragmentation) nên ' +
-      'đặt lề ở đó làm trang 2+ dính sát mép trên. Nhận: ' + pageRule[1].trim()
+    'LỖI: @page phải đặt margin 0 !important — lề đã do padding của khối in đảm ' +
+      'nhiệm, để @page có margin là hai lề cộng dồn. Nhận: ' + pageRule[1].trim()
   );
 }
-if (!/size:\s*A4\s+portrait/.test(pageRule[1])) {
-  throw new Error('LỖI: @page phải giữ `size: A4 portrait`.');
+if (!/size:\s*A4\s+portrait\s*!important\s*;/.test(pageRule[1])) {
+  throw new Error('LỖI: @page phải giữ `size: A4 portrait !important` (thắng size 80mm của globals).');
+}
+if (!/#printable-settlement-report\s*\{[^}]*padding:\s*12mm\s+10mm\s*!important/.test(src)) {
+  throw new Error(
+    'LỖI: khối in phải có `padding: 12mm 10mm !important` — đây là lề trái/phải ' +
+      'lặp mọi trang và lề trên trang đầu; thiếu nó thì bản in sát mép.'
+  );
+}
+if (!/\.print-block\s*\{[^}]*padding-top:\s*12mm/.test(src)) {
+  throw new Error(
+    'LỖI: mỗi .print-block phải có padding-top 12mm — padding-top của khối in chỉ hiện ' +
+      'ở trang đầu, nên lề trên của các trang sau do từng khối nội dung mang.'
+  );
+}
+
+// GỠ ÉP 80MM: rule gỡ phải dùng :has() để có độ đặc hiệu (1,0,1) CAO HƠN (0,0,1)
+// của globals. Không có rule này thì toàn bộ biên bản A4 bị ép còn 80mm.
+if (!/html:has\(#printable-settlement-report\)[\s\S]{0,200}body:has\(#printable-settlement-report\)[\s\S]{0,1200}?width:\s*auto\s*!important/.test(src)) {
+  throw new Error(
+    'LỖI: phải gỡ ép 80mm của phiếu nhiệt bằng html/body:has(#printable-settlement-report) ' +
+      '{ width: auto !important } — không có nó thì globals.css ép toàn bộ biên bản A4 ' +
+      'còn 80mm (đo thật: 302px / 718px = 42% chiều ngang, dính mép trái).'
+  );
 }
 
 const printableRule = src.match(/#printable-settlement-report\s*\{([^}]*)\}/);
 if (!printableRule) throw new Error('Không tìm thấy rule của #printable-settlement-report.');
-if (/padding:\s*[\d.]+mm/.test(printableRule[1])) {
+// Ở đây NGƯỢC LẠI với các lần trước: khối in PHẢI có padding mm. Lý do đo được
+// (xem chú thích lớn hơn ở trên): @page margin không thắng nổi globals, còn
+// padding-left/right thì lặp ở mọi trang nên lề ngang chắc chắn đúng.
+if (!/padding:\s*12mm\s+10mm\s*!important/.test(printableRule[1])) {
   throw new Error(
-    'LỖI: khối in KHÔNG được đặt lề bằng padding mm — padding-top chỉ hiện ở trang ' +
-      'đầu nên từ trang 2 chữ dính sát mép trên. Lề do @page margin quyết định. ' +
-      'Nhận: ' + printableRule[1].trim()
-  );
-}
-if (!/padding:\s*0\s*!important/.test(printableRule[1])) {
-  throw new Error(
-    'LỖI: khối in phải đặt `padding: 0 !important` — cộng dồn padding mm với @page ' +
-      'margin sẽ nhân đôi lề. Nhận: ' + printableRule[1].trim()
+    'LỖI: khối in phải có `padding: 12mm 10mm !important` — đây là lề trái/phải ' +
+      'mọi trang và lề trên trang đầu. Nhận: ' + printableRule[1].trim()
   );
 }
 

@@ -217,6 +217,13 @@
       "when": 1790600006000,
       "tag": "0030_royalty_basis",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790600007000,
+      "tag": "0031_products_promotions",
+      "breakpoints": true
     }
   ],
   "version": "7"

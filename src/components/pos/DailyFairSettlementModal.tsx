@@ -122,9 +122,12 @@ export function hourWindow(input: {
   return { start, end };
 }
 
-// Hình học dải giờ trên bản in: viewBox 240×46, co giãn theo bề rộng khung in.
+// Hình học dải giờ trên bản in: viewBox 720×46 — 720 là bề rộng vùng in A4 sau
+// lề (190mm @ 96dpi ≈ 718px), nên khi `w-full` co giãn tỉ lệ gần 1:1 và CHỮ
+// giữ đúng kích thước thật. Trước đây viewBox chỉ 240×46 bị giãn 3 lần: cột
+// thấp vẹo, nhãn giờ nằm cách xa nhau, dải giờ chiếm 137px chiều cao.
 // Nét VÀ CHỮ đều là nội dung SVG nên in mặc định (khác màu nền CSS).
-const BAND_W = 240;
+const BAND_W = 720;
 const BAND_H = 46;
 const BAND_BASE_Y = 34;
 const BAND_PLOT_H = 26;
@@ -381,13 +384,18 @@ export function DailyFairSettlementModal({
                absolute để ra khỏi khung cắt. */
             width: 100%;
             background: white !important;
-            /* KHÔNG đặt lề ở padding của khối in. Theo chuẩn CSS fragmentation,
-               padding-top chỉ hiện ở TRANG ĐẦU, padding-bottom chỉ ở trang cuối,
-               chỉ padding trái/phải mới lặp mọi trang — nên lề đặt ở đây đúng là
-               mất lề trên từ trang 2 (khớp ảnh in thật của owner). Lề trang do
-               margin của @page quyết định, xem bên dưới. Padding về 0 để không
-               cộng dồn với lề trang thành lề khổng lồ. */
-            padding: 0 !important;
+            /* LỀ TRANG THẬT — đặt bằng padding của khối in, KHÔNG dựa vào @page
+               margin. Đo thật trên trang đang chạy: @page margin của ta không
+               thắng được khối 80mm trong globals.css (biên bản sát mép trái,
+               dính đỉnh từ trang 2) dù đặt cùng thứ tự và có !important —
+               style của component không bảo đảm đứt sau globals trong <head>.
+               Còn padding thì theo chuẩn fragmentation: padding-left/right LẶP
+               ở mọi trang ⇒ lề trái/phải chắc chắn đúng; padding-top chỉ hiện ở
+               trang đầu, nên lề trên của các trang sau do padding-top của TỪNG
+               khối nội dung (rule .print-block bên dưới) đảm nhiệm — khối nào
+               mở đầu trang thì khối đó mang lề trên.
+               Vì vậy @page phải để margin 0, nếu không hai lề cộng dồn. */
+            padding: 12mm 10mm !important;
             margin: 0 !important;
             overflow: visible !important;
             max-height: none !important;
@@ -421,7 +429,12 @@ export function DailyFairSettlementModal({
           #printable-settlement-report .print-block {
             break-inside: avoid;
             page-break-inside: avoid;
+            /* Lề TRÊN cho mọi trang: padding-top chỉ hiện ở trang đầu, nên mỗi
+               khối nội dung mang lề trên của chính nó — khối nào rơi xuống đầu
+               trang mới thì lề trên xuất hiện đúng ở đó. */
+            padding-top: 12mm;
           }
+          /* Khối đầu tiên đã có lề trên từ padding của chính nó ở trên. */
 /* LỀ TRANG THẬT của bản in nằm ở @page margin — theo chuẩn, margin của
              @page lặp ở MỌI trang, còn padding của phần tử thì không (xem khối
              in ở trên). Khối in hoá đơn nhiệt cũng đặt @page trong @media print
@@ -429,9 +442,36 @@ export function DailyFairSettlementModal({
              A4 mất lề, vì rule !important thắng cả rule thường đến sau nó.
              LƯU Ý: comment trong khối style này không dùng ngoặc nhọn, test đọc
              file bằng regex sẽ dừng sớm ở dấu đóng ngoặc. */
+          /* GỠ ÉP 80MM CỦA PHIẾU NHIỆT K80 — đây là thủ phạm gốc của lỗi "bản in
+             chiếm 42% chiều ngang, dính mép". globals.css đặt sẵn trong
+             @media print: html và body bị ép width 80mm !important cho hóa đơn
+             nhiệt K80, kèm mọi con trực tiếp của body bị display none !important.
+             Rule đó áp cho
+             MỌI lần in trên toàn app nên biên bản A4 cũng bị ép còn 80mm = 302px
+             so với 718px vùng in A4 ⇒ 42%. Đo thật trên trang đang chạy:
+             width của html/body/#printable đều bằng 302.359px, và rule khớp chính
+             là dòng ép 80mm đó.
+             Sửa ở đây chứ không đụng globals.css: hóa đơn nhiệt đang dùng thật ở
+             POS, sửa globals là phá chức năng đang chạy. Selector dùng :has() để
+             có độ đặc hiệu CAO HƠN (1,0,1) nên thắng hẳn (0,0,1) của globals. */
+          html:has(#printable-settlement-report),
+          body:has(#printable-settlement-report) {
+            /* width: auto một mình chưa đủ — nó cho 100% bề rộng màn hình
+               (1440px) trong khi vùng in A4 chỉ 190mm (718px), Chrome lại co
+               trang. max-width theo đúng vùng in giữ mọi trường hợp: khi in
+               thật viewport đã là 718px, khi render PDF thì bị chặn ở 718px. */
+            /* max-width 210mm = đúng bề rộng tờ A4 (không trừ lề, vì lề do
+               padding của khối in đảm nhiệm). Đặt 190mm sẽ tạo lề phải dư
+               10mm so với lề trái — đo thật ra lệch đúng bằng 10mm. */
+            width: auto !important;
+            max-width: 210mm !important;
+          }
           @page {
-            size: A4 portrait;
-            margin: 12mm 10mm;
+            size: A4 portrait !important;
+            /* margin 0: lề đã do padding của khối in đảm nhiệm (xem khối in ở
+               trên). Để @page margin khác 0 là hai lề cộng dồn thành lề
+               khổng lồ, và lề của globals vẫn có thể thắng ở đây. */
+            margin: 0 !important;
           }
         }
       `}</style>
@@ -1126,7 +1166,7 @@ export function DailyFairSettlementModal({
             <div className="flex justify-between items-start border-b border-slate-400 pb-3 mb-4">
               <div>
                 <h4 className="font-sans font-black text-sm tracking-wider uppercase text-slate-900">
-                  CÔNG TY TNHH XUẤT BẢN FORMA
+                  FORMApubli
                 </h4>
                 <p className="font-sans text-[11px] text-slate-600">
                   Gian hàng / Địa điểm: <strong>{data.warehouse?.name}</strong> ({data.warehouse?.code})
@@ -1186,13 +1226,13 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
-            {/* I-BIS. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: đơn lớn
+            {/* II. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: đơn lớn
                 nhất, top 10 bán chạy, giờ cao điểm và tiền mặt theo từng ca.
                 Không có highlight (ngày không bán được gì) thì nói thẳng, không in
                 dòng rỗng. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                I-BIS. ĐIỂM NHẤN NGÀY
+                II. ĐIỂM NHẤN NGÀY
               </h3>
               <div className="grid grid-cols-2 gap-x-8 gap-y-1">
                 <div>- Doanh thu thực thu: <strong>{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
@@ -1263,8 +1303,8 @@ export function DailyFairSettlementModal({
                   {hourlyInWindow.map((h: any, i: number) => {
                     const n = Number(h.orders || 0);
                     const bh = bandBarH(n);
-                    const x = (i * bandSlot + 0.6).toFixed(2);
-                    const wRect = Math.max(0.5, bandSlot - 1.2).toFixed(2);
+                    const x = (i * bandSlot + 4).toFixed(2);
+                    const wRect = Math.max(4, bandSlot - 8).toFixed(2);
                     // Hai nhánh tách riêng để màu nằm thẳng trong thẻ in: giờ có đơn
                     // màu chàm, giờ trống màu xám nhạt — xám VẪN THẤY để đọc ra
                     // giờ nào không bán, không in ra khoảng trống mờ mịt.
@@ -1280,9 +1320,9 @@ export function DailyFairSettlementModal({
                   {hourlyInWindow.length > 0 && Number(hourlyInWindow[peakIndex]?.orders || 0) > 0 && (
                     <text
                       x={(peakIndex * bandSlot + bandSlot / 2).toFixed(2)}
-                      y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 1.5}
+                      y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 3}
                       textAnchor="middle"
-                      fontSize="5"
+                      fontSize="9"
                       fontWeight="bold"
                       fill="#1e293b"
                     >
@@ -1298,9 +1338,9 @@ export function DailyFairSettlementModal({
                       <text
                         key={`nhan-${h.hour}`}
                         x={(i * bandSlot + bandSlot / 2).toFixed(2)}
-                        y={BAND_BASE_Y + 6}
+                        y={BAND_BASE_Y + 8}
                         textAnchor="middle"
-                        fontSize="4.5"
+                        fontSize="8"
                         fill="#64748b"
                       >
                         {hour}h
@@ -1361,7 +1401,7 @@ export function DailyFairSettlementModal({
                 giấy trắng). Vẫn giữ `break-inside: avoid` cho từng khối. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                II. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
+                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
@@ -1417,7 +1457,7 @@ export function DailyFairSettlementModal({
                 báo thiếu hàng, mà cột này là biên bản bàn giao cho kế toán. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                III. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
