@@ -384,13 +384,18 @@ export function DailyFairSettlementModal({
                absolute để ra khỏi khung cắt. */
             width: 100%;
             background: white !important;
-            /* KHÔNG đặt lề ở padding của khối in. Theo chuẩn CSS fragmentation,
-               padding-top chỉ hiện ở TRANG ĐẦU, padding-bottom chỉ ở trang cuối,
-               chỉ padding trái/phải mới lặp mọi trang — nên lề đặt ở đây đúng là
-               mất lề trên từ trang 2 (khớp ảnh in thật của owner). Lề trang do
-               margin của @page quyết định, xem bên dưới. Padding về 0 để không
-               cộng dồn với lề trang thành lề khổng lồ. */
-            padding: 0 !important;
+            /* LỀ TRANG THẬT — đặt bằng padding của khối in, KHÔNG dựa vào @page
+               margin. Đo thật trên trang đang chạy: @page margin của ta không
+               thắng được khối 80mm trong globals.css (biên bản sát mép trái,
+               dính đỉnh từ trang 2) dù đặt cùng thứ tự và có !important —
+               style của component không bảo đảm đứt sau globals trong <head>.
+               Còn padding thì theo chuẩn fragmentation: padding-left/right LẶP
+               ở mọi trang ⇒ lề trái/phải chắc chắn đúng; padding-top chỉ hiện ở
+               trang đầu, nên lề trên của các trang sau do padding-top của TỪNG
+               khối nội dung (rule .print-block bên dưới) đảm nhiệm — khối nào
+               mở đầu trang thì khối đó mang lề trên.
+               Vì vậy @page phải để margin 0, nếu không hai lề cộng dồn. */
+            padding: 12mm 10mm !important;
             margin: 0 !important;
             overflow: visible !important;
             max-height: none !important;
@@ -424,7 +429,12 @@ export function DailyFairSettlementModal({
           #printable-settlement-report .print-block {
             break-inside: avoid;
             page-break-inside: avoid;
+            /* Lề TRÊN cho mọi trang: padding-top chỉ hiện ở trang đầu, nên mỗi
+               khối nội dung mang lề trên của chính nó — khối nào rơi xuống đầu
+               trang mới thì lề trên xuất hiện đúng ở đó. */
+            padding-top: 12mm;
           }
+          /* Khối đầu tiên đã có lề trên từ padding của chính nó ở trên. */
 /* LỀ TRANG THẬT của bản in nằm ở @page margin — theo chuẩn, margin của
              @page lặp ở MỌI trang, còn padding của phần tử thì không (xem khối
              in ở trên). Khối in hoá đơn nhiệt cũng đặt @page trong @media print
@@ -450,15 +460,18 @@ export function DailyFairSettlementModal({
                (1440px) trong khi vùng in A4 chỉ 190mm (718px), Chrome lại co
                trang. max-width theo đúng vùng in giữ mọi trường hợp: khi in
                thật viewport đã là 718px, khi render PDF thì bị chặn ở 718px. */
+            /* max-width 210mm = đúng bề rộng tờ A4 (không trừ lề, vì lề do
+               padding của khối in đảm nhiệm). Đặt 190mm sẽ tạo lề phải dư
+               10mm so với lề trái — đo thật ra lệch đúng bằng 10mm. */
             width: auto !important;
-            max-width: 190mm !important;
+            max-width: 210mm !important;
           }
           @page {
             size: A4 portrait !important;
-            /* !important BẮT BUỘC: globals.css đặt margin 0mm !important cho @page
-               giấy nhiệt. Rule thường đến sau vẫn thua, nên lề của ta sẽ mất
-               sạch — đúng triệu chứng dính mép mà owner thấy. */
-            margin: 12mm 10mm !important;
+            /* margin 0: lề đã do padding của khối in đảm nhiệm (xem khối in ở
+               trên). Để @page margin khác 0 là hai lề cộng dồn thành lề
+               khổng lồ, và lề của globals vẫn có thể thắng ở đây. */
+            margin: 0 !important;
           }
         }
       `}</style>
@@ -1153,7 +1166,7 @@ export function DailyFairSettlementModal({
             <div className="flex justify-between items-start border-b border-slate-400 pb-3 mb-4">
               <div>
                 <h4 className="font-sans font-black text-sm tracking-wider uppercase text-slate-900">
-                  CÔNG TY TNHH XUẤT BẢN FORMA
+                  FORMApubli
                 </h4>
                 <p className="font-sans text-[11px] text-slate-600">
                   Gian hàng / Địa điểm: <strong>{data.warehouse?.name}</strong> ({data.warehouse?.code})
@@ -1213,13 +1226,13 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
-            {/* I-BIS. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: đơn lớn
+            {/* II. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: đơn lớn
                 nhất, top 10 bán chạy, giờ cao điểm và tiền mặt theo từng ca.
                 Không có highlight (ngày không bán được gì) thì nói thẳng, không in
                 dòng rỗng. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                I-BIS. ĐIỂM NHẤN NGÀY
+                II. ĐIỂM NHẤN NGÀY
               </h3>
               <div className="grid grid-cols-2 gap-x-8 gap-y-1">
                 <div>- Doanh thu thực thu: <strong>{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
@@ -1388,7 +1401,7 @@ export function DailyFairSettlementModal({
                 giấy trắng). Vẫn giữ `break-inside: avoid` cho từng khối. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                II. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
+                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
@@ -1444,7 +1457,7 @@ export function DailyFairSettlementModal({
                 báo thiếu hàng, mà cột này là biên bản bàn giao cho kế toán. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                III. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>

@@ -19,6 +19,11 @@
 - Mỗi hành động phải có DẤU HIỆU BẤM RÕ: icon, viền, nhãn aria nói rõ thao tác,
   và trạng thái sau khi bấm (ví dụ "Đã thêm: <tên>"). Không để nút trông như
   mảng chữ — người dùng sẽ không dám bấm.
+- **TÊN CÔNG TY TRONG MỌI MẪU IN: `FORMApubli`** (chủ doanh nghiệp chốt 01/10/2026).
+  Dùng cho biên bản chốt ngày, phiếu xuất kho, hoá đơn bán hàng, và MỌI tài liệu in
+  sau này. KHÔNG viết "CÔNG TY TNHH XUẤT BẢN FORMA" nữa — chủ doanh nghiệp đã đổi
+  tên hiển thị. Nếu cần tên pháp lý đầy đủ thì hỏi lại chủ doanh nghiệp, không tự
+  suy diễn.
 
 This repository is configured with two always-on frameworks:
 1. **Ponytail** (Lazy senior dev mode — YAGNI, standard library first, shortest diffs, root-cause bug fixing)

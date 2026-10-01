@@ -223,7 +223,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
             <div className="flex justify-between items-start border-b border-slate-300 pb-4 mb-4">
               <div>
                 <h4 className="font-sans font-black text-sm tracking-wider uppercase text-slate-900">
-                  CÔNG TY TNHH XUẤT BẢN FORMA
+                  FORMApubli
                 </h4>
                 <p className="font-sans text-[11px] text-slate-600">
                   Địa chỉ: 177 Phố Huế, P. Phố Huế, Q. Hai Bà Trưng, Hà Nội
