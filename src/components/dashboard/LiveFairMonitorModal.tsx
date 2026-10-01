@@ -6,7 +6,7 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import {
   Activity, AlertTriangle, Banknote, Landmark, CalendarDays, CheckCircle2, Clock,
-  DoorOpen, RefreshCw, ShieldAlert, TrendingUp, X,
+  DoorOpen, MapPin, RefreshCw, ShieldAlert, TrendingUp, X,
 } from 'lucide-react';
 
 /**
@@ -14,7 +14,7 @@ import {
  *
  * Ba điều làm nên khác Báo Cáo Chốt Ngày:
  *  - tự làm mới khi đang mở, dừng hẳn khi đóng / tab ẩn (0 request khi không xem);
- *  - TẤT CẢ kho hội chợ cùng lúc, không chọn từng kho;
+ *  - theo kho dashboard đang chọn, hoặc TẤT CẢ kho hội chợ khi chưa chọn kho nào;
  *  - thấy đơn CHƯA ĐÓNG — thứ báo cáo ngày không bao giờ hiện.
  *
  * `isOpen` là cổng duy nhất quyết định có poll hay không. Đây là bản sao có
@@ -29,6 +29,7 @@ const STALE_AFTER_MS = 30_000;
 interface MonitorPayload {
   businessDate: string;
   timezoneNote: string;
+  fairWarehouses: Array<{ id: string; code: string; name: string }>;
   today: {
     orderCount: number; revenue: number; cashRevenue: number; transferRevenue: number;
     otherRevenue: number; transferPct: number; avgOrderValue: number;
@@ -73,7 +74,16 @@ function clockOf(iso: string | null | undefined) {
   return new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export function LiveFairMonitorModal({
+  isOpen,
+  onClose,
+  warehouseId,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  /** Kho đang chọn ở dashboard. undefined = xem TẤT CẢ kho hội chợ (mặc định cũ). */
+  warehouseId?: string;
+}) {
   const [data, setData] = useState<MonitorPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +128,11 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/pos/live-monitor', { cache: 'no-store' });
+      // Có kho đang chọn thì giới hạn phạm vi 1 kho, khác hẳn URL cũ (TẤT CẢ).
+      const url = warehouseId
+        ? `/api/pos/live-monitor?warehouseId=${encodeURIComponent(warehouseId)}`
+        : '/api/pos/live-monitor';
+      const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) {
         const j = await res.json().catch(() => null);
         throw new Error(j?.error || `Không tải được trạng thái (HTTP ${res.status}).`);
@@ -136,7 +150,7 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
       // Mạng hội chợ yếu: giãn dần thay vì dội 10 giây/lần cho tới khi hết pin.
       backoffRef.current = Math.min(backoffRef.current + 1, BACKOFF_MS.length - 1);
     }
-  }, []);
+  }, [warehouseId]);
 
   const schedule = useCallback(() => {
     if (pollRef.current) clearTimeout(pollRef.current);
@@ -230,6 +244,11 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
 
   const t = data?.today;
   const showStaleBanner = isStale || (!!error && !!data);
+  // Tên kho lấy từ chính payload (server đã trả kèm fairWarehouses) — không cần
+  // thêm prop thứ hai. Chỉ hiện khi đã có tên: đừng in ra id thô cho người dùng.
+  const scopeName = warehouseId
+    ? data?.fairWarehouses.find((w) => w.id === warehouseId)?.name || null
+    : null;
 
   // createPortal trực tiếp, khớt với 18 file khác trong src/components. Lưu ý:
   // KHÔNG dùng PortalToBody ở đây. Helper đó gate nội dung bằng state `mounted` riêng
@@ -276,6 +295,13 @@ export function LiveFairMonitorModal({ isOpen, onClose }: { isOpen: boolean; onC
               </button>
             </div>
           </div>
+
+          {scopeName && (
+            <p className="px-4 py-2 bg-indigo-50 border-b border-indigo-200 text-[11px] font-bold text-indigo-800 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 shrink-0" />
+              Đang xem kho: {scopeName}
+            </p>
+          )}
 
           <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[11px] text-slate-600 flex items-center justify-between gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5">

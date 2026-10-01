@@ -868,10 +868,12 @@ export function ExecutiveDashboard({
         currentRole={currentRole}
       />
 
-      {/* Modal Trạng Thái Hội Chợ — lúc này, không phải báo cáo cuối ngày. */}
+      {/* Modal Trạng Thái Hội Chợ — lúc này, không phải báo cáo cuối ngày.
+          undefined = TẤT CẢ kho hội chợ, giữ nguyên hành vi cũ. */}
       <LiveFairMonitorModal
         isOpen={isLiveMonitorOpen}
         onClose={() => setIsLiveMonitorOpen(false)}
+        warehouseId={selectedWarehouseId === 'ALL' ? undefined : selectedWarehouseId}
       />
     </div>
   );
