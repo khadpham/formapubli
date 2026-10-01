@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { promotions, promotionGifts, products } from '@/db/schema';
+import { promotions, promotionGifts, products, warehouses } from '@/db/schema';
 import { AppError } from './app-error';
 
 /**
@@ -22,6 +22,8 @@ export interface CreatePromotionInput {
   isActive?: boolean;
   startsAt?: string | null;
   endsAt?: string | null;
+  /** NULL/undefined = mọi kho; có giá trị = chỉ kho đó (0034). */
+  warehouseId?: string | null;
   gifts: PromotionGiftInput[];
 }
 
@@ -30,7 +32,27 @@ export interface UpdatePromotionInput {
   isActive?: boolean;
   startsAt?: string | null;
   endsAt?: string | null;
+  warehouseId?: string | null;
   gifts?: PromotionGiftInput[];
+}
+
+/** Ngày kết thúc phải sau ngày bắt đầu (so tuyệt đối, chấp nhận mọi múi giờ ISO). */
+function assertWindow(startsAt?: string | null, endsAt?: string | null) {
+  if (!startsAt || !endsAt) return;
+  const s = new Date(startsAt).getTime();
+  const e = new Date(endsAt).getTime();
+  if (!Number.isFinite(s) || !Number.isFinite(e)) {
+    throw AppError.invalid('Ngày bắt đầu / kết thúc không đúng định dạng.');
+  }
+  if (e <= s) {
+    throw AppError.invalid('Ngày kết thúc phải sau ngày bắt đầu.');
+  }
+}
+
+async function assertWarehouse(warehouseId?: string | null) {
+  if (!warehouseId) return;
+  const rows = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.id, warehouseId)).limit(1);
+  if (!rows.length) throw AppError.invalid('Kho áp dụng không tồn tại.');
 }
 
 function assertGift(g: PromotionGiftInput) {
@@ -62,6 +84,18 @@ async function assertProductsExist(gifts: PromotionGiftInput[]) {
 export const PromotionService = {
   async list() {
     const campaigns = await db.select().from(promotions);
+    return this.shape(campaigns);
+  },
+
+  /** Chiến dịch áp dụng cho một kho: toàn hệ thống (warehouse_id NULL) + riêng kho đó. */
+  async listForWarehouse(warehouseId: string) {
+    const campaigns = await db.select().from(promotions);
+    return this.shape(
+      campaigns.filter((c) => !c.warehouseId || c.warehouseId === warehouseId)
+    );
+  },
+
+  async shape(campaigns: Array<typeof promotions.$inferSelect>) {
     const gifts = campaigns.length ? await db.select().from(promotionGifts) : [];
     return campaigns.map((c) => ({
       ...c,
@@ -83,6 +117,8 @@ export const PromotionService = {
     if (!gifts.length) throw AppError.invalid('Cần ít nhất một dòng quà.');
     gifts.forEach(assertGift);
     await assertProductsExist(gifts);
+    assertWindow(input.startsAt, input.endsAt);
+    await assertWarehouse(input.warehouseId);
 
     const id = `promo-${crypto.randomUUID()}`;
     await db.insert(promotions).values({
@@ -91,6 +127,7 @@ export const PromotionService = {
       isActive: input.isActive !== false,
       startsAt: input.startsAt || null,
       endsAt: input.endsAt || null,
+      warehouseId: input.warehouseId || null,
     });
     for (const g of gifts) {
       await db.insert(promotionGifts).values({
@@ -115,11 +152,20 @@ export const PromotionService = {
     if (input.isActive !== undefined) {
       await db.update(promotions).set({ isActive: input.isActive }).where(eq(promotions.id, id));
     }
+    if (input.startsAt !== undefined || input.endsAt !== undefined) {
+      const nextStart = input.startsAt !== undefined ? input.startsAt : rows[0].startsAt;
+      const nextEnd = input.endsAt !== undefined ? input.endsAt : rows[0].endsAt;
+      assertWindow(nextStart, nextEnd);
+    }
     if (input.startsAt !== undefined) {
       await db.update(promotions).set({ startsAt: input.startsAt || null }).where(eq(promotions.id, id));
     }
     if (input.endsAt !== undefined) {
       await db.update(promotions).set({ endsAt: input.endsAt || null }).where(eq(promotions.id, id));
+    }
+    if (input.warehouseId !== undefined) {
+      await assertWarehouse(input.warehouseId);
+      await db.update(promotions).set({ warehouseId: input.warehouseId || null }).where(eq(promotions.id, id));
     }
     if (input.gifts !== undefined) {
       if (!input.gifts.length) throw AppError.invalid('Cần ít nhất một dòng quà.');

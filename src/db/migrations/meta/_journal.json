@@ -238,6 +238,13 @@
       "when": 1790600009000,
       "tag": "0033_ledger_sellable",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790600010000,
+      "tag": "0034_promotion_scope",
+      "breakpoints": true
     }
   ],
   "version": "7"

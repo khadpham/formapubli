@@ -40,6 +40,8 @@ export const promotions = sqliteTable('promotions', {
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   startsAt: text('starts_at'), // NULL = không giới hạn
   endsAt: text('ends_at'),
+  // 0034: phạm vi kho. NULL = áp dụng MỌI kho; có giá trị = chỉ kho đó.
+  warehouseId: text('warehouse_id').references(() => warehouses.id),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 

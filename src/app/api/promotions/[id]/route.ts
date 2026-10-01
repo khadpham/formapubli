@@ -23,6 +23,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       isActive: body.isActive,
       startsAt: body.startsAt,
       endsAt: body.endsAt,
+      warehouseId: body.warehouseId !== undefined ? body.warehouseId : undefined,
       gifts: Array.isArray(body.gifts) ? body.gifts : undefined,
     });
 

@@ -24,6 +24,7 @@ const ALL_SUITES = [
   'scripts/test-goods-in-pos-catalog.ts',
   'scripts/test-goods-sell-e2e.ts',
   'scripts/test-gift-forgery.ts',
+  'scripts/test-gift-warehouse-scope.ts',
   'scripts/test-promotions-service.ts',
   'scripts/test-settlement-goods-display.ts',
   'scripts/test-promotion-engine.ts',

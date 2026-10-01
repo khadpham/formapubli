@@ -18,6 +18,8 @@ interface Campaign {
   isActive: boolean;
   startsAt: string | null;
   endsAt: string | null;
+  /** NULL = mọi kho; có giá trị = chỉ kho đó (0034). */
+  warehouseId: string | null;
   gifts: GiftRow[];
 }
 
@@ -26,6 +28,29 @@ interface ProductOption {
   name: string;
   code: string | null;
   sellingPrice: number;
+}
+
+interface WarehouseOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * Giờ Việt Nam (UTC+7, không DST) — đơn vị duy nhất hệ thống dùng cho ngày
+ * nghiệp vụ. `datetime-local` của trình duyệt KHÔNG kèm múi giờ nên phải gắn
+ * `+07:00` tường minh: trước đây convert qua `toISOString()` (UTC) làm giờ
+ * hiển thị lệch đúng 7 tiếng và chiến dịch rơi ngoài cửa sổ giờ đã đặt.
+ */
+const VN_OFFSET_MIN = 7 * 60;
+/** ISO bất kỳ → giá trị cho ô `datetime-local` theo giờ VN. */
+function vnInputValue(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  return new Date(t + VN_OFFSET_MIN * 60_000).toISOString().slice(0, 16);
+}
+/** Giá trị ô `datetime-local` (giờ VN người dùng vừa chọn) → ISO kèm +07:00. */
+function vnIsoFromInput(local: string): string {
+  return `${local}:00+07:00`;
 }
 
 async function readJsonSafe(res: Response): Promise<any> {
@@ -43,17 +68,25 @@ interface PromoFormModalProps {
   isOpen: boolean;
   row: Campaign | null;
   products: ProductOption[];
+  warehouses: WarehouseOption[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }
 
-function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormModalProps) {
+/** Một bậc = một mốc tiền + NHIỀU món quà (cùng mốc là cùng bậc, không cộng dồn bậc). */
+interface TierForm {
+  minSubtotal: string;
+  lines: Array<{ productId: string; giftQuantity: string }>;
+}
+
+const EMPTY_TIERS: TierForm[] = [{ minSubtotal: '', lines: [{ productId: '', giftQuantity: '' }] }];
+
+function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }: PromoFormModalProps) {
   const [name, setName] = useState('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
-  const [gifts, setGifts] = useState<Array<{ minSubtotal: string; productId: string; giftQuantity: string }>>([
-    { minSubtotal: '', productId: '', giftQuantity: '' },
-  ]);
+  const [warehouseId, setWarehouseId] = useState('');
+  const [tiers, setTiers] = useState<TierForm[]>(EMPTY_TIERS);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -64,17 +97,26 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
     if (!isOpen) return;
     setError(null);
     setName(row?.name ?? '');
-    setStartsAt(row?.startsAt ?? '');
-    setEndsAt(row?.endsAt ?? '');
-    setGifts(
-      row?.gifts?.length
-        ? row.gifts.map((g) => ({
-            minSubtotal: String(g.minSubtotal),
-            productId: g.productId,
-            giftQuantity: String(g.giftQuantity),
-          }))
-        : [{ minSubtotal: '', productId: '', giftQuantity: '' }]
-    );
+    // State giữ giờ VN dạng ô nhập; convert 1 chiều lúc nạp và lúc gửi.
+    setStartsAt(row?.startsAt ? vnInputValue(row.startsAt) : '');
+    setEndsAt(row?.endsAt ? vnInputValue(row.endsAt) : '');
+    setWarehouseId(row?.warehouseId ?? '');
+    if (row?.gifts?.length) {
+      // Gộp các dòng cùng mốc thành một bậc để hiện đúng "1 mốc — nhiều quà".
+      const grouped = new Map<number, Array<{ productId: string; giftQuantity: string }>>();
+      for (const g of row.gifts) {
+        const list = grouped.get(g.minSubtotal) ?? [];
+        list.push({ productId: g.productId, giftQuantity: String(g.giftQuantity) });
+        grouped.set(g.minSubtotal, list);
+      }
+      setTiers(
+        Array.from(grouped.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([min, lines]) => ({ minSubtotal: String(min), lines }))
+      );
+    } else {
+      setTiers(EMPTY_TIERS);
+    }
   }, [isOpen, row]);
 
   useEffect(() => {
@@ -88,20 +130,42 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
 
   if (!isOpen || !mounted) return null;
 
-  const addRow = () => setGifts([...gifts, { minSubtotal: '', productId: '', giftQuantity: '' }]);
-  const removeRow = (i: number) => setGifts(gifts.filter((_, idx) => idx !== i));
+  const updateTier = (ti: number, patch: Partial<TierForm>) =>
+    setTiers(tiers.map((t, idx) => (idx === ti ? { ...t, ...patch } : t)));
+  const addTier = () =>
+    setTiers([...tiers, { minSubtotal: '', lines: [{ productId: '', giftQuantity: '' }] }]);
+  const removeTier = (ti: number) => setTiers(tiers.filter((_, idx) => idx !== ti));
+  const addLine = (ti: number) =>
+    setTiers(
+      tiers.map((t, idx) =>
+        idx === ti ? { ...t, lines: [...t.lines, { productId: '', giftQuantity: '' }] } : t
+      )
+    );
+  const updateLine = (ti: number, li: number, patch: Partial<{ productId: string; giftQuantity: string }>) =>
+    setTiers(
+      tiers.map((t, idx) =>
+        idx === ti ? { ...t, lines: t.lines.map((l, j) => (j === li ? { ...l, ...patch } : l)) } : t
+      )
+    );
+  const removeLine = (ti: number, li: number) =>
+    setTiers(
+      tiers.map((t, idx) => (idx === ti ? { ...t, lines: t.lines.filter((_, j) => j !== li) } : t))
+    );
 
   // Cảnh báo giá trị quà theo TỪNG bậc: tổng giá quà trong bậc so với mốc bậc đó.
   const warnings: string[] = [];
   const byTier = new Map<number, { value: number; base: number }>();
-  for (const g of gifts) {
-    const min = normalizePrice(g.minSubtotal);
-    const p = products.find((x) => x.id === g.productId);
-    const qty = Number(g.giftQuantity);
-    if (!Number.isFinite(min) || min <= 0 || !p || !Number.isInteger(qty) || qty <= 0) continue;
-    const cur = byTier.get(min) ?? { value: 0, base: min };
-    cur.value += (p.sellingPrice || 0) * qty;
-    byTier.set(min, cur);
+  for (const t of tiers) {
+    const min = normalizePrice(t.minSubtotal);
+    if (!Number.isFinite(min) || min < 0) continue;
+    for (const l of t.lines) {
+      const p = products.find((x) => x.id === l.productId);
+      const qty = Number(l.giftQuantity);
+      if (!p || !Number.isInteger(qty) || qty <= 0) continue;
+      const cur = byTier.get(min) ?? { value: 0, base: min };
+      cur.value += (p.sellingPrice || 0) * qty;
+      byTier.set(min, cur);
+    }
   }
   Array.from(byTier.values()).forEach(({ value, base }) => {
     const w = giftValueWarning(value, base);
@@ -114,25 +178,41 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
     setError(null);
 
     const cleanGifts: GiftRow[] = [];
-    for (const g of gifts) {
-      const min = normalizePrice(g.minSubtotal);
-      const qty = Number(g.giftQuantity);
-      if (!g.productId) {
-        setError('Chọn sản phẩm quà cho mọi dòng.');
-        return;
-      }
+    const seenTiers = new Set<number>();
+    for (const t of tiers) {
+      const min = normalizePrice(t.minSubtotal);
       if (!Number.isFinite(min) || min < 0) {
         setError('Mốc tiền không được âm (0 = đơn bất kỳ cũng tặng).');
         return;
       }
-      if (!Number.isInteger(qty) || qty <= 0) {
-        setError('Số lượng quà phải là số nguyên dương.');
+      if (seenTiers.has(min)) {
+        setError(`Trùng mốc ${min.toLocaleString('vi-VN')}đ ở hai bậc — gộp quà vào cùng một bậc.`);
         return;
       }
-      cleanGifts.push({ minSubtotal: min, productId: g.productId, giftQuantity: qty });
+      seenTiers.add(min);
+      if (!t.lines.length || t.lines.every((l) => !l.productId)) {
+        setError(`Bậc ${min.toLocaleString('vi-VN')}đ chưa có món quà nào.`);
+        return;
+      }
+      for (const l of t.lines) {
+        if (!l.productId) {
+          setError('Chọn sản phẩm quà cho mọi dòng.');
+          return;
+        }
+        const qty = Number(l.giftQuantity);
+        if (!Number.isInteger(qty) || qty <= 0) {
+          setError('Số lượng quà phải là số nguyên dương.');
+          return;
+        }
+        cleanGifts.push({ minSubtotal: min, productId: l.productId, giftQuantity: qty });
+      }
     }
     if (!name.trim()) {
       setError('Cần tên chương trình.');
+      return;
+    }
+    if (startsAt && endsAt && new Date(vnIsoFromInput(endsAt)).getTime() <= new Date(vnIsoFromInput(startsAt)).getTime()) {
+      setError('Ngày kết thúc phải sau ngày bắt đầu.');
       return;
     }
 
@@ -143,8 +223,9 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          startsAt: startsAt || null,
-          endsAt: endsAt || null,
+          startsAt: startsAt ? vnIsoFromInput(startsAt) : null,
+          endsAt: endsAt ? vnIsoFromInput(endsAt) : null,
+          warehouseId: warehouseId || null,
           gifts: cleanGifts,
         }),
       });
@@ -215,94 +296,134 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
             />
           </div>
 
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">Áp dụng tại kho</label>
+            <select
+              value={warehouseId}
+              onChange={(e) => setWarehouseId(e.target.value)}
+              aria-label="Kho áp dụng khuyến mại"
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+            >
+              <option value="">Mọi kho</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  Chỉ {w.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-500 mt-1">
+              POS kho khác không hiện quà của chương trình này; server cũng không duyệt quà sai kho.
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">Bắt đầu</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Bắt đầu (giờ VN)</label>
               <input
                 type="datetime-local"
-                value={startsAt ? startsAt.slice(0, 16) : ''}
-                onChange={(e) => setStartsAt(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                aria-label="Ngày giờ bắt đầu theo giờ Việt Nam"
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">Kết thúc</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Kết thúc (giờ VN)</label>
               <input
                 type="datetime-local"
-                value={endsAt ? endsAt.slice(0, 16) : ''}
-                onChange={(e) => setEndsAt(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+                aria-label="Ngày giờ kết thúc theo giờ Việt Nam"
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-bold text-slate-700">Bậc quà (đơn càng cao càng nhiều quà)</p>
-            {gifts.map((g, i) => (
-              <div key={i} className="flex items-stretch gap-1.5">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={g.minSubtotal}
-                  onChange={(e) => {
-                    const next = [...gifts];
-                    next[i] = { ...next[i], minSubtotal: e.target.value.replace(/[^\d.,]/g, '') };
-                    setGifts(next);
-                  }}
-                  onBlur={() => {
-                    const next = [...gifts];
-                    next[i] = { ...next[i], minSubtotal: formatPriceInput(next[i].minSubtotal) };
-                    setGifts(next);
-                  }}
-                  placeholder="Từ 500.000"
-                  aria-label={`Mốc tiền dòng ${i + 1}`}
-                  className="w-28 px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
-                />
-                <select
-                  value={g.productId}
-                  onChange={(e) => {
-                    const next = [...gifts];
-                    next[i] = { ...next[i], productId: e.target.value };
-                    setGifts(next);
-                  }}
-                  aria-label={`Sản phẩm quà dòng ${i + 1}`}
-                  className="flex-1 min-w-0 px-2 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+            <p className="text-xs font-bold text-slate-700">
+              Bậc quà — chỉ bậc CAO NHẤT đạt được chạy, không cộng dồn. Muốn mốc lớn tặng nhiều món thì thêm quà vào CÙNG bậc.
+            </p>
+            {tiers.map((t, ti) => (
+              <div key={ti} className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-stretch gap-1.5">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={t.minSubtotal}
+                    onChange={(e) =>
+                      updateTier(ti, { minSubtotal: e.target.value.replace(/[^\d.,]/g, '') })
+                    }
+                    onBlur={() =>
+                      updateTier(ti, { minSubtotal: formatPriceInput(t.minSubtotal) })
+                    }
+                    placeholder="0"
+                    aria-label={`Mốc tiền bậc ${ti + 1} (0 = đơn bất kỳ)`}
+                    className="w-28 px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <span className="flex items-center text-[10px] text-slate-500">
+                    {ti === 0 && !t.minSubtotal ? 'đơn bất kỳ' : 'đ trở lên'}
+                  </span>
+                  {tiers.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeTier(ti)}
+                      aria-label={`Xoá bậc ${ti + 1}`}
+                      className="ml-auto p-2 text-rose-500 hover:bg-rose-50 rounded-xl"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {t.lines.map((l, li) => (
+                  <div key={li} className="flex items-stretch gap-1.5">
+                    <select
+                      value={l.productId}
+                      onChange={(e) => updateLine(ti, li, { productId: e.target.value })}
+                      aria-label={`Quà ${li + 1} của bậc ${ti + 1}`}
+                      className="flex-1 min-w-0 px-2 py-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Chọn quà…</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {(p.sellingPrice || 0).toLocaleString('vi-VN')} đ
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={l.giftQuantity}
+                      onChange={(e) =>
+                        updateLine(ti, li, { giftQuantity: e.target.value.replace(/\D/g, '') })
+                      }
+                      placeholder="SL"
+                      aria-label={`Số lượng quà ${li + 1} bậc ${ti + 1}`}
+                      className="w-14 px-2 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    {t.lines.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(ti, li)}
+                        aria-label={`Xoá quà ${li + 1} bậc ${ti + 1}`}
+                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => addLine(ti)}
+                  className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-500"
                 >
-                  <option value="">Chọn quà…</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} — {(p.sellingPrice || 0).toLocaleString('vi-VN')} đ
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={g.giftQuantity}
-                  onChange={(e) => {
-                    const next = [...gifts];
-                    next[i] = { ...next[i], giftQuantity: e.target.value.replace(/\D/g, '') };
-                    setGifts(next);
-                  }}
-                  placeholder="SL"
-                  aria-label={`Số lượng dòng ${i + 1}`}
-                  className="w-14 px-2 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
-                />
-                {gifts.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeRow(i)}
-                    aria-label={`Xoá dòng ${i + 1}`}
-                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+                  <Plus className="w-3.5 h-3.5" /> Thêm quà vào bậc này
+                </button>
               </div>
             ))}
             <button
               type="button"
-              onClick={addRow}
+              onClick={addTier}
               className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-500"
             >
               <Plus className="w-4 h-4" /> Thêm bậc
@@ -338,6 +459,7 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
 export function PromotionsManager() {
   const [rows, setRows] = useState<Campaign[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -351,12 +473,14 @@ export function PromotionsManager() {
     setLoading(true);
     setError(null);
     try {
-      const [promoRes, prodRes] = await Promise.all([
+      const [promoRes, prodRes, whRes] = await Promise.all([
         fetch('/api/promotions', { cache: 'no-store' }),
         fetch('/api/products?includeInactive=false&limit=500', { cache: 'no-store' }),
+        fetch('/api/warehouses?all=true', { cache: 'no-store' }),
       ]);
       const promoJson = await readJsonSafe(promoRes);
       const prodJson = await readJsonSafe(prodRes);
+      const whJson = await readJsonSafe(whRes);
       if (token !== loadTokenRef.current) return;
       if (!promoRes.ok || !promoJson.success) {
         setError(promoJson.error || SERVER_BAD_RESPONSE);
@@ -365,6 +489,14 @@ export function PromotionsManager() {
       }
       setRows(Array.isArray(promoJson.promotions) ? promoJson.promotions : []);
       setProducts(Array.isArray(prodJson.products) ? prodJson.products : []);
+      const whList = Array.isArray(whJson.warehouses)
+        ? whJson.warehouses
+        : Array.isArray(whJson.data)
+          ? whJson.data
+          : [];
+      setWarehouses(
+        whList.map((w: any) => ({ id: String(w.id), name: String(w.name || w.id) }))
+      );
     } catch (err: any) {
       if (token !== loadTokenRef.current) return;
       setError(err?.message || 'Lỗi kết nối.');
@@ -459,10 +591,17 @@ export function PromotionsManager() {
                   )}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {row.gifts.length} bậc ·{' '}
-                  {row.gifts
-                    .map((g) => `từ ${g.minSubtotal.toLocaleString('vi-VN')}đ ×${g.giftQuantity}`)
-                    .join(' · ')}
+                  {row.warehouseId
+                    ? `Chỉ ${warehouses.find((w) => w.id === row.warehouseId)?.name || row.warehouseId} · `
+                    : 'Mọi kho · '}
+                  {(() => {
+                    const byMin = new Map<number, number>();
+                    for (const g of row.gifts) byMin.set(g.minSubtotal, (byMin.get(g.minSubtotal) || 0) + 1);
+                    return Array.from(byMin.entries())
+                      .sort((a, b) => a[0] - b[0])
+                      .map(([min, n]) => `từ ${min.toLocaleString('vi-VN')}đ: ${n} món`)
+                      .join(' · ');
+                  })()}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -498,6 +637,7 @@ export function PromotionsManager() {
         isOpen={isFormOpen}
         row={editing}
         products={products}
+        warehouses={warehouses}
         onClose={() => {
           setIsFormOpen(false);
           setEditing(null);
