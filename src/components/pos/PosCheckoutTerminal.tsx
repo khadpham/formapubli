@@ -107,7 +107,8 @@ interface BookItem {
  * Tên ở đây KHỚP CHÍNH XÁC với DB — đã đọc trực tiếp `editions` để đối chiếu:
  *   H74 "Tên mọi trên tàu Narcissus" · H65 "Job, tiểu thuyết về một người thuần hậu"
  *   H69 "Lý thuyết tầng lớp nhàn rỗi" · H67 "Một người tên là Thứ Năm"
- * Cả 4 đều xuất bản năm 2025. Cố tình KHÔNG so "gần giống": tên rút gọn dễ dính
+ *   H71 "Ông cha đạo ở Wakefield" · H72 "Người phụ tá" · H49 "In illo tempore"
+ * Cả 7 đều xuất bản năm 2025. Cố tình KHÔNG so "gần giống": tên rút gọn dễ dính
  * nhầm sang cuốn khác, và dính nhầm ở POS là mất tiền thật.
  */
 const SPECIAL_BOOK_TITLES = new Set([
@@ -115,6 +116,9 @@ const SPECIAL_BOOK_TITLES = new Set([
   'Job, tiểu thuyết về một người thuần hậu',
   'Lý thuyết tầng lớp nhàn rỗi',
   'Một người tên là Thứ Năm',
+  'Ông cha đạo ở Wakefield',
+  'Người phụ tá',
+  'In illo tempore',
 ]);
 
 /** Nhãn hiển thị khi nút đang bật BỊ ĐẢO CHIỀU — phải đúng nghĩa thật. */
@@ -1265,7 +1269,7 @@ export function PosCheckoutTerminal({
   // Mobile: chủ yếu quét scanner, danh mục thường xuyên chỉ làm nhiễu. Không có từ
   // khoá thì không hiện danh mục — chỉ hiện kết quả tìm kiếm. Desktop giữ nguyên.
   // Ngoại lệ: bấm nút "Sách đặc biệt" thì hiện nhóm đó kể cả khi không có từ khoá,
-  // vì ở hội chợ thu ngân cần bấm 1 cái là ra đúng 4 cuốn đó.
+  // vì ở hội chợ thu ngân cần bấm 1 cái là ra đúng các cuốn đó.
   const showCatalogGrid = !isMobileView || hasSearchQuery || showSpecialBooks;
   const filteredBooks = useMemo(() => {
     const q = searchQuery.trim();
