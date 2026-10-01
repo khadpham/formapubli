@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { GiftReportPanel } from './GiftReportPanel';
 import {
   Receipt,
   ShieldCheck,
@@ -256,6 +257,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   return (
     <div className="space-y-6">
+      <GiftReportPanel />
       {/* Header Controls */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="hidden md:block">
