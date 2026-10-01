@@ -63,7 +63,14 @@ if (/position\s*:\s*absolute/.test(printableDecls)) {
 // chọn trong hộp thoại. Màn hình vẫn giữ div CSS — chỉ bản IN đổi sang SVG.
 const printStart = src.indexOf('id="printable-settlement-report"');
 if (printStart < 0) throw new Error('Không tìm thấy khối biên bản in #printable-settlement-report.');
-const printBody = src.slice(printStart);
+// Cắt ĐÚNG đến hết khối in: khối in là phần tử JSX đầu tiên của portal riêng, nên
+// nó kết thúc ngay trước `</div>, document.body` (mount point của portal đó).
+// Quét tới CUỐI FILE thì assert vô tình đọc cả giao diện màn hình đặt sau — hôm
+// nay chưa có gì sai, nhưng thêm bất kỳ khối nào cuối file là assert im lặng bỏ
+// qua khối in mà vẫn xanh.
+const printEnd = /\n\s*<\/div>,\s*\n\s*document\.body/.exec(src.slice(printStart));
+if (!printEnd) throw new Error('Không tìm thấy điểm kết thúc khối in (</div>, document.body) — cập nhật test theo JSX mới.');
+const printBody = src.slice(printStart, printStart + printEnd.index);
 if (!/<svg\b/.test(printBody)) {
   throw new Error('LỖI: dải giờ trên bản in phải là <svg> — màu nền CSS bị Chrome lược khi tắt "Background graphics".');
 }
@@ -73,11 +80,16 @@ if (!/<rect\b/.test(printBody) || !/fill=["']#4f46e5["']/.test(printBody)) {
 if (!/<rect\b[^>]*fill=["']#cbd5e1["']/.test(printBody)) {
   throw new Error('LỖI: giờ 0 đơn vẫn phải thấy trên bản in ⇒ <rect> màu xám #cbd5e1.');
 }
-if (!/hourlyInWindow/.test(printBody) || !/hourWin\.start/.test(printBody) || !/hourWin\.end/.test(printBody)) {
+// `hourWin.end` (không phải `hourWin.end` thô) mới được in ra: end=24 là mốc giờ
+// không tồn tại, caption phải kẹp ở 23h cho khớp nhãn cuối của dải SVG.
+if (!/hourlyInWindow/.test(printBody) || !/hourWin\.start/.test(printBody) || !/hourEndShown/.test(printBody)) {
   throw new Error(
     'LỖI: dải giờ phải cắt theo khung giờ động (hourWindow → hourlyInWindow) và ghi rõ ' +
-      'khoảng giờ trên biên bản, không in cứng 24 cột.'
+      'khoảng giờ đã kẹp (hourEndShown) trên biên bản, không in cứng 24 cột.'
   );
+}
+if (/hourWin\.end\b/.test(printBody)) {
+  throw new Error('LỖI: caption dải giờ in thẳng `hourWin.end` — end=24 in ra mốc giờ 24h không có thật, phải dùng hourEndShown.');
 }
 if (/bg-indigo-600/.test(printBody)) {
   throw new Error('LỖI: còn dải giờ vẽ bằng màu nền CSS (bg-indigo-600) trong khối in ⇒ in ra trống.');

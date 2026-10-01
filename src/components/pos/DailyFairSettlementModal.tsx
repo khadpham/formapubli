@@ -323,6 +323,10 @@ export function DailyFairSettlementModal({
     reportDate: shownReportDate,
   });
   const hourlyInWindow = hourly.slice(hourWin.start, hourWin.end + 1);
+  // `end` có thể ra 24 khi khung chỉ gồm giờ 23 (đảm bảo `end > start`). 24 KHÔNG
+  // phải mốc giờ có thật — nhãn cuối của dải SVG vẫn là "23h" — nên hiển thị 23h
+  // cho khớp, tránh in ra mốc giờ không tồn tại.
+  const hourEndShown = Math.min(23, hourWin.end);
   const maxHourOrders = Math.max(1, ...hourlyInWindow.map((h: any) => Number(h.orders || 0)));
   const peakIndex = hourlyInWindow.reduce(
     (best: number, h: any, i: number) => (Number(h.orders || 0) > Number(hourlyInWindow[best]?.orders || 0) ? i : best),
@@ -1225,14 +1229,14 @@ export function DailyFairSettlementModal({
                   `hourWindow` (giờ mở ca + giờ có đơn), không hard-code. */}
               <div className="mt-1.5">
                 <p className="font-bold uppercase text-slate-800">
-                  - Số đơn theo giờ ({hourWin.start}h–{hourWin.end}h, giờ Việt Nam):
+                  - Số đơn theo giờ ({hourWin.start}h–{hourEndShown}h, giờ Việt Nam):
                 </p>
                 <svg
                   viewBox={`0 0 ${BAND_W} ${BAND_H}`}
                   className="w-full h-auto mt-1"
                   fontFamily="monospace"
                   role="img"
-                  aria-label={`Số đơn bán theo từng giờ từ ${hourWin.start}h đến ${hourWin.end}h giờ Việt Nam`}
+                  aria-label={`Số đơn bán theo từng giờ từ ${hourWin.start}h đến ${hourEndShown}h giờ Việt Nam`}
                 >
                   {hourlyInWindow.map((h: any, i: number) => {
                     const n = Number(h.orders || 0);
@@ -1248,8 +1252,10 @@ export function DailyFairSettlementModal({
                       <rect key={h.hour} x={x} y={BAND_BASE_Y - bh} width={wRect} height={bh} fill="#cbd5e1" />
                     );
                   })}
-                  {/* Số đơn của giờ cao điểm, đặt trên đỉnh cột max (một chữ số). */}
-                  {hourlyInWindow.length > 0 && (
+                  {/* Số đơn của giờ cao điểm, đặt trên đỉnh cột max (một chữ số). Ngày không bán
+                      được gì thì KHÔNG in số: cột xám đã nói lý do, in "0" lên
+                      nó là bịa ra một mốc cao điểm không tồn tại. */}
+                  {hourlyInWindow.length > 0 && Number(hourlyInWindow[peakIndex]?.orders || 0) > 0 && (
                     <text
                       x={(peakIndex * bandSlot + bandSlot / 2).toFixed(2)}
                       y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 1.5}
