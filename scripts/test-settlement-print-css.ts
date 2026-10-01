@@ -10,20 +10,23 @@ if (!/:not\(#printable-settlement-report\)/.test(m[1])) {
   throw new Error('LỖI: selector ẩn khi in nuốt cả #printable-settlement-report (độ đặc hiệu thắng display:block) → in ra trắng.');
 }
 
-// --- LỀ GIẤY ------------------------------------------------------------------
-// Owner đã in ra bản thật: chữ dính sát mép trên, không có lề. Nguyên nhân đã
-// xác minh: Chrome BỎ QUA margin đặt trong @page khi hộp thoại In để Margins =
-// Default (phần lớn máy in mặc định vậy), cộng thêm `padding: 0` của chúng ta
-// nên chữ dính mép. Cách chắc chắn là ĐỂ LỀ THẬT BẰNG PADDING của chính khối
-// in — không phụ thuộc trình duyệt/tính năng hộp thoại In.
+// --- LỀ GIẤY PHẢI LÀ @page MARGIN, KHÔNG ĐƯỢC LÀ PADDING CỦA PHẦN TỬ ---------
+// Bằng chứng từ ảnh in thật của owner: trang 1 có lề trên, TỪ TRANG 2 nội dung
+// dính sát đỉnh giấy. Khớp 100% với chuẩn CSS fragmentation: padding-top của một
+// phần tử CHỈ hiện ở TRANG ĐẦU, padding-bottom chỉ ở trang cuối, chỉ padding
+// trái/phải mới lặp ở mọi trang. Nên lề trang KHÔNG THỂ đặt bằng padding của
+// #printable. Lề trang phải đặt bằng `@page margin` — theo chuẩn lặp mọi trang.
+// Bằng chứng ngược: bản cũ `@page margin: 10mm` cho trang 1 lề đẹp ⇒ Chrome
+// TÔN TRỌNG @page margin. Giả định trước đó (@page margin bị bỏ qua) SAI.
 // Regex bắt buộc có `size:` trong thân rule: nếu không, lần khớp đầu tiên rơi
 // vào câu chú thích trong component có chữ "@page { margin }" ⇒ đọc nhầm CSS.
 const pageRule = src.match(/@page\s*\{([^}]*\bsize\s*:[^}]*)\}/);
 if (!pageRule) throw new Error('Không tìm thấy quy tắc @page — cần giữ khổ A4 portrait.');
-if (!/margin:\s*0\s*;/.test(pageRule[1])) {
+if (!/margin:\s*12mm\s+10mm\s*;/.test(pageRule[1])) {
   throw new Error(
-    'LỖI: @page phải đặt `margin: 0` — lề thật do padding của khối in quyết định, ' +
-      `đặt margin trong @page là Chrome bỏ qua (Margins=Default) ⇒ chữ dính mép. Nhận: ${pageRule[1].trim()}`
+    'LỖI: @page phải đặt `margin: 12mm 10mm` — đây là lề thật của MỌI trang. ' +
+      'padding của #printable chỉ hiện ở trang đầu (theo chuẩn fragmentation) nên ' +
+      'đặt lề ở đó làm trang 2+ dính sát mép trên. Nhận: ' + pageRule[1].trim()
   );
 }
 if (!/size:\s*A4\s+portrait/.test(pageRule[1])) {
@@ -32,10 +35,17 @@ if (!/size:\s*A4\s+portrait/.test(pageRule[1])) {
 
 const printableRule = src.match(/#printable-settlement-report\s*\{([^}]*)\}/);
 if (!printableRule) throw new Error('Không tìm thấy rule của #printable-settlement-report.');
-if (!/padding:\s*\d+mm\s+\d+mm\s*!important/.test(printableRule[1])) {
+if (/padding:\s*[\d.]+mm/.test(printableRule[1])) {
   throw new Error(
-    'LỖI: khối in phải có `padding: <trên>mm <ngang>mm !important` — đây mới là lề thật ' +
-      'in ra được trên Chrome. Nhận: ' + printableRule[1].trim()
+    'LỖI: khối in KHÔNG được đặt lề bằng padding mm — padding-top chỉ hiện ở trang ' +
+      'đầu nên từ trang 2 chữ dính sát mép trên. Lề do @page margin quyết định. ' +
+      'Nhận: ' + printableRule[1].trim()
+  );
+}
+if (!/padding:\s*0\s*!important/.test(printableRule[1])) {
+  throw new Error(
+    'LỖI: khối in phải đặt `padding: 0 !important` — cộng dồn padding mm với @page ' +
+      'margin sẽ nhân đôi lề. Nhận: ' + printableRule[1].trim()
   );
 }
 
@@ -95,4 +105,4 @@ if (/bg-indigo-600/.test(printBody)) {
   throw new Error('LỖI: còn dải giờ vẽ bằng màu nền CSS (bg-indigo-600) trong khối in ⇒ in ra trống.');
 }
 
-console.log('OK: selector in loại trừ đúng bản in; lề lấy từ padding của khối in (@page margin 0); dải giờ vẽ bằng SVG.');
+console.log('OK: selector in loại trừ đúng bản in; lề lấy từ @page margin 12mm 10mm (mọi trang), padding khối in = 0, không position absolute; dải giờ vẽ bằng SVG.');

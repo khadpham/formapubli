@@ -376,16 +376,18 @@ export function DailyFairSettlementModal({
             display: block !important;
             /* KHÔNG position:absolute. Owner in thật và thấy TRANG 2 dính sát mép
                trái còn trang 1 thì có lề: Chrome ngắt trang khối absolute kiểu khác
-               hẳn khối in-flow, padding chỉ giữ được ở trang đầu. Khối in vốn đã là
-               portal thẳng xuống document.body (anh em của backdrop, ngoài khung modal
-               cắt tràn) nên không cần absolute để ra khỏi khung cắt. */
+               hẳn khối in-flow. Khối in vốn đã là portal thẳng xuống document.body
+               (anh em của backdrop, ngoài khung modal cắt tràn) nên không cần
+               absolute để ra khỏi khung cắt. */
             width: 100%;
             background: white !important;
-            /* LỀ THẬT của bản in nằm ở padding này, KHÔNG nằm ở @page. Chrome bỏ qua
-               margin đặt trong @page khi hộp thoại In để Margins = Default (đa số
-               máy in mặc định vậy) ⇒ owner in ra chữ dính sát mép trên, không có
-               lề. Padding của chính khối in thì luôn được áp dụng. */
-            padding: 12mm 10mm !important;
+            /* KHÔNG đặt lề ở padding của khối in. Theo chuẩn CSS fragmentation,
+               padding-top chỉ hiện ở TRANG ĐẦU, padding-bottom chỉ ở trang cuối,
+               chỉ padding trái/phải mới lặp mọi trang — nên lề đặt ở đây đúng là
+               mất lề trên từ trang 2 (khớp ảnh in thật của owner). Lề trang do
+               margin của @page quyết định, xem bên dưới. Padding về 0 để không
+               cộng dồn với lề trang thành lề khổng lồ. */
+            padding: 0 !important;
             margin: 0 !important;
             overflow: visible !important;
             max-height: none !important;
@@ -400,16 +402,16 @@ export function DailyFairSettlementModal({
             break-inside: avoid;
             page-break-inside: avoid;
           }
-          /* Khối in hoá đơn nhiệt cũng đặt @page trong @media print với
-             margin: 0mm !important — không giữ !important ở đây thì biên bản
+/* LỀ TRANG THẬT của bản in nằm ở @page margin — theo chuẩn, margin của
+             @page lặp ở MỌI trang, còn padding của phần tử thì không (xem khối
+             in ở trên). Khối in hoá đơn nhiệt cũng đặt @page trong @media print
+             với margin 0mm !important — không giữ !important ở đây thì biên bản
              A4 mất lề, vì rule !important thắng cả rule thường đến sau nó.
-             Lề của biên bản do PADDING của khối in quyết định (xem trên), nên
-             @page đặt margin: 0 — đặt margin ở đây là may mắn có tác dụng,
-             phần lớn máy in bỏ qua. LƯU Ý: viết comment trong khối <style> này
-             không dùng ngoặc nhọn, test đọc file bằng regex sẽ dừng ở dấu }. */
+             LƯU Ý: comment trong khối style này không dùng ngoặc nhọn, test đọc
+             file bằng regex sẽ dừng sớm ở dấu đóng ngoặc. */
           @page {
             size: A4 portrait;
-            margin: 0;
+            margin: 12mm 10mm;
           }
         }
       `}</style>
