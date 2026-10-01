@@ -87,6 +87,77 @@ async function main() {
     console.log('✓ 0030: đã thêm cột royalty_basis');
   } else console.log('· 0030: cột đã có');
 
+  // --- 0031: products / promotions / promotion_gifts + 7 cột nullable.
+  // Đọc DDL NGUYÊN VĂN từ src/db/migrations/0031_products_promotions.sql, không
+  // tự viết — sai một tên cột là 500 toàn hệ thống. Cột chỉ thêm khi thiếu vì
+  // SQLite không có `ALTER TABLE ADD COLUMN IF NOT EXISTS`.
+  const COLS_0031: [string, string, string][] = [
+    ['editions', 'product_id', 'text REFERENCES `products`(`id`)'],
+    ['order_items', 'product_id', 'text REFERENCES `products`(`id`)'],
+    ['inventory_ledger', 'product_id', 'text REFERENCES `products`(`id`)'],
+    ['stock_balances', 'product_id', 'text REFERENCES `products`(`id`)'],
+    ['order_items', 'promotion_id', 'text REFERENCES `promotions`(`id`)'],
+    ['order_items', 'is_gift_line', 'integer NOT NULL DEFAULT 0'],
+    ['order_items', 'is_manual', 'integer NOT NULL DEFAULT 0'],
+  ];
+
+  if (!(await hasTable('products'))) {
+    await db.execute(
+      `CREATE TABLE IF NOT EXISTS \`products\` (
+         \`id\` text PRIMARY KEY NOT NULL,
+         \`code\` text,
+         \`name\` text NOT NULL,
+         \`product_kind\` text NOT NULL DEFAULT 'BOOK',
+         \`selling_price\` real NOT NULL DEFAULT 0,
+         \`cost_price\` real,
+         \`barcode\` text,
+         \`description\` text,
+         \`is_gift_item\` integer NOT NULL DEFAULT 0,
+         \`is_active\` integer NOT NULL DEFAULT 1,
+         \`created_at\` text DEFAULT CURRENT_TIMESTAMP)`
+    );
+    await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS products_code_unique ON products (code)`);
+    await db.execute(
+      `CREATE UNIQUE INDEX IF NOT EXISTS products_barcode_unique ON products (barcode) WHERE barcode IS NOT NULL`
+    );
+    console.log('✓ 0031: đã tạo bảng products');
+  } else console.log('· 0031: products đã có');
+
+  if (!(await hasTable('promotions'))) {
+    await db.execute(
+      `CREATE TABLE IF NOT EXISTS \`promotions\` (
+         \`id\` text PRIMARY KEY NOT NULL,
+         \`name\` text NOT NULL,
+         \`is_active\` integer NOT NULL DEFAULT 1,
+         \`starts_at\` text,
+         \`ends_at\` text,
+         \`created_at\` text DEFAULT CURRENT_TIMESTAMP)`
+    );
+    console.log('✓ 0031: đã tạo bảng promotions');
+  } else console.log('· 0031: promotions đã có');
+
+  if (!(await hasTable('promotion_gifts'))) {
+    await db.execute(
+      `CREATE TABLE IF NOT EXISTS \`promotion_gifts\` (
+         \`id\` text PRIMARY KEY NOT NULL,
+         \`promotion_id\` text NOT NULL REFERENCES \`promotions\`(\`id\`),
+         \`min_subtotal\` real NOT NULL,
+         \`product_id\` text NOT NULL REFERENCES \`products\`(\`id\`),
+         \`gift_quantity\` integer NOT NULL DEFAULT 1,
+         UNIQUE(\`promotion_id\`, \`min_subtotal\`, \`product_id\`))`
+    );
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_promotion_gifts_lookup ON promotion_gifts (promotion_id, min_subtotal)`
+    );
+    console.log('✓ 0031: đã tạo bảng promotion_gifts');
+  } else console.log('· 0031: promotion_gifts đã có');
+
+  for (const [table, col, decl] of COLS_0031) {
+    if (await hasColumn(table, col)) continue;
+    await db.execute(`ALTER TABLE \`${table}\` ADD \`${col}\` ${decl}`);
+    console.log(`✓ 0031: đã thêm ${table}.${col}`);
+  }
+
   // --- Chứng minh trigger thật sự chạy trên DB dev
   const ed = await q(`SELECT id FROM editions LIMIT 1`);
   const wh = await q(`SELECT id FROM warehouses LIMIT 1`);
