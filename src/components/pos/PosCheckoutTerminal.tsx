@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronUp,
   ScanLine,
+  Eye,
 } from 'lucide-react';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
@@ -401,6 +402,19 @@ export function PosCheckoutTerminal({
       if (typeof saved.receiptFooterText === 'string' && saved.receiptFooterText.length <= 200) setReceiptFooterText(saved.receiptFooterText);
     } catch {}
   }, []);
+
+  // Ảnh xác nhận trong phiếu "Bán hàng thành công": ẨN mặc định giống modal
+  // thanh toán, bấm "Xem ảnh" mới hiện (30/09). Trạng thái phải về ẨN mỗi khi
+  // sang đơn mới, nếu không xem ảnh đơn này rồi đơn sau mở ra đã thấy sẵn.
+  const [isReceiptProofVisible, setIsReceiptProofVisible] = useState(false);
+  useEffect(() => {
+    setIsReceiptProofVisible(false);
+    const url = completedOrder?.paymentProofUrl as string | undefined;
+    // Thu hồi URL của phiếu TRƯỚC khỏi RAM khi có phiếu mới, và khi unmount.
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [completedOrder?.orderCode]);
 
   useEffect(() => {
     if (!completedOrder || !autoPrintOnCheckout) return;
@@ -2237,6 +2251,13 @@ export function PosCheckoutTerminal({
         isGift,
         qrDataUrl: session.qrSnapshot.dataUrl || null,
         qrAccountNo: session.qrSnapshot.accountNo || null,
+        // 30/09: phiếu "Bán hàng thành công" hiện ẢNH XÁC NHẬN thay mã QR (khách
+        // đã quét QR ở bước trước). Blob đang có trong bộ nhớ nên chỉ cần tạo URL
+        // tạm, không phải đọc lại kho ảnh. Ảnh ẨN mặc định, bấm "Xem ảnh" mới hiện.
+        paymentProofUrl: session.paymentProof?.blob
+          ? URL.createObjectURL(session.paymentProof.blob)
+          : null,
+        paymentProofCapturedAt: session.paymentProof?.capturedAt || null,
       });
       postCheckoutResetRef.current?.();
       fetchActiveCashboxSession();
@@ -2305,7 +2326,30 @@ export function PosCheckoutTerminal({
    * với hộp thoại native sẽ che mất hộp thoại trên desktop. Đơn chỉ tạo ở
    * handleCheckoutCaptureChange, tức là sau khi thật sự có ảnh.
    */
+  // Chốt chặn mở ca cho nút thanh toán (30/09). Thu ngân chưa mở ca thì KHÔNG
+  // cho bán — mọi khoản thu phải thuộc về một ca để đối soát (đây chính là ý
+  // nghĩa của "mở ca để theo dõi thanh toán tiền mặt"). Không chặn ở server vì
+  // 21 luồng nội bộ (hoa hồng, dự báo, trả hàng, offline, bundle, đồng bộ) tạo
+  // đơn tiền mặt ngoài ca một cách hợp lệ — siết ở server phá vỡ chúng. Siết ở
+  // đúng chỗ thu ngân thao tác: nút thanh toán. Unit TẶNG không có dòng tiền nên
+  // cho qua; Owner/Manager miễn theo đúng luật B2a ở server.
+  const checkoutNeedsOpenShift =
+    !isGift &&
+    (paymentMethod === 'CASH' || isDigitalCheckout) &&
+    currentRole !== 'ROLE_OWNER' &&
+    currentRole !== 'ROLE_MANAGER';
+  const hasMatchingOpenShift =
+    Boolean(activeSession) &&
+    activeSession?.warehouseId === selectedWarehouseId &&
+    activeSession?.cashierId === cashierActorId;
+
   const handleCheckoutButtonClick = () => {
+    if (checkoutNeedsOpenShift && !hasMatchingOpenShift) {
+      setErrorMessage(
+        'Chưa mở ca két tại kho này. Vui lòng mở ca trước khi bán — mọi khoản thu phải thuộc về một ca để đối soát.'
+      );
+      return;
+    }
     if (isDigitalCheckout) {
       // DẤU HIỆU BẤM RÕ: iOS huỷ camera KHÔNG bắn `change` event, nên không có
       // gì để báo "bạn đã huỷ". Nếu không báo trước, nút trông chết và thu ngân
@@ -2579,6 +2623,21 @@ export function PosCheckoutTerminal({
                 {pendingOrderCount}
               </span>
             ) : null}
+          </button>
+
+          {/* 30/09: thư viện ảnh XÁC NHẬN lên UI chính. Trước đây nút "Ảnh thanh
+              toán" nằm sâu trong panel thanh toán, thu ngân muốn xem lại ảnh phải
+              lặn vào giỏ hàng mới thấy — không hợp lý. */}
+          <button
+            type="button"
+            id="btn-open-photo-gallery"
+            onClick={() => setIsPhotoGalleryOpen(true)}
+            aria-label="Xem thư viện ảnh xác nhận thanh toán"
+            title="Xem lại ảnh chụp xác nhận chuyển khoản"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer min-h-[40px] bg-slate-800 hover:bg-slate-700 text-slate-200"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Ảnh Thanh Toán</span>
           </button>
 
           {/* Quản lý Két tiền Ca làm việc (Cashbox Shift Management) */}
@@ -3562,7 +3621,8 @@ export function PosCheckoutTerminal({
               type="button"
               id="btn-desktop-checkout"
               onClick={handleCheckoutButtonClick}
-              disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
+              disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0 || (checkoutNeedsOpenShift && !hasMatchingOpenShift)}
+              title={checkoutNeedsOpenShift && !hasMatchingOpenShift ? 'Mở ca két trước khi bán — mọi khoản thu phải thuộc về một ca' : undefined}
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
@@ -3711,7 +3771,40 @@ export function PosCheckoutTerminal({
               </div>
             </div>
 
-            {completedOrder.qrDataUrl && (
+            {/* 30/09: hiện ẢNH XÁC NHẬN thay mã QR — khách đã quét QR và chuyển
+                xong ở bước trước, QR ở đây vô dụng và chiếm chỗ. Ảnh ẨN mặc định
+                giống modal thanh toán, bấm "Xem ảnh" mới hiện cho gọn phiếu. */}
+            {completedOrder.paymentProofUrl ? (
+              <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsReceiptProofVisible((v) => !v)}
+                    aria-expanded={isReceiptProofVisible}
+                    aria-label={isReceiptProofVisible ? 'Ẩn ảnh xác nhận' : 'Xem ảnh xác nhận'}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 text-[11px] font-bold text-slate-700 hover:bg-white transition bg-white"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    {isReceiptProofVisible ? 'Ẩn ảnh' : 'Xem ảnh'}
+                  </button>
+                  {completedOrder.paymentProofCapturedAt ? (
+                    <p className="text-[11px] text-emerald-700 font-medium">
+                      Đã thanh toán lúc {new Date(completedOrder.paymentProofCapturedAt).toLocaleString('vi-VN')}.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-emerald-700 font-medium">Đã thanh toán.</p>
+                  )}
+                </div>
+                {isReceiptProofVisible ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={completedOrder.paymentProofUrl}
+                    alt="Ảnh xác nhận chuyển khoản"
+                    className="w-full max-h-[40vh] object-contain rounded-xl border border-slate-200 bg-white"
+                  />
+                ) : null}
+              </div>
+            ) : completedOrder.qrDataUrl ? (
               <div className="flex flex-col items-center gap-1 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={completedOrder.qrDataUrl} alt="VietQR thanh toán" className="w-[180px] h-[180px] rounded-xl border border-slate-200 bg-white" />
@@ -3719,7 +3812,7 @@ export function PosCheckoutTerminal({
                   {completedOrder.finalAmount.toLocaleString('vi-VN')} đ{completedOrder.qrAccountNo ? ` → ${completedOrder.qrAccountNo}` : ''}
                 </div>
               </div>
-            )}
+            ) : null}
 
             <p className="text-[11px] text-emerald-700 text-center font-medium bg-emerald-50 py-1.5 rounded-lg border border-emerald-200">
               {completedOrder.isOffline
@@ -4418,8 +4511,9 @@ export function PosCheckoutTerminal({
               <button
                 type="button"
                 id="btn-confirm-mobile-checkout"
-                disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0}
+                disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0 || (checkoutNeedsOpenShift && !hasMatchingOpenShift)}
                 onClick={handleCheckoutButtonClick}
+                title={checkoutNeedsOpenShift && !hasMatchingOpenShift ? 'Mở ca két trước khi bán — mọi khoản thu phải thuộc về một ca' : undefined}
                 className={`w-full py-3 rounded-xl text-white text-xs font-extrabold shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 shadow-emerald-950/20'}`}
               >
                 {isSubmitting ? (

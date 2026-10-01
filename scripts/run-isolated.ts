@@ -116,6 +116,7 @@ const ALL_SUITES = [
   'scripts/test-checkout-stock-batch.ts',
   'scripts/test-confirm-unblock.ts',
   'scripts/test-stock-movement-batch-equivalence.ts',
+  'scripts/test-receipt-photo-shift.ts',
   'scripts/test-dashboard-ui-text.ts',
   'scripts/test-read-scope.ts',
   'scripts/drill-go-live.ts',
