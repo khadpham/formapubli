@@ -184,7 +184,7 @@ Mô hình **BẬC THANG**: chỉ mốc **CAO NHẤT** đạt được được k
 
 ### 6.4 Trạng thái test tổng
 
-`npx tsc --noEmit` **0 lỗi** (đã chạy lại sau commit mới nhất `3185edb`) · **124/125 suite xanh** (full `run-isolated` chạy ở `e7343d5`; sau `3185edb` mới chạy hồi quy trọng điểm: B3 7/7, goods E2E 33/33, gift-subtotal 20/20, gift-offline 21/21, approval-hash 20/20 — đều xanh; **build + full suite chưa chạy lại sau `3185edb`, phải chạy trước deploy**).
+`npx tsc --noEmit` **0 lỗi** · `npm run build` **sạch** · full `run-isolated` **124/125** (chỉ đỏ `test-pay2-money-audit.ts` flaky có sẵn — xem mục 7). Tất cả chạy lại sau commit mới nhất `3185edb` tối 02/10.
 
 Test mới sau bàn giao: `scripts/test-promotions-service.ts` **7/7**, `scripts/test-gift-shortfall.ts` **7/7**.
 
@@ -380,7 +380,7 @@ Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút to�
 | 2 | UI khuyến mại (8.1) | ✅ XONG |
 | 3 | B3 (8.2) → duyệt tay (8.3) → báo cáo (8.4) | ✅ XONG, mỗi mục có test riêng xanh |
 | 4 | Nạp hàng mẫu SP-001..004 lên prod (8.6) | ✅ XONG — đọc lại prod khớp 4 SP + 8 dòng tồn 100 + 8 bút toán |
-| 5 | Chạy `npm run build` + full `run-isolated` LẠI sau `3185edb` | ⏳ CHƯA — bắt buộc trước deploy |
+| 5 | Chạy `npm run build` + full `run-isolated` LẠI sau `3185edb` | ✅ XONG tối 02/10 — build sạch, 124/125 (chỉ đỏ flaky royalty) |
 | 6 | **Chủ duyệt deploy** | ⏳ CHỜ — merge 17 commit vào `main` + `npm run deploy` + rollback sẵn sàng |
 | 7 | Nghiệm thu tầng 3 trên prod: quét SP-001..004 ra đơn thật | ⏳ Sau deploy |
 | 8 | Mục 8.5 ghi bù sổ kho Hồ Gươm | **Chạy khi kho đóng (sau hội chợ)** |
