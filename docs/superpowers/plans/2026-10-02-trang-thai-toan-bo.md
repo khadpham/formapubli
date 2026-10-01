@@ -1,6 +1,6 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
-**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `f812a1df` (mốc 0đ + settings UI) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
+**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `8a6c0c46` (báo cáo hiện đúng hàng hóa) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
 |---|---|
@@ -8,7 +8,7 @@
 | **Worktree đang làm** | `D:\Data Project\formapubli-promo` |
 | Branch | `main` (đã merge `feat/khuyen-mai-san-pham` — merge commit `1d95371`, push origin xác nhận) |
 | HEAD | `1d95371` + docs sau deploy |
-| Production version đang chạy | `f812a1df-828b-44fb-bd99-c682999daac4` (deploy tối 02/10 lần 2: mốc 0đ + settings UI; site trả trang đăng nhập bình thường) |
+| Production version đang chạy | `8a6c0c46-db3e-4a5e-aa24-b6525d412145` (deploy tối 02/10 lần 3: báo cáo chốt ngày hiện đúng SP; site sống) |
 
 > **NGƯỜI ĐỌC PHẢI LÀM ĐƯỢC NGAY, KHÔNG PHẢI SUY LUẬN.** Mọi con số dưới đây là số đo được, không phải ước lượng. Lệnh copy chạy được nguyên văn.
 
@@ -26,6 +26,7 @@
 | **Cổng 3 — deploy** | ✅ **ĐÃ DEPLOY tối 02/10** (`55a82ca4`, từ merge `1d95371`) | Nghiệm thu quét SP thật chưa làm (cần máy thật) | Rollback sẵn sàng: `npx wrangler rollback <id>` |
 | **Test suite** | 124/125 xanh (+ tsc 0 + build sạch trên đúng cây deploy, kèm suite `test-autoclose-shift` của main) | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
 | **Sổ kho** | `stock_balances` ĐÚNG (440 dòng, 0 âm) | 🔴 ledger Hồ Gươm lệch **87 bút toán RECEIPT** (để sau hội chợ) | Hàng vật lý đúng; **thiếu sổ, không thiếu hàng** |
+| **Báo cáo chốt ngày** | ✅ Hiện đúng mã/tên/giá hàng hóa (`test-settlement-goods-display` 11/11; nhãn "Giá bán" cho GOODS, key theo product_id) | — | Lỗi thấy trên ảnh chụp: 4 dòng SP hiện `[]` + 0đ vì chỉ đọc `editions` |
 | **Hàng hóa mẫu prod** | ✅ SP-001..004 (Bookmark 5k, Móc khoá 15k, Gói quà 50k, Túi Tote 150k), mỗi món 100 cái × 2 kho (Hồ Gươm + ĐH Hà Nội), 8 bút toán OPENING_BALANCE khớp 8 dòng tồn | Chưa bán được (chờ deploy code) | Không — dữ liệu tượng trưng, chủ duyệt |
 | **Backup** | ✅ `backup-prod.ts` + `restore-prod.ts`, đã khôi phục thật 6/6 bảng khớp | — | Trước đây KHÔNG có script backup Turso |
 | **TypeScript** | `npx tsc --noEmit` **0 lỗi** (sau commit mới nhất `3185edb`) | — | — |
