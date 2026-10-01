@@ -124,12 +124,31 @@ ok(
 ok(/Đơn Hàng Theo Giờ/.test(chart), 'phải có tiêu đề tiếng Việt có dấu');
 ok(/Giờ cao điểm/.test(chart), 'phải có ô số Giờ cao điểm');
 ok(/đơn\/giờ/.test(chart), 'phải có ô số bình quân đơn/giờ');
-// Ô số thứ ba là TỔNG của cả dải giờ, nên nhãn phải nói "tổng" + nêu phạm vi giờ.
-// (Kiểm tra nhãn đúng ở test-render, vì test này đọc source nên chữ trong chú
-// thích cũng lọt vào — đó là lý do nhãn cũ nằm trong test-render.)
-ok(/Tổng doanh thu/.test(chart), 'ô số phải ghi "Tổng doanh thu"');
-// Phủ định "không được render nhãn cũ" nằm ở test-render: test này đọc source
-// nên chữ trong chú thích cũng lọt vào, không phân biệt được nhãn thật.
+// Ô số thứ ba là TIỀN BÌNH QUÂN mỗi giờ BÁN, và mẫu số phải là số giờ THỰC SỰ
+// CÓ ĐƠN (`openHours`), KHÔNG phải độ dài khung giờ — chia hết khung giờ ra con
+// số nhỏ giả tỉnh vì khung luôn kéo cả giờ nghỉ trưa không ai mua.
+ok(
+  /const openHours = list\.filter\(\(r\) => r\.orders > 0\)\.length/.test(chart),
+  'phải đếm GIỜ THỰC SỰ CÓ ĐƠN làm mẫu số, không chia hết độ dài khung giờ'
+);
+ok(
+  /salesPerOpenHour = openHours > 0 \? Math\.round\(totalSales \/ openHours\) : 0/.test(chart),
+  'tiền bình quân phải chia TỔNG doanh thu cho SỐ GIỜ CÓ ĐƠN'
+);
+ok(
+  /openHours > 0 \? Math\.round/.test(chart),
+  'phải chặn chia 0 khi không có giờ nào có đơn (ra Infinity/NaN)'
+);
+ok(/Doanh thu mỗi giờ bán/.test(chart), 'ô số phải ghi "Doanh thu mỗi giờ bán"');
+ok(
+  /\{openHours\} giờ có đơn/.test(chart),
+  'phải nêu rõ mẫu số để "bình quân" không bị đọc nhầm'
+);
+// Tổng doanh thu đã có chỗ khác (KPI "Thực thu" + bản in) — lặp lại ở đây chỉ tốn chỗ.
+ok(
+  />Tổng doanh thu</.test(chart) === false,
+  'không được lặp lại ô "Tổng doanh thu" — đã có ở KPI Thực thu và bản in'
+);
 ok(/đơn\/giờ/.test(chart), 'nhãn bình quân phải có dấu');
 ok(
   /role="img"[\s\S]{0,400}aria-label/.test(chart),

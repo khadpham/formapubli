@@ -189,12 +189,55 @@ ok(
   !html.includes('Doanh thu theo giờ'),
   'nhãn cũ "Doanh thu theo giờ" sai nghĩa (hiện tổng cả ngày) — không được render'
 );
-ok(html.includes('Tổng doanh thu'), 'ô số phải ghi "Tổng doanh thu"');
-ok(html.includes('cả ngày'), 'phải nêu rõ phạm vi giờ để không ai hiểu nhầm');
+// --- 9b. Ô "doanh thu mỗi giờ bán" phải đúng nghĩa ------------------------
+// Ô số này chia TỔNG doanh thu cho SỐ GIỜ THỰC SỰ CÓ ĐƠN, không phải cho độ
+// dài khung giờ. BAY có 14 giờ nhưng 13 giờ có đơn (12h = 0 đơn):
+//   tổng doanh thu = 16.250.000; 13 giờ có đơn ⇒ 1.250.000/giờ
+// Nếu cố tình chia 14 (độ dài khung) sẽ ra 1.160.714 — nhỏ hơn 89.286đ mỗi
+// giờ, và đọc dễ tưởng giờ nghỉ trưa không ai mua vẫn bán được tiền.
+const BAY_TOTAL = BAY.reduce((s, r) => s + Number(r.sales || 0), 0);
+const BAY_OPEN = BAY.filter((r) => Number(r.orders) > 0).length;
+const EXPECT_AVG = Math.round(BAY_TOTAL / BAY_OPEN);
+ok(BAY_TOTAL === 16_250_000, `tổng doanh thu mẫu = ${BAY_TOTAL}`);
+ok(BAY_OPEN === 13, `số giờ có đơn = ${BAY_OPEN}`);
+ok(
+  html.includes('Doanh thu mỗi giờ bán'),
+  'ô số phải ghi "Doanh thu mỗi giờ bán"'
+);
+ok(
+  html.includes(`${EXPECT_AVG.toLocaleString('vi-VN')}`),
+  `phải hiện tiền bình quân = tổng/${BAY_OPEN} giờ có đơn = ${EXPECT_AVG.toLocaleString('vi-VN')}`
+);
+ok(
+  !html.includes(`${Math.round(BAY_TOTAL / BAY.length).toLocaleString('vi-VN')}`) ||
+  EXPECT_AVG === Math.round(BAY_TOTAL / BAY.length),
+  'KHÔNG được chia hết độ dài khung giờ (mẫu số phải là số giờ CÓ ĐƠN)'
+);
+ok(html.includes(`${BAY_OPEN} giờ có đơn`), 'phải nêu rõ mẫu số để không ai hiểu nhầm');
+ok(
+  !html.includes('Tổng doanh thu'),
+  'không lặp lại "Tổng doanh thu" — đã có ở KPI Thực thu và bản in'
+);
 // Và tiền của từng giờ phải THỰC SỰ hiện khi rê — mới đúng nghĩa "theo giờ".
 ok(
   html.includes('chiếm') && html.includes('tổng đơn'),
   'dải số phải cho biết đơn/tiền/tỉ trọng của giờ đang xét'
 );
+
+// --- 9c. Ngày chỉ bán được đúng MỘT giờ: bình quân = đúng giờ đó ------------
+// Trường hợp biên của phép chia — nếu cứ chia theo khung 24 giờ thì ra con số
+// nhỏ giả tỉnh và trật "giờ đông nhất" cũng chỉ bằng 1/24 doanh thu.
+const oneDay = build(
+  [
+    { hour: 0, orders: 0, sales: 0 },
+    { hour: 9, orders: 3, sales: 1_000_000 },
+    { hour: 23, orders: 0, sales: 0 },
+  ],
+  0,
+  23
+);
+ok(oneDay.includes('1.000.000'), 'chỉ bán 1 giờ thì bình quân = đúng tiền giờ đó');
+ok(oneDay.includes('1 giờ có đơn'), 'phải nói đúng "1 giờ có đơn"');
+ok(!/NaN|Infinity/.test(oneDay), 'phép chia không được sinh NaN/Infinity');
 
 console.log(`\n=== BIỂU ĐỒ GIỜ — ĐO TOẠ ĐỘ THẬT: ${checks} assertions PASS ===\n`);

@@ -85,16 +85,31 @@ export function HourlyOrdersChart({
       null
     );
 
+    // Số giờ THỰC SỰ bán hàng — mẫu số cho "tiền bình quân mỗi giờ". Cố ý KHÔNG
+    // chia cho `list.length`: khung giờ luôn kéo từ giờ mở cửa tới giờ chốt ca
+    // nên có cả giờ nghỉ trưa không ai mua. Chia 14 giờ (8h–21h) trong khi chỉ
+    // 10 giờ bán được ra con số nhỏ giả tỉnh, đọc dễ tưởng buổi nghỉ cũng bán
+    // nhiều. Mẫu số phải là số giờ CÓ ĐƠN thì "bình quân" mới là con số so
+    // sánh được giữa các ca và các quầy.
+    const openHours = list.filter((r) => r.orders > 0).length;
+    const salesPerOpenHour = openHours > 0 ? Math.round(totalSales / openHours) : 0;
+
     const n = Math.max(1, list.length);
     const slot = PLOT_W / n;
     const barW = Math.max(5, Math.min(34, slot * 0.6));
     // Nhãn giờ mỗi `labelStep` giờ một nhãn để không chồng lên nhau khi khung 24h.
     const labelStep = Math.max(1, Math.ceil(n / 15));
 
-    return { list, totalOrders, totalSales, maxOrders, yMax, peak, quiet, slot, barW, labelStep };
+    return {
+list, totalOrders, maxOrders, yMax, peak, quiet,
+      openHours, salesPerOpenHour, slot, barW, labelStep,
+    };
   }, [rows]);
 
-  const { list, totalOrders, totalSales, maxOrders, yMax, peak, quiet, slot, barW, labelStep } = model;
+  const {
+    list, totalOrders, maxOrders, yMax, peak, quiet,
+    openHours, salesPerOpenHour, slot, barW, labelStep,
+  } = model;
 
   const activeHour = hover ?? locked ?? peak?.hour ?? null;
   const active = activeHour == null ? null : list.find((r) => r.hour === activeHour) ?? null;
@@ -118,7 +133,10 @@ export function HourlyOrdersChart({
     );
   }
 
-  const avgPerHour = totalOrders / list.length;
+  // Cùng mẫu số với ô tiền bên dưới: số giờ THỰC SỰ CÓ ĐƠN. Chia `list.length`
+  // (độ dài khung giờ) làm bình quân đơn luôn thấp hơn thực tế, vì khung kéo từ
+  // giờ mở cửa tới giờ chốt ca nên có cả giờ nghỉ trưa không ai mua.
+  const avgPerHour = openHours > 0 ? totalOrders / openHours : 0;
   const peakShare = peak && peak.orders > 0 ? Math.round((peak.orders / totalOrders) * 100) : 0;
 
   return (
@@ -161,18 +179,21 @@ export function HourlyOrdersChart({
             <span className="text-[10px] font-bold ml-1 text-slate-500">đơn/giờ</span>
           </p>
         </div>
+        {/* Ô số này KHÔNG lặp lại tổng doanh thu (đã có ở KPI "Thực thu" phía
+            trên và ở bản in) — lặp lại chỉ tốn chỗ. Thay bằng TIỀN BÌNH QUÂN
+            MỘT GIỜ BÁN, chia cho số giờ THỰC SỰ CÓ ĐƠN (xem `openHours`). */}
         <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl px-3 py-2">
-          <p className="text-[10px] font-bold text-emerald-700">Tổng doanh thu</p>
+          <p className="text-[10px] font-bold text-emerald-700">Doanh thu mỗi giờ bán</p>
           <p className="text-sm font-black font-mono text-emerald-800 mt-0.5 break-words leading-tight">
-            {money(totalSales)}
+            {money(salesPerOpenHour)}
             <span className="text-[10px] font-bold ml-0.5">đ</span>
           </p>
-          {/* Nhãn cũ "Doanh thu theo giờ" sai nghĩa: đây là TỔNG của cả dải giờ,
-              không phải tiền của một giờ. Tiền từng giờ nằm ở dải số bên dưới
-              (đổi theo giờ đang rê). Ghi rõ phạm vi để không ai đọc nhầm. Khung giờ
-              đã nêu ở tiêu đề rồi nên dòng này chỉ cần "cả ngày" — thêm `8h–21h`
-              ở đây là tràn ngang 5px ở màn 340px. */}
-          <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">cả ngày</p>
+          {/* Nói rõ mẫu số, không thì "bình quân" bị đọc nhầm là chia hết khung giờ
+              — mà khung giờ luôn kéo từ giờ mở cửa tới giờ chốt ca, có cả giờ
+              nghỉ trưa không ai mua. */}
+          <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+            {openHours} giờ có đơn
+          </p>
         </div>
       </div>
 
