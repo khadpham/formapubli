@@ -227,7 +227,7 @@ export class InventoryService {
         UPDATE stock_balances
         SET physical_quantity = physical_quantity + ${quantityDelta},
             updated_at = CURRENT_TIMESTAMP
-        WHERE edition_id = ${editionId}
+        WHERE product_id = ${editionId}
           AND warehouse_id = ${warehouseId}
           AND condition = ${condition}
           AND (physical_quantity + ${quantityDelta} >= 0)

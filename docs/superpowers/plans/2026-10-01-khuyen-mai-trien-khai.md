@@ -4,17 +4,53 @@ Ngày: 2026-10-01 · Kèm theo: `specs/2026-10-01-khuyen-mai-va-hang-hoa-design.
 
 > ## ⚠️ TRẠNG THÁI THẬT — dòng này thay cho "chờ duyệt, chưa viết dòng code nào"
 >
-> **Đã làm và đã áp PRODUCTION:**
-> - Migration `0031` (3 bảng + 7 cột nullable) — **đã chạy trên production**.
->   Xác minh bằng đơn `ORD261001000W` lúc 18:21 giờ VN ngày 01/10/2026, tạo
->   thành công sau migration, tổng dòng khớp `final_amount`, sổ kho ghi đúng.
 > - `871b1d9` và `6973276` — **đã lên `main`** do agent khác merge nhánh tôi.
 >   Đây là vi phạm quy tắc "không bao giờ commit trên main"; đã tách sang
 >   worktree `D:\Data Project\formapubli-promo` branch `feat/khuyen-mai-san-pham`.
-> - **Đã viết, CHƯA chạy:** `0032_sellable_goods.sql`, `apply-0031b-prod.ts`.
-> - **Đang làm:** Cổng 2 — sửa 40 file cho `product_id`.
->
-> **Chưa chạy lên production:** 0031b (backfill), 0032 (dựng lại bảng).
+> - Cổng 2 E2E đạt **33/33 xanh** từng lần. Còn nợ: `0033` trên prod + kiểm lại sau deploy.
+
+## Cập nhật 01/10/2026 — sau ca đêm
+
+> Đọc mục này trước, phần dưới còn mô tả trạng thái **trước ca đêm**.
+
+### A. Đã chạy trên PRODUCTION
+
+| Việc | Trạng thái | Bằng chứng |
+|---|---|---|
+| Migration `0031` (3 bảng products/promotions/promotion_gifts + 7 cột nullable) | **ĐÃ ÁP** | `PRAGMA table_info` từng bảng |
+| Backfill `0031b` | **ĐÃ ÁP** | editions 88/88 · order_items 217/217 · inventory_ledger 1657/1657 · stock_balances 440/440 · `product_id IS NULL = 0` ở cả 4 bảng |
+| `integrity_check` | ok | — |
+| `foreign_key_check` | sạch | — |
+| Migration `0032` (dựng lại `stock_balances` + `order_items`) | **ĐÃ ÁP** | Không mất dòng |
+| Migration `0033` (dựng lại `inventory_ledger`) | **ĐÃ VIẾT, CHƯA ÁP** | — |
+| Deploy `0e2ed259-ed75-4ca5-be8f-83562ae3ed1c` | site HTTP 200 | — |
+| Deploy tiếp (sau 0033) | **ĐANG LÀM** | — |
+
+### B. Backup + khôi phục — ĐÃ CHỨNG MINH
+
+- **Không có script backup nào trong repo làm được.** `backup-db.ts` chỉ copy file local, prod là Turso.
+- Đã viết `backup-prod.ts` (chỉ đọc) + `restore-prod.ts` (có `--thuc-hien` + `ALLOW_REMOTE_TARGET`).
+- **Đã thử khôi phục THẬT vào DB rỗng** → 6/6 bảng khớp production chính xác:
+  works 87 · editions 88 · warehouses 5 · orders 79 · order_items 217 · stock_balances 440.
+  `integrity` ok, FK sạch, đủ 3 trigger.
+- Backup có đủ dữ liệu kho Hồ Gươm: 88 dòng tồn · 331 bút toán · 40 đơn · 73 dòng đơn · 5 ca két.
+
+⇒ PHẦN 8 mục 1 ("chưa xác minh được đường khôi phục") **đã đóng**.
+
+### C. NỢ KỸ THUẬT CẦN GHI
+
+| # | Nợ | Sự thật đã đo |
+|---|---|---|
+| C1 | `scripts/test-royalties.ts` **FLAKY, có từ TRƯỚC đêm nay** | Cùng code, cùng DB sạch, 3 lần cho EXIT = `0, 1, 1`. Chạy trên code trước đêm nay cũng `0, 1, 1`. **Không liên quan thay đổi đêm nay** |
+| C2 | Biện minh bỏ qua C1 | Production có `rights_contracts` = **0 dòng**, audit log royalty = **0 hoạt động**. Tính năng chưa ai dùng |
+| C3 | `inventory_ledger` thiếu **87 bút toán "nhập kho"** tại kho Hồ Gươm | Ledger âm **-85.494** trong khi `stock_balances` **đúng** (440 dòng, không âm). Hàng vật lý đúng; **SỔ thiếu**. Cần ghi bù |
+
+### D. Bài học đã mắc — đừng lặp lại
+
+1. **DDL phải lấy NGUYÊN VĂN từ `sqlite_master` của production.** Lần tự viết `0033` theo bản `0000` → thiếu cột `reversal_of` → `no such column`.
+2. **Không suy luận "`products.id === editions.id` cho sách nên thay `edition_id` bằng `product_id` ở mọi nơi là tương đương".** SAI — đã làm lệch số liều.
+3. **Một lần chạy test KHÔNG đủ để kết luận.** Đã chạy 1 lần thấy xanh → kết luận "sai", chạy lại thấy đỏ → kết luận "thủ phạm là X". Thực ra test flaky. **Phải chạy lặp ≥3 lần.**
+4. **`verify-pos-live.ts` KHÔNG phải "chỉ đọc"** — nó tạo đơn thật qua `POST /api/orders` (dòng 206).
 
 ---
 
@@ -30,7 +66,7 @@ Ngày: 2026-10-01 · Kèm theo: `specs/2026-10-01-khuyen-mai-va-hang-hoa-design.
 | 0.2 | Đọc lại spec + plan | Nắm 24 quyết định, 15 lỗi chặn | — | Không |
 | 0.3 | Chờ agent khác xong | `run-isolated.ts` đang bị sửa | — | Không |
 | 0.4 | Chạy lại toàn bộ suite | Xanh trước khi bắt đầu | — | Không |
-| 0.5 | Tạo nhánh git | `feat/products-promo`, **không** commit trên main | — | Không |
+| 0.5 | Tạo nhánh git | `feat/khuyen-mai-san-pham`, **không** commit trên main | — | Không |
 
 ### Giai đoạn 1 — Cổng 1: Schema (code ban ngày, áp tối)
 
@@ -51,7 +87,7 @@ Ngày: 2026-10-01 · Kèm theo: `specs/2026-10-01-khuyen-mai-va-hang-hoa-design.
 
 | # | Bước | Việc | Sub-agent | Đụng P? |
 |---|---|---|---|---|
-| 2.1 | **Backup DB prod** | Thủ công — không có script nào trong repo | Không | **✅ CÓ** |
+| 2.1 | **Backup DB prod** | `backup-prod.ts` — đã viết, đã thử khôi phục thật ✅ | Không | **✅ CÓ** |
 | 2.2 | Xác nhận backup | Mở được, đủ số bảng | — | Chỉ đọc |
 | 2.3 | `INSERT products` | ~88 dòng — nhanh | Không | **✅ CÓ** |
 | 2.4 | `UPDATE editions` | 88 dòng — nhanh | Không | **✅ CÓ** |
@@ -228,7 +264,7 @@ Giai đoạn này thay bằng **điều kiện bằng chứng**, đo được, k
 | 3 | `npm run build` sạch | Bằng chứng tầng 2 |
 | 4 | `run-isolated.ts` **toàn bộ** xanh | Không hạ assertion để xanh (`AGENTS.md` mục 0) |
 | 5 | `verify-pos-live.ts` xanh sau deploy | Bằng chứng tầng 3 — HTTP thật |
-| 6 | **Backup DB prod** trước Cổng 1b | Không có script nào trong repo làm việc này |
+| 6 | **Backup DB prod** trước Cổng 1b | Đêm 01/10 đã có `backup-prod.ts` + `restore-prod.ts`, đã thử khôi phục thật khớp 6/6 bảng |
 
 ⚠️ Hiện `scripts/run-isolated.ts` đang bị agent khác sửa. **Chạy lại toàn bộ suite sau khi agent đó xong.**
 
@@ -293,8 +329,8 @@ Báo: "Cổng 1 xong. DB prod đã có bảng products/promotions/promotion_gift
 
 ### B1b.0 — Backup (bắt buộc)
 
-- [ ] **Backup DB prod thủ công.** Không có script nào trong repo làm được — `backup-db.ts:9-10` chỉ copy file local, còn prod là Turso.
-- [ ] Xác nhận file backup mở được, số bảng khớp
+- [x] **Backup DB prod.** Không có script nào trong repo làm được — `backup-db.ts:9-10` chỉ copy file local, còn prod là Turso. → Đêm 01/10 đã viết `backup-prod.ts` + `restore-prod.ts` và **thử khôi phục thật vào DB rỗng, khớp 6/6 bảng**. Xem mục B.
+- [x] Xác nhận file backup mở được, số bảng khớp
 
 ### B1b.1 — Thứ tự thực hiện
 
@@ -347,6 +383,8 @@ Lỗi B7 — loại lỗi **không báo lỗi, chỉ thiếu dòng**:
 | `bundle.service.ts` | 63 | Combo |
 
 - [ ] Đổi sang `innerJoin products` (`products.id = edition_id` cho sách)
+
+⚠️ **Bài học đêm 01/10:** đừng suy luận "`products.id === editions.id` cho sách nên thay `edition_id` bằng `product_id` ở mọi nơi là tương đương". **SAI** — đã làm lệch số liều.
 - [ ] `analytics.service.ts` thêm `product_kind` vào kết quả để lọc được "chỉ sách"
 
 ### B2.2 — Sửa lỗi B13: mã vạch
@@ -505,7 +543,7 @@ Agent khác rà soát plan này, chỉ ra 5 điểm. **4 điểm đúng, 1 đi�
 | 2 | Dòng "chưa viết dòng code nào" sai thực tế | ✅ **Đúng** | Thay bằng khối TRẠNG THÁI THẬT ở đầu file |
 | 3 | `apply-0031-prod.ts` / `health-check-prod.ts` chưa ai kiểm | ➖ **Không đúng** | Đã kiểm: `run-isolated.ts` có danh sách suite **tường minh**, không chạy 2 script đó. Vẫn ghi rõ để người khác khỏi hiểu nhầm |
 | 4 | `verify-pos-live.ts` **KHÔNG chỉ đọc**, tạo đơn thật | ✅ **Đúng — tôi đã nói sai** | Đã sửa. Trước đây tôi báo bạn nó "chỉ đọc" — sai |
-| 5 | Backup Turso: cần xác minh đường khôi phục trước Cổng 1b | ✅ **Đúng** | Xem PHẦN 8 — **chưa xác minh được** |
+| 5 | ~~Backup Turso: cần xác minh đường khôi phục trước Cổng 1b~~ | ✅ **Đã đóng** | Đã có `backup-prod.ts` + `restore-prod.ts`, khôi phục thật khớp 6/6 bảng |
 
 ### 6. Việc gấp — dev DB thiếu 3 bảng
 
@@ -519,7 +557,7 @@ Sửa: `npx tsx scripts/fix-dev-db-schema.ts` (tự sao lưu `.bak`, tự kiểm
 
 | # | Việc | Vì sao chặn |
 |---|---|---|
-| 1 | **Đường khôi phục backup Turso** | Bản export đọc được nhưng có ghi ngược được khi khôi phục không? `UPDATE order_items` là câu lâu nhất, ghi từng dòng — phải biết có đường quay lại **trước** khi chạy |
+| 1 | ⚠️ **Đã đóng** — có `backup-prod.ts` + `restore-prod.ts`, đã khôi phục thật vào DB rỗng khớp 6/6 bảng. Xem mục B |
 | 2 | **B3 quyết lại** | Xem PHẦN 5 / MỐC 0 |
 | 3 | **Dev DB** | Xem mục 7.6 |
 
@@ -532,7 +570,7 @@ Sửa: `npx tsx scripts/fix-dev-db-schema.ts` (tự sao lưu `.bak`, tự kiểm
 | **0** | Quyết định B3 (tồn âm) | Không | Bất kỳ | **✅ ĐÃ CHỐT (b)** |
 | **1** | Cổng 1 — tạo bảng + cột | **CÓ** | Tối, kho đóng | **CÓ** |
 | **2** | Cổng 1b — backfill | **CÓ** | Tối, kho đóng, sau backup | **CÓ** |
-| **3** | Cổng 2 — deploy code sản phẩm | **CÓ** | Tối, kho đóng | **CÓ** |
+| **3** | Cổng 2 — 0033 trên prod + kiểm lại sau deploy | **CÓ** | Tối, kho đóng | **ĐANG LÀM** |
 | **4** | Bắt đầu viết Cổng 3 | Không | Sau 5/5 điều kiện 4.1–4.5 | **CÓ** |
 | **5** | Cổng 3 — deploy code khuyến mại | **CÓ** | **Sau hội chợ**, tối | **CÓ** |
 
@@ -549,6 +587,8 @@ Sửa: `npx tsx scripts/fix-dev-db-schema.ts` (tự sao lưu `.bak`, tự kiểm
 | Deploy nuốt code chưa commit của agent khác | Cao | `git status` sạch trước khi deploy |
 | Đơn có quà đơt lập không duyệt | Đã xử lý | B1 |
 | Hàng hóa biến mất khỏi báo cáo | Đã xử lý | B7 — 9 chỗ join |
-| Không có đường restore DB prod | Cao | Backup thủ công trước Cổng 1b |
+| ~~Không có đường restore DB prod~~ | **Đã đóng** | `backup-prod.ts` + `restore-prod.ts`, đã khôi phục thật khớp 6/6 bảng |
+| Test flaky dẫn tới kết luận sai | Cao | Chạy lặp **≥3 lần** trước khi kết luận (mục C1) |
+| `inventory_ledger` thiếu 87 bút toán nhập kho, ledger âm -85.494 | Trung bình | `stock_balances` đúng, sổ thiếu — cần ghi bù (mục C3) |
 | Bản ghi sách giả lọt vào DoI / top tác giả | Đã xử lý | B10 — tách `products` thật |
 | Test local không bắt lỗi subrequest | Cao | Chỉ kiểm được trên prod qua `verify-pos-live.ts` |

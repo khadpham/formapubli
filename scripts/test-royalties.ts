@@ -28,8 +28,11 @@ async function runRoyaltyTests() {
   const workList = await db.select().from(works).limit(3);
   if (workList.length < 3) throw new Error('Test DB chưa seed đủ tác phẩm.');
   const [workA, workB, workC] = workList;
-  const edOf = async (workId: string) =>
-    (await db.select().from(editions).where(eq(editions.workId, workId)).limit(1))[0];
+// PHẢI có `ORDER BY id`. Không có thì SQLite trả dòng tuỳ ý — đã đo được:
+// cùng code, cùng DB sạch, chạy 3 lần cho EXIT = 0, 1, 1. Test này FLAKY,
+// không phải lỗi của code nghiệp vụ. Khiến cả một buổi tìm lỗi sai hướng.
+const edOf = async (workId: string) =>
+  (await db.select().from(editions).where(eq(editions.workId, workId)).orderBy(editions.id).limit(1))[0];
   const edA = await edOf(workA.id);
   const edB = await edOf(workB.id);
 
