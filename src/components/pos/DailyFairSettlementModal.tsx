@@ -994,7 +994,7 @@ export function DailyFairSettlementModal({
         {/* NỘI DUNG BIÊN BẢN CHỐT CA KHỔ A4 (CHỈ HIỂN THỊ KHI IN window.print) */}
         {/* ============================================================== */}
         {data && createPortal(
-          <div id="printable-settlement-report" className="hidden print:block bg-white p-8 text-slate-900 text-[12px] leading-relaxed font-serif">
+          <div id="printable-settlement-report" className="hidden print:block bg-white text-slate-900 text-[12px] leading-relaxed font-serif">
             {/* Khối in PHẢI createPortal riêng xuống `document.body`. Nằm trong
                 khung modal `overflow-hidden max-h-[92vh]` thì lúc in khung cha
                 cắt mất toàn bộ biên bản, window.print() ra trang trắng — đúng
@@ -1190,7 +1190,7 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
-            {/* III. Đơn vượt trần chiết khấu — người duyệt phải chịu trách nhiệm
+            {/* II. Đơn vượt trần chiết khấu — người duyệt phải chịu trách nhiệm
                 nên giữ đủ tên người duyệt + thu ngân trên bản in. Trên 10 dòng thì
                 cắt và đếm phần dư, không kéo dài biên bản.
 
@@ -1201,7 +1201,7 @@ export function DailyFairSettlementModal({
                 giấy trắng). Vẫn giữ `break-inside: avoid` cho từng khối. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
+                II. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
@@ -1250,14 +1250,14 @@ export function DailyFairSettlementModal({
               </table>
             </div>
 
-            {/* IV. Tồn gọn — CHỈ ấn phẩm thực sự bán ra trong ngày (soldToday > 0).
+            {/* III. Tồn gọn — CHỈ ấn phẩm thực sự bán ra trong ngày (soldToday > 0).
                 Ấn phẩm tồn không bán là tĩnh, không in (một gian hàng có 81 ấn bản
                 thì bảng đầy đủ đẩy biên bản ra trang 3-4 vô nghĩa). Bảng này KHÔNG
                 cap: đã bán mấy ấn phẩm thì in hết mấy ấn phẩm — thiếu dòng là
                 báo thiếu hàng, mà cột này là biên bản bàn giao cho kế toán. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+                III. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
@@ -1291,9 +1291,11 @@ export function DailyFairSettlementModal({
                   )}
                 </tbody>
               </table>
-              {/* 2 dòng tổng kết cuối ngày. Tổng số cuốn bán ra cộng ở TRÌNH DUYỆT
-                  từ `soldToday` — đó cũng đúng là tổng `quantity` của các dòng
-                  order_items trong ngày, cộng lại không sai với bảng ở trên. */}
+              {/* 2 dòng tổng kết cuối ngày. Tổng số cuốn bán ra cộng ở TRÌNH DUYỆT từ
+                  `soldToday` của chính các dòng in ở bảng trên — nguồn là
+                  `inventoryReconciliation`, tức CHỈ ấn phẩm có dòng tồn ghi nhận
+                  trong kho; ấn phẩm bán mà không có dòng tồn thì không vào
+                  bảng này (không phải tổng quantity mọi order_items của ngày). */}
               <div className="grid grid-cols-2 gap-x-8 gap-y-0.5 mt-1">
                 <div>
                   - TỔNG SỐ CUỒN BÁN RA: <strong className="font-mono">{soldTodayTotal} cuốn</strong>
@@ -1314,7 +1316,7 @@ export function DailyFairSettlementModal({
               )}
             </div>
 
-            {/* V. Chữ ký 3 bên thu thấp (h-12) để biên bản vẫn vừa trang mà chỗ
+            {/* IV. Chữ ký 3 bên thu thấp (h-12) để biên bản vẫn vừa trang mà chỗ
                 ký vẫn đủ để viết tay — biên bản này người ta KÝ THẬT. */}
             <div className="print-block font-sans grid grid-cols-3 gap-4 text-center text-xs mt-6 pt-2">
               <div>
