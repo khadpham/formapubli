@@ -78,7 +78,8 @@ ok(
 const cronWorkflow = path.resolve(process.cwd(), '.github/workflows/auto-close-shift.yml');
 ok(fs.existsSync(cronWorkflow), 'Phải có workflow lịch gọi safeguard — không có thì tính năng chết lặng lẽ');
 const wf = fs.readFileSync(cronWorkflow, 'utf8');
-ok(/schedule:/.test(wf), 'Workflow phải có schedule');
+ok(/^\s*schedule:\s*$/m.test(wf), 'Workflow phải có schedule kích hoạt (không bị comment)');
+ok(/^\s*-\s*cron:\s*['"][^'"]+['"]/m.test(wf), 'Schedule phải có cron kích hoạt (không bị comment)');
 ok(/curl/.test(wf), 'Workflow phải gọi HTTP vào endpoint');
 ok(/CRON_SECRET/.test(wf), 'Workflow phải dùng CRON_SECRET');
 ok(

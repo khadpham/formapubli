@@ -10,15 +10,8 @@ name: Chốt ca & chốt ngày tự động
 # scripts/test-cron-auto-close.ts khoá lại điều này.
 
 on:
-  # TẠM TẮT 2026-09-29 — lý do:
-  #  1. Secret Worker CRON_SECRET bị mất ⇒ 401 suốt, lịch chưa từng chạy được.
-  #     Đã set lại (Worker + GitHub) và verify 200, nhưng CHƯA từng có run thật.
-  #  2. P2 chưa sửa: `closeDay(autoCloseOpenShifts:true)` sẽ TỰ ĐÓNG ca quầy quá
-  #     hạn trên 7 ngày dữ liệu, ghi expectedCash và để closingCashActual=null
-  #     ⇒ đối soát két thành UNVERIFIED. Ghi dữ liệu tài chính không giám sát.
-  # Bật lại khi P2 xong. `workflow_dispatch` vẫn giữ để chạy tay có người canh.
-  # schedule:
-  #   - cron: '40 16 * * *'   # 23:40 giờ VN = 16:40 UTC
+  schedule:
+    - cron: '40 16 * * *'   # 23:40 giờ VN = 16:40 UTC
   workflow_dispatch:
 
 concurrency:
