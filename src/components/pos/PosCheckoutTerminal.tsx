@@ -526,6 +526,9 @@ export function PosCheckoutTerminal({
     setIsScannerOpen(false);
     setAmbiguousMatches(null);
     setCart([]);
+    // Belt & braces: lock là ref (không re-render khi đổi) nên mọi đường xong
+    // đơn đều phải thả tay ở đây, không chỉ trông chờ finally của handler.
+    checkoutLockRef.current = false;
     setNote('');
     setQrSnapshot(null);
     setIsGift(false);
@@ -635,6 +638,11 @@ export function PosCheckoutTerminal({
   const isApprovalPendingState =
     isApprovalPending || (isDiscountApprovalModalOpen && pendingDiscountRate !== null);
   const isCartFrozen = isApprovalPendingState || approvedDiscountRequestId !== null || checkoutLockRef.current;
+  // Banner "chờ duyệt" CHỈ khi có phê duyệt thật (đang chờ hoặc đã duyệt).
+  // Trước đây banner hiện cả lúc checkoutLock (đang chốt đơn) với đúng chữ
+  // "chờ Quản lý duyệt" ⇒ thu ngân tưởng đơn nào cũng phải xin duyệt, bấm
+  // "Mở lại mã" ⇒ modal duyệt mở ra rồi lỗi/tắt (đúng phàn nàn 02/10 tối).
+  const hasRealApprovalState = isApprovalPending || approvedDiscountRequestId !== null;
   const isInteractionLocked = isCartFrozen || isParserImporting;
   const isTransferOverlayOpen = Boolean(transferSession) || isPhotoGalleryOpen;
   /** Tài khoản nhận/QR của kho đang tải: chưa có QR và chưa từng có nguồn. */
@@ -3361,14 +3369,19 @@ export function PosCheckoutTerminal({
                   <div>
                     <p className="text-xs font-bold">🔒 Giỏ hàng đang tạm khóa</p>
                     <p className="text-[11px] text-amber-700">
-                      {approvedDiscountRequestId
-                        ? `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
-                        : `Đang chờ Quản lý duyệt chiết khấu ${pendingDiscountRate ? Math.round(pendingDiscountRate * 100) + '%' : ''}. Không thể sửa giỏ.`}
+                      {hasRealApprovalState ? (
+                        approvedDiscountRequestId
+                          ? `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
+                          : `Đang chờ Quản lý duyệt chiết khấu ${pendingDiscountRate ? Math.round(pendingDiscountRate * 100) + '%' : ''}. Không thể sửa giỏ.`
+                      ) : (
+                        'Đang xử lý thanh toán, giỏ tạm khóa trong giây lát.'
+                      )}
                     </p>
                   </div>
                 </div>
+                {hasRealApprovalState && (
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {!isDiscountApprovalModalOpen && !approvedDiscountRequestId && (
+                  {!isDiscountApprovalModalOpen && !approvedDiscountRequestId && pendingApprovalRequestId && (
                     <button
                       type="button"
                       disabled={isSubmitting || checkoutLockRef.current}
@@ -3393,6 +3406,7 @@ export function PosCheckoutTerminal({
                       : 'Hủy duyệt để sửa giỏ'}
                   </button>
                 </div>
+                )}
               </div>
             )}
 

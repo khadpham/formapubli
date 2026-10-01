@@ -17,6 +17,12 @@
  *    `finalAmount` từ PHIÊN ĐÃ ĐÓNG BĂNG. Sau khi F5 giữa chừng lúc chờ chuyển
  *    khoản, giỏ rỗng còn phiên còn ⇒ phiếu có tổng tiền đúng nhưng bảng dòng
  *    sách rỗng và mất dòng "Tạm tính".
+ *
+ * 4. Banner "Giỏ hàng đang tạm khóa" hiện chữ "chờ Quản lý duyệt" NGAY CẢ khi
+ *    chỉ đang chốt đơn (checkoutLock, không có phê duyệt nào) ⇒ thu ngân tưởng
+ *    đơn nào cũng phải xin duyệt; bấm "Mở lại mã" (không có yêu cầu nào) ⇒
+ *    modal duyệt mở ra rồi lỗi/tắt. Chữ duyệt chỉ được hiện khi có phê duyệt
+ *    thật; nút "Mở lại mã" chỉ khi có yêu cầu đang chờ.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -78,6 +84,20 @@ ok(
 ok(
   /items: \[\.\.\.cart, \.\.\.giftItems\]\.map\(/.test(pos),
   'phải đóng băng danh sách mặc hàng (cả dòng thường lẫn dòng quà) vào phiên lúc tạo đơn'
+);
+
+// --- 4. Banner đóng băng không được mạo danh "chờ duyệt" khi chỉ đang chốt đơn ---
+ok(
+  /hasRealApprovalState = isApprovalPending \|\| approvedDiscountRequestId !== null/.test(pos),
+  'banner phân biệt phê duyệt thật với khóa chốt đơn'
+);
+ok(
+  /hasRealApprovalState \? \(/.test(pos),
+  'chữ "chờ duyệt" chỉ hiện khi có phê duyệt thật, còn lại là "đang xử lý thanh toán"'
+);
+ok(
+  /pendingApprovalRequestId && \(/.test(pos),
+  'nút "Mở lại mã" chỉ hiện khi có yêu cầu đang chờ (không mở modal rỗng)'
 );
 
 console.log(`\n=== BA LỖI POS ĐÃ XÁC MINH: ${checks} assertions PASS ===`);
