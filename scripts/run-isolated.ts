@@ -22,6 +22,7 @@ const ALL_SUITES = [
   'scripts/test-inventory.ts',
   'scripts/test-products.ts',
   'scripts/test-goods-in-pos-catalog.ts',
+  'scripts/test-goods-sell-e2e.ts',
   'scripts/test-products-rbac.ts',
   'scripts/test-price-normalize.ts',
   'scripts/test-0032-preserves-data.ts',

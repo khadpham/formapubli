@@ -83,7 +83,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
     id: `sb-${wid}`, productId: wid, editionId: wid, warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: openingQty,
   });
   await db.insert(inventoryLedger).values({
-    id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',
+    id: `led-${wid}-open`, editionId: wid, productId: wid, warehouseId: 'wh-au-co',
     eventType: 'OPENING_BALANCE', quantityDelta: openingQty, condition: 'NEW',
     documentRef: `OPEN-${probe}`, actorId: 'cp3r-fixture', idempotencyKey: `idem-open-${wid}`,
   });

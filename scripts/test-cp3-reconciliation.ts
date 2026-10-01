@@ -132,7 +132,7 @@ async function main() {
     id: 'sb-erec', productId: 'erec', editionId: 'erec', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50,
   });
   await db0.insert(inventoryLedger).values({
-    id: 'led-erec-open', editionId: 'erec', warehouseId: 'wh-au-co',
+    id: 'led-erec-open', editionId: 'erec', productId: 'erec', warehouseId: 'wh-au-co',
     eventType: 'OPENING_BALANCE', quantityDelta: 50, condition: 'NEW',
     documentRef: 'OPEN-REC', actorId: 'cp3r-fixture', idempotencyKey: 'idem-open-erec',
   });

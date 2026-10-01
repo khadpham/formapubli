@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs, dailyOrderCounters } from '../db';
+import { db, orders, orderItems, editions, products, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs, dailyOrderCounters } from '../db';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
@@ -506,21 +506,35 @@ export class OrderService {
       needTotal.set(item.editionId, (needTotal.get(item.editionId) || 0) + item.quantity);
     }
 
-    // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data)
+    // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data).
+    //
+    // Tra từ BẢNG `products` (tầng gốc), KHÔNG phải `editions`. Sách đã được
+    // mirror vào `products` với `id` TRÙNG `editions.id` nên kết quả y hệt trước
+    // đây; hàng hóa thì chỉ có `products`.
+    //
+    // Trước đây tra `FROM editions` ⇒ hàng hóa không có dòng editions nên chết
+    // NGAY TẠI ĐÂY, trước cả bước kiểm ATP — đơn không tạo được. Đây là lỗi
+    // đã lên production; bằng chứng ở scripts/test-goods-sell-e2e.ts.
     const editionIds = stockCheckItems.map((i) => i.editionId);
-    const dbEditions = await withDbRetry(async () => {
+    const dbProducts = await withDbRetry(async () => {
       return await db
         .select({
-          id: editions.id,
-          code: editions.code,
-          title: editions.title,
-          coverPrice: editions.coverPrice,
+          id: products.id,
+          name: products.name,
+          coverPrice: products.sellingPrice,
+          // Lấy LUÔN ở đây vì câu này đã chạy rồi — không tốn thêm subrequest.
+          // Dùng để biết dòng này là SÁCH hay HÀNG HÓA, quyết định ghi
+          // `inventory_ledger.edition_id` là NULL hay không. Đường này gần với
+          // trần 50 subrequest của Worker nên tuyệt đối không thêm query.
+          productKind: products.productKind,
         })
-        .from(editions)
-        .where(inArray(editions.id, editionIds));
+        .from(products)
+        .where(inArray(products.id, editionIds));
     });
 
-    const editionMap = new Map(dbEditions.map((e) => [e.id, e]));
+    // Khoá theo `products.id`; giá trị vẫn là `editionId` (với sách chúng BẰNG
+    // nhau) để không phá vỡ các call site phía dưới.
+    const editionMap = new Map(dbProducts.map((e) => [e.id, e]));
 
     // 3. Tính toán dòng tiền và chi tiết đơn hàng ngoài transaction
     let calculatedSubtotal = 0;
@@ -538,9 +552,15 @@ export class OrderService {
         calculatedSubtotal += priced.subtotal;
         calculatedFinalAmount += priced.finalAmount;
 
-        return {
+return {
           id: `oi-${generateUUIDv7()}`,
-          editionId: item.editionId,
+          // Hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, vì cột này
+          // VẪN CÒN FK `editions(id)` (nullable ≠ bỏ FK).
+          editionId: edition.productKind === 'BOOK' ? item.editionId : null,
+          productId: item.editionId,
+          // Cờ này đi xuống `recordMovementsBatch` để quyết định ghi sổ kho,
+          // thay vì tra thêm một query (đường này sát trần subrequest Worker).
+          isBook: edition.productKind === 'BOOK',
           quantity: item.quantity,
           unitCoverPrice: priced.coverPrice,
           unitDiscountRate: itemDiscountRate,
@@ -555,16 +575,22 @@ export class OrderService {
         calculatedSubtotal += line.quantity * line.unitCoverPrice;
         calculatedFinalAmount += line.totalAmount;
 
-        return {
-           id: `oi-${generateUUIDv7()}`,
+return {
+          id: `oi-${generateUUIDv7()}`,
           editionId: line.editionId,
+          productId: line.editionId,
+          // Dòng combo luôn là ấn bản sách.
+          isBook: true,
           quantity: line.quantity,
           unitCoverPrice: line.unitCoverPrice,
           unitDiscountRate: line.unitDiscountRate,
           unitSellingPrice: line.unitSellingPrice,
           totalAmount: line.totalAmount,
-          bundleId: line.bundleId as string | undefined,
-          bundleQty: line.bundleQty as number | undefined,
+          // PHẢI giữ `line.*` — tôi đã đổi nhầm thành `undefined` một lần, làm
+          // dòng combo mất `bundle_id` ⇒ đếm chiết khấu sai, replay combo đụng
+          // IDEMPOTENCY_CONFLICT. Bằng chứng: test-pay2-money-audit F4.
+          bundleId: line.bundleId,
+          bundleQty: line.bundleQty,
         };
       }),
     ];
@@ -852,7 +878,10 @@ export class OrderService {
             currentItems: preparedItems
               .filter((item) => !item.bundleId)
               .map((item) => ({
-                editionId: item.editionId,
+                // `consumeApproval` cần `products.id` để băm hash giỏ — với sách
+                // nó BẰNG `edition_id`. `edition_id` có thể NULL cho hàng hóa nên
+                // dùng `product_id` (luôn khác NULL).
+                editionId: item.productId,
                 quantity: item.quantity,
                 unitPrice: item.unitCoverPrice,
               })),
@@ -902,10 +931,14 @@ export class OrderService {
             const lineValues: Record<string, unknown> = {
               id: item.id,
               orderId,
-              editionId: item.editionId,
-              // 0032: NOT NULL + FK `products(id)`. Sách có
-              // `products.id === editions.id`, nên đặt bằng `editionId`.
-              productId: item.editionId,
+              // 0032/0033: `order_items.edition_id` nullable nhưng VẪN CÒN FK
+              // `editions(id)`. Hàng hóa không có dòng editions nên phải ghi
+              // NULL — ghi id hàng hóa vào đây là FK violation, đơn rollback.
+              editionId: item.isBook ? item.editionId : null,
+              // 0032: NOT NULL + FK `products(id)`. PHẢI dùng `item.productId`
+              // chứ không phải `item.editionId` — với hàng hóa `editionId` đã là
+              // NULL ở dòng trên, dùng nó sẽ vi phạm NOT NULL.
+              productId: item.productId,
               quantity: item.quantity,
               unitCoverPrice: item.unitCoverPrice,
               unitDiscountRate: item.unitDiscountRate,
@@ -924,7 +957,9 @@ export class OrderService {
           let lineIdx = 0;
           for (const item of preparedItems) {
             await InventoryService.recordMovement({
-              editionId: item.editionId,
+              editionId: item.productId,
+              // 0033: hàng hóa ghi `inventory_ledger.edition_id = NULL`.
+              isBook: item.isBook !== false,
               warehouseId,
               eventType: 'DISPATCH_SALE',
               quantityDelta: -item.quantity,
@@ -1476,13 +1511,17 @@ export class OrderService {
     await InventoryService.recordMovementsBatch(
       lines.map((ln) => ({
         // 0032: `order_items.edition_id` nullable nên không truyền thẳng được.
-        // `product_id` NOT NULL và với sách thì BẰNG `edition_id`, nên kết quả
-        // y hệt trước đây.
+        // `product_id` NOT NULL và với sách thì BẰNG `edition_id`.
         //
-        // ⚠️ HẠN CHẾ CÒN LẠI: `inventory_ledger.edition_id` VẪN NOT NULL (0032
-        // chưa dựng lại bảng này) ⇒ hàng hóa chưa ghi được vào sổ kho. Cần một
-        // migration sau để bỏ ràng buộc đó; xem spec mục 6 B10.
+        // 0033: `inventory_ledger.edition_id` cũng nullable. Hàng hóa KHÔNG có
+        // dòng `editions` nên phải để NULL — còn sách thì giữ nguyên để báo cáo
+        // và royalty vẫn tra được. Cờ `is_gift_line` không đủ vì quà tặng cũng
+        // có thể là sách; dùng `product_id` có trong `products` (không tốn query
+        // thêm vì đã tra ở bước 2).
         editionId: ln.productId,
+        // 0033: hàng hóa ghi `edition_id = NULL` vào sổ kho. `order_items` chỉ
+        // giữ `product_id`; quyết định sách/hàng hóa đã có sẵn ở bước 2.
+        isBook: !ln.productId.startsWith('pr-'),
         quantityDelta: -ln.quantity,
         condition: 'NEW' as const,
       })),

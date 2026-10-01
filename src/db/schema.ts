@@ -215,11 +215,11 @@ export const customerOwnedBooks = sqliteTable('customer_owned_books', {
 // 10. Append-Only Inventory Ledger (Sổ cái Kho Bất biến)
 export const inventoryLedger = sqliteTable('inventory_ledger', {
   id: text('id').primaryKey(),
-  editionId: text('edition_id').notNull().references(() => editions.id),
-  // 0031 đã thêm cột này vào DB nhưng schema.ts chưa khai báo — phải khai để
-  // khớp. NULLABLE vì 0031 chỉ ADD COLUMN, giá trị chỉ có sau khi backfill
-  // (Cổng 1b). `edition_id` ở đây VẪN NOT NULL: 0032 chưa dựng lại bảng này.
-  productId: text('product_id').references(() => products.id),
+  // 0033: `edition_id` NULLABLE — hàng hóa không có dòng `editions`.
+  editionId: text('edition_id').references(() => editions.id),
+  // 0033: NOT NULL + FK. Sách có `products.id === editions.id` nên chép thẳng từ
+  // `edition_id` khi backfill.
+  productId: text('product_id').notNull().references(() => products.id),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   ownerId: text('owner_id').references(() => partners.id), // PARTNER_FORMAPUBLI or consignment partner
   lotId: text('lot_id'), // Printing lot or batch identifier

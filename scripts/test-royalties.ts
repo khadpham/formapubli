@@ -203,7 +203,7 @@ async function runRoyaltyTests() {
   for (const recordedAt of ['2026-12-30T15:00:00.000Z', '2026-12-30T20:00:00.000Z', '2026-12-31T16:30:00.000Z']) {
     await db.insert(inventoryLedger).values({
       id: `led-edge-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
-      editionId: edEdge.id, warehouseId: 'wh-au-co',
+      editionId: edEdge.id, productId: edEdge.id, warehouseId: 'wh-au-co',
       eventType: 'RECEIPT', quantityDelta: 10, condition: 'NEW',
       documentRef: 'ROYALTY-EDGE', actorId: 'test-runner',
       idempotencyKey: `roy-edge-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
@@ -224,7 +224,7 @@ async function runRoyaltyTests() {
   for (const recordedAt of ['2026-12-30T15:00:00.000Z', '2026-12-30T20:00:00.000Z', '2026-12-31T16:30:00.000Z']) {
     await db.insert(inventoryLedger).values({
       id: `led-edge-sale-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
-      editionId: edEdge.id, warehouseId: 'wh-au-co',
+      editionId: edEdge.id, productId: edEdge.id, warehouseId: 'wh-au-co',
       eventType: 'DISPATCH_SALE', quantityDelta: -10, condition: 'NEW',
       documentRef: 'ROYALTY-EDGE-SALE', actorId: 'test-runner',
       idempotencyKey: `roy-edge-sale-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,

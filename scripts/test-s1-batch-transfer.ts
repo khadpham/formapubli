@@ -74,7 +74,7 @@ async function main() {
   for (let n = 1; n <= 42; n++) {
     const qty = n === 40 ? 5 : 50;
     await seedDb.insert(schema.inventoryLedger).values({
-      id: `led-s1-open-${n}`, editionId: ed(n), warehouseId: MAIN,
+      id: `led-s1-open-${n}`, editionId: ed(n), productId: ed(n), warehouseId: MAIN,
       eventType: 'OPENING_BALANCE', quantityDelta: qty, condition: 'NEW',
       documentRef: 'OPEN-S1', actorId: 's1', idempotencyKey: `idem-s1-open-${n}`,
     });

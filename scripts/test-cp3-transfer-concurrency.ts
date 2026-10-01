@@ -89,7 +89,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
     { id: 'wh-du-phong', code: 'KHO_DU_PHONG', name: 'Kho 3 - Du Phong (CP3)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   await db.insert(inventoryLedger).values({
-    id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',
+    id: `led-${wid}-open`, editionId: wid, productId: wid, warehouseId: 'wh-au-co',
     eventType: 'OPENING_BALANCE', quantityDelta: openingQty, condition: 'NEW',
     documentRef: `OPEN-${probe}`, actorId: 'cp3-fixture', idempotencyKey: `idem-open-${wid}`,
   });

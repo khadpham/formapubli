@@ -9,6 +9,12 @@ import { computeTransferDispatchFingerprint } from '../lib/transfer-fingerprint'
 
 export interface RecordMovementParams {
   editionId: string;
+  /**
+   * 0033: `false` ⇒ đây là HÀNG HÓA, bút toán ghi `edition_id = NULL` vì hàng
+   * hóa không có dòng `editions`. Bỏ trống (mặc định `true`) = sách, giữ nguyên
+   * hành vi như cũ.
+   */
+  isBook?: boolean;
   warehouseId: string;
   eventType: 'RECEIPT' | 'DISPATCH_SALE' | 'DISPATCH_GIFT' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'TRANSFER_LOSS' | 'CONSIGNMENT_SOLD' | 'CONSIGNMENT_LOSS' | 'ADJUSTMENT' | 'OPENING_BALANCE' | 'RETURN_INBOUND' | 'SPONSORSHIP_DRAWDOWN';
   quantityDelta: number; // positive or negative, must be non-zero
@@ -149,6 +155,9 @@ export class InventoryService {
       tx: externalTx,
     } = params;
     const effActorId = params.actorContext?.staffId || actorId;
+    // 0033: mặc định `true` để MỌI call site cũ (chỉ bán sách) giữ nguyên hành
+    // vi. Chỉ `false` khi caller biết chắc đây là hàng hóa.
+    const isBook = params.isBook !== false;
 
     if (quantityDelta === 0) {
       throw AppError.invalid('Độ biến động tồn kho (quantityDelta) phải khác 0.');
@@ -167,7 +176,13 @@ export class InventoryService {
 
       await tx.insert(inventoryLedger).values({
         id: ledgerId,
-        editionId,
+        // 0033: `edition_id` nullable. Hàng hóa KHÔNG có dòng `editions` nên bút
+        // toán phải để NULL — nếu ghi id hàng hóa vào đây thì FK `editions(id)`
+        // vi phạm và cả đơn rollback.
+        editionId: isBook ? editionId : null,
+        // 0033: `product_id` NOT NULL + FK `products(id)`. Sách có
+        // `products.id === editions.id` nên đặt bằng `editionId` cho cả hai loại.
+        productId: editionId,
         warehouseId,
         ownerId,
         lotId,
@@ -332,7 +347,11 @@ export class InventoryService {
     await tx.insert(inventoryLedger).values(
       items.map((it, i) => ({
         id: `led-${stamp}-${i}-${Math.random().toString(36).substring(2, 9)}`,
-        editionId: it.editionId,
+        // 0033: hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, nếu
+        // không FK `editions(id)` vi phạm và cả đơn bị rollback.
+        editionId: (it as any).isBook === false ? null : it.editionId,
+        // 0033: `product_id` NOT NULL — sách `products.id === editions.id`.
+        productId: it.editionId,
         warehouseId: common.warehouseId,
         ownerId: it.ownerId,
         lotId: it.lotId,
@@ -730,14 +749,14 @@ export class InventoryService {
         // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
         const ledgerRows = merged.flatMap((it) => ([
           {
-            id: crypto.randomUUID(), editionId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
+            id: crypto.randomUUID(), editionId: it.editionId, productId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
             quantityDelta: -it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
             correlationId: batchKey, effectiveAt: nowIso,
             note: `Chuyển kho hàng loạt tới [${toId}] (${pckCode}). ${note}`.trim(),
             idempotencyKey: `${batchKey}-out-${it.editionId}`,
           },
           {
-            id: crypto.randomUUID(), editionId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
+            id: crypto.randomUUID(), editionId: it.editionId, productId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
             quantityDelta: it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
             correlationId: batchKey, effectiveAt: nowIso,
             note: `Tiếp nhận chuyển kho hàng loạt từ [${fromId}] (${pckCode}). ${note}`.trim(),

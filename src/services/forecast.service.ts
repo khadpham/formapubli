@@ -105,7 +105,11 @@ export class ForecastService {
         )
       )
       .groupBy(inventoryLedger.editionId);
-    return new Map(rows.map((r) => [r.editionId, Number(r.qty ?? 0)]));
+    return new Map(
+      rows
+        .filter((r): r is { editionId: string; qty: number } => r.editionId !== null)
+        .map((r) => [r.editionId, Number(r.qty ?? 0)])
+    );
   }
 
   /**

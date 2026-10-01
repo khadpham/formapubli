@@ -343,14 +343,14 @@ async function run() {
   ];
   for (const r of ledgerRows) {
     await db.insert(schema.inventoryLedger).values({
-      id: r.id, editionId: r.ed, warehouseId: WH, eventType: 'DISPATCH_SALE',
+      id: r.id, editionId: r.ed, productId: r.ed, warehouseId: WH, eventType: 'DISPATCH_SALE',
       quantityDelta: r.qty, condition: 'NEW', documentRef: 'AUD-ROY',
       actorId: 'auditc', idempotencyKey: 'k-' + r.id, recordedAt: r.ts,
     } as any);
   }
   // In trong hạn: 800 cuốn ed-a1.
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-print', editionId: 'ed-a1', warehouseId: WH, eventType: 'RECEIPT',
+    id: 'led-print', editionId: 'ed-a1', productId: 'ed-a1', warehouseId: WH, eventType: 'RECEIPT',
     quantityDelta: 800, condition: 'NEW', documentRef: 'AUD-PRINT',
     actorId: 'auditc', idempotencyKey: 'k-led-print', recordedAt: '2026-02-01T04:00:00Z',
   } as any);
@@ -408,14 +408,14 @@ async function run() {
   });
   // In 799 ⇒ còn 201 (> 200, > 10%) ⇒ KHÔNG cảnh báo.
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-warn-799', editionId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
+    id: 'led-warn-799', editionId: 'ed-c1', productId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
     quantityDelta: 799, condition: 'NEW', documentRef: 'AUD-WARN', actorId: 'auditc',
     idempotencyKey: 'k-warn-799', recordedAt: '2026-02-01T04:00:00Z',
   } as any);
   const qWarn1 = await RoyaltyService.quotaStatus(cWarn.contractId);
   // In thêm 1 ⇒ còn 200 ⇒ chạm ngưỡng tuyệt đối ⇒ cảnh báo.
   await db.insert(schema.inventoryLedger).values({
-    id: 'led-warn-1', editionId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
+    id: 'led-warn-1', editionId: 'ed-c1', productId: 'ed-c1', warehouseId: WH, eventType: 'RECEIPT',
     quantityDelta: 1, condition: 'NEW', documentRef: 'AUD-WARN', actorId: 'auditc',
     idempotencyKey: 'k-warn-1', recordedAt: '2026-02-01T04:00:00Z',
   } as any);
