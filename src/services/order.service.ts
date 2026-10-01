@@ -591,13 +591,30 @@ export class OrderService {
           return s + (p?.coverPrice || 0) * (i.quantity || 0);
         }, 0);
 
-      allowedGiftProducts = new Set(
-        computeGifts({ eligibleBase, campaigns: shaped }).map((g) => g.productId)
-      );
       // Dòng quà do người tự thêm đã qua duyệt thì được phép, kể cả khi không
       // nằm trong cấu hình — nhưng BẮT BUỘC phải có `discountApprovalId`.
-      // Ở đây không truyền `approvedManual` vì việc đó thuộc luồng duyệt riêng;
-      // cần thì sẽ bổ sung ở Cổng 3.
+      // Engine nhận `approvedManual` để công nhận chúng là quà hợp lệ.
+      let approvedManual: Set<string> | undefined;
+      if (params.discountApprovalId) {
+        const appr = await DiscountApprovalService.getRequest(params.discountApprovalId);
+        // Dòng hàng đã duyệt nằm trong `cartSnapshot` (JSON) của yêu cầu.
+        let snapshotItems: any[] = [];
+        try {
+          const parsed: any = JSON.parse(String((appr as any)?.cartSnapshot ?? '[]'));
+          snapshotItems = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          snapshotItems = [];
+        }
+        approvedManual = new Set(
+          snapshotItems
+            .filter((i: any) => i?.isManual === true && i?.isGiftLine === true)
+            .map((i: any) => String(i.editionId))
+        );
+      }
+
+      allowedGiftProducts = new Set(
+        computeGifts({ eligibleBase, campaigns: shaped, approvedManual }).map((g) => g.productId)
+      );
     }
 
     const preparedItems = [
