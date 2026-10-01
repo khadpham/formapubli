@@ -1361,10 +1361,123 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
-            {/* III. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT */}
+            {/* III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU */}
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                III. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
+                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
+              </h3>
+              <table className="w-full border-collapse border border-slate-300 text-[12px]">
+                <thead>
+                  <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
+                    <th className="border border-slate-300 py-1.5 px-2 w-10">#</th>
+                    <th className="border border-slate-300 py-1.5 px-2 w-28">Mã đơn</th>
+                    <th className="border border-slate-300 py-1.5 px-2 text-left">Thu ngân</th>
+                    <th className="border border-slate-300 py-1.5 px-2 w-16 text-center">CK</th>
+                    <th className="border border-slate-300 py-1.5 px-2 w-28 text-right">Thực thu</th>
+                    <th className="border border-slate-300 py-1.5 px-2 text-left">Người duyệt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overCapOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="border border-slate-300 py-2.5 px-2 text-center text-slate-500 italic">
+                        Không có đơn vượt trần chiết khấu 20% trong ngày.
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {overCapOrders.slice(0, 10).map((ord: any, idx: number) => (
+                        <tr key={ord.id} className="hover:bg-slate-50">
+                          <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-600">{idx + 1}</td>
+                          <td className="border border-slate-300 py-1.5 px-2 font-mono font-bold text-slate-900">{ord.orderCode}</td>
+                          <td className="border border-slate-300 py-1.5 px-2 font-mono text-slate-800">{ord.cashierId}</td>
+                          <td className="border border-slate-300 py-1.5 px-2 text-center font-mono font-semibold text-amber-700">
+                            {Math.round((ord.discountRate || 0) * 100)}%
+                          </td>
+                          <td className="border border-slate-300 py-1.5 px-2 text-right font-mono font-semibold text-slate-900">
+                            {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="border border-slate-300 py-1.5 px-2 text-slate-800">{ord.approvedBy}</td>
+                        </tr>
+                      ))}
+                      {overCapOrders.length > 10 && (
+                        <tr>
+                          <td colSpan={6} className="border border-slate-300 py-1.5 px-2 text-center italic font-semibold text-slate-600">
+                            +{overCapOrders.length - 10} đơn khác (xem trên màn hình)
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* IV. TỒN SÁCH CUỐI NGÀY */}
+            <div className="print-block mb-4 font-sans">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
+                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+              </h3>
+              <table className="w-full border-collapse border border-slate-300 text-[11.5px]">
+                <thead>
+                  <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
+                    <th className="border border-slate-300 py-1 px-2 w-10">#</th>
+                    <th className="border border-slate-300 py-1 px-2 w-20">Mã</th>
+                    <th className="border border-slate-300 py-1 px-2 text-left">Tên ấn phẩm</th>
+                    <th className="border border-slate-300 py-1 px-2 w-20 text-right">Đã bán</th>
+                    <th className="border border-slate-300 py-1 px-2 w-24 text-right">Tồn còn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {soldOnlyRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="border border-slate-300 py-2 px-2 text-center text-slate-500 italic">
+                        Trong ngày không bán ấn phẩm nào.
+                      </td>
+                    </tr>
+                  ) : (
+                    soldOnlyRows.map((it: any, idx: number) => (
+                      <tr key={it.editionId} className="hover:bg-slate-50">
+                        <td className="border border-slate-300 py-1 px-2 text-center font-mono text-slate-600">{idx + 1}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-center font-mono font-bold text-slate-900">{it.code}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-slate-900">{it.title}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-right font-mono font-semibold text-slate-900">{it.soldToday || 0}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-right font-mono font-bold text-slate-900">
+                          {it.theoreticalStock}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              {/* Tổng kết số cuốn đã bán & tồn lý thuyết */}
+              <div className="grid grid-cols-2 gap-x-10 gap-y-1 mt-2 text-[11.5px] text-slate-700">
+                <div className="flex justify-between py-0.5 border-b border-slate-100">
+                  <span>- TỔNG SỐ CUỐN BÁN RA:</span>
+                  <strong className="font-mono font-bold text-slate-950">{soldTodayTotal} cuốn</strong>
+                </div>
+                <div className="flex justify-between py-0.5 border-b border-slate-100">
+                  <span>- Chiết khấu bình quân:</span>
+                  <strong className="font-mono font-bold text-slate-950">
+                    {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
+                  </strong>
+                </div>
+              </div>
+              <p className="text-[11.5px] mt-1.5 text-slate-700">
+                - TỔNG SỐ CUỐN TỒN LÝ THUYẾT: <strong className="font-mono font-bold text-slate-950">{totalTheoreticalBooks} cuốn</strong>{' '}
+                <span className="italic text-slate-500">(tính theo xuất nhập tồn máy tính, chưa kiểm kê thực tế)</span>
+              </p>
+              {stocktakeNote && (
+                <p className="text-[11.5px] italic mt-1 text-slate-600">
+                  Ghi chú đóng thùng: {stocktakeNote}
+                </p>
+              )}
+            </div>
+
+            {/* V. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT */}
+            <div className="print-block mb-4 font-sans">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
+                V. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
               </h3>
               <div className="grid grid-cols-2 gap-x-10 gap-y-1 text-[12px] text-slate-700">
                 <div className="py-0.5">
@@ -1513,119 +1626,6 @@ export function DailyFairSettlementModal({
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            {/* IV. ĐƠN VƯỢT TRẦN CHIẾT KHẤU */}
-            <div className="print-block mb-4 font-sans">
-              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                IV. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
-              </h3>
-              <table className="w-full border-collapse border border-slate-300 text-[12px]">
-                <thead>
-                  <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
-                    <th className="border border-slate-300 py-1.5 px-2 w-10">#</th>
-                    <th className="border border-slate-300 py-1.5 px-2 w-28">Mã đơn</th>
-                    <th className="border border-slate-300 py-1.5 px-2 text-left">Thu ngân</th>
-                    <th className="border border-slate-300 py-1.5 px-2 w-16 text-center">CK</th>
-                    <th className="border border-slate-300 py-1.5 px-2 w-28 text-right">Thực thu</th>
-                    <th className="border border-slate-300 py-1.5 px-2 text-left">Người duyệt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {overCapOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="border border-slate-300 py-2.5 px-2 text-center text-slate-500 italic">
-                        Không có đơn vượt trần chiết khấu 20% trong ngày.
-                      </td>
-                    </tr>
-                  ) : (
-                    <>
-                      {overCapOrders.slice(0, 10).map((ord: any, idx: number) => (
-                        <tr key={ord.id} className="hover:bg-slate-50">
-                          <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-600">{idx + 1}</td>
-                          <td className="border border-slate-300 py-1.5 px-2 font-mono font-bold text-slate-900">{ord.orderCode}</td>
-                          <td className="border border-slate-300 py-1.5 px-2 font-mono text-slate-800">{ord.cashierId}</td>
-                          <td className="border border-slate-300 py-1.5 px-2 text-center font-mono font-semibold text-amber-700">
-                            {Math.round((ord.discountRate || 0) * 100)}%
-                          </td>
-                          <td className="border border-slate-300 py-1.5 px-2 text-right font-mono font-semibold text-slate-900">
-                            {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
-                          </td>
-                          <td className="border border-slate-300 py-1.5 px-2 text-slate-800">{ord.approvedBy}</td>
-                        </tr>
-                      ))}
-                      {overCapOrders.length > 10 && (
-                        <tr>
-                          <td colSpan={6} className="border border-slate-300 py-1.5 px-2 text-center italic font-semibold text-slate-600">
-                            +{overCapOrders.length - 10} đơn khác (xem trên màn hình)
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* V. TỒN SÁCH CUỐI NGÀY */}
-            <div className="print-block mb-4 font-sans">
-              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                V. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
-              </h3>
-              <table className="w-full border-collapse border border-slate-300 text-[12px]">
-                <thead>
-                  <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
-                    <th className="border border-slate-300 py-1.5 px-2 w-10">#</th>
-                    <th className="border border-slate-300 py-1.5 px-2 w-20">Mã</th>
-                    <th className="border border-slate-300 py-1.5 px-2 text-left">Tên ấn phẩm</th>
-                    <th className="border border-slate-300 py-1.5 px-2 w-20 text-right">Đã bán</th>
-                    <th className="border border-slate-300 py-1.5 px-2 w-24 text-right">Tồn còn</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {soldOnlyRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="border border-slate-300 py-2.5 px-2 text-center text-slate-500 italic">
-                        Trong ngày không bán ấn phẩm nào.
-                      </td>
-                    </tr>
-                  ) : (
-                    soldOnlyRows.map((it: any, idx: number) => (
-                      <tr key={it.editionId} className="hover:bg-slate-50">
-                        <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-600">{idx + 1}</td>
-                        <td className="border border-slate-300 py-1.5 px-2 text-center font-mono font-bold text-slate-900">{it.code}</td>
-                        <td className="border border-slate-300 py-1.5 px-2 text-slate-900">{it.title}</td>
-                        <td className="border border-slate-300 py-1.5 px-2 text-right font-mono font-semibold text-slate-900">{it.soldToday || 0}</td>
-                        <td className="border border-slate-300 py-1.5 px-2 text-right font-mono font-bold text-slate-900">
-                          {it.theoreticalStock}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              {/* Tổng kết số cuốn đã bán & tồn lý thuyết */}
-              <div className="grid grid-cols-2 gap-x-10 gap-y-1 mt-2.5 text-[12px] text-slate-700">
-                <div className="flex justify-between py-0.5 border-b border-slate-100">
-                  <span>- TỔNG SỐ CUỐN BÁN RA:</span>
-                  <strong className="font-mono font-bold text-slate-950">{soldTodayTotal} cuốn</strong>
-                </div>
-                <div className="flex justify-between py-0.5 border-b border-slate-100">
-                  <span>- Chiết khấu bình quân:</span>
-                  <strong className="font-mono font-bold text-slate-950">
-                    {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
-                  </strong>
-                </div>
-              </div>
-              <p className="text-[12px] mt-2 text-slate-700">
-                - TỔNG SỐ CUỐN TỒN LÝ THUYẾT: <strong className="font-mono font-bold text-slate-950">{totalTheoreticalBooks} cuốn</strong>{' '}
-                <span className="italic text-slate-500">(tính theo xuất nhập tồn máy tính, chưa kiểm kê thực tế)</span>
-              </p>
-              {stocktakeNote && (
-                <p className="text-[12px] italic mt-1 text-slate-600">
-                  Ghi chú đóng thùng: {stocktakeNote}
-                </p>
-              )}
             </div>
 
             {/* VI. XÁC NHẬN BÀN GIAO (CHỮ KÝ 3 BÊN) */}
