@@ -2112,8 +2112,22 @@ export function PosCheckoutTerminal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: orderUuid,
-          orderCode,
-           idempotencyKey,
+          // KHÔNG gửi `orderCode` lên — giống hệt nhánh chuyển khoản (:1999).
+          // Server cấp mã 13 ký tự bằng bộ đếm NGUYÊN TẢ ở DB. Bắt buộc: hội
+          // chợ có nhiều máy POS, mỗi máy tự đếm thì hai máy cùng tạo đơn đầu
+          // ngày sẽ ra trùng mã, mà `order_code` là UNIQUE nên đơn của máy sau
+          // KHÔNG GHI ĐƯỢC. Trước đây client gửi mã tự sinh 29 ký tự ⇒
+          // `params.orderCode` luôn có giá trị ⇒ bộ đếm không bao giờ chạy và
+          // tính năng này là code chết.
+          //
+          // ĐO ĐƯỢC trên production trước khi sửa: 49 đơn chuyển khoản dài 13
+          // ký tự ✅, nhưng 10 đơn TIỀN MẶT hội chợ + 3 đơn tiền mặt văn phòng
+          // vẫn dài 29 ký tự ❌, 1 đơn cũ 18 ký tự.
+          //
+          // An toàn với duyệt chiết khấu: `consumeApproval` băm hash theo
+          // `request.orderCode` (mã đã khoá lúc xin duyệt) chứ không theo mã
+          // của đơn đang tạo — xem `discount-approval.service.ts:886-894`.
+          idempotencyKey,
            createdAt: orderTimestamp,
            warehouseId: selectedWarehouseId,
            channel,
