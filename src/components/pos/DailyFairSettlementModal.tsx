@@ -23,7 +23,9 @@ import {
   Lock,
   Layers,
   Percent,
+  Trophy,
 } from 'lucide-react';
+import { parseDbTimestamp } from '@/lib/db-timestamp';
 
 interface DailyFairSettlementModalProps {
   isOpen: boolean;
@@ -31,6 +33,31 @@ interface DailyFairSettlementModalProps {
   warehouseId: string;
   warehouseName?: string;
   currentRole?: string;
+}
+
+// Mọi cột thời gian trong DB là UTC; giờ người đọc là giờ Việt Nam (UTC+7, không
+// DST). `parseDbTimestamp` đọc được CẢ HAI họ timestamp đang cùng tồn tại (ISO
+// 'T' do app ghi và ' ' do SQLite CURRENT_TIMESTAMP ghi) — `new Date('… 09:00:00')`
+// không có múi giờ nên đọc thẳng là sẽ lệch 7 tiếng.
+const vnHmFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function vnHm(value: string | Date | null | undefined): string {
+  if (value == null) return '';
+  const d = parseDbTimestamp(value);
+  return d && !Number.isNaN(d.getTime()) ? vnHmFmt.format(d) : '';
+}
+
+/** Nhãn tiếng Việt của hình thức thanh toán — cùng cách chia 3 nhóm với service. */
+function paymentMethodLabel(method: string | null | undefined): string {
+  const key = (method || 'CASH').toUpperCase();
+  if (key === 'CASH') return 'Tiền mặt';
+  if (key === 'BANK_TRANSFER' || key === 'QR_CODE' || key === 'TRANSFER') return 'Chuyển khoản';
+  return 'Thẻ';
 }
 
 export function DailyFairSettlementModal({
@@ -179,6 +206,20 @@ export function DailyFairSettlementModal({
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
   );
+  // Tỉ lệ đơn lớn nhất so với doanh thu thực thu — dùng cho thanh ngang. Chặn
+  // trên 100% vì thẻ đơn có thể trả một phần (đặt cọc): thanh vượt rộng sẽ tràn
+  // ra ngoài khung.
+  const highlightShare = (() => {
+    const net = Number(data?.financials?.netSales || 0);
+    const top = Number(data?.highlight?.finalAmount || 0);
+    if (!(net > 0) || !(top > 0)) return 0;
+    return Math.min(100, (top / net) * 100);
+  })();
+  // Ấn phẩm bán chạy nhất làm chuẩn cho thanh ngang Top 10 (bằng 0 thì chia 0).
+  const maxTopCopies = Math.max(
+    1,
+    ...(data?.topSellers || []).map((s: any) => Number(s.soldCopies || 0))
+  );
   // Ngày in ra LUÔN là ngày của số liệu (`data.reportDate` do API trả), không
   // phải ngày đang chọn trên ô date. Ô date là ý định của người dùng; `reportDate`
   // mới là ngày mà số tiền/số sách thuộc về. Lệch hai thứ này chính là lúc biên bản
@@ -231,9 +272,18 @@ export function DailyFairSettlementModal({
           .no-print {
             display: none !important;
           }
+          /* Biên bản gọn: mỗi khối nằm trọn trong một trang, không để trình
+             duyệt cắt ngang giữa chừng (bảng dài sẽ vỡ, bản in loạn dòng). */
+          #printable-settlement-report .print-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          /* Khối in hoá đơn nhiệt cũng đặt @page trong @media print với
+             margin: 0mm !important — không giữ !important ở đây thì biên bản
+             A4 mất lề, vì rule !important thắng cả rule thường đến sau nó. */
           @page {
             size: A4 portrait;
-            margin: 10mm;
+            margin: 10mm !important;
           }
         }
       `}</style>
@@ -407,6 +457,58 @@ export function DailyFairSettlementModal({
               {/* TAB 1: DOANH SỐ & ĐỐI SOÁT KÉT TIỀN */}
               {activeTab === 'FINANCIALS' && (
                 <div className="space-y-5 animate-in fade-in duration-150">
+                  {/* ĐƠN GIÁ TRỊ CAO NHẤT — "điểm nhấn" của ngày: đơn lớn nhất
+                      để thu ngân/quản lý nhìn thấy ngay mà không phải lần trong
+                      danh sách. Không có đơn thì KHÔNG hiện thẻ rỗng. Thanh ngang
+                      = tỉ lệ đơn này chiếm bao nhiêu doanh thu thực thu. */}
+                  {data.highlight && (
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-3">
+                      <h4 className="font-extrabold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Trophy className="w-4 h-4 text-amber-600" />
+                        Đơn Giá Trị Cao Nhất
+                      </h4>
+
+                      <div className="flex flex-wrap items-end justify-between gap-2">
+                        <div>
+                          <p className="font-mono font-black text-base text-slate-900 leading-tight">
+                            {data.highlight.orderCode}
+                          </p>
+                          <p className="font-mono font-bold text-sm text-emerald-700">
+                            {(data.highlight.finalAmount || 0).toLocaleString('vi-VN')} đ
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-slate-700">
+                            TT: {paymentMethodLabel(data.highlight.paymentMethod)}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-slate-700">
+                            {data.highlight.itemCount || 0} SP
+                          </span>
+                          {vnHm(data.highlight.createdAt) && (
+                            <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-mono font-bold text-slate-700">
+                              {vnHm(data.highlight.createdAt)} giờ VN
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div
+                        role="img"
+                        aria-label={`Chiếm ${highlightShare.toFixed(1)}% doanh thu thực thu trong ngày`}
+                      >
+                        <div className="h-2.5 rounded-full bg-amber-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-amber-500"
+                            style={{ width: `${highlightShare.toFixed(1)}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] font-bold text-amber-800 mt-1">
+                          Chiếm {highlightShare.toFixed(1)}% doanh thu thực thu trong ngày
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* KPI Cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
@@ -814,24 +916,42 @@ export function DailyFairSettlementModal({
                       {data.topSellers?.map((seller: any, idx: number) => (
                         <div
                           key={seller.editionId}
-                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between"
+                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5"
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
-                              {idx + 1}
-                            </span>
-                            <div>
-                              <p className="font-bold text-slate-800 truncate max-w-[180px]">
-                                [{seller.code}] {seller.title}
-                              </p>
-                              <p className="text-[10px] text-slate-400 font-mono">
-                                {(seller.soldRevenue || 0).toLocaleString('vi-VN')} đ
-                              </p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
+                                {idx + 1}
+                              </span>
+                              <div>
+                                <p className="font-bold text-slate-800 truncate max-w-[180px]">
+                                  [{seller.code}] {seller.title}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  {(seller.soldRevenue || 0).toLocaleString('vi-VN')} đ
+                                </p>
+                              </div>
                             </div>
+                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs">
+                              {seller.soldCopies} cuốn
+                            </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs">
-                            {seller.soldCopies} cuốn
-                          </span>
+                          {/* Thanh ngang CSS thuần (không lib): độ dài = số cuốn so
+                              với ấn phẩm bán chạy nhất. Chuẩn là chính danh sách
+                              này nên không cần trục số. */}
+                          <div
+                            role="img"
+                            aria-label={`${seller.soldCopies} cuốn, so với ấn phẩm bán chạy nhất trong ngày`}
+                            title={`${seller.soldCopies} cuốn so với ấn phẩm bán chạy nhất`}
+                            className="h-1.5 rounded-full bg-slate-200 overflow-hidden"
+                          >
+                            <div
+                              className="h-full rounded-full bg-emerald-500"
+                              style={{
+                                width: `${Math.round(((Number(seller.soldCopies) || 0) / maxTopCopies) * 100)}%`,
+                              }}
+                            />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -882,7 +1002,7 @@ export function DailyFairSettlementModal({
             </div>
 
             {/* I. Số liệu Doanh thu & Két tiền */}
-            <div className="space-y-2 mb-4 font-sans text-xs">
+            <div className="print-block space-y-2 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
                 I. TỔNG HỢP DOANH THU & ĐỐI SOÁT KÉT TIỀN
               </h3>
@@ -916,12 +1036,52 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
+            {/* I-BIS. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: thực thu,
+                số đơn, đơn lớn nhất và 5 ấn phẩm bán chạy nhất. Không có
+                highlight (ngày không bán được gì) thì nói thẳng, không in dòng
+                rỗng. Top 5 giới hạn 5 dòng để bản in còn gọn. */}
+            <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
+                I-BIS. ĐIỂM NHẤN NGÀY
+              </h3>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                <div>- Doanh thu thực thu: <strong>{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
+                <div>- Số đơn bán ra: <strong>{data.financials?.totalOrdersCount || 0} đơn</strong></div>
+              </div>
+              {data.highlight ? (
+                <div>
+                  - Đơn giá trị cao nhất: <strong className="font-mono">{data.highlight.orderCode}</strong> ·{' '}
+                  <strong>{(data.highlight.finalAmount || 0).toLocaleString('vi-VN')} đ</strong> · TT:{' '}
+                  {paymentMethodLabel(data.highlight.paymentMethod)} · <strong>{data.highlight.itemCount || 0} SP</strong>
+                  {vnHm(data.highlight.createdAt) ? ` · ${vnHm(data.highlight.createdAt)} giờ VN` : ''}
+                </div>
+              ) : (
+                <div className="italic text-slate-600">- Ngày này không có đơn hàng nào.</div>
+              )}
+              <div>
+                <p className="font-bold uppercase text-slate-800">- Top 5 ấn phẩm bán chạy nhất:</p>
+                {(data.topSellers || []).length === 0 ? (
+                  <p className="italic text-slate-600">Không có ấn phẩm nào bán ra trong ngày.</p>
+                ) : (
+                  (data.topSellers || []).slice(0, 5).map((s: any, i: number) => (
+                    <p key={s.editionId} className="pl-3 font-mono">
+                      {i + 1}. [{s.code}] {s.title} — {s.soldCopies} cuốn
+                    </p>
+                  ))
+                )}
+              </div>
+            </div>
+
             {/* II. Bảng đối soát tồn sách */}
-            <div className="space-y-2 mb-4">
+            <div className="print-block space-y-2 mb-4">
               <h3 className="font-sans font-bold text-xs text-slate-900 uppercase border-b border-slate-300 pb-1">
                 II. ĐỐI SOÁT TỒN SÁCH TRÊN KỆ & BÀN GIAO ĐÓNG THÙNG
               </h3>
-              <table className="w-full border-collapse border border-slate-900 text-[11px]">
+              {/* Bảng chi tiết theo từng ấn bản KHÔNG in: một gian hàng có 81
+                  ấn bản thì bảng này đẩy biên bản ra trang 3-4, mà bản in này
+                  ký tay cho kế toán chỉ cần TỔNG tồn (dòng ngay dưới bảng).
+                  Màn hình vẫn xem đủ bảng đầy đủ. */}
+              <table className="w-full border-collapse border border-slate-900 text-[11px] print:hidden">
                 <thead>
                   <tr className="bg-slate-100 font-sans font-bold text-center">
                     <th className="border border-slate-900 p-1.5 w-8">STT</th>
@@ -964,6 +1124,13 @@ export function DailyFairSettlementModal({
                   </tr>
                 </tbody>
               </table>
+              {/* Dòng tồn thật sự ký tay: bảng chi tiết ở trên không in, nên tổng
+                  tồn phải còn ở đây. KHÔNG in 0 cho phần kiểm kê — chưa có số đếm
+                  thật thì 0 là hẹn số bịa. */}
+              <p className="font-sans text-[11px]">
+                - TỔNG SỐ CUỐN TỒN LÝ THUYẾT: <strong className="font-mono">{totalTheoreticalBooks} cuốn</strong>{' '}
+                <span className="italic text-amber-800">(chưa kiểm kê thực tế — chi tiết theo ấn bảm xem trên màn hình)</span>
+              </p>
               {stocktakeNote && (
                 <p className="font-sans text-[11px] italic mt-1 text-slate-700">
                   Ghi chú đóng thùng: {stocktakeNote}
@@ -972,7 +1139,7 @@ export function DailyFairSettlementModal({
             </div>
 
             {/* III. Chữ ký 3 bên */}
-            <div className="font-sans grid grid-cols-3 gap-4 text-center text-xs mt-8 pt-4">
+            <div className="print-block font-sans grid grid-cols-3 gap-4 text-center text-xs mt-8 pt-4">
               <div>
                 <p className="font-bold uppercase text-slate-900">Thu ngân lập biên bản</p>
                 <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>

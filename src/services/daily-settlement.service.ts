@@ -293,6 +293,53 @@ export class DailySettlementService {
         .slice(0, 10);
     }
 
+    // 6b. Đơn giá trị cao nhất trong ngày — thẻ "Đơn Giá Trị Cao Nhất" trên màn
+    // hình + mục I-bis của bản in. Số sản phẩm gom MỘT query cho cả ngày (không
+    // N+1): đơn POS có nhiều dòng `order_items`, phải CỘNG `quantity` chứ không
+    // đếm số dòng.
+    const countByOrder = new Map<string, number>();
+    if (orderIds.length > 0) {
+      const rows = await txOrDb
+        .select({
+          orderId: orderItems.orderId,
+          qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+        })
+        .from(orderItems)
+        .where(
+          sql`${orderItems.orderId} IN (${sql.join(orderIds.map((id: string) => sql`${id}`), sql`, `)})`
+        )
+        .groupBy(orderItems.orderId);
+      for (const r of rows) countByOrder.set(r.orderId, Number(r.qty || 0));
+    }
+
+    // Hoà tiền phải ỔN ĐỊNH: hai đơn cùng `final_amount` phải ra cùng một đơn mọi
+    // lần chạy, không phụ thuộc thứ tự hàng SQLite trả về. Phụ theo giờ tạo (đơn
+    // ra trước thắng), rồi theo id cho tuyệt đối.
+    //
+    // KHÔNG so `created_at` bằng chuỗi: DB đang có HAI họ timestamp —
+    // 'YYYY-MM-DDTHH:MM:SSZ' (app ghi `toISOString()`) và 'YYYY-MM-DD HH:MM:SS'
+    // (`CURRENT_TIMESTAMP` của SQLite, cũng UTC). Dấu cách < chữ 'T' nên so
+    // chuỗi coi đơn họ SQLite là LUÔN sớm hơn ⇒ chọn nhầm đơn. `createdMs`
+    // chuẩn hoá cả hai về UTC trước khi so.
+    const createdMs = (o: any) => parseDbTimestamp(o.createdAt)?.getTime() ?? 0;
+    const top1 = [...(dayOrders as any[])].sort(
+      (a, b) =>
+        (b.finalAmount || 0) - (a.finalAmount || 0) ||
+        createdMs(a) - createdMs(b) ||
+        String(a.id).localeCompare(String(b.id))
+    )[0];
+    const highlight = top1
+      ? {
+          orderCode: top1.orderCode,
+          finalAmount: top1.finalAmount,
+          subtotal: top1.subtotal,
+          discountAmount: top1.discountAmount,
+          paymentMethod: top1.paymentMethod,
+          itemCount: countByOrder.get(top1.id) || 0,
+          createdAt: top1.createdAt,
+        }
+      : null;
+
     // 7. Đối soát tồn sách hội chợ (Stock Reconciliation)
     const balances = await txOrDb
       .select({
@@ -405,6 +452,7 @@ export class DailySettlementService {
         orders: enrichedOverCapOrders,
       },
       topSellers,
+      highlight,
       inventoryReconciliation,
     };
   }
