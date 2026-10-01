@@ -50,3 +50,14 @@ certificates
 # sạch"). Sinh ra thì giữ, nhưng không theo dõi trong git.
 eval-executive-ai-report.json
 /reports/
+
+# Du lieu nhap tu Shopee (anh san pham + file tai ve). Day la du lieu kinh doanh,
+# khong phai code: file zip anh 7.4 MB va cac thu muc anh san lam `git status`
+# bao (dirty) -> pham quy tac "chi deploy khi cay sach". Giu tren dia may o duoi
+# dang ten goc de khong commit nham.
+Shopee_*.xlsx
+Shopee_*.tsv
+Shopee_*.zip
+shopee_image_urls.json
+shopee_images_renamed/
+74_anh_bia_theo_ten_sach/
