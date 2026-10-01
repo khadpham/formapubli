@@ -62,8 +62,24 @@ export class AnalyticsService {
    *
    * Chỉ tính ấn bản `is_active` (ấn bản bị khoá như H85 không hiện ở POS thì cũng
    * không nên được báo là hàng đang bán được), và chỉ kho `is_active`.
+   *
+   * `warehouseId` là tham số CỘNG THÊM (Task 2 — dropdown kho trên dashboard):
+   * không truyền thì y hệt cũ (toàn hệ thống), truyền thì chỉ tính kho đó và
+   * `warehouseCount=1`, `warehouseNames=[tên kho đó]`. Không có tham số ⇒ mọi
+   * lời gọi cũ (route `/api/analytics?view=stock-summary`) không đổi hành vi.
+   *
+   * `totalSkus` là quy mô CATALOG (bản quản trị "còn bao nhiêu mã đang bán") nên
+   * CỐ Ý không lọc theo kho — lọc nó sẽ làm KPI "Tổng SKU" nhảy theo dropdown,
+   * đúng nghĩa nhưng khác hành vi cũ và gây nhầm lẫn khi so 2 con số.
    */
-  static async stockSummary() {
+  static async stockSummary(warehouseId?: string) {
+    const rowConds = [
+      sql`${stockBalances.physicalQuantity} > 0`,
+      sql`${editions.isActive} = 1`,
+      sql`${warehouses.isActive} = 1`,
+    ];
+    if (warehouseId) rowConds.push(eq(stockBalances.warehouseId, warehouseId));
+
     const rows = await db
       .select({
         titlesWithStock: sql<number>`COUNT(DISTINCT ${stockBalances.editionId})`,
@@ -72,13 +88,7 @@ export class AnalyticsService {
       .from(stockBalances)
       .innerJoin(editions, eq(stockBalances.editionId, editions.id))
       .innerJoin(warehouses, eq(stockBalances.warehouseId, warehouses.id))
-      .where(
-        and(
-          sql`${stockBalances.physicalQuantity} > 0`,
-          sql`${editions.isActive} = 1`,
-          sql`${warehouses.isActive} = 1`
-        )
-      );
+      .where(and(...rowConds));
 
     const [skus] = await db
       .select({ n: sql<number>`COUNT(*)` })
@@ -88,7 +98,11 @@ export class AnalyticsService {
     const whs = await db
       .select({ id: warehouses.id, name: warehouses.name })
       .from(warehouses)
-      .where(sql`${warehouses.isActive} = 1`)
+      .where(
+        warehouseId
+          ? and(sql`${warehouses.isActive} = 1`, eq(warehouses.id, warehouseId))
+          : sql`${warehouses.isActive} = 1`
+      )
       .orderBy(warehouses.name);
 
     return {

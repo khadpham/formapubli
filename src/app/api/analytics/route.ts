@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId) });
     }
     if (view === 'stock-summary') {
-      return NextResponse.json({ success: true, data: await AnalyticsService.stockSummary() });
+      const warehouseId = searchParams.get('warehouseId') || undefined;
+      return NextResponse.json({ success: true, data: await AnalyticsService.stockSummary(warehouseId) });
     }
     return NextResponse.json(
       { success: false, error: 'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary).' },
