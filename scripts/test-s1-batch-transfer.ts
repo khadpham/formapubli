@@ -79,7 +79,7 @@ async function main() {
       documentRef: 'OPEN-S1', actorId: 's1', idempotencyKey: `idem-s1-open-${n}`,
     });
     await seedDb.insert(schema.stockBalances).values({
-      id: `sb-s1-${n}`, editionId: ed(n), warehouseId: MAIN, condition: 'NEW', physicalQuantity: qty,
+      id: `sb-s1-${n}`, productId: ed(n), editionId: ed(n), warehouseId: MAIN, condition: 'NEW', physicalQuantity: qty,
     });
   }
   raw.close();

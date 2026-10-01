@@ -97,13 +97,16 @@ async function topEditions(range: { startDate: string; endDate: string }, topN =
     .groupBy(orderItems.editionId)
     .orderBy(desc(sql`COALESCE(SUM(${orderItems.quantity}), 0)`))
     .limit(Math.max(1, Math.min(20, topN)));
-  return rows.map((r) => ({
-    editionId: r.editionId,
-    code: r.code || '?',
-    title: r.title || null,
-    qty: Number(r.qty || 0),
-    revenue: Number(r.revenue || 0),
-  }));
+  // 0032: dòng hàng hóa có `edition_id` NULL (leftJoin editions không khớp) ⇒ bỏ.
+  return rows
+    .filter((r): r is typeof r & { editionId: string } => r.editionId !== null)
+    .map((r) => ({
+      editionId: r.editionId,
+      code: r.code || '?',
+      title: r.title || null,
+      qty: Number(r.qty || 0),
+      revenue: Number(r.revenue || 0),
+    }));
 }
 
 export class ExecutiveDigestService {

@@ -129,9 +129,12 @@ async function probeUpgrade() {
   await db.insert(editions).values({
     id: 'e-leg', code: 'LEG', workId: 'w-leg', isbn: '9786040000001', isbnLast4: '0001', coverPrice: 50000,
   });
-  await db.insert(stockBalances).values({
-    id: 'sb-leg', editionId: 'e-leg', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 7,
-  });
+await db.run(sql`INSERT INTO stock_balances (id, edition_id, warehouse_id, condition, physical_quantity)
+          VALUES ('sb-leg', 'e-leg', 'wh-au-co', 'NEW', 7)`);
+   // CỐ Ý dùng RAW SQL, không dùng drizzle `stockBalances`: test này dựng DB bằng
+   // bộ migration CŨ (0015/0016) để kiểm chứng đường nâng cấp, nên bảng ở đây
+   // chưa có cột `product_id`. Drizzle theo `schema.ts` hiện tại sẽ sinh cột đó
+   // và vỡ. Đây cũng là lý do các dòng legacy bên dưới dùng raw SQL.
   // Legacy insert bang raw SQL dung cot thoi 0015 (drizzle schema da co cot 0016).
   await c.execute("INSERT INTO transfer_shipments(id,from_warehouse_id,to_warehouse_id,dispatcher_id,status) VALUES('TRF-LEGACY-01','wh-au-co','wh-au-co','legacy','CANCELLED')");
   c.close();
@@ -204,10 +207,14 @@ async function probeUniquesAndLinks() {
     id: 'ord-u-1', orderCode: 'ORD-CP3-U-1', warehouseId: 'wh-au-co',
     subtotal: 60000, finalAmount: 60000, idempotencyKey: 'ORDK-U-1',
   });
-  const oi: any = await db.insert(schema.orderItems).values({
-    id: 'oi-u-1', orderId: 'ord-u-1', editionId: 'e-u', quantity: 1,
-    unitCoverPrice: 60000, unitSellingPrice: 60000, totalAmount: 60000,
-  }).returning({ id: schema.orderItems.id }).catch((e) => { console.error('orderItems insert:', String(e).slice(0, 120)); return [] as any[]; });
+// 0032 đã dựng lại `order_items` với `product_id` NOT NULL. Dùng raw SQL như
+// các dòng legacy khác trong file, và truyền `product_id` = `edition_id`
+// (sách có products.id === editions.id).
+// KHÔNG nuốt lỗi: `.catch` im lặng khiến test báo xanh dù insert hỏng — đúng
+// loại lỗi im lặng đã bị phê bàn nhiều trong dự án này.
+ const oi: any = await db.run(sql`INSERT INTO order_items
+     (id, order_id, edition_id, product_id, quantity, unit_cover_price, unit_selling_price, total_amount)
+     VALUES ('oi-u-1', 'ord-u-1', 'e-u', 'e-u', 1, 60000, 60000, 60000) RETURNING id`);
   await db.insert(schema.returnOrders).values({
     id: 'RET-U-1', orderId: 'ord-u-1', returnCode: 'RET-U-1', returnType: 'REFUND',
     reason: 'CUSTOMER_CHANGE_MIND', status: 'REQUESTED', targetWarehouseId: 'wh-au-co',

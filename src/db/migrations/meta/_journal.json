@@ -224,6 +224,13 @@
       "when": 1790600007000,
       "tag": "0031_products_promotions",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790600008000,
+      "tag": "0032_sellable_goods",
+      "breakpoints": true
     }
   ],
   "version": "7"

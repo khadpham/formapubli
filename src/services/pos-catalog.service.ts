@@ -42,7 +42,10 @@ export class PosCatalogService {
     const todayVn = businessDateOf(new Date());
 
     const soldRows = await db
-      .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+      .select({
+        productId: orderItems.productId,
+        qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+      })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
@@ -52,9 +55,12 @@ export class PosCatalogService {
           sql`substr(datetime(${orders.createdAt}, '+7 hours'), 1, 10) = ${todayVn}`
         )
       )
-      .groupBy(orderItems.editionId);
+      .groupBy(orderItems.productId);
     const soldMap = new Map<string, number>();
-    for (const r of soldRows) soldMap.set(r.editionId, Number(r.qty || 0));
+    // 0032: nhóm theo `product_id` (NOT NULL). Với sách `product_id` ===
+    // `edition_id`, nên `soldMap` y hệt trước đây — nhưng không còn rơi dữ liệu
+    // hàng hóa vì `edition_id` NULL.
+    for (const r of soldRows) soldMap.set(r.productId, Number(r.qty || 0));
 
     const all = await db
       .select({
@@ -78,7 +84,10 @@ export class PosCatalogService {
     const [balRows, heldRows] = await Promise.all([
       ids.length
         ? db
-            .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
+            .select({
+              productId: stockBalances.productId,
+              qty: stockBalances.physicalQuantity,
+            })
             .from(stockBalances)
             .where(
               and(
@@ -92,6 +101,7 @@ export class PosCatalogService {
         ? db
             .select({
               editionId: orderItems.editionId,
+              productId: orderItems.productId,
               quantity: orderItems.quantity,
               createdAt: orders.createdAt,
               paymentExpiresAt: orders.paymentExpiresAt,
@@ -116,7 +126,8 @@ export class PosCatalogService {
         : [],
     ]);
     const balMap = new Map<string, number>();
-    for (const r of balRows) balMap.set(r.editionId, Number(r.qty || 0));
+    // 0032: khoá theo `product_id` (NOT NULL); với sách bằng `edition_id`.
+    for (const r of balRows) balMap.set(r.productId, Number(r.qty || 0));
     // Quyết định giữ chỗ cuối cùng do OrderService.getPendingEffectiveExpiry —
     // MỘT quy tắc hạn duy nhất của hệ thống. Trước đây danh mục POS cộng thẳng
     // mọi đơn PENDING trong 48h nên đơn chuyển khoản quầy hết hạn sau 30 phút
@@ -126,7 +137,8 @@ export class PosCatalogService {
     for (const row of heldRows) {
       const expiry = OrderService.getPendingEffectiveExpiry(row);
       if (!expiry || expiry.getTime() <= nowMs) continue;
-      heldMap.set(row.editionId, (heldMap.get(row.editionId) || 0) + Number(row.quantity || 0));
+      // 0032: khoá theo `product_id` cho khớp `balMap`/`soldMap`.
+      heldMap.set(row.productId, (heldMap.get(row.productId) || 0) + Number(row.quantity || 0));
     }
     const isFair = wh?.warehouseType === 'FAIR_EVENT';
 

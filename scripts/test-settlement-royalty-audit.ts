@@ -80,7 +80,7 @@ async function run() {
   ]);
   for (const e of ['ed-a1', 'ed-a2', 'ed-b1', 'ed-c1']) {
     await db.insert(schema.stockBalances).values({
-      id: `sb-${e}`, editionId: e, warehouseId: WH, condition: 'NEW', physicalQuantity: 500,
+      id: `sb-${e}`, productId: e, editionId: e, warehouseId: WH, condition: 'NEW', physicalQuantity: 500,
     });
   }
 
@@ -100,7 +100,7 @@ async function run() {
     } as any);
     if (o.editionId) {
       await db.insert(schema.orderItems).values({
-        id: `it-${o.id}`, orderId: o.id, editionId: o.editionId, quantity: o.qty || 1,
+        id: `it-${o.id}`, orderId: o.id, editionId: o.editionId, productId: o.editionId, quantity: o.qty || 1,
         unitCoverPrice: o.unitPrice || 0, unitSellingPrice: o.unitPrice || 0,
         totalAmount: o.amount,
       } as any);
@@ -299,7 +299,7 @@ async function run() {
       isbnLast4: `0${100 + i}`, coverPrice: 10000, isActive: true,
     });
     await db.insert(schema.stockBalances).values({
-      id: `sb-${edId}`, editionId: edId, warehouseId: WH, condition: 'NEW', physicalQuantity: 100,
+      id: `sb-${edId}`, productId: edId, editionId: edId, warehouseId: WH, condition: 'NEW', physicalQuantity: 100,
     });
     await mkOrder({
       id: `o-top-s${i}`, code: `AUD-TOPS-${i}`, amount: 10 * i, createdAt: `${D6}T06:00:00Z`,
@@ -589,7 +589,7 @@ async function run() {
   for (let i = 1; i <= 5; i++) {
     await mk(`o-top-${i}`, `AUD-TOP-${i}`, 10000 * i, '2026-11-12T04:00:00Z', 'RETAIL_OFFICE');
     await db.insert(schema.orderItems).values({
-      id: `it-top-${i}`, orderId: `o-top-${i}`, editionId: 'ed-b1', quantity: i,
+      id: `it-top-${i}`, orderId: `o-top-${i}`, editionId: 'ed-b1', productId: 'ed-b1', quantity: i,
       unitCoverPrice: 10000, unitSellingPrice: 10000, totalAmount: 10000 * i,
     } as any);
   }

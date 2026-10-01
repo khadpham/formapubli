@@ -903,6 +903,9 @@ export class OrderService {
               id: item.id,
               orderId,
               editionId: item.editionId,
+              // 0032: NOT NULL + FK `products(id)`. Sách có
+              // `products.id === editions.id`, nên đặt bằng `editionId`.
+              productId: item.editionId,
               quantity: item.quantity,
               unitCoverPrice: item.unitCoverPrice,
               unitDiscountRate: item.unitDiscountRate,
@@ -1429,7 +1432,11 @@ export class OrderService {
         // ATP gom BATCH (2 câu cố định) vì lý do subrequest nêu ở createOrder B2.
         const ownNeed = new Map<string, number>();
         for (const ln of lines) {
-          ownNeed.set(ln.editionId, (ownNeed.get(ln.editionId) || 0) + ln.quantity);
+          // 0032: `edition_id` nullable nên không làm khóa Map được. Dùng
+          // `product_id` (NOT NULL). Với sách `product_id === edition_id` nên giá
+          // trị truyền xuống `getBatchATP` y hệt trước đây.
+          const key = ln.productId;
+          ownNeed.set(key, (ownNeed.get(key) || 0) + ln.quantity);
         }
     const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
     // TỒN VẬT LÝ GỘP 1 CÂU (30/09). Trước đây gọi `getBalance` TỪNG DÒNG — mỗi
@@ -1465,7 +1472,14 @@ export class OrderService {
     // `recordMovementsBatch` cho KẾT QUẢ Y HỆT, chỉ gom câu lệnh.
     await InventoryService.recordMovementsBatch(
       lines.map((ln) => ({
-        editionId: ln.editionId,
+        // 0032: `order_items.edition_id` nullable nên không truyền thẳng được.
+        // `product_id` NOT NULL và với sách thì BẰNG `edition_id`, nên kết quả
+        // y hệt trước đây.
+        //
+        // ⚠️ HẠN CHẾ CÒN LẠI: `inventory_ledger.edition_id` VẪN NOT NULL (0032
+        // chưa dựng lại bảng này) ⇒ hàng hóa chưa ghi được vào sổ kho. Cần một
+        // migration sau để bỏ ràng buộc đó; xem spec mục 6 B10.
+        editionId: ln.productId,
         quantityDelta: -ln.quantity,
         condition: 'NEW' as const,
       })),

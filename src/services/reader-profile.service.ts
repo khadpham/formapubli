@@ -81,6 +81,9 @@ export class ReaderProfileService {
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 3);
     const topEditions = lines
+      // 0032: innerJoin editions ⇒ hàng hóa (`edition_id` NULL) không lọt vào
+      // `lines`; chốt lại để khỏi phải suy luận từ JOIN trong kiểu dữ liệu.
+      .filter((l): l is typeof l & { editionId: string } => l.editionId !== null)
       .map((l) => ({ editionId: l.editionId, code: l.code, title: l.title, qty: Number(l.qty || 0) }))
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);

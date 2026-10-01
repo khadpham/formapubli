@@ -1,7 +1,20 @@
 # Kế hoạch triển khai: Sản phẩm hàng hóa + Khuyến mại
 
 Ngày: 2026-10-01 · Kèm theo: `specs/2026-10-01-khuyen-mai-va-hang-hoa-design.md`
-Trạng thái: **CHỜ DUYỆT** — chưa viết dòng code nào.
+
+> ## ⚠️ TRẠNG THÁI THẬT — dòng này thay cho "chờ duyệt, chưa viết dòng code nào"
+>
+> **Đã làm và đã áp PRODUCTION:**
+> - Migration `0031` (3 bảng + 7 cột nullable) — **đã chạy trên production**.
+>   Xác minh bằng đơn `ORD261001000W` lúc 18:21 giờ VN ngày 01/10/2026, tạo
+>   thành công sau migration, tổng dòng khớp `final_amount`, sổ kho ghi đúng.
+> - `871b1d9` và `6973276` — **đã lên `main`** do agent khác merge nhánh tôi.
+>   Đây là vi phạm quy tắc "không bao giờ commit trên main"; đã tách sang
+>   worktree `D:\Data Project\formapubli-promo` branch `feat/khuyen-mai-san-pham`.
+> - **Đã viết, CHƯA chạy:** `0032_sellable_goods.sql`, `apply-0031b-prod.ts`.
+> - **Đang làm:** Cổng 2 — sửa 40 file cho `product_id`.
+>
+> **Chưa chạy lên production:** 0031b (backfill), 0032 (dựng lại bảng).
 
 ---
 
@@ -162,9 +175,29 @@ Giai đoạn này thay bằng **điều kiện bằng chứng**, đo được, k
 |---|---|---|
 | **A** | Chạy `ALLOW_PROD_WRITE=true npx tsx scripts/apply-00XX-prod.ts` | **CÓ** — cần kho đóng |
 | **B** | `npm run deploy` | **CÓ** — cần kho đóng |
-| **C** | `npx tsx scripts/verify-pos-live.ts` | Không (chỉ đọc) |
+| **C** | `npx tsx scripts/verify-pos-live.ts` | **CÓ — CẦN KHO ĐÓNG** |
+| **D** | Bất kỳ script `trace-*.ts` / `health-check-prod.ts` | **CÓ** — xem ghi chú dưới |
 
-`run-isolated.ts` dùng `file:formapubli_test.db` (`:196-198`) — **không** chạm Turso. Đã kiểm chứng: không suite nào nào trong `scripts/` tham chiếu Turso.
+> ### 🔴 SỬA — `verify-pos-live.ts` KHÔNG phải "chỉ đọc"
+>
+> Bản đầu của plan xếp nó vào nhóm chỉ đọc. **Sai.** Đọc file thật:
+> - `:181` — `BƯỚC GHI THẬT — tạo một đơn qua POST /api/orders`
+> - `:206` — `method: 'POST'` vào `/api/orders`
+> - `:216` — assert *"25. POST /api/orders tạo đơn thật"*
+>
+> Nó **tạo đơn thật trong kho đang bán**. Chạy lúc đang bán là tự tạo đơn rác
+> giữa ca, trừ tồn kho thật. → **Xếp vào nhóm cần kho đóng**, giống deploy.
+
+> ### Ghi chú: script đụng production KHÔNG nằm trong test runner
+>
+> `run-isolated.ts` có danh sách suite **tường minh**, và ép
+> `DATABASE_URL=file:formapubli_test.db`. Đã kiểm: nó **không** chạy
+> `apply-0031-prod.ts`, `health-check-prod.ts`, `verify-pos-live.ts` hay bất kỳ
+> `trace-*.ts` nào. ⇒ `npm run test:isolated` an toàn.
+>
+> Nhưng những script đó **cố ý** trỏ production. Người khác chạy tay là chuyện
+> khác — chúng đều có `requireExplicitTarget()` in ra host đích và bắt gõ
+> `ALLOW_REMOTE_TARGET=<host>`.
 
 ### Bản đồ cổng
 
@@ -423,13 +456,32 @@ Báo: "Cổng 2 code xong. Test xanh. Cần deploy để bạn thử thật.
 - [ ] Test đơn offline có quà
 - [ ] Test đơn 15 dòng — không vượt trần subrequest
 
-### 🛑 MỐC 0 — ĐÃ CHỐT
+### 🛑 MỐC 0 — B3 = PHƯƠNG ÁN (b\*) — ĐÃ CHỐT
 
-**B3 (tồn âm khi hết quà) = phương án (b):** ghi ledger xuất nhưng **KHÔNG ghi `stock_balances`**. Không đụng trigger `0027`. POS hiện cảnh báo.
+**Quyết định:** dòng quà hết tồn vẫn cho thanh toán, **không ghi `stock_balances`**, chỉ ghi ledger kèm cờ.
 
-Lý do: trigger nằm trên `stock_balances` không có cột `event_type` → không tồn tại câu SQL nào cho phép âm "chỉ khi là quà" mà không `DROP` trigger. Tồn âm thật là thứ khó gỡ nhất về sau.
+Lý do: (c*) chặn đơn = mất tiền thật giữa ca. (b*) chỉ đụng dòng quà, sách vẫn bán bình thường.
 
-→ Cần nới tầng 1 và tầng 2 của lỗi B2 (`order.service.ts:780-789`, `inventory.service.ts:204-212`), **không** đụng tầng 3 (trigger).
+#### Bốn điều kiện bắt buộc
+
+| # | Điều kiện | Vì sao | Nơi thực thi |
+|---|---|---|---|
+| **1** | **Chỉ dòng quà được bypass ATP. Sách vẫn chặn.** | Rủi ro lớn nhất của (b*). Bypass nhầm cả đơn ⇒ POS bán được cả khi hết sách ⇒ tồn âm, mất tiền | `order.service.ts:780-789` — lọc dòng quà ra khỏi `needTotal` **trước** khi gọi `getBatchATP` |
+| **2** | **Quà ảo phải được đánh dấu.** Cột `is_gift_shortfall` | Không ghi `stock_balances` ⇒ tồn quà **không giảm** ⇒ hết hàng vẫn tặng được, mà không có dấu vết. Hệ thống sẽ nói dối chính nó | Cột mới trên `order_items` — **đặt trong migration 0032**, vì 0031 đã áp production không thêm được nữa |
+| **3** | **POS cảnh báo TRƯỚC khi chốt**, không phải sau | Thu ngân phải biết trước khi thu tiền, không phải sau khi khách đứng đợi | Client: khi dòng quà `is_gift_shortfall` thì badge đỏ + hộp thoại |
+| **4** | **Báo cáo tách 2 loại**: quà tặng khi **còn tồn** vs quà tặng khi **hết tồn** | Nếu gộp, ta thấy số liệu đẹp trong khi số quà thật đã cạn. Báo cáo sai ngay sau khi dựng lại là mất uy tín | Báo cáo quà tặng: 2 dòng, tách theo `is_gift_shortfall` |
+
+#### Test biên BẮT BUỘC cho điều kiện 1
+
+> Đơn gồm **1 dòng quà hết tồn + 1 cuốn sách hết tồn** → **phải bị chặn**, không được cho bán.
+
+Nếu test này đỏ ⇒ bypass đang nuốt cả đơn ⇒ **dừng ngay**, không deploy.
+
+Cột `is_gift_shortfall` chưa có trong `schema.ts` và chưa trong `orderItems` — phải thêm cùng lúc với Cổng 3.
+
+#### Trạng thái
+
+**B* đã chốt nhưng CHƯA code.** Nó nằm ở **Cổng 3** (đường tiền), chạy **sau hội chợ**. Cổng 1 và 0032 không phụ thuộc quyết định này.
 
 ```
 Báo: "Cổng 2 đã chạy ổn định. Bắt đầu Cổng 3 (logic khuyến mại) chứ?"
@@ -443,7 +495,37 @@ Báo: "Cổng 3 code xong. Test xanh. Cần deploy để bạn thử thật."
 
 ---
 
-## PHẦN 6 — DANH SÁCH MỐC (bản tóm tắt để báo team)
+## PHẦN 7 — PHẢN HỒI RÀ SOÁT CỦA AGENT KHÁC (đã xử lý)
+
+Agent khác rà soát plan này, chỉ ra 5 điểm. **4 điểm đúng, 1 điểm không đúng.**
+
+| # | Điểm agent nêu | Kết luận | Xử lý |
+|---|---|---|---|
+| 1 | B3=(b) khiến ATP chặn **CẢ ĐƠN** khi hết quà ⇒ POS treo giữa ca | ✅ **Đúng** | Sửa PHẦN 5 / MỐC 0, thêm 4 bước bắt buộc kèm theo. **Cần bạn xác nhận lại** |
+| 2 | Dòng "chưa viết dòng code nào" sai thực tế | ✅ **Đúng** | Thay bằng khối TRẠNG THÁI THẬT ở đầu file |
+| 3 | `apply-0031-prod.ts` / `health-check-prod.ts` chưa ai kiểm | ➖ **Không đúng** | Đã kiểm: `run-isolated.ts` có danh sách suite **tường minh**, không chạy 2 script đó. Vẫn ghi rõ để người khác khỏi hiểu nhầm |
+| 4 | `verify-pos-live.ts` **KHÔNG chỉ đọc**, tạo đơn thật | ✅ **Đúng — tôi đã nói sai** | Đã sửa. Trước đây tôi báo bạn nó "chỉ đọc" — sai |
+| 5 | Backup Turso: cần xác minh đường khôi phục trước Cổng 1b | ✅ **Đúng** | Xem PHẦN 8 — **chưa xác minh được** |
+
+### 6. Việc gấp — dev DB thiếu 3 bảng
+
+Agent khác chạy `check-dev-db-schema.ts`, báo dev DB thiếu `products`, `promotions`, `promotion_gifts`. Ai chạy POS local hoặc test đọc bảng mới ⇒ **500**.
+
+Sửa: `npx tsx scripts/fix-dev-db-schema.ts` (tự sao lưu `.bak`, tự kiểm tra trước khi chạy).
+
+---
+
+## PHẦN 8 — VIỆC CÒN MỞ, chặn Cổng 1b
+
+| # | Việc | Vì sao chặn |
+|---|---|---|
+| 1 | **Đường khôi phục backup Turso** | Bản export đọc được nhưng có ghi ngược được khi khôi phục không? `UPDATE order_items` là câu lâu nhất, ghi từng dòng — phải biết có đường quay lại **trước** khi chạy |
+| 2 | **B3 quyết lại** | Xem PHẦN 5 / MỐC 0 |
+| 3 | **Dev DB** | Xem mục 7.6 |
+
+---
+
+## PHẦN 9 — Câu hỏi cho bạn
 
 | Mốc | Tên | Đụng prod? | Khi nào | Cần bạn duyệt? |
 |---|---|---|---|---|

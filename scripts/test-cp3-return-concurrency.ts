@@ -80,7 +80,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
     { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (CP3R)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   await db.insert(stockBalances).values({
-    id: `sb-${wid}`, editionId: wid, warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: openingQty,
+    id: `sb-${wid}`, productId: wid, editionId: wid, warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: openingQty,
   });
   await db.insert(inventoryLedger).values({
     id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',

@@ -94,7 +94,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
     documentRef: `OPEN-${probe}`, actorId: 'cp3-fixture', idempotencyKey: `idem-open-${wid}`,
   });
   await db.insert(stockBalances).values({
-    id: `sb-${wid}-auco`, editionId: wid, warehouseId: 'wh-au-co',
+    id: `sb-${wid}-auco`, productId: wid, editionId: wid, warehouseId: 'wh-au-co',
     condition: 'NEW', physicalQuantity: openingQty,
   });
   // salePayload dùng channel='FAIR_EVENT' = bán tại quầy, nên đơn PENDING bắt

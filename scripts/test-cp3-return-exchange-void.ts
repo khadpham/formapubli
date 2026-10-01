@@ -97,7 +97,7 @@ async function freshProbeDb(probe: string, openingQty: number) {
       isbn: '9786040000000', isbnLast4: '0000', coverPrice: cover,
     });
     await db.insert(stockBalances).values({
-      id: `sb-${wid}`, editionId: wid, warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: openingQty,
+      id: `sb-${wid}`, productId: wid, editionId: wid, warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: openingQty,
     });
     await db.insert(inventoryLedger).values({
       id: `led-${wid}-open`, editionId: wid, warehouseId: 'wh-au-co',

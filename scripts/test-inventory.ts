@@ -159,6 +159,7 @@ async function runInventoryTests() {
   await db.delete(stockBalances).where(eq(stockBalances.id, QUARANTINE_ROW_ID));
   await db.insert(stockBalances).values({
     id: QUARANTINE_ROW_ID,
+    productId: book.id,
     editionId: book.id,
     warehouseId: whAuCo.id,
     condition: 'QUARANTINE',

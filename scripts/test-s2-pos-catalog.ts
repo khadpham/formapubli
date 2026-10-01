@@ -60,7 +60,7 @@ async function main() {
       id: `led-s2-${eid}`, editionId: eid, warehouseId: MAIN, eventType: 'OPENING_BALANCE',
       quantityDelta: qty, condition: 'NEW', documentRef: 'OPEN-S2', actorId: 's2', idempotencyKey: `idem-s2-${eid}`,
     });
-    await seedDb.insert(schema.stockBalances).values({ id: `sb-s2-${eid}`, editionId: eid, warehouseId: MAIN, condition: 'NEW', physicalQuantity: qty });
+    await seedDb.insert(schema.stockBalances).values({ id: `sb-s2-${eid}`, productId: eid, editionId: eid, warehouseId: MAIN, condition: 'NEW', physicalQuantity: qty });
   }
   raw.close();
 

@@ -55,6 +55,7 @@ async function run() {
   await db.insert(stockBalances).values([
     {
       id: `sb-${edition.id}-wh-in-transit-NEW`,
+      productId: edition.id,
       editionId: edition.id,
       warehouseId: 'wh-in-transit',
       condition: 'NEW',
@@ -62,6 +63,7 @@ async function run() {
     },
     {
       id: `sb-${edition.id}-wh-quynh-mai-DEFECTIVE`,
+      productId: edition.id,
       editionId: edition.id,
       warehouseId: 'wh-quynh-mai',
       condition: 'DEFECTIVE',

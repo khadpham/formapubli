@@ -61,8 +61,8 @@ async function run() {
      VALUES ('wh-nn','KHO_NN','Kho âm','PHYSICAL_MAIN',1,1,'2026-01-01 00:00:00')`
   );
   await db.execute(
-    `INSERT INTO stock_balances (id,edition_id,warehouse_id,condition,physical_quantity)
-     VALUES ('sb-nn','ed-nn','wh-nn','NEW',10)`
+    `INSERT INTO stock_balances (id,edition_id,product_id,warehouse_id,condition,physical_quantity)
+     VALUES ('sb-nn','ed-nn','ed-nn','wh-nn','NEW',10)`
   );
   const pos = await db.execute(`SELECT physical_quantity FROM stock_balances WHERE id='sb-nn'`);
   ok(Number(pos.rows[0].physical_quantity) === 10, 'ghi tồn kho dương phải thành công');

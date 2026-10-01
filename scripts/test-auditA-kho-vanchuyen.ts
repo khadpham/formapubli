@@ -79,7 +79,7 @@ async function run() {
   };
   const setBal = async (editionId: string, qty: number, wh = WH1) => {
     await db.insert(schema.stockBalances).values({
-      id: `sb-${editionId}-${wh}-NEW`, editionId, warehouseId: wh, condition: 'NEW', physicalQuantity: qty,
+      id: `sb-${editionId}-${wh}-NEW`, productId: editionId, editionId, warehouseId: wh, condition: 'NEW', physicalQuantity: qty,
     }).onConflictDoNothing();
     await db.update(schema.stockBalances)
       .set({ physicalQuantity: qty })
@@ -161,7 +161,7 @@ async function run() {
     status: 'PENDING_CONFIRMATION', cashierId: 'staff-tn', idempotencyKey: 'idem-ord-pending-1',
   });
   await db.insert(schema.orderItems).values({
-    id: 'oi-pending-1', orderId: 'ord-pending-1', editionId: 'ed-3', quantity: 5,
+    id: 'oi-pending-1', productId: 'ed-3', orderId: 'ord-pending-1', editionId: 'ed-3', quantity: 5,
     unitCoverPrice: 70000, unitSellingPrice: 100000, totalAmount: 500000,
   });
   const { OrderService } = await import('../src/services/order.service');
@@ -312,7 +312,7 @@ async function run() {
       status: 'COMPLETED', cashierId: 'staff-tn', idempotencyKey: `idem-${o}`,
     });
     await db.insert(schema.orderItems).values({
-      id: `oi-${o}`, orderId: o, editionId: 'ed-2', quantity: 300,
+      id: `oi-${o}`, productId: 'ed-2', orderId: o, editionId: 'ed-2', quantity: 300,
       unitCoverPrice: 70000, unitSellingPrice: 100000, totalAmount: 30000000,
     });
   }

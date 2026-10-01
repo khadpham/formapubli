@@ -129,7 +129,7 @@ async function main() {
     { id: 'wh-au-co', code: 'KHO_AU_CO', name: 'Kho 1 - Au Co (REC)', isActive: true, isSellableOnPos: true, warehouseType: 'PHYSICAL_MAIN' },
   ]);
   await db0.insert(stockBalances).values({
-    id: 'sb-erec', editionId: 'erec', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50,
+    id: 'sb-erec', productId: 'erec', editionId: 'erec', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50,
   });
   await db0.insert(inventoryLedger).values({
     id: 'led-erec-open', editionId: 'erec', warehouseId: 'wh-au-co',

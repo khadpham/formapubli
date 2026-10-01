@@ -54,8 +54,8 @@ async function run() {
 
   // Initial stock: Book 1 has 50, Book 2 has 20
   await db.insert(schema.stockBalances).values([
-    { id: `sb-${EDITION_ID_1}`, editionId: EDITION_ID_1, warehouseId: WAREHOUSE_ID, physicalQuantity: 50, condition: 'NEW' },
-    { id: `sb-${EDITION_ID_2}`, editionId: EDITION_ID_2, warehouseId: WAREHOUSE_ID, physicalQuantity: 20, condition: 'NEW' },
+    { id: `sb-${EDITION_ID_1}`, productId: EDITION_ID_1, editionId: EDITION_ID_1, warehouseId: WAREHOUSE_ID, physicalQuantity: 50, condition: 'NEW' },
+    { id: `sb-${EDITION_ID_2}`, productId: EDITION_ID_2, editionId: EDITION_ID_2, warehouseId: WAREHOUSE_ID, physicalQuantity: 20, condition: 'NEW' },
   ]);
 
   const STAFF_WAREHOUSE = { staffId: 'staff-tk', role: 'ROLE_WAREHOUSE', fullName: 'Thủ Kho 1' };

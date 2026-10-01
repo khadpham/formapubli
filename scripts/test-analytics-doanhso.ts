@@ -172,7 +172,7 @@ async function run() {
   }).onConflictDoNothing();
   const transitQty = 500;
   await db.insert(stockBalances).values({
-    id: `ab-sb-transit-${edB}`, editionId: edB, warehouseId: 'ab-transit',
+    id: `ab-sb-transit-${edB}`, productId: edB, editionId: edB, warehouseId: 'ab-transit',
     condition: 'NEW', physicalQuantity: transitQty,
   });
   const stockExcl = await ForecastService.availableStock(edB);
@@ -477,7 +477,7 @@ async function run() {
     for (const e of allEditions) {
       const qty = 3;
       await db.insert(stockBalances).values({
-        id: `ab-sb-${wh}-${e.id}`, editionId: e.id, warehouseId: wh,
+        id: `ab-sb-${wh}-${e.id}`, productId: e.id, editionId: e.id, warehouseId: wh,
         condition: 'NEW', physicalQuantity: qty,
       }).onConflictDoNothing();
       expectedQty += qty;

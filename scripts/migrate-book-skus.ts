@@ -290,6 +290,7 @@ async function run() {
       for (const wh of activeWarehouses) {
         await db.insert(stockBalances).values({
           id: `sb-${editionId}-${wh.id}-NEW`,
+          productId: editionId,
           editionId,
           warehouseId: wh.id,
           condition: 'NEW',

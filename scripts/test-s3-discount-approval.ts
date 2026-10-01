@@ -75,6 +75,7 @@ async function run() {
   await db.insert(schema.stockBalances).values([
     {
       id: 'sb-ed-h01-wh-au-co-NEW',
+      productId: 'ed-h01',
       editionId: 'ed-h01',
       warehouseId: 'wh-au-co',
       condition: 'NEW',
@@ -82,6 +83,7 @@ async function run() {
     },
     {
       id: 'sb-ed-h21-wh-au-co-NEW',
+      productId: 'ed-h21',
       editionId: 'ed-h21',
       warehouseId: 'wh-au-co',
       condition: 'NEW',
@@ -89,6 +91,7 @@ async function run() {
     },
     {
       id: 'sb-ed-round-wh-au-co-NEW',
+      productId: 'ed-round',
       editionId: 'ed-round',
       warehouseId: 'wh-au-co',
       condition: 'NEW',

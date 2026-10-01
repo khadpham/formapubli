@@ -155,7 +155,11 @@ export class AnalyticsService {
         .where(and(eq(orders.status, 'COMPLETED'), ...createdAtBetween(orders.createdAt, from, to)))
         .groupBy(orderItems.editionId);
       const map = new Map<string, { qty: number; revenue: number }>();
-      for (const r of rows) map.set(r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) });
+      for (const r of rows) {
+        // 0032: dòng hàng hóa có `edition_id` NULL ⇒ bỏ, báo cáo này chỉ dành cho sách.
+        if (r.editionId === null) continue;
+        map.set(r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) });
+      }
       return map;
     };
     const cur = await agg(thisMon, new Date().toISOString());

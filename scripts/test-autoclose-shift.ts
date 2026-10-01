@@ -92,10 +92,10 @@ async function run() {
     { id: 'ed-auto-2', code: 'A-02', workId: 'work-auto', isbn: '9786040009002', isbnLast4: '9002', coverPrice: 200000, isActive: true },
   ]);
   await db.insert(schema.stockBalances).values([
-    { id: 'sb-auto-1', editionId: 'ed-auto-1', warehouseId: 'wh-auto', physicalQuantity: 100, condition: 'NEW' },
-    { id: 'sb-auto-2', editionId: 'ed-auto-2', warehouseId: 'wh-auto', physicalQuantity: 100, condition: 'NEW' },
-    { id: 'sb-auto-3', editionId: 'ed-auto-1', warehouseId: 'wh-auto-2', physicalQuantity: 100, condition: 'NEW' },
-    { id: 'sb-auto-4', editionId: 'ed-auto-1', warehouseId: 'wh-auto-3', physicalQuantity: 100, condition: 'NEW' },
+    { id: 'sb-auto-1', productId: 'ed-auto-1', editionId: 'ed-auto-1', warehouseId: 'wh-auto', physicalQuantity: 100, condition: 'NEW' },
+    { id: 'sb-auto-2', productId: 'ed-auto-2', editionId: 'ed-auto-2', warehouseId: 'wh-auto', physicalQuantity: 100, condition: 'NEW' },
+    { id: 'sb-auto-3', productId: 'ed-auto-1', editionId: 'ed-auto-1', warehouseId: 'wh-auto-2', physicalQuantity: 100, condition: 'NEW' },
+    { id: 'sb-auto-4', productId: 'ed-auto-1', editionId: 'ed-auto-1', warehouseId: 'wh-auto-3', physicalQuantity: 100, condition: 'NEW' },
   ]);
 
   // Ca quá giờ của thu ngân A tại wh-auto (mở 2 ngày trước, cutoff wh-auto = 00:05)
@@ -279,8 +279,8 @@ async function run() {
     },
   ]);
   await db.insert(schema.orderItems).values([
-    { id: 'oi-auto-1', orderId: 'ord-auto-1', editionId: 'ed-auto-1', quantity: 3, unitCoverPrice: 100000, unitSellingPrice: 100000, totalAmount: 300000 },
-    { id: 'oi-auto-2', orderId: 'ord-auto-offline', editionId: 'ed-auto-2', quantity: 1, unitCoverPrice: 700000, unitSellingPrice: 700000, totalAmount: 700000 },
+    { id: 'oi-auto-1', productId: 'ed-auto-1', orderId: 'ord-auto-1', editionId: 'ed-auto-1', quantity: 3, unitCoverPrice: 100000, unitSellingPrice: 100000, totalAmount: 300000 },
+    { id: 'oi-auto-2', productId: 'ed-auto-2', orderId: 'ord-auto-offline', editionId: 'ed-auto-2', quantity: 1, unitCoverPrice: 700000, unitSellingPrice: 700000, totalAmount: 700000 },
   ]);
 
   // ================================================================ A. cutoff

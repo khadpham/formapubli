@@ -191,12 +191,19 @@ export class InventoryService {
         .values({
           id: bucketId,
           editionId,
+          // 0032: `product_id` NOT NULL + FK `products(id)`. Sách có
+          // `products.id === editions.id`, nên đặt bằng `editionId`.
+          productId: editionId,
           warehouseId,
           condition,
           physicalQuantity: 0,
         })
         .onConflictDoNothing({
-          target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
+          // 0032 đổi unique `uq_stock_bucket` từ (edition_id,…) sang
+          // (product_id,…). Bắt buộc phải khớp index đúng, nếu không SQLite
+          // ném "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+          // constraint" và mọi ghi nhập kho chết.
+          target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition],
         });
 
       // 3. ATOMIC GUARD: UPDATE trực tiếp bằng biểu thức nguyên tử, chặn đứng triệt để Lost-Update race condition
@@ -360,13 +367,19 @@ export class InventoryService {
           rows.map((it) => ({
             id: `sb-${it.editionId}-${common.warehouseId}-${condition}`,
             editionId: it.editionId,
+            // 0032: NOT NULL + FK. Sách có `products.id === editions.id`.
+            productId: it.editionId,
             warehouseId: common.warehouseId,
             condition: condition as typeof stockBalances.$inferInsert.condition,
             physicalQuantity: 0,
           }))
         )
         .onConflictDoNothing({
-          target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
+          // 0032 đổi UNIQUE `uq_stock_bucket` sang (product_id,…). Phải khớp
+          // index đúng, không thì SQLite ném "ON CONFLICT clause does not match
+          // any PRIMARY KEY or UNIQUE constraint". Còn 3 chỗ trong file này
+          // dùng mẫu này — đã quét hết bằng grep.
+          target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition],
         });
     }
 
@@ -707,11 +720,12 @@ export class InventoryService {
           .insert(stockBalances)
           .values(
             merged.flatMap((it) => [
-              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
-              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: it.editionId, productId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: it.editionId, productId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
             ])
           )
-          .onConflictDoNothing({ target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition] });
+          // 0032: unique index đã sang product_id — xem giải thích ở recordMovement.
+          .onConflictDoNothing({ target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition] });
 
         // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
         const ledgerRows = merged.flatMap((it) => ([
@@ -931,8 +945,13 @@ export class InventoryService {
     // chỉ đếm 3 mã kho cứng nên kho hội chợ không bao giờ hiện trong ma trận.
     const balanceMap = new Map<string, Record<string, number>>();
     for (const bal of allBalances) {
-      if (!balanceMap.has(bal.editionId)) balanceMap.set(bal.editionId, {});
-      const record = balanceMap.get(bal.editionId)!;
+      // 0032: `edition_id` nullable cho hàng hóa nên không dùng làm khóa Map.
+      // `product_id` NOT NULL, và với sách thì BẰNG `edition_id` — nên khoá và
+      // giá trị trả về y hệt trước đây. Tới C2b (ATP chuyển sang product) thì
+      // khoá này đã sẵn đúng chiều.
+      const key = bal.productId;
+      if (!balanceMap.has(key)) balanceMap.set(key, {});
+      const record = balanceMap.get(key)!;
       record[bal.warehouseId] = (record[bal.warehouseId] || 0) + Number(bal.physicalQuantity || 0);
     }
 

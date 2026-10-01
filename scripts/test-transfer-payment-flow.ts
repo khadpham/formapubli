@@ -66,8 +66,8 @@ async function run() {
     { id: 'ed-tp-2', code: 'TP2', workId: 'work-tp', title: 'Sách TP2', isbn: '9786040001020', isbnLast4: '1020', coverPrice: 90000 },
   ]);
   await db.insert(schema.stockBalances).values([
-    { id: 'sb-tp-1', editionId: 'ed-tp-1', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50 },
-    { id: 'sb-tp-2', editionId: 'ed-tp-2', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50 },
+    { id: 'sb-tp-1', productId: 'ed-tp-1', editionId: 'ed-tp-1', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50 },
+    { id: 'sb-tp-2', productId: 'ed-tp-2', editionId: 'ed-tp-2', warehouseId: 'wh-au-co', condition: 'NEW', physicalQuantity: 50 },
   ]);
 
   const sessionA = await CashboxService.openSession({ warehouseId: 'wh-au-co', cashierId: CASHIER_A.staffId, openingCash: 0 });
@@ -561,7 +561,7 @@ async function run() {
     isbn: '9786040002010', isbnLast4: '2010', coverPrice: 100000,
   });
   await db.insert(schema.stockBalances).values({
-    id: 'sb-cap-1', editionId: 'ed-cap-1', warehouseId: CAP_WH, condition: 'NEW', physicalQuantity: 500,
+    id: 'sb-cap-1', productId: 'ed-cap-1', editionId: 'ed-cap-1', warehouseId: CAP_WH, condition: 'NEW', physicalQuantity: 500,
   });
   const capSession = await CashboxService.openSession({
     warehouseId: CAP_WH, cashierId: CASHIER_A.staffId, openingCash: 0,
@@ -755,7 +755,7 @@ async function run() {
     isbn: '9786040003010', isbnLast4: '3010', coverPrice: 100000,
   });
   await db.insert(schema.stockBalances).values({
-    id: 'sb-fair-1', editionId: 'ed-fair-1', warehouseId: FAIR_WH, condition: 'NEW', physicalQuantity: 30,
+    id: 'sb-fair-1', productId: 'ed-fair-1', editionId: 'ed-fair-1', warehouseId: FAIR_WH, condition: 'NEW', physicalQuantity: 30,
   });
   const fairBody = (overrides: Record<string, any> = {}) => ({
     warehouseId: FAIR_WH,

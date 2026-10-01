@@ -54,7 +54,7 @@ async function run() {
     { id: 'ed-h01', code: 'H01', workId: 'work-w01', title: 'Sach H01', isbn: '9780000000001', isbnLast4: '0001', coverPrice: 150000, isActive: true },
   ]);
   await db.insert(schema.stockBalances).values([
-    { id: 'sb-h01', editionId: 'ed-h01', warehouseId: 'wh-co', condition: 'NEW', physicalQuantity: 42 },
+    { id: 'sb-h01', productId: 'ed-h01', editionId: 'ed-h01', warehouseId: 'wh-co', condition: 'NEW', physicalQuantity: 42 },
   ]);
   for (const s of [CASHIER, KEEPER, MGR]) {
     await db.insert(schema.staffAccounts).values({

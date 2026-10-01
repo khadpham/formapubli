@@ -132,7 +132,12 @@ export class ForecastService {
         )
       )
       .groupBy(stockBalances.editionId);
-    return new Map(rows.map((r) => [r.editionId, Number(r.qty ?? 0)]));
+    // 0032: dòng hàng hóa có `edition_id` NULL ⇒ bỏ, hàm này chỉ dành cho sách.
+    return new Map(
+      rows
+        .filter((r): r is typeof r & { editionId: string } => r.editionId !== null)
+        .map((r) => [r.editionId, Number(r.qty ?? 0)])
+    );
   }
 
   /** Tồn khả dụng của MỘT ấn bản (vẫn 1 truy vấn, không vòng kho). */

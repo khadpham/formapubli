@@ -44,7 +44,7 @@ async function seed(raw: any) {
     const id = ED[i];
     await raw.execute({ sql: `INSERT OR IGNORE INTO works (id,code,title,author) VALUES (?,?,?,?)`, args: [`w-${id}`, `W${i}`, `T${i}`, 'A'] });
     await raw.execute({ sql: `INSERT OR IGNORE INTO editions (id,work_id,code,isbn,isbn_last4,cover_price) VALUES (?,?,?,?,?,?)`, args: [id, `w-${id}`, `E${i}`, `9780000000${i}`, String(i), 50000] });
-    await raw.execute({ sql: `INSERT OR IGNORE INTO stock_balances (id,edition_id,warehouse_id,condition,physical_quantity) VALUES (?,?,?,'NEW',?)`, args: [`sb-${id}`, id, WH, 50] });
+    await raw.execute({ sql: `INSERT OR IGNORE INTO stock_balances (id,edition_id,product_id,warehouse_id,condition,physical_quantity) VALUES (?,?,?,?,'NEW',?)`, args: [`sb-${id}`, id, id, WH, 50] });
     await raw.execute({ sql: `UPDATE stock_balances SET physical_quantity = 50 WHERE id = ?`, args: [`sb-${id}`] });
   }
 }
