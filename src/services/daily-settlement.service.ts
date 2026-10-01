@@ -362,6 +362,14 @@ export class DailySettlementService {
       bucket.sales += ord.finalAmount || 0;
     }
 
+    const totalItemsSold = Array.from(soldQtyAll.values()).reduce((sum, q) => sum + q, 0);
+    const averageOrderValue = dayOrders.length > 0 ? Math.round(netSales / dayOrders.length) : 0;
+    const averageItemsPerOrder = dayOrders.length > 0 ? Number((totalItemsSold / dayOrders.length).toFixed(1)) : 0;
+    const peakHour = ordersByHour.reduce(
+      (best, h) => (h.orders > best.orders ? h : best),
+      { hour: 0, orders: 0, sales: 0 }
+    );
+
     // 7. Đối soát tồn sách hội chợ (Stock Reconciliation)
     const balances = await txOrDb
       .select({
@@ -419,6 +427,10 @@ export class DailySettlementService {
         netSales,
         averageDiscountRate,
         isDiscountRateWarning,
+        totalItemsSold,
+        averageOrderValue,
+        averageItemsPerOrder,
+        peakHour: peakHour.orders > 0 ? peakHour : null,
       },
       paymentBreakdown: {
         cash: {

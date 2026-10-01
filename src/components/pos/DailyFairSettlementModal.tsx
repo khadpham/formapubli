@@ -128,9 +128,9 @@ export function hourWindow(input: {
 // thấp vẹo, nhãn giờ nằm cách xa nhau, dải giờ chiếm 137px chiều cao.
 // Nét VÀ CHỮ đều là nội dung SVG nên in mặc định (khác màu nền CSS).
 const BAND_W = 720;
-const BAND_H = 46;
-const BAND_BASE_Y = 34;
-const BAND_PLOT_H = 26;
+const BAND_H = 68;
+const BAND_BASE_Y = 48;
+const BAND_PLOT_H = 30;
 
 /** Nhãn tiếng Việt của hình thức thanh toán — cùng cách chia 3 nhóm với service. */
 function paymentMethodLabel(method: string | null | undefined): string {
@@ -343,7 +343,28 @@ export function DailyFairSettlementModal({
   const soldOnlyRows: any[] = (data?.inventoryReconciliation || []).filter(
     (it: any) => Number(it.soldToday || 0) > 0
   );
-  const soldTodayTotal = soldOnlyRows.reduce((sum: number, it: any) => sum + Number(it.soldToday || 0), 0);
+  const soldTodayTotal =
+    data?.financials?.totalItemsSold ??
+    soldOnlyRows.reduce((sum: number, it: any) => sum + Number(it.soldToday || 0), 0);
+
+  const totalOrdersCount = Number(data?.financials?.totalOrdersCount || 0);
+  const netSalesAmount = Number(data?.financials?.netSales || 0);
+  const averageOrderValue =
+    data?.financials?.averageOrderValue ??
+    (totalOrdersCount > 0 ? Math.round(netSalesAmount / totalOrdersCount) : 0);
+  const averageItemsPerOrder =
+    data?.financials?.averageItemsPerOrder ??
+    (totalOrdersCount > 0 ? (soldTodayTotal / totalOrdersCount).toFixed(1) : '0');
+
+  const cashOrdersCount = Number(data?.paymentBreakdown?.cash?.ordersCount || 0);
+  const qrTransferOrdersCount = Number(data?.paymentBreakdown?.qrTransfer?.ordersCount || 0);
+  const cardOrdersCount = Number(data?.paymentBreakdown?.card?.ordersCount || 0);
+  const cashOrdersShare = totalOrdersCount > 0 ? Math.round((cashOrdersCount / totalOrdersCount) * 100) : 0;
+  const qrOrdersShare = totalOrdersCount > 0 ? Math.round((qrTransferOrdersCount / totalOrdersCount) * 100) : 0;
+
+  const peakHourNumber = hourlyInWindow[peakIndex]?.hour ?? null;
+  const peakHourOrders = Number(hourlyInWindow[peakIndex]?.orders || 0);
+  const peakHourSales = Number(hourlyInWindow[peakIndex]?.sales || 0);
 
   // Bảng đơn vượt trần chiết khấu trên bản in: cap 10 dòng, phần dư đếm gọn.
   const overCapOrders: any[] = data?.discountSupervision?.orders || [];
@@ -1156,7 +1177,7 @@ export function DailyFairSettlementModal({
         {/* NỘI DUNG BIÊN BẢN CHỐT CA KHỔ A4 (CHỈ HIỂN THỊ KHI IN window.print) */}
         {/* ============================================================== */}
         {data && createPortal(
-          <div id="printable-settlement-report" className="hidden print:block bg-white text-slate-900 text-[12px] leading-relaxed font-serif">
+          <div id="printable-settlement-report" className="hidden print:block bg-white text-slate-900 text-[12px] leading-relaxed font-sans">
             {/* Khối in PHẢI createPortal riêng xuống `document.body`. Nằm trong
                 khung modal `overflow-hidden max-h-[92vh]` thì lúc in khung cha
                 cắt mất toàn bộ biên bản, window.print() ra trang trắng — đúng
@@ -1168,7 +1189,7 @@ export function DailyFairSettlementModal({
                 <h4 className="font-sans font-black text-sm tracking-wider uppercase text-slate-900">
                   FORMApubli
                 </h4>
-                <p className="font-sans text-[11px] text-slate-600">
+                <p className="font-sans text-[11px] text-slate-600 mt-0.5">
                   Gian hàng / Địa điểm: <strong>{data.warehouse?.name}</strong> ({data.warehouse?.code})
                 </p>
                 <p className="font-sans text-[11px] text-slate-600">
@@ -1177,38 +1198,57 @@ export function DailyFairSettlementModal({
               </div>
               <div className="text-right font-sans text-[11px] text-slate-600">
                 <p className="font-bold text-slate-800">BIÊN BẢN SỐ: BB-{data.reportDate.replace(/-/g, '')}</p>
-                <p className="italic">Lập lúc: {new Date().toLocaleTimeString('vi-VN')} ngày {new Date().toLocaleDateString('vi-VN')}</p>
+                <p className="italic mt-0.5">Lập lúc: {new Date().toLocaleTimeString('vi-VN')} ngày {new Date().toLocaleDateString('vi-VN')}</p>
               </div>
             </div>
 
-            {/* Tiêu đề Biên Bản */}
+            {/* Tiêu đề Báo Cáo & Biên Bản */}
             <div className="text-center my-4">
               <h1 className="font-sans font-black text-xl tracking-wide uppercase text-slate-900">
-                BIÊN BẢN BÀN GIAO CA & ĐỐI SOÁT KIỂM KÊ HỘI CHỢ
+                BÁO CÁO DOANH THU & KẾT TOÁN NGÀY
               </h1>
-              <p className="font-sans italic text-xs text-slate-600 mt-0.5">
-                (Dùng cho kiểm kê két tiền, cơ cấu thanh toán và tồn sách thực tế đóng thùng cuối ngày)
+              <p className="font-sans italic text-xs text-slate-600 mt-1">
+                (Biên bản bàn giao ca, đối soát két tiền và kiểm kê tồn kho)
               </p>
             </div>
 
-            {/* I. Số liệu Doanh thu & Két tiền */}
+            {/* I. CHỈ SỐ KINH DOANH & PHÂN TÍCH ĐƠN HÀNG */}
             <div className="print-block space-y-2 mb-4 font-sans text-xs">
-              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                I. TỔNG HỢP DOANH THU & ĐỐI SOÁT KÉT TIỀN
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1.5 mb-2.5 tracking-wider text-[12px]">
+                I. CHỈ SỐ KINH DOANH & PHÂN TÍCH ĐƠN HÀNG
               </h3>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                <div>- Tổng số đơn hàng bán ra: <strong>{data.financials?.totalOrdersCount} đơn</strong></div>
-                <div>- Doanh thu gộp: <strong>{(data.financials?.grossSales || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>- Tổng chiết khấu thương mại: <strong>{((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%</strong> (-{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ)</div>
-                <div>- Doanh thu thực thu: <strong>{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>+ Doanh số tiền mặt: <strong>{(data.paymentBreakdown?.cash?.sales || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>+ Doanh số Chuyển khoản QR: <strong>{(data.paymentBreakdown?.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>- Tiền đầu ca bàn giao: <strong>{(data.cashboxReconciliation?.openingCashTotal || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>- Tiền mặt kỳ vọng trong két: <strong>{(data.cashboxReconciliation?.expectedCashTotal || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>- Tiền mặt thực tế đếm được: <strong>{(data.cashboxReconciliation?.closingCashActualTotal || 0).toLocaleString('vi-VN')} đ</strong></div>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-2 leading-relaxed">
+                <div>- Doanh thu thực thu: <strong className="font-mono text-slate-950">{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
+                <div>- Tổng số đơn hàng bán ra: <strong className="font-mono">{totalOrdersCount} đơn</strong> (trong đó: <strong>{cashOrdersCount}</strong> tiền mặt, <strong>{qrTransferOrdersCount}</strong> chuyển khoản)</div>
+
+                <div>- Doanh thu gộp: <strong className="font-mono">{(data.financials?.grossSales || 0).toLocaleString('vi-VN')} đ</strong></div>
+                <div>- Tổng số cuốn đã bán: <strong className="font-mono">{soldTodayTotal} cuốn</strong></div>
+
+                <div>- Chiết khấu thương mại: <strong className="font-mono">{((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%</strong> (-{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ)</div>
+                <div>- Giá trị trung bình / đơn (AOV): <strong className="font-mono">{averageOrderValue.toLocaleString('vi-VN')} đ/đơn</strong></div>
+
+                <div>- Cơ cấu đơn hàng: <strong>{cashOrdersCount} TM ({cashOrdersShare}%) · {qrTransferOrdersCount} CK ({qrOrdersShare}%)</strong></div>
+                <div>- Số cuốn trung bình / đơn: <strong className="font-mono">{averageItemsPerOrder} cuốn/đơn</strong></div>
+              </div>
+            </div>
+
+            {/* II. CƠ CẤU THANH TOÁN & ĐỐI SOÁT KÉT TIỀN */}
+            <div className="print-block space-y-2 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1.5 mb-2.5 tracking-wider text-[12px]">
+                II. CƠ CẤU THANH TOÁN & ĐỐI SOÁT KÉT TIỀN
+              </h3>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-2 leading-relaxed">
+                <div>+ Doanh số tiền mặt: <strong className="font-mono">{(data.paymentBreakdown?.cash?.sales || 0).toLocaleString('vi-VN')} đ</strong> ({cashOrdersCount} đơn · {data.paymentBreakdown?.cash?.percentage || 0}% DT)</div>
+                <div>+ Doanh số Chuyển khoản QR: <strong className="font-mono">{(data.paymentBreakdown?.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ</strong> ({qrTransferOrdersCount} đơn · {data.paymentBreakdown?.qrTransfer?.percentage || 0}% DT)</div>
+                {cardOrdersCount > 0 && (
+                  <div>+ Doanh số Thẻ / Khác: <strong className="font-mono">{(data.paymentBreakdown?.card?.sales || 0).toLocaleString('vi-VN')} đ</strong> ({cardOrdersCount} đơn)</div>
+                )}
+                <div>- Tiền đầu ca bàn giao: <strong className="font-mono">{(data.cashboxReconciliation?.openingCashTotal || 0).toLocaleString('vi-VN')} đ</strong></div>
+                <div>- Tiền mặt kỳ vọng trong két: <strong className="font-mono">{(data.cashboxReconciliation?.expectedCashTotal || 0).toLocaleString('vi-VN')} đ</strong></div>
+                <div>- Tiền mặt thực tế đếm được: <strong className="font-mono">{(data.cashboxReconciliation?.closingCashActualTotal || 0).toLocaleString('vi-VN')} đ</strong></div>
                 <div>
                   - Chênh lệch két tiền:{' '}
-                  <strong>
+                  <strong className="font-mono">
                     {/* `cashVariance === null` = CHƯA ĐỦ CĂN CỨ (còn ca mở, hoặc ca
                         chưa ai đếm két), KHÔNG phải chênh lệch bằng 0. Biểu thức
                         cũ `(null || 0) > 0` rơi vào nhánh cuối và in ra
@@ -1224,162 +1264,35 @@ export function DailyFairSettlementModal({
                   </strong>
                 </div>
               </div>
-            </div>
 
-            {/* II. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: đơn lớn
-                nhất, top 10 bán chạy, giờ cao điểm và tiền mặt theo từng ca.
-                Không có highlight (ngày không bán được gì) thì nói thẳng, không in
-                dòng rỗng. */}
-            <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
-              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                II. ĐIỂM NHẤN NGÀY
-              </h3>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                <div>- Doanh thu thực thu: <strong>{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong></div>
-                <div>- Số đơn bán ra: <strong>{data.financials?.totalOrdersCount || 0} đơn</strong></div>
-              </div>
-              {data.highlight ? (
-                <div>
-                  - Đơn giá trị cao nhất: <strong className="font-mono">{data.highlight.orderCode}</strong> ·{' '}
-                  <strong>{(data.highlight.finalAmount || 0).toLocaleString('vi-VN')} đ</strong> · TT:{' '}
-                  {paymentMethodLabel(data.highlight.paymentMethod)} · <strong>{data.highlight.itemCount || 0} SP</strong>
-                  {vnHm(data.highlight.createdAt) ? ` · ${vnHm(data.highlight.createdAt)} giờ VN` : ''}
-                </div>
-              ) : (
-                <div className="italic text-slate-600">- Ngày này không có đơn hàng nào.</div>
-              )}
-
-              {/* Top 10: mã + tên + số cuốn + tiền. KHÔNG cap ở 5 như bản cũ — bản in
-                  nay còn chỗ và số liệu này dùng để đối chiếu bàn giao sách. */}
-              <table className="w-full border-collapse border border-slate-900 text-[10px] mt-1">
-                <thead>
-                  <tr className="bg-slate-100 font-bold text-center">
-                    <th className="border border-slate-900 p-1 w-8">#</th>
-                    <th className="border border-slate-900 p-1 w-16">Mã</th>
-                    <th className="border border-slate-900 p-1 text-left">Tên ấn phẩm</th>
-                    <th className="border border-slate-900 p-1 w-14 text-right">Số cuốn</th>
-                    <th className="border border-slate-900 p-1 w-24 text-right">Doanh thu</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.topSellers || []).length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="border border-slate-900 p-1 text-center italic">
-                        Không có ấn phẩm nào bán ra trong ngày.
-                      </td>
-                    </tr>
-                  ) : (
-                    (data.topSellers || []).map((s: any, i: number) => (
-                      <tr key={s.editionId}>
-                        <td className="border border-slate-900 p-1 text-center font-mono">{i + 1}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono font-bold">{s.code}</td>
-                        <td className="border border-slate-900 p-1">{s.title}</td>
-                        <td className="border border-slate-900 p-1 text-right font-mono">{s.soldCopies}</td>
-                        <td className="border border-slate-900 p-1 text-right font-mono">
-                          {(s.soldRevenue || 0).toLocaleString('vi-VN')} đ
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-
-              {/* Dải giờ VN vẽ bằng SVG, KHÔNG bằng div màu nền: Chrome lược màu
-                  nền khi hộp thoại In để "Background graphics" tắt (đang tắt) ⇒
-                  bản in ra dải cột TRỐNG trong khi chữ vẫn in đủ. Nét và chữ
-                  SVG là nội dung nên in mặc định. Khung giờ lấy động từ
-                  `hourWindow` (giờ mở ca + giờ có đơn), không hard-code. */}
-              <div className="mt-1.5">
-                <p className="font-bold uppercase text-slate-800">
-                  - Số đơn theo giờ ({hourWin.start}h–{hourEndShown}h, giờ Việt Nam):
-                </p>
-                <svg
-                  viewBox={`0 0 ${BAND_W} ${BAND_H}`}
-                  className="w-full h-auto mt-1"
-                  fontFamily="monospace"
-                  role="img"
-                  aria-label={`Số đơn bán theo từng giờ từ ${hourWin.start}h đến ${hourEndShown}h giờ Việt Nam`}
-                >
-                  {hourlyInWindow.map((h: any, i: number) => {
-                    const n = Number(h.orders || 0);
-                    const bh = bandBarH(n);
-                    const x = (i * bandSlot + 4).toFixed(2);
-                    const wRect = Math.max(4, bandSlot - 8).toFixed(2);
-                    // Hai nhánh tách riêng để màu nằm thẳng trong thẻ in: giờ có đơn
-                    // màu chàm, giờ trống màu xám nhạt — xám VẪN THẤY để đọc ra
-                    // giờ nào không bán, không in ra khoảng trống mờ mịt.
-                    return n > 0 ? (
-                      <rect key={h.hour} x={x} y={BAND_BASE_Y - bh} width={wRect} height={bh} fill="#4f46e5" />
-                    ) : (
-                      <rect key={h.hour} x={x} y={BAND_BASE_Y - bh} width={wRect} height={bh} fill="#cbd5e1" />
-                    );
-                  })}
-                  {/* Số đơn của giờ cao điểm, đặt trên đỉnh cột max (một chữ số). Ngày không bán
-                      được gì thì KHÔNG in số: cột xám đã nói lý do, in "0" lên
-                      nó là bịa ra một mốc cao điểm không tồn tại. */}
-                  {hourlyInWindow.length > 0 && Number(hourlyInWindow[peakIndex]?.orders || 0) > 0 && (
-                    <text
-                      x={(peakIndex * bandSlot + bandSlot / 2).toFixed(2)}
-                      y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 3}
-                      textAnchor="middle"
-                      fontSize="9"
-                      fontWeight="bold"
-                      fill="#1e293b"
-                    >
-                      {Number(hourlyInWindow[peakIndex]?.orders || 0)}
-                    </text>
-                  )}
-                  {/* Nhãn giờ: mỗi 3 giờ một nhãn, cộng thêm hai đầu khung. */}
-                  {hourlyInWindow.map((h: any, i: number) => {
-                    const hour = Number(h.hour);
-                    const isEnd = i === hourlyInWindow.length - 1;
-                    if (hour % 3 !== 0 && i !== 0 && !isEnd) return null;
-                    return (
-                      <text
-                        key={`nhan-${h.hour}`}
-                        x={(i * bandSlot + bandSlot / 2).toFixed(2)}
-                        y={BAND_BASE_Y + 8}
-                        textAnchor="middle"
-                        fontSize="8"
-                        fill="#64748b"
-                      >
-                        {hour}h
-                      </text>
-                    );
-                  })}
-                </svg>
-              </div>
-
-              {/* Tiền mặt theo từng ca. `expectedCashLive − openingCash` = tiền mặt
-                  bán TRONG ca đó, cùng đúng định nghĩa mà dòng kỳ vọng ở mục I
-                  đang cộng lên — không trộn hai phạm vi khác nhau. */}
-              <div className="mt-1.5">
-                <p className="font-bold uppercase text-slate-800">- Tiền mặt bán theo từng ca:</p>
+              {/* Tiền mặt theo từng ca */}
+              <div className="mt-2.5">
+                <p className="font-bold uppercase text-slate-800 text-[11px] mb-1">- Tiền mặt bán theo từng ca:</p>
                 {(data.cashboxReconciliation?.sessions || []).length === 0 ? (
                   <p className="italic text-slate-600">- Không có ca két nào trong ngày.</p>
                 ) : (
-                  <table className="w-full border-collapse border border-slate-900 text-[10px] mt-1">
+                  <table className="w-full border-collapse border border-slate-900 text-[10px]">
                     <thead>
                       <tr className="bg-slate-100 font-bold text-center">
-                        <th className="border border-slate-900 p-1 text-left">Thu ngân</th>
-                        <th className="border border-slate-900 p-1 w-24 text-center">Giờ mở</th>
-                        <th className="border border-slate-900 p-1 w-24 text-center">Giờ đóng</th>
-                        <th className="border border-slate-900 p-1 w-28 text-right">Tiền mặt bán</th>
-                        <th className="border border-slate-900 p-1 w-20 text-center">Trạng thái</th>
+                        <th className="border border-slate-900 py-1 px-1.5 text-left">Thu ngân</th>
+                        <th className="border border-slate-900 py-1 px-1.5 w-24 text-center">Giờ mở</th>
+                        <th className="border border-slate-900 py-1 px-1.5 w-24 text-center">Giờ đóng</th>
+                        <th className="border border-slate-900 py-1 px-1.5 w-28 text-right">Tiền mặt bán</th>
+                        <th className="border border-slate-900 py-1 px-1.5 w-20 text-center">Trạng thái</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(data.cashboxReconciliation?.sessions || []).map((s: any) => (
                         <tr key={s.id}>
-                          <td className="border border-slate-900 p-1 font-mono">{s.cashierId}</td>
-                          <td className="border border-slate-900 p-1 text-center font-mono">{vnHm(s.openedAt) || '—'}</td>
-                          <td className="border border-slate-900 p-1 text-center font-mono">
+                          <td className="border border-slate-900 py-1 px-1.5 font-mono">{s.cashierId}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 text-center font-mono">{vnHm(s.openedAt) || '—'}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 text-center font-mono">
                             {s.closedAt ? vnHm(s.closedAt) : '—'}
                           </td>
-                          <td className="border border-slate-900 p-1 text-right font-mono">
+                          <td className="border border-slate-900 py-1 px-1.5 text-right font-mono">
                             {(Number(s.expectedCashLive || 0) - Number(s.openingCash || 0)).toLocaleString('vi-VN')} đ
                           </td>
-                          <td className="border border-slate-900 p-1 text-center">
+                          <td className="border border-slate-900 py-1 px-1.5 text-center">
                             {s.status === 'OPEN' ? 'Còn mở' : 'Đã đóng'}
                           </td>
                         </tr>
@@ -1390,34 +1303,179 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
-            {/* II. Đơn vượt trần chiết khấu — người duyệt phải chịu trách nhiệm
-                nên giữ đủ tên người duyệt + thu ngân trên bản in. Trên 10 dòng thì
-                cắt và đếm phần dư, không kéo dài biên bản.
+            {/* III. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT */}
+            <div className="print-block space-y-2 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1.5 mb-2.5 tracking-wider text-[12px]">
+                III. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
+              </h3>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 leading-relaxed">
+                <div>
+                  {data.highlight ? (
+                    <span>
+                      - Đơn giá trị cao nhất: <strong className="font-mono">{data.highlight.orderCode}</strong> ·{' '}
+                      <strong>{(data.highlight.finalAmount || 0).toLocaleString('vi-VN')} đ</strong> · TT:{' '}
+                      {paymentMethodLabel(data.highlight.paymentMethod)} · <strong>{data.highlight.itemCount || 0} SP</strong>
+                      {vnHm(data.highlight.createdAt) ? ` · ${vnHm(data.highlight.createdAt)}` : ''}
+                    </span>
+                  ) : (
+                    <span className="italic text-slate-600">- Ngày này không có đơn hàng nào.</span>
+                  )}
+                </div>
+                <div>
+                  {peakHourOrders > 0 ? (
+                    <span>
+                      - Giờ cao điểm bán chạy: <strong className="font-mono">{peakHourNumber}h</strong> (<strong>{peakHourOrders} đơn</strong> · <strong>{peakHourSales.toLocaleString('vi-VN')} đ</strong>)
+                    </span>
+                  ) : (
+                    <span className="italic text-slate-600">- Chưa ghi nhận mốc giờ cao điểm.</span>
+                  )}
+                </div>
+              </div>
 
-                KHÔNG ép `break-before: page` ở đây: đo thật bằng Chrome headless với
-                dữ liệu tải nặng (10 ấn phẩm bán chạy + 14 đơn vượt trần + 22 ấn phẩm
-                đã bán), ép ngắt trang và không ép đều ra ĐÚNG 3 TRANG — ép chỉ làm
-                trang 2 chỉ chứa mục II rồi bỏ trống, đúng thứ owner phàn về (thừa
-                giấy trắng). Vẫn giữ `break-inside: avoid` cho từng khối. */}
-            <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
-              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
+              {/* Dải giờ VN vẽ bằng SVG: viewBox 720x68 với BASE_Y=48 và PLOT_H=30 chống lẹm số */}
+              <div className="mt-2">
+                <p className="font-bold uppercase text-slate-800 text-[11px] mb-1">
+                  - Số đơn theo giờ ({hourWin.start}h–{hourEndShown}h, giờ Việt Nam):
+                </p>
+                <svg
+                  viewBox={`0 0 ${BAND_W} ${BAND_H}`}
+                  className="w-full h-auto mt-1"
+                  fontFamily="monospace"
+                  role="img"
+                  aria-label={`Số đơn bán theo từng giờ từ ${hourWin.start}h đến ${hourEndShown}h giờ Việt Nam`}
+                >
+                  {/* Trục đáy mỏng định vị biểu đồ */}
+                  <line x1="0" y1={BAND_BASE_Y} x2={BAND_W} y2={BAND_BASE_Y} stroke="#e2e8f0" strokeWidth="1" />
+
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const n = Number(h.orders || 0);
+                    const bh = bandBarH(n);
+                    const x = (i * bandSlot + 4).toFixed(2);
+                    const wRect = Math.max(4, bandSlot - 8).toFixed(2);
+                    const isPeak = i === peakIndex && n > 0;
+                    return n > 0 ? (
+                      <rect
+                        key={h.hour}
+                        x={x}
+                        y={BAND_BASE_Y - bh}
+                        width={wRect}
+                        height={bh}
+                        rx="3"
+                        fill="#4f46e5"
+                      />
+                    ) : (
+                      <rect
+                        key={h.hour}
+                        x={x}
+                        y={BAND_BASE_Y - bh}
+                        width={wRect}
+                        height={bh}
+                        rx="1"
+                        fill="#cbd5e1"
+                      />
+                    );
+                  })}
+                  {/* Số lượng đơn trên các cột có phát sinh đơn (chống lẹm với headroom an toàn) */}
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const n = Number(h.orders || 0);
+                    if (n <= 0) return null;
+                    const bh = bandBarH(n);
+                    const isPeak = i === peakIndex;
+                    return (
+                      <text
+                        key={`val-${h.hour}`}
+                        x={(i * bandSlot + bandSlot / 2).toFixed(2)}
+                        y={BAND_BASE_Y - bh - 4}
+                        textAnchor="middle"
+                        fontSize={isPeak ? '9.5' : '8.5'}
+                        fontWeight={isPeak ? '900' : 'bold'}
+                        fill={isPeak ? '#1e1b4b' : '#334155'}
+                      >
+                        {n}
+                      </text>
+                    );
+                  })}
+                  {/* Nhãn giờ: mỗi 3 giờ một nhãn, cộng thêm hai đầu khung */}
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const hour = Number(h.hour);
+                    const isEnd = i === hourlyInWindow.length - 1;
+                    if (hour % 3 !== 0 && i !== 0 && !isEnd) return null;
+                    return (
+                      <text
+                        key={`nhan-${h.hour}`}
+                        x={(i * bandSlot + bandSlot / 2).toFixed(2)}
+                        y={BAND_BASE_Y + 13}
+                        textAnchor="middle"
+                        fontSize="8.5"
+                        fill="#64748b"
+                      >
+                        {hour}h
+                      </text>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              {/* Top 10 Bán chạy */}
+              <div className="mt-2.5">
+                <p className="font-bold uppercase text-slate-800 text-[11px] mb-1">
+                  - Top 10 ấn phẩm bán chạy nhất:
+                </p>
+                <table className="w-full border-collapse border border-slate-900 text-[10px]">
+                  <thead>
+                    <tr className="bg-slate-100 font-bold text-center">
+                      <th className="border border-slate-900 py-1 px-1.5 w-8">#</th>
+                      <th className="border border-slate-900 py-1 px-1.5 w-16">Mã</th>
+                      <th className="border border-slate-900 py-1 px-1.5 text-left">Tên ấn phẩm</th>
+                      <th className="border border-slate-900 py-1 px-1.5 w-14 text-right">Số cuốn</th>
+                      <th className="border border-slate-900 py-1 px-1.5 w-24 text-right">Doanh thu</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.topSellers || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="border border-slate-900 py-1 px-1.5 text-center italic">
+                          Không có ấn phẩm nào bán ra trong ngày.
+                        </td>
+                      </tr>
+                    ) : (
+                      (data.topSellers || []).map((s: any, i: number) => (
+                        <tr key={s.editionId}>
+                          <td className="border border-slate-900 py-1 px-1.5 text-center font-mono">{i + 1}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 text-center font-mono font-bold">{s.code}</td>
+                          <td className="border border-slate-900 py-1 px-1.5">{s.title}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 text-right font-mono">{s.soldCopies}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 text-right font-mono">
+                            {(s.soldRevenue || 0).toLocaleString('vi-VN')} đ
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* IV. ĐƠN VƯỢT TRẦN CHIẾT KHẤU */}
+            <div className="print-block space-y-2 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1.5 mb-2.5 tracking-wider text-[12px]">
+                IV. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
                   <tr className="bg-slate-100 font-bold text-center">
-                    <th className="border border-slate-900 p-1 w-8">#</th>
-                    <th className="border border-slate-900 p-1 w-20">Mã đơn</th>
-                    <th className="border border-slate-900 p-1 text-left">Thu ngân</th>
-                    <th className="border border-slate-900 p-1 w-14 text-center">CK</th>
-                    <th className="border border-slate-900 p-1 w-24 text-right">Thực thu</th>
-                    <th className="border border-slate-900 p-1 text-left">Người duyệt</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-8">#</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-20">Mã đơn</th>
+                    <th className="border border-slate-900 py-1 px-1.5 text-left">Thu ngân</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-14 text-center">CK</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-24 text-right">Thực thu</th>
+                    <th className="border border-slate-900 py-1 px-1.5 text-left">Người duyệt</th>
                   </tr>
                 </thead>
                 <tbody>
                   {overCapOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="border border-slate-900 p-1.5 text-center italic">
+                      <td colSpan={6} className="border border-slate-900 py-1.5 px-2 text-center italic">
                         Không có đơn vượt trần chiết khấu 20% trong ngày.
                       </td>
                     </tr>
@@ -1425,21 +1483,21 @@ export function DailyFairSettlementModal({
                     <>
                       {overCapOrders.slice(0, 10).map((ord: any, idx: number) => (
                         <tr key={ord.id}>
-                          <td className="border border-slate-900 p-1 text-center font-mono">{idx + 1}</td>
-                          <td className="border border-slate-900 p-1 font-mono font-bold">{ord.orderCode}</td>
-                          <td className="border border-slate-900 p-1 font-mono">{ord.cashierId}</td>
-                          <td className="border border-slate-900 p-1 text-center font-mono">
+                          <td className="border border-slate-900 py-1 px-1.5 text-center font-mono">{idx + 1}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 font-mono font-bold">{ord.orderCode}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 font-mono">{ord.cashierId}</td>
+                          <td className="border border-slate-900 py-1 px-1.5 text-center font-mono">
                             {Math.round((ord.discountRate || 0) * 100)}%
                           </td>
-                          <td className="border border-slate-900 p-1 text-right font-mono">
+                          <td className="border border-slate-900 py-1 px-1.5 text-right font-mono">
                             {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
                           </td>
-                          <td className="border border-slate-900 p-1">{ord.approvedBy}</td>
+                          <td className="border border-slate-900 py-1 px-1.5">{ord.approvedBy}</td>
                         </tr>
                       ))}
                       {overCapOrders.length > 10 && (
                         <tr>
-                          <td colSpan={6} className="border border-slate-900 p-1 text-center italic font-bold">
+                          <td colSpan={6} className="border border-slate-900 py-1 px-1.5 text-center italic font-bold">
                             +{overCapOrders.length - 10} đơn khác (xem trên màn hình)
                           </td>
                         </tr>
@@ -1450,40 +1508,36 @@ export function DailyFairSettlementModal({
               </table>
             </div>
 
-            {/* III. Tồn gọn — CHỈ ấn phẩm thực sự bán ra trong ngày (soldToday > 0).
-                Ấn phẩm tồn không bán là tĩnh, không in (một gian hàng có 81 ấn bản
-                thì bảng đầy đủ đẩy biên bản ra trang 3-4 vô nghĩa). Bảng này KHÔNG
-                cap: đã bán mấy ấn phẩm thì in hết mấy ấn phẩm — thiếu dòng là
-                báo thiếu hàng, mà cột này là biên bản bàn giao cho kế toán. */}
-            <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
-              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
-                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+            {/* V. TỒN SÁCH CUỐI NGÀY */}
+            <div className="print-block space-y-2 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1.5 mb-2.5 tracking-wider text-[12px]">
+                V. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
               </h3>
               <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
                   <tr className="bg-slate-100 font-bold text-center">
-                    <th className="border border-slate-900 p-1 w-8">#</th>
-                    <th className="border border-slate-900 p-1 w-16">Mã</th>
-                    <th className="border border-slate-900 p-1 text-left">Tên ấn phẩm</th>
-                    <th className="border border-slate-900 p-1 w-16 text-right">Đã bán</th>
-                    <th className="border border-slate-900 p-1 w-20 text-right">Tồn còn</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-8">#</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-16">Mã</th>
+                    <th className="border border-slate-900 py-1 px-1.5 text-left">Tên ấn phẩm</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-16 text-right">Đã bán</th>
+                    <th className="border border-slate-900 py-1 px-1.5 w-20 text-right">Tồn còn</th>
                   </tr>
                 </thead>
                 <tbody>
                   {soldOnlyRows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="border border-slate-900 p-1.5 text-center italic">
+                      <td colSpan={5} className="border border-slate-900 py-1.5 px-2 text-center italic">
                         Trong ngày không bán ấn phẩm nào.
                       </td>
                     </tr>
                   ) : (
                     soldOnlyRows.map((it: any, idx: number) => (
                       <tr key={it.editionId}>
-                        <td className="border border-slate-900 p-1 text-center font-mono">{idx + 1}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono font-bold">{it.code}</td>
-                        <td className="border border-slate-900 p-1">{it.title}</td>
-                        <td className="border border-slate-900 p-1 text-right font-mono">{it.soldToday || 0}</td>
-                        <td className="border border-slate-900 p-1 text-right font-mono font-bold">
+                        <td className="border border-slate-900 py-1 px-1.5 text-center font-mono">{idx + 1}</td>
+                        <td className="border border-slate-900 py-1 px-1.5 text-center font-mono font-bold">{it.code}</td>
+                        <td className="border border-slate-900 py-1 px-1.5">{it.title}</td>
+                        <td className="border border-slate-900 py-1 px-1.5 text-right font-mono">{it.soldToday || 0}</td>
+                        <td className="border border-slate-900 py-1 px-1.5 text-right font-mono font-bold">
                           {it.theoreticalStock}
                         </td>
                       </tr>
@@ -1491,21 +1545,17 @@ export function DailyFairSettlementModal({
                   )}
                 </tbody>
               </table>
-              {/* 2 dòng tổng kết cuối ngày. Tổng số cuốn bán ra cộng ở TRÌNH DUYỆT từ
-                  `soldToday` của chính các dòng in ở bảng trên — nguồn là
-                  `inventoryReconciliation`, tức CHỈ ấn phẩm có dòng tồn ghi nhận
-                  trong kho; ấn phẩm bán mà không có dòng tồn thì không vào
-                  bảng này (không phải tổng quantity mọi order_items của ngày). */}
-              <div className="grid grid-cols-2 gap-x-8 gap-y-0.5 mt-1">
+              {/* Tổng kết số cuốn đã bán & tồn lý thuyết */}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 mt-2 leading-relaxed">
                 <div>
-                  - TỔNG SỐ CUỒN BÁN RA: <strong className="font-mono">{soldTodayTotal} cuốn</strong>
+                  - TỔNG SỐ CUỐN BÁN RA: <strong className="font-mono">{soldTodayTotal} cuốn</strong>
                 </div>
                 <div>
                   - Chiết khấu bình quân:{' '}
                   <strong className="font-mono">{((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%</strong>
                 </div>
               </div>
-              <p className="text-[11px]">
+              <p className="text-[11px] mt-1">
                 - TỔNG SỐ CUỐN TỒN LÝ THUYẾT: <strong className="font-mono">{totalTheoreticalBooks} cuốn</strong>{' '}
                 <span className="italic text-amber-800">(chưa kiểm kê thực tế)</span>
               </p>
@@ -1516,31 +1566,30 @@ export function DailyFairSettlementModal({
               )}
             </div>
 
-            {/* IV. Chữ ký 3 bên thu thấp (h-12) để biên bản vẫn vừa trang mà chỗ
-                ký vẫn đủ để viết tay — biên bản này người ta KÝ THẬT. */}
-            <div className="print-block font-sans grid grid-cols-3 gap-4 text-center text-xs mt-6 pt-2">
+            {/* VI. XÁC NHẬN BÀN GIAO (CHỮ KÝ 3 BÊN) */}
+            <div className="print-block font-sans grid grid-cols-3 gap-6 text-center text-xs mt-8 pt-3">
               <div>
                 <p className="font-bold uppercase text-slate-900">Thu ngân lập biên bản</p>
-                <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>
-                <div className="h-12" />
-                <p className="font-bold text-slate-800">................................</p>
+                <p className="italic text-[11px] text-slate-500 mt-0.5">(Ký, ghi rõ họ tên)</p>
+                <div className="h-24" />
+                <p className="font-bold text-slate-800">................................................</p>
               </div>
 
               <div>
                 <p className="font-bold uppercase text-slate-900">Quản lý gian hàng / Trưởng ca</p>
-                <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>
-                <div className="h-12" />
-                <p className="font-bold text-slate-800">................................</p>
+                <p className="italic text-[11px] text-slate-500 mt-0.5">(Ký, ghi rõ họ tên)</p>
+                <div className="h-24" />
+                <p className="font-bold text-slate-800">................................................</p>
               </div>
 
               <div>
                 <p className="font-bold uppercase text-slate-900">Thủ kho nhận bàn giao sách</p>
-                <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>
-                <div className="h-12" />
-                <p className="font-bold text-slate-800">................................</p>
+                <p className="italic text-[11px] text-slate-500 mt-0.5">(Ký, ghi rõ họ tên)</p>
+                <div className="h-24" />
+                <p className="font-bold text-slate-800">................................................</p>
               </div>
             </div>
-            </div>,
+          </div>,
           document.body
         )}
       </div>
