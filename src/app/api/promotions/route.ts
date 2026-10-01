@@ -15,7 +15,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
   try {
-    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
+    // Thu ngân cần đọc cấu hình quà để trên giỏ hiện badge "Quà".
+    // Chỉ GHI (POST/PATCH) mới khóa Quản lý/Chủ.
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
     const items = await PromotionService.list();
     return NextResponse.json({ success: true, promotions: items, total: items.length });
   } catch (error: unknown) {
