@@ -33,6 +33,14 @@ export interface DayRevenue {
   total: number;
 }
 
+/** Nhãn tiếng Việt (có dấu) cho `warehouses.warehouseType` — dùng ở thẻ "Kho Vận Vật Lý". */
+const WAREHOUSE_TYPE_LABEL: Record<string, string> = {
+  PHYSICAL_MAIN: 'Kho vật lý chính',
+  FAIR_EVENT: 'Gian hàng hội chợ',
+  CONSIGNMENT: 'Kho đại lý',
+  IN_TRANSIT: 'Hàng đang chuyển',
+};
+
 // Mọi cột thời gian trong DB là UTC; ngày/giờ người dùng đọc là giờ Việt Nam
 // (UTC+7, không DST). `parseDbTimestamp` đọc được CẢ HAI họ timestamp đang
 // cùng tồn tại (ISO 'T' do app ghi và ' ' do SQLite CURRENT_TIMESTAMP ghi).
@@ -130,7 +138,37 @@ export function ExecutiveDashboard({
     warehouseCount: number;
     warehouseNames: string[];
   } | null>(null);
-  const [selectedSettlementWarehouseId, setSelectedSettlementWarehouseId] = useState<string>('wh-du-phong');
+  /**
+   * Phạm vi kho của TOÀN TRANG. Trước đây dropdown chỉ đổi kho cho modal báo cáo
+   * ngày, còn số liệu tổng quan luôn là toàn hệ thống — bấm kho nào cũng thấy
+   * cùng một con số. Nay `selectedWarehouseId` gắn vào MỌI fetch (`/api/orders`
+   * và `/api/analytics?view=stock-summary`), nên 4 KPI, tách sổ kép, trend 7 ngày,
+   * donut, top 5 và đơn gần đây đều tính từ `orders`/`stockSummary` đã lọc —
+   * các khối đó KHÔNG cần sửa code.
+   *
+   * 'ALL' = toàn hệ thống. Được nhớ lại giữa các phiên (đọc lúc mount).
+   */
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>(
+    () => (typeof window !== 'undefined' && localStorage.getItem('dashboard.warehouseId')) || 'ALL'
+  );
+  /**
+   * Kho bị gán cho thu ngân (`/api/auth/me` → `assignedWarehouseId`). Khi có,
+   * ép phạm vi về đúng kho của ca và KHÔNG cho chọn kho khác.
+   */
+  const [lockedWarehouseId, setLockedWarehouseId] = useState<string | null>(null);
+  /** Modal "Báo Cáo Ngày" luôn cần MỘT kho: khi phạm vi là 'ALL' thì lấy kho hội chợ đầu tiên (giữ hành vi cũ). */
+  const [defaultFairWarehouseId, setDefaultFairWarehouseId] = useState<string>('wh-du-phong');
+
+  const pickWarehouse = (id: string) => {
+    setSelectedWarehouseId(id);
+    try {
+      localStorage.setItem('dashboard.warehouseId', id);
+    } catch {
+      /* Safari ẩn danh / chặn storage: bỏ qua, chỉ mất tính năng nhớ lựa chọn */
+    }
+  };
+
+  const scopeParam = selectedWarehouseId !== 'ALL' ? `&warehouseId=${encodeURIComponent(selectedWarehouseId)}` : '';
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -138,10 +176,10 @@ export function ExecutiveDashboard({
       const [orderRes, stockRes] = await Promise.all([
         // no-store: bấm "Làm mới" phải đọc server thật, không phải bản cache
         // của trình duyệt (dynamic route nhưng client fetch vẫn bị HTTP cache).
-        fetch('/api/orders?fiscalScope=ALL', { cache: 'no-store' }),
+        fetch(`/api/orders?fiscalScope=ALL${scopeParam}`, { cache: 'no-store' }),
         // Số liệu tồn kho. Trước đây thẻ "Tồn Kho" hiển thị CHỮ VIẾT CỨNG
         // "81 Đầu Sách" + "(3 Kho)" + tên kho viết thẳng, nên không bao giờ đúng.
-        fetch('/api/analytics?view=stock-summary', { cache: 'no-store' }),
+        fetch(`/api/analytics?view=stock-summary${scopeParam}`, { cache: 'no-store' }),
       ]);
       const orderData = await orderRes.json();
       const stockData = await stockRes.json();
@@ -161,7 +199,26 @@ export function ExecutiveDashboard({
 
   useEffect(() => {
     fetchDashboardData();
-  }, [currentRole]);
+  }, [currentRole, selectedWarehouseId]);
+
+  // Thu ngân được gán kho thì chỉ được xem đúng kho của mình. `/api/auth/me` đã
+  // trả `assignedWarehouseId` (POS dùng đúng endpoint này) — không cần API mới.
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!alive) return;
+        const wid = j?.data?.assignedWarehouseId;
+        if (!wid) return;
+        setLockedWarehouseId(wid);
+        setSelectedWarehouseId(wid);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     async function loadWarehouses() {
@@ -176,7 +233,7 @@ export function ExecutiveDashboard({
           // không có dữ liệu trong khi thực ra là chọn sai kho.
           const fairWh = json.data.find((w: any) => w.warehouseType === 'FAIR_EVENT');
           if (fairWh) {
-            setSelectedSettlementWarehouseId(fairWh.id);
+            setDefaultFairWarehouseId(fairWh.id);
           }
         }
       } catch (err) {
@@ -185,6 +242,21 @@ export function ExecutiveDashboard({
     }
     loadWarehouses();
   }, []);
+
+  // Kho đã lưu có thể không còn tồn tại (xoá / ngưng hoạt động). Giữ id cũ thì
+  // mọi API trả rỗng ⇒ trang hiện "0 đơn / 0 kho" như thể hệ thống hết hàng.
+  // Vì vậy id lạ ⇒ quay về 'ALL' và ghi đè giá trị cũ trong localStorage.
+  useEffect(() => {
+    if (warehouses.length === 0 || selectedWarehouseId === 'ALL') return;
+    if (lockedWarehouseId) return; // kho gán phải còn thì server mới trả lỗi, đừng âm thầm đổi phạm vi
+    if (warehouses.some((w: any) => w.id === selectedWarehouseId)) return;
+    setSelectedWarehouseId('ALL');
+    try {
+      localStorage.setItem('dashboard.warehouseId', 'ALL');
+    } catch {
+      /* storage bị chặn — không sao, chỉ mất nhớ lựa chọn */
+    }
+  }, [warehouses, selectedWarehouseId, lockedWarehouseId]);
 
   // Thẻ "Sách sắp hết hàng" KHÔNG tồn tại trong JSX: `lowStockBooks` cũ chỉ
   // được tính ra rồi bỏ không, và biến `matrixBooks` từng được setState ở đâu đó
@@ -210,6 +282,21 @@ export function ExecutiveDashboard({
 
   const isOwnerOrManager = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
+  /** Kho mà modal "Báo Cáo Ngày" sẽ mở: kho đang chọn, hoặc kho hội chợ đầu tiên khi phạm vi là toàn hệ thống. */
+  const settlementWarehouseId =
+    selectedWarehouseId !== 'ALL' ? selectedWarehouseId : defaultFairWarehouseId;
+
+  /** Tên kho dùng cho banner + modal; null khi phạm vi là toàn hệ thống. */
+  const scopeWarehouseName =
+    selectedWarehouseId === 'ALL'
+      ? null
+      : (warehouses.find((w: any) => w.id === selectedWarehouseId)?.name ?? selectedWarehouseId);
+
+  /** Thu ngân bị gán kho không được chọn kho khác — chỉ hiện đúng kho của ca. */
+  const selectableWarehouses = lockedWarehouseId
+    ? warehouses.filter((w: any) => w.id === lockedWarehouseId)
+    : warehouses;
+
   return (
     <div className="space-y-6">
       {/* Top Welcome & Status Banner */}
@@ -227,6 +314,10 @@ export function ExecutiveDashboard({
           <h2 className="text-2xl font-black mt-1 text-white tracking-tight">
             Bảng Quản Trị Vận Hành Toàn Cảnh
           </h2>
+          {/* Dòng phạm vi: mọi số bên dưới thuộc đúng kho đang chọn ở thanh nút trên cùng. */}
+          <p className="text-sm font-bold text-amber-300 mt-0.5">
+            Phạm vi: {scopeWarehouseName ?? 'Tất cả kho'}
+          </p>
           <p className="text-sm text-slate-300 mt-0.5 max-w-2xl">
             Giám sát toàn diện 3 Khối Cốt Lõi: Kho Hàng 3 Địa Điểm, Quầy Thu Ngân Bán Sách và Sổ Kép Tài Chính.
           </p>
@@ -273,31 +364,38 @@ export function ExecutiveDashboard({
             <Activity className="w-4 h-4" />
             Xem Trạng Thái
           </button>
-          {/* Bộ chọn kho & nút chốt ngày hội chợ */}
+          {/* Bộ chọn phạm vi kho: đổi phạm vi thì TOÀN TRANG đổi theo (đã gắn vào mọi fetch) */}
           <div className="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl p-1 shadow-inner shrink-0 max-w-full">
             <Building2 className="w-3.5 h-3.5 text-amber-400 ml-2 mr-1 shrink-0" />
             <select
-              value={selectedSettlementWarehouseId}
-              onChange={(e) => setSelectedSettlementWarehouseId(e.target.value)}
+              value={selectedWarehouseId}
+              onChange={(e) => pickWarehouse(e.target.value)}
               className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer pr-2 max-w-[200px] truncate min-w-0"
-              title="Chọn kho / gian hàng cần kết toán"
+              title="Chọn kho muốn xem — mọi số liệu trên trang đổi theo kho này"
+              aria-label="Chọn kho để xem số liệu tổng quan"
             >
-              {warehouses.length > 0 ? (
-                warehouses.map((w) => (
+              {!lockedWarehouseId && (
+                <option value="ALL" className="bg-slate-900 text-white">
+                  Tất cả kho
+                </option>
+              )}
+              {selectableWarehouses.length > 0 ? (
+                selectableWarehouses.map((w) => (
                   <option key={w.id} value={w.id} className="bg-slate-900 text-white">
                     {w.name}
                   </option>
                 ))
               ) : (
-                <option value="wh-du-phong" className="bg-slate-900 text-white">
-                  Kho 3 - Hội Chợ
+                <option value={lockedWarehouseId || 'ALL'} className="bg-slate-900 text-white">
+                  {lockedWarehouseId || 'Kho 3 - Hội Chợ'}
                 </option>
               )}
             </select>
             <button
               onClick={() => setIsSettlementModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer shrink-0"
-              title="Xem báo cáo chốt ngày. Ngày được máy chốt tự động lúc 23:59, nút này không chốt ngày."
+              title="Xem báo cáo chốt ngày của kho đang chọn. Ngày được máy chốt tự động lúc 23:59, nút này không chốt ngày."
+              aria-label="Xem Báo Cáo Ngày của kho đang chọn"
             >
               <CalendarCheck className="w-3.5 h-3.5" />
               Báo Cáo Ngày
@@ -361,7 +459,9 @@ export function ExecutiveDashboard({
           </p>
         </div>
 
-        {/* Tổng Tồn Kho Vật Lý — số liệu lấy THẬT từ API, không ghi cứng. */}
+        {/* Tổng Tồn Kho Vật Lý — số liệu lấy THẬT từ API, không ghi cứng. Lọc theo kho
+            KHÔNG cần sửa khối này: `/api/analytics?view=stock-summary&warehouseId=`
+            đã trả `warehouseCount=1` + `warehouseNames=[tên kho đó]`. */}
         <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -495,35 +595,39 @@ export function ExecutiveDashboard({
           </div>
 
           <div className="space-y-3">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-900">Kho 1 - Âu Cơ</p>
-                <p className="text-[11px] text-slate-500">Văn phòng chính & Xuất lẻ</p>
-              </div>
-              <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 font-mono">
-                Sẵn sàng
-              </span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-900">Kho 2 - Quỳnh Mai</p>
-                <p className="text-[11px] text-slate-500">Kho lưu trữ tổng số lượng lớn</p>
-              </div>
-              <span className="px-2 py-1 rounded-lg text-xs font-bold bg-slate-200 text-slate-700 font-mono">
-                Kho tổng
-              </span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-900">Kho 3 - Hội Chợ</p>
-                <p className="text-[11px] text-slate-500">Gian hàng sự kiện lưu động</p>
-              </div>
-              <span className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 font-mono">
-                POS Bán
-              </span>
-            </div>
+            {/* Trước đây 3 thẻ này viết CỨNG tên kho + mô tả — thêm kho thứ 4 là
+                sai ngay, còn kho bị xoá thì vẫn hiện. Nay dựng từ /api/warehouses. */}
+            {warehouses.length === 0 ? (
+              <p className="text-xs text-slate-400">Đang tải danh sách kho…</p>
+            ) : (
+              warehouses.map((w: any) => (
+                <div
+                  key={w.id}
+                  className={`p-3 rounded-xl border flex items-center justify-between ${
+                    w.id === selectedWarehouseId
+                      ? 'bg-amber-50 border-amber-300'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 truncate">{w.name}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {WAREHOUSE_TYPE_LABEL[w.warehouseType] || 'Kho'}
+                      {w.code ? ` · ${w.code}` : ''}
+                    </p>
+                  </div>
+                  <span
+                    className={`px-2 py-1 rounded-lg text-xs font-bold font-mono shrink-0 ml-2 ${
+                      w.isActive
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {w.isActive ? 'Hoạt động' : 'Ngưng'}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -708,9 +812,10 @@ export function ExecutiveDashboard({
       <DailyFairSettlementModal
         isOpen={isSettlementModalOpen}
         onClose={() => setIsSettlementModalOpen(false)}
-        warehouseId={selectedSettlementWarehouseId}
+        warehouseId={settlementWarehouseId}
         warehouseName={
-          warehouses.find((w) => w.id === selectedSettlementWarehouseId)?.name || 'Kho 3 - Hội Chợ (Gian hàng sự kiện)'
+          warehouses.find((w: any) => w.id === settlementWarehouseId)?.name ||
+          'Kho 3 - Hội Chợ (Gian hàng sự kiện)'
         }
         currentRole={currentRole}
       />
