@@ -1,6 +1,6 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
-**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `ee6b50d7` (sửa tổng thể cài đặt KM) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
+**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `6e1aafcd` (sửa gốc quà không vào giỏ) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
 |---|---|
@@ -8,7 +8,7 @@
 | **Worktree đang làm** | `D:\Data Project\formapubli-promo` |
 | Branch | `main` (đã merge `feat/khuyen-mai-san-pham` — merge commit `1d95371`, push origin xác nhận) |
 | HEAD | `1d95371` + docs sau deploy |
-| Production version đang chạy | `ee6b50d7-4307-47bd-8c0e-364227c10b77` (deploy tối 02/10 lần 4: sửa tổng thể cài đặt KM — giờ VN, phạm vi kho 0034, mốc gộp nhiều quà; site sống) |
+| Production version đang chạy | `6e1aafcd-fc7f-43b7-aebe-9eda9b4dcbe0` (deploy tối 02/10 lần 5: sửa gốc quà không vào giỏ — matrix/sổ cái đọc products; site sống) |
 
 > **NGƯỜI ĐỌC PHẢI LÀM ĐƯỢC NGAY, KHÔNG PHẢI SUY LUẬN.** Mọi con số dưới đây là số đo được, không phải ước lượng. Lệnh copy chạy được nguyên văn.
 
