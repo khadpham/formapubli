@@ -203,8 +203,10 @@ export function DailyFairSettlementModal({
              Nếu chỉ dùng "visibility: hidden" thì nội dung ẩn VẪN CHIẾM CHỖ ⇒
              trình duyệt in ra hàng chục trang TRẮNG nối sau biên bản.
              :has() loại đúng nhánh chứa biên bản (portal của nó nằm thẳng con
-             của body). */
-          body > *:not(:has(#printable-settlement-report)) {
+             của body). :not(#id) phía sau là bắt buộc: riêng :has() không đủ —
+             độ đặc hiệu (1,0,1) của nó thắng rule #id { display:block !important }
+             (1,0,0), cả hai đều !important nên biên bản vẫn bị ẩn ⇒ in trắng. */
+          body > *:not(:has(#printable-settlement-report)):not(#printable-settlement-report) {
             display: none !important;
           }
           #printable-settlement-report,
