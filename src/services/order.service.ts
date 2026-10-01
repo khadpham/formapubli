@@ -2745,6 +2745,100 @@ export class CashboxService {
   }
 
   /**
+   * CẬP NHẬT SỐ TIỀN THỰC ĐẾM (POST-AUDIT) — Chỉ Quản lý/Chủ cửa hàng.
+   * Dùng khi ca bị tự động chốt (closingCashActual = null) hoặc cần đối soát
+   * lại số tiền thực tế trong két sau khi đã đóng ca.
+   */
+  static async auditClosingCash(
+    params: {
+      sessionId: string;
+      closingCashActual: number;
+      notes?: string;
+      actorRole: string;
+      actorId: string;
+    },
+    txOrDb?: any
+  ) {
+    if (txOrDb) return withDbRetry(() => this.applyAuditClosingCash(txOrDb, params));
+    return withDbRetry(() => db.transaction((tx) => this.applyAuditClosingCash(tx, params)));
+  }
+
+  private static async applyAuditClosingCash(
+    tx: any,
+    params: {
+      sessionId: string;
+      closingCashActual: number;
+      notes?: string;
+      actorRole: string;
+      actorId: string;
+    }
+  ) {
+    const { sessionId, closingCashActual, notes, actorRole, actorId } = params;
+    if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
+      throw AppError.forbidden('Chỉ Quản lý hoặc Chủ cửa hàng mới được cập nhật tiền thực đếm sau khi chốt ca.');
+    }
+    if (!sessionId) {
+      throw AppError.invalid('Thiếu mã phiên két tiền (sessionId).');
+    }
+    if (typeof closingCashActual !== 'number' || !Number.isFinite(closingCashActual) || closingCashActual < 0) {
+      throw AppError.invalid('Số tiền thực đếm không hợp lệ.');
+    }
+
+    const rows = await tx
+      .select()
+      .from(cashboxSessions)
+      .where(eq(cashboxSessions.id, sessionId))
+      .limit(1);
+
+    if (rows.length === 0) {
+      throw AppError.invalid(`Không tìm thấy phiên két tiền: ${sessionId}`);
+    }
+
+    const session = rows[0];
+    if (session.status !== 'CLOSED') {
+      throw AppError.invalid(`Phiên két tiền đang mở (${session.status}), vui lòng chốt ca trước khi nhập bổ sung.`);
+    }
+
+    const expectedCash = session.expectedCash ?? (session.openingCash + (session.totalCashSales ?? 0));
+    const cashDiscrepancy = closingCashActual - expectedCash;
+    const auditTag = `AUDIT_COUNT: ${closingCashActual.toLocaleString('vi-VN')} đ (bởi ${actorRole} ${actorId}${notes ? `: ${notes}` : ''})`;
+    const updatedNotes = session.notes ? `${session.notes} | ${auditTag}` : auditTag;
+
+    await tx
+      .update(cashboxSessions)
+      .set({
+        closingCashActual,
+        cashDiscrepancy,
+        notes: updatedNotes,
+      })
+      .where(eq(cashboxSessions.id, sessionId));
+
+    const AUDIT_ID = `aud-cashbox-audit-count-${sessionId}-${Date.now()}`;
+    await tx
+      .insert(auditLogs)
+      .values({
+        id: AUDIT_ID,
+        action: 'AUDIT_CASHBOX_COUNT',
+        actorRole,
+        actorId,
+        resource: '/api/cashbox',
+        details: `Cập nhật số tiền thực đếm sau khi chốt ca ${sessionId}: ${closingCashActual.toLocaleString('vi-VN')} đ (kỳ vọng ${expectedCash.toLocaleString('vi-VN')} đ, lệch ${cashDiscrepancy.toLocaleString('vi-VN')} đ).`.slice(0, 500),
+        ipAddress: 'local',
+      });
+
+    return {
+      sessionId,
+      cashierId: session.cashierId,
+      warehouseId: session.warehouseId,
+      openingCash: session.openingCash,
+      closingCashActual,
+      expectedCash,
+      cashDiscrepancy,
+      status: session.status,
+    };
+  }
+
+  /**
    * Chặn bán tại quầy khi ca của thu ngân đã quá giờ chốt ngày.
    * Hàm thuần: không đọc DB (dùng session row đã tải sẵn) để không làm nặng
    * đường nóng tạo đơn.

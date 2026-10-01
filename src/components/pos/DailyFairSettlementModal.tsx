@@ -24,9 +24,11 @@ import {
   Layers,
   Percent,
   Trophy,
+  Coins,
 } from 'lucide-react';
 import { parseDbTimestamp } from '@/lib/db-timestamp';
 import { HourlyOrdersChart } from './HourlyOrdersChart';
+import { CashboxAuditCountModal } from './CashboxAuditCountModal';
 
 interface DailyFairSettlementModalProps {
   isOpen: boolean;
@@ -181,6 +183,8 @@ export function DailyFairSettlementModal({
   // TRẮNG — người dùng tưởng máy in hỏng. Giữ thông báo ở state để nói rõ
   // vì sao không in, thay vì im lặng cho ra trang trắng.
   const [printNotice, setPrintNotice] = useState<string | null>(null);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [auditModalSessionId, setAuditModalSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -961,6 +965,110 @@ export function DailyFairSettlementModal({
                         </div>
                       )}
 
+                      {/* Bổ sung tiền thực đếm khi có ca đã đóng nhưng chưa có tiền thực đếm */}
+                      {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') &&
+                        (data.cashboxReconciliation?.sessions || []).some(
+                          (s: any) =>
+                            s.status === 'CLOSED' &&
+                            (s.closingCashActual === null || s.closingCashActual === undefined)
+                        ) && (
+                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
+                            <div className="text-xs text-amber-900 pr-2">
+                              <p className="font-bold flex items-center gap-1">
+                                <Coins className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                Có ca đã đóng nhưng chưa có tiền thực đếm
+                              </p>
+                              <p className="text-[11px] text-amber-700">
+                                Nhập tiền thực tế trong két để hệ thống đối soát chênh lệch ngay.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuditModalSessionId(null);
+                                setIsAuditModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition shrink-0"
+                            >
+                              <Coins className="w-3.5 h-3.5" />
+                              Nhập Tiền Thực Đếm
+                            </button>
+                          </div>
+                        )}
+
+                      {/* Danh sách các ca két trong ngày */}
+                      {Array.isArray(data.cashboxReconciliation?.sessions) && data.cashboxReconciliation.sessions.length > 0 && (
+                        <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                            Chi tiết ca két ({data.cashboxReconciliation.sessions.length} ca):
+                          </p>
+                          <div className="space-y-1.5">
+                            {data.cashboxReconciliation.sessions.map((s: any) => {
+                              const uncounted =
+                                s.status === 'CLOSED' &&
+                                (s.closingCashActual === null || s.closingCashActual === undefined);
+                              const exp = s.expectedCashLive ?? s.expectedCash ?? 0;
+                              const isManager = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+                              return (
+                                <div
+                                  key={s.id}
+                                  className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex flex-wrap items-center justify-between gap-2"
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                      <span>Thu ngân: {s.cashierId}</span>
+                                      <span
+                                        className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                                          s.status === 'OPEN'
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : uncounted
+                                            ? 'bg-rose-100 text-rose-800'
+                                            : 'bg-emerald-100 text-emerald-800'
+                                        }`}
+                                      >
+                                        {s.status === 'OPEN'
+                                          ? 'Đang mở'
+                                          : uncounted
+                                          ? 'Chưa đếm két'
+                                          : 'Đã đóng'}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                      Kỳ vọng: <span className="font-mono font-medium text-slate-700">{exp.toLocaleString('vi-VN')} đ</span>
+                                      {' · '}
+                                      Thực đếm:{' '}
+                                      <span className="font-mono font-bold text-slate-800">
+                                        {s.closingCashActual !== null && s.closingCashActual !== undefined
+                                          ? `${s.closingCashActual.toLocaleString('vi-VN')} đ`
+                                          : '—'}
+                                      </span>
+                                    </p>
+                                  </div>
+
+                                  {isManager && s.status === 'CLOSED' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAuditModalSessionId(s.id);
+                                        setIsAuditModalOpen(true);
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+                                        uncounted
+                                          ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm'
+                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                      }`}
+                                    >
+                                      <Coins className="w-3 h-3" />
+                                      {uncounted ? 'Nhập Tiền Thực Đếm' : 'Sửa Tiền Đếm'}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* openShiftAlerts do API trả sẵn (route daily-settlement gắn vào data)
                           nhưng trước đây không màn hình nào đọc.
                           QUAN TRỌNG: `getStaleOpenShiftCheck` trả OBJECT
@@ -1664,6 +1772,14 @@ export function DailyFairSettlementModal({
           </div>,
           document.body
         )}
+        {/* Modal Bổ Sung Tiền Thực Đếm Két */}
+        <CashboxAuditCountModal
+          isOpen={isAuditModalOpen}
+          onClose={() => setIsAuditModalOpen(false)}
+          onSuccess={fetchSettlement}
+          sessions={data?.cashboxReconciliation?.sessions || []}
+          initialSessionId={auditModalSessionId}
+        />
       </div>
     </div>,
     document.body
