@@ -233,6 +233,21 @@ export function DailyFairSettlementModal({
   // tồn lý thuyết. Cố ý KHÔNG in 0 cho phần kiểm kê: số 0 là hẹn số bịa.
   void 0;
 
+  // Dải 24 giờ VN cho biểu đồ cột cao điểm trên bản in. `Math.max(1, ...)` để
+  // ngày không bán được gì vẫn ra 24 cột xám bằng nhau thay vì chia 0 = NaN.
+  const hourly: any[] = data?.ordersByHour || [];
+  const maxHourOrders = Math.max(1, ...hourly.map((h: any) => Number(h.orders || 0)));
+
+  // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
+  const soldOnlyRows: any[] = (data?.inventoryReconciliation || []).filter(
+    (it: any) => Number(it.soldToday || 0) > 0
+  );
+  const soldTodayTotal = soldOnlyRows.reduce((sum: number, it: any) => sum + Number(it.soldToday || 0), 0);
+
+  // Bảng đơn vượt trần chiết khấu trên bản in: cap 10 dòng, phần dư đếm gọn.
+  const overCapOrders: any[] = data?.discountSupervision?.orders || [];
+  const overCapCount = overCapOrders.length;
+
   return createPortal(
     <div
       className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
@@ -266,7 +281,11 @@ export function DailyFairSettlementModal({
             top: 0;
             width: 100%;
             background: white !important;
-            padding: 0 !important;
+            /* LỀ THẬT của bản in nằm ở padding này, KHÔNG nằm ở @page. Chrome bỏ qua
+               margin đặt trong @page khi hộp thoại In để Margins = Default (đa số
+               máy in mặc định vậy) ⇒ owner in ra chữ dính sát mép trên, không có
+               lề. Padding của chính khối in thì luôn được áp dụng. */
+            padding: 12mm 10mm !important;
             margin: 0 !important;
             overflow: visible !important;
             max-height: none !important;
@@ -283,10 +302,14 @@ export function DailyFairSettlementModal({
           }
           /* Khối in hoá đơn nhiệt cũng đặt @page trong @media print với
              margin: 0mm !important — không giữ !important ở đây thì biên bản
-             A4 mất lề, vì rule !important thắng cả rule thường đến sau nó. */
+             A4 mất lề, vì rule !important thắng cả rule thường đến sau nó.
+             Lề của biên bản do PADDING của khối in quyết định (xem trên), nên
+             @page đặt margin: 0 — đặt margin ở đây là may mắn có tác dụng,
+             phần lớn máy in bỏ qua. LƯU Ý: viết comment trong khối <style> này
+             không dùng ngoặc nhọn, test đọc file bằng regex sẽ dừng ở dấu }. */
           @page {
             size: A4 portrait;
-            margin: 10mm !important;
+            margin: 0;
           }
         }
       `}</style>
@@ -511,6 +534,59 @@ export function DailyFairSettlementModal({
                       </div>
                     </div>
                   )}
+
+                  {/* TOP 10 BÁN CHẠY — chuyển từ tab Chiết Khấu sang đây: nó là
+                      thứ bán được bao nhiêu, không phải thứ chiết khấu bao nhiêu.
+                      Tab Chiết Khấu giữ bảng đơn vượt trần + cảnh báo tỷ lệ. */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+                    <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-emerald-600" />
+                      Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                      {data.topSellers?.map((seller: any, idx: number) => (
+                        <div
+                          key={seller.editionId}
+                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
+                                {idx + 1}
+                              </span>
+                              <div>
+                                <p className="font-bold text-slate-800 truncate max-w-[180px]">
+                                  [{seller.code}] {seller.title}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  {(seller.soldRevenue || 0).toLocaleString('vi-VN')} đ
+                                </p>
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs">
+                              {seller.soldCopies} cuốn
+                            </span>
+                          </div>
+                          {/* Thanh ngang CSS thuần (không lib): độ dài = số cuốn so
+                              với ấn phẩm bán chạy nhất. Chuẩn là chính danh sách
+                              này nên không cần trục số. */}
+                          <div
+                            role="img"
+                            aria-label={`${seller.soldCopies} cuốn, so với ấn phẩm bán chạy nhất trong ngày`}
+                            title={`${seller.soldCopies} cuốn so với ấn phẩm bán chạy nhất`}
+                            className="h-1.5 rounded-full bg-slate-200 overflow-hidden"
+                          >
+                            <div
+                              className="h-full rounded-full bg-emerald-500"
+                              style={{
+                                width: `${Math.round(((Number(seller.soldCopies) || 0) / maxTopCopies) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
                   {/* KPI Cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -908,57 +984,6 @@ export function DailyFairSettlementModal({
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Top Sellers */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-                    <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <TrendingUp className="w-4 h-4 text-emerald-600" />
-                      Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      {data.topSellers?.map((seller: any, idx: number) => (
-                        <div
-                          key={seller.editionId}
-                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
-                                {idx + 1}
-                              </span>
-                              <div>
-                                <p className="font-bold text-slate-800 truncate max-w-[180px]">
-                                  [{seller.code}] {seller.title}
-                                </p>
-                                <p className="text-[10px] text-slate-400 font-mono">
-                                  {(seller.soldRevenue || 0).toLocaleString('vi-VN')} đ
-                                </p>
-                              </div>
-                            </div>
-                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs">
-                              {seller.soldCopies} cuốn
-                            </span>
-                          </div>
-                          {/* Thanh ngang CSS thuần (không lib): độ dài = số cuốn so
-                              với ấn phẩm bán chạy nhất. Chuẩn là chính danh sách
-                              này nên không cần trục số. */}
-                          <div
-                            role="img"
-                            aria-label={`${seller.soldCopies} cuốn, so với ấn phẩm bán chạy nhất trong ngày`}
-                            title={`${seller.soldCopies} cuốn so với ấn phẩm bán chạy nhất`}
-                            className="h-1.5 rounded-full bg-slate-200 overflow-hidden"
-                          >
-                            <div
-                              className="h-full rounded-full bg-emerald-500"
-                              style={{
-                                width: `${Math.round(((Number(seller.soldCopies) || 0) / maxTopCopies) * 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               )}
             </>
@@ -1039,10 +1064,10 @@ export function DailyFairSettlementModal({
               </div>
             </div>
 
-            {/* I-BIS. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: thực thu,
-                số đơn, đơn lớn nhất và 5 ấn phẩm bán chạy nhất. Không có
-                highlight (ngày không bán được gì) thì nói thẳng, không in dòng
-                rỗng. Top 5 giới hạn 5 dòng để bản in còn gọn. */}
+            {/* I-BIS. ĐIỂM NHẤN NGÀY — phần đọc nhanh của biên bản: đơn lớn
+                nhất, top 10 bán chạy, giờ cao điểm và tiền mặt theo từng ca.
+                Không có highlight (ngày không bán được gì) thì nói thẳng, không in
+                dòng rỗng. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
                 I-BIS. ĐIỂM NHẤN NGÀY
@@ -1061,78 +1086,226 @@ export function DailyFairSettlementModal({
               ) : (
                 <div className="italic text-slate-600">- Ngày này không có đơn hàng nào.</div>
               )}
-              <div>
-                <p className="font-bold uppercase text-slate-800">- Top 5 ấn phẩm bán chạy nhất:</p>
-                {(data.topSellers || []).length === 0 ? (
-                  <p className="italic text-slate-600">Không có ấn phẩm nào bán ra trong ngày.</p>
+
+              {/* Top 10: mã + tên + số cuốn + tiền. KHÔNG cap ở 5 như bản cũ — bản in
+                  nay còn chỗ và số liệu này dùng để đối chiếu bàn giao sách. */}
+              <table className="w-full border-collapse border border-slate-900 text-[10px] mt-1">
+                <thead>
+                  <tr className="bg-slate-100 font-bold text-center">
+                    <th className="border border-slate-900 p-1 w-8">#</th>
+                    <th className="border border-slate-900 p-1 w-16">Mã</th>
+                    <th className="border border-slate-900 p-1 text-left">Tên ấn phẩm</th>
+                    <th className="border border-slate-900 p-1 w-14 text-right">Số cuốn</th>
+                    <th className="border border-slate-900 p-1 w-24 text-right">Doanh thu</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.topSellers || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="border border-slate-900 p-1 text-center italic">
+                        Không có ấn phẩm nào bán ra trong ngày.
+                      </td>
+                    </tr>
+                  ) : (
+                    (data.topSellers || []).map((s: any, i: number) => (
+                      <tr key={s.editionId}>
+                        <td className="border border-slate-900 p-1 text-center font-mono">{i + 1}</td>
+                        <td className="border border-slate-900 p-1 text-center font-mono font-bold">{s.code}</td>
+                        <td className="border border-slate-900 p-1">{s.title}</td>
+                        <td className="border border-slate-900 p-1 text-right font-mono">{s.soldCopies}</td>
+                        <td className="border border-slate-900 p-1 text-right font-mono">
+                          {(s.soldRevenue || 0).toLocaleString('vi-VN')} đ
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+
+              {/* Dải 24 giờ VN, CSS thuần (không lib): cao = số đơn của giờ đó,
+                  chuẩn là giờ bán nhiều nhất trong chính ngày. Giờ không bán
+                  được gì thì cột xám bằng 0 — giữ đủ 24 cột để đọc là biết ngay
+                  gian hàng mở lúc nào. */}
+              <div className="mt-1.5">
+                <p className="font-bold uppercase text-slate-800">- Số đơn theo giờ (giờ Việt Nam):</p>
+                <div className="flex items-end gap-[2px] h-9 mt-1" role="img" aria-label="Số đơn bán theo từng giờ trong ngày">
+                  {hourly.map((h: any) => {
+                    const n = Number(h.orders || 0);
+                    return (
+                      <div
+                        key={h.hour}
+                        title={`${h.hour}h: ${n} đơn · ${(Number(h.sales || 0)).toLocaleString('vi-VN')} đ`}
+                        className={`flex-1 ${n > 0 ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                        style={{ height: `${n > 0 ? Math.max(8, Math.round((n / maxHourOrders) * 100)) : 4}%` }}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between font-mono text-[9px] text-slate-500 mt-0.5">
+                  <span>0h</span>
+                  <span>6h</span>
+                  <span>12h</span>
+                  <span>18h</span>
+                  <span>23h</span>
+                </div>
+              </div>
+
+              {/* Tiền mặt theo từng ca. `expectedCashLive − openingCash` = tiền mặt
+                  bán TRONG ca đó, cùng đúng định nghĩa mà dòng kỳ vọng ở mục I
+                  đang cộng lên — không trộn hai phạm vi khác nhau. */}
+              <div className="mt-1.5">
+                <p className="font-bold uppercase text-slate-800">- Tiền mặt bán theo từng ca:</p>
+                {(data.cashboxReconciliation?.sessions || []).length === 0 ? (
+                  <p className="italic text-slate-600">- Không có ca két nào trong ngày.</p>
                 ) : (
-                  (data.topSellers || []).slice(0, 5).map((s: any, i: number) => (
-                    <p key={s.editionId} className="pl-3 font-mono">
-                      {i + 1}. [{s.code}] {s.title} — {s.soldCopies} cuốn
-                    </p>
-                  ))
+                  <table className="w-full border-collapse border border-slate-900 text-[10px] mt-1">
+                    <thead>
+                      <tr className="bg-slate-100 font-bold text-center">
+                        <th className="border border-slate-900 p-1 text-left">Thu ngân</th>
+                        <th className="border border-slate-900 p-1 w-24 text-center">Giờ mở</th>
+                        <th className="border border-slate-900 p-1 w-24 text-center">Giờ đóng</th>
+                        <th className="border border-slate-900 p-1 w-28 text-right">Tiền mặt bán</th>
+                        <th className="border border-slate-900 p-1 w-20 text-center">Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.cashboxReconciliation?.sessions || []).map((s: any) => (
+                        <tr key={s.id}>
+                          <td className="border border-slate-900 p-1 font-mono">{s.cashierId}</td>
+                          <td className="border border-slate-900 p-1 text-center font-mono">{vnHm(s.openedAt) || '—'}</td>
+                          <td className="border border-slate-900 p-1 text-center font-mono">
+                            {s.closedAt ? vnHm(s.closedAt) : '—'}
+                          </td>
+                          <td className="border border-slate-900 p-1 text-right font-mono">
+                            {(Number(s.expectedCashLive || 0) - Number(s.openingCash || 0)).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="border border-slate-900 p-1 text-center">
+                            {s.status === 'OPEN' ? 'Còn mở' : 'Đã đóng'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             </div>
 
-            {/* II. Bảng đối soát tồn sách */}
-            <div className="print-block space-y-2 mb-4">
-              <h3 className="font-sans font-bold text-xs text-slate-900 uppercase border-b border-slate-300 pb-1">
-                II. ĐỐI SOÁT TỒN SÁCH TRÊN KỆ & BÀN GIAO ĐÓNG THÙNG
+            {/* III. Đơn vượt trần chiết khấu — người duyệt phải chịu trách nhiệm
+                nên giữ đủ tên người duyệt + thu ngân trên bản in. Trên 10 dòng thì
+                cắt và đếm phần dư, không kéo dài biên bản.
+
+                KHÔNG ép `break-before: page` ở đây: đo thật bằng Chrome headless với
+                dữ liệu tải nặng (10 ấn phẩm bán chạy + 14 đơn vượt trần + 22 ấn phẩm
+                đã bán), ép ngắt trang và không ép đều ra ĐÚNG 3 TRANG — ép chỉ làm
+                trang 2 chỉ chứa mục III rồi bỏ trống, đúng thứ owner phàn về (thừa
+                giấy trắng). Vẫn giữ `break-inside: avoid` cho từng khối. */}
+            <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
+                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
               </h3>
-              {/* Bảng chi tiết theo từng ấn bản KHÔNG in: một gian hàng có 81
-                  ấn bản thì bảng này đẩy biên bản ra trang 3-4, mà bản in này
-                  ký tay cho kế toán chỉ cần TỔNG tồn (dòng ngay dưới bảng).
-                  Màn hình vẫn xem đủ bảng đầy đủ. */}
-              <table className="w-full border-collapse border border-slate-900 text-[11px] print:hidden">
+              <table className="w-full border-collapse border border-slate-900 text-[10px]">
                 <thead>
-                  <tr className="bg-slate-100 font-sans font-bold text-center">
-                    <th className="border border-slate-900 p-1.5 w-8">STT</th>
-                    <th className="border border-slate-900 p-1.5 w-16">Mã SKU</th>
-                    <th className="border border-slate-900 p-1.5 text-left">Tên tác phẩm / Ấn phẩm</th>
-                    <th className="border border-slate-900 p-1.5 w-16 text-right">Đã bán POS</th>
-                    <th className="border border-slate-900 p-1.5 w-20 text-center">Tồn máy tính</th>
-                    <th className="border border-slate-900 p-1.5 w-20 text-center">Kiểm kê</th>
-                    <th className="border border-slate-900 p-1.5 w-24 text-center">Chênh lệch</th>
+                  <tr className="bg-slate-100 font-bold text-center">
+                    <th className="border border-slate-900 p-1 w-8">#</th>
+                    <th className="border border-slate-900 p-1 w-20">Mã đơn</th>
+                    <th className="border border-slate-900 p-1 text-left">Thu ngân</th>
+                    <th className="border border-slate-900 p-1 w-14 text-center">CK</th>
+                    <th className="border border-slate-900 p-1 w-24 text-right">Thực thu</th>
+                    <th className="border border-slate-900 p-1 text-left">Người duyệt</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.inventoryReconciliation?.map((it: any, idx: number) => {
-                    const actual = it.theoreticalStock;
-                    return (
+                  {overCapOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="border border-slate-900 p-1.5 text-center italic">
+                        Không có đơn vượt trần chiết khấu 20% trong ngày.
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {overCapOrders.slice(0, 10).map((ord: any, idx: number) => (
+                        <tr key={ord.id}>
+                          <td className="border border-slate-900 p-1 text-center font-mono">{idx + 1}</td>
+                          <td className="border border-slate-900 p-1 font-mono font-bold">{ord.orderCode}</td>
+                          <td className="border border-slate-900 p-1 font-mono">{ord.cashierId}</td>
+                          <td className="border border-slate-900 p-1 text-center font-mono">
+                            {Math.round((ord.discountRate || 0) * 100)}%
+                          </td>
+                          <td className="border border-slate-900 p-1 text-right font-mono">
+                            {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="border border-slate-900 p-1">{ord.approvedBy}</td>
+                        </tr>
+                      ))}
+                      {overCapOrders.length > 10 && (
+                        <tr>
+                          <td colSpan={6} className="border border-slate-900 p-1 text-center italic font-bold">
+                            +{overCapOrders.length - 10} đơn khác (xem trên màn hình)
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* IV. Tồn gọn — CHỈ ấn phẩm thực sự bán ra trong ngày (soldToday > 0).
+                Ấn phẩm tồn không bán là tĩnh, không in (một gian hàng có 81 ấn bản
+                thì bảng đầy đủ đẩy biên bản ra trang 3-4 vô nghĩa). Bảng này KHÔNG
+                cap: đã bán mấy ấn phẩm thì in hết mấy ấn phẩm — thiếu dòng là
+                báo thiếu hàng, mà cột này là biên bản bàn giao cho kế toán. */}
+            <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
+                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+              </h3>
+              <table className="w-full border-collapse border border-slate-900 text-[10px]">
+                <thead>
+                  <tr className="bg-slate-100 font-bold text-center">
+                    <th className="border border-slate-900 p-1 w-8">#</th>
+                    <th className="border border-slate-900 p-1 w-16">Mã</th>
+                    <th className="border border-slate-900 p-1 text-left">Tên ấn phẩm</th>
+                    <th className="border border-slate-900 p-1 w-16 text-right">Đã bán</th>
+                    <th className="border border-slate-900 p-1 w-20 text-right">Tồn còn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {soldOnlyRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="border border-slate-900 p-1.5 text-center italic">
+                        Trong ngày không bán ấn phẩm nào.
+                      </td>
+                    </tr>
+                  ) : (
+                    soldOnlyRows.map((it: any, idx: number) => (
                       <tr key={it.editionId}>
                         <td className="border border-slate-900 p-1 text-center font-mono">{idx + 1}</td>
                         <td className="border border-slate-900 p-1 text-center font-mono font-bold">{it.code}</td>
-                        <td className="border border-slate-900 p-1 font-medium">{it.title}</td>
+                        <td className="border border-slate-900 p-1">{it.title}</td>
                         <td className="border border-slate-900 p-1 text-right font-mono">{it.soldToday || 0}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono font-bold">{it.theoreticalStock}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono">{actual}</td>
-                        <td className="border border-slate-900 p-1 text-center font-mono text-slate-400">
-                          Chưa kiểm kê
+                        <td className="border border-slate-900 p-1 text-right font-mono font-bold">
+                          {it.theoreticalStock}
                         </td>
                       </tr>
-                    );
-                  })}
-                  <tr className="font-bold bg-slate-50 font-sans">
-                    <td colSpan={4} className="border border-slate-900 p-1.5 text-center uppercase">
-                      TỔNG SỐ CUỐN TỒN LÝ THUYẾT:
-                    </td>
-                    <td className="border border-slate-900 p-1.5 text-center font-mono">{totalTheoreticalBooks}</td>
-                    {/* Bản in bàn giao đưa cho kế toán. Không có số đếm thật thì
-                        KHÔNG in 0 ở cột kiểm kê — số 0 ở đây là hẹn số bịa và tạo
-                        ra một biên bản "chênh lệch 0" giả. */}
-                    <td colSpan={2} className="border border-slate-900 p-1.5 text-center font-sans text-amber-800">
-                      Chưa kiểm kê thực tế
-                    </td>
-                  </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
-              {/* Dòng tồn thật sự ký tay: bảng chi tiết ở trên không in, nên tổng
-                  tồn phải còn ở đây. KHÔNG in 0 cho phần kiểm kê — chưa có số đếm
-                  thật thì 0 là hẹn số bịa. */}
-              <p className="font-sans text-[11px]">
+              {/* 2 dòng tổng kết cuối ngày. Tổng số cuốn bán ra cộng ở TRÌNH DUYỆT
+                  từ `soldToday` — đó cũng đúng là tổng `quantity` của các dòng
+                  order_items trong ngày, cộng lại không sai với bảng ở trên. */}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-0.5 mt-1">
+                <div>
+                  - TỔNG SỐ CUỒN BÁN RA: <strong className="font-mono">{soldTodayTotal} cuốn</strong>
+                </div>
+                <div>
+                  - Chiết khấu bình quân:{' '}
+                  <strong className="font-mono">{((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%</strong>
+                </div>
+              </div>
+              <p className="text-[11px]">
                 - TỔNG SỐ CUỐN TỒN LÝ THUYẾT: <strong className="font-mono">{totalTheoreticalBooks} cuốn</strong>{' '}
-                <span className="italic text-amber-800">(chưa kiểm kê thực tế — chi tiết theo ấn bảm xem trên màn hình)</span>
+                <span className="italic text-amber-800">(chưa kiểm kê thực tế)</span>
               </p>
               {stocktakeNote && (
                 <p className="font-sans text-[11px] italic mt-1 text-slate-700">
@@ -1141,26 +1314,27 @@ export function DailyFairSettlementModal({
               )}
             </div>
 
-            {/* III. Chữ ký 3 bên */}
-            <div className="print-block font-sans grid grid-cols-3 gap-4 text-center text-xs mt-8 pt-4">
+            {/* V. Chữ ký 3 bên thu thấp (h-12) để biên bản vẫn vừa trang mà chỗ
+                ký vẫn đủ để viết tay — biên bản này người ta KÝ THẬT. */}
+            <div className="print-block font-sans grid grid-cols-3 gap-4 text-center text-xs mt-6 pt-2">
               <div>
                 <p className="font-bold uppercase text-slate-900">Thu ngân lập biên bản</p>
                 <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>
-                <div className="h-20" />
+                <div className="h-12" />
                 <p className="font-bold text-slate-800">................................</p>
               </div>
 
               <div>
                 <p className="font-bold uppercase text-slate-900">Quản lý gian hàng / Trưởng ca</p>
                 <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>
-                <div className="h-20" />
+                <div className="h-12" />
                 <p className="font-bold text-slate-800">................................</p>
               </div>
 
               <div>
                 <p className="font-bold uppercase text-slate-900">Thủ kho nhận bàn giao sách</p>
                 <p className="italic text-[11px] text-slate-500">(Ký, ghi rõ họ tên)</p>
-                <div className="h-20" />
+                <div className="h-12" />
                 <p className="font-bold text-slate-800">................................</p>
               </div>
             </div>

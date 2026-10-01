@@ -563,8 +563,11 @@ export function ExecutiveDashboard({
 
       {/* Middle Section: Cash Flow Breakdown & Quick Action Modules */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Dual-Bookkeeping Financial Breakdown */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+        {/* Left 2 Cols: Dual-Bookkeeping Financial Breakdown.
+            Khi đang lọc MỘT kho thì cột trái ăn hết 3 cột: cột phải (danh sách
+            kho) đã bị ẩn vì nó chỉ liệt kê đúng cái kho đang chọn — giữ nó lại
+            là một cột trống trông vỡ layout. */}
+        <div className={`${selectedWarehouseId === 'ALL' ? 'lg:col-span-2' : 'lg:col-span-3'} bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4`}>
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
@@ -640,7 +643,10 @@ export function ExecutiveDashboard({
           </div>
         </div>
 
-        {/* Right Col: Quick Warehouse Navigation */}
+        {/* Right Col: Quick Warehouse Navigation. ẨN khi đang lọc một kho — danh
+            sách này chỉ liệt kê từng kho, lọc 1 kho thì thẻ được khoá ấy chẳng
+            nói thêm được gì mà lại làm cột phải trống. */}
+        {selectedWarehouseId === 'ALL' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
@@ -691,6 +697,7 @@ export function ExecutiveDashboard({
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* Ticket 4: 3 chart SVG nhẹ kiểu Power BI — trend 7 ngày, donut sổ kép, top 5 đơn */}
