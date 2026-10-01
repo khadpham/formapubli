@@ -1,5 +1,5 @@
 import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, warehouses, works } from '../db';
-import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
@@ -263,6 +263,170 @@ export class InventoryService {
     return await db.transaction(async (tx) => {
       return await executeWork(tx);
     });
+  }
+
+  /**
+   * Ghi N bút toán kho trong MỘT lần gọi — dùng cho `confirmOrder` (30/09).
+   *
+   * VÌ SAO CẦN: `recordMovement` gọi lặp tốn 4 câu SQL mỗi dòng. Trên DB từ xa
+   * (Turso) mỗi câu là một subrequest HTTPS từ Cloudflare Worker, mà Worker chỉ
+   * chịu 50 subrequest/lần gọi. Đo thật trên production: đơn 1–4 dòng xác nhận
+   * được, đơn 5 dòng trở lên thì hỏng — đúng ngưỡng đó, và lỗi bị
+   * `handleApiError` che thành "Lỗi hệ thống". Cục bộ (file DB) 20 dòng vẫn chạy
+   * vì không có chặn subrequest, nên lỗi chỉ lộ trên production.
+   *
+   * Kết quả y hệt gọi lặp, chỉ khác số câu:
+   *   gọi lặp : ~4 câu/dòng  →  đơn 17 dòng ≈ 72 câu (vượt trần)
+   *   gộp     : ~1 câu/dòng + 4 câu chung → đơn 17 dòng ≈ 21 câu
+   *
+   * AN TOÀN: vẫn nằm trong transaction của caller, nên sai số lượng âm làm hỏng
+   * CẢ đơn (rollback) chứ không lọt. Bước 4 của `recordMovement` (đọc lại tồn kho)
+   * chỉ để dựng giá trị trả về mà `confirmOrder` không dùng, nên ở đây bỏ hẳn và
+   * thay bằng MỘT câu đọc lại cho toàn đơn.
+   */
+  static async recordMovementsBatch(
+    items: Array<{
+      editionId: string;
+      quantityDelta: number;
+      condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
+      ownerId?: string;
+      lotId?: string;
+      unitCostSnapshot?: number;
+    }>,
+    common: {
+      warehouseId: string;
+      eventType: RecordMovementParams['eventType'];
+      documentRef: string;
+      note?: string;
+      actorId?: string;
+      correlationId?: string;
+      effectiveAt?: string;
+      /**
+       * Tiền tố idempotencyKey. BẮT BUỘC giữ đúng tiền tố mà `confirmOrder` dùng
+       * để nhận diện "đã duyệt rồi" (`idem-confirm-<orderId>-`), nếu đổi tiền tố
+       * thì lần gọi lại sẽ tưởng đơn chưa có bút toán và báo nhầm. Test
+       * test-transfer-payment-flow bắt đúng lỗi này.
+       */
+      idempotencyPrefix?: string;
+    },
+    tx: any
+  ): Promise<number> {
+    if (items.length === 0) return 0;
+    const actorId = common.actorId || 'system';
+    const effectiveAt = common.effectiveAt || new Date().toISOString();
+    const stamp = Date.now();
+
+    for (const it of items) {
+      if (!Number.isInteger(it.quantityDelta) || it.quantityDelta === 0) {
+        throw AppError.invalid(`Biến động tồn kho phải khác 0 (nhận ${it.quantityDelta}).`);
+      }
+    }
+    // 1. MỘT câu cho MỌI bút toán trong sổ cái bất biến.
+    await tx.insert(inventoryLedger).values(
+      items.map((it, i) => ({
+        id: `led-${stamp}-${i}-${Math.random().toString(36).substring(2, 9)}`,
+        editionId: it.editionId,
+        warehouseId: common.warehouseId,
+        ownerId: it.ownerId,
+        lotId: it.lotId,
+        eventType: common.eventType,
+        quantityDelta: it.quantityDelta,
+        unitCostSnapshot: it.unitCostSnapshot,
+        condition: it.condition || 'NEW',
+        documentRef: common.documentRef,
+        note: common.note,
+        actorId,
+        correlationId: common.correlationId,
+        idempotencyKey: `${common.idempotencyPrefix || `idem-bat-${common.correlationId || common.documentRef}`}-${i}-${it.editionId}`,
+        effectiveAt,
+      }))
+    );
+
+    // 2. MỘT câu cho mỗi nhóm condition tạo bucket tồn kho còn thiếu.
+    const groups = new Map<string, Array<{ editionId: string; quantityDelta: number; condition?: string; ownerId?: string; lotId?: string; unitCostSnapshot?: number }>>();
+    for (const it of items) {
+      const key = it.condition || 'NEW';
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(it);
+      else groups.set(key, [it]);
+    }
+    const entries = Array.from(groups.entries());
+    for (let g = 0; g < entries.length; g++) {
+      const condition = entries[g][0];
+      const rows = entries[g][1];
+      await tx
+        .insert(stockBalances)
+        .values(
+          rows.map((it) => ({
+            id: `sb-${it.editionId}-${common.warehouseId}-${condition}`,
+            editionId: it.editionId,
+            warehouseId: common.warehouseId,
+            condition: condition as typeof stockBalances.$inferInsert.condition,
+            physicalQuantity: 0,
+          }))
+        )
+        .onConflictDoNothing({
+          target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
+        });
+    }
+
+    // 3. MỘT câu trừ tồn cho MỌI dòng. CASE ghép từng ấn bản với delta của nó.
+    //    BẮT BUỘC gộp delta theo (ấn bản, condition) TRƯỚC: nếu một ấn bản xuất
+    //    hiện ở nhiều dòng, `CASE` chỉ khớp nhánh WHEN đầu tiên ⇒ chỉ trừ một
+    //    lần và TỒN KHO SAI. (Test bắt được đúng lỗi này: 2 dòng cùng 1 ấn bản
+    //    cho -47 cuốn thay vì -49.) Sổ cái vẫn giữ MỘT DÒNG MỖI DÒNG đơn.
+    //    Bản lặp dùng mệnh đề `AND (physical_quantity + delta >= 0)`; bản gộp
+    //    không diễn đạt được điều kiện riêng từng dòng trong một câu, nên chuyển
+    //    sang kiểm âm ở bước 4 — tương đương vì cùng transaction, lỗi ⇒ rollback
+    //    cả đơn. Trigger mức DB (migration 0027/0029) vẫn chạy và vẫn chặn âm.
+    const deltaByKey = new Map<string, number>();
+    for (const it of items) {
+      const key = `${it.editionId}::${it.condition || 'NEW'}`;
+      deltaByKey.set(key, (deltaByKey.get(key) ?? 0) + it.quantityDelta);
+    }
+    const agg = Array.from(deltaByKey.entries());
+    const branches = agg
+      .map(([key, delta]) => {
+        const [editionId, condition] = key.split('::');
+        return sql`WHEN ${stockBalances.editionId} = ${editionId} AND ${stockBalances.condition} = ${condition} THEN ${delta}`;
+      })
+      .reduce((acc, b) => sql`${acc} ${b}`, sql``);
+    const matches = items.map(
+      (it) =>
+        sql`(${stockBalances.editionId} = ${it.editionId} AND ${stockBalances.condition} = ${it.condition || 'NEW'})`
+    );
+    await tx.run(sql`
+      UPDATE stock_balances
+      SET physical_quantity = physical_quantity + CASE ${branches} ELSE 0 END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE warehouse_id = ${common.warehouseId}
+        AND (${sql.join(matches, sql` OR `)})
+    `);
+
+    // 4. Kiểm âm: đọc lại TẤT CẢ tồn kho trong 1 câu. Sai ⇒ ném lỗi ⇒ rollback
+    //    cả đơn, y hệt bản lặp.
+    const after = await tx
+      .select({ editionId: stockBalances.editionId, condition: stockBalances.condition, qty: stockBalances.physicalQuantity })
+      .from(stockBalances)
+      .where(
+        and(
+          eq(stockBalances.warehouseId, common.warehouseId),
+          or(
+            ...items.map((it) =>
+              and(
+                eq(stockBalances.editionId, it.editionId),
+                eq(stockBalances.condition, it.condition || 'NEW')
+              )
+            )
+          )
+        )
+      );
+    for (const r of after) {
+      if (Number(r.qty || 0) < 0) {
+        throw AppError.atp(`LỖI XUẤT ÂM KHO: ${r.editionId} còn ${r.qty} cuốn sau khi trừ.`);
+      }
+    }
+    return items.length;
   }
 
   /**

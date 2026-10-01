@@ -1457,24 +1457,32 @@ export class OrderService {
       }
     }
 
-        // 7. Ghi sổ kho (DISPATCH_SALE) với idempotency key gắn correlationId
-        let idx = 0;
-        for (const ln of lines) {
-          await InventoryService.recordMovement({
-            editionId: ln.editionId,
-            warehouseId: ord.warehouseId,
-            eventType: 'DISPATCH_SALE',
-            quantityDelta: -ln.quantity,
-            condition: 'NEW',
-            documentRef: ord.orderCode,
-            note: `Duyệt đơn online ${ord.orderCode} (${ord.channel})`,
-            actorId: resolvedActorId,
-            correlationId: orderId,
-            idempotencyKey: `idem-confirm-${orderId}-${idx}-${ln.editionId}`,
-            tx,
-          });
-          idx++;
-        }
+    // 7. Ghi sổ kho (DISPATCH_SALE) — GỘP CẢ ĐƠN trong 1 lần gọi (30/09).
+    // Trước đây gọi `recordMovement` TỪNG DÒNG = ~4 câu SQL/dòng. Trên Turso từ
+    // xa mỗi câu là 1 subrequest từ Cloudflare Worker, mà Worker chỉ chịu 50 ⇒ đơn
+    // từ 5 dòng trở lên vượt trần và hỏng (lỗi bị che thành "Lỗi hệ thống").
+    // Đo thật: production đơn 1–4 dòng được, 5/12/16/17 dòng hỏng với ledger = 0.
+    // `recordMovementsBatch` cho KẾT QUẢ Y HỆT, chỉ gom câu lệnh.
+    await InventoryService.recordMovementsBatch(
+      lines.map((ln) => ({
+        editionId: ln.editionId,
+        quantityDelta: -ln.quantity,
+        condition: 'NEW' as const,
+      })),
+      {
+        warehouseId: ord.warehouseId,
+        eventType: 'DISPATCH_SALE',
+        documentRef: ord.orderCode,
+        note: `Duyệt đơn online ${ord.orderCode} (${ord.channel})`,
+        actorId: resolvedActorId,
+        correlationId: orderId,
+        // Giữ đúng tiền tố mà nhánh idempotent ở trên dò tìm
+        // (`idem-confirm-<orderId>-`), nếu không lần gọi lại sẽ tưởng đơn chưa
+        // có bút toán và báo nhầm "đã COMPLETED nhưng không có bút toán".
+        idempotencyPrefix: `idem-confirm-${orderId}`,
+      },
+      tx
+    );
 
         // 8. Chuyển trạng thái có điều kiện: PENDING_CONFIRMATION → COMPLETED
         const updateRes: any = await tx.run(sql`
