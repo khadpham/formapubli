@@ -9,6 +9,12 @@ import { computeTransferDispatchFingerprint } from '../lib/transfer-fingerprint'
 
 export interface RecordMovementParams {
   editionId: string;
+  /**
+   * 0033: `false` ⇒ đây là HÀNG HÓA, bút toán ghi `edition_id = NULL` vì hàng
+   * hóa không có dòng `editions`. Bỏ trống (mặc định `true`) = sách, giữ nguyên
+   * hành vi như cũ.
+   */
+  isBook?: boolean;
   warehouseId: string;
   eventType: 'RECEIPT' | 'DISPATCH_SALE' | 'DISPATCH_GIFT' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'TRANSFER_LOSS' | 'CONSIGNMENT_SOLD' | 'CONSIGNMENT_LOSS' | 'ADJUSTMENT' | 'OPENING_BALANCE' | 'RETURN_INBOUND' | 'SPONSORSHIP_DRAWDOWN';
   quantityDelta: number; // positive or negative, must be non-zero
@@ -26,6 +32,11 @@ export interface RecordMovementParams {
   effectiveAt?: string;
   tx?: any; // Cho phép truyền transaction context bên ngoài
   actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
+  /**
+   * B3 (quà hết tồn): ghi CHỈ bút toán ledger, KHÔNG đụng `stock_balances`.
+   * Tồn thực tế đang âm về vật lý — trừ sổ theo dữ liệu tệ sẽ âm giả.
+   */
+  skipStockUpdate?: boolean;
 }
 
 export interface TransferBatchItemInput {
@@ -78,7 +89,10 @@ export class InventoryService {
       .from(stockBalances)
       .where(
         and(
-          eq(stockBalances.editionId, editionId),
+          // Lọc theo `product_id` (khóa UNIQUE), KHÔNG lọc `edition_id`:
+          // hàng hóa có `edition_id = NULL` nên lọc theo đó không bao giờ
+          // khớp. Sách có `product_id === edition_id` nên không đổi hành vi.
+          eq(stockBalances.productId, editionId),
           eq(stockBalances.warehouseId, warehouseId),
           eq(stockBalances.condition, condition)
         )
@@ -107,13 +121,13 @@ export class InventoryService {
     if (ids.length === 0) return out;
     const rows = await txOrDb
       .select({
-        editionId: stockBalances.editionId,
+        editionId: stockBalances.productId,
         qty: stockBalances.physicalQuantity,
       })
       .from(stockBalances)
       .where(
         and(
-          inArray(stockBalances.editionId, ids),
+          inArray(stockBalances.productId, ids),
           eq(stockBalances.warehouseId, warehouseId),
           eq(stockBalances.condition, condition)
         )
@@ -149,6 +163,9 @@ export class InventoryService {
       tx: externalTx,
     } = params;
     const effActorId = params.actorContext?.staffId || actorId;
+    // 0033: mặc định `true` để MỌI call site cũ (chỉ bán sách) giữ nguyên hành
+    // vi. Chỉ `false` khi caller biết chắc đây là hàng hóa.
+    const isBook = params.isBook !== false;
 
     if (quantityDelta === 0) {
       throw AppError.invalid('Độ biến động tồn kho (quantityDelta) phải khác 0.');
@@ -167,7 +184,13 @@ export class InventoryService {
 
       await tx.insert(inventoryLedger).values({
         id: ledgerId,
-        editionId,
+        // 0033: `edition_id` nullable. Hàng hóa KHÔNG có dòng `editions` nên bút
+        // toán phải để NULL — nếu ghi id hàng hóa vào đây thì FK `editions(id)`
+        // vi phạm và cả đơn rollback.
+        editionId: isBook ? editionId : null,
+        // 0033: `product_id` NOT NULL + FK `products(id)`. Sách có
+        // `products.id === editions.id` nên đặt bằng `editionId` cho cả hai loại.
+        productId: editionId,
         warehouseId,
         ownerId,
         lotId,
@@ -184,19 +207,42 @@ export class InventoryService {
         effectiveAt: effectiveAt || new Date().toISOString(),
       });
 
+      // B3: bút toán sổ kho nhưng không trừ bảng cân đối — tồn đang cạn,
+      // hàng vật lý vẫn phải ghi nhận đã ra khỏi kho.
+      if (params.skipStockUpdate === true) {
+        return {
+          ledgerId,
+          editionId,
+          warehouseId,
+          previousQuantity: null,
+          newQuantity: null,
+          quantityDelta,
+        };
+      }
+
       // 2. Bảo đảm bucket tồn kho tồn tại (nếu chưa có thì tạo mới với số lượng 0)
       const bucketId = `sb-${editionId}-${warehouseId}-${condition}`;
       await tx
         .insert(stockBalances)
         .values({
           id: bucketId,
-          editionId,
+          // 0033: hàng hóa (GOODS) không có dòng `editions` ⇒ `edition_id` phải
+          // NULL, nếu không FK `editions(id)` chặn. (Chỉ thấy khi bucket chưa
+          // tồn tại — bucket đã có thì ON CONFLICT DO NOTHING bỏ qua.)
+          editionId: isBook ? editionId : null,
+          // 0032: `product_id` NOT NULL + FK `products(id)`. Sách có
+          // `products.id === editions.id`, nên đặt bằng `editionId`.
+          productId: editionId,
           warehouseId,
           condition,
           physicalQuantity: 0,
         })
         .onConflictDoNothing({
-          target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
+          // 0032 đổi unique `uq_stock_bucket` từ (edition_id,…) sang
+          // (product_id,…). Bắt buộc phải khớp index đúng, nếu không SQLite
+          // ném "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+          // constraint" và mọi ghi nhập kho chết.
+          target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition],
         });
 
       // 3. ATOMIC GUARD: UPDATE trực tiếp bằng biểu thức nguyên tử, chặn đứng triệt để Lost-Update race condition
@@ -205,7 +251,7 @@ export class InventoryService {
         UPDATE stock_balances
         SET physical_quantity = physical_quantity + ${quantityDelta},
             updated_at = CURRENT_TIMESTAMP
-        WHERE edition_id = ${editionId}
+        WHERE product_id = ${editionId}
           AND warehouse_id = ${warehouseId}
           AND condition = ${condition}
           AND (physical_quantity + ${quantityDelta} >= 0)
@@ -218,7 +264,8 @@ export class InventoryService {
           .from(stockBalances)
           .where(
             and(
-              eq(stockBalances.editionId, editionId),
+              // `product_id`, không phải `edition_id` (hàng hóa có edition NULL).
+              eq(stockBalances.productId, editionId),
               eq(stockBalances.warehouseId, warehouseId),
               eq(stockBalances.condition, condition)
             )
@@ -237,7 +284,8 @@ export class InventoryService {
         .from(stockBalances)
         .where(
           and(
-            eq(stockBalances.editionId, editionId),
+            // `product_id`, không phải `edition_id` (hàng hóa có edition NULL).
+            eq(stockBalances.productId, editionId),
             eq(stockBalances.warehouseId, warehouseId),
             eq(stockBalances.condition, condition)
           )
@@ -325,7 +373,11 @@ export class InventoryService {
     await tx.insert(inventoryLedger).values(
       items.map((it, i) => ({
         id: `led-${stamp}-${i}-${Math.random().toString(36).substring(2, 9)}`,
-        editionId: it.editionId,
+        // 0033: hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, nếu
+        // không FK `editions(id)` vi phạm và cả đơn bị rollback.
+        editionId: (it as any).isBook === false ? null : it.editionId,
+        // 0033: `product_id` NOT NULL — sách `products.id === editions.id`.
+        productId: it.editionId,
         warehouseId: common.warehouseId,
         ownerId: it.ownerId,
         lotId: it.lotId,
@@ -359,14 +411,22 @@ export class InventoryService {
         .values(
           rows.map((it) => ({
             id: `sb-${it.editionId}-${common.warehouseId}-${condition}`,
-            editionId: it.editionId,
+            // Hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, nếu
+            // không FK `editions(id)` chặn (đã dính khi nạp SP-001 lên prod).
+            editionId: (it as any).isBook === false ? null : it.editionId,
+            // 0032: NOT NULL + FK. Sách có `products.id === editions.id`.
+            productId: it.editionId,
             warehouseId: common.warehouseId,
             condition: condition as typeof stockBalances.$inferInsert.condition,
             physicalQuantity: 0,
           }))
         )
         .onConflictDoNothing({
-          target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition],
+          // 0032 đổi UNIQUE `uq_stock_bucket` sang (product_id,…). Phải khớp
+          // index đúng, không thì SQLite ném "ON CONFLICT clause does not match
+          // any PRIMARY KEY or UNIQUE constraint". Còn 3 chỗ trong file này
+          // dùng mẫu này — đã quét hết bằng grep.
+          target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition],
         });
     }
 
@@ -385,15 +445,17 @@ export class InventoryService {
       deltaByKey.set(key, (deltaByKey.get(key) ?? 0) + it.quantityDelta);
     }
     const agg = Array.from(deltaByKey.entries());
+    // `product_id` là khóa UNIQUE — `edition_id` của hàng hóa là NULL nên
+    // khớp theo đó không bao giờ trúng. Sách có product_id === edition_id.
     const branches = agg
       .map(([key, delta]) => {
         const [editionId, condition] = key.split('::');
-        return sql`WHEN ${stockBalances.editionId} = ${editionId} AND ${stockBalances.condition} = ${condition} THEN ${delta}`;
+        return sql`WHEN ${stockBalances.productId} = ${editionId} AND ${stockBalances.condition} = ${condition} THEN ${delta}`;
       })
       .reduce((acc, b) => sql`${acc} ${b}`, sql``);
     const matches = items.map(
       (it) =>
-        sql`(${stockBalances.editionId} = ${it.editionId} AND ${stockBalances.condition} = ${it.condition || 'NEW'})`
+        sql`(${stockBalances.productId} = ${it.editionId} AND ${stockBalances.condition} = ${it.condition || 'NEW'})`
     );
     await tx.run(sql`
       UPDATE stock_balances
@@ -406,7 +468,7 @@ export class InventoryService {
     // 4. Kiểm âm: đọc lại TẤT CẢ tồn kho trong 1 câu. Sai ⇒ ném lỗi ⇒ rollback
     //    cả đơn, y hệt bản lặp.
     const after = await tx
-      .select({ editionId: stockBalances.editionId, condition: stockBalances.condition, qty: stockBalances.physicalQuantity })
+      .select({ editionId: stockBalances.productId, condition: stockBalances.condition, qty: stockBalances.physicalQuantity })
       .from(stockBalances)
       .where(
         and(
@@ -414,7 +476,7 @@ export class InventoryService {
           or(
             ...items.map((it) =>
               and(
-                eq(stockBalances.editionId, it.editionId),
+                eq(stockBalances.productId, it.editionId),
                 eq(stockBalances.condition, it.condition || 'NEW')
               )
             )
@@ -707,23 +769,24 @@ export class InventoryService {
           .insert(stockBalances)
           .values(
             merged.flatMap((it) => [
-              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
-              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: it.editionId, productId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: it.editionId, productId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
             ])
           )
-          .onConflictDoNothing({ target: [stockBalances.editionId, stockBalances.warehouseId, stockBalances.condition] });
+          // 0032: unique index đã sang product_id — xem giải thích ở recordMovement.
+          .onConflictDoNothing({ target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition] });
 
         // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
         const ledgerRows = merged.flatMap((it) => ([
           {
-            id: crypto.randomUUID(), editionId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
+            id: crypto.randomUUID(), editionId: it.editionId, productId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
             quantityDelta: -it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
             correlationId: batchKey, effectiveAt: nowIso,
             note: `Chuyển kho hàng loạt tới [${toId}] (${pckCode}). ${note}`.trim(),
             idempotencyKey: `${batchKey}-out-${it.editionId}`,
           },
           {
-            id: crypto.randomUUID(), editionId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
+            id: crypto.randomUUID(), editionId: it.editionId, productId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
             quantityDelta: it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
             correlationId: batchKey, effectiveAt: nowIso,
             note: `Tiếp nhận chuyển kho hàng loạt từ [${fromId}] (${pckCode}). ${note}`.trim(),
@@ -931,8 +994,13 @@ export class InventoryService {
     // chỉ đếm 3 mã kho cứng nên kho hội chợ không bao giờ hiện trong ma trận.
     const balanceMap = new Map<string, Record<string, number>>();
     for (const bal of allBalances) {
-      if (!balanceMap.has(bal.editionId)) balanceMap.set(bal.editionId, {});
-      const record = balanceMap.get(bal.editionId)!;
+      // 0032: `edition_id` nullable cho hàng hóa nên không dùng làm khóa Map.
+      // `product_id` NOT NULL, và với sách thì BẰNG `edition_id` — nên khoá và
+      // giá trị trả về y hệt trước đây. Tới C2b (ATP chuyển sang product) thì
+      // khoá này đã sẵn đúng chiều.
+      const key = bal.productId;
+      if (!balanceMap.has(key)) balanceMap.set(key, {});
+      const record = balanceMap.get(key)!;
       record[bal.warehouseId] = (record[bal.warehouseId] || 0) + Number(bal.physicalQuantity || 0);
     }
 

@@ -366,6 +366,10 @@ export class RoyaltyService {
       }
 
       for (const r of ledgerRows) {
+        // `edition_id` NULLABLE từ 0033 (hàng hóa không có dòng `editions`).
+        // Truy vấn trên đã lọc `inArray(edition_id, editionIds)` nên dòng hàng
+        // hóa không lọt vào đây — guard chỉ để thu hẹp kiểu, không đổi hành vi.
+        if (r.editionId === null) continue;
         const q = Number(r.qty ?? 0);
         if (!q) continue;
         // Đơn không đạt điều kiện (tài trợ / chưa hoàn tất / ngoài hạn): không phải

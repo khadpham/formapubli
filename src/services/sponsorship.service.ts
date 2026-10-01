@@ -149,6 +149,7 @@ export class SponsorshipService {
           id: `oi-spf-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
           orderId,
           editionId,
+          productId: editionId,
           quantity,
           unitCoverPrice: cover,
           unitDiscountRate: 1,

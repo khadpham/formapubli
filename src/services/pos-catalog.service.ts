@@ -1,16 +1,23 @@
-import { db, editions, orderItems, orders, stockBalances, works } from '../db';
+import { db, editions, orderItems, orders, stockBalances, works, products } from '../db';
 import { and, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { OrderService, PENDING_TTL_HOURS, businessDateOf } from './order.service';
 import { WarehouseService } from './warehouse.service';
 
 export interface PosCatalogLine {
+  /**
+   * Khóa dòng sản phẩm. Với sách = `editions.id` (`ed-h01`); với hàng hóa =
+   * `products.id` (`pr-…`). Tên cột giữ nguyên để không phá hợp đồng với POS.
+   */
   editionId: string;
+  productKind: 'BOOK' | 'GOODS';
   code: string;
   title: string;
   author: string;
   isbn: string;
   isbnLast4: string;
+  /** Mã vạch EAN-13 — hàng hóa quét mã này. Sách để '' nếu chưa gán. */
+  barcode: string;
   coverPrice: number;
   /** Năm phát hành — POS sắp xếp "Cũ → Mới / Mới → Cũ" theo trường này. Có thể null. */
   publicationYear: number | null;
@@ -42,7 +49,10 @@ export class PosCatalogService {
     const todayVn = businessDateOf(new Date());
 
     const soldRows = await db
-      .select({ editionId: orderItems.editionId, qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+      .select({
+        productId: orderItems.productId,
+        qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+      })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
@@ -52,24 +62,38 @@ export class PosCatalogService {
           sql`substr(datetime(${orders.createdAt}, '+7 hours'), 1, 10) = ${todayVn}`
         )
       )
-      .groupBy(orderItems.editionId);
+      .groupBy(orderItems.productId);
     const soldMap = new Map<string, number>();
-    for (const r of soldRows) soldMap.set(r.editionId, Number(r.qty || 0));
+    // 0032: nhóm theo `product_id` (NOT NULL). Với sách `product_id` ===
+    // `edition_id`, nên `soldMap` y hệt trước đây — nhưng không còn rơi dữ liệu
+    // hàng hóa vì `edition_id` NULL.
+    for (const r of soldRows) soldMap.set(r.productId, Number(r.qty || 0));
 
+    // NGUỒN LÀ `products` (tầng gốc), LEFT JOIN `editions` + `works` để lấy
+    // metadata sách. Sách đã được mirror vào `products` với `id` TRÙNG
+    // `editions.id` (migration 0031b), nên một câu này trả CẢ sách lẫn hàng
+    // hóa. Trước đây lấy `FROM editions INNER JOIN works` — hàng hóa không có
+    // dòng `editions` nên biến mất khỏi lưới quét mã, thứ lỗi "không báo lỗi,
+    // chỉ thiếu dòng".
     const all = await db
       .select({
-        id: editions.id,
-        code: editions.code,
-        title: editions.title,
+        id: products.id,
+        productKind: products.productKind,
+        code: products.code,
+        title: products.name,
+        coverPrice: products.sellingPrice,
+        barcode: products.barcode,
+        isActive: products.isActive,
+        // Sách mới có; hàng hóa để NULL.
         isbn: editions.isbn,
         isbnLast4: editions.isbnLast4,
-        coverPrice: editions.coverPrice,
         publicationYear: editions.publicationYear,
-        isActive: editions.isActive,
         author: works.author,
+        editionCode: editions.code,
       })
-      .from(editions)
-      .innerJoin(works, eq(editions.workId, works.id));
+      .from(products)
+      .leftJoin(editions, eq(editions.id, products.id))
+      .leftJoin(works, eq(works.id, editions.workId));
 
     // Batch ATP (BV hiệu năng): gom physical NEW + giữ chỗ PENDING theo lô,
     // đúng semantics OrderService.getATP (fair = physical, còn lại trừ giữ chỗ).
@@ -78,11 +102,17 @@ export class PosCatalogService {
     const [balRows, heldRows] = await Promise.all([
       ids.length
         ? db
-            .select({ editionId: stockBalances.editionId, qty: stockBalances.physicalQuantity })
+            .select({
+              productId: stockBalances.productId,
+              qty: stockBalances.physicalQuantity,
+            })
             .from(stockBalances)
             .where(
               and(
-                inArray(stockBalances.editionId, ids),
+                // `product_id`, KHÔNG phải `edition_id`: hàng hóa có
+                // `edition_id = NULL` nên lọc theo nó là mất sạch tồn hàng hóa
+                // ⇒ ATP = 0 ⇒ POS báo hết hàng oan. Với sách hai cột BẰNG nhau.
+                inArray(stockBalances.productId, ids),
                 eq(stockBalances.warehouseId, warehouseId),
                 eq(stockBalances.condition, 'NEW')
               )
@@ -92,6 +122,7 @@ export class PosCatalogService {
         ? db
             .select({
               editionId: orderItems.editionId,
+              productId: orderItems.productId,
               quantity: orderItems.quantity,
               createdAt: orders.createdAt,
               paymentExpiresAt: orders.paymentExpiresAt,
@@ -100,7 +131,8 @@ export class PosCatalogService {
             .innerJoin(orders, eq(orderItems.orderId, orders.id))
             .where(
               and(
-                inArray(orderItems.editionId, ids),
+                // `product_id` — xem giải thích ở truy vấn `stock_balances` phía trên.
+                inArray(orderItems.productId, ids),
                 eq(orders.warehouseId, warehouseId),
                 eq(orders.status, 'PENDING_CONFIRMATION'),
                 // Prefilter rộng (siêu tập) — y hệt OrderService.getBatchATP.
@@ -116,7 +148,8 @@ export class PosCatalogService {
         : [],
     ]);
     const balMap = new Map<string, number>();
-    for (const r of balRows) balMap.set(r.editionId, Number(r.qty || 0));
+    // 0032: khoá theo `product_id` (NOT NULL); với sách bằng `edition_id`.
+    for (const r of balRows) balMap.set(r.productId, Number(r.qty || 0));
     // Quyết định giữ chỗ cuối cùng do OrderService.getPendingEffectiveExpiry —
     // MỘT quy tắc hạn duy nhất của hệ thống. Trước đây danh mục POS cộng thẳng
     // mọi đơn PENDING trong 48h nên đơn chuyển khoản quầy hết hạn sau 30 phút
@@ -126,7 +159,8 @@ export class PosCatalogService {
     for (const row of heldRows) {
       const expiry = OrderService.getPendingEffectiveExpiry(row);
       if (!expiry || expiry.getTime() <= nowMs) continue;
-      heldMap.set(row.editionId, (heldMap.get(row.editionId) || 0) + Number(row.quantity || 0));
+      // 0032: khoá theo `product_id` cho khớp `balMap`/`soldMap`.
+      heldMap.set(row.productId, (heldMap.get(row.productId) || 0) + Number(row.quantity || 0));
     }
     const isFair = wh?.warehouseType === 'FAIR_EVENT';
 
@@ -135,12 +169,19 @@ export class PosCatalogService {
       if (e.isActive === false) continue;
       const physical = balMap.get(e.id) || 0;
       items.push({
+        // `editionId` giữ nguyên tên để không phá vỡ hợp đồng với POS và các
+        // test hiện có, nhưng giá trị giờ là `products.id` — với sách thì BẰNG
+        // `editions.id` (chốt #2 spec), với hàng hóa thì là `pr-…`.
         editionId: e.id,
-        code: e.code,
-        title: e.title || e.code,
-        author: e.author,
-        isbn: e.isbn,
-        isbnLast4: e.isbnLast4,
+        productKind: e.productKind === 'GOODS' ? 'GOODS' : 'BOOK',
+        code: e.code || e.editionCode || '',
+        title: e.title || e.code || e.editionCode || '',
+        // Hàng hóa không có tác giả/ISBN — để '' thay vì null để UI không in
+        // chữ "null" ra giữa quầy.
+        author: e.author || '',
+        isbn: e.isbn || '',
+        isbnLast4: e.isbnLast4 || '',
+        barcode: e.barcode || '',
         coverPrice: e.coverPrice || 0,
         publicationYear: e.publicationYear ?? null,
         // getATP đã khóa chốt theo loại kho (fair = physical, chính trừ giữ chỗ).

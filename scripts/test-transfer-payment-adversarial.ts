@@ -78,11 +78,11 @@ async function run() {
     { id: 'ed-adv-2', code: 'ADV2', workId: 'work-adv', title: 'Sách ADV2', isbn: '9786040003020', isbnLast4: '3020', coverPrice: 100000 },
   ]);
   await db.insert(schema.stockBalances).values([
-    { id: 'sb-adv-1', editionId: 'ed-adv-1', warehouseId: WH, condition: 'NEW', physicalQuantity: 100 },
-    { id: 'sb-adv-2', editionId: 'ed-adv-2', warehouseId: WH, condition: 'NEW', physicalQuantity: 100 },
-    { id: 'sb-adv-2-w2', editionId: 'ed-adv-2', warehouseId: 'wh-adv-2', condition: 'NEW', physicalQuantity: 100 },
-    { id: 'sb-adv-1-w2', editionId: 'ed-adv-1', warehouseId: 'wh-adv-2', condition: 'NEW', physicalQuantity: 100 },
-    { id: 'sb-adv-1-w3', editionId: 'ed-adv-1', warehouseId: WH3, condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-adv-1', productId: 'ed-adv-1', editionId: 'ed-adv-1', warehouseId: WH, condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-adv-2', productId: 'ed-adv-2', editionId: 'ed-adv-2', warehouseId: WH, condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-adv-2-w2', productId: 'ed-adv-2', editionId: 'ed-adv-2', warehouseId: 'wh-adv-2', condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-adv-1-w2', productId: 'ed-adv-1', editionId: 'ed-adv-1', warehouseId: 'wh-adv-2', condition: 'NEW', physicalQuantity: 100 },
+    { id: 'sb-adv-1-w3', productId: 'ed-adv-1', editionId: 'ed-adv-1', warehouseId: WH3, condition: 'NEW', physicalQuantity: 100 },
   ]);
   const session = await CashboxService.openSession({ warehouseId: WH, cashierId: CASHIER.staffId, openingCash: 0 });
   // Ca mở ở 2 kho phụ (dùng cho các case cần đơn quầy PENDING hợp lệ).
@@ -744,6 +744,7 @@ async function run() {
   });
   await db.insert(schema.orderItems).values({
     id: 'oi-adv-b5-oversold',
+    productId: 'ed-adv-2',
     orderId: 'ord-adv-b5-oversold',
     editionId: 'ed-adv-2',
     quantity: 1,

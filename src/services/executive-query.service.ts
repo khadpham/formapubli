@@ -514,7 +514,11 @@ export class ExecutiveQueryService {
         )
       )
       .groupBy(orderItems.editionId);
-    const salesMap = new Map(salesRows.map((r) => [r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) }]));
+    const salesMap = new Map<string, { qty: number; revenue: number }>(
+      salesRows
+        .filter((r): r is typeof r & { editionId: string } => r.editionId !== null)
+        .map((r) => [r.editionId, { qty: Number(r.qty || 0), revenue: Number(r.revenue || 0) }])
+    );
 
     const stockRows = await db
       .select({

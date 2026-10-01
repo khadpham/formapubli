@@ -47,7 +47,7 @@ async function run() {
   await db.insert(schema.editions).values(editions as any);
   await db.insert(schema.stockBalances).values(
     editions.map((e, i) => ({
-      id: `sb-${e.id}`, editionId: e.id, warehouseId: 'wh-src', condition: 'NEW', physicalQuantity: 10 + i,
+      id: `sb-${e.id}`, editionId: e.id, productId: e.id, warehouseId: 'wh-src', condition: 'NEW', physicalQuantity: 10 + i,
     })) as any
   );
   await db.insert(schema.staffAccounts).values({
@@ -92,7 +92,7 @@ async function run() {
     cashierId: 'BAT-QL', idempotencyKey: 'hold-idem-1', createdAt: now,
   } as any);
   await db.insert(schema.orderItems).values({
-    id: 'oi-hold', orderId: 'ord-hold', editionId: 'ed-b000', quantity: 4,
+    id: 'oi-hold', orderId: 'ord-hold', editionId: 'ed-b000', productId: 'ed-b000', quantity: 4,
     unitCoverPrice: 50000, unitSellingPrice: 50000, discountRate: 0, lineTotal: 200000, totalAmount: 200000,
   } as any);
   const res3 = await InventoryService.checkBatchAvailability({

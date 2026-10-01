@@ -28,8 +28,11 @@ async function runRoyaltyTests() {
   const workList = await db.select().from(works).limit(3);
   if (workList.length < 3) throw new Error('Test DB chưa seed đủ tác phẩm.');
   const [workA, workB, workC] = workList;
-  const edOf = async (workId: string) =>
-    (await db.select().from(editions).where(eq(editions.workId, workId)).limit(1))[0];
+// PHẢI có `ORDER BY id`. Không có thì SQLite trả dòng tuỳ ý — đã đo được:
+// cùng code, cùng DB sạch, chạy 3 lần cho EXIT = 0, 1, 1. Test này FLAKY,
+// không phải lỗi của code nghiệp vụ. Khiến cả một buổi tìm lỗi sai hướng.
+const edOf = async (workId: string) =>
+  (await db.select().from(editions).where(eq(editions.workId, workId)).orderBy(editions.id).limit(1))[0];
   const edA = await edOf(workA.id);
   const edB = await edOf(workB.id);
 
@@ -203,7 +206,7 @@ async function runRoyaltyTests() {
   for (const recordedAt of ['2026-12-30T15:00:00.000Z', '2026-12-30T20:00:00.000Z', '2026-12-31T16:30:00.000Z']) {
     await db.insert(inventoryLedger).values({
       id: `led-edge-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
-      editionId: edEdge.id, warehouseId: 'wh-au-co',
+      editionId: edEdge.id, productId: edEdge.id, warehouseId: 'wh-au-co',
       eventType: 'RECEIPT', quantityDelta: 10, condition: 'NEW',
       documentRef: 'ROYALTY-EDGE', actorId: 'test-runner',
       idempotencyKey: `roy-edge-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
@@ -224,7 +227,7 @@ async function runRoyaltyTests() {
   for (const recordedAt of ['2026-12-30T15:00:00.000Z', '2026-12-30T20:00:00.000Z', '2026-12-31T16:30:00.000Z']) {
     await db.insert(inventoryLedger).values({
       id: `led-edge-sale-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,
-      editionId: edEdge.id, warehouseId: 'wh-au-co',
+      editionId: edEdge.id, productId: edEdge.id, warehouseId: 'wh-au-co',
       eventType: 'DISPATCH_SALE', quantityDelta: -10, condition: 'NEW',
       documentRef: 'ROYALTY-EDGE-SALE', actorId: 'test-runner',
       idempotencyKey: `roy-edge-sale-${recordedAt}-${Math.random().toString(36).slice(2, 8)}`,

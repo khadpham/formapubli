@@ -296,6 +296,7 @@ export class DeliveryOrderService {
           await tx.insert(inventoryLedger).values({
             id: crypto.randomUUID(),
             editionId: item.editionId,
+            productId: item.editionId,
             warehouseId: order.fromWarehouseId,
             ownerId: order.partnerId,
             eventType,
@@ -477,6 +478,7 @@ export class DeliveryOrderService {
           await tx.insert(inventoryLedger).values({
             id: crypto.randomUUID(),
             editionId: item.editionId,
+            productId: item.editionId,
             warehouseId: original.fromWarehouseId,
             ownerId: original.partnerId,
             eventType: 'RECEIPT_RETURN',

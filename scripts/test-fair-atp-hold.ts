@@ -47,8 +47,8 @@ async function run() {
   await raw.execute({ sql: `INSERT INTO staff_accounts (staff_id,full_name,role,passcode_hash,salt,is_active,session_version) VALUES ('C1','T1','ROLE_CASHIER',?,?,1,1)`, args: ['v2$100000$' + '0'.repeat(64), 's'] });
   await raw.execute({ sql: `INSERT OR REPLACE INTO works (id,code,title,author) VALUES ('wk-test','WK-T','Tac pham thu nghiem','Tac gia')`, args: [] });
   await raw.execute({ sql: `INSERT OR REPLACE INTO editions (id,code,work_id,title,isbn,isbn_last4,cover_price) VALUES (?,?,?,?,?,?,100000)`, args: [ED, 'ED-TEST', 'wk-test', 'An ban thu nghiem', '9780000000001', '0001'] });
-  await raw.execute({ sql: `INSERT OR REPLACE INTO stock_balances (id,edition_id,warehouse_id,condition,physical_quantity) VALUES ('sb1',?,'wh-fair','NEW',5)`, args: [ED] });
-  await raw.execute({ sql: `INSERT OR REPLACE INTO stock_balances (id,edition_id,warehouse_id,condition,physical_quantity) VALUES ('sb2',?,'wh-main','NEW',5)`, args: [ED] });
+  await raw.execute({ sql: `INSERT OR REPLACE INTO stock_balances (id,edition_id,product_id,warehouse_id,condition,physical_quantity) VALUES ('sb1',?,?,'wh-fair','NEW',5)`, args: [ED, ED] });
+  await raw.execute({ sql: `INSERT OR REPLACE INTO stock_balances (id,edition_id,product_id,warehouse_id,condition,physical_quantity) VALUES ('sb2',?,?,'wh-main','NEW',5)`, args: [ED, ED] });
   await raw.execute({ sql: `INSERT OR REPLACE INTO cashbox_sessions (id,warehouse_id,cashier_id,opening_cash,status,opened_at) VALUES ('sx','wh-fair','C1',0,'OPEN',?)`, args: [sqlNow()] });
 
   const addPending = async (id: string, code: string, wh: string, cashier: string, sess: string | null) => {
@@ -58,8 +58,8 @@ async function run() {
       args: [id, code, 'k-' + id, wh, cashier, sess, sqlNow(), in30min()],
     });
     await raw.execute({
-      sql: `INSERT OR REPLACE INTO order_items (id,order_id,edition_id,quantity,unit_cover_price,unit_selling_price,total_amount) VALUES (?,?,?,5,100000,100000,500000)`,
-      args: ['oi-' + id, id, ED],
+      sql: `INSERT OR REPLACE INTO order_items (id,order_id,edition_id,product_id,quantity,unit_cover_price,unit_selling_price,total_amount) VALUES (?,?,?,?,5,100000,100000,500000)`,
+      args: ['oi-' + id, id, ED, ED],
     });
   };
 

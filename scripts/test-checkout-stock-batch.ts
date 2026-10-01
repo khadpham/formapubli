@@ -65,9 +65,9 @@ async function run() {
       args: [id, `w-${id}`, id.toUpperCase(), `978000000${id.slice(-1)}0`, id.slice(-1), 50000],
     });
     await raw.execute({
-      sql: `INSERT INTO stock_balances (id,edition_id,warehouse_id,condition,physical_quantity)
-            VALUES (?,?,?, 'NEW', ?)`,
-      args: [`sb-${id}`, id, WH, qty],
+      sql: `INSERT INTO stock_balances (id,edition_id,product_id,warehouse_id,condition,physical_quantity)
+            VALUES (?,?,?,?, 'NEW', ?)`,
+      args: [`sb-${id}`, id, id, WH, qty],
     });
   }
   await raw.execute({

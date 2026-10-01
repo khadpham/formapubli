@@ -72,9 +72,12 @@ export class ReturnService {
     const lines = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
     const map = new Map<string, { qty: number; unitPrice: number }>();
     for (const l of lines) {
-      const cur = map.get(l.editionId) || { qty: 0, unitPrice: l.unitSellingPrice };
+      // 0032: `edition_id` nullable cho hàng hóa. Khoá theo `product_id`
+      // (NOT NULL); với sách thì bằng đúng `edition_id` nên hành vi giữ nguyên.
+      const key = l.productId;
+      const cur = map.get(key) || { qty: 0, unitPrice: l.unitSellingPrice };
       cur.qty += l.quantity;
-      map.set(l.editionId, cur);
+      map.set(key, cur);
     }
     return map;
   }

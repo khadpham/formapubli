@@ -57,8 +57,8 @@ async function run() {
           targetWarehouseId: completedOrd.warehouseId,
           inventoryDisposition: 'RESTOCK',
           items: [
-            { editionId: it.editionId, quantity: it.quantity },
-            { editionId: it.editionId, quantity: 1 },
+            { editionId: it.editionId!, quantity: it.quantity },
+            { editionId: it.editionId!, quantity: 1 },
           ],
         });
       } catch (e: any) {

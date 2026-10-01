@@ -68,6 +68,7 @@ async function run() {
   await db.insert(schema.stockBalances).values([
     {
       id: 'sb-s4-1',
+      productId: 'ed-s4-1',
       editionId: 'ed-s4-1',
       warehouseId: 'wh-fair-s4',
       physicalQuantity: 50,
@@ -75,6 +76,7 @@ async function run() {
     },
     {
       id: 'sb-s4-2',
+      productId: 'ed-s4-2',
       editionId: 'ed-s4-2',
       warehouseId: 'wh-fair-s4',
       physicalQuantity: 30,
@@ -122,6 +124,7 @@ async function run() {
   await db.insert(schema.orderItems).values([
     {
       id: 'item-s4-1',
+      productId: 'ed-s4-1',
       orderId: 'ord-s4-1',
       editionId: 'ed-s4-1',
       quantity: 10,
@@ -151,6 +154,7 @@ async function run() {
   await db.insert(schema.orderItems).values([
     {
       id: 'item-s4-2',
+      productId: 'ed-s4-2',
       orderId: 'ord-s4-2',
       editionId: 'ed-s4-2',
       quantity: 2,

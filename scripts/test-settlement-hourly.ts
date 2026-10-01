@@ -118,6 +118,7 @@ async function run() {
     await db.insert(schema.orderItems).values({
       id: 'it-' + o.id,
       orderId: o.id,
+      productId: 'ed-hr-1',
       editionId: 'ed-hr-1',
       quantity: 1,
       unitCoverPrice: 100000,
