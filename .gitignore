@@ -49,4 +49,4 @@ certificates
 # làm bẩn cây thư mục mỗi lần chạy test (vi phạm quy tắc "deploy chỉ khi cây
 # sạch"). Sinh ra thì giữ, nhưng không theo dõi trong git.
 eval-executive-ai-report.json
-reports/
+/reports/
