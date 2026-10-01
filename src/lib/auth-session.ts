@@ -786,7 +786,7 @@ export async function claimCashierLease(params: {
   }
 }
 
-/** Guard đọc: row tồn tại + khớp session + lease chưa hết. */
+/** Guard đọc: row tồn tại + khớp session + lease chưa hết (hoặc cùng phiên tự động phục hồi). */
 export async function checkCashierLease(staffId: string, sessionId?: string): Promise<boolean> {
   if (!staffId || !sessionId) return false;
   const rows = await db
@@ -797,7 +797,23 @@ export async function checkCashierLease(staffId: string, sessionId?: string): Pr
   const row = rows[0];
   if (!row) return false;
   if (`${row.sessionId}` !== `${sessionId}`) return false;
-  return `${row.leaseExpiresAt}` > new Date().toISOString();
+  const nowIso = new Date().toISOString();
+  if (`${row.leaseExpiresAt}` > nowIso) return true;
+
+  // S-01/iOS: Cùng phiên (sessionId khớp, chưa bị máy khác chiếm quyền):
+  // Tự động hồi sinh lease khi thiết bị thức dậy (resume sau sleep/background trên iOS WebKit).
+  try {
+    await db
+      .update(activeSessions)
+      .set({
+        lastSeenAt: nowIso,
+        leaseExpiresAt: leaseExpiryIso(Date.now()),
+      })
+      .where(sql`${activeSessions.staffId} = ${staffId} AND ${activeSessions.sessionId} = ${sessionId}`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -827,11 +843,14 @@ export async function renewCashierLease(params: {
   if (params.sessionVersion !== undefined && Number(st.sessionVersion) !== params.sessionVersion) {
     return false;
   }
+  // S-01/iOS: Cùng thiết bị (sessionId khớp): cho phép gia hạn kể cả khi mốc cũ
+  // vừa quá hạn trong lúc iOS đóng băng timer nền. Máy khác chiếm quyền thì
+  // sessionId đã đổi -> update 0 dòng -> từ chối 401 như cũ.
   const res: any = await db
     .update(activeSessions)
     .set({ lastSeenAt: nowIso, leaseExpiresAt: leaseExpiryIso(nowMs) })
     .where(
-      sql`${activeSessions.staffId} = ${params.staffId} AND ${activeSessions.sessionId} = ${params.sessionId} AND ${activeSessions.leaseExpiresAt} > ${nowIso}`
+      sql`${activeSessions.staffId} = ${params.staffId} AND ${activeSessions.sessionId} = ${params.sessionId}`
     );
   return (res?.rowsAffected ?? 0) === 1;
 }

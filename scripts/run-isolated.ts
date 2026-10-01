@@ -99,6 +99,7 @@ const ALL_SUITES = [
   'scripts/test-auth-rbac.ts',
   'scripts/test-pos-report-permissions.ts',
   'scripts/test-concurrent-session.ts',
+  'scripts/test-cashier-session-recovery.ts',
   'scripts/test-phase0-laneA.ts',
   'scripts/test-cp2-concurrency-probes.ts',
   'scripts/test-cp3-transfer-concurrency.ts',

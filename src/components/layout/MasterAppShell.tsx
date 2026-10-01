@@ -149,9 +149,22 @@ export function MasterAppShell({
     };
     const timer = setInterval(beat, 5 * 60 * 1000);
     void beat(); // Stamp ngay khi vào ca để offline gate có mốc, không chờ 5 phút.
+
+    // S-01/iOS: WebKit đóng băng setInterval khi khoá máy / chuyển app.
+    // Lắng nghe visibilitychange và focus để gia hạn ngay tức thì khi mở lại màn hình.
+    const handleWakeup = () => {
+      if (document.visibilityState === 'visible') {
+        void beat();
+      }
+    };
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+
     return () => {
       alive = false;
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
     };
   }, [session?.role, session?.actorId]);
 
