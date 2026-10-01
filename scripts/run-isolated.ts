@@ -86,6 +86,7 @@ const ALL_SUITES = [
   'scripts/test-customer-tags.ts',
   'scripts/test-sponsorships.ts',
   'scripts/test-analytics.ts',
+  'scripts/test-stock-summary-scope.ts',
   'scripts/test-order-guards.ts',
   'scripts/test-patch02-laneA.ts',
   'scripts/test-patch02-laneB.ts',
