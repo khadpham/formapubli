@@ -70,6 +70,7 @@ const ALL_SUITES = [
     'scripts/test-ux-crud-fixes.ts',
   'scripts/test-warehouse-lifecycle.ts',
   'scripts/test-autoclose-shift.ts',
+  'scripts/test-cashbox-audit-count.ts',
   'scripts/test-cron-auto-close.ts',
   'scripts/test-payment-photo-contract.ts',
   'scripts/test-photo-write-gate.ts',

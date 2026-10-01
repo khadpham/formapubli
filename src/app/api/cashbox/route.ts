@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     if (action === 'OPEN' && openingInvalid) {
       return NextResponse.json({ success: false, error: 'Tiền đầu ca không hợp lệ.' }, { status: 400 });
     }
-    if (action === 'CLOSE' && closingInvalid) {
+    if ((action === 'CLOSE' || action === 'AUDIT_COUNT') && closingInvalid) {
       return NextResponse.json({ success: false, error: 'Tiền thực đếm không hợp lệ.' }, { status: 400 });
     }
 
@@ -206,8 +206,31 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (action === 'AUDIT_COUNT') {
+      if (userRole === 'ROLE_CASHIER') {
+        return NextResponse.json(
+          { success: false, code: 'FORBIDDEN', error: 'Chỉ quản lý mới được bổ sung tiền thực đếm sau khi chốt.' },
+          { status: 403 }
+        );
+      }
+      if (!sessionId || closingCashActual === undefined) {
+        return NextResponse.json(
+          { success: false, error: 'Thiếu mã phiên (sessionId) hoặc số tiền thực đếm (closingCashActual).' },
+          { status: 400 }
+        );
+      }
+      const result = await CashboxService.auditClosingCash({
+        sessionId,
+        closingCashActual: closingAmount,
+        notes,
+        actorRole: userRole,
+        actorId: session.actorId,
+      });
+      return NextResponse.json({ success: true, data: result });
+    }
+
     return NextResponse.json(
-      { success: false, error: `Hành động không hợp lệ: ${action}. Chỉ chấp nhận 'OPEN', 'CLOSE' hoặc 'AUTO_CLOSE'.` },
+      { success: false, error: `Hành động không hợp lệ: ${action}. Chỉ chấp nhận 'OPEN', 'CLOSE', 'AUTO_CLOSE' hoặc 'AUDIT_COUNT'.` },
       { status: 400 }
     );
   } catch (error: any) {
