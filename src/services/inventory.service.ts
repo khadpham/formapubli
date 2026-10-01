@@ -89,7 +89,10 @@ export class InventoryService {
       .from(stockBalances)
       .where(
         and(
-          eq(stockBalances.editionId, editionId),
+          // Lọc theo `product_id` (khóa UNIQUE), KHÔNG lọc `edition_id`:
+          // hàng hóa có `edition_id = NULL` nên lọc theo đó không bao giờ
+          // khớp. Sách có `product_id === edition_id` nên không đổi hành vi.
+          eq(stockBalances.productId, editionId),
           eq(stockBalances.warehouseId, warehouseId),
           eq(stockBalances.condition, condition)
         )
@@ -118,13 +121,13 @@ export class InventoryService {
     if (ids.length === 0) return out;
     const rows = await txOrDb
       .select({
-        editionId: stockBalances.editionId,
+        editionId: stockBalances.productId,
         qty: stockBalances.physicalQuantity,
       })
       .from(stockBalances)
       .where(
         and(
-          inArray(stockBalances.editionId, ids),
+          inArray(stockBalances.productId, ids),
           eq(stockBalances.warehouseId, warehouseId),
           eq(stockBalances.condition, condition)
         )
@@ -223,7 +226,10 @@ export class InventoryService {
         .insert(stockBalances)
         .values({
           id: bucketId,
-          editionId,
+          // 0033: hàng hóa (GOODS) không có dòng `editions` ⇒ `edition_id` phải
+          // NULL, nếu không FK `editions(id)` chặn. (Chỉ thấy khi bucket chưa
+          // tồn tại — bucket đã có thì ON CONFLICT DO NOTHING bỏ qua.)
+          editionId: isBook ? editionId : null,
           // 0032: `product_id` NOT NULL + FK `products(id)`. Sách có
           // `products.id === editions.id`, nên đặt bằng `editionId`.
           productId: editionId,
@@ -258,7 +264,8 @@ export class InventoryService {
           .from(stockBalances)
           .where(
             and(
-              eq(stockBalances.editionId, editionId),
+              // `product_id`, không phải `edition_id` (hàng hóa có edition NULL).
+              eq(stockBalances.productId, editionId),
               eq(stockBalances.warehouseId, warehouseId),
               eq(stockBalances.condition, condition)
             )
@@ -277,7 +284,8 @@ export class InventoryService {
         .from(stockBalances)
         .where(
           and(
-            eq(stockBalances.editionId, editionId),
+            // `product_id`, không phải `edition_id` (hàng hóa có edition NULL).
+            eq(stockBalances.productId, editionId),
             eq(stockBalances.warehouseId, warehouseId),
             eq(stockBalances.condition, condition)
           )
@@ -403,7 +411,9 @@ export class InventoryService {
         .values(
           rows.map((it) => ({
             id: `sb-${it.editionId}-${common.warehouseId}-${condition}`,
-            editionId: it.editionId,
+            // Hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, nếu
+            // không FK `editions(id)` chặn (đã dính khi nạp SP-001 lên prod).
+            editionId: (it as any).isBook === false ? null : it.editionId,
             // 0032: NOT NULL + FK. Sách có `products.id === editions.id`.
             productId: it.editionId,
             warehouseId: common.warehouseId,
@@ -435,15 +445,17 @@ export class InventoryService {
       deltaByKey.set(key, (deltaByKey.get(key) ?? 0) + it.quantityDelta);
     }
     const agg = Array.from(deltaByKey.entries());
+    // `product_id` là khóa UNIQUE — `edition_id` của hàng hóa là NULL nên
+    // khớp theo đó không bao giờ trúng. Sách có product_id === edition_id.
     const branches = agg
       .map(([key, delta]) => {
         const [editionId, condition] = key.split('::');
-        return sql`WHEN ${stockBalances.editionId} = ${editionId} AND ${stockBalances.condition} = ${condition} THEN ${delta}`;
+        return sql`WHEN ${stockBalances.productId} = ${editionId} AND ${stockBalances.condition} = ${condition} THEN ${delta}`;
       })
       .reduce((acc, b) => sql`${acc} ${b}`, sql``);
     const matches = items.map(
       (it) =>
-        sql`(${stockBalances.editionId} = ${it.editionId} AND ${stockBalances.condition} = ${it.condition || 'NEW'})`
+        sql`(${stockBalances.productId} = ${it.editionId} AND ${stockBalances.condition} = ${it.condition || 'NEW'})`
     );
     await tx.run(sql`
       UPDATE stock_balances
@@ -456,7 +468,7 @@ export class InventoryService {
     // 4. Kiểm âm: đọc lại TẤT CẢ tồn kho trong 1 câu. Sai ⇒ ném lỗi ⇒ rollback
     //    cả đơn, y hệt bản lặp.
     const after = await tx
-      .select({ editionId: stockBalances.editionId, condition: stockBalances.condition, qty: stockBalances.physicalQuantity })
+      .select({ editionId: stockBalances.productId, condition: stockBalances.condition, qty: stockBalances.physicalQuantity })
       .from(stockBalances)
       .where(
         and(
@@ -464,7 +476,7 @@ export class InventoryService {
           or(
             ...items.map((it) =>
               and(
-                eq(stockBalances.editionId, it.editionId),
+                eq(stockBalances.productId, it.editionId),
                 eq(stockBalances.condition, it.condition || 'NEW')
               )
             )

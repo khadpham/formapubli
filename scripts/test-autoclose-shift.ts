@@ -620,6 +620,15 @@ async function run() {
   // Đồng hồ thật cho phần này: case "mở ca ngay lúc này" phải dùng giờ thật.
   delete process.env.CASHBOX_TEST_NOW;
 
+  // Cửa sổ nửa đêm ±3 phút (giờ máy chủ): ca vừa mở lúc 23:59:xx đã QUA mốc
+  // chốt 23:59:00 nên overdue=true là ĐÚNG — code đúng, kỳ vọng "vừa mở thì
+  // không quá giờ" sai đúng 60 giây này. Tương tự 00:00–00:03 cho case ca đêm.
+  // Không bỏ qua âm thầm: 4 check giờ-thật bên dưới tự in dòng BỎ QUA.
+  const __mm = realNow.getHours() * 60 + realNow.getMinutes();
+  const SKIP_LIVE_CLOCK = __mm >= 23 * 60 + 57 || __mm < 3;
+  const skipLive = (label: string) =>
+    console.log(`  ! BỎ QUA (cửa sổ nửa đêm ±3 phút): ${label}`);
+
   const { parseDbTimestamp } = await import('../src/lib/db-timestamp');
 
   // Đúng thứ SQLite CURRENT_TIMESTAMP sẽ ghi: UTC, "YYYY-MM-DD HH:MM:SS", không múi giờ.
@@ -646,7 +655,8 @@ async function run() {
   });
 
   const evalJustOpened = evaluateShiftCutoff(justOpened, { warehouseId: 'wh-auto-3', now: realNow });
-  check('ca vừa mở (giờ thật) KHÔNG bị coi là quá giờ', () => {
+  if (SKIP_LIVE_CLOCK) skipLive('ca vừa mở (giờ thật) KHÔNG bị coi là quá giờ');
+  else check('ca vừa mở (giờ thật) KHÔNG bị coi là quá giờ', () => {
     assert.strictEqual(evalJustOpened.overdue, false);
     assert.ok(evalJustOpened.elapsedMinutes <= 1, `elapsedMinutes=${evalJustOpened.elapsedMinutes}`);
     // SQLite chỉ ghi tới giây → so với thời điểm thật đã cắt ms, lệch tối đa 999ms.
@@ -671,7 +681,8 @@ async function run() {
     warehouseId: 'wh-auto-3',
     now: realNow,
   });
-  check('ca mở SAU NỬA ĐÊM giờ địa phương vẫn nằm trong ngày nghiệp vụ (không bị chặn)', () => {
+  if (SKIP_LIVE_CLOCK) skipLive('ca mở SAU NỬA ĐÊM giờ địa phương vẫn nằm trong ngày nghiệp vụ (không bị chặn)');
+  else check('ca mở SAU NỬA ĐÊM giờ địa phương vẫn nằm trong ngày nghiệp vụ (không bị chặn)', () => {
     assert.strictEqual(evalOvernight.overdue, false);
     // Ngày nghiệp vụ phải là HÔM NAY theo giờ máy chủ, không phải hôm qua.
     const localToday = `${realNow.getFullYear()}-${String(realNow.getMonth() + 1).padStart(2, '0')}-${String(realNow.getDate()).padStart(2, '0')}`;
@@ -680,7 +691,11 @@ async function run() {
   });
 
   // Hẹn gặp thật: phiên mà DB tự đóng dấu thời gian (CURRENT_TIMESTAMP) rồi bán
-  // ngay. Đây chính là case 6c của test-online-orders từng vỡ.
+  // ngay. Đây chính là case 6c của test-online-orders từng vỡ. Toàn bộ khối này
+  // phụ thuộc "giờ thật < mốc chốt" nên cũng bỏ qua trong cửa sổ nửa đêm.
+  if (SKIP_LIVE_CLOCK) {
+    skipLive('phiên mới mở có opened_at kiểu SQLite + ca mở bằng CURRENT_TIMESTAMP rồi bán ngay (case 6c)');
+  } else {
   await db.insert(schema.cashboxSessions).values({
     id: 'cbs-tz-live',
     warehouseId: 'wh-auto-3',
@@ -715,6 +730,7 @@ async function run() {
     assert.ok(liveOrder, 'đơn phải tạo được');
     assert.strictEqual(liveOrder!.status, 'COMPLETED');
   });
+  }
 
   console.log(`\n${failures === 0 ? '🎉 AUTOCLOSE SHIFT: 100% PASS' : `❌ AUTOCLOSE SHIFT: ${failures} check FAIL`}`);
   if (failures > 0) process.exit(1);

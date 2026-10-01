@@ -1,15 +1,14 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
-**Ngày:** 02/10/2026 · **Trạng thái:** LÕI XONG, CHƯA DEPLOY · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
+**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `55a82ca4` · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
 |---|---|
-| Repo gốc | `D:\Data Project\formapli` (ghi đúng: `D:\Data Project\formapubli`) |
+| Repo gốc | `D:\Data Project\formapubli` |
 | **Worktree đang làm** | `D:\Data Project\formapubli-promo` |
-| Branch | `feat/khuyen-mai-san-pham` |
-| HEAD | `fb3783f` |
-| Số commit chưa merge vào `main` | **8** |
-| Production version đang chạy | `b8ad7643-ec6d-44ac-80e3-d66fd6838213` |
+| Branch | `main` (đã merge `feat/khuyen-mai-san-pham` — merge commit `1d95371`, push origin xác nhận) |
+| HEAD | `1d95371` + docs sau deploy |
+| Production version đang chạy | `55a82ca4-7233-4a81-a1f7-73daf29700e3` (deploy tối 02/10, site trả trang đăng nhập bình thường) |
 
 > **NGƯỜI ĐỌC PHẢI LÀM ĐƯỢC NGAY, KHÔNG PHẢI SUY LUẬN.** Mọi con số dưới đây là số đo được, không phải ước lượng. Lệnh copy chạy được nguyên văn.
 
@@ -19,16 +18,21 @@
 
 | Nhóm | Làm được gì | Chưa làm gì | Rủi ro |
 |---|---|---|---|
-| **Hàng hóa** | ✅ Đầy đủ: bảng `products`, API, UI Cài Đặt → Quản trị → Hàng Hóa, E2E **33/33** | Chưa bán được trên production | Migration đã lên production nhưng code bán hàng hóa **chưa deploy** |
-| **Cổng 3 — engine** | ✅ Hàm thuần khiết, mô hình bậc thang, `test-promotion-engine` **32/32** | UI chưa có gì | Không |
-| **Cổng 3 — server** | ✅ 5 lỗi đã sửa, 5 test khoá lại (20/20, 20/20, 21/21, 12/12) | B3 (quà hết tồn), duyệt quà tay chưa nối | Client có thể gửi cờ quà giả — **đã chặn** |
-| **Cổng 3 — deploy** | — | 🔴 **CHƯA DEPLOY** | Deploy sớm = 2 lỗi lên production (đã xảy ra 1 lần) |
-| **Test suite** | 124/125 xanh | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
-| **Sổ kho** | `stock_balances` ĐÚNG (440 dòng, 0 âm) | 🔴 ledger Hồ Gươm lệch **87 bút toán RECEIPT** | Hàng vật lý đúng; **thiếu sổ, không thiếu hàng** |
+| **Hàng hóa** | ✅ Đầy đủ: bảng `products`, API, UI Cài Đặt → Quản trị → Hàng Hóa, E2E **33/33** | Chưa bán được trên production (code bán chưa deploy) | Migration đã lên production nhưng code bán hàng hóa **chưa deploy** |
+| **Cổng 3 — engine** | ✅ Hàm thuần khiết, mô hình bậc thang, `test-promotion-engine` **32/32** | — | Không |
+| **Cổng 3 — server** | ✅ 5 lỗi đã sửa, 5 test khoá lại (20/20, 20/20, 21/21, 12/12) + B3 quà hết tồn (7/7) + nối `approvedManual` (8.3) | Nút "Tặng thêm" trong giỏ POS chưa có | Client có thể gửi cờ quà giả — **đã chặn** |
+| **Cổng 3 — UI** | ✅ Màn hình cài đặt mốc (Cài Đặt → Khuyến Mãi) + giỏ POS tự hiện badge "Quà" + nút "Bỏ quà" (desktop + mobile) | Nút "Tặng thêm" | Không — UI chỉ đọc/gợi ý, server tự xác minh lại |
+| **Cổng 3 — báo cáo quà** | ✅ `GET /api/reports/gifts` + panel tách còn tồn / hết tồn | — | Không |
+| **Cổng 3 — deploy** | ✅ **ĐÃ DEPLOY tối 02/10** (`55a82ca4`, từ merge `1d95371`) | Nghiệm thu quét SP thật chưa làm (cần máy thật) | Rollback sẵn sàng: `npx wrangler rollback <id>` |
+| **Test suite** | 124/125 xanh (+ tsc 0 + build sạch trên đúng cây deploy, kèm suite `test-autoclose-shift` của main) | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
+| **Sổ kho** | `stock_balances` ĐÚNG (440 dòng, 0 âm) | 🔴 ledger Hồ Gươm lệch **87 bút toán RECEIPT** (để sau hội chợ) | Hàng vật lý đúng; **thiếu sổ, không thiếu hàng** |
+| **Hàng hóa mẫu prod** | ✅ SP-001..004 (Bookmark 5k, Móc khoá 15k, Gói quà 50k, Túi Tote 150k), mỗi món 100 cái × 2 kho (Hồ Gươm + ĐH Hà Nội), 8 bút toán OPENING_BALANCE khớp 8 dòng tồn | Chưa bán được (chờ deploy code) | Không — dữ liệu tượng trưng, chủ duyệt |
 | **Backup** | ✅ `backup-prod.ts` + `restore-prod.ts`, đã khôi phục thật 6/6 bảng khớp | — | Trước đây KHÔNG có script backup Turso |
-| **TypeScript** | `npx tsc --noEmit` **0 lỗi** | — | — |
+| **TypeScript** | `npx tsc --noEmit` **0 lỗi** (sau commit mới nhất `3185edb`) | — | — |
 
-**Ba việc kế tiếp theo thứ tự:** (1) UI khuyến mại → (2) B3 quà hết tồn → (3) luồng duyệt quà tay.
+**Việc đã xong sau bàn giao (8 commit):** UI cài đặt mốc `7fc1ab2` → giỏ POS badge Quà `709cad9` → B3 `efa5e0e` → duyệt quà tay `53ecc1e` → báo cáo quà `812745c` + fix gitignore `285e4e4` → fix test regex `e7343d5` → fix kho product_id `3185edb`.
+
+**Việc kế tiếp duy nhất cần chủ quyết:** deploy hay không (xem mục 12).
 
 ---
 
@@ -179,11 +183,13 @@ Mô hình **BẬC THANG**: chỉ mốc **CAO NHẤT** đạt được được k
 
 ### 6.4 Trạng thái test tổng
 
-`npx tsc --noEmit` **0 lỗi** · **124/125 suite xanh**.
+`npx tsc --noEmit` **0 lỗi** · `npm run build` **sạch** · full `run-isolated` **124/125** (chỉ đỏ `test-pay2-money-audit.ts` flaky có sẵn — xem mục 7). Tất cả chạy lại sau commit mới nhất `3185edb` tối 02/10.
+
+Test mới sau bàn giao: `scripts/test-promotions-service.ts` **7/7**, `scripts/test-gift-shortfall.ts` **7/7**.
 
 ---
 
-## 7. 🔴 ĐANG ĐỎ — 1 suite
+## 7. 🔴 ĐANG ĐỎ — 1 suite (đã giảm từ 2: `test-pos-cash-integrity` đã sửa xong ở `e7343d5`)
 
 | Hạng mục | Giá trị |
 |---|---|
@@ -217,47 +223,33 @@ Mô hình **BẬC THANG**: chỉ mốc **CAO NHẤT** đạt được được k
 
 ---
 
-## 8. ⚪ CÒN LẠI — theo thứ tự nên làm
+## 8. ✅ ĐÃ XONG HẾT SAU BÀN GIAO (trừ 2 việc nhỏ ở 8.6)
 
-### 8.1 UI khuyến mại — ⚪ CHƯA LÀM GÌ
+### 8.1 UI khuyến mại — ✅ XONG (`7fc1ab2` + `709cad9`)
 
-| Hạng mục | Cần làm |
+| Hạng mục | Đã làm |
 |---|---|
-| Nút "Khuyến mãi" trong tab POS | Chỉ hiện cho **Quản lý / Chủ** |
-| Màn hình cài đặt mốc | Mỗi dòng: `Từ 500.000đ` → chọn sản phẩm + số lượng |
-| Badge "Quà" trong giỏ | + nút **"Bỏ quà"** |
-| Nút **"Tặng thêm"** | Thêm quà thủ công ngoài chương trình |
-| Cảnh báo giá quà | Khi `giá quà ≥ 50% mốc` — dùng **`giftValueWarning()` đã có sẵn trong `promotion-engine.ts`** |
+| Màn hình cài đặt mốc | Cài Đặt → Quản trị → **Khuyến Mãi** (`PromotionsManager`): thêm/sửa/ngưng chương trình, bậc quà, cảnh báo `giftValueWarning()` |
+| API cấu hình | `GET/POST /api/promotions`, `PATCH /api/promotions/:id` — ghi khóa Quản lý/Chủ; GET mở cho thu ngân đọc để giỏ hiện badge |
+| Badge "Quà" trong giỏ | Desktop + mobile, giá 0đ |
+| Nút **"Bỏ quà"** | Trong giỏ, engine không tặng lại (đã có test engine 32/32 khoá) |
+| Giỏ POS tự tính quà | `computeGifts` cùng hàm với server — client chỉ GỢI Ý, server tự xác minh lại |
 
-Kiểm chứng: mở POS bằng tài khoản Quản lý → thấy nút Khuyến mãi; tạo mốc; quét đơn đủ tiền → giỏ tự hiện badge "Quà"; bấm "Bỏ quà" → dòng quà biến mất.
+Kiểm chứng: `test-promotions-service.ts` **7/7** + hồi quy `test-gift-subtotal` 20/20.
 
-### 8.2 B3 = (b\*) — quà hết tồn
+### 8.2 B3 = (b\*) — quà hết tồn — ✅ XONG (`efa5e0e` + test `test-gift-shortfall.ts` 7/7)
 
-**Nguyên nhân:** hiện tại `order.service.ts` **chặn cả đơn** khi quà hết tồn ⇒ mất đơn hợp lệ.
+Quà hết tồn **vẫn cho thanh toán** nhưng **KHÔNG ghi `stock_balances`**; chỉ ghi `inventory_ledger` + bật cờ `is_gift_shortfall`. Sách thường không đổi.
 
-**Sửa ở đâu:** `src/services/order.service.ts` (nhánh xử lý dòng quà).
+### 8.3 Luồng duyệt quà tay — ✅ XONG PHẦN SERVER (`53ecc1e`)
 
-**Làm gì:** quà hết tồn **vẫn cho thanh toán** nhưng **KHÔNG ghi `stock_balances`**; chỉ ghi `inventory_ledger` + bật cờ `is_gift_shortfall`.
+`order.service.ts` đọc `cartSnapshot` của `discountApprovalId`, truyền `approvedManual` xuống engine. Quà tay chỉ hợp lệ khi đã duyệt — chưa duyệt ⇒ vẫn bị hạ về dòng thường.
 
-Cờ `is_gift_shortfall` **ĐÃ CÓ** trong migration `0032` + `schema.ts` — **code chưa viết**.
+### 8.4 Báo cáo quà tặng — ✅ XONG (`812745c`)
 
-Kiểm chứng: đặt tồn quà = 0, chạy `scripts/test-gift-subtotal.ts` và `scripts/test-gift-offline.ts` ⇒ đơn vẫn 201, `stock_balances` không đổi, `is_gift_shortfall = 1`, ledger có bút toán tương ứng.
+`GET /api/reports/gifts` + panel trong Sổ Doanh Số — tách 2 nhóm theo cờ `is_gift_shortfall`. (Kèm fix `.gitignore`: `reports/` → `/reports/` để không che `src/app/api/reports`, commit `285e4e4`.)
 
-### 8.3 Luồng duyệt quà tay
-
-**Nguyên nhân:** engine đã có tham số **`approvedManual`** nhưng **chưa nối** vào `order.service.ts`.
-
-**Sửa ở đâu:** `src/services/order.service.ts` — truyền `approvedManual` xuống engine và gắn **`discountApprovalId`**.
-
-Kiểm chứng: đơn có quà tay mà chưa duyệt ⇒ **409**; sau khi duyệt ⇒ **201** và `discount_approval_id` không null.
-
-### 8.4 Báo cáo quà tặng
-
-**Nguyên nhân:** báo cáo gộp chung quà còn tồn và quà hết tồn.
-
-**Sửa ở đâu:** báo cáo bán hàng — tách 2 nhóm theo cờ **`is_gift_shortfall`**.
-
-### 8.5 🔴 Sổ kho Hồ Gươm — thiếu 87 bút toán RECEIPT
+### 8.5 🔴 Sổ kho Hồ Gươm — thiếu 87 bút toán RECEIPT (CHƯA LÀM — để sau hội chợ, khi kho đóng)
 
 | Số liệu | Giá trị |
 |---|---|
@@ -273,14 +265,32 @@ Kiểm chứng: đơn có quà tay mà chưa duyệt ⇒ **409**; sau khi duyệ
 
 > **Hàng vật lý ĐÚNG — thiếu sổ, không thiếu hàng.**
 
+### 8.6 Hàng hóa mẫu trên production — ✅ XONG (chủ duyệt, đã nạp 02/10 tối)
+
+| Món | Mã | Giá | Tồn |
+|---|---|---|---|
+| Bookmark | SP-001 | 5.000đ | 100 Hồ Gươm + 100 ĐH Hà Nội |
+| Móc khoá | SP-002 | 15.000đ | 100 + 100 |
+| Gói quà Bất ngờ | SP-003 (đánh dấu quà) | 50.000đ | 100 + 100 |
+| Túi Tote | SP-004 | 150.000đ | 100 + 100 |
+
+Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút toán OPENING_BALANCE — 8 bút toán khớp 8 dòng tồn). Khi nạp phát hiện bug kho (xem bài học 9) và đã sửa trong `3185edb`.
+
+### 8.7 Còn mở (nhỏ, không chặn deploy)
+
+1. Nút **"Tặng thêm"** trong giỏ POS (quà tay tự phục vụ) — engine + server đã sẵn (8.3), chỉ thiếu nút bấm.
+2. `scripts/probe-ordercode-length.ts` (untracked, không phải của đợt này — để nguyên, không commit).
+
 ---
 
 ## 9. LỘ TRÌNH CỬA SỔ
 
 | Điều kiện | Trạng thái hiện tại |
 |---|---|
-| **Chưa ai được nhập hàng hóa vào kho** cho tới khi có xác nhận "xanh" | Màn hình Hàng Hóa **đã hiện** nhưng **chưa bán được** |
+| **Chưa ai được nhập hàng hóa vào kho** cho tới khi có xác nhận "xanh" | ⚠️ ĐÃ NHẬP MẪU theo lệnh chủ (SP-001..004, 100×2 kho) — nhưng **chưa bán được** vì code Cổng 3 chưa deploy |
 | Migration `0031`–`0033` đã áp | ✅ Nhưng **chưa deploy code Cổng 3** |
+
+**Sau khi "xanh" bao gồm:** Cổng 3 deploy xong + hàng hóa mẫu bán được trên production (quét SP-001..004 ra đơn thật).
 
 **Lý do:** hàng hóa chưa bán được trên production. Điều kiện này do **agent giám sát** đặt ra và **đã được chủ đồng ý**.
 
@@ -288,7 +298,7 @@ Kiểm chứng: đơn có quà tay mà chưa duyệt ⇒ **409**; sau khi duyệ
 
 ---
 
-## 10. BÀI HỌC ĐÃ MẮC (8 bài — đọc để không lặp lại)
+## 10. BÀI HỌC ĐÃ MẮC (9 bài — đọc để không lặp lại)
 
 | # | Bài học | Hệ quả đã gặp |
 |---|---|---|
@@ -300,12 +310,24 @@ Kiểm chứng: đơn có quà tay mà chưa duyệt ⇒ **409**; sau khi duyệ
 | 6 | **`schema.ts` phải khớp migration** | Khai `promotion_gifts.created_at` nhưng `0031` không tạo cột đó ⇒ **mọi truy vấn bảng đó trả 500** |
 | 7 | **Giao sub-agent theo MẪU LỖI, không theo danh sách file** | **4 file** cùng một lỗi bị sót vì tôi liệt kê tên file |
 | 8 | **Test phải tự dựng dữ liệu chương trình** | `test-gift-subtotal` / `test-gift-offline` gửi cờ quà nhưng **không tạo `promotions`** ⇒ server hạ dòng quà (đúng hành vi bảo mật) ⇒ test đỏ. Sửa bằng cách **dựng chiến dịch thật**, KHÔNG nới lỏng kiểm tra bảo mật |
+| 9 | **`stock_balances` đọc/ghi theo `product_id`, KHÔNG theo `edition_id`** | Hàng hóa có `edition_id = NULL` (FK `editions`) nên nạp tồn crash FK + tra tồn luôn trả 0. Sách có `product_id === edition_id` nên đổi sang `product_id` không đổi hành vi sách. Đã quét hết `inventory.service.ts` (getBalance, getBatchBalance, recordMovement, recordMovementsBatch) |
 
 ---
 
 ## 11. DANH SÁCH FILE QUAN TRỌNG
 
-### Code Cổng 3
+### Code Cổng 3 (thêm sau bàn giao)
+
+| File | Vai trò |
+|---|---|
+| `src/services/promotion.service.ts` | CRUD cấu hình khuyến mại (validate mốc/số lượng/sản phẩm) |
+| `src/app/api/promotions/route.ts` + `[id]/route.ts` | GET (thu ngân được đọc) / POST / PATCH (khóa Quản lý/Chủ) |
+| `src/components/settings/PromotionsManager.tsx` | Màn hình cài đặt mốc (Cài Đặt → Khuyến Mãi) |
+| `src/services/gift-report.service.ts` + `src/app/api/reports/gifts/route.ts` | Báo cáo quà tách còn tồn / hết tồn |
+| `src/components/sales/GiftReportPanel.tsx` | Panel báo cáo trong Sổ Doanh Số |
+| `src/components/pos/PosCheckoutTerminal.tsx` | Giỏ tự tính quà + badge "Quà" + "Bỏ quà" (desktop + mobile); dòng quà đi vào cả 2 đường online/offline |
+
+### Code Cổng 3 (lúc bàn giao)
 
 | File | Vai trò |
 |---|---|
@@ -331,12 +353,15 @@ Kiểm chứng: đơn có quà tay mà chưa duyệt ⇒ **409**; sau khi duyệ
 | `scripts/restore-prod.ts` | Khôi phục (dry-run mặc định) |
 | `scripts/apply-00XX-prod.ts` | Áp migration production |
 | `scripts/verify-pos-live.ts` | Nghiệm thu tầng 3 — **tạo đơn thật**, không phải chỉ đọc |
+| `scripts/seed-goods-prototype.ts` | Nạp SP-001..004 + tồn 100×2 kho (idempotent, bọc prod-write-guard) |
 | `scripts/test-goods-sell-e2e.ts` | 33/33 |
 | `scripts/test-promotion-engine.ts` | 32/32 |
+| `scripts/test-promotions-service.ts` | **7/7 (mới)** |
 | `scripts/test-gift-subtotal.ts` | 20/20 |
 | `scripts/test-gift-approval-hash.ts` | 20/20 |
 | `scripts/test-gift-offline.ts` | 21/21 |
 | `scripts/test-gift-forgery.ts` | 12/12 |
+| `scripts/test-gift-shortfall.ts` | **7/7 (mới, B3)** |
 | `scripts/test-pay2-money-audit.ts` | 🔴 flaky có sẵn (mục 7) |
 | `scripts/test-royalties.ts` | Cùng triệu chứng flaky |
 
@@ -346,15 +371,16 @@ Kiểm chứng: đơn có quà tay mà chưa duyệt ⇒ **409**; sau khi duyệ
 
 ---
 
-## 12. LỘ TRÌNH SAU KHI NHẬN BÀN GIAO
+## 12. LỘ TRÌNH SAU KHI NHẬN BÀN GIAO (cập nhật sau 8 commit mới)
 
-| Bước | Việc | Điều kiện kết thúc |
+| Bước | Việc | Trạng thái |
 |---|---|---|
-| 1 | `git branch --show-current` xác nhận đúng branch | Trả `feat/khuyen-mai-san-pham` |
-| 2 | Đọc mục 8.1 → làm UI khuyến mại | Nút + mốc + badge + 2 nút chạy tay trên POS |
-| 3 | Chạy `npx tsx scripts/run-isolated.ts` | **124/125** hoặc tốt hơn, `tsc` 0 lỗi |
-| 4 | Làm mục 8.2 (B3) → 8.3 (duyệt quà tay) → 8.4 (báo cáo) | Mỗi mục có test riêng xanh |
-| 5 | **Báo cáo kết quả trước khi deploy** | Chủ duyệt |
-| 6 | Deploy + rollback nếu cần | `npm run deploy`; `npx wrangler rollback <id>` |
-| 7 | Mục 8.5 ghi bù sổ kho Hồ Gươm | **Chạy khi kho đóng** |
-| 8 | Báo "xanh" để mở lộ trình cửa sổ nhập hàng hóa | Có xác nhận từ chủ |
+| 1 | `git branch --show-current` xác nhận đúng branch | ✅ `feat/khuyen-mai-san-pham`, HEAD `3185edb`, cây sạch (trừ 1 file untracked không phải của đợt này) |
+| 2 | UI khuyến mại (8.1) | ✅ XONG |
+| 3 | B3 (8.2) → duyệt tay (8.3) → báo cáo (8.4) | ✅ XONG, mỗi mục có test riêng xanh |
+| 4 | Nạp hàng mẫu SP-001..004 lên prod (8.6) | ✅ XONG — đọc lại prod khớp 4 SP + 8 dòng tồn 100 + 8 bút toán |
+| 5 | Chạy `npm run build` + full `run-isolated` LẠI sau `3185edb` | ✅ XONG tối 02/10 — build sạch, 124/125 (chỉ đỏ flaky royalty) |
+| 6 | **Chủ duyệt deploy** | ✅ DUYỆT + DEPLOY tối 02/10 — merge `1d95371`, push origin xác nhận, `npm run deploy` → `55a82ca4`, site sống |
+| 7 | Nghiệm thu tầng 3 trên prod: quét SP-001..004 ra đơn thật | ⏳ Sáng mai, máy thật (chưa làm — cố ý không tạo đơn rác tối nay) |
+| 8 | Mục 8.5 ghi bù sổ kho Hồ Gươm | **Chạy khi kho đóng (sau hội chợ)** |
+| 9 | Báo "xanh" để mở lộ trình cửa sổ | Sau bước 7 |
