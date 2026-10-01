@@ -52,6 +52,83 @@ function vnHm(value: string | Date | null | undefined): string {
   return d && !Number.isNaN(d.getTime()) ? vnHmFmt.format(d) : '';
 }
 
+/** Mốc thời gian đã chuẩn hoá về Date (hỗ trợ cả số epoch). */
+function asDate(value: string | Date | number | null | undefined): Date | null {
+  const d = typeof value === 'number' ? new Date(value) : parseDbTimestamp(value);
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+/** Giờ Việt Nam (0–23) của một mốc thời gian trong DB. */
+function vnHourOf(value: string | Date | number | null | undefined): number | null {
+  const d = asDate(value);
+  return d ? new Date(d.getTime() + 7 * 3600 * 1000).getUTCHours() : null;
+}
+
+/** Ngày nghiệp vụ Việt Nam 'YYYY-MM-DD' của một mốc thời gian. */
+function vnDayOf(value: string | Date | number | null | undefined): string | null {
+  const d = asDate(value);
+  return d ? new Date(d.getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10) : null;
+}
+
+/** Giờ mở ca mặc định khi ngày đó không có dữ liệu hoạt động nào. */
+const HOUR_DEFAULT_START = 8;
+/** Giờ chốt ca quy ước khi in ngày đã qua — không cắt trước giờ này. */
+const HOUR_PAST_END = 21;
+
+/**
+ * KHUNG GIỜ ĐỘNG của dải giờ: `[start, end]` là khoảng giờ có việc thật, tính từ
+ * ca mở/đóng và giờ có đơn. In cứng 24 cột thì một quầy mở 9h đóng 18h ra 15 cột
+ * rỗng — cột rỗng mà lại không vẽ được (xem chú thích dải giờ SVG trong bản in).
+ *
+ * Mọi mốc thời gian đi qua `parseDbTimestamp` + 7h, KHÔNG cắt chuỗi và KHÔNG dùng
+ * giờ máy: DB có HAI họ timestamp cùng tồn tại, cắt chuỗi là ra giờ UTC ⇒ lệch 7
+ * tiếng ⇒ dải in lệch hẳn khung giờ làm việc.
+ *
+ * - Hôm nay: kết thúc ở max(giờ hiện tại, giờ có việc cuối) — giờ hiện tại là mốc
+ *   dưới, nên dải không bao giờ cắt mất giờ đang bán.
+ * - Ngày đã qua: kéo tới 21h, giờ đóng ca không phải mốc chặn (quầy đóng ca sớm
+ *   vẫn phải in tới giờ chốt quy ước).
+ * - `end > start` luôn: khung rỗng thì dải in không có cột nào để đọc.
+ */
+export function hourWindow(input: {
+  sessions?: ({ openedAt?: string | Date | null; closedAt?: string | Date | null } | null)[] | null;
+  hourly?: ({ hour: number; orders?: number | null } | null)[] | null;
+  reportDate?: string | null;
+  now?: string | Date | number | null;
+} = {}): { start: number; end: number } {
+  const rows = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  const nowValue = input.now ?? new Date();
+  const hours = (v: (number | null)[]) => v.filter((h): h is number => h != null && Number.isFinite(h));
+
+  const busy = rows<{ hour: number; orders?: number | null }>(input.hourly)
+    .filter((h) => Number(h?.orders || 0) > 0)
+    .map((h) => Number(h?.hour))
+    .filter((h) => Number.isFinite(h));
+  const opened = hours(rows<{ openedAt?: string | Date | null }>(input.sessions).map((s) => vnHourOf(s?.openedAt)));
+  const closed = hours(rows<{ closedAt?: string | Date | null }>(input.sessions).map((s) => vnHourOf(s?.closedAt)));
+
+  const firstActivity = [...opened, ...busy].length ? Math.min(...opened, ...busy) : null;
+  const lastActivity = [...closed, ...busy].length ? Math.max(...closed, ...busy) : null;
+  // Không có hoạt động nào thì lùi về 8h — nhưng KHÔNG cắt mất hoạt động sớm hơn 8h.
+  const start = firstActivity ?? HOUR_DEFAULT_START;
+
+  const nowHour = vnHourOf(nowValue) ?? HOUR_DEFAULT_START;
+  const reportDay = input.reportDate || vnDayOf(nowValue);
+  const isToday = reportDay != null && vnDayOf(nowValue) === reportDay;
+  let end: number;
+  if (isToday) end = lastActivity == null ? nowHour : Math.max(nowHour, lastActivity);
+  else end = lastActivity == null ? HOUR_PAST_END : Math.max(HOUR_PAST_END, lastActivity);
+  if (end <= start) end = Math.min(24, start + 1);
+  return { start, end };
+}
+
+// Hình học dải giờ trên bản in: viewBox 240×46, co giãn theo bề rộng khung in.
+// Nét VÀ CHỮ đều là nội dung SVG nên in mặc định (khác màu nền CSS).
+const BAND_W = 240;
+const BAND_H = 46;
+const BAND_BASE_Y = 34;
+const BAND_PLOT_H = 26;
+
 /** Nhãn tiếng Việt của hình thức thanh toán — cùng cách chia 3 nhóm với service. */
 function paymentMethodLabel(method: string | null | undefined): string {
   const key = (method || 'CASH').toUpperCase();
@@ -233,10 +310,27 @@ export function DailyFairSettlementModal({
   // tồn lý thuyết. Cố ý KHÔNG in 0 cho phần kiểm kê: số 0 là hẹn số bịa.
   void 0;
 
-  // Dải 24 giờ VN cho biểu đồ cột cao điểm trên bản in. `Math.max(1, ...)` để
-  // ngày không bán được gì vẫn ra 24 cột xám bằng nhau thay vì chia 0 = NaN.
+  // Dải 24 mốc giờ VN cho biểu đồ cột cao điểm trên bản in. `Math.max(1, ...)` để
+  // ngày không bán được gì vẫn ra cột xám thay vì chia 0 = NaN.
   const hourly: any[] = data?.ordersByHour || [];
-  const maxHourOrders = Math.max(1, ...hourly.map((h: any) => Number(h.orders || 0)));
+
+  // KHUNG GIỜ ĐỘNG — dải giờ chỉ in khoảng có việc thật. `slice(start, end + 1)`
+  // vì `end` là giờ CUỐI CÙNG có việc (hoặc giờ hiện tại của hôm nay) nên nó phải
+  // nằm trong dải. Cùng hàm này dùng cho cả màn hình lẫn bản in.
+  const hourWin = hourWindow({
+    sessions: data?.cashboxReconciliation?.sessions,
+    hourly,
+    reportDate: shownReportDate,
+  });
+  const hourlyInWindow = hourly.slice(hourWin.start, hourWin.end + 1);
+  const maxHourOrders = Math.max(1, ...hourlyInWindow.map((h: any) => Number(h.orders || 0)));
+  const peakIndex = hourlyInWindow.reduce(
+    (best: number, h: any, i: number) => (Number(h.orders || 0) > Number(hourlyInWindow[best]?.orders || 0) ? i : best),
+    0
+  );
+  const bandSlot = BAND_W / Math.max(1, hourlyInWindow.length);
+  /** Cao cột theo số đơn; giờ 0 đơn vẫn chừa 2 đơn vị để thấy mốc giờ trống. */
+  const bandBarH = (n: number) => (n > 0 ? Math.max(6, Math.round((n / maxHourOrders) * BAND_PLOT_H)) : 2);
 
   // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
   const soldOnlyRows: any[] = (data?.inventoryReconciliation || []).filter(
@@ -276,9 +370,11 @@ export function DailyFairSettlementModal({
             /* Lớp "hidden" (display:none) của Tailwind đè lên "print:block" tuỳ
                thứ tự CSS. Tự ép hiện để không bao giờ phụ thuộc thứ tự đó. */
             display: block !important;
-            position: absolute;
-            left: 0;
-            top: 0;
+            /* KHÔNG position:absolute. Owner in thật và thấy TRANG 2 dính sát mép
+               trái còn trang 1 thì có lề: Chrome ngắt trang khối absolute kiểu khác
+               hẳn khối in-flow, padding chỉ giữ được ở trang đầu. Khối in vốn đã là
+               portal thẳng xuống document.body (anh em của backdrop, ngoài khung modal
+               cắt tràn) nên không cần absolute để ra khỏi khung cắt. */
             width: 100%;
             background: white !important;
             /* LỀ THẬT của bản in nằm ở padding này, KHÔNG nằm ở @page. Chrome bỏ qua
@@ -1122,32 +1218,68 @@ export function DailyFairSettlementModal({
                 </tbody>
               </table>
 
-              {/* Dải 24 giờ VN, CSS thuần (không lib): cao = số đơn của giờ đó,
-                  chuẩn là giờ bán nhiều nhất trong chính ngày. Giờ không bán
-                  được gì thì cột xám bằng 0 — giữ đủ 24 cột để đọc là biết ngay
-                  gian hàng mở lúc nào. */}
+              {/* Dải giờ VN vẽ bằng SVG, KHÔNG bằng div màu nền: Chrome lược màu
+                  nền khi hộp thoại In để "Background graphics" tắt (đang tắt) ⇒
+                  bản in ra dải cột TRỐNG trong khi chữ vẫn in đủ. Nét và chữ
+                  SVG là nội dung nên in mặc định. Khung giờ lấy động từ
+                  `hourWindow` (giờ mở ca + giờ có đơn), không hard-code. */}
               <div className="mt-1.5">
-                <p className="font-bold uppercase text-slate-800">- Số đơn theo giờ (giờ Việt Nam):</p>
-                <div className="flex items-end gap-[2px] h-9 mt-1" role="img" aria-label="Số đơn bán theo từng giờ trong ngày">
-                  {hourly.map((h: any) => {
+                <p className="font-bold uppercase text-slate-800">
+                  - Số đơn theo giờ ({hourWin.start}h–{hourWin.end}h, giờ Việt Nam):
+                </p>
+                <svg
+                  viewBox={`0 0 ${BAND_W} ${BAND_H}`}
+                  className="w-full h-auto mt-1"
+                  fontFamily="monospace"
+                  role="img"
+                  aria-label={`Số đơn bán theo từng giờ từ ${hourWin.start}h đến ${hourWin.end}h giờ Việt Nam`}
+                >
+                  {hourlyInWindow.map((h: any, i: number) => {
                     const n = Number(h.orders || 0);
-                    return (
-                      <div
-                        key={h.hour}
-                        title={`${h.hour}h: ${n} đơn · ${(Number(h.sales || 0)).toLocaleString('vi-VN')} đ`}
-                        className={`flex-1 ${n > 0 ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                        style={{ height: `${n > 0 ? Math.max(8, Math.round((n / maxHourOrders) * 100)) : 4}%` }}
-                      />
+                    const bh = bandBarH(n);
+                    const x = (i * bandSlot + 0.6).toFixed(2);
+                    const wRect = Math.max(0.5, bandSlot - 1.2).toFixed(2);
+                    // Hai nhánh tách riêng để màu nằm thẳng trong thẻ in: giờ có đơn
+                    // màu chàm, giờ trống màu xám nhạt — xám VẪN THẤY để đọc ra
+                    // giờ nào không bán, không in ra khoảng trống mờ mịt.
+                    return n > 0 ? (
+                      <rect key={h.hour} x={x} y={BAND_BASE_Y - bh} width={wRect} height={bh} fill="#4f46e5" />
+                    ) : (
+                      <rect key={h.hour} x={x} y={BAND_BASE_Y - bh} width={wRect} height={bh} fill="#cbd5e1" />
                     );
                   })}
-                </div>
-                <div className="flex justify-between font-mono text-[9px] text-slate-500 mt-0.5">
-                  <span>0h</span>
-                  <span>6h</span>
-                  <span>12h</span>
-                  <span>18h</span>
-                  <span>23h</span>
-                </div>
+                  {/* Số đơn của giờ cao điểm, đặt trên đỉnh cột max (một chữ số). */}
+                  {hourlyInWindow.length > 0 && (
+                    <text
+                      x={(peakIndex * bandSlot + bandSlot / 2).toFixed(2)}
+                      y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 1.5}
+                      textAnchor="middle"
+                      fontSize="5"
+                      fontWeight="bold"
+                      fill="#1e293b"
+                    >
+                      {Number(hourlyInWindow[peakIndex]?.orders || 0)}
+                    </text>
+                  )}
+                  {/* Nhãn giờ: mỗi 3 giờ một nhãn, cộng thêm hai đầu khung. */}
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const hour = Number(h.hour);
+                    const isEnd = i === hourlyInWindow.length - 1;
+                    if (hour % 3 !== 0 && i !== 0 && !isEnd) return null;
+                    return (
+                      <text
+                        key={`nhan-${h.hour}`}
+                        x={(i * bandSlot + bandSlot / 2).toFixed(2)}
+                        y={BAND_BASE_Y + 6}
+                        textAnchor="middle"
+                        fontSize="4.5"
+                        fill="#64748b"
+                      >
+                        {hour}h
+                      </text>
+                    );
+                  })}
+                </svg>
               </div>
 
               {/* Tiền mặt theo từng ca. `expectedCashLive − openingCash` = tiền mặt

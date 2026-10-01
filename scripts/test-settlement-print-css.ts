@@ -39,4 +39,48 @@ if (!/padding:\s*\d+mm\s+\d+mm\s*!important/.test(printableRule[1])) {
   );
 }
 
-console.log('OK: selector in loại trừ đúng bản in; lề lấy từ padding của khối in (@page margin 0).');
+// --- KHỐI IN KHÔNG ĐƯỢC `position: absolute` ------------------------------------
+// Owner đã in thật và báo: TRANG 2 dính sát mép trái, chỉ trang 1 có lề. Nguyên
+// nhân đã xác minh: khối in là khối ABSOLUTE nên Chrome ngắt trang nó kiểu khác
+// hẳn khối in-flow — padding của các trang sau rơi mất, chỉ trang đầu giữ lề.
+// Portal của khối in vốn đã nằm thẳng dưới `document.body` (anh em của backdrop,
+// ngoài khung modal cắt tràn) nên KHÔNG cần absolute để thoát khung cắt.
+// Bỏ comment `/* … */` trước khi kiểm: chú thích giải thích lý do bỏ absolute
+// buộc phải nhắc lại chữ "position: absolute" — mà comment KHÔNG phải khai báo,
+// đọc nó thành lỗi thì test sai.
+const printableDecls = printableRule[1].replace(/\/\*[\s\S]*?\*\//g, '');
+if (/position\s*:\s*absolute/.test(printableDecls)) {
+  throw new Error(
+    'LỖI: khối in không được để `position: absolute` — Chrome ngắt trang khối absolute ' +
+      'sai, padding mất từ trang 2 ⇒ lề trang 2 dính mép. Nhận: ' + printableDecls.trim()
+  );
+}
+
+// --- DẢI GIỜ TRÊN BẢN IN PHẢI VẼ BẰNG SVG, KHÔNG BẰNG MÀU NỀN CSS -------------
+// Owner in ra một dải 24 cột TRỐNG: Chrome lược màu nền khi hộp thoại In để
+// "Background graphics" tắt (đang tắt), chỉ chữ và nhãn còn in. Cách chắc chắn
+// là vẽ bằng SVG inline (nét SVG là nội dung, in mặc định), không phụ thuộc tuỳ
+// chọn trong hộp thoại. Màn hình vẫn giữ div CSS — chỉ bản IN đổi sang SVG.
+const printStart = src.indexOf('id="printable-settlement-report"');
+if (printStart < 0) throw new Error('Không tìm thấy khối biên bản in #printable-settlement-report.');
+const printBody = src.slice(printStart);
+if (!/<svg\b/.test(printBody)) {
+  throw new Error('LỖI: dải giờ trên bản in phải là <svg> — màu nền CSS bị Chrome lược khi tắt "Background graphics".');
+}
+if (!/<rect\b/.test(printBody) || !/fill=["']#4f46e5["']/.test(printBody)) {
+  throw new Error('LỖI: dải giờ SVG phải có <rect> màu indigo #4f46e5 cho giờ có đơn.');
+}
+if (!/<rect\b[^>]*fill=["']#cbd5e1["']/.test(printBody)) {
+  throw new Error('LỖI: giờ 0 đơn vẫn phải thấy trên bản in ⇒ <rect> màu xám #cbd5e1.');
+}
+if (!/hourlyInWindow/.test(printBody) || !/hourWin\.start/.test(printBody) || !/hourWin\.end/.test(printBody)) {
+  throw new Error(
+    'LỖI: dải giờ phải cắt theo khung giờ động (hourWindow → hourlyInWindow) và ghi rõ ' +
+      'khoảng giờ trên biên bản, không in cứng 24 cột.'
+  );
+}
+if (/bg-indigo-600/.test(printBody)) {
+  throw new Error('LỖI: còn dải giờ vẽ bằng màu nền CSS (bg-indigo-600) trong khối in ⇒ in ra trống.');
+}
+
+console.log('OK: selector in loại trừ đúng bản in; lề lấy từ padding của khối in (@page margin 0); dải giờ vẽ bằng SVG.');
