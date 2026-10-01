@@ -265,6 +265,14 @@ P0/P1 dưới đây là thứ tự xử lý đề xuất, không phải tuyên b
 
 **S-OFFLINE: chặn chốt đơn offline mới khi không có lease hợp lệ; giữ nguyên giỏ và queue.** Người dùng đã nhắc lại quyết định trong phán quyết sau review; bỏ trạng thái chờ xác nhận. **Concurrent-login:** cashier-only, giữ phiên cũ, chặn phiên mới; không kick-old. S-01 không còn blocked về quyết định nghiệp vụ, nhưng vẫn phải qua migration/test/release gates.
 
+**S-01b — Tự hồi sinh lease khi CÙNG phiên thức dậy (chủ doanh nghiệp chốt 01/10/2026).** Mốc 10 phút ở §4.1 sinh ra để phòng MỘT tình huống: máy thu ngân hỏng / rơi / hết pin, sau 10 phút máy khác đăng nhập thế chỗ được mà không cần phiền Quản lý. Nhưng nó vô tình trừng phạt cả ca làm việc bình thường: iOS và Android đóng băng `setInterval` khi khoá màn hình, nên heartbeat 5 phút không chạy, lease hết hạn dù KHÔNG máy nào tranh chấp — thu ngân mở lại iPhone phải gõ lại PIN và có nguy cơ mất giỏ.
+
+Quyết định: tách bản chất khỏi cơ chế. `sessionId` gửi lên mà **trùng khớp** với `session_id` đang ghi trong `active_sessions` chứng tỏ *chính chiếc máy đó, chưa từng có máy khác thế chỗ* → server tự re-claim lease (`checkCashierLease` và `renewCashierLease`). Session đã bị đổi (máy B đã vào) → `rowsAffected = 0` → **vẫn 401 đúng như cũ**, S-01 không suy giảm.
+
+- Ràng buộc cứng còn giữ: **không vượt tuổi cookie 12 giờ** (§4.1) — máy ngủ qua đêm sang ca hôm sau vẫn phải đăng nhập lại.
+- Client bổ sung `visibilitychange` + `focus` để gửi ngay một nhịp heartbeat khi thu ngân chạm sáng máy, thay vì chờ hết 5 phút. Phải throttle, không bắn mỗi focus.
+- Bằng chứng: `scripts/test-cashier-session-recovery.ts` — 6 case gọi hàm thật trên DB cô lập, gồm case quan trọng nhất: máy B chiếm quyền rồi máy A cũ bị chặn cả hai đường.
+
 - Client chỉ cho chốt offline trong thời hạn lease đã được server xác nhận gần nhất; không tự kéo dài theo đồng hồ chỉnh tay, không có lease hoặc trạng thái lease không xác định thì chỉ giữ nháp.
 - Khi hết hạn, app tiếp tục cho xem/giữ giỏ nhưng khóa chốt mới và yêu cầu kết nối/xác minh lại. Resume sau sleep phải revalidate trước thao tác ghi.
 - Đơn đã lưu trước đó không bị xóa hoặc tự đổi cashier khi token hết hiệu lực. Chỉ sync sau xác thực đúng actor/quyền; xung đột cần giữ queue và hiển thị để đối soát.

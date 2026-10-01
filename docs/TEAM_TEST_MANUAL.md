@@ -206,14 +206,22 @@ Quy tắc: bug chặn bán/chặn két/chặn đồng bộ = P0 báo ngay; bug c
 4. **Offline:** mất mạng vẫn xem/sửa giỏ NHƯNG **không chốt được đơn offline
    mới** khi phiên chưa được xác nhận gần đây (anti bán ảo); queue cũ không bị xóa.
 5. **Đổi PIN = hết phiên cũ** ở mọi máy (tự đăng xuất, đăng nhập lại).
-6. **Phê duyệt chiết khấu — giỏ bị khóa:** khi chờ duyệt hoặc ĐÃ ĐƯỢC DUYỆT,
+6. **Khoá máy rồi mở lại (bản 01/10):** thu ngân iPhone/Android khoá màn
+   hình 15–30 phút rồi mở lại → **tự vào tiếp, không hỏi lại PIN, không mất
+   giỏ hàng**. Trước bản này máy bị đuổi vì trình duyệt ngủ đông dừng
+   heartbeat. Sau 12 giờ không dùng thì bắt đăng nhập lại (giới hạn này giữ
+   nguyên, không đổi).
+7. **Vẫn chặn máy cũ sau khi đổi máy:** máy A khoá lâu → máy B đăng nhập
+   NV-01 → B vào được → quay lại A mở máy thì **A bị báo hết phiên** và phải
+   đăng nhập lại. Đây là điều KHÔNG được nới lỏng.
+8. **Phê duyệt chiết khấu — giỏ bị khóa:** khi chờ duyệt hoặc ĐÃ ĐƯỢC DUYỆT,
    giỏ khóa hoàn toàn (không thêm/sửa/xóa/scan). Muốn sửa giỏ: bấm
    **"Sửa giỏ và hủy phê duyệt"** — hệ thống hủy phê duyệt TRÊN SERVER rồi
    mới mở khóa (mất mạng khi hủy → giỏ vẫn khóa, không giả định hủy xong).
    Quản lý duyệt: bấm **"Xem giỏ đã khóa"** để đối chiếu đúng giỏ lúc xin duyệt.
-7. **Chuyển khoản / QR (đã gộp 1 lựa chọn):** chọn "Chuyển khoản / QR" → hiện
+9. **Chuyển khoản / QR (đã gộp 1 lựa chọn):** chọn "Chuyển khoản / QR" → hiện
    thông tin TK + QR. Trước khi chốt đơn PHẢI bấm **"Xác nhận đã nhận tiền"**
    (xác nhận tay của thu ngân — đã soi tài khoản/người chuyển). Đơn cũ định
    dạng QR_CODE/BANK_TRANSFER đọc/báo cáo như trước.
-8. **Mobile:** nút **Thanh toán nổi** mở sheet thanh toán (không tự chốt đơn);
+10. **Mobile:** nút **Thanh toán nổi** mở sheet thanh toán (không tự chốt đơn);
    danh mục lưới 2 cột; đóng/mở sheet không mất giỏ.
