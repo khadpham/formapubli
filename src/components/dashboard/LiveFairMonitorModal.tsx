@@ -167,6 +167,27 @@ export function LiveFairMonitorModal({
     }, wait);
   }, [load]);
 
+  /** Nạp lại ngay theo yêu cầu của người dùng (nút làm mới / Tải lại). */
+  const refresh = useCallback(() => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollRef.current = null;
+    // Bấm tay là bằng chứng mạng đã hồi, nên không giữ backoff của lần lỗi trước.
+    backoffRef.current = 0;
+    setLoading(true);
+    void load().finally(() => setLoading(false));
+    schedule();
+  }, [load, schedule]);
+
+  // Đổi kho lúc modal đang mở: xoá số của kho cũ NGAY, không để KPI kho A nằm
+  // dưới nhãn kho B trong lúc chờ nạp. Chạy sau effect cổng isOpen (fetch bất
+  // đồng bộ ⇒ setData tới sau), nên thứ tự không sao.
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    setLastUpdatedAt(null);
+    setIsStale(false);
+  }, [warehouseId]);
+
   // Cổng duy nhất quyết định có poll hay không.
   useEffect(() => {
     if (!isOpen) {
@@ -247,8 +268,15 @@ export function LiveFairMonitorModal({
   // Tên kho lấy từ chính payload (server đã trả kèm fairWarehouses) — không cần
   // thêm prop thứ hai. Chỉ hiện khi đã có tên: đừng in ra id thô cho người dùng.
   const scopeName = warehouseId
-    ? data?.fairWarehouses.find((w) => w.id === warehouseId)?.name || null
+    ? data?.fairWarehouses?.find((w) => w.id === warehouseId)?.name || null
     : null;
+  // Khi lỗi thì `data` chưa có ⇒ chưa biết tên, chỉ còn id. Vẫn phải nói rõ đang
+  // xem kho nào, nếu không người dùng tưởng lỗi nằm ở "hệ thống".
+  const scopeLabel = scopeName
+    ? ` của kho ${scopeName}`
+    : warehouseId
+      ? ` của kho ${warehouseId}`
+      : '';
 
   // createPortal trực tiếp, khớt với 18 file khác trong src/components. Lưu ý:
   // KHÔNG dùng PortalToBody ở đây. Helper đó gate nội dung bằng state `mounted` riêng
@@ -270,14 +298,18 @@ export function LiveFairMonitorModal({
               <div className="min-w-0">
                 <h3 className="font-extrabold text-sm sm:text-base whitespace-nowrap">Trạng Thái Hội Chợ</h3>
                 <p className="text-[11px] sm:text-xs text-slate-400 truncate">
-                  {data ? `Ngày ${data.businessDate} · cập nhật lúc ${clockOf(lastUpdatedAt)}` : 'Đang tải…'}
+                  {data
+                    ? `Ngày ${data.businessDate} · cập nhật lúc ${clockOf(lastUpdatedAt)}`
+                    : error
+                      ? 'Không tải được dữ liệu'
+                      : 'Đang tải…'}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { if (pollRef.current) clearTimeout(pollRef.current); pollRef.current = null; setLoading(true); void load().finally(() => setLoading(false)); schedule(); }}
+                onClick={refresh}
                 className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
                 title="Làm mới số liệu"
                 aria-label="Làm mới số liệu trạng thái hội chợ"
@@ -329,6 +361,42 @@ export function LiveFairMonitorModal({
 
             {!data && !loading && !error && (
               <p className="py-14 text-center text-slate-400 text-xs">Chưa có số liệu.</p>
+            )}
+
+            {/* Lỗi mà chưa có data ⇒ thân modal TRỐNG nếu không có khối này: người
+                dùng thấy modal mở ra rồi trắng, không biết là hỏng hay đang tải. */}
+            {!data && error && (
+              <div className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50 space-y-2.5">
+                <p className="text-xs font-extrabold text-rose-800 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  Không tải được trạng thái{scopeLabel}
+                </p>
+                <p className="text-[11px] text-rose-700">{error}</p>
+                {warehouseId && (
+                  <p className="text-[11px] text-rose-700">
+                    Chỉ xem được kho hội chợ đang hoạt động. Chọn kho khác, hoặc bấm Tải lại.
+                  </p>
+                )}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={refresh}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow transition flex items-center gap-1.5 cursor-pointer"
+                    title="Tải lại trạng thái hội chợ"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Tải lại
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition cursor-pointer"
+                    title="Đóng bảng trạng thái"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
             )}
 
             {data && (

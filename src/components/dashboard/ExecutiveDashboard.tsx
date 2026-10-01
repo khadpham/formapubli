@@ -339,6 +339,19 @@ export function ExecutiveDashboard({
     ? warehouses.filter((w: any) => w.id === lockedWarehouseId)
     : warehouses;
 
+  /**
+   * `live-monitor` chỉ phục vụ kho HỘI CHỢ: server CỐ Ý trả 400 khi `warehouseId`
+   * không phải kho hội chợ đang hoạt động (route.ts:87-96, đã pin bằng
+   * test-live-monitor-runtime P8). Chọn kho vận vật vật lý ⇒ không truyền id,
+   * để modal về hành vi cũ (TẤT CẢ) thay vì mở ra rồi báo lỗi. Lấy
+   * `warehouseType` từ danh sách kho sẵn có, không hardcode id kho nào.
+   */
+  const liveMonitorWarehouseId =
+    selectedWarehouseId !== 'ALL' &&
+    warehouses.some((w: any) => w.id === selectedWarehouseId && w.warehouseType === 'FAIR_EVENT')
+      ? selectedWarehouseId
+      : undefined;
+
   return (
     <div className="space-y-6">
       {/* Top Welcome & Status Banner */}
@@ -869,11 +882,11 @@ export function ExecutiveDashboard({
       />
 
       {/* Modal Trạng Thái Hội Chợ — lúc này, không phải báo cáo cuối ngày.
-          undefined = TẤT CẢ kho hội chợ, giữ nguyên hành vi cũ. */}
+          undefined = TẤT CẢ kho hội chợ, hoặc kho đang chọn không phải hội chợ. */}
       <LiveFairMonitorModal
         isOpen={isLiveMonitorOpen}
         onClose={() => setIsLiveMonitorOpen(false)}
-        warehouseId={selectedWarehouseId === 'ALL' ? undefined : selectedWarehouseId}
+        warehouseId={liveMonitorWarehouseId}
       />
     </div>
   );
