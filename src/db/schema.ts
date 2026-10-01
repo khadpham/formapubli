@@ -51,7 +51,10 @@ export const promotionGifts = sqliteTable('promotion_gifts', {
   // SỐ CỐ ĐỊNH. Không bao giờ theo tỉ lệ — nếu "mua 4 tặng 1" sinh động thì quà
   // sinh quà, đó là vòng lặp thật.
   giftQuantity: integer('gift_quantity').notNull().default(1),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  // KHÔNG khai `created_at`: migration 0031 không tạo cột này trên
+  // `promotion_gifts`. Khai thêm ở đây là lệch schema — drizzle sẽ sinh SQL đọc
+  // cột không tồn tại ⇒ mọi truy vấn chạm bảng này đều 500. Bắt được nhờ
+  // scripts/test-gift-forgery.ts.
 }, (table) => ({
   lookupIdx: index('idx_promotion_gifts_lookup').on(table.promotionId, table.minSubtotal),
   uniqueIdx: uniqueIndex('promotion_gifts_unique').on(table.promotionId, table.minSubtotal, table.productId),

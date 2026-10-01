@@ -72,9 +72,10 @@ import {
    updateOfflineOrderPaymentState,
    attachOfflineOrderPaymentProof,
    applySyncErrorToOfflineOrder,
-   OfflineOrder,
-   OfflinePaymentState,
-   PaymentProofPhoto,
+OfflineOrder,
+    OfflinePaymentState,
+    PaymentProofPhoto,
+    toOfflineSyncItem,
 } from '@/lib/offline-db';
 import { UserRole } from '@/lib/roles';
 import { priceLine } from '@/lib/pricing';
@@ -135,6 +136,10 @@ interface CartItem {
   coverPrice: number;
   quantity: number;
   stockAvailable: number;
+  // 0031: dòng quà của chương trình mốc tiền (bán 0đ). Đường offline PHẢI giữ
+  // cờ này tới lúc đồng bộ — mất cờ thì dòng quà bị áp chiết khấu cả đơn và
+  // đơn offline thu thiếu tiền (xem `toOfflineSyncItem`).
+  isGiftLine?: boolean;
   // 1.0: tồn khả dụng ATP tại thời điểm thêm (null = chưa tra / offline)
   atpAvailable?: number | null;
 }
@@ -769,12 +774,9 @@ export function PosCheckoutTerminal({
               allowOverdraft: true,
               isGift: (order as any).isGift || order.discountRate === 1,
               giftReason: (order as any).giftReason || order.note,
-              items: order.items.map((it) => ({
-                editionId: it.editionId,
-                quantity: it.quantity,
-                unitCoverPrice: it.unitCoverPrice,
-                unitDiscountRate: (order as any).isGift || order.discountRate === 1 ? 1 : undefined,
-              })),
+              items: order.items.map((it) =>
+                toOfflineSyncItem(it, Boolean((order as any).isGift) || order.discountRate === 1)
+              ),
             }),
           });
           const resData = await res.json();
@@ -1826,6 +1828,9 @@ export function PosCheckoutTerminal({
             title: c.title,
             quantity: c.quantity,
             unitCoverPrice: c.coverPrice,
+            // Cờ dòng quà phải đi kèm xuống IndexedDB, không thì lúc đồng bộ
+            // không còn dấu vết để bắt dòng này bán 0đ.
+            isGiftLine: c.isGiftLine === true,
           })),
           subtotal,
           discountAmount: isGift ? subtotal : discountAmount,

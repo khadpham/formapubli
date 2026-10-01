@@ -1,4 +1,5 @@
-import { db, orders, orderItems, editions, products, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs, dailyOrderCounters } from '../db';
+import { db, orders, orderItems, editions, products, promotions, promotionGifts, warehouses, partners, customers, cashboxSessions, returnOrders, inventoryLedger, discountApprovalRequests, activeSessions, stockBalances, auditLogs, dailyOrderCounters } from '../db';
+import { computeGifts, type PromotionCampaign } from '../lib/promotion-engine';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
@@ -17,6 +18,10 @@ export interface OrderItemInput {
   quantity: number;
   unitCoverPrice?: number;
   unitDiscountRate?: number;
+  // 0031: dòng QUÀ của chương trình "đơn đạt mốc tiền". Giá 0đ (unitDiscountRate = 1)
+  // là quyền lợi ĐÃ CẤU HÌNH, không phải thu ngân tự chiết khấu ⇒ dòng này bị miễn
+  // trần chiết khấu và KHÔNG tính vào subtotal/discountAmount của đơn.
+  isGiftLine?: boolean;
 }
 
 export type OrderChannel =
@@ -540,6 +545,61 @@ export class OrderService {
     let calculatedSubtotal = 0;
     let calculatedFinalAmount = 0;
 
+    // Tra chương trình khuyến mại đang chạy. Đây là nguồn SỰ THẬT để xác minh
+    // dòng quà — client KHÔNG được tự quyết mình có quà.
+    // Chỉ tra khi client có gắn cờ quà, để không tốn query cho đơn thường
+    // (đường này sát trần 50 subrequest của Worker).
+    const claimedGiftIds = looseItems.filter((i) => i.isGiftLine).map((i) => i.editionId);
+    let allowedGiftProducts = new Set<string>();
+    if (claimedGiftIds.length) {
+      const campaigns = await db
+        .select()
+        .from(promotions)
+        .where(eq(promotions.isActive, true));
+      const rules = campaigns.length
+        ? await db
+            .select()
+            .from(promotionGifts)
+        : [];
+      const byCampaign = new Map(campaigns.map((c) => [c.id, c]));
+      const shaped: PromotionCampaign[] = campaigns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        isActive: c.isActive,
+        startsAt: c.startsAt,
+        endsAt: c.endsAt,
+        gifts: rules
+          .filter((r) => r.promotionId === c.id)
+          .map((r) => ({
+            minSubtotal: r.minSubtotal,
+            productId: r.productId,
+            giftQuantity: r.giftQuantity,
+          })),
+      })).filter((c) => byCampaign.has(c.id));
+
+      // eligibleBase = tổng giá GỐC của các dòng KHÔNG phải quà.
+      // Tuyệt đối không lấy `calculatedSubtotal` vì nó đã bị trừ chiết khấu, và
+      // không bao giờ lấy tổng cả đơn vì dòng quà sẽ tự đẩy tổng lên bậc kế
+      // tiếp (vòng lặp — đã tốn một đêm tìm hiểu).
+      const eligibleBase = looseItems
+        .filter((i) => !claimedGiftIds.includes(i.editionId))
+        .reduce((s, i) => {
+          const p = dbProducts.find((x) => x.id === i.editionId);
+          // PHẢI NHÂN SỐ LƯỢNG. Bản đầu chỉ cộng `coverPrice` một lần ⇒ đơn
+          // nhiều cuốn tính ra đúng bằng giá bìa của MỘT cuốn, dưới mốc ⇒
+          // quà thật cũng bị hạ. Bắt được bởi scripts/test-gift-forgery.ts.
+          return s + (p?.coverPrice || 0) * (i.quantity || 0);
+        }, 0);
+
+      allowedGiftProducts = new Set(
+        computeGifts({ eligibleBase, campaigns: shaped }).map((g) => g.productId)
+      );
+      // Dòng quà do người tự thêm đã qua duyệt thì được phép, kể cả khi không
+      // nằm trong cấu hình — nhưng BẮT BUỘC phải có `discountApprovalId`.
+      // Ở đây không truyền `approvedManual` vì việc đó thuộc luồng duyệt riêng;
+      // cần thì sẽ bổ sung ở Cổng 3.
+    }
+
     const preparedItems = [
       ...looseItems.map((item) => {
         const edition = editionMap.get(item.editionId);
@@ -547,9 +607,38 @@ export class OrderService {
         if (!edition) throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
         const coverPrice = edition.coverPrice || 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
-        const priced = priceLine(coverPrice, itemDiscountRate, item.quantity);
+        const claimedGift = Boolean(item.isGiftLine);
 
-        calculatedSubtotal += priced.subtotal;
+        // ⚠️ KHÔNG TIN CỜ `isGiftLine` TỪ CLIENT.
+        // Client gửi lên là dễ sửa: thu ngân tự gắn cờ ⇒ bán 0đ, miễn trần 20%,
+        // không cần Quản lý duyệt. Server phải tự tra `promotions` xác nhận món
+        // này THẬT SỰ nằm trong bậc mà đơn đạt tới.
+        const isGiftLine = claimedGift && allowedGiftProducts.has(item.editionId);
+
+        // Cờ client gắn mà không có trong chương trình ⇒ hạ về dòng thường,
+        // khách trả đúng giá. KHÔNG báo lỗi: người dùng không có lý do biết.
+        // `isGiftClaimedRejected` đưa vào audit để sau này điều tra.
+        let isGiftClaimedRejected = false;
+        if (claimedGift && !isGiftLine) {
+          isGiftClaimedRejected = true;
+        }
+
+        // Dòng bị hạ về thường thì giá phải đúng: chiết khấu theo đơn, không
+        // phải 1 (100%) mà client gửi lên.
+        const effectiveDiscountRate = isGiftLine
+          ? 1
+          : claimedGift
+            ? discountRate
+            : itemDiscountRate;
+        const priced = priceLine(coverPrice, effectiveDiscountRate, item.quantity);
+
+        // DÒNG QUÀ: finalAmount vẫn cộng (bằng 0 vì giá bán 0đ) nhưng KHÔNG cộng
+        // subtotal. Nếu cộng, `subtotal` và `discountAmount` của đơn mang giá bìa
+        // của món quà ⇒ báo cáo cuối ngày (daily-settlement.service.ts:101-102) báo
+        // như khách được chiết khấu 300.000đ dù không có 1đ chiết khấu nào.
+        if (!isGiftLine) {
+          calculatedSubtotal += priced.subtotal;
+        }
         calculatedFinalAmount += priced.finalAmount;
 
 return {
@@ -561,9 +650,14 @@ return {
           // Cờ này đi xuống `recordMovementsBatch` để quyết định ghi sổ kho,
           // thay vì tra thêm một query (đường này sát trần subrequest Worker).
           isBook: edition.productKind === 'BOOK',
+          isGiftLine,
           quantity: item.quantity,
           unitCoverPrice: priced.coverPrice,
-          unitDiscountRate: itemDiscountRate,
+          // Lưu `effectiveDiscountRate`, KHÔNG lưu `itemDiscountRate`. Nếu lưu
+          // giá trị client gửi, một dòng quà GIẢ bị hạ xuống dòng thường vẫn
+          // mang `unit_discount_rate = 1` trong DB ⇒ báo cáo tưởng khách được
+          // chiết khấu 100%. Bắt được bởi scripts/test-gift-forgery.ts.
+          unitDiscountRate: effectiveDiscountRate,
           unitSellingPrice: priced.unitSellingPrice,
           totalAmount: priced.finalAmount,
           bundleId: undefined as string | undefined,
@@ -581,6 +675,7 @@ return {
           productId: line.editionId,
           // Dòng combo luôn là ấn bản sách.
           isBook: true,
+          isGiftLine: false,
           quantity: line.quantity,
           unitCoverPrice: line.unitCoverPrice,
           unitDiscountRate: line.unitDiscountRate,
@@ -863,7 +958,12 @@ return {
 
         if (params.discountApprovalId) {
           const hasUnexpectedLineDiscount = preparedItems.some(
-            (item) => Math.abs((item.unitDiscountRate ?? discountRate) - discountRate) > 0.0001
+            (item) =>
+              // DÒNG QUÀ miễn: giá 0đ là quyền lợi chương trình, không phải chiết
+              // khấu thu ngân tự bấm. So sánh nó với `discountRate` sẽ khiến mọi
+              // đơn "vừa có quà vừa cần duyệt chiết khấu" chết 409.
+              !item.isGiftLine &&
+              Math.abs((item.unitDiscountRate ?? discountRate) - discountRate) > 0.0001
           );
           if (hasUnexpectedLineDiscount) {
             throw AppError.conflict('Mức chiết khấu từng dòng không khớp yêu cầu đã được duyệt.');
@@ -876,7 +976,7 @@ return {
           await DiscountApprovalService.consumeApproval({
             requestId: params.discountApprovalId,
             currentItems: preparedItems
-              .filter((item) => !item.bundleId)
+              .filter((item) => !item.bundleId && !item.isGiftLine)
               .map((item) => ({
                 // `consumeApproval` cần `products.id` để băm hash giỏ — với sách
                 // nó BẰNG `edition_id`. `edition_id` có thể NULL cho hàng hóa nên
@@ -944,6 +1044,9 @@ return {
               unitDiscountRate: item.unitDiscountRate,
               unitSellingPrice: item.unitSellingPrice,
               totalAmount: item.totalAmount,
+              // 0031: cột chặn vòng lặp khi tính mốc khuyến mại — phải ghi
+              // xuống DB, không chỉ giữ trong RAM.
+              isGiftLine: Boolean(item.isGiftLine),
             };
             if (item.bundleId != null) lineValues.bundleId = item.bundleId;
             if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;

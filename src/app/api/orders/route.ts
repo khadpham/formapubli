@@ -22,6 +22,11 @@ const MAX_CASHIER_DISCOUNT_RATE = 0.2;
 const PAYMENT_PROOF_MAX_LEN = 200;
 const CANCEL_REASON_MAX_LEN = 500;
 
+/** Cờ dòng quà (`order_items.is_gift_line`) từ JSON body: 1, "1", true. */
+function isGiftLineFlag(value: unknown): boolean {
+  return value === true || value === 1 || `${value}` === '1';
+}
+
 /**
  * Kiểm tra ảnh xác nhận ở biên HTTP: cả hai trường hoặc cùng có, hoặc cùng thiếu.
  * Giới hạn độ dài để client không phình audit_logs, và bắt buộc capturedAt là ngày hợp lệ.
@@ -278,6 +283,8 @@ export async function POST(req: NextRequest) {
       editionId: it?.editionId,
       quantity: it?.quantity,
       unitDiscountRate: it?.unitDiscountRate,
+      // 0031: dòng quà của chương trình mốc tiền (client có thể gửi 1 hoặc "1").
+      isGiftLine: isGiftLineFlag(it?.isGiftLine),
     }));
     const parsedOrderDiscount =
       discountRate !== undefined && discountRate !== null && `${discountRate}` !== ''
@@ -331,12 +338,19 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    const effectiveItemDiscounts = (safeItems as any[]).map((it) => {
-      const v = it?.unitDiscountRate;
-      const parsed =
-        v !== undefined && v !== null && `${v}` !== '' ? parseFloat(v) : parsedOrderDiscount;
-      return Number.isFinite(parsed) ? parsed : 0;
-    });
+    // DÒNG QUÀ (`is_gift_line`) bị loại TRƯỚC khi so trần: giá bìa của món quà đi
+    // kèm `unitDiscountRate = 1` (bán 0đ) là quyền lợi ĐÃ CẤU HÌNH của chương
+    // trình, không phải thu ngân tự chiết khấu. Nếu tính vào đây thì MỌI đơn
+    // khuyến mại (discountRate = 0 ⇒ giftFlag = false) đều 403 với thông báo
+    // "Chiết khấu từ 20% trở lên cần Quản lý phê duyệt".
+    const effectiveItemDiscounts = (safeItems as any[])
+      .filter((it) => !isGiftLineFlag(it?.isGiftLine))
+      .map((it) => {
+        const v = it?.unitDiscountRate;
+        const parsed =
+          v !== undefined && v !== null && `${v}` !== '' ? parseFloat(v) : parsedOrderDiscount;
+        return Number.isFinite(parsed) ? parsed : 0;
+      });
     const maxDiscountRate = giftFlag
       ? 1
       : Math.max(
@@ -365,7 +379,10 @@ export async function POST(req: NextRequest) {
         try {
           await DiscountApprovalService.assertValidForCheckout({
             requestId: discountApprovalId,
-            items: pricedItems,
+            // Dòng quà không có trong yêu cầu duyệt (người duyệt không duyệt quà), nên
+            // hash giỏ phải băm trên tập dòng KHÔNG phải quà — khớp với
+            // `consumeApproval` ở order.service.ts (cũng đã lọc dòng quà).
+            items: pricedItems.filter((it: any) => !it.isGiftLine),
             discountRate: Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
             warehouseId,
             actorId: actorHeader,
