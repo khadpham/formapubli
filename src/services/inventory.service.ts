@@ -32,6 +32,11 @@ export interface RecordMovementParams {
   effectiveAt?: string;
   tx?: any; // Cho phép truyền transaction context bên ngoài
   actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
+  /**
+   * B3 (quà hết tồn): ghi CHỈ bút toán ledger, KHÔNG đụng `stock_balances`.
+   * Tồn thực tế đang âm về vật lý — trừ sổ theo dữ liệu tệ sẽ âm giả.
+   */
+  skipStockUpdate?: boolean;
 }
 
 export interface TransferBatchItemInput {
@@ -198,6 +203,19 @@ export class InventoryService {
         idempotencyKey,
         effectiveAt: effectiveAt || new Date().toISOString(),
       });
+
+      // B3: bút toán sổ kho nhưng không trừ bảng cân đối — tồn đang cạn,
+      // hàng vật lý vẫn phải ghi nhận đã ra khỏi kho.
+      if (params.skipStockUpdate === true) {
+        return {
+          ledgerId,
+          editionId,
+          warehouseId,
+          previousQuantity: null,
+          newQuantity: null,
+          quantityDelta,
+        };
+      }
 
       // 2. Bảo đảm bucket tồn kho tồn tại (nếu chưa có thì tạo mới với số lượng 0)
       const bucketId = `sb-${editionId}-${warehouseId}-${condition}`;

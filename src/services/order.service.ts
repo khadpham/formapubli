@@ -704,6 +704,8 @@ return {
 
     // 5. Ghi nhận Đơn hàng & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
     // Toàn bộ kiểm tra idempotency, phiên két, tính ATP và ghi chép nằm trong write transaction.
+    // B3: mã hàng hóa có dòng quà hết tồn — ghi ledger, KHÔNG trừ stock_balances.
+    const shortfallEditionIds = new Set<string>();
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
         // B0. Kiểm tra Idempotency bên trong Transaction với idempotencyKey đã chuẩn hóa
@@ -902,6 +904,16 @@ return {
           for (const [editionId, qty] of Array.from(needTotal.entries())) {
             const atp = atpMap.get(editionId) ?? 0;
             if (atp < qty) {
+              // B3: dòng quà hết tồn KHÔNG chặn đơn. Chỉ miễn khi TOÀN BỘ nhu
+              // cầu của mã này đều là dòng quà đã xác minh — còn mã vừa bán
+              // thường vừa tặng quà thì vẫn chặn nếu tổng vượt tồn.
+              const giftDemand = preparedItems
+                .filter((i) => i.isGiftLine && i.productId === editionId)
+                .reduce((s, i) => s + i.quantity, 0);
+              if (giftDemand === qty) {
+                shortfallEditionIds.add(editionId);
+                continue;
+              }
               throw AppError.atp(
                 `HẾT HÀNG KHẢ DỤNG (ATP): Ấn bản ${editionId} chỉ còn ${atp} cuốn có thể bán (đã trừ phần khách online giữ chỗ), không đủ ${qty} cuốn!`
               );
@@ -1047,6 +1059,9 @@ return {
               // 0031: cột chặn vòng lặp khi tính mốc khuyến mại — phải ghi
               // xuống DB, không chỉ giữ trong RAM.
               isGiftLine: Boolean(item.isGiftLine),
+              // B3: quà hết tồn vẫn bán được — gắn cờ để báo cáo tách riêng.
+              isGiftShortfall:
+                Boolean(item.isGiftLine) && shortfallEditionIds.has(item.productId),
             };
             if (item.bundleId != null) lineValues.bundleId = item.bundleId;
             if (item.bundleQty != null) lineValues.bundleQty = item.bundleQty;
@@ -1059,6 +1074,8 @@ return {
           // B5: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
           let lineIdx = 0;
           for (const item of preparedItems) {
+            const shortfall =
+              Boolean(item.isGiftLine) && shortfallEditionIds.has(item.productId);
             await InventoryService.recordMovement({
               editionId: item.productId,
               // 0033: hàng hóa ghi `inventory_ledger.edition_id = NULL`.
@@ -1067,8 +1084,11 @@ return {
               eventType: 'DISPATCH_SALE',
               quantityDelta: -item.quantity,
               condition: 'NEW',
+              skipStockUpdate: shortfall,
               documentRef: orderCode,
-              note: item.bundleId
+              note: shortfall
+                ? `Quà hết tồn — ghi sổ xuất, KHÔNG trừ bảng cân đối (is_gift_shortfall) trong đơn ${orderCode}`
+                : item.bundleId
                 ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
                 : isGift
                 ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
