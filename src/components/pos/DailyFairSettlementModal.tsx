@@ -1034,7 +1034,7 @@ export function DailyFairSettlementModal({
                                   [{it.code}] {it.title}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-mono">
-                                  Giá bìa: {(it.coverPrice || 0).toLocaleString('vi-VN')} đ
+                                  {it.productKind === 'GOODS' ? 'Giá bán' : 'Giá bìa'}: {(it.coverPrice || 0).toLocaleString('vi-VN')} đ
                                 </p>
                               </td>
                               <td className="p-3 text-right font-mono font-bold text-slate-600">

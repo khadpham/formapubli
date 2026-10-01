@@ -8,6 +8,7 @@ import {
   inventoryLedger,
   stockBalances,
   editions,
+  products,
   works,
   warehouses,
   auditLogs,
@@ -256,36 +257,48 @@ export class DailySettlementService {
       const lineItems = await txOrDb
         .select({
           editionId: orderItems.editionId,
+          productId: orderItems.productId,
           quantity: orderItems.quantity,
           totalAmount: orderItems.totalAmount,
           editionCode: editions.code,
           editionTitle: editions.title,
           workTitle: works.title,
           coverPrice: editions.coverPrice,
+          // Hàng hóa không có dòng `editions` (edition_id NULL) — đọc hiển
+          // thị từ `products` (tầng gốc). Sách ưu tiên `editions` để giữ
+          // nguyên hiển thị cũ.
+          productCode: products.code,
+          productName: products.name,
+          productPrice: products.sellingPrice,
+          productKind: products.productKind,
         })
         .from(orderItems)
         .leftJoin(editions, eq(orderItems.editionId, editions.id))
+        .leftJoin(products, eq(orderItems.productId, products.id))
         .leftJoin(works, eq(editions.workId, works.id))
         .where(sql`${orderItems.orderId} IN (${sql.join(orderIds.map((id: string) => sql`${id}`), sql`, `)})`);
 
       const sellerAgg = new Map<string, any>();
       for (const item of lineItems) {
-        const edId = item.editionId;
-        const title = item.editionTitle || item.workTitle || item.editionCode || 'Ấn phẩm';
-        if (!sellerAgg.has(edId)) {
-          sellerAgg.set(edId, {
-            editionId: edId,
-            code: item.editionCode,
+        // Khóa theo `product_id` (NOT NULL) — `edition_id` NULL với hàng hóa,
+        // gom nhầm mọi món hàng hóa thành một dòng.
+        const key = item.productId;
+        const title = item.editionTitle || item.workTitle || item.productName || item.editionCode || item.productCode || 'Ấn phẩm';
+        if (!sellerAgg.has(key)) {
+          sellerAgg.set(key, {
+            editionId: key,
+            code: item.editionCode || item.productCode,
             title,
-            coverPrice: item.coverPrice,
+            coverPrice: item.coverPrice ?? item.productPrice,
+            productKind: item.productKind,
             soldCopies: 0,
             soldRevenue: 0,
           });
         }
-        const record = sellerAgg.get(edId);
+        const record = sellerAgg.get(key);
         record.soldCopies += item.quantity;
         record.soldRevenue += item.totalAmount;
-        soldQtyAll.set(edId, (soldQtyAll.get(edId) || 0) + item.quantity);
+        soldQtyAll.set(key, (soldQtyAll.get(key) || 0) + item.quantity);
       }
 
       topSellers = Array.from(sellerAgg.values())
@@ -374,15 +387,22 @@ export class DailySettlementService {
     const balances = await txOrDb
       .select({
         editionId: stockBalances.editionId,
+        productId: stockBalances.productId,
         physicalQuantity: stockBalances.physicalQuantity,
         code: editions.code,
         isbn: editions.isbn,
         title: editions.title,
         workTitle: works.title,
         coverPrice: editions.coverPrice,
+        // Hàng hóa: đọc từ `products` (xem giải thích ở mục 6).
+        productCode: products.code,
+        productName: products.name,
+        productPrice: products.sellingPrice,
+        productKind: products.productKind,
       })
       .from(stockBalances)
       .leftJoin(editions, eq(stockBalances.editionId, editions.id))
+      .leftJoin(products, eq(stockBalances.productId, products.id))
       .leftJoin(works, eq(editions.workId, works.id))
       .where(
         and(
@@ -394,16 +414,21 @@ export class DailySettlementService {
     const soldMap = soldQtyAll;
 
     const inventoryReconciliation = balances
-      .filter((b: any) => b.physicalQuantity > 0 || soldMap.has(b.editionId))
+      // Khóa theo `product_id` — `edition_id` NULL với hàng hóa.
+      .filter((b: any) => b.physicalQuantity > 0 || soldMap.has(b.productId))
       .map((b: any) => {
-        const soldQty = soldMap.get(b.editionId) || 0;
+        const soldQty = soldMap.get(b.productId) || 0;
         const currentStock = b.physicalQuantity;
         return {
-          editionId: b.editionId,
-          code: b.code,
+          // Giữ tên trường `editionId` cho contract cũ, nhưng giá trị là
+          // `product_id` (sách: hai cái bằng nhau; hàng hóa: chỉ product có).
+          // Điều này còn sửa luôn React key trùng nhau của 4 dòng SP-00x.
+          editionId: b.productId,
+          code: b.code || b.productCode,
           isbn: b.isbn,
-          title: b.title || b.workTitle || b.code,
-          coverPrice: b.coverPrice,
+          title: b.title || b.workTitle || b.productName || b.code || b.productCode,
+          coverPrice: b.coverPrice ?? b.productPrice,
+          productKind: b.productKind,
           soldToday: soldQty,
           theoreticalStock: currentStock,
         };
