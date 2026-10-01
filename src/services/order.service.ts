@@ -562,7 +562,10 @@ export class OrderService {
             .from(promotionGifts)
         : [];
       const byCampaign = new Map(campaigns.map((c) => [c.id, c]));
-      const shaped: PromotionCampaign[] = campaigns.map((c) => ({
+      const shaped: PromotionCampaign[] = campaigns
+        // 0034: chiến dịch kho khác không được xác minh quà cho kho này.
+        .filter((c) => !(c as any).warehouseId || (c as any).warehouseId === warehouseId)
+        .map((c) => ({
         id: c.id,
         name: c.name,
         isActive: c.isActive,

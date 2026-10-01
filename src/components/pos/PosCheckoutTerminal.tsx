@@ -1623,9 +1623,12 @@ export function PosCheckoutTerminal({
 
   // Lấy cấu hình khuyến mại từ server (nguồn sự thật). Thất bại thì coi như
   // không có chương trình — POS vẫn bán bình thường, chỉ không hiện quà.
+  // Lọc theo kho đang bán (0034) và tải lại khi đổi kho hoặc giỏ vừa có hàng
+  // (chiến dịch tạo sau khi mở POS vẫn bắt được mà không cần tải lại trang).
+  const cartIsEmpty = cart.length === 0;
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/promotions', { cache: 'no-store' })
+    fetch(`/api/promotions?warehouseId=${encodeURIComponent(selectedWarehouseId)}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((json) => {
         if (cancelled || !json?.success) return;
@@ -1647,7 +1650,8 @@ export function PosCheckoutTerminal({
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWarehouseId, cartIsEmpty]);
 
   // eligibleBase = tổng giá GỐC các dòng thường (giỏ `cart` KHÔNG chứa dòng quà).
   const giftItems = useMemo<CartItem[]>(() => {

@@ -128,6 +128,59 @@ async function main() {
   });
   ok('Tắt chương trình ⇒ engine không tặng gì', gifts.length === 0);
 
+  // 5. Phạm vi kho (0034): chiến dịch kho A không lọt sang kho B.
+  const scoped = await PromotionService.create({
+    name: `${CAMP_ID_PATTERN}kho A`,
+    warehouseId: 'wh-au-co',
+    gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }],
+  });
+  const forA = await PromotionService.listForWarehouse('wh-au-co');
+  const forB = await PromotionService.listForWarehouse('wh-quynh-mai');
+  ok('kho A thấy chiến dịch kho A', forA.some((c: any) => c.id === scoped.id));
+  ok('kho B KHÔNG thấy chiến dịch kho A', !forB.some((c: any) => c.id === scoped.id));
+  const global = await PromotionService.create({
+    name: `${CAMP_ID_PATTERN}moi kho`,
+    gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }],
+  });
+  ok('chiến dịch mọi kho hiện ở cả hai kho',
+    (await PromotionService.listForWarehouse('wh-au-co')).some((c: any) => c.id === global.id) &&
+    (await PromotionService.listForWarehouse('wh-quynh-mai')).some((c: any) => c.id === global.id));
+  blocked = false;
+  try {
+    await PromotionService.create({ name: 'x', warehouseId: 'kho-khong-ton-tai', gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }] });
+  } catch {
+    blocked = true;
+  }
+  ok('kho không tồn tại bị chặn', blocked);
+
+  // 6. Cửa sổ ngày giờ VN: kết thúc trước bắt đầu ⇒ chặn; trong cửa sổ ⇒ tặng.
+  blocked = false;
+  try {
+    await PromotionService.create({
+      name: 'x', startsAt: '2026-10-05T00:00:00+07:00', endsAt: '2026-10-01T00:00:00+07:00',
+      gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }],
+    });
+  } catch {
+    blocked = true;
+  }
+  ok('kết thúc trước bắt đầu bị chặn', blocked);
+  const nowVN = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 16);
+  const winCamp = await PromotionService.create({
+    name: `${CAMP_ID_PATTERN}cua so`,
+    startsAt: `${nowVN}:00+07:00`,
+    endsAt: '2099-01-01T00:00:00+07:00',
+    gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }],
+  });
+  const winShaped = (await PromotionService.list())
+    .filter((c: any) => c.id === winCamp.id)
+    .map((c: any) => ({ id: c.id, name: c.name, isActive: c.isActive, startsAt: c.startsAt, endsAt: c.endsAt, gifts: c.gifts }));
+  ok('chiến dịch trong cửa sổ giờ VN ⇒ engine tặng ngay',
+    computeGifts({ eligibleBase: 1000, campaigns: winShaped }).length === 1);
+  for (const cid of [scoped.id, global.id, winCamp.id]) {
+    await q(`DELETE FROM promotion_gifts WHERE promotion_id = ?`, [cid]);
+    await q(`DELETE FROM promotions WHERE id = ?`, [cid]);
+  }
+
   // Dọn dẹp.
   await q(`DELETE FROM promotion_gifts WHERE promotion_id = ?`, [created.id]);
   await q(`DELETE FROM promotions WHERE id = ?`, [created.id]);
