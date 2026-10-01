@@ -1,4 +1,4 @@
-import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, warehouses, works } from '../db';
+import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, products, warehouses, works } from '../db';
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
@@ -953,12 +953,22 @@ export class InventoryService {
    * Lấy ma trận tồn kho của toàn bộ 81 đầu sách x 3 Kho vật lý (Âu Cơ, Quỳnh Mai, Dự phòng).
    */
   static async getStockMatrix() {
-    // 1. Lấy danh sách toàn bộ editions kèm thông tin work
-    const allEditions = await db
+    // 1. Lấy danh mục từ `products` (tầng gốc) + LEFT JOIN `editions`/`works`
+    // cho metadata sách. TRƯỚC ĐÂY duyệt `FROM editions` ⇒ hàng hóa không bao
+    // giờ hiện trong ma trận kho, và `books` của POS cũng thiếu hàng hóa ⇒
+    // quà khuyến mại không resolve được ⇒ không tự vào giỏ, không vào đơn,
+    // không trừ kho (bằng chứng: 4 dòng SP-001..004 tồn 100 vô hình 02/10).
+    // Sách ưu tiên trường `editions` để giữ nguyên hiển thị cũ.
+    const allProducts = await db
       .select({
-        id: editions.id,
-        code: editions.code,
-        title: editions.title,
+        id: products.id,
+        productKind: products.productKind,
+        code: products.code,
+        name: products.name,
+        sellingPrice: products.sellingPrice,
+        isActive: products.isActive,
+        editionCode: editions.code,
+        editionTitle: editions.title,
         isbn: editions.isbn,
         isbnLast4: editions.isbnLast4,
         coverPrice: editions.coverPrice,
@@ -967,12 +977,11 @@ export class InventoryService {
         author: works.author,
         translator: works.translator,
         shortCode: works.shortCode,
-        // POS sắp xếp "Cũ → Mới" theo năm phát hành, nên ma trận tồn kho phải
-        // trả field này. `publication_year` có trong 81/81 ấn bản.
         publicationYear: editions.publicationYear,
       })
-      .from(editions)
-      .innerJoin(works, eq(editions.workId, works.id));
+      .from(products)
+      .leftJoin(editions, eq(editions.id, products.id))
+      .leftJoin(works, eq(works.id, editions.workId));
 
     // 2. Lấy toàn bộ số dư tồn kho
     // CHỈ bucket condition = 'NEW': transferBatch chỉ trừ/cộng NEW, đếm cả
@@ -1004,11 +1013,27 @@ export class InventoryService {
       record[bal.warehouseId] = (record[bal.warehouseId] || 0) + Number(bal.physicalQuantity || 0);
     }
 
-    return allEditions.map((ed) => {
-      const bal = balanceMap.get(ed.id) || {};
+    return allProducts.map((p) => {
+      const bal = balanceMap.get(p.id) || {};
       const totalStock = Object.values(bal).reduce((s, n) => s + n, 0);
       return {
-        ...ed,
+        id: p.id,
+        // Sách giữ mã/tên/giá từ `editions`; hàng hóa lấy từ `products`.
+        code: p.editionCode || p.code || '',
+        title: p.editionTitle || p.name || '',
+        isbn: p.isbn || '',
+        isbnLast4: p.isbnLast4 || '',
+        coverPrice: p.coverPrice ?? p.sellingPrice ?? 0,
+        status: p.status || 'ACTIVE',
+        publisher: p.publisher || null,
+        author: p.author || '',
+        translator: p.translator || null,
+        shortCode: p.shortCode || null,
+        // POS sắp xếp "Cũ → Mới" theo năm phát hành (null-safe ở client);
+        // hàng hóa không có năm ⇒ null.
+        publicationYear: p.publicationYear ?? null,
+        productKind: p.productKind,
+        isActive: p.isActive,
         stockAuCo: bal['wh-au-co'] || 0,
         stockQuynhMai: bal['wh-quynh-mai'] || 0,
         stockDuPhong: bal['wh-du-phong'] || 0,
@@ -1022,7 +1047,7 @@ export class InventoryService {
    * Lấy lịch sử biến động sổ cái kho gần nhất (Audit Trail).
    */
   static async getLedgerHistory(limit = 50) {
-    return await db
+    const rows = await db
       .select({
         id: inventoryLedger.id,
         eventType: inventoryLedger.eventType,
@@ -1032,16 +1057,27 @@ export class InventoryService {
         note: inventoryLedger.note,
         actorId: inventoryLedger.actorId,
         recordedAt: inventoryLedger.recordedAt,
+        // Bút toán hàng hóa có `edition_id = NULL` nên INNER JOIN editions là
+        // mất hẳn dòng khỏi sổ cái. LEFT JOIN cả hai, ưu tiên `editions`,
+        // rồi gộp về đúng contract cũ (bookCode/bookTitle) để UI khỏi sửa.
         bookCode: editions.code,
+        productCode: products.code,
         bookTitle: editions.title,
+        productName: products.name,
         isbnLast4: editions.isbnLast4,
         warehouseCode: warehouses.code,
         warehouseName: warehouses.name,
       })
       .from(inventoryLedger)
-      .innerJoin(editions, eq(inventoryLedger.editionId, editions.id))
-      .innerJoin(warehouses, eq(inventoryLedger.warehouseId, warehouses.id))
+      .leftJoin(editions, eq(inventoryLedger.editionId, editions.id))
+      .leftJoin(products, eq(inventoryLedger.productId, products.id))
+      .leftJoin(warehouses, eq(inventoryLedger.warehouseId, warehouses.id))
       .orderBy(desc(inventoryLedger.recordedAt))
       .limit(limit);
+    return rows.map((r) => ({
+      ...r,
+      bookCode: r.bookCode || r.productCode || '',
+      bookTitle: r.bookTitle || r.productName || '',
+    }));
   }
 }
