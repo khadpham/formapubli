@@ -112,6 +112,9 @@ export interface TransferPaymentModalProps {
    */
   bankInfoLoading?: boolean;
   cashierId: string;
+  /** Ô Ghi chú dùng chung state với panel quầy — không phải state riêng. */
+  note: string;
+  setNote: (value: string) => void;
   onUsePhoto: (photo: PaymentProofPhoto) => Promise<void>;
   onConfirm: () => Promise<void>;
   onCancel: () => Promise<void>;
@@ -132,6 +135,8 @@ export function TransferPaymentModal({
   cacheLabel,
   bankInfoLoading = false,
   cashierId,
+  note,
+  setNote,
   onUsePhoto,
   onConfirm,
   onCancel,
@@ -381,6 +386,14 @@ export function TransferPaymentModal({
             <Camera className="w-4 h-4" />
             {isSaving ? 'Đang lưu ảnh...' : session.paymentProof ? 'Chụp lại ảnh' : 'Chụp ảnh xác nhận'}
           </button>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ghi chú đơn (không bắt buộc)…"
+            aria-label="Ghi chú đơn hàng"
+            className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+          />
           <button
             type="button"
             onClick={onConfirm}

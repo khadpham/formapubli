@@ -1882,10 +1882,11 @@ export function PosCheckoutTerminal({
           finalAmount: isGift ? 0 : finalAmount,
           totalQuantity: totalCopies,
           items: [...cart],
-          discountRate: isGift ? 1 : discountRate,
-          paymentMethod,
-          date: new Date().toLocaleString('vi-VN'),
-          isOffline: true,
+        discountRate: isGift ? 1 : discountRate,
+        paymentMethod,
+        note,
+        date: new Date().toLocaleString('vi-VN'),
+        isOffline: true,
           isGift,
           qrDataUrl: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.dataUrl || null : null,
           qrAccountNo: (paymentMethod === 'QR_CODE' || paymentMethod === 'BANK_TRANSFER') ? qrSnapshot?.accountNo || null : null,
@@ -2072,6 +2073,7 @@ export function PosCheckoutTerminal({
         items: [...cart],
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
+        note,
         date: new Date().toLocaleString('vi-VN'),
         isOffline: false,
         isGift,
@@ -2250,6 +2252,7 @@ export function PosCheckoutTerminal({
         customerName,
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
+        note,
         date: new Date().toLocaleString('vi-VN'),
         isOffline: false,
         isGift,
@@ -3571,9 +3574,25 @@ export function PosCheckoutTerminal({
                     }}
                     className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
                   >
-                    <option value="CASH">Tiền mặt</option>
-                    <option value="BANK_TRANSFER">Chuyển khoản / Quét QR</option>
-                  </select>
+                  <option value="CASH">Tiền mặt</option>
+                  <option value="BANK_TRANSFER">Chuyển khoản / Quét QR</option>
+                </select>
+                </div>
+                {/* Ghi chú nằm NGAY DƯỚI chọn hình thức thanh toán (30/09) nên dù chọn
+                    tiền mặt hay chuyển khoản nó vẫn hiện. Cùng một `note` đã gửi
+                    server, không có ô thứ hai. */}
+                <div className="hidden lg:block mt-2">
+                  <label className="text-[11px] font-bold text-slate-500 block mb-1">
+                    Ghi chú:
+                  </label>
+                  <input
+                    type="text"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Ghi chú đơn (không bắt buộc)…"
+                    aria-label="Ghi chú đơn hàng"
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
                 </div>
               </div>
               {isWideCheckout && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
@@ -3687,6 +3706,8 @@ export function PosCheckoutTerminal({
           onConfirm={handleConfirmTransfer}
           onCancel={handleCancelTransfer}
           errorMessage={transferErrorMessage}
+          note={note}
+          setNote={setNote}
         />
       )}
 
@@ -4465,6 +4486,22 @@ export function PosCheckoutTerminal({
                   <option value="CASH">Tiền mặt</option>
                   <option value="BANK_TRANSFER">Chuyển khoản / Quét QR</option>
                 </select>
+              </div>
+              {/* Ghi chú nằm NGAY DƯỚI chọn hình thức thanh toán (30/09) nên dù chọn
+                  tiền mặt hay chuyển khoản nó vẫn hiện. Cùng một `note` đã gửi
+                  server, không có ô thứ hai. */}
+              <div className="mt-2">
+                <label className="text-[11px] font-bold text-slate-500 block mb-1">
+                  Ghi chú:
+                </label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Ghi chú đơn (không bắt buộc)…"
+                  aria-label="Ghi chú đơn hàng"
+                  className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
               </div>
 
               {!isWideCheckout && (paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE') && (
