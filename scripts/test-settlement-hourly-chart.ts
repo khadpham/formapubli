@@ -124,7 +124,12 @@ ok(
 ok(/Đơn Hàng Theo Giờ/.test(chart), 'phải có tiêu đề tiếng Việt có dấu');
 ok(/Giờ cao điểm/.test(chart), 'phải có ô số Giờ cao điểm');
 ok(/đơn\/giờ/.test(chart), 'phải có ô số bình quân đơn/giờ');
-ok(/Doanh thu theo giờ/.test(chart), 'phải có ô số doanh thu theo giờ');
+// Ô số thứ ba là TỔNG của cả dải giờ, nên nhãn phải nói "tổng" + nêu phạm vi giờ.
+// (Kiểm tra nhãn đúng ở test-render, vì test này đọc source nên chữ trong chú
+// thích cũng lọt vào — đó là lý do nhãn cũ nằm trong test-render.)
+ok(/Tổng doanh thu/.test(chart), 'ô số phải ghi "Tổng doanh thu"');
+// Phủ định "không được render nhãn cũ" nằm ở test-render: test này đọc source
+// nên chữ trong chú thích cũng lọt vào, không phân biệt được nhãn thật.
 ok(/đơn\/giờ/.test(chart), 'nhãn bình quân phải có dấu');
 ok(
   /role="img"[\s\S]{0,400}aria-label/.test(chart),

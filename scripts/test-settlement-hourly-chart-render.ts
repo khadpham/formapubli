@@ -181,4 +181,20 @@ ok(
   'cột ở khung 24h không được nhỏ hơn 5 đơn vị để còn bấm được'
 );
 
+// --- 9b. Nhãn ô số phải đúng nghĩa ----------------------------------------
+// Ô số thứ ba hiển thị TỔNG của cả dải giờ, không phải tiền của một giờ.
+// Nhãn cũ "Doanh thu theo giờ" sai nghĩa: đọc dễ tưởng là tiền của giờ đang
+// xét trong khi đó là cả ngày. Kiểm trên HTML ĐÃ RENDER nên không dính chú thích.
+ok(
+  !html.includes('Doanh thu theo giờ'),
+  'nhãn cũ "Doanh thu theo giờ" sai nghĩa (hiện tổng cả ngày) — không được render'
+);
+ok(html.includes('Tổng doanh thu'), 'ô số phải ghi "Tổng doanh thu"');
+ok(html.includes('cả ngày'), 'phải nêu rõ phạm vi giờ để không ai hiểu nhầm');
+// Và tiền của từng giờ phải THỰC SỰ hiện khi rê — mới đúng nghĩa "theo giờ".
+ok(
+  html.includes('chiếm') && html.includes('tổng đơn'),
+  'dải số phải cho biết đơn/tiền/tỉ trọng của giờ đang xét'
+);
+
 console.log(`\n=== BIỂU ĐỒ GIỜ — ĐO TOẠ ĐỘ THẬT: ${checks} assertions PASS ===\n`);

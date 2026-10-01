@@ -162,11 +162,17 @@ export function HourlyOrdersChart({
           </p>
         </div>
         <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl px-3 py-2">
-          <p className="text-[10px] font-bold text-emerald-700">Doanh thu theo giờ</p>
-          <p className="text-sm font-black font-mono text-emerald-800 mt-0.5">
+          <p className="text-[10px] font-bold text-emerald-700">Tổng doanh thu</p>
+          <p className="text-sm font-black font-mono text-emerald-800 mt-0.5 break-words leading-tight">
             {money(totalSales)}
             <span className="text-[10px] font-bold ml-0.5">đ</span>
           </p>
+          {/* Nhãn cũ "Doanh thu theo giờ" sai nghĩa: đây là TỔNG của cả dải giờ,
+              không phải tiền của một giờ. Tiền từng giờ nằm ở dải số bên dưới
+              (đổi theo giờ đang rê). Ghi rõ phạm vi để không ai đọc nhầm. Khung giờ
+              đã nêu ở tiêu đề rồi nên dòng này chỉ cần "cả ngày" — thêm `8h–21h`
+              ở đây là tràn ngang 5px ở màn 340px. */}
+          <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">cả ngày</p>
         </div>
       </div>
 
