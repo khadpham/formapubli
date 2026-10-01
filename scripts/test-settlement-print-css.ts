@@ -22,15 +22,30 @@ if (!/:not\(#printable-settlement-report\)/.test(m[1])) {
 // vào câu chú thích trong component có chữ "@page { margin }" ⇒ đọc nhầm CSS.
 const pageRule = src.match(/@page\s*\{([^}]*\bsize\s*:[^}]*)\}/);
 if (!pageRule) throw new Error('Không tìm thấy quy tắc @page — cần giữ khổ A4 portrait.');
-if (!/margin:\s*12mm\s+10mm\s*;/.test(pageRule[1])) {
+// !important BẮT BUỘC ở cả size và margin: globals.css (layout.css) đặt
+// `@page` margin 0mm !important cho hóa đơn nhiệt K80. Rule thường đến sau vẫn
+// THUA, biên bản A4 sẽ mất sạch lề và bị ép còn 80mm. Đo thật trên trang chạy
+// thật cho thấy html/body bị ép `width: 80mm !important` (302.359px so với 718px
+// vùng in A4 = 42%) và @page margin bị 0 — cùng một thủ phạm.
+if (!/margin:\s*12mm\s+10mm\s*!important\s*;/.test(pageRule[1])) {
   throw new Error(
-    'LỖI: @page phải đặt `margin: 12mm 10mm` — đây là lề thật của MỌI trang. ' +
-      'padding của #printable chỉ hiện ở trang đầu (theo chuẩn fragmentation) nên ' +
-      'đặt lề ở đó làm trang 2+ dính sát mép trên. Nhận: ' + pageRule[1].trim()
+    'LỖI: @page phải đặt `margin: 12mm 10mm !important` — đây là lề thật của MỌI ' +
+      'trang, và phải !important để thắng globals.css đang ép margin 0mm cho phiếu ' +
+      'nhiệt. Nhận: ' + pageRule[1].trim()
   );
 }
-if (!/size:\s*A4\s+portrait/.test(pageRule[1])) {
-  throw new Error('LỖI: @page phải giữ `size: A4 portrait`.');
+if (!/size:\s*A4\s+portrait\s*!important\s*;/.test(pageRule[1])) {
+  throw new Error('LỖI: @page phải giữ `size: A4 portrait !important` (thắng size 80mm của globals).');
+}
+
+// GỠ ÉP 80MM: rule gỡ phải dùng :has() để có độ đặc hiệu (1,0,1) CAO HƠN (0,0,1)
+// của globals. Không có rule này thì toàn bộ biên bản A4 bị ép còn 80mm.
+if (!/html:has\(#printable-settlement-report\)[\s\S]{0,200}body:has\(#printable-settlement-report\)[\s\S]{0,1200}?width:\s*auto\s*!important/.test(src)) {
+  throw new Error(
+    'LỖI: phải gỡ ép 80mm của phiếu nhiệt bằng html/body:has(#printable-settlement-report) ' +
+      '{ width: auto !important } — không có nó thì globals.css ép toàn bộ biên bản A4 ' +
+      'còn 80mm (đo thật: 302px / 718px = 42% chiều ngang, dính mép trái).'
+  );
 }
 
 const printableRule = src.match(/#printable-settlement-report\s*\{([^}]*)\}/);

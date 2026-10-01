@@ -122,9 +122,12 @@ export function hourWindow(input: {
   return { start, end };
 }
 
-// Hình học dải giờ trên bản in: viewBox 240×46, co giãn theo bề rộng khung in.
+// Hình học dải giờ trên bản in: viewBox 720×46 — 720 là bề rộng vùng in A4 sau
+// lề (190mm @ 96dpi ≈ 718px), nên khi `w-full` co giãn tỉ lệ gần 1:1 và CHỮ
+// giữ đúng kích thước thật. Trước đây viewBox chỉ 240×46 bị giãn 3 lần: cột
+// thấp vẹo, nhãn giờ nằm cách xa nhau, dải giờ chiếm 137px chiều cao.
 // Nét VÀ CHỮ đều là nội dung SVG nên in mặc định (khác màu nền CSS).
-const BAND_W = 240;
+const BAND_W = 720;
 const BAND_H = 46;
 const BAND_BASE_Y = 34;
 const BAND_PLOT_H = 26;
@@ -429,9 +432,33 @@ export function DailyFairSettlementModal({
              A4 mất lề, vì rule !important thắng cả rule thường đến sau nó.
              LƯU Ý: comment trong khối style này không dùng ngoặc nhọn, test đọc
              file bằng regex sẽ dừng sớm ở dấu đóng ngoặc. */
+          /* GỠ ÉP 80MM CỦA PHIẾU NHIỆT K80 — đây là thủ phạm gốc của lỗi "bản in
+             chiếm 42% chiều ngang, dính mép". globals.css đặt sẵn trong
+             @media print: html và body bị ép width 80mm !important cho hóa đơn
+             nhiệt K80, kèm mọi con trực tiếp của body bị display none !important.
+             Rule đó áp cho
+             MỌI lần in trên toàn app nên biên bản A4 cũng bị ép còn 80mm = 302px
+             so với 718px vùng in A4 ⇒ 42%. Đo thật trên trang đang chạy:
+             width của html/body/#printable đều bằng 302.359px, và rule khớp chính
+             là dòng ép 80mm đó.
+             Sửa ở đây chứ không đụng globals.css: hóa đơn nhiệt đang dùng thật ở
+             POS, sửa globals là phá chức năng đang chạy. Selector dùng :has() để
+             có độ đặc hiệu CAO HƠN (1,0,1) nên thắng hẳn (0,0,1) của globals. */
+          html:has(#printable-settlement-report),
+          body:has(#printable-settlement-report) {
+            /* width: auto một mình chưa đủ — nó cho 100% bề rộng màn hình
+               (1440px) trong khi vùng in A4 chỉ 190mm (718px), Chrome lại co
+               trang. max-width theo đúng vùng in giữ mọi trường hợp: khi in
+               thật viewport đã là 718px, khi render PDF thì bị chặn ở 718px. */
+            width: auto !important;
+            max-width: 190mm !important;
+          }
           @page {
-            size: A4 portrait;
-            margin: 12mm 10mm;
+            size: A4 portrait !important;
+            /* !important BẮT BUỘC: globals.css đặt margin 0mm !important cho @page
+               giấy nhiệt. Rule thường đến sau vẫn thua, nên lề của ta sẽ mất
+               sạch — đúng triệu chứng dính mép mà owner thấy. */
+            margin: 12mm 10mm !important;
           }
         }
       `}</style>
@@ -1263,8 +1290,8 @@ export function DailyFairSettlementModal({
                   {hourlyInWindow.map((h: any, i: number) => {
                     const n = Number(h.orders || 0);
                     const bh = bandBarH(n);
-                    const x = (i * bandSlot + 0.6).toFixed(2);
-                    const wRect = Math.max(0.5, bandSlot - 1.2).toFixed(2);
+                    const x = (i * bandSlot + 4).toFixed(2);
+                    const wRect = Math.max(4, bandSlot - 8).toFixed(2);
                     // Hai nhánh tách riêng để màu nằm thẳng trong thẻ in: giờ có đơn
                     // màu chàm, giờ trống màu xám nhạt — xám VẪN THẤY để đọc ra
                     // giờ nào không bán, không in ra khoảng trống mờ mịt.
@@ -1280,9 +1307,9 @@ export function DailyFairSettlementModal({
                   {hourlyInWindow.length > 0 && Number(hourlyInWindow[peakIndex]?.orders || 0) > 0 && (
                     <text
                       x={(peakIndex * bandSlot + bandSlot / 2).toFixed(2)}
-                      y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 1.5}
+                      y={BAND_BASE_Y - bandBarH(Number(hourlyInWindow[peakIndex]?.orders || 0)) - 3}
                       textAnchor="middle"
-                      fontSize="5"
+                      fontSize="9"
                       fontWeight="bold"
                       fill="#1e293b"
                     >
@@ -1298,9 +1325,9 @@ export function DailyFairSettlementModal({
                       <text
                         key={`nhan-${h.hour}`}
                         x={(i * bandSlot + bandSlot / 2).toFixed(2)}
-                        y={BAND_BASE_Y + 6}
+                        y={BAND_BASE_Y + 8}
                         textAnchor="middle"
-                        fontSize="4.5"
+                        fontSize="8"
                         fill="#64748b"
                       >
                         {hour}h
