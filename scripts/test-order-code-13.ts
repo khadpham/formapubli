@@ -143,18 +143,39 @@ function testClientDoesNotBypassServerAllocation() {
     .join('\n');
   const svc = fs2.readFileSync(path2.join(root, 'src/services/order.service.ts'), 'utf8');
 
-  // Mọi body POST /api/orders phải bỏ trường `orderCode`. Dùng regex bắt đúng
-  // khu vực gửi đi, không nhầm với chỗ khai báo offline.
-  const online = (pos.match(/fetch\('\/api\/orders',[\s\S]{0,900}?\n\s*\}\);/g) || []).filter(
-    (b) => !/order\.orderCode/.test(b)
+  // Mọi body POST /api/orders phải bỏ trường `orderCode`.
+  //
+  // BẢN ĐẦU DÙNG CỬA SỔ `{0,900}?` — body nhánh TIỀN MẶT dài ~1100 ký tự
+  // nên KHÔNG BAO GIỜ match ⇒ nhánh đó không hề được kiểm tra. Thêm nữa
+  // `online.length >= 1` nên chỉ cần MỘT nhánh khớp là test xanh. Đã đo được
+  // trên production: 10 đơn tiền mặt vẫn ra mã 29 ký tự vì lý do này.
+  //
+  // Sửa: cửa sổ đủ rộng + đòi đủ SỐ NHÁNH (tiền mặt VÀ chuyển khoản).
+  const POST_WINDOW = 4000;
+  const bodies = (pos.match(
+    new RegExp(`fetch\\('/api/orders',[\\s\\S]{0,${POST_WINDOW}}?\\n\\s*\\}\\);`, 'g')
+  ) || []).filter((b) => !/order\.orderCode/.test(b));
+
+  // Không phải mọi lần gọi đều là "tạo đơn mới":
+  //  · `action: 'CONFIRM'` / `'CANCEL'` — thao tác sau khi đơn đã có.
+  //  · body có `order.orderCode` — SYNC ĐƠN OFFLINE, mã đã tạo từ trước rồi,
+  //    gửi lại là đúng (đã nằm trong điều kiện lọc ở trên).
+  const creates = bodies.filter((b) => !/action:\s*'(CONFIRM|CANCEL)'/.test(b));
+  ok(
+    creates.length >= 2,
+    `phải soi được CẢ 2 nhánh TẠO ĐƠN (tiền mặt + chuyển khoản) — thấy ${creates.length}`
   );
-  ok(online.length >= 1, 'phải tìm được body POST /api/orders');
-  for (const b of online) {
+  for (const b of creates) {
     ok(
       !/\n\s*orderCode,/.test(b),
-      'body POST /api/orders KHÔNG được gửi orderCode — client sinh mã sẽ chặn bộ đếm DB'
+      'body TẠO ĐƠN KHÔNG được gửi orderCode — client sinh mã sẽ chặn bộ đếm DB'
     );
   }
+  // Chốt hồi quy: nếu thêm `orderCode` trở lại nhánh tiền mặt thì phải ĐỎ.
+  ok(
+    !/\n\s*orderCode,\n\s*idempotencyKey/.test(pos.split("id: orderUuid")[1] || ''),
+    'nhánh tiền mặt KHÔNG được gửi orderCode trước idempotencyKey'
+  );
 
   // Server phải thật sự có nhánh tự cấp mã.
   ok(
