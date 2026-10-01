@@ -34,8 +34,11 @@ export interface UpdatePromotionInput {
 }
 
 function assertGift(g: PromotionGiftInput) {
-  if (!Number.isFinite(g.minSubtotal) || g.minSubtotal <= 0) {
-    throw AppError.invalid('Mốc tiền phải lớn hơn 0.');
+  // Mốc 0 = "đơn bất kỳ cũng tặng" (vd đơn < 300k tặng Bookmark). Engine chỉ
+  // kích hoạt mốc 0 khi đơn có tiền thật nên đơn quà-only 0đ không lọt.
+  // Chỉ chặn số âm / không phải số.
+  if (!Number.isFinite(g.minSubtotal) || g.minSubtotal < 0) {
+    throw AppError.invalid('Mốc tiền không được âm.');
   }
   if (!Number.isInteger(g.giftQuantity) || g.giftQuantity <= 0) {
     throw AppError.invalid('Số lượng quà phải là số nguyên dương.');

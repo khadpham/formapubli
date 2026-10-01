@@ -121,8 +121,8 @@ function PromoFormModal({ isOpen, row, products, onClose, onSaved }: PromoFormMo
         setError('Chọn sản phẩm quà cho mọi dòng.');
         return;
       }
-      if (!Number.isFinite(min) || min <= 0) {
-        setError('Mốc tiền phải lớn hơn 0.');
+      if (!Number.isFinite(min) || min < 0) {
+        setError('Mốc tiền không được âm (0 = đơn bất kỳ cũng tặng).');
         return;
       }
       if (!Number.isInteger(qty) || qty <= 0) {

@@ -216,6 +216,26 @@ eq('giftQuantity thập phân bị bỏ qua', ids(computeGifts({
 })), []);
 eq('eligibleBase = 0 thì không tặng gì', calc(0), []);
 
+console.log('\n--- 7b. MỐC 0 ("đơn bất kỳ cũng tặng") ---');
+// Ví dụ thật của chủ: <300k tặng Bookmark, ≥300k thêm Móc khoá.
+const TIER0_CAMPAIGN: PromotionCampaign = {
+  id: 'KM0',
+  name: 'Mốc 0',
+  isActive: true,
+  gifts: [
+    { minSubtotal: 0, productId: 'Bookmark', giftQuantity: 1 },
+    { minSubtotal: 300_000, productId: 'Bookmark', giftQuantity: 1 },
+    { minSubtotal: 300_000, productId: 'MocKhoa', giftQuantity: 1 },
+  ],
+};
+const calc0 = (eligibleBase: number) =>
+  computeGifts({ eligibleBase, campaigns: [TIER0_CAMPAIGN] });
+eq('đơn 0đ (toàn quà, không tiền) → mốc 0 cũng KHÔNG kích (chống tự tặng)', ids(calc0(0)), []);
+eq('đơn 50k (< 300k) → chỉ Bookmark', ids(calc0(50_000)), ['Bookmark']);
+eq('đơn 299k → chỉ Bookmark', ids(calc0(299_999)), ['Bookmark']);
+eq('đơn 300k → Bookmark + Móc khoá (bậc cao nhất, không cộng dồn mốc 0)', ids(calc0(300_000)), ['Bookmark', 'MocKhoa']);
+eq('đơn 1tr → vẫn bậc 300k, không nhân quà', ids(calc0(1_000_000)), ['Bookmark', 'MocKhoa']);
+
 console.log('\n--- 8. CẢNH BÁO GIÁ TRỊ QUÀ ---');
 eq('quà = 20% đơn → không cảnh báo', giftValueWarning(200_000, 1_000_000), null);
 eq('quà = 50% đơn → CẢNH BÁO', typeof giftValueWarning(500_000, 1_000_000), 'string');

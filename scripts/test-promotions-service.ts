@@ -67,14 +67,29 @@ async function main() {
   let mine = all.find((c: any) => c.id === created.id);
   ok('list trả đúng 1 dòng quà, mốc 500.000', !!mine && mine.gifts.length === 1 && mine.gifts[0].minSubtotal === 500000);
 
-  // 2. Mốc ≤ 0 bị chặn.
+  // 2. Mốc âm bị chặn; mốc 0 ("đơn bất kỳ") hợp lệ.
   let blocked = false;
   try {
-    await PromotionService.create({ name: 'x', gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }] });
+    await PromotionService.create({ name: 'x', gifts: [{ minSubtotal: -1, productId: PRODUCT_ID, giftQuantity: 1 }] });
   } catch {
     blocked = true;
   }
-  ok('Mốc 0 bị chặn', blocked);
+  ok('Mốc âm bị chặn', blocked);
+
+  const zeroCamp = await PromotionService.create({
+    name: `${CAMP_ID_PATTERN}moc 0`,
+    gifts: [{ minSubtotal: 0, productId: PRODUCT_ID, giftQuantity: 1 }],
+  });
+  ok('Mốc 0 ("đơn bất kỳ") được chấp nhận', typeof zeroCamp.id === 'string');
+  const zeroGifts = computeGifts({
+    eligibleBase: 50000,
+    campaigns: (await PromotionService.list())
+      .filter((c: any) => c.id === zeroCamp.id)
+      .map((c: any) => ({ id: c.id, name: c.name, isActive: c.isActive, gifts: c.gifts })),
+  });
+  ok('Mốc 0 từ DB: đơn 50k được tặng', zeroGifts.length === 1 && zeroGifts[0].productId === PRODUCT_ID);
+  await q(`DELETE FROM promotion_gifts WHERE promotion_id = ?`, [zeroCamp.id]);
+  await q(`DELETE FROM promotions WHERE id = ?`, [zeroCamp.id]);
 
   blocked = false;
   try {

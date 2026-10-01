@@ -63,11 +63,16 @@ function inWindow(c: PromotionCampaign, at: Date): boolean {
  * Bậc cao nhất mà đạt được, trong MỘT chiến dịch.
  * Các dòng cùng `minSubtotal` là cùng một bậc (500k→A, 800k→A+B là 2 bậc với
  * 3 dòng).
+ *
+ * Mốc 0 ("đơn bất kỳ cũng tặng") chỉ kích hoạt khi đơn có tiền thật
+ * (`eligibleBase > 0`): đơn 0đ (toàn dòng quà, không dòng bán) mà cũng tặng
+ * thì thu ngân tạo đơn quà-only 0đ tuỳ ý — đúng lỗ hổng tự tặng đã chặn ở
+ * server. Giữ luật này ở engine để client và server cùng đúng.
  */
 function topTierReached(campaign: PromotionCampaign, eligibleBase: number): number | null {
   const reached = campaign.gifts
     .map((g) => g.minSubtotal)
-    .filter((m) => eligibleBase >= m);
+    .filter((m) => (m > 0 ? eligibleBase >= m : eligibleBase > 0));
   if (!reached.length) return null;
   return Math.max(...reached);
 }
