@@ -206,15 +206,18 @@ export function DailyFairSettlementModal({
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
   );
-  // Tỉ lệ đơn lớn nhất so với doanh thu thực thu — dùng cho thanh ngang. Chặn
-  // trên 100% vì thẻ đơn có thể trả một phần (đặt cọc): thanh vượt rộng sẽ tràn
-  // ra ngoài khung.
+  // Tỉ lệ đơn lớn nhất so với doanh thu thực thu. CÓ THỂ VƯỢT 100%: thẻ đơn
+  // thanh toán một phần (đặt cọc) nên `final_amount` của một đơn có thể lớn hơn
+  // tổng thực thu của ngày. Vì vậy chỉ thanh ngang mới bị chặn 100, còn CON SỐ
+  // hiển thị phải là tỉ lệ thật — in ra "100.0%" cho một tỉ lệ 130% là báo sai.
   const highlightShare = (() => {
     const net = Number(data?.financials?.netSales || 0);
     const top = Number(data?.highlight?.finalAmount || 0);
     if (!(net > 0) || !(top > 0)) return 0;
-    return Math.min(100, (top / net) * 100);
+    return (top / net) * 100;
   })();
+  // Thanh ngang không được vượt rộng khung.
+  const highlightBarWidth = Math.min(100, highlightShare);
   // Ấn phẩm bán chạy nhất làm chuẩn cho thanh ngang Top 10 (bằng 0 thì chia 0).
   const maxTopCopies = Math.max(
     1,
@@ -499,7 +502,7 @@ export function DailyFairSettlementModal({
                         <div className="h-2.5 rounded-full bg-amber-100 overflow-hidden">
                           <div
                             className="h-full rounded-full bg-amber-500"
-                            style={{ width: `${highlightShare.toFixed(1)}%` }}
+                            style={{ width: `${highlightBarWidth.toFixed(1)}%` }}
                           />
                         </div>
                         <p className="text-[10px] font-bold text-amber-800 mt-1">
