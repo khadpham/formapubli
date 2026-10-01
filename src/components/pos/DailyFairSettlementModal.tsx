@@ -1197,7 +1197,7 @@ export function DailyFairSettlementModal({
                 KHÔNG ép `break-before: page` ở đây: đo thật bằng Chrome headless với
                 dữ liệu tải nặng (10 ấn phẩm bán chạy + 14 đơn vượt trần + 22 ấn phẩm
                 đã bán), ép ngắt trang và không ép đều ra ĐÚNG 3 TRANG — ép chỉ làm
-                trang 2 chỉ chứa mục III rồi bỏ trống, đúng thứ owner phàn về (thừa
+                trang 2 chỉ chứa mục II rồi bỏ trống, đúng thứ owner phàn về (thừa
                 giấy trắng). Vẫn giữ `break-inside: avoid` cho từng khối. */}
             <div className="print-block space-y-1.5 mb-4 font-sans text-xs">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1">
