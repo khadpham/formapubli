@@ -123,6 +123,7 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       'rights_contracts', 'return_orders', 'return_order_items',
       'staff_accounts', 'document_sequences', 'idempotency_keys',
       'discount_approval_requests', 'delivery_orders', 'delivery_order_items',
+      'products', 'promotions', 'promotion_gifts',
     ],
   });
 
