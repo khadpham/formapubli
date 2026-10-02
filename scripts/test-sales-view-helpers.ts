@@ -415,6 +415,111 @@ ok(
   '48. Fetch của panel có AbortController (bấm liên tiếp nhiều preset không bị response cũ ghi đè)'
 );
 
+// ---------------------------------------------------------------------------
+// 9. Task 6 — TopEditionsPanel + GiftReportPanel.
+//    Cả hai là panel CLIENT nên trạng thái chỉ tồn tại vài chục ms: quét SOURCE
+//    (bỏ comment) như mục 7/8, không dựng trình duyệt cho từng assertion.
+//    Đây là contract đã khóa ở server (Task 2/3): client chỉ được ĐỌC đúng
+//    shape đó, không tự tính lại (cộng tay) và không giấu quà vào bảng top.
+// ---------------------------------------------------------------------------
+const TOP_SRC = readFileSync(
+  path.resolve(process.cwd(), 'src/components/sales/TopEditionsPanel.tsx'),
+  'utf8'
+);
+const GIFT_SRC = readFileSync(
+  path.resolve(process.cwd(), 'src/components/sales/GiftReportPanel.tsx'),
+  'utf8'
+);
+const TOP_CODE = stripComments(TOP_SRC);
+const GIFT_CODE = stripComments(GIFT_SRC);
+const LEDGER_TOP_CALL = LEDGER_CODE.match(/<TopEditionsPanel[\s\S]*?\/>/)?.[0] || '';
+const LEDGER_GIFT_CALL = LEDGER_CODE.match(/<GiftReportPanel[\s\S]*?\/>/)?.[0] || '';
+
+// --- Top bán chạy ----------------------------------------------------------
+ok(
+  /warehouseId:\s*string/.test(TOP_CODE) && /actorId:\s*string/.test(TOP_CODE),
+  '49. Top nhận kho + actorId THẬT từ tab (không tự đặt filter, không ký giả)'
+);
+ok(
+  !/setHours\(/.test(TOP_CODE) && !/toISOString\(/.test(TOP_CODE) &&
+    (/(vnToday|lastNDays)\(/.test(TOP_CODE)),
+  '50. Preset ngày của Top lấy theo GIỜ VIỆT NAM qua helper, không setHours/toISOString (giờ máy)',
+  `vnToday/lastNDays: ${/(vnToday|lastNDays)\(/.test(TOP_CODE)}`
+);
+ok(
+  /set\('startDate'/.test(TOP_CODE) && /set\('endDate'/.test(TOP_CODE) &&
+    /set\('warehouseId'/.test(TOP_CODE) && /'top-editions'/.test(TOP_CODE) &&
+    /api\/analytics/.test(TOP_CODE),
+  '51. Top gửi kho + khoảng ngày xuống /api/analytics (số khớp bảng đang lọc)'
+);
+ok(
+  /totalGiftQty/.test(TOP_CODE) && /đã tặng/i.test(TOP_CODE),
+  '52. Top hiện "đã tặng N cuốn" riêng (quà 0đ không lẫn vào bảng nhưng không bị giấu)'
+);
+ok(
+  /Tải lại/.test(TOP_CODE) && /Top\s*\$|<label|htmlFor/.test(TOP_CODE),
+  '53. Nút refresh CÓ NHÃN nhìn thấy + select TopN có nhãn (nút trông như mảng chữ thì không ai bấm)'
+);
+ok(
+  /Tiêu đề/.test(TOP_CODE) && /Kỳ lọc/.test(TOP_CODE) &&
+    !/'Hang'/.test(TOP_CODE) && !/'Tieu de'/.test(TOP_CODE),
+  '54. CSV Top có dấu + cột "Kỳ lọc" (không còn header không dấu Hang/Tieu de)'
+);
+ok(
+  /actorId:\s*'top-editions'/.test(TOP_CODE) === false && /actorId=\{actorId\}/.test(LEDGER_TOP_CALL),
+  '55. Watermark CSV Top ký NGƯỜI THẬT (actorId từ Sổ Kép, đã gỡ hằng số "top-editions")'
+);
+ok(
+  /new AbortController\(\)/.test(TOP_CODE),
+  '56. Fetch của Top có AbortController (bấm preset liên tiếp không hiện dữ liệu kỳ cũ)'
+);
+
+// --- Báo cáo quà -----------------------------------------------------------
+ok(
+  /from:\s*string/.test(GIFT_CODE) && /to:\s*string/.test(GIFT_CODE) &&
+    /currentRole:\s*UserRole/.test(GIFT_CODE),
+  '57. Panel Quà nhận from/to/currentRole từ tab (không tự đặt kỳ riêng)'
+);
+ok(
+  /ROLE_OWNER/.test(GIFT_CODE) && /ROLE_MANAGER/.test(GIFT_CODE) &&
+    /return null/.test(GIFT_CODE),
+  '58. Panel Quà ẨN HẲN với vai khác (return null — không hộp đỏ 403 cho thu ngân/kế toán thuế)'
+);
+ok(
+  /reports\/gifts/.test(GIFT_CODE) && /set\('from'/.test(GIFT_CODE) && /set\('to'/.test(GIFT_CODE),
+  '59. Panel Quà gửi from/to (server lọc ngày VN + chỉ đơn COMPLETED)'
+);
+ok(
+  /Thử lại/.test(GIFT_CODE) && /lineCount/.test(GIFT_CODE),
+  '60. Panel Quà có nút "Thử lại" khi lỗi + hiện lineCount (số dòng quà thật)'
+);
+ok(
+  /productName \|\||productName\s*\?\?/.test(GIFT_CODE),
+  '61. Tên quà null hiện "—" thay vì trống/khoảng trắng'
+);
+ok(
+  /totalDelivered/.test(GIFT_CODE) && /totalShortfall/.test(GIFT_CODE),
+  '62. Tiêu đề lấy "đã phát" (totalDelivered), quà hết tồn hiện DÒNG RIÊNG (totalShortfall)'
+);
+ok(
+  /from=\{startDate\}/.test(LEDGER_GIFT_CALL) && /to=\{endDate\}/.test(LEDGER_GIFT_CALL) &&
+    /currentRole=\{currentRole\}/.test(LEDGER_GIFT_CALL) &&
+    /warehouseId=\{selectedWarehouse\}/.test(LEDGER_TOP_CALL) &&
+    /actorId=\{actorId\}/.test(LEDGER_TOP_CALL),
+  '63. Sổ Kép truyền filter ĐANG DÙNG xuống cả 2 panel (một state, không tạo state thứ hai)',
+  `Gift: ${LEDGER_GIFT_CALL.replace(/\s+/g, ' ')} | Top: ${LEDGER_TOP_CALL.replace(/\s+/g, ' ')}`
+);
+
+// --- Script vá DB dev: phải vá luôn cột 0032, không lúc nào lại 500 -------
+const FIX_DEV_SRC = readFileSync(
+  path.resolve(process.cwd(), 'scripts/fix-dev-db-schema.ts'),
+  'utf8'
+);
+ok(
+  /is_gift_shortfall/.test(FIX_DEV_SRC),
+  '64. fix-dev-db-schema vá cột order_items.is_gift_shortfall (0032) — thiếu nó panel Quà lỗi SQL'
+);
+
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
 if (failures > 0) process.exit(1);
 console.log('\n✅ Helper Doanh Số: ngày VN đúng tháng lịch, nhãn kênh tiếng Việt, CSV có dấu.');
