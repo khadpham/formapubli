@@ -130,6 +130,7 @@ export const warehouses = sqliteTable('warehouses', {
   // Mẫu nội dung chuyển khoản QR riêng theo kho. Biến hỗ trợ: {SL} số lượng,
   // {MA} mã đơn, {KHO} tên kho, {KH} mã kho. Quản lý tự sửa trong Quản Lý Kho.
   qrTransferTemplate: text('qr_transfer_template'),
+  sortOrder: integer('sort_order').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
