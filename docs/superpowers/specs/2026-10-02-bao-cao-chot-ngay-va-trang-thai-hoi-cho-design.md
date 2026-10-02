@@ -39,10 +39,11 @@ Người mở báo cáo lúc 22h phải cuộn qua 10 sản phẩm bán chạy m
 2. **Thanh chuyển tab** (639-672): 3 tab chữ dài + nút "Đơn vị CK" + nút tải lại chen cùng một hàng; trên điện thoại là thanh cuộn ngang không có dấu hiệu còn tab.
 3. **Nút "In Báo Cáo"** nằm trên cùng (dòng 598) — khi đang ở giữa trang dài thì phải cuộn lên.
 
-### 1.4 Bản in không theo thứ tự đang xem
+### 1.4 Bản in thiếu luôn nhóm cần đếm
 
-- Màn hình dùng `sortedStocktakeList` (memo 196-218, render 1298), có nút 3 chế độ (1273).
-- Bản in dùng `data.inventoryReconciliation` **thô** (dòng 393) ⇒ không bao giờ theo thứ tự nhân viên đang đọc.
+- Màn hình tab Kiểm Kê: bảng ĐẦY ĐỦ 88 ấn phẩm, có sắp xếp + lọc (memo `sortedStocktakeList` 196-218, render 1298).
+- Bản in: **không có bảng này**. Chỉ in `IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)` từ `soldOnlyRows` (dòng 393) — lọc `soldToday > 0`, thứ tự thô.
+- Bảng in đó **đã có cột "Tồn còn"** (dòng 1709) nên xếp lại theo cột này được, không phải đổi cấu trúc bảng.
 
 ---
 
@@ -51,7 +52,7 @@ Người mở báo cáo lúc 22h phải cuộn qua 10 sản phẩm bán chạy m
 **Mục tiêu**
 1. Mở Báo cáo Chốt Ngày là thấy ngay tiền thu, két có khớp không, còn đơn nào đang chờ.
 2. Hai màn hình không còn cùng trả lời một câu hỏi.
-3. Bản in kiểm kê khớp đúng thứ tự và bộ lọc đang xem trên màn hình.
+3. Bản in có đủ hai bảng (sắp hết + đã bán), cùng xếp theo tồn bé → lớn.
 4. Bỏ hẳn nút "Đơn vị CK", thay bằng hiển thị đồng thời tiền và phần trăm.
 5. Bổ sung chọn 1 kho / 1 ngày cho Trạng Thái Hội Chợ, nhớ kho đã chọn.
 
@@ -71,7 +72,7 @@ Người mở báo cáo lúc 22h phải cuộn qua 10 sản phẩm bán chạy m
 | D2 | Chuyển "Đơn lớn nhất" + "Top 10 bán chạy" sang Trạng Thái Hội Chợ | ✅ |
 | D3 | Chuẩn hoá ngày nghiệp vụ của cả 2 màn về giờ Việt Nam | ✅ |
 | D4 | Thêm dòng "đơn QR đang chờ xác nhận" vào Báo cáo Chốt Ngày (phương án A) | ✅ |
-| D5 | Bản in kiểm kê theo đúng thứ tự + bộ lọc đang xem, có ghi rõ | ✅ |
+| D5 | Bản in: thêm bảng "Sắp hết (cần đếm)" + xếp BẢNG ĐÃ BÁN theo cột tồn (phương án C) | ✅ |
 | D6 | Trạng Thái Hội Chợ: nhớ kho đã chọn, KHÔNG nhớ ngày | ✅ |
 | D7 | Kiểm kê mặc định xếp **tồn bé → lớn**; bỏ chế độ "Mặc định" (thô) | ✅ |
 
@@ -137,13 +138,18 @@ Người mở báo cáo lúc 22h phải cuộn qua 10 sản phẩm bán chạy m
 - Xoá 2 đoạn tự chuyển sang ASC không còn tác dụng: khi mở tab Kiểm Kê (dòng 1203-1205) và khi bật lọc sắp hết (dòng 1198-1208 rút gọn còn phần bật/tắt).
 - Giữ nguyên bảng và nút "Sắp hết (≤ 5)", nhưng **phải hiện cảnh báo trên màn hình**: "Đang lọc: chỉ tồn ≤ 5 — bản in cũng chỉ có các dòng này."
 
-### 4.5 Bản in kiểm kê (D5)
+### 4.5 Bản in (D5) — phát hiện khi đọc code: bản in THIẾU bảng kiểm kê
 
-- Bản in dùng `sortedStocktakeList` **thay cho** mảng thô (dòng 393).
-- Đầu bảng in thêm 2 dòng:
-  - `Thứ tự: Tồn bé → lớn` (hoặc `Lớn → bé`) và
-  - `Bộ lọc: chỉ tồn ≤ 5` nếu đang bật lọc.
-- Không in cột nào phụ thuộc `activeTab`; in đúng tab đang mở.
+Thực tế hiện tại (đã kiểm dòng 1466-1955): bản in **không có bảng kiểm kê tồn đầy đủ**. Nó chỉ in bảng `IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)` lấy `soldOnlyRows` — chỉ những ấn phẩm **đã bán trong ngày** (`soldToday > 0`), và **thứ tự thô** (dòng 393).
+
+Hậu quả thực tế: cuốn sắp hết mà hôm nay không bán được cuốn nào thì **không có mặt trên giấy**, dù đó đúng là nhóm phải đếm lúc đóng thùng.
+
+**Sửa (phương án C):**
+
+1. Bảng `IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)` — **xếp theo cột "Tồn còn" bé → lớn**. Bảng này đã có cột `Tồn còn` (dòng 1709/1727) nên chỉ sắp lại mảng, không đổi cấu trúc bảng.
+2. Thêm bảng mới `V. SẮP HẾT (TỒN ≤ 5) — CẦN ĐẾM CUỐI NGÀY`: lấy `inventoryReconciliation` lọc `theoreticalStock <= STOCK_THRESHOLD_WARNING`, **xếp tồn bé → lớn**. Cột: `#`, `Mã`, `Tên ấn phẩm`, `Tồn còn`, `Số đếm thực tế` (ô trống để nhân viên điền tay khi kiểm kê — hệ thống hiện **không** lưu số đếm, xem chú thích state ở trên).
+3. Cả hai bảng dùng **cùng một quy tắc**: xếp theo tồn bé → lớn. Trùng lặp giữa hai bảng là CÓ CHỦ Ý — một cuốn tồn 3 vừa đã bán vừa sắp hết xuất hiện ở cả hai chỗ vì nó thuộc cả hai việc: cần đếm và đã bán.
+4. Nút "Chỉ hiện tồn ≤ 5" trên màn hình **không** chi phối bản in — bản in luôn in cả hai bảng cố định ở trên. Nhờ vậy giấy in luôn giống nhau bất kể người dùng đang bật/tắt bộ lọc trên màn hình.
 
 ### 4.6 Trạng Thái Hội Chợ
 
