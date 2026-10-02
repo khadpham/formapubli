@@ -414,7 +414,6 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
               <tr>
                 <th className="px-4 py-3 w-16">Mã</th>
                 <th className="px-4 py-3">Tên sách / Tác phẩm</th>
-                <th className="px-4 py-3 w-28">Tên tắt</th>
                 <th className="px-4 py-3 w-36">ISBN (4 số cuối)</th>
                 <th className="px-4 py-3">Tác giả / Dịch giả</th>
                 <th className="px-4 py-3 text-right w-28">Giá bìa</th>
@@ -424,7 +423,7 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
             <tbody className="divide-y divide-slate-100">
               {displayedBooks.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                     <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-40" />
                     Không tìm thấy sách phù hợp với từ khóa &ldquo;{debouncedTerm}&rdquo;
                   </td>
@@ -436,11 +435,6 @@ export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: Cat
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900">{b.title}</div>
                       <div className="text-xs text-slate-400">{b.category || b.publisher}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-block px-2 py-0.5 bg-amber-50 text-amber-700 rounded font-mono text-xs font-semibold">
-                        {b.shortCode || '-'}
-                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-mono text-xs text-slate-500">{b.isbn}</div>

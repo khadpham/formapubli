@@ -553,7 +553,7 @@ export function StockOverviewMatrix({
               placeholder={
                 isListening
                   ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
-                  : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+                  : 'Tìm theo tên không dấu, tên tắt, 4 số cuối, mã SKU hoặc bấm Micro...'
               }
               value={searchTerm ?? ''}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -1206,7 +1206,6 @@ export function StockOverviewMatrix({
                 <tr>
                   <th className="px-3 py-3 w-14">Mã</th>
                   <th className="px-3 py-3">Tên sách & Tác phẩm</th>
-                  <th className="px-3 py-3 w-24">Tên tắt</th>
                   <th className="px-3 py-3 w-28">4 số ISBN</th>
                   {warehouseTab === 'ALL' ? (
                     <>
@@ -1290,11 +1289,6 @@ export function StockOverviewMatrix({
                       <td className="px-3 py-2.5">
                         <div className="font-semibold text-slate-900">{b.title}</div>
                         <div className="text-[11px] text-slate-400">{b.author}</div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded font-mono font-semibold">
-                          {b.shortCode || '-'}
-                        </span>
                       </td>
                       <td className="px-3 py-2.5 font-mono">
                         <span className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">
