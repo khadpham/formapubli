@@ -99,10 +99,10 @@ export function LiveFairMonitorModal({
   const [notice, setNotice] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Kho đang xem. Mặc định rỗng = TẤT CẢ kho hội chợ.
-  // Nhớ qua localStorage: người dùng hay xem 1 kho hội chợ cụ thể, mở lại
-  // thấy đúng kho đó thì không phải chọn lại.
-  const [scopeWarehouseId, setScopeWarehouseId] = useState<string>('');
+  // Kho đang xem. Mặc định lấy từ dashboard đang chọn; rỗng = TẤT CẢ kho hội chợ.
+  // Nhớ lựa chọn của chính người dùng qua localStorage: người hay xem 1 kho
+  // hội chợ cụ thể, mở lại thấy đúng kho đó thì không phải chọn lại.
+  const [scopeWarehouseId, setScopeWarehouseId] = useState<string>(warehouseId || '');
   // Ngày đang xem. KHÔNG nhớ — mỗi lần mở về hôm nay, vì mở nhầm ngày cũ
   // khiến người dùng tưởng hôm nay chưa bán được gì (số liệu = 0).
   const [viewDate, setViewDate] = useState<string>(() =>
@@ -136,10 +136,11 @@ export function LiveFairMonitorModal({
   // Tương tự cho ngày đang xem: response về sau khi đổi ngày thì bỏ.
   const viewDateRef = useRef(viewDate);
   viewDateRef.current = viewDate;
-  // Kho dùng cho lần nạp: ưu tiên lựa chọn trong modal, không có thì lấy prop
-  // từ dashboard (giữ tương thích với nơi gọi cũ).
-  const scopeWarehouseIdRef = useRef(scopeWarehouseId || warehouseId || '');
-  scopeWarehouseIdRef.current = scopeWarehouseId || warehouseId || '';
+  // Kho dùng cho lần nạp. KHÔNG fallback về prop: nếu có fallback thì chọn
+  // "Tất cả kho hội chợ" (giá trị rỗng) sẽ bị bỏ qua và API vẫn lấy 1 kho,
+  // trong khi ô chọn lại hiện "Tất cả" ⇒ quản lý tưởng đang xem cả hội chợ.
+  const scopeWarehouseIdRef = useRef(scopeWarehouseId);
+  scopeWarehouseIdRef.current = scopeWarehouseId;
 
   // Drawer duyệt chiết khấu cũng render ra document.body, cùng cấp với modal
   // monitor. useModalFocusTrap chỉ đánh dấu inert lên #app-main-content, không
@@ -257,6 +258,18 @@ export function LiveFairMonitorModal({
       pollRef.current = null;
     };
   }, [isOpen, load, schedule]);
+
+  // Đổi kho hoặc đổi ngày thì nạp NGAY. Không có effect này thì màn vẫn hiện số
+  // của kho/ngày cũ cho tới lượt poll kế tiếp (10s, hoặc 40s nếu đang backoff) —
+  // người dùng chọn "hôm qua" rồi thấy số của hôm nay, tưởng hôm nay chưa bán.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollRef.current = null;
+    backoffRef.current = 0;
+    void load();
+    schedule();
+  }, [isOpen, scopeWarehouseId, viewDate, load, schedule]);
 
   // Quay lại tab thì nạp ngay, không bắt thu ngân chờ tới lượt poll kế tiếp.
   useEffect(() => {

@@ -311,7 +311,9 @@ export async function GET(req: NextRequest) {
         finalAmount: orders.finalAmount,
         paymentMethod: orders.paymentMethod,
         createdAt: orders.createdAt,
-        itemCount: sql<number>`COUNT(${orderItems.id})`,
+        // PHẢI CỘNG `quantity`, không đếm số dòng: đơn POS có thể nhiều dòng
+        // `order_items`. Đếm dòng là đơn 3 dòng × 5 cuốn ra "3 SP" thay vì 15.
+        itemCount: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
       })
       .from(orders)
       .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
@@ -323,7 +325,10 @@ export async function GET(req: NextRequest) {
         )
       )
       .groupBy(orders.id)
-      .orderBy(desc(orders.finalAmount))
+      // Hoà tiền phải ra CÙNG một đơn mọi lần chạy. Ở hội chợ nhiều đơn tròn
+      // trăm nghìn là chuyện thường; thiếu tie-break thì thẻ "Đơn lớn nhất" nhảy
+      // qua lại giữa hai lần tải và người dùng tưởng dữ liệu sai.
+      .orderBy(desc(orders.finalAmount), desc(orders.createdAt), desc(orders.id))
       .limit(1);
 
     return NextResponse.json({

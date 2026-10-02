@@ -56,4 +56,11 @@ assert.ok(
   'không hardcode số 5 trong tiêu đề bảng in'
 );
 
+// 6. Mục trên giấy phải ĐÚNG THỨ TỰ. Lỗi đã gặp: bảng Sắp hết được chèn
+// trước mục V nhưng lại đánh số VI ⇒ biên bản in ra "VI" rồi mới tới "V".
+assert.ok(
+  src.indexOf('V. SẮP HẾT') > 0 && src.indexOf('V. SẮP HẾT') < src.indexOf('VI. PHÂN TÍCH'),
+  'trên giấy phải là mục V. SẮP HẾT rồi mới tới VI. PHÂN TÍCH'
+);
+
 console.log('✓ test-settlement-print-stocktake PASS');

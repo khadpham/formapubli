@@ -91,6 +91,16 @@ export class DailySettlementService {
     // và đơn hết hạn VẪN CÒN trong DB với status PENDING_CONFIRMATION (chỉ đổi
     // sang CANCELLED khi ai đó bấm xác nhận), trong khi ATP đã nhả giữ chỗ từ
     // lâu. Tính bằng SUM thuần sẽ thổi phồng số tiền chờ.
+    const pendingConditions = [
+      eq(orders.warehouseId, warehouseId),
+      eq(orders.status, 'PENDING_CONFIRMATION'),
+      vnDayEquals(orders.createdAt, targetDate),
+    ];
+    // Phải lọc `sessionId` GIỐNG `dayOrders` (trên). Báo cáo theo 1 ca thì đơn
+    // chờ của ca khác không được lọt vào, nếu không tiền chờ của ca bên cạnh
+    // sẽ lẫn vào báo cáo của ca này.
+    if (sessionId) pendingConditions.push(eq(orders.cashboxSessionId, sessionId));
+
     const pendingRows = await txOrDb
       .select({
         finalAmount: orders.finalAmount,
@@ -99,13 +109,7 @@ export class DailySettlementService {
         paymentExpiresAt: orders.paymentExpiresAt,
       })
       .from(orders)
-      .where(
-        and(
-          eq(orders.warehouseId, warehouseId),
-          eq(orders.status, 'PENDING_CONFIRMATION'),
-          vnDayEquals(orders.createdAt, targetDate)
-        )
-      );
+      .where(and(...pendingConditions));
 
     let pendingQrTotal = 0;
     let pendingQrCount = 0;

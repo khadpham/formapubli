@@ -207,11 +207,13 @@ function MoneyHeader({ data }: { data: any }) {
           <p className="text-[10px] text-slate-400">{pb.qrTransfer?.ordersCount || 0} đơn</p>
         </div>
         {/* Cả hai đơn vị cùng lúc: xem tiền thật và xem tỉ lệ. Trước đây phải
-            bấm nút đổi đơn vị, dễ đọc nhầm "5%" thành tổng chiết khấu. */}
+            bấm nút đổi đơn vị, dễ đọc nhầm "5%" thành tổng chiết khấu.
+            Ngày không có chiết khấu thì in "0 đ" chứ không phải "−0 đ". */}
         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
           <p className="text-[11px] font-bold text-rose-700">Chiết khấu đã cấp</p>
           <p className="font-mono font-black text-sm text-rose-700">
-            −{(f.totalDiscount || 0).toLocaleString('vi-VN')} đ
+            {Number(f.totalDiscount || 0) > 0 ? '−' : ''}
+            {(f.totalDiscount || 0).toLocaleString('vi-VN')} đ
           </p>
           <p className="text-[10px] text-rose-600 font-semibold">
             tương đương {((f.averageDiscountRate || 0) * 100).toFixed(1)}%
@@ -427,23 +429,6 @@ export function DailyFairSettlementModal({
   const totalTheoreticalBooks = (data?.inventoryReconciliation || []).reduce(
     (sum: number, it: any) => sum + (it.theoreticalStock || 0),
     0
-  );
-  // Tỉ lệ đơn lớn nhất so với doanh thu thực thu. CÓ THỂ VƯỢT 100%: thẻ đơn
-  // thanh toán một phần (đặt cọc) nên `final_amount` của một đơn có thể lớn hơn
-  // tổng thực thu của ngày. Vì vậy chỉ thanh ngang mới bị chặn 100, còn CON SỐ
-  // hiển thị phải là tỉ lệ thật — in ra "100.0%" cho một tỉ lệ 130% là báo sai.
-  const highlightShare = (() => {
-    const net = Number(data?.financials?.netSales || 0);
-    const top = Number(data?.highlight?.finalAmount || 0);
-    if (!(net > 0) || !(top > 0)) return 0;
-    return (top / net) * 100;
-  })();
-  // Thanh ngang không được vượt rộng khung.
-  const highlightBarWidth = Math.min(100, highlightShare);
-  // Ấn phẩm bán chạy nhất làm chuẩn cho thanh ngang Top 10 (bằng 0 thì chia 0).
-  const maxTopCopies = Math.max(
-    1,
-    ...(data?.topSellers || []).map((s: any) => Number(s.soldCopies || 0))
   );
   // Ngày in ra LUÔN là ngày của số liệu (`data.reportDate` do API trả), không
   // phải ngày đang chọn trên ô date. Ô date là ý định của người dùng; `reportDate`
@@ -1578,7 +1563,7 @@ export function DailyFairSettlementModal({
                 có mặt trên giấy — đúng nhóm nhân viên cần đếm nhất. */}
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                VI. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) — CẦN ĐẾM CUỐI NGÀY
+                V. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) — CẦN ĐẾM CUỐI NGÀY
               </h3>
               <table className="w-full border-collapse border border-slate-300 text-[11.5px]">
                 <thead>
@@ -1618,10 +1603,11 @@ export function DailyFairSettlementModal({
               </p>
             </div>
 
-            {/* V. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT */}
+            {/* VI. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
+                (mục V là bảng Sắp hết ở trên — đánh số theo thứ tự thật trên giấy) */}
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                V. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
+                VI. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
               </h3>
               <div className="grid grid-cols-2 gap-x-10 gap-y-1 text-[12px] text-slate-700">
                 <div className="py-0.5">

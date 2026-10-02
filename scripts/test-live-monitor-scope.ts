@@ -55,7 +55,44 @@ assert.ok(
   'truy vấn ngày phải dùng đúng helper vnDayEq đã có sẵn trong file'
 );
 
-// 7. Comment cũ nói báo cáo chốt ngày dùng ngày UTC là SAI.
+// 6b. Số cuốn phải CỘNG quantity, không đếm số dòng `order_items`.
+assert.ok(
+  /itemCount: sql<number>`COALESCE\(SUM\(\$\{orderItems\.quantity\}\), 0\)`/.test(route),
+  'itemCount phải SUM(quantity) — đếm số DÒNG order_items là sai (đơn 3 dòng × 5 cuốn ra 3 thay vì 15)'
+);
+assert.ok(
+  !/itemCount: sql<number>`COUNT\(/.test(route),
+  'không được COUNT(order_items.id) cho itemCount'
+);
+
+// 6c. Đơn lớn nhất phải có tie-break, nếu không sẽ nhảy qua lại khi hoà tiền.
+assert.ok(
+  /orderBy\(desc\(orders\.finalAmount\), desc\(orders\.createdAt\), desc\(orders\.id\)\)/.test(route),
+  'đơn lớn nhất phải có tie-break ổn định (tiền, rồi giờ, rồi id)'
+);
+
+// 7. Chọn "Tất cả kho hội chợ" phải THỰC SỰ có tác dụng.
+//    Lỗi đã gặp: ref fallback về prop ⇒ chọn rỗng thì API vẫn lấy 1 kho.
+assert.ok(
+  !/scopeWarehouseIdRef\.current = scopeWarehouseId \|\| warehouseId/.test(ui),
+  'không được fallback ref về prop — sẽ làm lựa chọn "Tất cả kho hội chợ" mất tác dụng'
+);
+assert.ok(
+  /onChange=\{\(e\) => setScopeWarehouseId\(e\.target\.value\)\}/.test(ui),
+  'ô chọn kho phải nối vào setScopeWarehouseId'
+);
+
+// 8. Đổi kho/ngày phải nạp lại ngay, không đợi poll kế tiếp (10-40 giây).
+assert.ok(
+  /\[isOpen, scopeWarehouseId, viewDate, load, schedule\]/.test(ui),
+  'phải có effect nạp lại khi scopeWarehouseId hoặc viewDate đổi'
+);
+assert.ok(
+  /onChange=\{\(e\) => setViewDate\(e\.target\.value\)\}/.test(ui),
+  'ô chọn ngày phải nối vào setViewDate'
+);
+
+// 9. Comment cũ nói báo cáo chốt ngày dùng ngày UTC là SAI.
 //    Chỉ chặn câu claim sai đó, KHÔNG cấm nhắc tới UTC ở chỗ giải thích
 //    "vì sao phải cộng 7 giờ" — đó là tài liệu đúng.
 assert.ok(

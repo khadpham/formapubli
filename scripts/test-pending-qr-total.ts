@@ -49,10 +49,13 @@ async function run() {
 
   const todayVn = businessDateOf(new Date());
 
-  const mk = async (id: string, over: any) => {
+  // Default là `QR_CODE` — giá trị THẬT của hệ thống (CASH | BANK_TRANSFER |
+  // QR_CODE). Đừng để mặc định là giá trị bịa: một lệnh `mk()` sau này quên
+  // override sẽ chèn method không tồn tại và test đỏ với nguyên nhân sai.
+  const mk = async (id: string, over: any = {}) => {
     await db.insert(schema.orders).values({
       id, orderCode: id.toUpperCase(),
-      warehouseId: WH, status: 'PENDING_CONFIRMATION', paymentMethod: 'QR_TRANSFER',
+      warehouseId: WH, status: 'PENDING_CONFIRMATION', paymentMethod: 'QR_CODE',
       subtotal: 100000, discountAmount: 0, finalAmount: 100000,
       cashierId: 'ADMIN-01', customerName: 'Khách lẻ',
       idempotencyKey: `test-pending-${id}`,
@@ -68,13 +71,19 @@ async function run() {
   // Giá trị `payment_method` PHẢI là giá trị thật của hệ thống: schema khai
   // CASH | BANK_TRANSFER | QR_CODE. Nếu test dùng giá trị bịa (QR_TRANSFER…) thì
   // nó xanh với cả code sai — đúng cái bẫy đã xảy ra ở lần viết đầu.
-  await mk('o-live', { paymentMethod: 'QR_CODE' });
+  await mk('o-live');
   await mk('o-live-bank', { paymentMethod: 'BANK_TRANSFER' });
-  await mk('o-expired', { paymentMethod: 'QR_CODE', paymentExpiresAt: '2000-01-01T00:00:00.000Z' });
+  await mk('o-expired', { paymentExpiresAt: '2000-01-01T00:00:00.000Z' });
   await mk('o-cash', { paymentMethod: 'CASH' });
-  // 23:50 VN hôm qua = 16:50 UTC hôm qua.
-  await mk('o-yesterday', { paymentMethod: 'QR_CODE', createdAt: new Date(Date.now() - 7 * 3600_000).toISOString() });
-  await mk('o-done', { status: 'COMPLETED', paymentMethod: 'QR_CODE' });
+  // Đơn NGOÀI ngày đang xem: dùng 10:00 VN của HÔM QUA.
+  //
+  // Cố ý KHÔNG dùng `now - 7h` như lần đầu: đó là 17:00 VN của hôm qua CHỈ khi
+  // giờ VN hiện tại ≥ 7h; gần nửa đêm thì rơi về cùng ngày VN với `now` và test
+  // ĐỎ vào 17/24 giờ trong ngày. Lấy ngày theo mốc nghiệp vụ rồi ghép giờ cố
+  // định ⇒ chắc chắn khác ngày đang xem, mọi giờ trong ngày.
+  const yesterdayNoonVn = `${businessDateOf(new Date(Date.now() - 48 * 3600_000))}T03:00:00.000Z`;
+  await mk('o-yesterday', { createdAt: yesterdayNoonVn });
+  await mk('o-done', { status: 'COMPLETED' });
 
   const r: any = await DailySettlementService.getDailyFairSettlement({
     warehouseId: WH,
