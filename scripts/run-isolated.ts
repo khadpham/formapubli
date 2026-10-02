@@ -156,6 +156,9 @@ const ALL_SUITES = [
   // KHÔNG: đặt TRƯỚC suite cuối để suite cuối vẫn chạy trên DB đã có dữ liệu
   // này (mọi assertion của nó so với SQL gốc trên cùng DB nên vẫn đúng).
   'scripts/test-sales-scope-filter.ts',
+  // Báo cáo quà: chỉ tính đơn COMPLETED + tách tổng đã phát (Task 2). Chạy
+  // trước test-analytics-doanhso vì nó cũng đọc orders/order_items.
+  'scripts/test-gift-completed-only.ts',
   'scripts/test-analytics-doanhso.ts',
 ];
 
