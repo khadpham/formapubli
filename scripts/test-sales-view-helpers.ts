@@ -442,9 +442,8 @@ ok(
 );
 ok(
   !/setHours\(/.test(TOP_CODE) && !/toISOString\(/.test(TOP_CODE) &&
-    (/(vnToday|lastNDays)\(/.test(TOP_CODE)),
-  '50. Preset ngày của Top lấy theo GIỜ VIỆT NAM qua helper, không setHours/toISOString (giờ máy)',
-  `vnToday/lastNDays: ${/(vnToday|lastNDays)\(/.test(TOP_CODE)}`
+    /startDate:\s*string/.test(TOP_CODE) && /endDate:\s*string/.test(TOP_CODE),
+  '50. Top nhận ngày từ tab (startDate/endDate) và KHÔNG tự cắt ngày giờ máy (setHours/toISOString)'
 );
 ok(
   /set\('startDate'/.test(TOP_CODE) && /set\('endDate'/.test(TOP_CODE) &&
@@ -456,9 +455,20 @@ ok(
   /totalGiftQty/.test(TOP_CODE) && /đã tặng/i.test(TOP_CODE),
   '52. Top hiện "đã tặng N cuốn" riêng (quà 0đ không lẫn vào bảng nhưng không bị giấu)'
 );
+// Nút refresh phải có CHỮ trong chính thẻ `<button>` (icon trần là "mảng chữ",
+// người dùng không dám bấm). Quét từng thẻ button thay vì regex dotAll (cấu
+// hình ts của repo chưa bật target es2018 ⇒ cờ `s` bị tsc chặi TS1501).
+const TOP_BUTTONS = TOP_CODE.match(/<button[\s\S]*?<\/button>/g) || [];
 ok(
-  /Tải lại/.test(TOP_CODE) && /Top\s*\$|<label|htmlFor/.test(TOP_CODE),
-  '53. Nút refresh CÓ NHÃN nhìn thấy + select TopN có nhãn (nút trông như mảng chữ thì không ai bấm)'
+  /<label[^>]*htmlFor="top-editions-n"/.test(TOP_CODE) &&
+    TOP_BUTTONS.some((b) => /<RefreshCw[\s\S]*?\/>/.test(b) && /Tải lại/.test(b)),
+  '53. Nút refresh CÓ NHÃN nhìn thấy (icon + "Tải lại") + select TopN có label htmlFor'
+);
+ok(
+  !/type Preset/.test(TOP_CODE) && !/presetRange/.test(TOP_CODE) &&
+    !/setPreset\(/.test(TOP_CODE) && !/lastNDays\(/.test(TOP_CODE) &&
+    !/Hôm nay[\s\S]*?7 ngày qua[\s\S]*?30 ngày qua/.test(TOP_CODE),
+  '53b. Top KHÔNG còn preset ngày riêng (hai bộ nút ngày trên một màn ⇒ số lệch nhau)'
 );
 ok(
   /Tiêu đề/.test(TOP_CODE) && /Kỳ lọc/.test(TOP_CODE) &&
@@ -502,11 +512,22 @@ ok(
   '62. Tiêu đề lấy "đã phát" (totalDelivered), quà hết tồn hiện DÒNG RIÊNG (totalShortfall)'
 );
 ok(
+  /new AbortController\(\)/.test(GIFT_CODE) && /abortRef\.current\?\.abort\(\)/.test(GIFT_CODE) &&
+    /controller\.signal\.aborted/.test(GIFT_CODE),
+  '62b. Fetch của panel Quà có AbortController + check aborted (đổi ngày tab liên tục không bị số kỳ cũ ghi đè)'
+);
+ok(
+  /setTotalDelivered\(0\)/.test(GIFT_CODE) && /setTotalShortfall\(0\)/.test(GIFT_CODE) &&
+    /setError\(/.test(GIFT_CODE),
+  '62c. Nhánh LỖI của panel Quà XOÁ số đã tải (không để số kỳ cũ đứng cạnh nhãn kỳ mới)'
+);
+ok(
   /from=\{startDate\}/.test(LEDGER_GIFT_CALL) && /to=\{endDate\}/.test(LEDGER_GIFT_CALL) &&
     /currentRole=\{currentRole\}/.test(LEDGER_GIFT_CALL) &&
+    /startDate=\{startDate\}/.test(LEDGER_TOP_CALL) && /endDate=\{endDate\}/.test(LEDGER_TOP_CALL) &&
     /warehouseId=\{selectedWarehouse\}/.test(LEDGER_TOP_CALL) &&
     /actorId=\{actorId\}/.test(LEDGER_TOP_CALL),
-  '63. Sổ Kép truyền filter ĐANG DÙNG xuống cả 2 panel (một state, không tạo state thứ hai)',
+  '63. Sổ Kép truyền filter ĐANG DÙNG (kho + ngày) xuống cả 2 panel (một state, không state thứ hai)',
   `Gift: ${LEDGER_GIFT_CALL.replace(/\s+/g, ' ')} | Top: ${LEDGER_TOP_CALL.replace(/\s+/g, ' ')}`
 );
 

@@ -698,11 +698,13 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         )}
       </div>
 
-      {/* Sach ban chay nhat (OWNER/MANAGER) — tra loi "cuon nao ban chay nhat hom nay/tuan nay/thang nay".
-          Kho + actor that lay tu bo loc chung cua tab; preset ngay la cua rieng panel
-          (Hôm nay / 7 ngày / 30 ngày) va tinh theo LICH VIET NAM qua helper Task 4. */}
+      {/* Sach ban chay nhat (OWNER/MANAGER) — dung CHUNG bo loc cua tab (ngay/kho) va
+          actor that cua So Kep, y het RevenueAnalyticsPanel: panel khong tu dat
+          preset ngay rieng nen so cua no luon khop bang so tren bang. */}
       <TopEditionsPanel
         currentRole={currentRole}
+        startDate={startDate}
+        endDate={endDate}
         warehouseId={selectedWarehouse}
         warehouseLabel={selectedWarehouse === 'ALL' ? 'Tất cả kho' : warehouseNameOf(selectedWarehouse)}
         actorId={actorId}

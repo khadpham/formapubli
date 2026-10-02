@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Gift, RefreshCw } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 
@@ -35,8 +35,15 @@ export function GiftReportPanel({ currentRole, from, to }: GiftReportPanelProps)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const fetchGifts = useCallback(async () => {
     if (!canView) return;
+    // Bấm preset ngày liên tiếp thì response cũ vẫn bay về và ghi đè số của kỳ
+    // trước. Huỷ request trước đó thay vì so timestamp (cùng mẫu Top/Revenue).
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -46,9 +53,18 @@ export function GiftReportPanel({ currentRole, from, to }: GiftReportPanelProps)
       if (from) params.set('from', from);
       if (to) params.set('to', to);
       const qs = params.toString();
-      const res = await fetch(`/api/reports/gifts${qs ? `?${qs}` : ''}`, { cache: 'no-store' });
+      const res = await fetch(`/api/reports/gifts${qs ? `?${qs}` : ''}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const json = await res.json().catch(() => null);
+      if (controller.signal.aborted) return;
       if (!res.ok || !json?.success) {
+        // Số cũ thuộc KỲ CŨ: giữ nó cạnh nhãn kỳ mới là nói dối. Xoá luôn.
+        setInStock([]);
+        setShortfall([]);
+        setTotalDelivered(0);
+        setTotalShortfall(0);
         setError(json?.error || 'Máy chủ không phản hồi đúng.');
         return;
       }
@@ -57,14 +73,20 @@ export function GiftReportPanel({ currentRole, from, to }: GiftReportPanelProps)
       setTotalDelivered(Number(json.totalDelivered || 0));
       setTotalShortfall(Number(json.totalShortfall || 0));
     } catch {
+      if (controller.signal.aborted) return;
+      setInStock([]);
+      setShortfall([]);
+      setTotalDelivered(0);
+      setTotalShortfall(0);
       setError('Lỗi kết nối.');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [canView, from, to]);
 
   useEffect(() => {
     fetchGifts();
+    return () => abortRef.current?.abort();
   }, [fetchGifts]);
 
   if (!canView) return null;

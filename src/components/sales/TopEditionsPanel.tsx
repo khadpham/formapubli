@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Trophy, Download, RefreshCw } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
-import { lastNDays, type DateRange } from '@/lib/sales-view';
 
 interface TopEditionsPanelProps {
   currentRole: UserRole;
+  /** Ngày nghiệp vụ VN 'YYYY-MM-DD' từ tab; rỗng = không lọc ngày. */
+  startDate: string;
+  endDate: string;
   /** Kho đang lọc ở tab Doanh Số; 'ALL' = không lọc kho. */
   warehouseId: string;
   /** Tên kho THẬT (từ /api/warehouses) để ghi ra CSV, không bịa. */
@@ -15,8 +17,6 @@ interface TopEditionsPanelProps {
   /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
   actorId: string;
 }
-
-type Preset = 'TODAY' | 'WEEK' | 'MONTH';
 
 /** Một dòng của `AnalyticsService.topEditions` (Task 3 đã khóa shape). */
 interface TopEditionRow {
@@ -27,21 +27,6 @@ interface TopEditionRow {
   orders: number;
   revenue: number;
   qtyShare: number;
-}
-
-/**
- * Khoảng ngày theo LỊCH VIỆT NAM qua helper dùng chung (Task 4).
- *
- * Preset cũ dùng `new Date()` + `setHours(0,0,0,0)` + `toISOString()` ⇒ cắt
- * ngày theo GIỜ MÁY và gửi ISO múi giờ UTC. Máy dev GMT+7 nên "Hôm nay" nuốt
- * mất đơn 00:00–07:00 giờ VN (nằm ở ngày UTC hôm trước) — cùng một bảng "Hôm
- * nay" mà mỗi máy ra một kết quả.
- */
-function presetRange(p: Preset): DateRange & { label: string } {
-  const now = new Date();
-  if (p === 'TODAY') return { ...lastNDays(1, now), label: 'Hôm nay' };
-  if (p === 'WEEK') return { ...lastNDays(7, now), label: '7 ngày qua' };
-  return { ...lastNDays(30, now), label: '30 ngày qua' };
 }
 
 const CSV_HEADERS = [
@@ -58,23 +43,23 @@ const CSV_HEADERS = [
 
 export function TopEditionsPanel({
   currentRole,
+  startDate,
+  endDate,
   warehouseId,
   warehouseLabel,
   actorId,
 }: TopEditionsPanelProps) {
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
-  const [preset, setPreset] = useState<Preset>('WEEK');
   const [topN, setTopN] = useState(20);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<TopEditionRow[]>([]);
   const [totals, setTotals] = useState({ totalQty: 0, totalRevenue: 0, totalGiftQty: 0 });
   const abortRef = useRef<AbortController | null>(null);
-  const range = useMemo(() => presetRange(preset), [preset]);
 
   const fetchTop = useCallback(async () => {
     if (!canView) return;
-    // Bấm liên tiếp nhiều preset/kho thì response cũ vẫn bay về và ghi đè kết
+    // Bấm liên tiếp nhiều bộ lọc/kho thì response cũ vẫn bay về và ghi đè kết
     // quả mới (bảng hiện số của kỳ trước). Huỷ request trước đó thay vì so timestamp.
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -84,8 +69,11 @@ export function TopEditionsPanel({
     try {
       const params = new URLSearchParams();
       params.set('view', 'top-editions');
-      params.set('startDate', range.startDate);
-      params.set('endDate', range.endDate);
+      // Khoảng ngày LẤY TỪ TAB (giống RevenueAnalyticsPanel). Panel KHÔNG có preset
+      // riêng: hai bộ nút ngày trên một màn thì số của panel lệch với bảng đang
+      // lọc mà không ai biết vì sao. Rỗng = không lọc ngày.
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
       params.set('top', String(topN));
       // Mặc định của API đã loại dòng quà; gửi tường minh để đọc file là biết
       // bảng này cố tình không có quà.
@@ -119,7 +107,7 @@ export function TopEditionsPanel({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [canView, currentRole, range.startDate, range.endDate, topN, warehouseId]);
+  }, [canView, currentRole, startDate, endDate, topN, warehouseId]);
 
   useEffect(() => {
     fetchTop();
@@ -128,7 +116,10 @@ export function TopEditionsPanel({
 
   if (!canView) return null;
 
-  const rangeLabel = `${range.startDate} → ${range.endDate}`;
+  // Nhãn kỳ LẤY TỪ BỘ LỌC CỦA TAB, không suy ra từ preset nội bộ: rỗng = không
+  // lọc ngày, và nhãn phải khớp đúng cái bảng Sổ Kép đang hiện.
+  const rangeLabel = startDate || endDate ? `${startDate || 'đầu kỳ'} → ${endDate || 'nay'}` : 'toàn bộ thời gian';
+  const csvRange = startDate && endDate ? `${startDate}_${endDate}` : startDate || endDate || 'all';
 
   const exportCsv = () => {
     if (items.length === 0) {
@@ -172,14 +163,14 @@ export function TopEditionsPanel({
     const watermarked = appendExportWatermark(baseCsv, rawObjects, {
       actorId,
       actorRole: currentRole,
-      reportName: `SÁCH BÁN CHẠY NHẤT — ${range.label} — ${warehouseLabel}`,
+      reportName: `SÁCH BÁN CHẠY NHẤT — ${rangeLabel} — ${warehouseLabel}`,
       fiscalScope: 'ALL',
     });
     const blob = new Blob(['\uFEFF' + watermarked], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Sach_Ban_Chay_${range.startDate}_${range.endDate}.csv`);
+    link.setAttribute('download', `Sach_Ban_Chay_${csvRange}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -195,26 +186,17 @@ export function TopEditionsPanel({
             Sách Bán Chạy Nhất
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Kỳ {range.label} ({rangeLabel}) • {warehouseLabel} • Tổng{' '}
+            Kỳ {rangeLabel} • {warehouseLabel} • Tổng{' '}
             {totals.totalQty.toLocaleString('vi-VN')} cuốn / {totals.totalRevenue.toLocaleString('vi-VN')} đ
           </p>
           <p className="text-[11px] text-amber-700 mt-0.5">
             Đã tặng {totals.totalGiftQty.toLocaleString('vi-VN')} cuốn trong kỳ này (không tính vào bảng bán chạy)
           </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Số liệu theo đúng bộ lọc của bảng trên: kho, ngày.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {(['TODAY', 'WEEK', 'MONTH'] as Preset[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPreset(p)}
-              aria-pressed={preset === p}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                preset === p ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {p === 'TODAY' ? 'Hôm nay' : p === 'WEEK' ? '7 ngày qua' : '30 ngày qua'}
-            </button>
-          ))}
           <label htmlFor="top-editions-n" className="text-[11px] font-bold text-slate-500">
             Số dòng
           </label>
