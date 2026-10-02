@@ -580,3 +580,81 @@ Nhánh `feat/settlement-overhaul`, 6 commit, `tsc` sạch, **7/7 suite cách ly 
 ### Bài học đã lưu
 1. **Test dùng chung hằng/giá trị với code = test không bảo chứng được gì.** Giá trị phải lấy từ nguồn thật (schema), và nên có 1 test "phá code có chủ đích" để chứng minh test bắt lỗi.
 2. **Mọi thao tác trước khi deploy phải chạy lại sau rebase** — main tiến thêm 3 lần trong lúc làm.
+
+---
+
+## 9. Vòng review + sửa lỗi UI (02/10/2026 19:00–19:36)
+
+| Deploy | Version ID | Nội dung |
+|---|---|---|
+| 8 | `3cec35f9` | Overhaul báo cáo chốt ngày + trạng thái hội chợ |
+| 9 | `62fee3c7` | Sửa lề A4 (0mm → 12/10mm) + chip "Đã chốt ca 100%" lệm ra ngoài |
+| 10 | `95eba1d5` | Sửa lỗi review: `moveWarehouse` báo thành công giả + import chết |
+
+### Lỗi A4: đo thật, không đoán
+Khối 80mm trong `globals.css` khai `@page { margin: 0mm !important }` **đứng trước**;
+khối A4 khai `margin: 12mm 10mm` **không** important. Theo cascade, `!important` thắng
+bất kể thứ tự. `size` thì cả hai đều không important nên A4 thắng ⇒ triệu chứng
+"đúng khổ A4 nhưng không có lề nào".
+
+Đo bằng Edge headless + đọc trực tiếp content stream trong PDF:
+
+| | Lề trái | Lề trên |
+|---|---|---|
+| Trước | **0.00 mm** | **0.00 mm** |
+| Sau | **10.05 mm** | **11.91 mm** |
+
+Đã xác nhận lại trên CSS production sau deploy:
+`@page{size:80mm auto;margin:0!important}` rồi `@page{size:A4 portrait!important;margin:12mm 10mm!important}`.
+
+### Sự cố tôi tự gây ra (đã sửa)
+Sửa `globals.css` xong để thừa một dấu `}`. `tsc` **không** bắt lỗi CSS, test vẫn
+xanh, tôi **đã push lên main** trước khi build ⇒ `next build` fail ⇒ ai build sau
+cũng fail. Đã sửa + push ngay, và thêm test cân bằng ngoặc cho `globals.css`.
+
+**Quy tắc mới: file CSS phải chạy `npm run build` TRƯỚC khi push, không dựa vào `tsc`.**
+
+### Review OCR delegate (19 file, 20 tổng cộng; 1 file `.md` bị loại)
+| Mức | Lỗi | Kết quả |
+|---|---|---|
+| Medium | `WarehouseManagerPanel.moveWarehouse` không kiểm `res.ok` cho các PATCH lưu `sortOrder` ⇒ HTTP 500 vẫn báo "Đã đổi vị trí", refresh là thứ tự tự nhảy về cũ | ✅ Đã sửa: `res.ok` + `Promise.allSettled` + báo "Chỉ lưu được x/y kho" |
+| Low | `page.tsx` import chết `warehouses` | ✅ Đã gỡ |
+| Nghi vấn | `colSpan={8}` vs "9 `<th>`" | ❌ **Không phải bug** — tôi đếm nhầm `<thead` là `<th>`; thật chỉ có 8 cột |
+
+Một sự cố phạm vi đã bắt được: preview OCR đầu dùng `main` **cục bộ đã cũ** nên bỏ sót
+`globals.css` — chính là file chứa bản sửa lề. Phải dùng `origin/main` mới đủ.
+
+## 10. TỔNG KẾT PHIÊN 02/10/2026
+
+### Đang chạy trên production
+| Mục | Trạng thái |
+|---|---|
+| Worker `formapubli` | `95eba1d5` — 100% traffic |
+| `main` | `e2f231d` = `origin/main` |
+| Migration | `0035` (discount approval) + `0036` (warehouse sort_order) — đều đã áp |
+
+### Test mới thêm hôm nay (7 suite, đều đăng ký trong `run-isolated.ts`)
+`test-pending-qr-total` · `test-stocktake-order` · `test-settlement-money-header` ·
+`test-settlement-print-stocktake` · `test-settlement-print-margin-and-chip` ·
+`test-live-monitor-scope` · (cập nhật) `test-warehouse-reorder`
+
+### 🔶 Việc TREO, cần chủ quyết
+| Việc | Nguyên nhân |
+|---|---|
+| Sửa ISBN `ed-h66` (Tristram Shandy) | Mã in trên sách chưa được quét. Tôi **không** đoán: `9786044449685` chỉ suy ra từ checksum 12 số đầu, CSV chỉ có 1 dòng, web không có bản NXB Hà Nội 2025 |
+| Sửa ISBN `ed-h85` (Đốt kho tái bản) | Chủ sẽ tự cập nhật. Hệ thống hiện lưu 14 số |
+| Validate checksum ISBN-13 khi nhập | Chủ để sau. Đây chính là nguyên nhân gốc làm sách Wittgenstein không quét được |
+| Cột "so với hôm qua" ▲▼ trên khối tiền | Để giữ diff nhỏ, làm ở đợt sau |
+
+### 🟡 Việc của AGENT KHÁC, không đụng vào
+- `D:\Data Project\formapubli` (worktree chính): đang có 2 file docs `doanh-so-overhaul` sửa dở + 1 script tạm `scripts/tmp-probe-isbn.ts` **untracked**.
+- `D:\Data Project\formapubli-promo`: nhánh `fix/remove-order-notifications`, chưa merge, có `scripts/probe-ordercode-length.ts` untracked.
+- `D:\Data Project\formapubli-sales`: nhánh `agent/b-doanh-so-overhaul`.
+
+### Bài học lớn nhất hôm nay
+1. **Test dùng chung hằng/giá trị với code thì test không bảo chứng được gì.** `pendingQr`
+   lọc `QR_TRANSFER` trong khi hệ thống thật dùng `BANK_TRANSFER` ⇒ tính năng luôn = 0
+   mà test vẫn xanh. Trước khi tin test, cắt 1 chỗ trong code và xem test có đỏ không.
+2. **`tsc` không validate CSS.** Lỗi `}` thừa làm cả repo không build được mà test vẫn xanh.
+3. **Deploy phải đo bằng thứ chạy thật**, không tin bằng mắt: lề A4 đo được 0.00mm → 10.05mm.
+4. **Review độc lập bắt được 9 lỗi** mà tự test không bắt được.
