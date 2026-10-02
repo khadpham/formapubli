@@ -178,14 +178,15 @@ export function RevenueAnalyticsPanel({
     };
     for (const g of groups) {
       for (const r of g.rows) {
-        push(g.label, r.channel, Number(r.orders || 0), Number(r.revenue || 0), g.share * 100);
+        // Tỷ trọng TÍNH LẠI trên `salesRevenue` (mẫu số như dòng TỔNG) chứ không
+        // dùng `share` của server — server chia trên TỔNG CẢ kênh kể cả tài trợ.
+        const rev = Number(r.revenue || 0);
+        push(g.label, r.channel, Number(r.orders || 0), rev, salesRevenue > 0 ? (rev / salesRevenue) * 100 : 0);
       }
     }
-    // Dòng tài trợ RIÊNG, KHÔNG gộp vào doanh thu bán — kế toán đối chiếu file
-    // với sổ thấy đúng cái số 0đ mà sổ ghi.
-    if (gift.orders > 0 || gift.revenue > 0) {
-      push('Tặng / Tài trợ (ngoài doanh thu)', 'SPONSORSHIP', gift.orders, gift.revenue, 0);
-    }
+    // Dòng tài trợ RIÊNG, KHÔNG gộp vào doanh thu bán — và LUÔN có mặt (kể cả
+    // khi 0đ) để file khớp đúng bảng trên màn hình, nơi dòng này hiện hoài.
+    push('Tặng / Tài trợ (ngoài doanh thu)', 'SPONSORSHIP', gift.orders, gift.revenue, 0);
     push('TỔNG', '', totalOrders, salesRevenue, salesRevenue > 0 ? 100 : 0);
 
     const rangeLabel = startDate || endDate ? `${startDate || 'đầu kỳ'} → ${endDate || 'nay'}` : 'toàn bộ thời gian';
