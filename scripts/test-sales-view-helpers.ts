@@ -16,6 +16,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   monthPreset,
   lastNDays,
@@ -245,7 +246,15 @@ ok(
 //    Đây là lỗi reviewer nhặt ở vòng review 1 — canh ở source vì trạng thái
 //    loading chỉ tồn tại vài chục ms nên test trình duyệt bắt không ổn định.
 // ---------------------------------------------------------------------------
-const LEDGER_SRC = readFileSync(new URL('../src/components/sales/SalesLedgerView.tsx', import.meta.url), 'utf8');
+// Đọc theo convention repo (`path.resolve(process.cwd(), …)` như
+// test-sales-ledger-vn-day.ts) chứ KHÔNG dùng `import.meta.url`: repo không
+// khai báo `"type"` trong package.json nên đây là CJS, và `import.meta.url`
+// bị tsc từ chối khi biên dịch `--module commonjs` (TS1343) — mọi assert đọc
+// source phía sau sẽ chết theo.
+const LEDGER_SRC = readFileSync(
+  path.resolve(process.cwd(), 'src/components/sales/SalesLedgerView.tsx'),
+  'utf8'
+);
 ok(
   /loading\s*&&\s*!summary/.test(LEDGER_SRC) && /Đang tải…/.test(LEDGER_SRC),
   '27. Lúc skeleton bật (loading && !summary) phải hiện "Đang tải…", KHÔNG hiện "0 đơn hoàn tất"'
