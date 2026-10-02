@@ -525,21 +525,37 @@ export function ExecutiveDashboard({
           </p>
         </div>
 
-        {/* Tổng Tồn Kho Vật Lý — số liệu lấy THẬT từ API, không ghi cứng. Lọc theo kho
-            KHÔNG cần sửa khối này: `/api/analytics?view=stock-summary&warehouseId=`
-            đã trả `warehouseCount=1` + `warehouseNames=[tên kho đó]`. */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
+        {/* Tổng Tồn Kho Vật Lý — bấm vào chuyển ngay sang Kho Hàng để xem chi tiết & sắp xếp tồn */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onNavigateTab('inventory')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onNavigateTab('inventory');
+            }
+          }}
+          className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-amber-300 transition-all cursor-pointer group"
+          title="Bấm để mở Ma trận Tồn Kho & kiểm tra các đầu sách sắp hết hàng"
+          aria-label="Mở Ma trận Tồn Kho"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-amber-700 transition-colors">
               Tồn Kho Vật Lý ({stockSummary?.warehouseCount ?? 0} Kho)
             </span>
-            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-100 transition-colors">
               <Boxes className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-2xl font-extrabold text-slate-900 mt-2 font-mono">
-            {stockSummary ? stockSummary.titlesWithStock : '…'} Đầu Sách
-          </p>
+          <div className="flex items-baseline justify-between mt-2">
+            <p className="text-2xl font-extrabold text-slate-900 font-mono">
+              {stockSummary ? stockSummary.titlesWithStock : '…'} Đầu Sách
+            </p>
+            <span className="text-xs font-bold text-amber-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-0.5">
+              Xem kho <ArrowUpRight className="w-3.5 h-3.5" />
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-1">
             {stockSummary
               ? `${stockSummary.totalUnits.toLocaleString('vi-VN')} cuốn · ${stockSummary.warehouseNames.join(' · ')}`
