@@ -17,6 +17,15 @@ import fs from 'node:fs';
 const css = fs.readFileSync('src/app/globals.css', 'utf8');
 const modal = fs.readFileSync('src/components/pos/DailyFairSettlementModal.tsx', 'utf8');
 
+// ---- 0. globals.css phải CÂN BẰNG ngoặc ----
+// Lỗi thật đã gặp: sửa khối @page xong thừa một dấu } ở cuối file.
+// `tsc` KHÔNG bắt lỗi CSS, và lỗi này làm `next build` fail ⇒ chặn cả repo.
+// Đã lên main một lần, mọi người build sau đều fail.
+const stripped = css.replace(/\/\*[\s\S]*?\*\//g, ''); // bỏ comment trước khi đếm
+const open = (stripped.match(/\{/g) || []).length;
+const close = (stripped.match(/\}/g) || []).length;
+assert.equal(open, close, `globals.css lệch ngoặc: ${open} '{' nhưng ${close} '}' — next build sẽ fail`);
+
 // ---- 1. Lề A4 ----
 const pageBlocks: string[] = [];
 const re = /@page\s*\{([^}]*)\}/g;
