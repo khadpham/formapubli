@@ -1,23 +1,43 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BarChart3, Download, RefreshCw, Wallet, Store, Truck, Globe, Gift } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
+import { channelLabel, fiscalScopeLabel } from '@/lib/sales-view';
 
 interface RevenueAnalyticsPanelProps {
   currentRole: UserRole;
+  /** Ngày nghiệp vụ VN 'YYYY-MM-DD'; rỗng = không lọc ngày. */
+  startDate: string;
+  endDate: string;
+  /** 'ALL' = không lọc kho. */
+  warehouseId: string;
+  /** undefined = không lọc sổ (API chỉ nhận đúng 2 giá trị này). */
+  fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+  /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
+  actorId: string;
 }
 
-const CHANNEL_LABELS: Record<string, string> = {
-  FAIR_EVENT: 'Bán lẻ — Hội chợ',
-  RETAIL_OFFICE: 'Bán lẻ — Văn phòng / Quầy',
-  WHOLESALE_PARTNER: 'Bán đại lý (bán đứt)',
-  ONLINE: 'Online (tổng hợp cũ)',
-  RETAIL_ONLINE_WEB: 'Online — Web',
-  RETAIL_ONLINE_SOCIAL: 'Online — Mạng xã hội / Chat',
-  SPONSORSHIP: 'Tặng / Tài trợ (0đ)',
-};
+/** Một dòng của `AnalyticsService.byChannel`. */
+interface ChannelRow {
+  channel: string;
+  orders: number;
+  revenue: number;
+  subtotal: number;
+  share: number;
+}
+
+/** `GET /api/analytics?view=cashflow` — server đã loại SPONSORSHIP khỏi `salesRevenue`. */
+interface Cashflow {
+  channels: ChannelRow[];
+  salesRevenue: number;
+  netRevenue: number;
+  codPending: number;
+  codReceived: number;
+  sponsorshipDrawnValue: number;
+  sponsorshipDrawnQty: number;
+}
 
 const SOURCE_GROUPS: { id: string; label: string; channels: string[]; icon: any }[] = [
   { id: 'retail', label: 'Bán lẻ', channels: ['FAIR_EVENT', 'RETAIL_OFFICE'], icon: Store },
@@ -26,27 +46,61 @@ const SOURCE_GROUPS: { id: string; label: string; channels: string[]; icon: any 
   { id: 'gift', label: 'Tặng / Tài trợ', channels: ['SPONSORSHIP'], icon: Gift },
 ];
 
-export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProps) {
+/** Nhóm bán hàng THẬT — nhóm tặng/tài trợ hiện dòng riêng, ngoài doanh thu. */
+const SELL_GROUPS = SOURCE_GROUPS.filter((g) => g.id !== 'gift');
+const GIFT_GROUP = SOURCE_GROUPS.find((g) => g.id === 'gift')!;
+
+const CSV_HEADERS = ['Nhóm nguồn', 'Kênh', 'Số đơn', 'Doanh thu (VND)', 'Tỷ trọng (%)'];
+
+export function RevenueAnalyticsPanel({
+  currentRole,
+  startDate,
+  endDate,
+  warehouseId,
+  fiscalScope,
+  actorId,
+}: RevenueAnalyticsPanelProps) {
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [channels, setChannels] = useState<any[]>([]);
-  const [cashflow, setCashflow] = useState<any>(null);
+  const [cashflow, setCashflow] = useState<Cashflow | null>(null);
   const [consignment, setConsignment] = useState<any[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     if (!canView) return;
+    // Bấm liên tiếp nhiều preset/kho thì response cũ vẫn bay về và ghi đè kết
+    // quả mới. Huỷ request trước đó thay vì so timestamp.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setLoadError(null);
     try {
-      const [cRes, fRes, sRes] = await Promise.all([
-        fetch('/api/analytics?view=channels').then((r) => r.json()).catch(() => null),
-        fetch('/api/analytics?view=cashflow').then((r) => r.json()).catch(() => null),
-        fetch('/api/analytics?view=consignment').then((r) => r.json()).catch(() => null),
+      // Kho + sổ: chỉ cashflow nhận (kho ký gửi là tồn vật lý, không chia sổ).
+      const scope = new URLSearchParams();
+      if (startDate) scope.set('startDate', startDate);
+      if (endDate) scope.set('endDate', endDate);
+      if (warehouseId && warehouseId !== 'ALL') scope.set('warehouseId', warehouseId);
+      if (fiscalScope) scope.set('fiscalScope', fiscalScope);
+      const range = new URLSearchParams();
+      if (startDate) range.set('startDate', startDate);
+      if (endDate) range.set('endDate', endDate);
+      const url = (view: string, q: URLSearchParams) =>
+        `/api/analytics?view=${view}${q.toString() ? `&${q.toString()}` : ''}`;
+
+      const [fRes, sRes] = await Promise.all([
+        fetch(url('cashflow', scope), { signal: controller.signal })
+          .then((r) => r.json())
+          .catch(() => null),
+        fetch(url('consignment', range), { signal: controller.signal })
+          .then((r) => r.json())
+          .catch(() => null),
       ]);
+      if (controller.signal.aborted) return;
       const failed: string[] = [];
-      if (cRes?.success) setChannels(cRes.data || []);
-      else failed.push('kênh');
+      // `cashflow.channels` CHÍNH LÀ breakdown kênh đã lọc — dùng lại thay vì
+      // gọi thêm `view=channels` (hai nguồn cùng câu truy vấn, dễ lệch nhau).
       if (fRes?.success) setCashflow(fRes.data || null);
       else failed.push('dòng tiền');
       if (sRes?.success) setConsignment(sRes.data || []);
@@ -55,64 +109,98 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
         setLoadError(`Không tải được số liệu ${failed.join(', ')} — kiểm tra mạng rồi bấm Tải lại.`);
       }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, [canView, currentRole, startDate, endDate, warehouseId, fiscalScope]);
 
   useEffect(() => {
     fetchAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRole]);
+    return () => abortRef.current?.abort();
+  }, [fetchAll]);
 
   if (!canView) return null;
 
-  const totalRevenue = channels.reduce((s, c) => s + Number(c.revenue || 0), 0);
-  const groups = SOURCE_GROUPS.map((g) => {
+  const channels = cashflow?.channels || [];
+  // Mẫu số tỷ trọng = doanh thu bán của SERVER (đã loại tài trợ). Trước đây
+  // panel tự cộng `byChannel` nên tài trợ nằm trong mẫu số ⇒ tổng tỷ trọng <100%
+  // mà không có dòng nào giải thích.
+  const salesRevenue = Number(cashflow?.salesRevenue || 0);
+  const netRevenue = Number(cashflow?.netRevenue || 0);
+
+  const groups = SELL_GROUPS.map((g) => {
     const rows = channels.filter((c) => g.channels.includes(c.channel));
     const revenue = rows.reduce((s, r) => s + Number(r.revenue || 0), 0);
     const orders = rows.reduce((s, r) => s + Number(r.orders || 0), 0);
-    return { ...g, rows, revenue, orders, share: totalRevenue > 0 ? revenue / totalRevenue : 0 };
+    return { ...g, rows, revenue, orders, share: salesRevenue > 0 ? revenue / salesRevenue : 0 };
   }).sort((a, b) => b.revenue - a.revenue);
+
+  const giftRows = channels.filter((c) => GIFT_GROUP.channels.includes(c.channel));
+  const gift = {
+    ...GIFT_GROUP,
+    rows: giftRows,
+    orders: giftRows.reduce((s, r) => s + Number(r.orders || 0), 0),
+    // Nếu server trả tiền cho đơn tài trợ (0đ theo nghiệp vụ) thì hiện đúng số
+    // thật, nhưng KHÔNG cộng vào doanh thu bán.
+    revenue: giftRows.reduce((s, r) => s + Number(r.revenue || 0), 0),
+  };
+
+  const totalOrders = groups.reduce((s, g) => s + g.orders, 0);
+  const showLoading = loading && !cashflow;
+  const showEmpty = !loading && !loadError && channels.length === 0;
 
   const exportSourceCsv = () => {
     if (channels.length === 0) {
       alert('Chưa có dữ liệu nguồn doanh thu để xuất.');
       return;
     }
-    const headers = ['Nhom nguon', 'Kenh', 'So don', 'Doanh thu (VND)', 'Ty trong (%)'];
-    // Chan Excel formula injection o ten nhom/kenh.
+    if (!actorId) {
+      alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+      return;
+    }
+    // Chặn Excel formula injection ở tên nhóm/kênh.
     const cell = (v: string | number) => {
       const s = `${v ?? ''}`;
-      return /^[=+\-@]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
+      return /^[=+\-@\t\r]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
     };
-    const rawObjects = channels.map((c) => ({
-      channel: c.channel,
-      orders: Number(c.orders || 0),
-      revenue: Number(c.revenue || 0),
-      share: Number(c.share || 0),
-    }));
-    const rows = channels.map((c) => {
-      const g = SOURCE_GROUPS.find((x) => x.channels.includes(c.channel));
-      return [
-        cell(g?.label || ''),
-        cell(CHANNEL_LABELS[c.channel] || c.channel),
-        Number(c.orders || 0),
-        Number(c.revenue || 0),
-        (Number(c.share || 0) * 100).toFixed(2),
-      ];
-    });
-    const baseCsv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const rawObjects: Record<string, unknown>[] = [];
+    const rows: string[] = [];
+    const push = (
+      groupLabel: string,
+      channel: string,
+      orders: number,
+      revenue: number,
+      sharePct: number
+    ) => {
+      rawObjects.push({ group: groupLabel, channel, orders, revenue, sharePct });
+      rows.push(
+        [cell(groupLabel), cell(channelLabel(channel)), orders, revenue, sharePct.toFixed(2)].join(',')
+      );
+    };
+    for (const g of groups) {
+      for (const r of g.rows) {
+        push(g.label, r.channel, Number(r.orders || 0), Number(r.revenue || 0), g.share * 100);
+      }
+    }
+    // Dòng tài trợ RIÊNG, KHÔNG gộp vào doanh thu bán — kế toán đối chiếu file
+    // với sổ thấy đúng cái số 0đ mà sổ ghi.
+    if (gift.orders > 0 || gift.revenue > 0) {
+      push('Tặng / Tài trợ (ngoài doanh thu)', 'SPONSORSHIP', gift.orders, gift.revenue, 0);
+    }
+    push('TỔNG', '', totalOrders, salesRevenue, salesRevenue > 0 ? 100 : 0);
+
+    const rangeLabel = startDate || endDate ? `${startDate || 'đầu kỳ'} → ${endDate || 'nay'}` : 'toàn bộ thời gian';
+    const baseCsv = [CSV_HEADERS.join(','), ...rows].join('\r\n');
     const watermarked = appendExportWatermark(baseCsv, rawObjects, {
-      actorId: 'revenue-analytics',
+      actorId,
       actorRole: currentRole,
-      reportName: 'Báo cáo nguồn doanh thu & dòng tiền (bán lẻ / đại lý / online / tặng)',
-      fiscalScope: 'ALL',
+      reportName: `Phân tích nguồn doanh thu & dòng tiền — ${rangeLabel} — ${fiscalScope ? fiscalScopeLabel(fiscalScope) : 'mọi sổ'}`,
+      fiscalScope: fiscalScope || 'ALL',
     });
     const blob = new Blob(['\uFEFF' + watermarked], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Nguon_Doanh_Thu_FormaPubli_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Nguon_Doanh_Thu_${startDate || 'all'}_${endDate || 'nay'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -130,6 +218,9 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
           <p className="text-xs text-slate-500 mt-0.5">
             Bán lẻ • Đại lý • Online • Tặng/đối tác — kèm tỷ trọng %, COD và ký gửi. Chỉ Chủ sở hữu / Quản lý.
           </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Số liệu theo đúng bộ lọc của bảng trên: kho, ngày, sổ.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -142,7 +233,9 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
           </button>
           <button
             onClick={exportSourceCsv}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition"
+            disabled={!actorId}
+            title={actorId ? 'Xuất báo cáo nguồn doanh thu' : 'Chưa đọc được người đăng nhập — tải lại trang'}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
             Xuất Excel/CSV
@@ -164,83 +257,127 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
         </div>
       )}
 
-      {/* Tổng quan dòng tiền */}
-      {cashflow && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
-            <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1"><Wallet className="w-3.5 h-3.5" /> Doanh thu bán hàng</p>
-            <p className="text-lg font-black text-emerald-900 font-mono mt-1">{Number(cashflow.salesRevenue || 0).toLocaleString('vi-VN')} đ</p>
-            <p className="text-[11px] text-emerald-700">Đã trừ tặng/tài trợ 0đ</p>
-          </div>
-          <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200">
-            <p className="text-[11px] font-bold text-indigo-700">Doanh thu thuần (trừ hoàn)</p>
-            <p className="text-lg font-black text-indigo-900 font-mono mt-1">{Number(cashflow.netRevenue || 0).toLocaleString('vi-VN')} đ</p>
-            <p className="text-[11px] text-indigo-700">Hoàn đã duyệt đã trừ</p>
-          </div>
-          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-            <p className="text-[11px] font-bold text-amber-700">COD chờ về</p>
-            <p className="text-lg font-black text-amber-900 font-mono mt-1">{Number(cashflow.codPending || 0).toLocaleString('vi-VN')} đ</p>
-            <p className="text-[11px] text-amber-700">Đã về: {Number(cashflow.codReceived || 0).toLocaleString('vi-VN')} đ</p>
-          </div>
-          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200">
-            <p className="text-[11px] font-bold text-rose-700">Sách tặng / tài trợ đã rút</p>
-            <p className="text-lg font-black text-rose-900 font-mono mt-1">{Number(cashflow.sponsorshipDrawnQty || 0).toLocaleString('vi-VN')} cuốn</p>
-            <p className="text-[11px] text-rose-700">Trị giá bìa: {Number(cashflow.sponsorshipDrawnValue || 0).toLocaleString('vi-VN')} đ</p>
-          </div>
+      {/* Trạng thái tải / rỗng RIÊNG — không hiện 0 đ giả khi chưa có số liệu */}
+      {showLoading && (
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+          Đang tải số liệu theo bộ lọc kho/ngày/sổ…
+        </div>
+      )}
+      {showEmpty && (
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+          Chưa có đơn hoàn tất trong khoảng lọc này. Đổi kho hoặc khoảng ngày ở bảng trên rồi bấm “Tải lại”.
         </div>
       )}
 
-      {/* Bảng theo nhóm nguồn */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
-            <tr>
-              <th className="p-3">Nhóm nguồn</th>
-              <th className="p-3">Số đơn</th>
-              <th className="p-3">Doanh thu</th>
-              <th className="p-3">Tỷ trọng</th>
-              <th className="p-3">Chi tiết kênh</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {groups.map((g) => {
-              const Icon = g.icon;
-              return (
-                <tr key={g.id} className="hover:bg-slate-50/70">
+      {cashflow && !showEmpty && (
+        <>
+          {/* Tổng quan dòng tiền — số lấy thẳng từ cashflow, không cộng lại client */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1"><Wallet className="w-3.5 h-3.5" /> Doanh thu bán hàng</p>
+              <p className="text-lg font-black text-emerald-900 font-mono mt-1">{salesRevenue.toLocaleString('vi-VN')} đ</p>
+              <p className="text-[11px] text-emerald-700">Đã trừ tặng/tài trợ 0đ</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200">
+              <p className="text-[11px] font-bold text-indigo-700">Doanh thu thuần (trừ hoàn)</p>
+              <p className="text-lg font-black text-indigo-900 font-mono mt-1">{netRevenue.toLocaleString('vi-VN')} đ</p>
+              <p className="text-[11px] text-indigo-700">Hoàn đã duyệt đã trừ</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+              <p className="text-[11px] font-bold text-amber-700">COD chờ về</p>
+              <p className="text-lg font-black text-amber-900 font-mono mt-1">{Number(cashflow.codPending || 0).toLocaleString('vi-VN')} đ</p>
+              <p className="text-[11px] text-amber-700">Đã về: {Number(cashflow.codReceived || 0).toLocaleString('vi-VN')} đ</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200">
+              <p className="text-[11px] font-bold text-rose-700">Sách tặng / tài trợ đã rút</p>
+              <p className="text-lg font-black text-rose-900 font-mono mt-1">{Number(cashflow.sponsorshipDrawnQty || 0).toLocaleString('vi-VN')} cuốn</p>
+              <p className="text-[11px] text-rose-700">Trị giá bìa: {Number(cashflow.sponsorshipDrawnValue || 0).toLocaleString('vi-VN')} đ</p>
+            </div>
+          </div>
+
+          {/* Bảng theo nhóm nguồn — dòng tài trợ RIÊNG, dòng TỔNG ở cuối */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                <tr>
+                  <th className="p-3">Nhóm nguồn</th>
+                  <th className="p-3">Số đơn</th>
+                  <th className="p-3">Doanh thu</th>
+                  <th className="p-3">Tỷ trọng</th>
+                  <th className="p-3">Chi tiết kênh</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {groups.map((g) => {
+                  const Icon = g.icon;
+                  return (
+                    <tr key={g.id} className="hover:bg-slate-50/70">
+                      <td className="p-3 font-extrabold text-slate-900 flex items-center gap-1.5">
+                        <Icon className="w-4 h-4 text-indigo-600" />
+                        {g.label}
+                      </td>
+                      <td className="p-3 font-mono font-bold">{g.orders.toLocaleString('vi-VN')}</td>
+                      <td className="p-3 font-mono font-bold text-emerald-700">{g.revenue.toLocaleString('vi-VN')} đ</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.round(g.share * 100)}%` }} />
+                          </div>
+                          <span className="font-mono font-bold text-slate-800">{(g.share * 100).toFixed(1)}%</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-slate-600">
+                        {g.rows.length === 0 ? (
+                          <span className="text-slate-400">Chưa phát sinh</span>
+                        ) : (
+                          g.rows.map((r: ChannelRow) => (
+                            <div key={r.channel} className="flex justify-between gap-3 py-0.5">
+                              <span>{channelLabel(r.channel)} ({Number(r.orders || 0)} đơn)</span>
+                              <span className="font-mono font-semibold">{Number(r.revenue || 0).toLocaleString('vi-VN')} đ</span>
+                            </div>
+                          ))
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-amber-50/60">
                   <td className="p-3 font-extrabold text-slate-900 flex items-center gap-1.5">
-                    <Icon className="w-4 h-4 text-indigo-600" />
-                    {g.label}
+                    <Gift className="w-4 h-4 text-amber-600" />
+                    Tặng / Tài trợ (ngoài doanh thu)
                   </td>
-                  <td className="p-3 font-mono font-bold">{g.orders.toLocaleString('vi-VN')}</td>
-                  <td className="p-3 font-mono font-bold text-emerald-700">{g.revenue.toLocaleString('vi-VN')} đ</td>
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-2 rounded-full bg-slate-100 overflow-hidden">
-                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.round(g.share * 100)}%` }} />
-                      </div>
-                      <span className="font-mono font-bold text-slate-800">{(g.share * 100).toFixed(1)}%</span>
-                    </div>
-                  </td>
+                  <td className="p-3 font-mono font-bold">{gift.orders.toLocaleString('vi-VN')}</td>
+                  <td className="p-3 font-mono font-bold text-amber-700">{gift.revenue.toLocaleString('vi-VN')} đ</td>
+                  <td className="p-3 font-mono text-slate-500">—</td>
                   <td className="p-3 text-slate-600">
-                    {g.rows.length === 0 ? (
+                    {gift.rows.length === 0 ? (
                       <span className="text-slate-400">Chưa phát sinh</span>
                     ) : (
-                      g.rows.map((r: any) => (
+                      gift.rows.map((r: ChannelRow) => (
                         <div key={r.channel} className="flex justify-between gap-3 py-0.5">
-                          <span>{CHANNEL_LABELS[r.channel] || r.channel} ({Number(r.orders || 0)} đơn)</span>
-                          <span className="font-mono font-semibold">{Number(r.revenue || 0).toLocaleString('vi-VN')} đ • {(Number(r.share || 0) * 100).toFixed(1)}%</span>
+                          <span>{channelLabel(r.channel)} ({Number(r.orders || 0)} đơn)</span>
+                          <span className="font-mono font-semibold">{Number(r.revenue || 0).toLocaleString('vi-VN')} đ</span>
                         </div>
                       ))
                     )}
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50">
+                <tr>
+                  <td className="p-3 font-black text-slate-900">TỔNG</td>
+                  <td className="p-3 font-mono font-black">{totalOrders.toLocaleString('vi-VN')}</td>
+                  <td className="p-3 font-mono font-black text-emerald-700">{salesRevenue.toLocaleString('vi-VN')} đ</td>
+                  <td className="p-3 font-mono font-black text-slate-800">100%</td>
+                  <td className="p-3 text-slate-500">Không gồm dòng tặng / tài trợ</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
+      )}
 
-      {/* Ký gửi đại lý */}
+      {/* Ký gửi đại lý — tồn vật lý, KHÔNG chia theo kho/sổ nên chỉ lọc ngày */}
       {consignment.length > 0 && (
         <div className="overflow-x-auto">
           <h4 className="text-xs font-extrabold text-slate-900 mb-2">Hàng ký gửi tại đại lý (wh-consign-*)</h4>
@@ -266,6 +403,9 @@ export function RevenueAnalyticsPanel({ currentRole }: RevenueAnalyticsPanelProp
               ))}
             </tbody>
           </table>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Kho ký gửi là tồn vật lý nên không chia theo kho/sổ: dòng này luôn là tổng các kho ký gửi, chỉ lọc theo ngày.
+          </p>
         </div>
       )}
 
