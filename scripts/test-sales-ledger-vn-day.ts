@@ -23,6 +23,11 @@ const read = (p: string) =>
 
 const svc = read('src/services/order.service.ts');
 const ui = read('src/components/sales/SalesLedgerView.tsx');
+// Task 4: logic ngày VN đã rút khỏi component vào helper dùng chung
+// (`src/lib/sales-view.ts`) cho cả 4 panel. Component chỉ còn gọi helper, nên
+// phải quét helper mới thấy múi giờ — quét mỗi component là giữ một bản sao
+// logic ngày ở từng file, tức đúng lỗi Task 4 sửa.
+const helper = read('src/lib/sales-view.ts');
 
 let checks = 0;
 const ok = (c: boolean, m: string) => { checks++; assert.ok(c, m); };
@@ -48,11 +53,26 @@ ok(
   'getOrders không được tự so chuỗi thô nữa'
 );
 
-// 3. Client gửi ngày VN, không gửi ngày UTC và không gửi hậu tố giờ.
+// 3. Ngày VN lấy ở HELPER dùng chung, không phải trong từng component.
 ok(
-  /Asia\/Ho_Chi_Minh/.test(ui),
-  'SalesLedgerView phải lấy ngày theo Asia/Ho_Chi_Minh'
+  /Asia\/Ho_Chi_Minh/.test(helper),
+  'sales-view phải lấy ngày theo Asia/Ho_Chi_Minh'
 );
+ok(
+  /timeZone:\s*VN_TZ/.test(helper) && /VN_TZ\s*=\s*'Asia\/Ho_Chi_Minh'/.test(helper),
+  'múi giờ phải gom vào hằng VN_TZ và truyền qua timeZone (không rải chuỗi lệch giờ rải rác)'
+);
+// Component PHẢI gọi helper, không tự tính lại ngày (đó là lỗi gốc: mỗi file
+// một bản "30 ngày" ⇒ các panel hiện số khác nhau trên cùng một bảng số).
+ok(
+  /monthPreset\(/.test(ui) && /lastNDays\(/.test(ui) && /vnToday\(/.test(ui),
+  'SalesLedgerView phải dùng helper monthPreset/lastNDays/vnToday thay vì tự tính ngày'
+);
+ok(
+  !/Date\.now\(\)\s*-\s*\d+\s*\*\s*24/.test(ui),
+  'SalesLedgerView không được tự trừ N*24h — đó là "30 ngày trượt", không phải tháng lịch'
+);
+// 3b. Client gửi ngày VN, không gửi ngày UTC và không gửi hậu tố giờ.
 ok(
   !/todayStr = now\.toISOString\(\)\.slice\(0, 10\)/.test(ui),
   'không được lấy ngày UTC bằng toISOString().slice(0,10)'
@@ -62,8 +82,12 @@ ok(
   'không được gắn hậu tố T23:59:59 — nó đẩy cả hai đầu về nhánh so mốc UTC cũ'
 );
 ok(
-  /setEndDate\(todayStr\)/.test(ui),
-  'endDate phải là ngày trần để bao trọn ngày nghiệp vụ'
+  /setEndDate\(/.test(ui),
+  'endDate phải được set (ngày trần từ helper) để bao trọn ngày nghiệp vụ'
+);
+ok(
+  /setEndDate\([^)]*(toISOString|slice\(0, ?10\))/.test(ui) === false,
+  'endDate không được lấy từ ISO/ngày UTC thô'
 );
 
 console.log(`\n=== NGÀY NGHIỆP VỤ SỔ DOANH SỐ: ${checks} assertions PASS ===`);

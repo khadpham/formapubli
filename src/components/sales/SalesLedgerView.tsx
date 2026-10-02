@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Search,
   FileSpreadsheet,
-  Printer,
   Percent,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
@@ -108,6 +107,9 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     [warehouseNameById]
   );
 
+  // Nút "Làm mới" chỉ gọi lại `fetchOrders` — KHÔNG nạp lại `/api/warehouses`
+  // (useEffect kho chạy một lần lúc mount). Nên nhắc người dùng "tải lại
+  // trang", đừng hứa "bấm Làm mới" rồi kho vẫn trống.
   // Người đăng nhập thật (đóng watermark CSV). Rỗng thì KHÔNG xuất được: ký
   // bằng mã bịa thì tệ hơn là không có dấu vết.
   useEffect(() => {
@@ -244,6 +246,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       customerName: ord.customerName,
       paymentMethod: ord.paymentMethod,
       subtotal: Number(ord.subtotal || 0),
+      discountAmount: Number(ord.discountAmount || 0),
       finalAmount: Number(ord.finalAmount || 0),
       fiscalScope: ord.fiscalScope,
       vatInvoiceCode: ord.vatInvoiceCode,
@@ -321,13 +324,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Xuất Excel/CSV</span>
           </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>In Phiếu</span>
-          </button>
+          {/* Nút "In Phiếu" ĐÃ GỠ (2026-10-02): nó gọi `window.print()` trên
+              cả trang app ⇒ ra giấy trắng vì không có CSS in riêng cho sổ.
+              Giữ nút là lời hứa sai với người dùng. Nối phiếu nhiệt thật là
+              việc riêng, phải làm cùng driver/mẫu in chứ không vá bằng print. */}
         </div>
       </div>
 
@@ -446,7 +446,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               này vẫn hiện 3 kho bịa ⇒ người dùng lọc nhầm kho không tồn tại. */}
           {warehouses.length === 0 && (
             <span className="text-[10px] text-amber-600 font-medium">
-              Chưa tải được danh mục kho — bấm "Làm mới"
+              Chưa tải được danh mục kho — tải lại trang
             </span>
           )}
         </div>
@@ -501,14 +501,19 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               {(summary?.totalRevenue ?? 0).toLocaleString('vi-VN')} đ
             </p>
           )}
+          {/* Nhãn luôn hiện (không chỉ khi có slicer): trước đây khi
+              `channelSlicer === 'ALL'` và không tìm kiếm thì thẻ trông như đang
+              bám theo bảng, và người dùng tưởng số đổi theo bảng. */}
+          {/* Skeleton đang bật thì `summary` còn null ⇒ hiện "0 đơn hoàn tất"
+              nhảy xuống rồi mới có số ⇒ nhấp nháy giả. Hiện "Đang tải…" thay vì số 0. */}
           <p className="text-[10px] text-slate-400 mt-0.5">
-            {summary?.totalOrders ?? 0} đơn hoàn tất · doanh thu gộp chưa trừ hoàn
+            {loading && !summary
+              ? 'Đang tải…'
+              : `${(summary?.totalOrders ?? 0).toLocaleString('vi-VN')} đơn hoàn tất · doanh thu gộp chưa trừ hoàn`}
           </p>
-          {(channelSlicer !== 'ALL' || searchQuery) && (
-            <p className="text-[10px] text-slate-400">
-              Thẻ tổng theo ngày/kho/sổ; ô tìm kiếm và nút kênh chỉ lọc bảng bên dưới.
-            </p>
-          )}
+          <p className="text-[10px] text-slate-400">
+            Thẻ tổng theo kho/ngày/sổ; nút kênh và ô tìm kiếm chỉ lọc bảng bên dưới.
+          </p>
         </div>
       </div>
 

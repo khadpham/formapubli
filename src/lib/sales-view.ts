@@ -145,6 +145,7 @@ const SALES_CSV_HEADERS = [
   'Khách hàng',
   'Thanh toán',
   'Tiền hàng',
+  'Chiết khấu (VND)',
   'Thực thu',
   'Sổ',
   'Số HĐ VAT',
@@ -160,6 +161,7 @@ export interface SalesCsvRow {
   paymentMethod?: string | null;
   subtotal?: number | null;
   finalAmount?: number | null;
+  discountAmount?: number | null;
   fiscalScope?: string | null;
   vatInvoiceCode?: string | null;
   createdAt?: string | null;
@@ -194,6 +196,7 @@ export function buildSalesCsv(
       csvCell(row.customerName || '—'),
       csvCell(paymentLabel(row.paymentMethod ?? null)),
       Number(row.subtotal ?? 0),
+      Number(row.discountAmount ?? 0),
       Number(row.finalAmount ?? 0),
       csvCell(fiscalScopeLabel(row.fiscalScope ?? null)),
       csvCell(row.vatInvoiceCode ?? ''),

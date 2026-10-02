@@ -15,6 +15,7 @@
  * Đây là CONTRACT cho Task 5/6 dùng lại — đổi chữ ký/tên ở đây là phá 2 task sau.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   monthPreset,
   lastNDays,
@@ -148,6 +149,7 @@ const csv = buildSalesCsv(
       customerName: 'Nguyễn Thị Lan, đại diện',
       paymentMethod: 'CASH',
       subtotal: 120000,
+      discountAmount: 12000,
       finalAmount: 108000,
       fiscalScope: 'OFFICIAL_TAX',
       vatInvoiceCode: '',
@@ -158,11 +160,11 @@ const csv = buildSalesCsv(
 );
 
 const headerLine = csv.split('\r\n')[0];
-for (const h of ['Mã đơn', 'Kho', 'Kênh', 'Thanh toán', 'Tiền hàng', 'Thực thu', 'Sổ', 'Giờ VN']) {
+for (const h of ['Mã đơn', 'Kho', 'Kênh', 'Thanh toán', 'Tiền hàng', 'Chiết khấu (VND)', 'Thực thu', 'Sổ', 'Giờ VN']) {
   ok(headerLine.includes(h), `15. Header CSV có cột "${h}"`, headerLine);
 }
 
-const headerOrder = ['Mã đơn', 'Kho', 'Kênh', 'Thanh toán', 'Tiền hàng', 'Thực thu', 'Sổ', 'Giờ VN'].map((h) =>
+const headerOrder = ['Mã đơn', 'Kho', 'Kênh', 'Thanh toán', 'Tiền hàng', 'Chiết khấu (VND)', 'Thực thu', 'Sổ', 'Giờ VN'].map((h) =>
   headerLine.indexOf(h)
 );
 ok(
@@ -199,6 +201,17 @@ const csvMultiLine = buildSalesCsv(
 );
 ok(csvMultiLine.includes('"Trần\nThị Hai"'), '24. Ô chứa XUỐNG DÒNG được bọc nháy kép');
 
+// Cột chiết khấu: kế toán đối chiếu sổ cần SỐ TIỀN giảm, không chỉ tỷ lệ.
+const csvFirstDataLine = csv.split('\r\n')[1];
+assert.ok(csvFirstDataLine.includes(',12000,'), 'CSV phải có ô chiết khấu bằng SỐ TIỀN');
+ok(true, '24b. Cột "Chiết khấu (VND)" chứa số tiền giảm (12000)', csvFirstDataLine);
+// Không có cột CK trong input ⇒ ra 0, không `NaN`/`undefined`.
+const csvNoDiscount = buildSalesCsv(
+  [{ orderCode: 'DH-0', warehouseName: 'K', channel: 'ONLINE', subtotal: 1000, finalAmount: 1000 }],
+  'nv-bich'
+);
+ok(!/NaN|undefined/.test(csvNoDiscount), '24c. Thiếu `discountAmount` ⇒ ra 0, không NaN/undefined');
+
 // Chống Excel formula injection: text bắt đầu = + - @ phải có dấu nháy bảo vệ.
 const csvFormula = buildSalesCsv(
   [
@@ -224,6 +237,43 @@ const csvEmpty = buildSalesCsv([], 'nv-bich');
 ok(
   csvEmpty.split('\r\n')[0].includes('Mã đơn') && csvEmpty.includes('Total Records: [0]'),
   '26. buildSalesCsv([]) vẫn có header + watermark, không lỗi'
+);
+
+// ---------------------------------------------------------------------------
+// 6. KHÓA: thẻ tổng không được nháy "0 đơn" trong lúc đang tải, và nhãn
+//    "thẻ tổng theo kho/ngày/sổ" phải LUÔN hiện (không chỉ khi có slicer).
+//    Đây là lỗi reviewer nhặt ở vòng review 1 — canh ở source vì trạng thái
+//    loading chỉ tồn tại vài chục ms nên test trình duyệt bắt không ổn định.
+// ---------------------------------------------------------------------------
+const LEDGER_SRC = readFileSync(new URL('../src/components/sales/SalesLedgerView.tsx', import.meta.url), 'utf8');
+ok(
+  /loading\s*&&\s*!summary/.test(LEDGER_SRC) && /Đang tải…/.test(LEDGER_SRC),
+  '27. Lúc skeleton bật (loading && !summary) phải hiện "Đang tải…", KHÔNG hiện "0 đơn hoàn tất"'
+);
+ok(
+  /Thẻ tổng theo kho\/ngày\/sổ/.test(LEDGER_SRC) &&
+    !/channelSlicer !== 'ALL' \|\| searchQuery/.test(LEDGER_SRC),
+  '28. Nhãn "thẻ tổng theo kho/ngày/sổ" hiện LUÔN, không điều kiện theo slicer'
+);
+// Bỏ comment trước khi quét: chính comment giải thích "vì sao gỡ" lại chứa
+// chữ `window.print()` và "In Phiếu" ⇒ quét thẳng sẽ báo đỏ giả.
+const LEDGER_CODE = LEDGER_SRC
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n')
+  .filter((l) => !l.trim().startsWith('//'))
+  .join('\n');
+ok(
+  !/window\.print\(/.test(LEDGER_CODE) && !/In Phiếu/.test(LEDGER_CODE),
+  '29. Nút "In Phiếu" (window.print — in trang trắng) đã gỡ khỏi component'
+);
+ok(
+  /discountAmount: Number\(ord\.discountAmount \|\| 0\)/.test(LEDGER_SRC),
+  '30. Component truyền `discountAmount` vào buildSalesCsv (cột Chiết khấu)'
+);
+ok(
+  /Chưa tải được danh mục kho — tải lại trang/.test(LEDGER_SRC) &&
+    !/Chưa tải được danh mục kho — bấm "Làm mới"/.test(LEDGER_SRC),
+  '31. Hint kho rỗng nói "tải lại trang" (nút Làm mới không nạp lại /api/warehouses)'
 );
 
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
