@@ -45,8 +45,8 @@ export async function GET(req: NextRequest) {
     if (view === 'top-editions') {
       const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));
       const warehouseId = searchParams.get('warehouseId') || undefined;
-      // Chỉ '1' mới bật: thiếu/thêm rác → false ⇒ hành vi cũ, không đổi số.
-      const excludeGifts = searchParams.get('excludeGifts') === '1';
+      // Mặc định luôn loại bỏ quà tặng kèm (excludeGifts = true), trừ khi truyền thẳng '0'.
+      const excludeGifts = searchParams.get('excludeGifts') !== '0';
       return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId, excludeGifts) });
     }
     if (view === 'stock-summary') {

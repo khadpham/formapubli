@@ -312,6 +312,8 @@ export class DailySettlementService {
     // kế toán ⇒ báo thiếu hàng, không phải lỗi làm tròn.
     const soldQtyAll = new Map<string, number>();
 
+    let giftSummary = { totalGiftCopies: 0, items: [] as Array<{ productId: string; code: string; title: string; copies: number }> };
+
     if (orderIds.length > 0) {
       const lineItems = await txOrDb
         .select({
@@ -319,6 +321,8 @@ export class DailySettlementService {
           productId: orderItems.productId,
           quantity: orderItems.quantity,
           totalAmount: orderItems.totalAmount,
+          isGiftLine: orderItems.isGiftLine,
+          unitSellingPrice: orderItems.unitSellingPrice,
           editionCode: editions.code,
           editionTitle: editions.title,
           workTitle: works.title,
@@ -338,11 +342,36 @@ export class DailySettlementService {
         .where(sql`${orderItems.orderId} IN (${sql.join(orderIds.map((id: string) => sql`${id}`), sql`, `)})`);
 
       const sellerAgg = new Map<string, any>();
+      const giftAgg = new Map<string, any>();
+      let totalGiftCopies = 0;
+
       for (const item of lineItems) {
         // Khóa theo `product_id` (NOT NULL) — `edition_id` NULL với hàng hóa,
         // gom nhầm mọi món hàng hóa thành một dòng.
         const key = item.productId;
         const title = item.editionTitle || item.workTitle || item.productName || item.editionCode || item.productCode || 'Ấn phẩm';
+        
+        // 1. Luồng đối soát tồn kho (theoreticalStock): tính toàn bộ số lượng xuất/tặng
+        // để tồn kho thực tế trong thùng giảm chính xác.
+        soldQtyAll.set(key, (soldQtyAll.get(key) || 0) + item.quantity);
+
+        // 2. Phân loại quà tặng kèm: dòng có cờ isGiftLine, hoặc đơn giá/thành tiền = 0
+        const isGift = Boolean(item.isGiftLine) || Number(item.totalAmount || 0) <= 0 || Number(item.unitSellingPrice || 0) <= 0;
+        if (isGift) {
+          totalGiftCopies += item.quantity;
+          if (!giftAgg.has(key)) {
+            giftAgg.set(key, {
+              productId: key,
+              code: item.editionCode || item.productCode || '',
+              title,
+              copies: 0,
+            });
+          }
+          giftAgg.get(key).copies += item.quantity;
+          continue; // Quà tặng TUYỆT ĐỐI KHÔNG được tính vào Top bán chạy!
+        }
+
+        // 3. Luồng Top ấn phẩm/hàng hóa bán chạy thực tế:
         if (!sellerAgg.has(key)) {
           sellerAgg.set(key, {
             editionId: key,
@@ -357,12 +386,16 @@ export class DailySettlementService {
         const record = sellerAgg.get(key);
         record.soldCopies += item.quantity;
         record.soldRevenue += item.totalAmount;
-        soldQtyAll.set(key, (soldQtyAll.get(key) || 0) + item.quantity);
       }
 
       topSellers = Array.from(sellerAgg.values())
-        .sort((a, b) => b.soldCopies - a.soldCopies)
+        .sort((a, b) => b.soldCopies - a.soldCopies || b.soldRevenue - a.soldRevenue)
         .slice(0, 10);
+
+      giftSummary = {
+        totalGiftCopies,
+        items: Array.from(giftAgg.values()).sort((a, b) => b.copies - a.copies),
+      };
     }
 
     // 6b. Đơn giá trị cao nhất trong ngày — thẻ "Đơn Giá Trị Cao Nhất" trên màn
@@ -570,6 +603,7 @@ export class DailySettlementService {
         orders: enrichedOverCapOrders,
       },
       topSellers,
+      giftSummary,
       highlight,
       ordersByHour,
       inventoryReconciliation,

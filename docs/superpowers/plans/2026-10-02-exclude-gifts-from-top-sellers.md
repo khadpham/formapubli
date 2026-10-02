@@ -7,21 +7,21 @@
 
 ---
 
-## Danh Sách Các Bảng Cần Rà Soát & Khắc Phục
+## Danh Sách Các Bảng Đã Rà Soát & Khắc Phục
 
-1. **Báo cáo Chốt Ngày & Bản In (`daily-settlement.service.ts` & `DailyFairSettlementModal.tsx`)**:
+1. [x] **Báo cáo Chốt Ngày & Bản In (`daily-settlement.service.ts` & `DailyFairSettlementModal.tsx`)**:
    - Hiện trạng: Bookmark đứng Top 1 vì chưa lọc `isGiftLine = 1` và `totalAmount = 0`.
-   - Khắc phục: Lọc bỏ dòng quà tặng khỏi `topSellers`, bổ sung trả về `giftsGiven` (thống kê quà tặng đã phát).
-2. **Tab Doanh Số - Sách Bán Chạy (`TopEditionsPanel.tsx`)**:
+   - Khắc phục: Lọc bỏ dòng quà tặng khỏi `topSellers`, bổ sung trả về `giftSummary` (thống kê quà tặng đã phát).
+2. [x] **Tab Doanh Số - Sách Bán Chạy (`TopEditionsPanel.tsx`)**:
    - Hiện trạng: Chưa truyền `excludeGifts: '1'` khi gọi API.
    - Khắc phục: Bổ sung `excludeGifts: '1'`.
-3. **API Phân Tích Bán Chạy (`analytics.service.ts` & `/api/analytics`)**:
+3. [x] **API Phân Tích Bán Chạy (`analytics.service.ts` & `/api/analytics`)**:
    - Hiện trạng: `excludeGifts` mặc định là `false`.
    - Khắc phục: Đổi mặc định sang `true` (luôn loại trừ quà tặng, trừ khi client cố tình truyền `0`).
-4. **Giám Sát Hội Chợ Lúc Này (`LiveFairMonitorModal.tsx` & `/api/pos/live-monitor`)**:
+4. [x] **Giám Sát Hội Chợ Lúc Này (`LiveFairMonitorModal.tsx` & `/api/pos/live-monitor`)**:
    - Hiện trạng: Query Top 5 chưa lọc `orderItems.isGiftLine = 0`.
    - Khắc phục: Bổ sung `eq(orderItems.isGiftLine, false)` và `gt(orderItems.totalAmount, 0)`.
-5. **AI Copilot Tra Cứu Top Sách Bán Chạy (`executive-query.service.ts`)**:
+5. [x] **AI Copilot Tra Cứu Top Sách Bán Chạy (`executive-query.service.ts`)**:
    - Hiện trạng: Chưa lọc `orderItems.isGiftLine = 0`.
    - Khắc phục: Bổ sung điều kiện lọc dòng quà tặng.
 
@@ -29,55 +29,32 @@
 
 ## Chi Tiết Các Bước Triển Khai (Tasks)
 
-### Task 1: Viết Test Giả Lập & Chứng Minh Lỗi (TDD Red)
-- **Tạo:** `scripts/test-exclude-gifts-from-top.ts`
-- **Nội dung test:**
-  1. Tạo 1 đơn hàng gồm: 1 cuốn Sách A (mua 1 cuốn, 100.000đ), 1 cuốn Sách B (mua 2 cuốn, 200.000đ), và 1 Bookmark (tặng kèm 10 chiếc, `isGiftLine = true`, giá 0đ).
-  2. Gọi `DailySettlementService.getDailyFairSettlement`:
-     - Kiểm tra `topSellers`: Bookmark **KHÔNG ĐƯỢC** có mặt trong `topSellers`. Vị trí số 1 phải là Sách B (2 cuốn), vị trí số 2 là Sách A (1 cuốn).
-     - Kiểm tra `inventoryReconciliation`: Bookmark vẫn phải được trừ đúng 10 chiếc trong tồn kho (`soldToday = 10`).
-     - Kiểm tra `giftsGiven`: Ghi nhận đúng 10 Bookmark đã tặng.
-  3. Kiểm tra `AnalyticsService.topEditions`:
-     - Mặc định Bookmark không xuất hiện trong danh sách bán chạy.
-
----
+### Task 1: Viết Test Giả Lập & Chứng Minh Lỗi (TDD Red -> Green)
+- [x] Tạo `scripts/test-exclude-gifts-from-top.ts`
+- [x] Chạy Red phase: Xác nhận Bookmark quà tặng bị lọt vào top 1 (Fail).
+- [x] Chạy Green phase sau khi sửa: 11/11 checks PASS.
 
 ### Task 2: Nâng Cấp `daily-settlement.service.ts`
-- **Modify:** `src/services/daily-settlement.service.ts`
-- **Nội dung:**
-  - Trong `lineItems` select: Bổ sung `isGiftLine: orderItems.isGiftLine`, `unitSellingPrice: orderItems.unitSellingPrice`.
-  - Phân tách 2 luồng:
-    * `soldQtyAll`: Tiếp tục cộng dồn tất cả để kiểm kê đóng thùng trừ đúng tồn kho thực tế.
-    * `topSellers`: Chỉ cộng dồn các món thỏa mãn `!item.isGiftLine && Number(item.totalAmount) > 0 && Number(item.unitSellingPrice) > 0`.
-    * `giftsGiven`: Gom riêng các món quà tặng để trả về cấu trúc `{ totalGiftCopies, items: Array<{ code, title, copies }> }`.
-
----
+- [x] `isGiftLine` và `unitSellingPrice` được thêm vào select `lineItems`.
+- [x] `soldQtyAll`: Giữ nguyên tính đủ số lượng xuất/tặng để kiểm kê đóng thùng trừ đúng tồn kho thực tế.
+- [x] `topSellers`: Chỉ gom các sản phẩm bán có thu tiền (`!item.isGiftLine && item.totalAmount > 0 && item.unitSellingPrice > 0`).
+- [x] `giftSummary`: Gom riêng quà tặng đã phát `{ totalGiftCopies, items }`.
 
 ### Task 3: Nâng Cấp `DailyFairSettlementModal.tsx`
-- **Modify:** `src/components/pos/DailyFairSettlementModal.tsx`
-- **Nội dung:**
-  - Bảng "Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng": Hiển thị sạch sẽ, không có sản phẩm quà tặng 0đ nào.
-  - Thêm một badge/dòng tóm tắt nhỏ: "Đã tặng kèm {totalGiftCopies} phần quà khuyến mại" để quản lý nắm được số lượng quà đã phát.
-  - Trong bản in (printable view): Hiển thị danh sách Top 10 chuẩn xác, nếu có quà tặng thì có thêm dòng ghi chú số lượng quà tặng đã phát.
-
----
+- [x] Bảng Top 10 bán chạy sạch sẽ 100%, không dính quà tặng.
+- [x] Hiển thị dòng ghi chú quà tặng kèm đã phát (kèm số lượng từng món quà).
+- [x] Bản in biên bản chốt ngày có thêm ghi chú số lượng quà tặng kèm đã phát.
 
 ### Task 4: Rà Soát & Chuẩn Hóa Tất Cả Các Endpoint & Component Khác
-- **Modify:**
-  - `src/services/analytics.service.ts`: `excludeGifts = true` làm mặc định; thêm điều kiện `totalAmount > 0`.
-  - `src/app/api/analytics/route.ts`: Mặc định `excludeGifts = true` nếu không truyền `excludeGifts=0`.
-  - `src/components/sales/TopEditionsPanel.tsx`: Truyền `excludeGifts: '1'`.
-  - `src/app/api/pos/live-monitor/route.ts`: Thêm `eq(orderItems.isGiftLine, false)` và `gt(orderItems.totalAmount, 0)`.
-  - `src/services/executive-query.service.ts`: Thêm `eq(orderItems.isGiftLine, false)` và `gt(orderItems.totalAmount, 0)`.
-
----
+- [x] `src/services/analytics.service.ts`: `excludeGifts = true` làm mặc định; thêm điều kiện `totalAmount > 0`.
+- [x] `src/app/api/analytics/route.ts`: Mặc định `excludeGifts = true`.
+- [x] `src/components/sales/TopEditionsPanel.tsx`: Truyền `excludeGifts: '1'`.
+- [x] `src/app/api/pos/live-monitor/route.ts`: Thêm `eq(orderItems.isGiftLine, false)` và `gt(orderItems.totalAmount, 0)`.
+- [x] `src/services/executive-query.service.ts`: Thêm `eq(orderItems.isGiftLine, false)` và `gt(orderItems.totalAmount, 0)`.
 
 ### Task 5: Chạy Toàn Bộ Test Suite & Nghiệm Thu
-- Chạy:
-  * `npx tsx scripts/test-exclude-gifts-from-top.ts`
-  * `npx tsx scripts/test-settlement-goods-display.ts`
-  * `npx tsx scripts/test-settlement-ui.ts`
-  * `npx tsx scripts/test-stock-sorting-ui.ts`
-  * `npx tsc --noEmit`
-- Yêu cầu: Tất cả bài test đều XANH, không có bất kỳ regression nào.
-- Code Review & Báo cáo trước khi deploy.
+- [x] `scripts/test-exclude-gifts-from-top.ts`: PASS (11/11).
+- [x] `scripts/test-settlement-goods-display.ts`: PASS (11/11).
+- [x] `scripts/test-settlement-ui.ts`: PASS (29/29).
+- [x] `scripts/test-stock-sorting-ui.ts`: PASS (5/5).
+- [x] `npx tsc --noEmit`: 0 lỗi.

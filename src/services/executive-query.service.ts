@@ -510,7 +510,9 @@ export class ExecutiveQueryService {
           sql`datetime(${orders.createdAt}) >= datetime(${cutoff})`,
           sql`${orders.discountRate} < 1`,
           sql`${orders.channel} != 'SPONSORSHIP'`,
-          sql`${orders.finalAmount} > 0`
+          sql`${orders.finalAmount} > 0`,
+          eq(orderItems.isGiftLine, false),
+          sql`${orderItems.totalAmount} > 0`
         )
       )
       .groupBy(orderItems.editionId);

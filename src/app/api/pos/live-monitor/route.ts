@@ -291,7 +291,9 @@ export async function GET(req: NextRequest) {
         and(
           inArray(orders.warehouseId, scopeIds),
           eq(orders.status, 'COMPLETED'),
-          vnDayEq(orders.createdAt, date)
+          vnDayEq(orders.createdAt, date),
+          eq(orderItems.isGiftLine, false),
+          sql`${orderItems.totalAmount} > 0`
         )
       )
       .groupBy(orderItems.editionId, editions.code, editions.title)

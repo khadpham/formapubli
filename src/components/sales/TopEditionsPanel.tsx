@@ -47,6 +47,7 @@ export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
         startDate: r.startDate,
         endDate: r.endDate,
         top: String(n),
+        excludeGifts: '1',
       });
       const res = await fetch(`/api/analytics?${params.toString()}`);
       const json = await res.json().catch(() => null);
