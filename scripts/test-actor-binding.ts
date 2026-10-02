@@ -50,7 +50,7 @@ async function loginAs(staffId: string, passcode: string) {
 async function run() {
   console.log('🛡️ CHỐNG MẠO DANH ACTOR (DB cách ly, AUTH_STRICT=true)');
   let passed = 0;
-  const total = 8;
+  const total = 9;
   const ok = (name: string, cond: boolean, extra = '') => {
     if (cond) {
       passed++;
@@ -178,7 +178,7 @@ async function run() {
   });
   const r5: any = await post(
     postConsignments,
-    { action: 'record-sale', statementId: stmt2.statementId, editionId: book.id, quantity: 1, actorId: 'mallory' },
+    { action: 'record-sale', statementId: stmt2.statementId, editionId: book.id, quantity: 1, actorId: 'mallory', idempotencyKey: uniq('bind-sale') },
     cashierCk
   );
   const saleAudits = await db
@@ -193,6 +193,23 @@ async function run() {
     '5. record-sale spoof: đơn qua + audit ép về NV-01',
     r5.status === 200 && lastActor === 'NV-01',
     `audit.actor=${lastActor}`
+  );
+
+  // 5b. Replay CÙNG idempotencyKey → KHÔNG cộng dồn bán (chống retry ghi trùng).
+  const idemKey5b = uniq('bind-sale-idem');
+  const payload5b = {
+    action: 'record-sale', statementId: stmt2.statementId, editionId: book.id,
+    quantity: 2, actorId: 'mallory', idempotencyKey: idemKey5b,
+  };
+  const r5a: any = await post(postConsignments, payload5b, cashierCk);
+  const r5b: any = await post(postConsignments, payload5b, cashierCk);
+  const stmt2Detail: any = await ConsignmentService.getStatement(stmt2.statementId);
+  const line5b = (stmt2Detail.lines || []).find((l: any) => l.editionId === book.id);
+  ok(
+    '5b. Replay cùng idempotencyKey KHÔNG ghi trùng bán',
+    r5a.status === 200 && r5b.status === 200 && r5b.body?.data?.isDuplicate === true &&
+      Number(line5b?.reportedSoldQty || 0) === 3, // 1 (case 5) + 2 (lần đầu), lần replay +0
+    `sold=${line5b?.reportedSoldQty}, dup=${r5b.body?.data?.isDuplicate}`
   );
 
   // 6. CASHIER mở két đứng tên 'mallory' → két ép về NV-01.

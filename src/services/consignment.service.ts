@@ -51,6 +51,12 @@ function sanitizeCode(code: string): string {
   return code.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'partner';
 }
 
+/** true khi lỗi là vi phạm UNIQUE (replay cùng idempotencyKey -> không ghi trùng). */
+function isUniqueViolation(e: any): boolean {
+  const hay = `${e?.message || ''} ${e?.code || ''} ${e?.cause?.message || ''} ${e?.cause?.code || ''}`;
+  return /UNIQUE constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(hay);
+}
+
 export class ConsignmentService {
   /** Đảm bảo pháp nhân chủ sở hữu formapubli tồn tại (ownerId cho bút toán ký gửi). */
   static async ensureOwnerPartner(txOrDb: any = db) {
@@ -281,6 +287,8 @@ export class ConsignmentService {
     editionId: string;
     quantity: number;
     actorId: string;
+    /** Bắt buộc từ route: chống bấm đúp / retry ghi bán trùng. */
+    idempotencyKey?: string;
   }) {
     const { statementId, editionId, quantity, actorId } = params;
     // CP3-B1.2 (mục 5): số lượng phải là số nguyên > 0 — "1.5" bị từ chối,
@@ -295,24 +303,37 @@ export class ConsignmentService {
 
     const partnerWh = await this.ensurePartnerWarehouse(stmt.partnerId, db);
     const discount = await this.effectiveDiscount(statementId);
+    // Có key từ client -> khoá ledger ỔN ĐỊNH theo key (retry cùng key không ghi trùng).
+    // Không có key (caller cũ) -> giữ nguyên hành vi cũ.
+    const idem = params.idempotencyKey?.trim();
+    const soldKey = idem
+      ? `idem-consign-sold-${idem}`
+      : `idem-consign-sold-${statementId}-${editionId}-${Date.now()}`;
 
     return await withDbRetry(async () =>
       db.transaction(async (tx) => {
         await this.ensureOwnerPartner(tx);
-        await InventoryService.recordMovement({
-          editionId,
-          warehouseId: partnerWh,
-          eventType: 'CONSIGNMENT_SOLD',
-          quantityDelta: -quantity,
-          condition: 'NEW',
-          documentRef: statementId,
-          correlationId: statementId,
-          ownerId: OWNER_PARTNER_ID,
-          note: `Đại lý báo bán ${quantity} cuốn (kỳ ${statementId}).`,
-          actorId,
-          idempotencyKey: `idem-consign-sold-${statementId}-${editionId}-${Date.now()}`,
-          tx,
-        });
+        try {
+          await InventoryService.recordMovement({
+            editionId,
+            warehouseId: partnerWh,
+            eventType: 'CONSIGNMENT_SOLD',
+            quantityDelta: -quantity,
+            condition: 'NEW',
+            documentRef: statementId,
+            correlationId: statementId,
+            ownerId: OWNER_PARTNER_ID,
+            note: `Đại lý báo bán ${quantity} cuốn (kỳ ${statementId}).`,
+            actorId,
+            idempotencyKey: soldKey,
+            tx,
+          });
+        } catch (e: any) {
+          if (!isUniqueViolation(e)) throw e;
+          // Replay cùng key: KHÔNG trừ kho lần hai, KHÔNG cộng dồn bán lại.
+          const dup: any = await this.ensureLine(tx, statementId, editionId);
+          return { statementId, editionId, reportedSoldQty: dup.reportedSoldQty ?? 0, lineAmount: dup.lineAmount ?? 0, isDuplicate: true as const };
+        }
 
         const line: any = await this.ensureLine(tx, statementId, editionId);
         const newSold = (line.reportedSoldQty ?? 0) + quantity;
@@ -322,7 +343,7 @@ export class ConsignmentService {
           .set({ reportedSoldQty: newSold, lineAmount })
           .where(eq(consignmentStatementLines.id, line.id));
 
-        return { statementId, editionId, reportedSoldQty: newSold, lineAmount };
+        return { statementId, editionId, reportedSoldQty: newSold, lineAmount, isDuplicate: false as const };
       })
     );
   }
@@ -336,6 +357,8 @@ export class ConsignmentService {
     damagedQty?: number;
     actorId: string;
     notes?: string;
+    /** Bắt buộc từ route: chống bấm đúp / retry thu hồi trùng. */
+    idempotencyKey?: string;
   }) {
     const { statementId, toWarehouseId, editionId, newQty = 0, damagedQty = 0, actorId, notes } = params;
     // CP3-B1.2 (mục 5): số lượng phải là số nguyên không âm — "1.5" bị từ chối.
@@ -354,24 +377,33 @@ export class ConsignmentService {
 
     const partnerWh = await this.ensurePartnerWarehouse(stmt.partnerId, db);
     const total = newQty + damagedQty;
+    // Có key từ client -> khoá ledger ỔN ĐỊNH (retry cùng key không thu hồi trùng).
+    const idem = params.idempotencyKey?.trim();
+    const suffix = idem || `${statementId}-${editionId}-${Date.now()}`;
 
     return await withDbRetry(async () =>
       db.transaction(async (tx) => {
         await this.ensureOwnerPartner(tx);
-        await InventoryService.recordMovement({
-          editionId,
-          warehouseId: partnerWh,
-          eventType: 'TRANSFER_OUT',
-          quantityDelta: -total,
-          condition: 'NEW',
-          documentRef: statementId,
-          correlationId: statementId,
-          ownerId: OWNER_PARTNER_ID,
-          note: `Thu hồi từ quầy đại lý về kho [${toWarehouseId}]. ${notes || ''}`.trim(),
-          actorId,
-          idempotencyKey: `idem-consign-ret-out-${statementId}-${editionId}-${Date.now()}`,
-          tx,
-        });
+        try {
+          await InventoryService.recordMovement({
+            editionId,
+            warehouseId: partnerWh,
+            eventType: 'TRANSFER_OUT',
+            quantityDelta: -total,
+            condition: 'NEW',
+            documentRef: statementId,
+            correlationId: statementId,
+            ownerId: OWNER_PARTNER_ID,
+            note: `Thu hồi từ quầy đại lý về kho [${toWarehouseId}]. ${notes || ''}`.trim(),
+            actorId,
+            idempotencyKey: `idem-consign-ret-out-${suffix}`,
+            tx,
+          });
+        } catch (e: any) {
+          if (!isUniqueViolation(e)) throw e;
+          const dup: any = await this.ensureLine(tx, statementId, editionId);
+          return { statementId, editionId, returnedNewQty: dup.returnedNewQty ?? 0, returnedDamagedQty: dup.returnedDamagedQty ?? 0, isDuplicate: true as const };
+        }
         if (newQty > 0) {
           await InventoryService.recordMovement({
             editionId,
@@ -384,7 +416,7 @@ export class ConsignmentService {
             ownerId: OWNER_PARTNER_ID,
             note: `Thu hồi lành từ đại lý ${stmt.partnerId}.`,
             actorId,
-            idempotencyKey: `idem-consign-ret-new-${statementId}-${editionId}-${Date.now()}`,
+            idempotencyKey: `idem-consign-ret-new-${suffix}`,
             tx,
           });
         }
@@ -400,7 +432,7 @@ export class ConsignmentService {
             ownerId: OWNER_PARTNER_ID,
             note: `Thu hồi hỏng từ đại lý ${stmt.partnerId}, chờ thẩm định RMA.`,
             actorId,
-            idempotencyKey: `idem-consign-ret-dam-${statementId}-${editionId}-${Date.now()}`,
+            idempotencyKey: `idem-consign-ret-dam-${suffix}`,
             tx,
           });
         }
@@ -414,7 +446,7 @@ export class ConsignmentService {
           })
           .where(eq(consignmentStatementLines.id, line.id));
 
-        return { statementId, editionId, returnedNewQty: newQty, returnedDamagedQty: damagedQty };
+        return { statementId, editionId, returnedNewQty: newQty, returnedDamagedQty: damagedQty, isDuplicate: false as const };
       })
     );
   }

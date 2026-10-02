@@ -198,10 +198,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'record-sale') {
-      const { statementId, editionId, quantity, actorId } = body;
+      const { statementId, editionId, quantity, actorId, idempotencyKey } = body;
       if (!statementId || !editionId || !quantity) {
         return NextResponse.json(
           { success: false, error: 'Thiếu kỳ đối soát, ấn bản hoặc số lượng bán.' },
+          { status: 400 }
+        );
+      }
+      const saleKey = `${idempotencyKey || ''}`.trim();
+      if (!saleKey) {
+        return NextResponse.json(
+          { success: false, error: 'Bắt buộc idempotencyKey cho thao tác báo bán ký gửi (chống ghi trùng).' },
           { status: 400 }
         );
       }
@@ -211,6 +218,7 @@ export async function POST(req: NextRequest) {
         quantity: toQty(quantity),
         // Chống mạo danh: strict ép session (bỏ actorId client).
         actorId: resolveActorId(session, actorId),
+        idempotencyKey: saleKey,
       });
       const effSaleActor = resolveActorId(session, actorId);
       await recordAuditLog({
@@ -224,10 +232,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'record-return') {
-      const { statementId, toWarehouseId, editionId, newQty, damagedQty, actorId, notes } = body;
+      const { statementId, toWarehouseId, editionId, newQty, damagedQty, actorId, notes, idempotencyKey } = body;
       if (!statementId || !toWarehouseId || !editionId) {
         return NextResponse.json(
           { success: false, error: 'Thiếu kỳ đối soát, kho nhận hoặc ấn bản thu hồi.' },
+          { status: 400 }
+        );
+      }
+      const returnKey = `${idempotencyKey || ''}`.trim();
+      if (!returnKey) {
+        return NextResponse.json(
+          { success: false, error: 'Bắt buộc idempotencyKey cho thao tác thu hồi ký gửi (chống ghi trùng).' },
           { status: 400 }
         );
       }
@@ -240,6 +255,7 @@ export async function POST(req: NextRequest) {
         // Chống mạo danh: strict ép session (bỏ actorId client).
         actorId: resolveActorId(session, actorId),
         notes,
+        idempotencyKey: returnKey,
       });
       const effReturnActor = resolveActorId(session, actorId);
       await recordAuditLog({

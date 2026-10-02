@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, assertAssignedWarehouse, assertReadWarehouse } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DeliveryOrderService } from '@/services/delivery-order.service';
@@ -16,7 +16,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    await requireSessionRole(req, [
+    const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_WAREHOUSE',
@@ -25,6 +25,9 @@ export async function GET(
     ] as UserRole[]);
 
     const data = await DeliveryOrderService.getDeliveryOrder(params.id);
+    // Ràng buộc kho khi ĐỌC: thủ kho gán kho A không xem chi tiết phiếu kho B
+    // (trước đây chỉ luồng list lọc, chi tiết theo id thì lọt).
+    assertReadWarehouse(session, data as any);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return handleApiError(error);
@@ -56,6 +59,12 @@ export async function POST(
       role: session.role,
       fullName: session.fullName,
     };
+
+    // Ràng buộc kho khi GHI: chỉ xuất/hủy được phiếu thuộc kho mình phụ trách.
+    // Luồng list POST đã kiểm (`assertAssignedWarehouse`); route động này trước
+    // đây bỏ sót nên thủ kho kho A xuất/hủy được phiếu DRAFT của kho B nếu biết id.
+    const existing = await DeliveryOrderService.getDeliveryOrder(params.id);
+    assertAssignedWarehouse(session, existing.fromWarehouseId);
 
     if (action === 'DISPATCH') {
       const data = await DeliveryOrderService.dispatchAndLock({
