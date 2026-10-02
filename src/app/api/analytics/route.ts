@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
  *
  * Tham số RIÊNG theo từng view (không phải view nào cũng nhận hết):
  *   channels, cashflow : startDate, endDate, warehouseId, fiscalScope(OFFICIAL_TAX|INTERNAL_MANAGEMENT)
- *   top-editions       : startDate, endDate, top, warehouseId, excludeGifts=0 (bỏ dòng quà tặng)
+ *   top-editions       : startDate, endDate, top, warehouseId, excludeGifts=0 (mặc định ĐÃ loại dòng quà tặng; truyền excludeGifts=0 để GIỮ lại dòng quà)
  *   stock-summary      : warehouseId
  *   consignment        : startDate, endDate  (kho ký gửi suy ra từ mẫu id wh-consign-*, không nhận warehouseId/fiscalScope)
  *   trending           : top               (tuần hiện tại, không nhận startDate/endDate/warehouseId/fiscalScope)
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         error:
           'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary). ' +
           'channels/cashflow nhận startDate, endDate, warehouseId, fiscalScope (OFFICIAL_TAX | INTERNAL_MANAGEMENT). ' +
-          'top-editions nhận startDate, endDate, top, warehouseId, excludeGifts=0. ' +
+          'top-editions nhận startDate, endDate, top, warehouseId; mặc định đã loại dòng quà tặng, truyền excludeGifts=0 để giữ lại. ' +
           'stock-summary nhận warehouseId; consignment nhận startDate, endDate; trending nhận top.',
       },
       { status: 400 }

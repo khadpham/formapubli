@@ -17,7 +17,7 @@ const raw = createClient({ url: process.env.DATABASE_URL! });
 const q1 = async (sqlText: string): Promise<number> => Number((await raw.execute(sqlText)).rows[0].n);
 async function run() {
   let passed = 0; const total = 7;
-  // `detail` tu�� chọn: in số thật để khi đỏ nhìn thấy ngay lệch bao nhiêu.
+  // `detail` tùy chọn: in số thật để khi đỏ nhìn thấy ngay lệch bao nhiêu.
   const ok = (n: string, c: boolean, detail = '') => {
     if (c) passed++;
     console.log(`${c ? '✅' : '❌'} ${n}${detail ? ` — ${detail}` : ''}`);
