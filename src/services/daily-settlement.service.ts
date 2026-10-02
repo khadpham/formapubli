@@ -111,7 +111,11 @@ export class DailySettlementService {
     let pendingQrCount = 0;
     for (const r of pendingRows) {
       const method = (r.paymentMethod || '').toUpperCase();
-      if (method !== 'QR_TRANSFER' && method !== 'COUNTER_TRANSFER') continue;
+      // DANH SÁCH METHOD PHẢI KHỚP với khối phân loại ở trên (dòng ~143).
+      // Lần đầu viết sai (`QR_TRANSFER`/`COUNTER_TRANSFER` — không hề tồn tại
+      // trong hệ thống) làm `pendingQr` LUÔN = 0 mà test vẫn xanh vì test
+      // dùng cùng giá trị sai. Giá trị thật: CASH | BANK_TRANSFER | QR_CODE.
+      if (method !== 'BANK_TRANSFER' && method !== 'QR_CODE' && method !== 'TRANSFER') continue;
       if (OrderService.isPendingExpired(r)) continue;
       pendingQrTotal += r.finalAmount || 0;
       pendingQrCount++;

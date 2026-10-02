@@ -65,12 +65,16 @@ async function run() {
     } as any);
   };
 
-  await mk('o-live', {});
-  await mk('o-expired', { paymentExpiresAt: '2000-01-01T00:00:00.000Z' });
+  // Giá trị `payment_method` PHẢI là giá trị thật của hệ thống: schema khai
+  // CASH | BANK_TRANSFER | QR_CODE. Nếu test dùng giá trị bịa (QR_TRANSFER…) thì
+  // nó xanh với cả code sai — đúng cái bẫy đã xảy ra ở lần viết đầu.
+  await mk('o-live', { paymentMethod: 'QR_CODE' });
+  await mk('o-live-bank', { paymentMethod: 'BANK_TRANSFER' });
+  await mk('o-expired', { paymentMethod: 'QR_CODE', paymentExpiresAt: '2000-01-01T00:00:00.000Z' });
   await mk('o-cash', { paymentMethod: 'CASH' });
   // 23:50 VN hôm qua = 16:50 UTC hôm qua.
-  await mk('o-yesterday', { createdAt: new Date(Date.now() - 7 * 3600_000).toISOString() });
-  await mk('o-done', { status: 'COMPLETED', paymentMethod: 'QR_TRANSFER' });
+  await mk('o-yesterday', { paymentMethod: 'QR_CODE', createdAt: new Date(Date.now() - 7 * 3600_000).toISOString() });
+  await mk('o-done', { status: 'COMPLETED', paymentMethod: 'QR_CODE' });
 
   const r: any = await DailySettlementService.getDailyFairSettlement({
     warehouseId: WH,
@@ -79,12 +83,12 @@ async function run() {
 
   assert.ok(r.paymentBreakdown.pendingQr, 'phải có paymentBreakdown.pendingQr');
   assert.equal(
-    r.paymentBreakdown.pendingQr.ordersCount, 1,
-    'chỉ đúng 1 đơn QR còn hạn trong ngày (loại: quá hạn, tiền mặt, ngoài ngày, đã chốt)'
+    r.paymentBreakdown.pendingQr.ordersCount, 2,
+    'đúng 2 đơn chuyển khoản còn hạn trong ngày (QR_CODE + BANK_TRANSFER)'
   );
   assert.equal(
-    r.paymentBreakdown.pendingQr.total, 100000,
-    'tiền chờ = finalAmount của đúng đơn đó'
+    r.paymentBreakdown.pendingQr.total, 200000,
+    'tiền chờ = tổng finalAmount của 2 đơn đó'
   );
   assert.equal(
     r.financials.netSales, 100000,
