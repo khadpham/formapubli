@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { db, warehouses, partners } from '@/db';
+import { db, partners } from '@/db';
 import { InventoryService } from '@/services/inventory.service';
 import { WarehouseService } from '@/services/warehouse.service';
 import { MasterAppShell } from '@/components/layout/MasterAppShell';

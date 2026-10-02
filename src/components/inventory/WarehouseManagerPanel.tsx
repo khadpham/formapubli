@@ -128,17 +128,38 @@ export function WarehouseManagerPanel({
     setError(null);
 
     try {
-      // 3. Chuẩn hóa và lưu sortOrder tuần tự 0, 1, 2, ... cho toàn bộ danh sách để loại bỏ hoàn toàn va chạm mốc 0 cũ
-      await Promise.all(
-        newList.map((wh, idx) => {
+      // 3. Chuẩn hóa và lưu sortOrder tuần tự 0, 1, 2, ... cho toàn bộ danh sách để loại bỏ hoàn toàn va chạm mốc 0 cũ.
+      //
+      // PHẢI kiểm `res.ok`: `fetch` KHÔNG throw khi HTTP 500, nên không kiểm thì
+      // một kho bị từ chối vẫn bị báo "Đã đổi vị trí", UI giữ thứ tự tối ưu
+      // trong khi server không lưu ⇒ refresh là thứ tự tự nhảy về cũ, không báo lỗi.
+      // Dùng `allSettled` để mọi PATCH hoàn tất trước khi kết luận, tránh `load()`
+      // trong catch chạy đè lên PATCH còn đang bay.
+      const results = await Promise.allSettled(
+        newList.map(async (wh, idx) => {
           wh.sortOrder = idx;
-          return fetch(`/api/warehouses/${encodeURIComponent(wh.id)}`, {
+          const res = await fetch(`/api/warehouses/${encodeURIComponent(wh.id)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sortOrder: idx }),
           });
+          const body = await res.json().catch(() => null);
+          if (!res.ok || !body?.success) {
+            throw new Error(body?.error || `Không lưu được thứ tự kho [${wh.name}].`);
+          }
         })
       );
+
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length > 0) {
+        // Nói rõ đã lưu được mấy kho: lỗi một kho làm cả danh sách lệch.
+        throw new Error(
+          failed.length === results.length
+            ? 'Đổi vị trí kho thất bại.'
+            : `Chỉ lưu được ${results.length - failed.length}/${results.length} kho — thứ tự chưa chắc đúng.`
+        );
+      }
+
       await afterChange(`Đã đổi vị trí kho [${current.name}].`);
     } catch (e: any) {
       setError(e?.message || 'Đổi vị trí kho thất bại.');

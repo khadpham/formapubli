@@ -38,6 +38,24 @@ function runTests() {
     'Lỗi: WarehouseManagerPanel phải lưu thứ tự tuần tự idx cho các kho'
   );
 
+  // Lỗi thật đã gặp (02/10/2026): vòng PATCH lưu sortOrder KHÔNG kiểm `res.ok`.
+  // `fetch` không throw khi HTTP 500 ⇒ một kho bị từ chối vẫn báo "Đã đổi vị
+  // trí", UI giữ thứ tự tối ưu, server không lưu ⇒ refresh là thứ tự tự nhảy
+  // về cũ, không có thông báo lỗi. Ba handler khác trong cùng file đều kiểm.
+  const moveFn = panelContent.slice(panelContent.indexOf('moveWarehouse'));
+  assert.ok(
+    /Promise\.allSettled/.test(moveFn.slice(0, 2000)),
+    'Lỗi: moveWarehouse phải dùng Promise.allSettled để mọi PATCH hoàn tất trước khi kết luận'
+  );
+  assert.ok(
+    /!res\.ok/.test(moveFn.slice(0, 2000)),
+    'Lỗi: moveWarehouse phải kiểm res.ok — fetch không throw khi HTTP lỗi'
+  );
+  assert.ok(
+    /failed\.length/.test(moveFn.slice(0, 2500)),
+    'Lỗi: moveWarehouse phải báo khi chỉ lưu được một phần danh sách'
+  );
+
   console.log('--- 3. Kiểm tra SSR HomePage và API /api/warehouses ---');
   const pagePath = path.join(__dirname, '..', 'src', 'app', 'page.tsx');
   const pageContent = fs.readFileSync(pagePath, 'utf8');
