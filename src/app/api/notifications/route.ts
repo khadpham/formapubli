@@ -216,17 +216,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const nowIso = new Date().toISOString();
     const expiresAt = new Date(Date.now() + DISMISS_TTL_MS).toISOString();
-    for (const itemId of itemIds) {
-      // REPLACE (không phải INSERT OR IGNORE) để ẩn lại làm gia hạn mốc hạn mới.
-      await db
-        .insert(notificationDismissals)
-        .values({ actorId: session.actorId, itemId, dismissedAt: new Date().toISOString(), expiresAt })
-        .onConflictDoUpdate({
-          target: [notificationDismissals.actorId, notificationDismissals.itemId],
-          set: { dismissedAt: new Date().toISOString(), expiresAt },
-        });
-    }
+    // MỘT câu cho cả lô (trước đây 1 upsert/dòng; "Xóa tất cả" ~40 dòng có thể
+    // vượt trần subrequest Cloudflare Workers ~50 → 500).
+    // REPLACE (không INSERT OR IGNORE) để ẩn lại làm gia hạn mốc hạn mới.
+    await db
+      .insert(notificationDismissals)
+      .values(itemIds.map((itemId) => ({ actorId: session.actorId, itemId, dismissedAt: nowIso, expiresAt })))
+      .onConflictDoUpdate({
+        target: [notificationDismissals.actorId, notificationDismissals.itemId],
+        set: { dismissedAt: nowIso, expiresAt },
+      });
 
     return NextResponse.json({ success: true, data: { action, count: itemIds.length } });
   } catch (error: any) {

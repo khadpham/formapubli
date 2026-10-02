@@ -1,5 +1,5 @@
 import { db, customers, customerOwnedBooks, customerSubscriptions, customerTags, editions, orderItems, orders, works } from '../db';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql, inArray } from 'drizzle-orm';
 
 /**
  * 5.4 — READER PERSONA (nền dữ liệu, read-only, không migration).
@@ -175,9 +175,16 @@ export class ReaderProfileService {
       .sort((a, b) => b[1].score - a[1].score)
       .slice(0, Math.max(1, Math.min(200, limit)));
 
+    // MỘT query cho mọi độc giả khớp (trước đây 1 query/người → N+1; kết quả
+    // ~45+ người vượt trần subrequest Cloudflare Workers (~50) → 500).
+    const rankedIds = ranked.map(([customerId]) => customerId);
+    const custRows = rankedIds.length
+      ? await db.select().from(customers).where(inArray(customers.id, rankedIds))
+      : [];
+    const custById = new Map(custRows.map((c) => [c.id, c]));
     const out: ReaderMatch[] = [];
     for (const [customerId, v] of ranked) {
-      const cust = (await db.select().from(customers).where(eq(customers.id, customerId)).limit(1))[0];
+      const cust = custById.get(customerId);
       if (!cust) continue;
       out.push({
         customerId,

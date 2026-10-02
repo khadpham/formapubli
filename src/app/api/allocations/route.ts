@@ -25,8 +25,22 @@ export async function GET(request: NextRequest) {
 
     if (mode === 'picklist') {
       const itemsRaw = searchParams.get('items');
-      const items = itemsRaw ? JSON.parse(itemsRaw) : [];
-      const pickList = await AllocationService.generatePickList(warehouseId, items);
+      let items: unknown = [];
+      try {
+        items = itemsRaw ? JSON.parse(itemsRaw) : [];
+      } catch {
+        return NextResponse.json(
+          { success: false, error: 'Tham số items không phải JSON hợp lệ.' },
+          { status: 400 }
+        );
+      }
+      if (!Array.isArray(items)) {
+        return NextResponse.json({ success: false, error: 'items phải là mảng.' }, { status: 400 });
+      }
+      if (items.length > 500) {
+        return NextResponse.json({ success: false, error: 'Phiếu soạn tối đa 500 dòng.' }, { status: 400 });
+      }
+      const pickList = await AllocationService.generatePickList(warehouseId, items as any);
       return NextResponse.json({ success: true, data: pickList });
     }
 

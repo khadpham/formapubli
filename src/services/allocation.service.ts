@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { counterAllocations, editions, works, warehouses, stockBalances } from '../db/schema';
-import { eq, and, sql, desc, asc } from 'drizzle-orm';
+import { eq, and, sql, desc, asc, inArray } from 'drizzle-orm';
 
 
 export interface CreateAllocationItem {
@@ -42,6 +42,14 @@ export interface PickListResult {
   totalItemsToPick: number;
   groups: PickListShelfGroup[];
 }
+
+/**
+ * Trần số dòng soạn/lần. Trước đây `generatePickList` chạy 2 query MỖI dòng và
+ * `requests` nhận từ query param KHÔNG giới hạn ⇒ phiếu ~25+ dòng vượt trần
+ * subrequest của Cloudflare Workers (~50) → 500. Nay gộp 2 query cho cả phiếu
+ * và chặn trần này.
+ */
+const PICKLIST_MAX_LINES = 200;
 
 export class AllocationService {
   /**
@@ -259,14 +267,29 @@ export class AllocationService {
 
     const warehouseName = whList.length > 0 ? whList[0].name : warehouseId;
 
-    const groupsMap = new Map<string, PickListShelfGroup>();
-    let totalItemsToPick = 0;
-    let totalSkus = 0;
+    // Gộp nhu cầu theo ấn bản (bỏ trùng, cộng dồn) + chặn trần dòng.
+    const needByEdition = new Map<string, number>();
+    for (const req of requests || []) {
+      const qty = Number(req?.quantityNeeded);
+      if (!req?.editionId || !Number.isFinite(qty) || qty <= 0) continue;
+      needByEdition.set(req.editionId, (needByEdition.get(req.editionId) || 0) + qty);
+    }
+    const ids = Array.from(needByEdition.keys()).slice(0, PICKLIST_MAX_LINES);
+    if (ids.length === 0) {
+      return {
+        warehouseId,
+        warehouseName,
+        generatedAt: new Date().toISOString(),
+        totalSkus: 0,
+        totalItemsToPick: 0,
+        groups: [],
+      };
+    }
 
-    for (const req of requests) {
-      if (req.quantityNeeded <= 0) continue;
-
-      const editionRows = await db
+    // HAI query cố định cho cả phiếu (thay 2 query/dòng). Sách có
+    // `products.id === editions.id`; ở đây tra theo `edition_id` như trước.
+    const [editionRows, balanceRows] = await Promise.all([
+      db
         .select({
           id: editions.id,
           code: editions.code,
@@ -276,48 +299,46 @@ export class AllocationService {
         })
         .from(editions)
         .innerJoin(works, eq(editions.workId, works.id))
-        .where(eq(editions.id, req.editionId))
-        .limit(1);
-
-      if (editionRows.length === 0) continue;
-      const ed = editionRows[0];
-
-      // Lấy tồn kho thực tế hiện tại ở kho này
-      const balanceRows = await db
-        .select({ physicalQuantity: stockBalances.physicalQuantity })
+        .where(inArray(editions.id, ids)),
+      db
+        .select({ editionId: stockBalances.editionId, physicalQuantity: stockBalances.physicalQuantity })
         .from(stockBalances)
         .where(
           and(
-            eq(stockBalances.editionId, req.editionId),
+            inArray(stockBalances.editionId, ids),
             eq(stockBalances.warehouseId, warehouseId),
             eq(stockBalances.condition, 'NEW')
           )
-        )
-        .limit(1);
+        ),
+    ]);
+    const edById = new Map(editionRows.map((e) => [e.id, e]));
+    const balById = new Map(balanceRows.map((b) => [b.editionId, Number(b.physicalQuantity || 0)]));
 
-      const currentStock = balanceRows.length > 0 ? balanceRows[0].physicalQuantity : 0;
+    const groupsMap = new Map<string, PickListShelfGroup>();
+    let totalItemsToPick = 0;
+    let totalSkus = 0;
+
+    for (const id of ids) {
+      const ed = edById.get(id);
+      if (!ed) continue;
+      const qty = needByEdition.get(id)!;
+      const currentStock = balById.get(id) ?? 0;
       const shelf = ed.suggestedLocation?.trim() || 'KỆ CHƯA XẾP VỊ TRÍ';
 
       if (!groupsMap.has(shelf)) {
-        groupsMap.set(shelf, {
-          shelfLocation: shelf,
-          items: [],
-          totalQuantity: 0,
-        });
+        groupsMap.set(shelf, { shelfLocation: shelf, items: [], totalQuantity: 0 });
       }
-
       const grp = groupsMap.get(shelf)!;
       grp.items.push({
         editionId: ed.id,
         editionCode: ed.code,
         title: ed.title,
         author: ed.author,
-        quantityNeeded: req.quantityNeeded,
+        quantityNeeded: qty,
         currentStock,
       });
-      grp.totalQuantity += req.quantityNeeded;
-
-      totalItemsToPick += req.quantityNeeded;
+      grp.totalQuantity += qty;
+      totalItemsToPick += qty;
       totalSkus += 1;
     }
 
