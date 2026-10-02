@@ -14,6 +14,8 @@ interface TopEditionsPanelProps {
   warehouseId: string;
   /** Tên kho THẬT (từ /api/warehouses) để ghi ra CSV, không bịa. */
   warehouseLabel: string;
+  /** Sổ đang lọc ở tab; undefined = cả hai sổ. */
+  fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
   /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
   actorId: string;
 }
@@ -47,6 +49,7 @@ export function TopEditionsPanel({
   endDate,
   warehouseId,
   warehouseLabel,
+  fiscalScope,
   actorId,
 }: TopEditionsPanelProps) {
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
@@ -80,6 +83,8 @@ export function TopEditionsPanel({
       params.set('excludeGifts', '1');
       // Kho đang chọn ở tab: bỏ trống = không lọc kho (không gửi 'ALL' lên API).
       if (warehouseId && warehouseId !== 'ALL') params.set('warehouseId', warehouseId);
+      // Sổ đang lọc ở tab: bỏ trống = cả hai sổ.
+      if (fiscalScope) params.set('fiscalScope', fiscalScope);
       const res = await fetch(`/api/analytics?${params.toString()}`, {
         signal: controller.signal,
         cache: 'no-store',
@@ -107,7 +112,7 @@ export function TopEditionsPanel({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [canView, currentRole, startDate, endDate, topN, warehouseId]);
+  }, [canView, currentRole, startDate, endDate, topN, warehouseId, fiscalScope]);
 
   useEffect(() => {
     fetchTop();

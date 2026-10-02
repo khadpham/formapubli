@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));
       // Mặc định luôn loại bỏ quà tặng kèm (excludeGifts = true), trừ khi truyền thẳng '0'.
       const excludeGifts = searchParams.get('excludeGifts') !== '0';
-      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId, excludeGifts) });
+      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId, excludeGifts, scope.fiscalScope) });
     }
     if (view === 'stock-summary') {
       return NextResponse.json({ success: true, data: await AnalyticsService.stockSummary(warehouseId) });
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         error:
           'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary). ' +
           'channels/cashflow nhận startDate, endDate, warehouseId, fiscalScope (OFFICIAL_TAX | INTERNAL_MANAGEMENT). ' +
-          'top-editions nhận startDate, endDate, top, warehouseId; mặc định đã loại dòng quà tặng, truyền excludeGifts=0 để giữ lại. ' +
+          'top-editions nhận startDate, endDate, top, warehouseId, fiscalScope; mặc định đã loại dòng quà tặng, truyền excludeGifts=0 để giữ lại. ' +
           'stock-summary nhận warehouseId; consignment nhận startDate, endDate; trending nhận top.',
       },
       { status: 400 }

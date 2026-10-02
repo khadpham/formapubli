@@ -707,6 +707,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         endDate={endDate}
         warehouseId={selectedWarehouse}
         warehouseLabel={selectedWarehouse === 'ALL' ? 'Tất cả kho' : warehouseNameOf(selectedWarehouse)}
+        fiscalScope={scopeParam === 'ALL' ? undefined : scopeParam}
         actorId={actorId}
       />
 

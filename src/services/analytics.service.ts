@@ -275,7 +275,7 @@ export class AnalyticsService {
    * bảng (dành cho muốn xem tổng cả quà). Mặc định này đã khóa bằng test
    * `scripts/test-top-gifts-locked.ts` — đổi nó là làm đỏ suite đó.
    */
-  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true) {
+  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true, fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT') {
     const conds = [
       eq(orders.status, 'COMPLETED'),
       sql`${orders.discountRate} < 1`,
@@ -283,6 +283,8 @@ export class AnalyticsService {
       sql`${orders.finalAmount} > 0`,
     ];
     if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    // Task 7b: Top đi theo sổ của tab (Sổ Thuế chỉ thấy sách của đơn VAT).
+    if (fiscalScope) conds.push(eq(orders.fiscalScope, fiscalScope));
     conds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
     // VÌ SAO LỌC QUÀ Ở ĐÂY: bảng "Top bán chạy" trả lời "khách MUA gì", mà dòng
     // quà (`is_gift_line = 1`) không phải do khách chọn — nó do chương trình
@@ -337,6 +339,7 @@ export class AnalyticsService {
         sql`${orderItems.isGiftLine} = 1`,
       ];
       if (warehouseId) giftConds.push(eq(orders.warehouseId, warehouseId));
+      if (fiscalScope) giftConds.push(eq(orders.fiscalScope, fiscalScope));
       giftConds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
       const giftRows = await db
         .select({ q: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })

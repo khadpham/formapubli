@@ -526,9 +526,14 @@ ok(
     /currentRole=\{currentRole\}/.test(LEDGER_GIFT_CALL) &&
     /startDate=\{startDate\}/.test(LEDGER_TOP_CALL) && /endDate=\{endDate\}/.test(LEDGER_TOP_CALL) &&
     /warehouseId=\{selectedWarehouse\}/.test(LEDGER_TOP_CALL) &&
+    /fiscalScope=\{/.test(LEDGER_TOP_CALL) &&
     /actorId=\{actorId\}/.test(LEDGER_TOP_CALL),
-  '63. Sổ Kép truyền filter ĐANG DÙNG (kho + ngày) xuống cả 2 panel (một state, không state thứ hai)',
+  '63. Sổ Kép truyền filter ĐANG DÙNG (kho + ngày + sổ) xuống cả 2 panel (một state, không state thứ hai)',
   `Gift: ${LEDGER_GIFT_CALL.replace(/\s+/g, ' ')} | Top: ${LEDGER_TOP_CALL.replace(/\s+/g, ' ')}`
+);
+ok(
+  /params\.set\('fiscalScope', fiscalScope\)/.test(TOP_CODE),
+  '63b. Top gửi fiscalScope xuống /api/analytics (Sổ Thuế chỉ thấy sách của đơn VAT)'
 );
 
 // --- Script vá DB dev: phải vá luôn cột 0032, không lúc nào lại 500 -------

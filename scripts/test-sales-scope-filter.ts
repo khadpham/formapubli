@@ -16,7 +16,7 @@ const uniq = (p: string) => `${p}-${Date.now()}-${seq++}`;
 const raw = createClient({ url: process.env.DATABASE_URL! });
 const q1 = async (sqlText: string): Promise<number> => Number((await raw.execute(sqlText)).rows[0].n);
 async function run() {
-  let passed = 0; const total = 7;
+  let passed = 0; const total = 9;
   // `detail` tùy chọn: in số thật để khi đỏ nhìn thấy ngay lệch bao nhiêu.
   const ok = (n: string, c: boolean, detail = '') => {
     if (c) passed++;
@@ -108,6 +108,24 @@ async function run() {
     `hoàn nội bộ=${refundInt} (netRevenue ${cfInt.netRevenue} = ${cfInt.salesRevenue} - ${refundInt}); ` +
     `hoàn thuế=${refundTax} (netRevenue ${cfTax2.netRevenue} = ${cfTax2.salesRevenue} - ${refundTax}); ` +
     `kho ma: netRevenue=${cfGhostNet.netRevenue} = salesRevenue=${cfGhostNet.salesRevenue}`
+  );
+  // 8-9. TOP BÁN CHẠY cũng theo sổ (Task 7b): đơn A INTERNAL + đơn C TAX cùng edA.
+  //    Không scope: edA qty >= 2; scope thuế: edA chỉ còn đơn C (qty 1).
+  //    Nếu service bỏ qua fiscalScope thì hai số bằng nhau và 9 đỏ.
+  const topAll = await AnalyticsService.topEditions({}, 100);
+  const topTax = await (AnalyticsService as any).topEditions({}, 100, undefined, true, 'OFFICIAL_TAX');
+  const qtyOf = (t: any, id: string) => Number(t.items.find((i: any) => i.editionId === id)?.qty || 0);
+  const allA = qtyOf(topAll, edA);
+  const taxA = qtyOf(topTax, edA);
+  ok(
+    '8. topEditions không scope thấy đủ đơn (edB có mặt, edA qty >= 2)',
+    topAll.items.some((i: any) => i.editionId === edB) && allA >= 2,
+    `edA=${allA}`
+  );
+  ok(
+    '9. topEditions fiscalScope=OFFICIAL_TAX thu hẹp đúng về đơn thuế (edA 1)',
+    taxA >= 1 && taxA < allA,
+    `edA thuế=${taxA} < không lọc=${allA}`
   );
   console.log(`SCOPE-FILTER: ${passed}/${total}`); process.exit(passed === total ? 0 : 1);
 }
