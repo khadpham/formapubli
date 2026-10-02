@@ -177,6 +177,11 @@ export function CashboxAuditCountModal({
       aria-modal="true"
       aria-labelledby="audit-count-modal-title"
       className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSubmitting) {
+          onClose();
+        }
+      }}
     >
       <div
         ref={containerRef}

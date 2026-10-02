@@ -42,9 +42,10 @@ interface PortalToBodyProps {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
 }
 
-export function PortalToBody({ children, className, style }: PortalToBodyProps) {
+export function PortalToBody({ children, className, style, onClick }: PortalToBodyProps) {
   // Gate on mount so SSR/prerender never touches `document`.
   const [mounted, setMounted] = useState(false);
 
@@ -55,7 +56,7 @@ export function PortalToBody({ children, className, style }: PortalToBodyProps) 
   if (!mounted || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className={className} style={style} data-portal-to-body="">
+    <div className={className} style={style} onClick={onClick} data-portal-to-body="">
       {children}
     </div>,
     document.body

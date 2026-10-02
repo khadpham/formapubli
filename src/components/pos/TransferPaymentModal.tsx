@@ -256,7 +256,14 @@ export function TransferPaymentModal({
 
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] bg-slate-950/80 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-[70] bg-slate-950/80 flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy && !isSaving) {
+          onCancel();
+        }
+      }}
+    >
       <div
         ref={modalRef}
         role="dialog"

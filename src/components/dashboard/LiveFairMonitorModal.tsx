@@ -299,7 +299,14 @@ export function LiveFairMonitorModal({
   // bao giờ thử lại ⇒ mất cả bẫy focus lẫn `inert` trên #app-main-content.
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div
+        className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !busyOrder) {
+            onClose();
+          }
+        }}
+      >
         <div
           ref={panelRef}
           className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-200 my-auto flex flex-col max-h-[92vh]"

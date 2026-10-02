@@ -957,8 +957,37 @@ export function InAppBarcodeScanner({
         {/* Thanh nút: hàng 1 là nút phụ, hàng 2 là nút CHÍNH (xanh) — thu ngân
             nhìn là thấy ngay bước thanh toán. Nút chuyển ống trước/sau đã bỏ
             (30/09): máy quét luôn dùng camera sau, nút đó chỉ chiếm chỗ. */}
-        <div className="p-3 bg-slate-900/95 border-t border-slate-800 flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center justify-center gap-2.5">
+        <div
+          className="p-3 bg-slate-900/95 border-t border-slate-800 flex flex-col gap-2.5"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              stopCamera();
+              onClose();
+            }
+          }}
+        >
+          <div
+            className="flex flex-wrap items-center justify-center gap-2.5"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                stopCamera();
+                onClose();
+              }
+            }}
+          >
+          <button
+            type="button"
+            onClick={() => {
+              stopCamera();
+              onClose();
+            }}
+            aria-label="Đóng máy quét mã vạch"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-rose-950/60 hover:text-rose-300 hover:border-rose-500/50 border border-transparent transition-all"
+          >
+            <X className="w-4 h-4" />
+            <span>Đóng</span>
+          </button>
+
           {hasTorch && (
             <button
               type="button"

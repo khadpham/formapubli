@@ -132,7 +132,14 @@ export function WarehouseManagerPanel({
   if (!isOpen) return null;
 
   return (
-    <PortalToBody className="fixed inset-0 z-[90] bg-slate-950/70 flex items-start sm:items-center justify-center p-3 overflow-y-auto">
+    <PortalToBody
+      className="fixed inset-0 z-[90] bg-slate-950/70 flex items-start sm:items-center justify-center p-3 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busyId) {
+          onClose();
+        }
+      }}
+    >
       <div
         ref={panelRef}
         role="dialog"
