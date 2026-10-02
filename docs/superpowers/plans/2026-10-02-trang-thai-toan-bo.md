@@ -514,3 +514,42 @@ Vì 2 lỗi đọc, script bỏ qua phần ghi thật ⇒ **không có đơn tes
 
 ### Bẫy mới gặp (rất dễ lẫn)
 `background_process start` với tham số `workdir` **bị bỏ qua** — dev server khởi động ở thư mục gốc session (`D:\Data Project\formapubli`) và ghi vào `.next` của worktree chính, tức **phục vụ nhầm code**. Phải `Set-Location -LiteralPath '<worktree>'` trong chính lệnh rồi mới chạy `npm run dev:lan`. Dấu hiệu: so `LastWriteTime` của `.next` ở hai worktree.
+
+## 7. Overhaul Báo Cáo Chốt Ngày + Trạng Thái Hội Chợ (18:00 02/10/2026)
+
+Nhánh `feat/settlement-overhaul`, 6 commit, `tsc` sạch, **7/7 suite cách ly xanh**, build thành công. **CHƯA DEPLOY** — chờ chủ duyệt.
+
+| # | Việc | Kết quả |
+|---|---|---|
+| 1 | `paymentBreakdown.pendingQr` | ✅ Đơn chuyển khoản đang chờ, **loại đơn quá hạn 48h**, loại tiền mặt, loại ngoài ngày |
+| 2 | `src/lib/stocktake-order.ts` | ✅ `sortByStock` / `filterLowStock` / `sortLabel` — màn hình và bản in dùng CHUNG |
+| 3 | Khối tiền đầu tab | ✅ Thực thu là số chủ đạo + 4 ô phụ + dòng két + dòng đơn chờ |
+| 4 | Bỏ nút "Đơn vị CK" + bản in | ✅ Hiện luôn tiền và %; mặc định xếp tồn bé→lớn; thêm **bảng VI. Sắp hết** |
+| 5 | Thanh tab + chân modal | ✅ Segmented pill dính đầu, 3 mục luôn hiện; nút In dính đáy; nhớ tab qua `sessionStorage` |
+| 6 | Trạng Thái Hội Chợ | ✅ Chọn kho + ngày, nhớ kho (không nhớ ngày); thêm khối "Đơn lớn nhất" (API có `largestOrder` mới) |
+
+### Sửa cái gì đúng sau khi đọc code (không phải do đoán)
+- **Bản in thiếu luôn nhóm cần đếm**: trước đây chỉ in ấn phẩm ĐÃ BÁN trong ngày. Cuốn sắp hết mà hôm nay không bán cuốn nào không có mặt trên giấy — đúng nhóm nhân viên cần đếm nhất.
+- **Cả hai màn đã dùng ngày Việt Nam từ trước**: comment trong `live-monitor/route.ts` nói báo cáo ngày dùng ngày UTC là **sai** (`daily-settlement` dùng `vnDayEquals` + `businessDateOf`). Đã sửa comment, không đổi logic.
+
+### Rủi ro đã chặn bằng test
+| Rủi ro | Chặn bằng |
+|---|---|
+| Đơn chờ quá hạn 48h làm thổi phồng tiền chờ | `test-pending-qr-total` — 5 ca: còn hạn / quá hạn / tiền mặt / ngoài ngày / đã chốt |
+| Bản in lệch màn hình | `test-settlement-print-stocktake` — cả hai bảng gọi chung `sortByStock` |
+| Người dùng đọc nhầm "%" là tổng chiết khấu | Bỏ hẳn nút đổi đơn vị, luôn hiện cả hai số |
+| Mở nhầm ngày ở Trạng Thái Hội Chợ | Không nhớ ngày + cảnh báo "Đang xem ngày X, không phải hôm nay" |
+
+### Lỗi phát hiện khi chạy (đã sửa)
+- `{ data: any }` trong destructuring TS hiểu là **đổi tên biến thành `any`**, không phải khai báo kiểu → `tsc` báo `Cannot find name 'data'`. Đúng cách: `{ data }: { data: any }`.
+- Monitor đã có sẵn khối "Bán chạy nhất" ⇒ chỉ thêm "Đơn lớn nhất", không dán trùng.
+
+### Chưa làm (có chủ ý)
+- Cột "So với hôm nay" ▲▼ trên khối tiền (cần truy vấn ngày hôm trước) — để đợt sau để giữ diff nhỏ.
+- Sửa mã vạch `ed-h66`, `ed-h85`; validate checksum ISBN-13 (chủ để sau).
+
+### Nghiệm thu tay (2 phút, cần dev server)
+1. Mở Báo Cáo Chốt Ngày → Thực thu phải ở NGAY ĐẦU, không cuộn.
+2. Tab Kiểm Kê mở ra đã xếp tồn bé→lớn, không cần bấm.
+3. Bấm `In Báo Cáo` → giấy có mục IV (đã bán) và VI (sắp hết), cùng xếp tồn bé→lớn.
+4. Trạng Thái Hội Chợ → chọn 1 kho, đóng mở lại thì kho còn đúng, ngày về hôm nay.
