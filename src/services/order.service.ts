@@ -120,6 +120,16 @@ function requiresPaymentProof(paymentMethod: string | null | undefined): boolean
 }
 
 /**
+ * Số lượng MUA (không tính dòng quà khuyến mại) — vào {SL} nội dung QR.
+ * Quà tặng đi kèm đơn nhưng khách không trả tiền cho nó; ghi nó vào {SL} làm
+ * nội dung chuyển khoản sai (mua 1 + tặng 1 ⇒ QR ghi 2). Server tự xác minh
+ * cờ quà (không tin client) nên đây là nơi duy nhất định nghĩa đúng.
+ */
+function pricedQuantityOf(lines: Array<{ quantity: number; isGiftLine?: boolean | null }>): number {
+  return lines.reduce((sum, i) => sum + (!i.isGiftLine ? Number(i.quantity || 0) : 0), 0);
+}
+
+/**
  * Quy tắc nghiệp vụ: đơn bán tại quầy = kênh RETAIL_OFFICE (kho chính) HOẶC
  * FAIR_EVENT (gian hàng hội chợ). Gian hàng hội chợ CŨNG là bán trực tiếp tại
  * quầy: POS chọn kênh theo warehouseType (PosCheckoutTerminal), nên thu ngân
@@ -281,6 +291,7 @@ export class OrderService {
           fiscalScope: existingPre[0].fiscalScope,
           itemsCount: existingLines.length,
           totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          pricedQuantity: pricedQuantityOf(existingLines),
           status: existingPre[0].status,
           isDuplicate: true,
         };
@@ -451,6 +462,7 @@ export class OrderService {
           fiscalScope: existingPre[0].fiscalScope,
           itemsCount: existingLines.length,
           totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          pricedQuantity: pricedQuantityOf(existingLines),
           status: existingPre[0].status,
           isDuplicate: true,
         };
@@ -786,6 +798,7 @@ return {
             fiscalScope: existing[0].fiscalScope,
             itemsCount: existingLines.length,
             totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+            pricedQuantity: pricedQuantityOf(existingLines),
             status: existing[0].status,
             isDuplicate: true,
           };
@@ -1154,6 +1167,7 @@ return {
           paymentExpiresAt,
           itemsCount: preparedItems.length,
           totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
+          pricedQuantity: pricedQuantityOf(preparedItems),
           isDuplicate: false,
         };
       });

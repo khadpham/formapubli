@@ -32,6 +32,7 @@ const ALL_SUITES = [
   'scripts/test-settlement-goods-display.ts',
   'scripts/test-promotion-engine.ts',
   'scripts/test-gift-subtotal.ts',
+  'scripts/test-qr-priced-quantity.ts',
   'scripts/test-gift-approval-hash.ts',
   'scripts/test-gift-offline.ts',
   'scripts/test-products-rbac.ts',

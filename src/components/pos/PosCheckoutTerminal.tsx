@@ -2062,12 +2062,14 @@ export function PosCheckoutTerminal({
           expiresAt: resData.data?.paymentExpiresAt || undefined,
           // Số lượng lấy từ CHÍNH server trả về: giỏ có thể bị sửa giữa lúc
           // gọi, nhưng {SL} trên QR phải là số lượng thật của đơn đã tạo.
+          // Dùng `pricedQuantity` (đã trừ quà khuyến mại), KHÔNG dùng
+          // `totalQuantity` (gồm cả quà): mua 1 + tặng 1 thì QR phải ghi 1.
           qrSnapshot: {
             dataUrl: '',
             payload: '',
             accountNo: '',
             content: '',
-            orderQuantity: Number(resData.data?.totalQuantity ?? totalCopies),
+            orderQuantity: Number(resData.data?.pricedQuantity ?? resData.data?.totalQuantity ?? totalCopies),
           },
           // Đóng băng danh sách mặc hàng và TổNG TIỀN vào chính phiên. Xem giải
           // thích ở `items` trong TransferPaymentSession: nếu không, phiếu thu in
