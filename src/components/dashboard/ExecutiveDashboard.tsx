@@ -32,6 +32,10 @@ import { PaymentMixCard } from '@/components/dashboard/PaymentMixCard';
 // gọi cũ (và test) không phải đổi đường dẫn import.
 import { vnBusinessDay, shiftVnDay, vnDayFmt, vnHmFmt } from '@/lib/vn-time';
 export { vnBusinessDay };
+// Số dashboard đi CHUNG đường ống với tab Doanh Số (Task 7): khoảng ngày lấy từ
+// helper tháng lịch dùng chung, không tự cắt ngày — trước đây fetch toàn bộ
+// lịch sử nên số lệch tab đúng bằng số đơn ngoài kỳ.
+import { monthPreset } from '@/lib/sales-view';
 
 interface ExecutiveDashboardProps {
   currentRole: UserRole;
@@ -184,6 +188,10 @@ export function ExecutiveDashboard({
   };
 
   const scopeParam = selectedWarehouseId !== 'ALL' ? `&warehouseId=${encodeURIComponent(selectedWarehouseId)}` : '';
+  // Kỳ mặc định = tháng lịch VN hiện tại (cùng định nghĩa với tab Doanh Số).
+  // Tính 1 lần lúc mount: để tab mở qua nửa đêm thì bấm "Làm mới" để lấy kỳ mới.
+  const monthRange = React.useMemo(() => monthPreset(new Date()), []);
+  const rangeParam = `&startDate=${monthRange.startDate}&endDate=${monthRange.endDate}`;
 
   const fetchDashboardData = async () => {
     const seq = ++requestSeqRef.current;
@@ -192,7 +200,7 @@ export function ExecutiveDashboard({
       const [orderRes, stockRes] = await Promise.all([
         // no-store: bấm "Làm mới" phải đọc server thật, không phải bản cache
         // của trình duyệt (dynamic route nhưng client fetch vẫn bị HTTP cache).
-        fetch(`/api/orders?fiscalScope=ALL${scopeParam}`, { cache: 'no-store' }),
+        fetch(`/api/orders?fiscalScope=ALL${scopeParam}${rangeParam}`, { cache: 'no-store' }),
         // Số liệu tồn kho. Trước đây thẻ "Tồn Kho" hiển thị CHỮ VIẾT CỨNG
         // "81 Đầu Sách" + "(3 Kho)" + tên kho viết thẳng, nên không bao giờ đúng.
         fetch(`/api/analytics?view=stock-summary${scopeParam}`, { cache: 'no-store' }),
@@ -581,6 +589,9 @@ export function ExecutiveDashboard({
           <p className="text-xs text-slate-500 mt-1 font-mono">
             {soldQty.toLocaleString('vi-VN')} cuốn
             {avgOrderValue > 0 ? ` · TB ${avgOrderValue.toLocaleString('vi-VN')} đ/đơn` : ''}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Kỳ {monthRange.startDate.split('-').slice(1).reverse().join('/')} → {monthRange.endDate.split('-').slice(1).reverse().join('/')} (cùng kỳ tab Doanh Số)
           </p>
         </div>
       </div>

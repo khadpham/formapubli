@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AnalyticsService } from '@/services/analytics.service';
+import { AnalyticsService, type AnalyticsScope } from '@/services/analytics.service';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 
@@ -8,8 +8,14 @@ export const dynamic = 'force-dynamic';
 /**
  * Bước 5 — OLAP read-only (0 migration).
  * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions|stock-summary
- *   &startDate=&endDate=&top=20&warehouseId=
- *   (view=top-editions nhận thêm &excludeGifts=1 để bỏ dòng quà tặng)
+ *   &startDate=&endDate=
+ *
+ * Tham số RIÊNG theo từng view (không phải view nào cũng nhận hết):
+ *   channels, cashflow : startDate, endDate, warehouseId, fiscalScope(OFFICIAL_TAX|INTERNAL_MANAGEMENT)
+ *   top-editions       : startDate, endDate, top, warehouseId, excludeGifts=0 (mặc định ĐÃ loại dòng quà tặng; truyền excludeGifts=0 để GIỮ lại dòng quà)
+ *   stock-summary      : warehouseId
+ *   consignment        : startDate, endDate  (kho ký gửi suy ra từ mẫu id wh-consign-*, không nhận warehouseId/fiscalScope)
+ *   trending           : top               (tuần hiện tại, không nhận startDate/endDate/warehouseId/fiscalScope)
  * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).
  */
 export async function GET(req: NextRequest) {
@@ -29,8 +35,20 @@ export async function GET(req: NextRequest) {
       }
     }
     const range = { startDate, endDate };
+    // Filter phạm vi của tab Doanh Số: kho + sổ kế toán. `fiscalScope` sai giá trị
+    // → 400 (không cho lọc im lặng theo sổ nào đó), còn thiếu thì không lọc sổ.
+    const warehouseId = searchParams.get('warehouseId') || undefined;
+    const fiscalScope = searchParams.get('fiscalScope') || undefined;
+    if (fiscalScope !== undefined && fiscalScope !== 'OFFICIAL_TAX' && fiscalScope !== 'INTERNAL_MANAGEMENT') {
+      return NextResponse.json(
+        { success: false, error: `Tham số fiscalScope không hợp lệ: ${fiscalScope} (chỉ OFFICIAL_TAX | INTERNAL_MANAGEMENT).` },
+        { status: 400 }
+      );
+    }
+    // Narrow kiểu: sau khối if ở trên, fiscalScope chỉ còn 2 giá trị hợp lệ.
+    const scope: AnalyticsScope = { warehouseId, fiscalScope };
     if (view === 'channels') {
-      return NextResponse.json({ success: true, data: await AnalyticsService.byChannel(range) });
+      return NextResponse.json({ success: true, data: await AnalyticsService.byChannel(range, scope) });
     }
     if (view === 'trending') {
       const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));
@@ -40,17 +58,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: await AnalyticsService.consignment(range) });
     }
     if (view === 'cashflow') {
-      return NextResponse.json({ success: true, data: await AnalyticsService.cashflow(range) });
+      return NextResponse.json({ success: true, data: await AnalyticsService.cashflow(range, scope) });
     }
     if (view === 'top-editions') {
       const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));
-      const warehouseId = searchParams.get('warehouseId') || undefined;
       // Mặc định luôn loại bỏ quà tặng kèm (excludeGifts = true), trừ khi truyền thẳng '0'.
       const excludeGifts = searchParams.get('excludeGifts') !== '0';
-      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId, excludeGifts) });
+      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId, excludeGifts, scope.fiscalScope) });
     }
     if (view === 'stock-summary') {
-      const warehouseId = searchParams.get('warehouseId') || undefined;
       return NextResponse.json({ success: true, data: await AnalyticsService.stockSummary(warehouseId) });
     }
     return NextResponse.json(
@@ -58,7 +74,9 @@ export async function GET(req: NextRequest) {
         success: false,
         error:
           'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary). ' +
-          'top-editions nhận thêm startDate, endDate, top, warehouseId và excludeGifts=1 (bỏ dòng quà tặng).',
+          'channels/cashflow nhận startDate, endDate, warehouseId, fiscalScope (OFFICIAL_TAX | INTERNAL_MANAGEMENT). ' +
+          'top-editions nhận startDate, endDate, top, warehouseId, fiscalScope; mặc định đã loại dòng quà tặng, truyền excludeGifts=0 để giữ lại. ' +
+          'stock-summary nhận warehouseId; consignment nhận startDate, endDate; trending nhận top.',
       },
       { status: 400 }
     );

@@ -1,118 +1,181 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Trophy, Download, RefreshCw } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
 
 interface TopEditionsPanelProps {
   currentRole: UserRole;
+  /** Ngày nghiệp vụ VN 'YYYY-MM-DD' từ tab; rỗng = không lọc ngày. */
+  startDate: string;
+  endDate: string;
+  /** Kho đang lọc ở tab Doanh Số; 'ALL' = không lọc kho. */
+  warehouseId: string;
+  /** Tên kho THẬT (từ /api/warehouses) để ghi ra CSV, không bịa. */
+  warehouseLabel: string;
+  /** Sổ đang lọc ở tab; undefined = cả hai sổ. */
+  fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+  /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
+  actorId: string;
 }
 
-type Preset = 'TODAY' | 'WEEK' | 'MONTH';
-
-function presetRange(p: Preset): { startDate: string; endDate: string; label: string } {
-  const now = new Date();
-  const end = now.toISOString();
-  if (p === 'TODAY') {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    return { startDate: d.toISOString(), endDate: end, label: 'Hôm nay' };
-  }
-  if (p === 'WEEK') {
-    const d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    return { startDate: d.toISOString(), endDate: end, label: '7 ngày qua' };
-  }
-  const d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return { startDate: d.toISOString(), endDate: end, label: '30 ngày qua' };
+/** Một dòng của `AnalyticsService.topEditions` (Task 3 đã khóa shape). */
+interface TopEditionRow {
+  editionId: string | null;
+  code: string | null;
+  title: string | null;
+  qty: number;
+  orders: number;
+  revenue: number;
+  qtyShare: number;
 }
 
-export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
+const CSV_HEADERS = [
+  'Hạng',
+  'Mã',
+  'Tiêu đề',
+  'Số lượng (cuốn)',
+  'Số đơn',
+  'Doanh thu (VND)',
+  'Tỷ trọng SL (%)',
+  'Kỳ lọc',
+  'Kho',
+];
+
+export function TopEditionsPanel({
+  currentRole,
+  startDate,
+  endDate,
+  warehouseId,
+  warehouseLabel,
+  fiscalScope,
+  actorId,
+}: TopEditionsPanelProps) {
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
-  const [preset, setPreset] = useState<Preset>('WEEK');
   const [topN, setTopN] = useState(20);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [items, setItems] = useState<any[]>([]);
-  const [totals, setTotals] = useState({ totalQty: 0, totalRevenue: 0 });
+  const [items, setItems] = useState<TopEditionRow[]>([]);
+  const [totals, setTotals] = useState({ totalQty: 0, totalRevenue: 0, totalGiftQty: 0 });
+  const abortRef = useRef<AbortController | null>(null);
 
-  const fetchTop = async (p: Preset = preset, n: number = topN) => {
+  const fetchTop = useCallback(async () => {
     if (!canView) return;
+    // Bấm liên tiếp nhiều bộ lọc/kho thì response cũ vẫn bay về và ghi đè kết
+    // quả mới (bảng hiện số của kỳ trước). Huỷ request trước đó thay vì so timestamp.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setLoadError(null);
     try {
-      const r = presetRange(p);
-      const params = new URLSearchParams({
-        view: 'top-editions',
-        startDate: r.startDate,
-        endDate: r.endDate,
-        top: String(n),
-        excludeGifts: '1',
+      const params = new URLSearchParams();
+      params.set('view', 'top-editions');
+      // Khoảng ngày LẤY TỪ TAB (giống RevenueAnalyticsPanel). Panel KHÔNG có preset
+      // riêng: hai bộ nút ngày trên một màn thì số của panel lệch với bảng đang
+      // lọc mà không ai biết vì sao. Rỗng = không lọc ngày.
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+      params.set('top', String(topN));
+      // Mặc định của API đã loại dòng quà; gửi tường minh để đọc file là biết
+      // bảng này cố tình không có quà.
+      params.set('excludeGifts', '1');
+      // Kho đang chọn ở tab: bỏ trống = không lọc kho (không gửi 'ALL' lên API).
+      if (warehouseId && warehouseId !== 'ALL') params.set('warehouseId', warehouseId);
+      // Sổ đang lọc ở tab: bỏ trống = cả hai sổ.
+      if (fiscalScope) params.set('fiscalScope', fiscalScope);
+      const res = await fetch(`/api/analytics?${params.toString()}`, {
+        signal: controller.signal,
+        cache: 'no-store',
       });
-      const res = await fetch(`/api/analytics?${params.toString()}`);
       const json = await res.json().catch(() => null);
+      if (controller.signal.aborted) return;
       if (json?.success) {
         setItems(json.data?.items || []);
-        setTotals({ totalQty: json.data?.totalQty || 0, totalRevenue: json.data?.totalRevenue || 0 });
+        setTotals({
+          totalQty: Number(json.data?.totalQty || 0),
+          totalRevenue: Number(json.data?.totalRevenue || 0),
+          // Quà đã phát không nằm trong bảng (dòng quà 0đ, khách không chọn) —
+          // nhưng phải hiện riêng, không giấu: không có thì "Top bán chạy" nghe
+          // như hết tặng quà.
+          totalGiftQty: Number(json.data?.totalGiftQty || 0),
+        });
       } else {
+        setItems([]);
         setLoadError('Không tải được số liệu sách bán chạy — kiểm tra mạng rồi bấm Tải lại.');
       }
     } catch {
+      if (controller.signal.aborted) return;
+      setItems([]);
       setLoadError('Không tải được số liệu sách bán chạy — kiểm tra mạng rồi bấm Tải lại.');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, [canView, currentRole, startDate, endDate, topN, warehouseId, fiscalScope]);
 
   useEffect(() => {
     fetchTop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRole]);
+    return () => abortRef.current?.abort();
+  }, [fetchTop]);
 
   if (!canView) return null;
+
+  // Nhãn kỳ LẤY TỪ BỘ LỌC CỦA TAB, không suy ra từ preset nội bộ: rỗng = không
+  // lọc ngày, và nhãn phải khớp đúng cái bảng Sổ Kép đang hiện.
+  const rangeLabel = startDate || endDate ? `${startDate || 'đầu kỳ'} → ${endDate || 'nay'}` : 'toàn bộ thời gian';
+  const csvRange = startDate && endDate ? `${startDate}_${endDate}` : startDate || endDate || 'all';
 
   const exportCsv = () => {
     if (items.length === 0) {
       alert('Chưa có dữ liệu sách bán chạy để xuất.');
       return;
     }
-    const r = presetRange(preset);
-    const headers = ['Hang', 'Ma', 'Tieu de', 'So luong (cuon)', 'So don', 'Doanh thu (VND)', 'Ty trong SL (%)'];
-    // Chan Excel formula injection o Ma/Tieu de.
+    if (!actorId) {
+      alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+      return;
+    }
+    // Chặn Excel formula injection ở Mã/Tiêu đề.
     const cell = (v: string | number) => {
       const s = `${v ?? ''}`;
-      return /^[=+\-@]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
+      return /^[=+\-@\t\r]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
     };
-    const rawObjects = items.map((it: any, i: number) => ({
+    // Watermark hash trên DỮ LIỆU THÔ (chưa escape) — số phải khớp số thứ tự
+    // trên bảng nên map kèm index.
+    const rawObjects = items.map((it, i) => ({
       rank: i + 1,
-      editionId: it.editionId,
-      code: it.code,
-      title: it.title,
+      code: it.code ?? '',
+      title: it.title ?? '',
       qty: Number(it.qty || 0),
       orders: Number(it.orders || 0),
       revenue: Number(it.revenue || 0),
+      qtySharePct: Number(it.qtyShare || 0) * 100,
+      period: rangeLabel,
+      warehouse: warehouseLabel,
     }));
-    const rows = items.map((it: any, i: number) => [
+    const rows = items.map((it, i) => [
       i + 1,
-      cell(it.code || ''),
-      cell(it.title || ''),
+      cell(it.code || '—'),
+      cell(it.title || '—'),
       Number(it.qty || 0),
       Number(it.orders || 0),
       Number(it.revenue || 0),
       (Number(it.qtyShare || 0) * 100).toFixed(2),
+      cell(rangeLabel),
+      cell(warehouseLabel),
     ]);
-    const baseCsv = [headers.join(','), ...rows.map((x) => x.join(','))].join('\r\n');
+    const baseCsv = [CSV_HEADERS.join(','), ...rows.map((x) => x.join(','))].join('\r\n');
     const watermarked = appendExportWatermark(baseCsv, rawObjects, {
-      actorId: 'top-editions',
+      actorId,
       actorRole: currentRole,
-      reportName: `SACH BAN CHAY (${r.label.toUpperCase()})`,
+      reportName: `SÁCH BÁN CHẠY NHẤT — ${rangeLabel} — ${warehouseLabel}`,
       fiscalScope: 'ALL',
     });
     const blob = new Blob(['\uFEFF' + watermarked], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Sach_Ban_Chay_${preset}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Sach_Ban_Chay_${csvRange}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -128,37 +191,46 @@ export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
             Sách Bán Chạy Nhất
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Kỳ {presetRange(preset).label} • Tổng {totals.totalQty.toLocaleString('vi-VN')} cuốn / {totals.totalRevenue.toLocaleString('vi-VN')} đ
+            Kỳ {rangeLabel} • {warehouseLabel} • Tổng{' '}
+            {totals.totalQty.toLocaleString('vi-VN')} cuốn / {totals.totalRevenue.toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[11px] text-amber-700 mt-0.5">
+            Đã tặng {totals.totalGiftQty.toLocaleString('vi-VN')} cuốn trong kỳ này (không tính vào bảng bán chạy)
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Số liệu theo đúng bộ lọc của bảng trên: kho, ngày.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {(['TODAY', 'WEEK', 'MONTH'] as Preset[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => { setPreset(p); fetchTop(p, topN); }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                preset === p ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {p === 'TODAY' ? 'Hôm nay' : p === 'WEEK' ? '7 ngày qua' : '30 ngày qua'}
-            </button>
-          ))}
+          <label htmlFor="top-editions-n" className="text-[11px] font-bold text-slate-500">
+            Số dòng
+          </label>
           <select
+            id="top-editions-n"
             value={topN}
-            onChange={(e) => { const n = Number(e.target.value); setTopN(n); fetchTop(preset, n); }}
+            onChange={(e) => setTopN(Number(e.target.value))}
             className="bg-slate-50 border border-slate-300 text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none cursor-pointer"
-            title="Số đầu sách hiển thị"
           >
             <option value={10}>Top 10</option>
             <option value={20}>Top 20</option>
             <option value={50}>Top 50</option>
           </select>
-          <button onClick={() => fetchTop()} disabled={loading} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition disabled:opacity-50" title="Tải lại">
-            <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
+          <button
+            onClick={() => fetchTop()}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Tải lại
           </button>
-          <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition">
+          <button
+            onClick={exportCsv}
+            disabled={!actorId}
+            title={actorId ? 'Xuất báo cáo sách bán chạy' : 'Chưa đọc được người đăng nhập — tải lại trang'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
+          >
             <Download className="w-3.5 h-3.5" />
-            CSV
+            Xuất Excel/CSV
           </button>
         </div>
       </div>
@@ -196,12 +268,12 @@ export function TopEditionsPanel({ currentRole }: TopEditionsPanelProps) {
                 </td>
               </tr>
             ) : (
-              items.map((it: any, i: number) => (
-                <tr key={it.editionId} className="hover:bg-slate-50/80">
+              items.map((it, i) => (
+                <tr key={it.editionId || `${it.code}-${i}`} className="hover:bg-slate-50/80">
                   <td className="p-3 font-black text-slate-400 font-mono">{i + 1}</td>
                   <td className="p-3">
-                    <span className="font-mono font-bold text-indigo-700">{it.code}</span>
-                    <span className="text-slate-600"> — {it.title}</span>
+                    <span className="font-mono font-bold text-indigo-700">{it.code || '—'}</span>
+                    <span className="text-slate-600"> — {it.title || '—'}</span>
                   </td>
                   <td className="p-3 text-right font-mono font-bold">{Number(it.qty || 0).toLocaleString('vi-VN')}</td>
                   <td className="p-3 text-right font-mono">{Number(it.orders || 0).toLocaleString('vi-VN')}</td>

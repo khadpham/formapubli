@@ -451,10 +451,12 @@ async function run() {
   const consNoDataQueries = counter2;
   proto2.execute = origExecute2;
   ok(
-    cfQueries === 4 && chQueries === 1 && teQueries === 1 && consNoDataQueries <= 3,
+    cfQueries === 4 && chQueries === 1 && teQueries <= 2 && consNoDataQueries <= 3,
     '3.11 Số truy vấn cố định, không N+1',
     `cashflow=${cfQueries}, byChannel=${chQueries}, topEditions=${teQueries}, consignment (chưa có kho KG)=${consNoDataQueries}`
   );
+  // topEditions = 2 CỐ ĐỊNH từ e3491e4 (bảng chính + đếm quà totalGiftQty), không
+  // phải N+1 theo dữ liệu — bound <= 2 giữ đúng ý đồ khóa (không phình query).
 
   // ==================================================================
   // PHẦN 4 — AnalyticsService.consignment: số lượng + số truy vấn

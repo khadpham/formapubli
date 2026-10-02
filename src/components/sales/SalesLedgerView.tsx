@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GiftReportPanel } from './GiftReportPanel';
 import {
   Receipt,
@@ -8,21 +8,29 @@ import {
   Building2,
   Calendar,
   Filter,
-  Download,
   RefreshCw,
   Search,
-  CheckCircle2,
-  AlertCircle,
   FileSpreadsheet,
-  Printer,
   Percent,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
-import { appendExportWatermark } from '@/lib/export-hash';
+import { matchesAnyVietnameseField } from '@/lib/vietnamese';
+import {
+  buildSalesCsv,
+  channelLabel,
+  fiscalScopeLabel,
+  lastNDays,
+  monthPreset,
+  paymentLabel,
+  vnHour,
+  vnToday,
+} from '@/lib/sales-view';
 import { RevenueAnalyticsPanel } from './RevenueAnalyticsPanel';
 import { TopEditionsPanel } from './TopEditionsPanel';
 
-// Slicer kenh ban -> nhom nguon (pivot nhanh kieu Excel)
+// Slicer kenh ban -> nhom nguon (pivot nhanh kieu Excel).
+// Đây là PHÂN NHÓM slicer, KHÔNG phải nhãn hiển thị — nhãn hiển thị lấy từ
+// `channelLabel` (src/lib/sales-view.ts) để cả màn Doanh Số chỉ có một từ điển.
 const CHANNEL_GROUP_OF: Record<string, 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT'> = {
   FAIR_EVENT: 'RETAIL',
   RETAIL_OFFICE: 'RETAIL',
@@ -33,16 +41,13 @@ const CHANNEL_GROUP_OF: Record<string, 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT
   SPONSORSHIP: 'GIFT',
 };
 
-// Nhan kenh hien thi (map thay nested ternary 7 cap).
-const CHANNEL_LABEL: Record<string, string> = {
-  FAIR_EVENT: 'Hội chợ',
-  RETAIL_OFFICE: 'Bán lẻ',
-  WHOLESALE_PARTNER: 'Đại lý',
-  RETAIL_ONLINE_WEB: 'Web',
-  RETAIL_ONLINE_SOCIAL: 'Mạng xã hội',
-  ONLINE: 'Online',
-  SPONSORSHIP: 'Tặng',
-};
+/** Tổng doanh thu do SERVER tính (`GET /api/orders` → `summary`). */
+interface SalesSummary {
+  totalOrders: number;
+  totalSubtotal: number;
+  totalDiscount: number;
+  totalRevenue: number;
+}
 
 interface SalesLedgerViewProps {
   currentRole: UserRole;
@@ -50,7 +55,13 @@ interface SalesLedgerViewProps {
 
 export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [orders, setOrders] = useState<any[]>([]);
+  // Tổng doanh số do SERVER tính (`getSalesSummary`), KHÔNG cộng lại từ `orders`.
+  // Cộng client sai ở 3 chỗ: (1) slicer kênh + ô tìm kiếm lọc `orders` nhưng thẻ
+  // tổng phải theo đúng bộ lọc server; (2) server đã loại SPONSORSHIP khỏi doanh
+  // thu bán, client cộng lại là lệch; (3) `getOrders` không giới hạn số dòng.
+  const [summary, setSummary] = useState<SalesSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT'>('ALL');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('ALL');
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -62,8 +73,21 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // Slicer + phan trang cuc bo: gioi han chieu cao bang, mac dinh 20 don
   const [channelSlicer, setChannelSlicer] = useState<'ALL' | 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT'>('ALL');
   const [pageSize, setPageSize] = useState<number>(20); // 20 | 50 | 100 | -1 (tat ca)
+  // Mã nhân viên THẬT đóng watermark mọi lượt xuất CSV. Trước đây ghi cứng
+  // 'cashier-pos' ⇒ không lượt xuất nào truy vết được về người đã bấm.
+  const [actorId, setActorId] = useState<string>('');
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
+  // Spec §5: thu ngân KHÔNG được thấy nút chọn Sổ Thuế — server ép INTERNAL cho
+  // thu ngân nên để nút đó là hứa một thứ rồi trả thứ khác (cashier bấm "Sổ Thuế"
+  // mà cột toàn "Sổ Quản trị Nội bộ"). Chỉ Owner/Manager được chuyển sổ.
+  const canViewTaxScope = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+  // Sổ đang xem: kế toán thuế bị ÉP OFFICIAL_TAX (xem useEffect bên dưới), người
+  // khác tự chọn. 'ALL' = xem cả hai sổ. MỘT nơi tính, dùng lại cho cả danh sách
+  // lẫn các panel con — không để mỗi panel tự suy luận lại.
+  const scopeParam: 'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT' = isTaxAccountant
+    ? 'OFFICIAL_TAX'
+    : activeScope;
 
   // Tải danh mục kho động từ server
   useEffect(() => {
@@ -81,6 +105,38 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     loadWarehouses();
   }, []);
 
+  // Tên kho CHỈ lấy từ API. Trước đây kho lạ bị đổ thành 'Kho Quỳnh Mai' ⇒ người
+  // dùng thấy trên sổ một tên kho không tồn tại rồi tưởng đang xem sai kho.
+  // Thiếu tên thì hiện '—' thành thật.
+  const warehouseNameById = useMemo(
+    () => new Map<string, string>((warehouses || []).map((w: any) => [w.id, w.name])),
+    [warehouses]
+  );
+  const warehouseNameOf = useCallback(
+    (id: string | null | undefined) => (id ? warehouseNameById.get(id) || '—' : '—'),
+    [warehouseNameById]
+  );
+
+  // Nút "Làm mới" chỉ gọi lại `fetchOrders` — KHÔNG nạp lại `/api/warehouses`
+  // (useEffect kho chạy một lần lúc mount). Nên nhắc người dùng "tải lại
+  // trang", đừng hứa "bấm Làm mới" rồi kho vẫn trống.
+  // Người đăng nhập thật (đóng watermark CSV). Rỗng thì KHÔNG xuất được: ký
+  // bằng mã bịa thì tệ hơn là không có dấu vết.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.success) setActorId(json.data?.actorId || '');
+      })
+      .catch(() => {
+        /* im lặng: nút Xuất tự khoá, không chặn cả màn hình */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Nếu là Kế toán thuế: Ép cứng chỉ được xem OFFICIAL_TAX
   useEffect(() => {
     if (isTaxAccountant) {
@@ -88,39 +144,47 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     }
   }, [currentRole, isTaxAccountant]);
 
-  // Xử lý chuyển đổi Preset ngày
+  // Xử lý chuyển đổi Preset ngày — dùng helper dùng chung (`sales-view.ts`):
+  // "Tháng này" = THÁNG LỊCH VN, "7 ngày" = ĐÚNG 7 ngày tính cả hôm nay.
+  // Ngày gửi dạng TRẦN 'YYYY-MM-DD' = ngày nghiệp vụ (xem `createdAtBetween`),
+  // nên KHÔNG gắn hậu tố 'T23:59:59'.
   const handleDatePresetChange = (preset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM') => {
     setDatePreset(preset);
-    // Ngày VIỆT NAM, và gửi dạng TRẦN 'YYYY-MM-DD'. Trước đây dùng
-    // `toISOString().slice(0,10)` tức NGÀY UTC, nên nút "HÔM NAY" thiếu trọn ca
-    // 00:00–07:00 và lại tính nhầm đơn sau 17:00 của hôm qua. API đọc ngày trần
-    // là ngày nghiệp vụ (xem `createdAtBetween` trong order.service), nên phải bỏ
-    // hậu tố 'T23:59:59' — có nó thì cả hai đầu rơi về nhánh so mốc UTC cũ.
-    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
-
+    const now = new Date();
     if (preset === 'ALL') {
       setStartDate('');
       setEndDate('');
     } else if (preset === 'TODAY') {
-      setStartDate(todayStr);
-      setEndDate(todayStr);
+      const today = vnToday(now);
+      setStartDate(today);
+      setEndDate(today);
     } else if (preset === 'WEEK') {
-      const weekAgo = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
-        .format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-      setStartDate(weekAgo);
-      setEndDate(todayStr);
+      const r = lastNDays(7, now);
+      setStartDate(r.startDate);
+      setEndDate(r.endDate);
     } else if (preset === 'MONTH') {
-      const monthAgo = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
-        .format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
-      setStartDate(monthAgo);
-      setEndDate(todayStr);
+      const r = monthPreset(now);
+      setStartDate(r.startDate);
+      setEndDate(r.endDate);
+    } else {
+      // CUSTOM phải XOÁ ngày cũ: trước đây nhánh này rỗng nên bấm "Tùy chọn" sau
+      // khi đang lọc "7 ngày" vẫn hiện 7 ngày đó, tưởng đã tự lọc theo.
+      setStartDate('');
+      setEndDate('');
     }
   };
 
-  const fetchOrders = async () => {
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchOrders = useCallback(async () => {
+    // Bấm liên tiếp nhiều preset/kho thì request cũ vẫn bay về và ghi đè kết
+    // quả mới. Huỷ request trước đó thay vì so timestamp.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
+    setLoadError(null);
     try {
-      const scopeParam = isTaxAccountant ? 'OFFICIAL_TAX' : activeScope;
       const params = new URLSearchParams();
       params.set('fiscalScope', scopeParam);
       if (selectedWarehouse !== 'ALL') {
@@ -133,121 +197,89 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         params.set('endDate', endDate);
       }
 
-      const res = await fetch(`/api/orders?${params.toString()}`);
+      const res = await fetch(`/api/orders?${params.toString()}`, { signal: controller.signal });
       const data = await res.json();
       if (data.success) {
         setOrders(data.orders || []);
+        setSummary(data.summary ?? null);
+      } else {
+        setOrders([]);
+        setSummary(null);
+        setLoadError(data.error || 'Không tải được danh sách doanh số.');
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       console.error('Lỗi tải danh sách doanh số:', err);
+      setLoadError('Không tải được danh sách doanh số. Kiểm tra mạng rồi bấm "Làm mới".');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, [activeScope, currentRole, selectedWarehouse, startDate, endDate]);
 
   useEffect(() => {
     fetchOrders();
-  }, [activeScope, currentRole, selectedWarehouse, startDate, endDate]);
+    return () => abortRef.current?.abort();
+  }, [fetchOrders]);
 
   const filteredOrders = orders.filter((ord) => {
     if (channelSlicer !== 'ALL' && CHANNEL_GROUP_OF[ord.channel] !== channelSlicer) return false;
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      ord.orderCode?.toLowerCase().includes(q) ||
-      ord.customerName?.toLowerCase().includes(q) ||
-      ord.vatInvoiceCode?.toLowerCase().includes(q)
-    );
+    // Chuẩn hoá dấu: gõ "truong" phải ra "Trường". `toLowerCase().includes()`
+    // cũ không bao giờ khớp tên có dấu.
+    return matchesAnyVietnameseField(searchQuery, [ord.orderCode, ord.customerName, ord.vatInvoiceCode]);
   });
 
   // Gioi han so dong hien thi de bang gon trong 1 man hinh (cuon doc xem tiep)
   const visibleOrders = pageSize === -1 ? filteredOrders : filteredOrders.slice(0, pageSize);
 
-  // The tong theo dung nhung gi dang thay (slicer kenh + tim kiem) de khong lech voi bang.
-  const viewSummary = {
-    totalSubtotal: filteredOrders.reduce((s, o) => s + Number(o.subtotal || 0), 0),
-    totalDiscount: filteredOrders.reduce((s, o) => s + Number(o.discountAmount || 0), 0),
-    totalRevenue: filteredOrders.reduce((s, o) => s + Number(o.finalAmount || 0), 0),
-  };
-  const avgDiscountPercent = viewSummary.totalSubtotal > 0
-    ? ((viewSummary.totalDiscount / viewSummary.totalSubtotal) * 100).toFixed(1)
-    : '0.0';
+  // Đơn quà 0đ (tặng 100%) vẫn đếm vào totalOrders của server — ghi rõ để người
+  // đọc không tưởng "N đơn = N đơn có tiền".
+  const zeroValueCount = orders.filter((o) => Number(o?.finalAmount) === 0).length;
 
-  // Xuất file CSV chuẩn UTF-8 BOM cho Excel
+  const avgDiscountPercent =
+    summary && summary.totalSubtotal > 0
+      ? ((summary.totalDiscount / summary.totalSubtotal) * 100).toFixed(1)
+      : '0.0';
+
+  // Xuất CSV dùng helper dùng chung: header có dấu, kênh/giờ tiếng Việt, watermark
+  // ký đúng người đang đăng nhập.
   const exportToCSV = () => {
     if (filteredOrders.length === 0) {
       alert('Không có dữ liệu đơn hàng để xuất CSV.');
       return;
     }
+    if (!actorId) {
+      alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+      return;
+    }
 
-    // Chan Excel formula injection: o text bat dau =,+,-,@ thi chen ' phia truoc.
-    const cell = (v: string | number) => {
-      const s = `${v ?? ''}`;
-      return /^[=+\-@]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
-    };
-    const headers = [
-      'Mã Đơn Hàng',
-      'Kho Xuất',
-      'Khách Hàng',
-      'Phương Thức TT',
-      'Tổng Giá Bìa (VND)',
-      'Tỷ Lệ CK (%)',
-      'Tiền Chiết Khấu (VND)',
-      'Thực Thu (VND)',
-      'Phân Loại Sổ',
-      'Số HĐ VAT',
-      'Thời Gian',
-    ];
-
-    const rawObjectsForHash = filteredOrders.map((ord) => ({
-      orderCode: ord.orderCode || '',
-      warehouseId: ord.warehouseId,
-      customerName: ord.customerName || '',
-      paymentMethod: ord.paymentMethod || '',
+    const rows = filteredOrders.map((ord) => ({
+      orderCode: ord.orderCode,
+      warehouseName: warehouseNameOf(ord.warehouseId),
+      channel: ord.channel,
+      customerName: ord.customerName,
+      paymentMethod: ord.paymentMethod,
       subtotal: Number(ord.subtotal || 0),
       discountAmount: Number(ord.discountAmount || 0),
       finalAmount: Number(ord.finalAmount || 0),
       fiscalScope: ord.fiscalScope,
-      vatInvoiceCode: ord.vatInvoiceCode || '',
-      createdAt: ord.createdAt || '',
+      vatInvoiceCode: ord.vatInvoiceCode,
+      createdAt: ord.createdAt,
     }));
 
-    const rows = filteredOrders.map((ord) => {
-      const whName = warehouses.find((w) => w.id === ord.warehouseId)?.name ||
-        (ord.warehouseId === 'wh-au-co' ? 'Kho Âu Cơ' : ord.warehouseId === 'wh-du-phong' ? 'Kho Hội Chợ' : 'Kho Quỳnh Mai');
-      const discountPct = ord.subtotal > 0 ? `${Math.round(((ord.discountAmount || 0) / ord.subtotal) * 100)}%` : '0%';
-      return [
-        cell(ord.orderCode || ''),
-        cell(whName),
-        cell(ord.customerName || ''),
-        cell(ord.paymentMethod || ''),
-        ord.subtotal || 0,
-        cell(discountPct),
-        ord.discountAmount || 0,
-        ord.finalAmount || 0,
-        cell(ord.fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Sổ Quản trị Nội bộ'),
-        cell(ord.vatInvoiceCode || ''),
-        cell(ord.createdAt || ''),
-      ];
-    });
-
-    const baseCsv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
-    const watermarkedCsv = appendExportWatermark(baseCsv, rawObjectsForHash, {
-      actorId: 'cashier-pos',
+    const watermarkedCsv = buildSalesCsv(rows, actorId, {
       actorRole: currentRole,
-      reportName: 'BÁO CÁO DOANH SỐ BÁN SÁCH & DÒNG TIỀN (SỔ KÉP)',
-      fiscalScope: activeScope,
+      reportName: 'BÁO CÁO DOANH SỐ BÁN SÁCH (SỔ KÉP)',
+      fiscalScope: isTaxAccountant ? 'OFFICIAL_TAX' : activeScope,
     });
 
+    // BOM để Excel đọc đúng tiếng Việt có dấu; tên file đặt theo NGÀY VIỆT NAM.
     const csvContent = '\uFEFF' + watermarkedCsv;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute(
-      'download',
-      `Bao_Cao_Doanh_So_FormaPubli_${new Date().toISOString().slice(0, 10)}.csv`
-    );
+    const ddmmyyyy = vnToday().split('-').reverse().join('-');
+    link.setAttribute('download', `Bao_Cao_Doanh_So_FORMApubli_${ddmmyyyy}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -257,7 +289,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   return (
     <div className="space-y-6">
-      <GiftReportPanel />
+      <GiftReportPanel currentRole={currentRole} from={startDate} to={endDate} />
       {/* Header Controls */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="hidden md:block">
@@ -294,25 +326,26 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </button>
           <button
             onClick={exportToCSV}
-            disabled={filteredOrders.length === 0}
+            disabled={filteredOrders.length === 0 || !actorId}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
-            title="Xuất bảng tính Excel/CSV tương thích font tiếng Việt"
+            title={
+              actorId
+                ? 'Xuất bảng tính Excel/CSV tương thích font tiếng Việt'
+                : 'Chưa đọc được người đăng nhập nên chưa xuất được (tải lại trang)'
+            }
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Xuất Excel/CSV</span>
           </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>In Phiếu</span>
-          </button>
+          {/* Nút "In Phiếu" ĐÃ GỠ (2026-10-02): nó gọi `window.print()` trên
+              cả trang app ⇒ ra giấy trắng vì không có CSS in riêng cho sổ.
+              Giữ nút là lời hứa sai với người dùng. Nối phiếu nhiệt thật là
+              việc riêng, phải làm cùng driver/mẫu in chứ không vá bằng print. */}
         </div>
       </div>
 
       {/* Scope Switcher Banner (Chỉ cho phép Quản lý & Điều hành chuyển đổi) */}
-      {!isTaxAccountant ? (
+      {!isTaxAccountant && canViewTaxScope ? (
         <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl">
           <button
             onClick={() => setActiveScope('ALL')}
@@ -345,11 +378,18 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             Sổ Quản Trị Nội Bộ
           </button>
         </div>
-      ) : (
+      ) : isTaxAccountant ? (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 font-medium">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>
             Chế độ Kế Toán Thuế đang kích hoạt: Hệ thống tự động áp dụng bộ lọc cách ly, chỉ trích xuất các đơn hàng có hóa đơn VAT hợp pháp.
+          </span>
+        </div>
+      ) : (
+        <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center gap-2 font-medium">
+          <ShieldCheck className="w-4 h-4 text-slate-500" />
+          <span>
+            Thu ngân chỉ xem sổ nội bộ đơn của mình.
           </span>
         </div>
       )}
@@ -416,60 +456,92 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer min-h-[36px]"
           >
             <option value="ALL">Tất cả các kho (Toàn hệ thống)</option>
-            {warehouses.length > 0 ? (
-              warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))
-            ) : (
-              <>
-                <option value="wh-au-co">Kho 1 - Âu Cơ (VP chính)</option>
-                <option value="wh-du-phong">Kho 3 - Hội Chợ (Sự kiện)</option>
-                <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai (Kho tổng)</option>
-              </>
-            )}
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
           </select>
+          {/* Không ghi cứng tên kho dự phòng: trước đây khi API rỗng, danh sách
+              này vẫn hiện 3 kho bịa ⇒ người dùng lọc nhầm kho không tồn tại. */}
+          {warehouses.length === 0 && (
+            <span className="text-[10px] text-amber-600 font-medium">
+              Chưa tải được danh mục kho — tải lại trang
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Financial Summary Cards — theo dung bo loc dang xem */}
+      {/* Financial Summary Cards — số do SERVER tổng (`GET /api/orders` → `summary`),
+          KHÔNG cộng lại từ danh sách đang lọc trên màn hình. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             Tổng Giá Bìa (Niêm yết)
           </span>
-          <p className="text-xl font-extrabold text-slate-900 mt-1 font-mono">
-            {(viewSummary.totalSubtotal || 0).toLocaleString('vi-VN')} đ
-          </p>
+          {loading && !summary ? (
+            <div className="mt-1.5 h-7 w-32 rounded-lg bg-slate-200 animate-pulse" aria-label="Đang tải" />
+          ) : (
+            <p className="text-xl font-extrabold text-slate-900 mt-1 font-mono">
+              {(summary?.totalSubtotal ?? 0).toLocaleString('vi-VN')} đ
+            </p>
+          )}
         </div>
 
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             {discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ Chiết Khấu Bình Quân' : 'Tổng Tiền Chiết Khấu Đã Giảm'}
           </span>
-          <p className="text-xl font-extrabold text-amber-600 mt-1 font-mono">
-            {discountDisplayMode === 'PERCENT' ? `${avgDiscountPercent}%` : `-${(viewSummary.totalDiscount || 0).toLocaleString('vi-VN')} đ`}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 font-medium">
-            {discountDisplayMode === 'PERCENT'
-              ? `Quy đổi tiền: -${(viewSummary.totalDiscount || 0).toLocaleString('vi-VN')} đ`
-              : `Tỷ lệ bình quân: ${avgDiscountPercent}%`}
-          </p>
+          {loading && !summary ? (
+            <div className="mt-1.5 h-7 w-32 rounded-lg bg-slate-200 animate-pulse" aria-label="Đang tải" />
+          ) : (
+            <>
+              <p className="text-xl font-extrabold text-amber-600 mt-1 font-mono">
+                {discountDisplayMode === 'PERCENT'
+                  ? `${avgDiscountPercent}%`
+                  : `-${(summary?.totalDiscount ?? 0).toLocaleString('vi-VN')} đ`}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5 font-medium">
+                {discountDisplayMode === 'PERCENT'
+                  ? `Quy đổi tiền: -${(summary?.totalDiscount ?? 0).toLocaleString('vi-VN')} đ`
+                  : `Tỷ lệ bình quân: ${avgDiscountPercent}%`}
+              </p>
+            </>
+          )}
         </div>
 
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             Doanh Thu Thực Thu
           </span>
-          <p className="text-xl font-extrabold text-emerald-700 mt-1 font-mono">
-            {(viewSummary.totalRevenue || 0).toLocaleString('vi-VN')} đ
-          </p>
-          {(channelSlicer !== 'ALL' || searchQuery) && (
-            <p className="text-[10px] text-slate-400 mt-0.5">Theo bộ lọc đang xem (kênh/tìm kiếm)</p>
+          {loading && !summary ? (
+            <div className="mt-1.5 h-7 w-32 rounded-lg bg-slate-200 animate-pulse" aria-label="Đang tải" />
+          ) : (
+            <p className="text-xl font-extrabold text-emerald-700 mt-1 font-mono">
+              {(summary?.totalRevenue ?? 0).toLocaleString('vi-VN')} đ
+            </p>
           )}
+          {/* Nhãn luôn hiện (không chỉ khi có slicer): trước đây khi
+              `channelSlicer === 'ALL'` và không tìm kiếm thì thẻ trông như đang
+              bám theo bảng, và người dùng tưởng số đổi theo bảng. */}
+          {/* Skeleton đang bật thì `summary` còn null ⇒ hiện "0 đơn hoàn tất"
+              nhảy xuống rồi mới có số ⇒ nhấp nháy giả. Hiện "Đang tải…" thay vì số 0. */}
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            {loading && !summary
+              ? 'Đang tải…'
+              : `${(summary?.totalOrders ?? 0).toLocaleString('vi-VN')} đơn hoàn tất · doanh thu gộp chưa trừ hoàn${zeroValueCount > 0 ? ` · gồm ${zeroValueCount.toLocaleString('vi-VN')} đơn quà 0đ` : ''}`}
+          </p>
+          <p className="text-[10px] text-slate-400">
+            Thẻ tổng theo kho/ngày/sổ; nút kênh và ô tìm kiếm chỉ lọc bảng bên dưới.
+          </p>
         </div>
       </div>
+
+      {loadError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-medium">
+          {loadError}
+        </div>
+      )}
 
       {/* Orders List Table — gioi han chieu cao + cuon, keo xuong la toi panel phan tich */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -549,7 +621,14 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {visibleOrders.length === 0 ? (
+              {loading && orders.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="p-8 text-center text-slate-400">
+                    <span className="inline-block h-4 w-40 rounded bg-slate-200 animate-pulse align-middle" />
+                    <span className="ml-2">Đang tải danh sách đơn…</span>
+                  </td>
+                </tr>
+              ) : visibleOrders.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="p-8 text-center text-slate-400">
                     Không tìm thấy đơn hàng nào phù hợp với bộ lọc.
@@ -562,24 +641,19 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                       {ord.orderCode}
                     </td>
                     <td className="p-3.5 font-medium text-slate-700">
-                      {warehouses.find((w) => w.id === ord.warehouseId)?.name ||
-                        (ord.warehouseId === 'wh-au-co'
-                          ? 'Kho Âu Cơ'
-                          : ord.warehouseId === 'wh-du-phong'
-                          ? 'Kho Hội Chợ'
-                          : 'Kho Quỳnh Mai')}
+                      {warehouseNameOf(ord.warehouseId)}
                     </td>
                     <td className="p-3.5 font-medium text-slate-900">
                       {ord.customerName}
                     </td>
                     <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                        {CHANNEL_LABEL[ord.channel] || ord.channel || '—'}
+                        {channelLabel(ord.channel)}
                       </span>
                     </td>
                     <td className="p-3.5">
-                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 font-mono">
-                        {ord.paymentMethod}
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
+                        {paymentLabel(ord.paymentMethod)}
                       </span>
                     </td>
                     <td className="p-3.5 font-mono text-slate-600">
@@ -612,16 +686,16 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                     <td className="p-3.5">
                       {ord.fiscalScope === 'OFFICIAL_TAX' ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Hóa đơn VAT
+                          {fiscalScopeLabel(ord.fiscalScope)}
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                          Sổ Quản trị Nội bộ
+                          {fiscalScopeLabel(ord.fiscalScope)}
                         </span>
                       )}
                     </td>
-                    <td className="p-3.5 text-slate-400 font-mono text-[11px]">
-                      {ord.createdAt?.slice(0, 16).replace('T', ' ')}
+                    <td className="p-3.5 text-slate-500 font-mono text-[11px]">
+                      {vnHour(ord.createdAt)}
                     </td>
                   </tr>
                 ))
@@ -639,11 +713,30 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         )}
       </div>
 
-      {/* Sach ban chay nhat (OWNER/MANAGER) — tra loi "cuon nao ban chay nhat hom nay/tuan nay/thang nay" */}
-      <TopEditionsPanel currentRole={currentRole} />
+      {/* Sach ban chay nhat (OWNER/MANAGER) — dung CHUNG bo loc cua tab (ngay/kho) va
+          actor that cua So Kep, y het RevenueAnalyticsPanel: panel khong tu dat
+          preset ngay rieng nen so cua no luon khop bang so tren bang. */}
+      <TopEditionsPanel
+        currentRole={currentRole}
+        startDate={startDate}
+        endDate={endDate}
+        warehouseId={selectedWarehouse}
+        warehouseLabel={selectedWarehouse === 'ALL' ? 'Tất cả kho' : warehouseNameOf(selectedWarehouse)}
+        fiscalScope={scopeParam === 'ALL' ? undefined : scopeParam}
+        actorId={actorId}
+      />
 
-      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang */}
-      <RevenueAnalyticsPanel currentRole={currentRole} />
+      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang.
+          Dùng CHUNG bo loc cua tab (kho/ngay/so) va actor that cua Sổ Kép: panel khong
+          tu dat filter rieng, nen so cua no luon khop bang so tren bang. */}
+      <RevenueAnalyticsPanel
+        currentRole={currentRole}
+        startDate={startDate}
+        endDate={endDate}
+        warehouseId={selectedWarehouse}
+        fiscalScope={scopeParam === 'ALL' ? undefined : scopeParam}
+        actorId={actorId}
+      />
     </div>
   );
 }

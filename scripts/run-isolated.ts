@@ -151,6 +151,22 @@ const ALL_SUITES = [
   // SUITE CUỐI: tạo ấn bản AB-* và bán chạy thật trong DB test dùng chung, nên
   // phải chạy SAU test-monthly-digest — digest lấy top 5 ấn bản bán chạy, thêm
   // dòng của suite này sẽ đẩy ấn bản của suite đó ra khỏi top 5.
+  // Tạo 2 đơn COMPLETED ở kho chính (1 sổ nội bộ + 1 sổ thuế) rồi so tổng
+  // `byChannel`/`cashflow` có/không filter — chạy SAU `test-analytics-doanhso`?
+  // KHÔNG: đặt TRƯỚC suite cuối để suite cuối vẫn chạy trên DB đã có dữ liệu
+  // này (mọi assertion của nó so với SQL gốc trên cùng DB nên vẫn đúng).
+  'scripts/test-sales-scope-filter.ts',
+  // Báo cáo quà: chỉ tính đơn COMPLETED + tách tổng đã phát (Task 2).
+  // THỨ TỰ BẮT BUỘC, KHÔNG ĐẢO: suite này tự dọn dữ liệu (try/finally) nên
+  // không vấn đề, nhưng các suite quà khác (test-gift-forgery…) để lại dòng quà
+  // của đơn COMPLETED trong DB test chung, và SQL gốc của assertion 3.6 ở
+  // test-analytics-doanhso không loại is_gift_line trong khi topEditions thì có
+  // ⇒ đặt sai chỗ là suite hậu kỳ này tự nó làm ĐỎ dữ liệu của suite sau.
+  'scripts/test-gift-completed-only.ts',
+  // Khóa mặc định loại quà của topEditions (Task 3). Suite tự dọn trong
+  // `finally` nên thứ tự không ảnh hưởng kết quả; vẫn đặt TRƯỚC
+  // `test-analytics-doanhso` theo yêu cầu brief để không mở cửa sổ dữ liệu lệch.
+  'scripts/test-top-gifts-locked.ts',
   'scripts/test-analytics-doanhso.ts',
 ];
 
