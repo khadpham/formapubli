@@ -13,11 +13,25 @@ import {
   PackageCheck,
   ShoppingBag,
   TimerReset,
+  Eye,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 
 // 1.2: TTL giữ chỗ ATP (giờ) — đồng bộ với PENDING_TTL_HOURS trong order.service.ts
 const PENDING_TTL_HOURS = 48;
+
+// Mặc định chỉ hiện 5 đơn mới nhất; bấm "Xem hết" mới bung toàn bộ đơn trong ngày.
+const DEFAULT_VISIBLE_COUNT = 5;
+
+function channelLabel(channel: string | null): string {
+  if (channel === 'RETAIL_ONLINE_SOCIAL') return 'Facebook Chat';
+  if (channel === 'RETAIL_ONLINE_WEB') return 'Website';
+  if (channel === 'FAIR_EVENT') return 'Tại quầy hội chợ';
+  if (channel === 'RETAIL_OFFICE') return 'Tại quầy';
+  if (channel === 'WHOLESALE_PARTNER') return 'Bán sỉ';
+  if (channel === 'ONLINE') return 'Online';
+  return channel || 'ONLINE';
+}
 
 interface PendingOrder {
   id: string;
@@ -30,6 +44,20 @@ interface PendingOrder {
   paymentMethod: string;
   note: string | null;
   createdAt: string | null;
+}
+
+interface OrderDetailItem {
+  id: string;
+  quantity: number;
+  productId: string;
+  editionId: string | null;
+  unitCoverPrice: number;
+  unitDiscountRate: number | null;
+  unitSellingPrice: number;
+  totalAmount: number;
+  isGiftLine: boolean | null;
+  productName: string | null;
+  productCode: string | null;
 }
 
 function ageInfo(createdAt: string | null) {
@@ -59,6 +87,13 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('ALL');
   const [channelFilter, setChannelFilter] = useState('ALL');
+  const [showAll, setShowAll] = useState(false);
+  const [warehouseNames, setWarehouseNames] = useState<Record<string, string>>({});
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [detailOrder, setDetailOrder] = useState<any | null>(null);
+  const [detailItems, setDetailItems] = useState<OrderDetailItem[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const canModerate = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
@@ -81,6 +116,52 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
   useEffect(() => {
     fetchPending();
   }, [fetchPending]);
+
+  // Tên kho thật (không map cứng 3 kho cũ — kho hội chợ tạo theo từng sự kiện).
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/warehouses?all=true', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const w of j?.data || []) map[`${w.id}`] = `${w.name}`;
+        setWarehouseNames(map);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const warehouseLabel = useCallback(
+    (id: string) => warehouseNames[id] || id,
+    [warehouseNames]
+  );
+
+  const openDetail = useCallback(async (orderId: string) => {
+    setDetailOrderId(orderId);
+    setDetailOrder(null);
+    setDetailItems([]);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không xem được chi tiết đơn');
+      setDetailOrder(json.order || null);
+      setDetailItems(json.items || []);
+    } catch (e: any) {
+      setDetailError(e.message || 'Không xem được chi tiết đơn');
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailOrderId(null);
+    setDetailOrder(null);
+    setDetailItems([]);
+    setDetailError(null);
+  }, []);
 
   // Tick đồng hồ TTL mỗi phút
   useEffect(() => {
@@ -263,9 +344,9 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
             className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="ALL">Tất cả kho xuất</option>
-            <option value="wh-au-co">Kho 1 - Âu Cơ</option>
-            <option value="wh-quynh-mai">Kho 2 - Quỳnh Mai</option>
-            <option value="wh-fair">Kho 3 - Hội Chợ</option>
+            {Object.entries(warehouseNames).map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
           </select>
 
           <select
@@ -274,9 +355,10 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
             className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="ALL">Tất cả kênh</option>
+            <option value="FAIR_EVENT">Tại quầy hội chợ</option>
+            <option value="RETAIL_OFFICE">Tại quầy</option>
             <option value="RETAIL_ONLINE_SOCIAL">Facebook / Chat</option>
             <option value="RETAIL_ONLINE_WEB">Website</option>
-            <option value="RETAIL_DIRECT">Quầy trực tiếp</option>
           </select>
         </div>
       </div>
@@ -301,12 +383,12 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
             {orders.length === 0 ? 'Hiện không có đơn online nào đang chờ duyệt' : 'Không có đơn nào khớp với bộ lọc hiện tại'}
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Đơn tạo từ công cụ Dán Chat FB/Zalo hoặc Web sẽ xuất hiện tại đây để Quản lý kiểm tra.
+            Đơn tạo từ quầy chuyển khoản/QR hoặc công cụ Dán Chat FB/Zalo sẽ xuất hiện tại đây để Quản lý kiểm tra.
           </p>
         </div>
       ) : (
         <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
-          {filteredOrders.map((o) => {
+          {(showAll ? filteredOrders : filteredOrders.slice(-DEFAULT_VISIBLE_COUNT).reverse()).map((o) => {
             const age = ageInfo(o.createdAt);
             const busy = actingId === o.id;
             return (
@@ -326,7 +408,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
                       {o.orderCode}
                     </span>
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700">
-                      {o.channel === 'RETAIL_ONLINE_SOCIAL' ? 'Facebook Chat' : o.channel === 'RETAIL_ONLINE_WEB' ? 'Website' : o.channel || 'ONLINE'}
+                      {channelLabel(o.channel)}
                     </span>
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
@@ -349,7 +431,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
                     </span>
                     <span className="text-slate-400 font-normal">
                       {' '}
-                      · {o.paymentMethod} · Kho xuất: {o.warehouseId === 'wh-au-co' ? 'Âu Cơ' : o.warehouseId === 'wh-quynh-mai' ? 'Quỳnh Mai' : 'Hội Chợ'}
+                      · {o.paymentMethod} · Kho xuất: {warehouseLabel(o.warehouseId)}
                     </span>
                   </p>
 
@@ -360,8 +442,17 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
                   )}
                 </div>
 
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => openDetail(o.id)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
+                    aria-label={`Xem chi tiết đơn ${o.orderCode}`}
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Xem
+                  </button>
                 {canModerate && (
-                  <div className="flex items-center gap-2 shrink-0">
+                  <>
                     <button
                       type="button"
                       disabled={busy}
@@ -385,15 +476,79 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
                     >
                       <XCircle className="w-3.5 h-3.5" /> Hủy
                     </button>
-                  </div>
+                  </>
                 )}
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Modal / Panel Xác nhận Hủy đơn */}
+      {filteredOrders.length > DEFAULT_VISIBLE_COUNT && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="w-full px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-700 text-white transition cursor-pointer"
+        >
+          {showAll ? 'Thu gọn — chỉ hiện 5 đơn mới nhất' : `Xem hết ${filteredOrders.length} đơn`}
+        </button>
+      )}
+
+      {/* Popup chi tiết đơn — đủ để đối soát mà không cần hỏi ai */}
+      {detailOrderId && (
+        <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3 animate-in fade-in">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+              <Eye className="w-4 h-4 text-indigo-600" />
+              Chi tiết đơn {detailOrder?.orderCode || ''}
+            </p>
+            <button
+              type="button"
+              onClick={closeDetail}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+            >
+              Đóng
+            </button>
+          </div>
+          {detailLoading && <p className="text-xs text-slate-500">Đang tải chi tiết đơn...</p>}
+          {detailError && (
+            <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{detailError}</p>
+          )}
+          {detailOrder && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <p><span className="text-slate-500">Khách:</span> <span className="font-bold">{detailOrder.customerName || 'Khách lẻ'}</span></p>
+                <p><span className="text-slate-500">Thu ngân:</span> <span className="font-bold">{detailOrder.cashierName || detailOrder.cashierId}</span></p>
+                <p><span className="text-slate-500">Kho:</span> <span className="font-bold">{detailOrder.warehouseName || detailOrder.warehouseId}</span></p>
+                <p><span className="text-slate-500">Kênh:</span> <span className="font-bold">{channelLabel(detailOrder.channel)}</span></p>
+                <p><span className="text-slate-500">Thanh toán:</span> <span className="font-bold">{detailOrder.paymentMethod}</span></p>
+                <p><span className="text-slate-500">Tạo lúc:</span> <span className="font-bold">{detailOrder.createdAt ? new Date(detailOrder.createdAt).toLocaleString('vi-VN') : '—'}</span></p>
+                <p><span className="text-slate-500">Tiền hàng:</span> <span className="font-bold">{Number(detailOrder.subtotal || 0).toLocaleString('vi-VN')} đ</span></p>
+                <p><span className="text-slate-500">Thực thu:</span> <span className="font-black text-emerald-700">{Number(detailOrder.finalAmount || 0).toLocaleString('vi-VN')} đ</span></p>
+              </div>
+              {detailOrder.note && <p className="text-[11px] text-slate-600">Ghi chú: {detailOrder.note}</p>}
+              <div className="space-y-1.5">
+                {detailItems.map((it) => (
+                  <div key={it.id} className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate">
+                        {it.productName || it.productId} × {it.quantity}
+                        {it.isGiftLine ? <span className="ml-1.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">Quà</span> : null}
+                      </p>
+                      <p className="text-[11px] text-slate-500">Bìa {Number(it.unitCoverPrice || 0).toLocaleString('vi-VN')}đ · Bán {Number(it.unitSellingPrice || 0).toLocaleString('vi-VN')}đ</p>
+                    </div>
+                    <p className="text-xs font-black text-slate-900 shrink-0">{Number(it.totalAmount || 0).toLocaleString('vi-VN')}đ</p>
+                  </div>
+                ))}
+                {detailItems.length === 0 && !detailLoading && (
+                  <p className="text-[11px] text-slate-400">Đơn không có dòng hàng.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {cancelId && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row gap-2 animate-in fade-in">
           <input
