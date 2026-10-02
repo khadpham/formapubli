@@ -281,7 +281,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   return (
     <div className="space-y-6">
-      <GiftReportPanel />
+      <GiftReportPanel currentRole={currentRole} from={startDate} to={endDate} />
       {/* Header Controls */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="hidden md:block">
@@ -698,8 +698,15 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         )}
       </div>
 
-      {/* Sach ban chay nhat (OWNER/MANAGER) — tra loi "cuon nao ban chay nhat hom nay/tuan nay/thang nay" */}
-      <TopEditionsPanel currentRole={currentRole} />
+      {/* Sach ban chay nhat (OWNER/MANAGER) — tra loi "cuon nao ban chay nhat hom nay/tuan nay/thang nay".
+          Kho + actor that lay tu bo loc chung cua tab; preset ngay la cua rieng panel
+          (Hôm nay / 7 ngày / 30 ngày) va tinh theo LICH VIET NAM qua helper Task 4. */}
+      <TopEditionsPanel
+        currentRole={currentRole}
+        warehouseId={selectedWarehouse}
+        warehouseLabel={selectedWarehouse === 'ALL' ? 'Tất cả kho' : warehouseNameOf(selectedWarehouse)}
+        actorId={actorId}
+      />
 
       {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang.
           Dùng CHUNG bo loc cua tab (kho/ngay/so) va actor that cua Sổ Kép: panel khong
