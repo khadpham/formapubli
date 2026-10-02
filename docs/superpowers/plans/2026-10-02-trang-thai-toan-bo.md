@@ -471,7 +471,7 @@ vào sách, KHÔNG phải hệ thống tự thêm sách. Nếu muốn phiếu gh
 | Commit | `85acbb1` trên `fix/discount-approval-order-code` (chưa merge `main`, không đụng commit trên `main`) |
 | Migration `0035` lên production | ✅ chạy `npx tsx scripts/apply-0035-prod.ts` — orders 111 → 111, approvals 20 → 20 (không mất dữ liệu), `foreign_key_check` sạch, `integrity_check ok` |
 | Build | ✅ `npm run build` sạch |
-| Deploy | ✅ worker `formapubli`, Version ID **`ba03a1c7-e532-4d46-bd78-8e97e5523024`** |
+| Deploy | ✅ worker `formapubli`, Version ID **`1c3b1889-f41b-462c-b645-4db5e66fe6aa`** |
 | Smoke HTTP | ✅ `GET /` → 200; `GET /api/auth/me` → `AUTH_REQUIRED` (worker + binding DB đang sống) |
 | Chưa làm | Chưa merge vào `main`; chưa nghiệm thu bằng tay trên điện thoại; chưa chạy `verify-pos-live.ts` (sẽ tạo 1 đơn thật — cần chủ quyết) |
 
@@ -489,3 +489,28 @@ vào sách, KHÔNG phải hệ thống tự thêm sách. Nếu muốn phiếu gh
   sẽ in nhầm tên. Lấy tên từ `/api/warehouses`, thiếu thì hiện MÃ kho.
 - **"Số sách" ≠ `totalQuantity`.** `totalQuantity` = tổng mọi dòng hàng gồm quà hàng
   hóa. Muốn số cuốn thì dùng `bookQuantity` (server đếm dòng có `edition_id`).
+
+## 6. Deploy lần 2 (sau verify tầng 3) — 15:20 02/10/2026
+
+| Việc | Kết quả |
+|---|---|
+| Commit | `44f800f` (docs) + `85acbb1` (code) — đã **push** lên `origin/fix/discount-approval-order-code` |
+| Deploy | ✅ Version ID **`1c3b1889-f41b-462c-b645-4db5e66fe6aa`**, 100% traffic |
+| Smoke | `GET /` → 200 (7.809 bytes) · `GET /api/auth/me` → 401 |
+
+### Kết quả verify tầng 3 (`scripts/verify-pos-live.ts`) trên dev
+PASS 22 / FAIL 2 — **cả 2 lỗi đều do dữ liệu DB dev, không phải code**:
+- `#9` catalog POS 0 mặt hàng ⇒ bảng `products` của `formapubli.db` **rỗng 0 dòng** (editions 88, stock_balances có). Catalog lấy nguồn từ `products` nên không có gì để bán.
+- `#15` mã đơn 13 ký tự = 0 ⇒ 74 đơn dev đều mã cũ 17 ký tự `ORD-20260912-XXXX`.
+Vì 2 lỗi đọc, script bỏ qua phần ghi thật ⇒ **không có đơn test nào được tạo**.
+
+### Bằng chứng production (đọc-only, qua HTTP thật)
+- Login `ADMIN-01` → 200, có cookie phiên.
+- `/api/warehouses?all=true` → **5 kho**.
+- `/api/pos/catalog` mỗi kho → **91 mặt hàng** (hội chợ: 81 có ATP; ĐH Hà Nội T10: 91/91).
+- DB production: `products` 92, `stock_balances` 448, `orders` 111.
+- **5 đơn hôm nay mã 13 ký tự server** `ORD261002000S…W`.
+- `orders.discount_approval_id` NULL cả 111 dòng, `client_order_code` NULL cả 20 yêu cầu ⇒ **luồng duyệt chiết khấu chưa có đơn thật nào dùng approval** (chủ quyết: không có dữ liệu kho sách để test, bỏ qua).
+
+### Bẫy mới gặp (rất dễ lẫn)
+`background_process start` với tham số `workdir` **bị bỏ qua** — dev server khởi động ở thư mục gốc session (`D:\Data Project\formapubli`) và ghi vào `.next` của worktree chính, tức **phục vụ nhầm code**. Phải `Set-Location -LiteralPath '<worktree>'` trong chính lệnh rồi mới chạy `npm run dev:lan`. Dấu hiệu: so `LastWriteTime` của `.next` ở hai worktree.
