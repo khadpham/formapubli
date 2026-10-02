@@ -270,9 +270,10 @@ export class AnalyticsService {
    * - JOIN truc tiep editions (khong IN-list → khong vuot 999 bien SQLite).
    * - Loai tang/tai tro/0d nhu salesByEdition. Loc kho qua orders.warehouseId.
    *
-   * `excludeGifts` (tham số 4, MẶC ĐỊNH false) tách dòng quà tặng ra khỏi bảng
-   * và trả thêm `totalGiftQty`. Mặc định false giữ hành vi cũ cho tab "Bán hàng"
-   * (không được đổi một số nào); true thì bảng chỉ còn hàng khách thực mua.
+   * `excludeGifts` (tham số 4, MẶC ĐỊNH true): true ⇒ bảng chỉ còn hàng khách
+   * thực mua, quà đã phát nằm ở `totalGiftQty`; false ⇒ giữ cả dòng quà trong
+   * bảng (dành cho muốn xem tổng cả quà). Mặc định này đã khóa bằng test
+   * `scripts/test-top-gifts-locked.ts` — đổi nó là làm đỏ suite đó.
    */
   static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true) {
     const conds = [
@@ -324,8 +325,11 @@ export class AnalyticsService {
       revenueShare: totalRevenue > 0 ? Number(r.revenue || 0) / totalRevenue : 0,
     }));
     out.sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
-    // Truy vấn thứ hai, chỉ khi UI cần con số quà. Mặc định `false` ⇒ không tốn
-    // query, và `0` giữ shape ổn định cho UI đọc một đường duy nhất.
+    // Truy vấn thứ hai, chỉ chạy khi `excludeGifts` (mặc định true) — tức là
+    // MẶC ĐỊNH LUÔN tốn 2 query, không phải 1. Cần nó vì hai con số phải cùng
+    // nói về MỘT tập đơn (bảng đã loại quà thì không ai biết quà đã phát bao
+    // nhiêu). Khi false ⇒ `totalGiftQty = 0`, shape ổn định cho UI đọc một
+    // đường duy nhất, và bảng đã chứa cả quà nên không cần đếm lần hai.
     let totalGiftQty = 0;
     if (excludeGifts) {
       const giftConds = [

@@ -15,8 +15,10 @@
  *
  * DỌN DẸP BẮT BUỘC (try/finally): assertion 3.6 của `test-analytics-doanhso`
  * đối chiếu `topEditions.totalQty` với SQL gốc KHÔNG lọc `is_gift_line`.
- * Để lại dòng quà của đơn COMPLETED ở DB test chung ⇒ 3.6 đỏ. Suite này vì thế
- * phải đặt TRƯỚC `test-analytics-doanhso` trong `scripts/run-isolated.ts`.
+ * Để lại dòng quà của đơn COMPLETED ở DB test chung ⇒ 3.6 đỏ. Suite này dọn
+ * trong `finally` nên thứ tự không ảnh hưởng kết quả; vẫn đặt TRƯỚC
+ * `test-analytics-doanhso` trong `scripts/run-isolated.ts` theo yêu cầu brief
+ * để không mở cửa sổ dữ liệu lệch.
  *
  * Chạy: npx tsx scripts/run-isolated.ts --only=test-top-gifts-locked
  */
@@ -53,6 +55,11 @@ async function run() {
   const giftLineId = `oi-tgl-g-${uid()}`;
 
   try {
+    // MỐC ĐO TRƯỚC: các suite quà chạy trước trong ALL_SUITES (test-gift-forgery…)
+    // để lại dòng quà trong DB test chung. `totalGiftQty` cộng cả chúng ⇒ phải
+    // so DELTA, không so tuyệt đối — cùng một luật, không phụ thuộc thứ tự chạy.
+    const beforeGiftQty = (await AnalyticsService.topEditions({}, 1)).totalGiftQty;
+
     await db.insert(products).values([
       { id: normalProductId, code: normalCode, name: 'Hàng bán thật (TGL)' },
       { id: giftProductId, code: giftCode, name: 'Quà tặng 0đ (TGL)' },
@@ -109,12 +116,13 @@ async function run() {
       !defGift,
       `món quà ${defGift ? 'CÓ mặt (sai)' : 'vắng mặt (đúng)'}, items=${def.items.length}`
     );
-    // `totalGiftQty` cộng MỌI dòng quà trong DB test chung (không lọc kho/kỳ
-    // riêng của fixture) ⇒ so sánh ">=", không so bằng tuyệt đối.
+    // So DELTA chứ không so tuyệt đối: truy vấn `totalGiftQty` không lọc kho
+    // nên nó cộng cả dòng quà của suite khác trong DB test chung. Hiệu đúng
+    // GIFT_QTY mới chứng minh nhánh đếm quà thật sự chạy và thấy fixture này.
     ok(
-      '3. totalGiftQty đếm được quà đã phát',
-      def.totalGiftQty >= GIFT_QTY,
-      `totalGiftQty=${def.totalGiftQty} >= ${GIFT_QTY}`
+      '3. totalGiftQty đếm đúng lượng quà của fixture',
+      def.totalGiftQty - beforeGiftQty === GIFT_QTY,
+      `trước=${beforeGiftQty}, sau=${def.totalGiftQty}, hiệu=${def.totalGiftQty - beforeGiftQty} (cần = ${GIFT_QTY})`
     );
 
     // (b) Cờ vẫn còn hoạt động: tắt loại quà ⇒ dòng quà phải xuất hiện.
@@ -122,8 +130,10 @@ async function run() {
     const incGift = inc.items.find((i) => i.code === giftCode);
     ok(
       '4. excludeGifts=false thì dòng quà CÓ mặt (cờ còn sống)',
-      !!incGift && incGift.qty === GIFT_QTY,
-      incGift ? `qty=${incGift.qty}, revenue=${incGift.revenue}` : 'KHÔNG THẤY'
+      !!incGift && incGift.qty === GIFT_QTY && inc.totalGiftQty === 0,
+      incGift
+        ? `qty=${incGift.qty}, revenue=${incGift.revenue}, totalGiftQty=${inc.totalGiftQty} (phải 0)`
+        : 'KHÔNG THẤY'
     );
   } finally {
     // BẮT BUỘC kể cả khi insert/assert lỗi giữa chừng — xem cảnh báo 3.6 ở đầu file.

@@ -163,11 +163,9 @@ const ALL_SUITES = [
   // test-analytics-doanhso không loại is_gift_line trong khi topEditions thì có
   // ⇒ đặt sai chỗ là suite hậu kỳ này tự nó làm ĐỎ dữ liệu của suite sau.
   'scripts/test-gift-completed-only.ts',
-  // THỨ TỰ BẮT BUỘC, KHÔNG ĐẢO: suite này tự tạo đơn COMPLETED có dòng quà để
-  // khóa mặc định loại quà của topEditions. Nó dọn sạch trong finally, nhưng nếu
-  // đặt SAU `test-analytics-doanhso` thì SQL gốc của assertion 3.6 (không lọc
-  // is_gift_line) không còn dòng quà nào để đối chiếu ⇒ 3.6 xanh giả. Đặt
-  // TRƯỚC để 3.6 vẫn đối chiếu trên DB có dữ liệu thật.
+  // Khóa mặc định loại quà của topEditions (Task 3). Suite tự dọn trong
+  // `finally` nên thứ tự không ảnh hưởng kết quả; vẫn đặt TRƯỚC
+  // `test-analytics-doanhso` theo yêu cầu brief để không mở cửa sổ dữ liệu lệch.
   'scripts/test-top-gifts-locked.ts',
   'scripts/test-analytics-doanhso.ts',
 ];
