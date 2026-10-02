@@ -5,15 +5,12 @@ import { createPortal } from 'react-dom';
 import {
   Receipt,
   Banknote,
-  QrCode,
-  CreditCard,
   AlertTriangle,
   CheckCircle2,
   XCircle,
   Printer,
   Calendar,
   Building2,
-  TrendingUp,
   Package,
   Boxes,
   ShieldAlert,
@@ -22,10 +19,7 @@ import {
   X,
   Lock,
   Layers,
-  Percent,
-  Trophy,
   Coins,
-  ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Flame,
@@ -38,6 +32,7 @@ import {
   getStockRowHighlightClass,
   STOCK_THRESHOLD_WARNING,
 } from '@/lib/stock-highlight';
+import { sortByStock, filterLowStock, sortLabel } from '@/lib/stocktake-order';
 
 interface DailyFairSettlementModalProps {
   isOpen: boolean;
@@ -267,7 +262,6 @@ export function DailyFairSettlementModal({
   const [isLoading, setIsLoading] = useState(false);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
   const [warehouseList, setWarehouseList] = useState<any[]>([]);
-  const [discountDisplayMode, setDiscountDisplayMode] = useState<'PERCENT' | 'VND'>('PERCENT');
   // Ngày mặc định phải là NGÀY NGHIỆP VỤ VIỆT NAM. Trước đây dùng
   // `toISOString().slice(0,10)` là ngày UTC ⇒ từ 00:00 đến 07:00 giờ VN, modal mở
   // báo cáo của HÔM QUA, lệch hẳn với cron chốt ngày theo giờ VN.
@@ -285,35 +279,22 @@ export function DailyFairSettlementModal({
   // theoreticalStock mà API đã trả sẵn. Nên bỏ ô nhập, chỉ hiện tồn lý thuyết và
   // nói rõ chưa kiểm kê, để không ai tưởng đã đếm.
   const [stocktakeNote, setStocktakeNote] = useState('');
-  // Sắp xếp bảng kiểm kê theo tồn lý thuyết: 'DEFAULT', 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
-  const [stocktakeSortMode, setStocktakeSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
+  // Sắp xếp bảng kiểm kê theo tồn lý thuyết. MẶC ĐỊNH 'ASC' (Bé → Lớn):
+  // người dùng luôn bấm nút này để xem sách sắp hết trước, nên thà mặc định
+  // luôn — bản in cũng xếp theo đúng thứ tự này. Chỉ còn 2 trạng thái vì
+  // thứ tự thô không mang ý nghĩa gì khi đối chiếu.
+  const [stocktakeSortMode, setStocktakeSortMode] = useState<'ASC' | 'DESC'>('ASC');
   // Lọc chỉ hiển thị các đầu sách sắp hết (tồn lý thuyết <= 5 cuốn)
   const [stocktakeOnlyLow, setStocktakeOnlyLow] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
 
-  // Danh sách kiểm kê có sắp xếp và lọc theo nhu cầu đối soát cuối ngày
+  // Danh sách kiểm kê có sắp xếp và lọc theo nhu cầu đối soát cuối ngày.
+  // Dùng CHUNG helper với bản in (`stocktake-order.ts`) để giấy in luôn khớp
+  // đúng cái người dùng đang đọc trên màn.
   const sortedStocktakeList = useMemo(() => {
     const list = Array.isArray(data?.inventoryReconciliation) ? data.inventoryReconciliation : [];
-    let res = list;
-    if (stocktakeOnlyLow) {
-      res = res.filter((it: any) => Number(it.theoreticalStock || 0) <= STOCK_THRESHOLD_WARNING);
-    }
-    if (stocktakeSortMode === 'ASC') {
-      res = [...res].sort((a: any, b: any) => {
-        const aT = Number(a.theoreticalStock || 0);
-        const bT = Number(b.theoreticalStock || 0);
-        if (aT !== bT) return aT - bT;
-        return (a.code || '').localeCompare(b.code || '');
-      });
-    } else if (stocktakeSortMode === 'DESC') {
-      res = [...res].sort((a: any, b: any) => {
-        const aT = Number(a.theoreticalStock || 0);
-        const bT = Number(b.theoreticalStock || 0);
-        if (aT !== bT) return bT - aT;
-        return (a.code || '').localeCompare(b.code || '');
-      });
-    }
-    return res;
+    const base = stocktakeOnlyLow ? filterLowStock(list) : list;
+    return sortByStock(base, stocktakeSortMode);
   }, [data?.inventoryReconciliation, stocktakeSortMode, stocktakeOnlyLow]);
 
   // Số lượng đầu sách có tồn lý thuyết <= 5 cuốn
@@ -489,8 +470,18 @@ export function DailyFairSettlementModal({
   const bandBarH = (n: number) => (n > 0 ? Math.max(6, Math.round((n / maxHourOrders) * BAND_PLOT_H)) : 2);
 
   // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
-  const soldOnlyRows: any[] = (data?.inventoryReconciliation || []).filter(
-    (it: any) => Number(it.soldToday || 0) > 0
+  // Xếp theo cột "Tồn còn" bé → lớn, dùng CHUNG hàm với màn hình kiểm kê, để
+  // người đối chiếu thấy đúng thứ tự đang đọc.
+  const soldOnlyRows: any[] = sortByStock(
+    (data?.inventoryReconciliation || []).filter((it: any) => Number(it.soldToday || 0) > 0),
+    'ASC'
+  );
+  // Bảng những cuốn CẦN ĐẾM lúc đóng thùng: tồn ≤ ngưỡng, xếp tồn bé → lớn.
+  // Cố ý KHÔNG phụ thuộc bộ lọc trên màn hình: giấy in phải luôn giống nhau bất
+  // kể người dùng đang bật/tắt gì, nếu không bản in và màn hẻ lệch nhau.
+  const lowStockRows: any[] = sortByStock(
+    filterLowStock(data?.inventoryReconciliation || []),
+    'ASC'
   );
   const soldTodayTotal =
     data?.financials?.totalItemsSold ??
@@ -734,19 +725,6 @@ export function DailyFairSettlementModal({
           </div>
 
           <div className="flex items-center gap-2 mb-2">
-            <button
-              type="button"
-              onClick={() => setDiscountDisplayMode((prev) => (prev === 'PERCENT' ? 'VND' : 'PERCENT'))}
-              className="px-2.5 py-1 text-xs font-bold rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 shadow-sm transition"
-              title="Chuyển đổi cách hiển thị chiết khấu giữa % và số tiền VNĐ"
-            >
-              <Percent className="w-3.5 h-3.5 text-amber-600" />
-              <span>Đơn vị CK:</span>
-              <span className="font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-extrabold text-[11px]">
-                {discountDisplayMode === 'PERCENT' ? '%' : 'VNĐ'}
-              </span>
-            </button>
-
             <button
               onClick={fetchSettlement}
               className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-slate-200 transition"
@@ -1047,15 +1025,8 @@ export function DailyFairSettlementModal({
                         {/* Chip lọc nhanh sách sắp hết */}
                         <button
                           type="button"
-                          onClick={() => {
-                            setStocktakeOnlyLow((prev) => {
-                              const next = !prev;
-                              if (next && stocktakeSortMode === 'DEFAULT') {
-                                setStocktakeSortMode('ASC');
-                              }
-                              return next;
-                            });
-                          }}
+                          aria-pressed={stocktakeOnlyLow}
+                          onClick={() => setStocktakeOnlyLow((prev) => !prev)}
                           className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
                             stocktakeOnlyLow
                               ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200'
@@ -1077,32 +1048,23 @@ export function DailyFairSettlementModal({
                         {/* Nút sắp xếp */}
                         <button
                           type="button"
-                          onClick={() => {
-                            setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'));
-                          }}
+                          onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
                           className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
                             stocktakeSortMode === 'ASC'
                               ? 'bg-rose-50/80 text-rose-800 border-rose-300'
-                              : stocktakeSortMode === 'DESC'
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
-                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-300'
                           }`}
                           title="Đổi chiều sắp xếp tồn lý thuyết"
                         >
                           {stocktakeSortMode === 'ASC' ? (
                             <>
                               <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
-                              <span>Tồn: Bé → Lớn</span>
-                            </>
-                          ) : stocktakeSortMode === 'DESC' ? (
-                            <>
-                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>Tồn: Lớn → Bé</span>
+                              <span>Tồn: {sortLabel('ASC')}</span>
                             </>
                           ) : (
                             <>
-                              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Sắp xếp tồn</span>
+                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Tồn: {sortLabel('DESC')}</span>
                             </>
                           )}
                         </button>
@@ -1120,20 +1082,18 @@ export function DailyFairSettlementModal({
                               scope="col"
                               role="button"
                               tabIndex={0}
-                              onClick={() => setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'))}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT')); } }}
-                              aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : stocktakeSortMode === 'DESC' ? 'descending' : 'none'}
-                              title="Bấm để sắp xếp tồn lý thuyết: Bé → Lớn (xem sách sắp hết) hoặc Lớn → Bé"
+                              onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); } }}
+                              aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : 'descending'}
+                              title={`Bấm để đổi chiều sắp xếp tồn lý thuyết. Đang xếp: ${sortLabel(stocktakeSortMode)}`}
                               className="p-3 text-center w-36 cursor-pointer select-none hover:bg-slate-200 transition-colors"
                             >
                               <div className="flex items-center justify-center gap-1.5">
                                 <span>Tồn lý thuyết</span>
                                 {stocktakeSortMode === 'ASC' ? (
                                   <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                ) : stocktakeSortMode === 'DESC' ? (
-                                  <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                 ) : (
-                                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                 )}
                               </div>
                               <span className="block font-normal text-[10px] text-slate-500">
@@ -1249,7 +1209,7 @@ export function DailyFairSettlementModal({
                             <th className="p-3">Mã Đơn</th>
                             <th className="p-3">Thu Ngân</th>
                             <th className="p-3 text-right">Giá Gốc</th>
-                            <th className="p-3 text-center">{discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ CK' : 'Chiết Khấu'}</th>
+                            <th className="p-3 text-center">Chiết Khấu</th>
                             <th className="p-3 text-right">Thực Thu</th>
                             <th className="p-3 text-center">Phương Thức</th>
                             <th className="p-3">Người Duyệt</th>
@@ -1271,21 +1231,15 @@ export function DailyFairSettlementModal({
                                   {(ord.subtotal || 0).toLocaleString('vi-VN')} đ
                                 </td>
                                 <td className="p-3 text-center font-mono font-bold text-rose-600">
-                                  {discountDisplayMode === 'PERCENT' ? (
-                                    <div>
-                                      <span>{Math.round((ord.discountRate || 0) * 100)}%</span>
-                                      <span className="block text-[10px] text-slate-400 font-normal">
-                                        -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      <span>-{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ</span>
-                                      <span className="block text-[10px] text-slate-400 font-normal">
-                                        {Math.round((ord.discountRate || 0) * 100)}%
-                                      </span>
-                                    </div>
-                                  )}
+                                  {/* Tiền thật là số chính, tỉ lệ là số phụ. Trước đây
+                                      người dùng phải bấm nút đổi đơn vị để xem được
+                                      số còn lại, dễ đọc nhầm tỉ lệ thành tổng chiết khấu. */}
+                                  <span>
+                                    -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
+                                  </span>
+                                  <span className="block text-[10px] text-slate-400 font-normal">
+                                    {Math.round((ord.discountRate || 0) * 100)}%
+                                  </span>
                                 </td>
                                 <td className="p-3 text-right font-mono font-bold text-slate-900">
                                   {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
@@ -1603,6 +1557,52 @@ export function DailyFairSettlementModal({
                   Ghi chú đóng thùng: {stocktakeNote}
                 </p>
               )}
+            </div>
+
+            {/* VI. SẮP HẾT — nhóm phải đếm lúc đóng thùng.
+                Trước đây bản in KHÔNG có bảng này: chỉ in ấn phẩm đã bán trong
+                ngày, nên cuốn sắp hết mà hôm nay không bán được cuốn nào không
+                có mặt trên giấy — đúng nhóm nhân viên cần đếm nhất. */}
+            <div className="print-block mb-4 font-sans">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
+                VI. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) — CẦN ĐẾM CUỐI NGÀY
+              </h3>
+              <table className="w-full border-collapse border border-slate-300 text-[11.5px]">
+                <thead>
+                  <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
+                    <th className="border border-slate-300 py-1 px-2 w-10">#</th>
+                    <th className="border border-slate-300 py-1 px-2 w-20">Mã</th>
+                    <th className="border border-slate-300 py-1 px-2 text-left">Tên ấn phẩm</th>
+                    <th className="border border-slate-300 py-1 px-2 w-24 text-right">Tồn còn</th>
+                    <th className="border border-slate-300 py-1 px-2 w-32 text-center">Số đếm thực tế</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lowStockRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="border border-slate-300 py-2 px-2 text-center text-slate-500 italic">
+                        Không có ấn phẩm nào tồn ≤ {STOCK_THRESHOLD_WARNING} cuốn.
+                      </td>
+                    </tr>
+                  ) : (
+                    lowStockRows.map((it: any, idx: number) => (
+                      <tr key={it.editionId}>
+                        <td className="border border-slate-300 py-1 px-2 text-center font-mono text-slate-600">{idx + 1}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-center font-mono font-bold text-slate-900">{it.code}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-slate-900">{it.title}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-right font-mono font-bold text-slate-900">
+                          {it.theoreticalStock}
+                        </td>
+                        {/* Hệ thống KHÔNG lưu số đếm — để trống cho nhân viên điền tay. */}
+                        <td className="border border-slate-300 py-1 px-2" />
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              <p className="text-[11.5px] italic mt-1 text-slate-600">
+                Xếp theo tồn {sortLabel('ASC').toLowerCase()}. Số đếm thực tế do nhân viên điền tay — hệ thống chưa lưu số đếm.
+              </p>
             </div>
 
             {/* V. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT */}
