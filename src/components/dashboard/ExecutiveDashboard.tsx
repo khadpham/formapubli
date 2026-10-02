@@ -27,6 +27,7 @@ import { TopProductsCard } from '@/components/dashboard/TopProductsCard';
 import { TopOrdersCard } from '@/components/dashboard/TopOrdersCard';
 import { ChannelMixCard } from '@/components/dashboard/ChannelMixCard';
 import { PaymentMixCard } from '@/components/dashboard/PaymentMixCard';
+import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
 // Mọi phép tính ngày/giờ đã dời sang đây: trước đây mỗi màn hình tự viết một
 // bản và bản sai đã làm biểu đồ lệch 7 tiếng. Re-export `vnBusinessDay` để nơi
 // gọi cũ (và test) không phải đổi đường dẫn import.
@@ -133,6 +134,7 @@ export function ExecutiveDashboard({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [isLiveMonitorOpen, setIsLiveMonitorOpen] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [stockSummary, setStockSummary] = useState<{
     titlesWithStock: number;
@@ -750,7 +752,7 @@ export function ExecutiveDashboard({
         <TopProductsCard
           warehouseId={selectedWarehouseId !== 'ALL' ? selectedWarehouseId : undefined}
         />
-        <TopOrdersCard orders={orders} />
+        <TopOrdersCard orders={orders} onSelectOrder={setSelectedOrderId} />
         {/* Cột thứ ba xếp hai thẻ nhỏ chồng lên nhau ở màn rộng, tách ngang ở
             màn vừa — để khoảng trống của ô donut không thành một ô trống. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
@@ -803,7 +805,14 @@ export function ExecutiveDashboard({
                 orders.slice(0, 5).map((ord) => (
                   <tr key={ord.id} className="hover:bg-slate-50/80">
                     <td className="p-3.5 font-mono font-bold text-indigo-700">
-                      {ord.orderCode}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderId(ord.id)}
+                        className="hover:text-indigo-900 hover:underline cursor-pointer text-left transition-colors"
+                        title={`Bấm để xem chi tiết đơn ${ord.orderCode}`}
+                      >
+                        {ord.orderCode}
+                      </button>
                     </td>
                     <td className="p-3.5 font-medium text-slate-800">
                       {ord.customerName || 'Khách lẻ'}
@@ -862,6 +871,15 @@ export function ExecutiveDashboard({
         isOpen={isLiveMonitorOpen}
         onClose={() => setIsLiveMonitorOpen(false)}
         warehouseId={liveMonitorWarehouseId}
+      />
+
+      {/* Modal Chi Tiết Đơn Hàng Dùng Chung & Thao Tác Hủy Đơn An Toàn */}
+      <OrderDetailModal
+        orderId={selectedOrderId}
+        isOpen={!!selectedOrderId}
+        onClose={() => setSelectedOrderId(null)}
+        currentRole={currentRole}
+        onOrderVoided={() => fetchDashboardData()}
       />
     </div>
   );

@@ -11,9 +11,11 @@ import { Receipt } from 'lucide-react';
 export function TopOrdersCard({
   orders,
   className = '',
+  onSelectOrder,
 }: {
   orders: any[];
   className?: string;
+  onSelectOrder?: (orderId: string) => void;
 }) {
   const top = React.useMemo(
     () =>
@@ -36,7 +38,7 @@ export function TopOrdersCard({
             Top 5 đơn giá trị cao
           </h3>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Thanh ngang theo thực thu, kèm số cuốn trong đơn
+            Thanh ngang theo thực thu {onSelectOrder ? '(bấm mã đơn để xem chi tiết)' : 'kèm số cuốn trong đơn'}
           </p>
         </div>
       </div>
@@ -67,18 +69,39 @@ export function TopOrdersCard({
             if (giftQty > 0)
               parts.push(`${giftQty.toLocaleString('vi-VN')} cuốn quà`);
             const pct = Math.max(4, Math.round((amount / maxAmount) * 100));
+            const orderId = o.id ? String(o.id) : null;
+
             return (
               <div key={String(o.id ?? i)}>
                 <div className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="font-mono font-bold text-indigo-700 truncate">
-                    {String(o.orderCode || '—')}
-                    {parts.length > 0 && (
-                      <span className="font-sans font-normal text-slate-500">
-                        {' '}
-                        · {parts.join(', ')}
+                  {onSelectOrder && orderId ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectOrder(orderId)}
+                      className="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer truncate text-left flex items-center gap-1 group transition-colors"
+                      title={`Bấm để xem chi tiết đơn ${String(o.orderCode || '')}`}
+                    >
+                      <span className="truncate group-hover:underline">
+                        {String(o.orderCode || '—')}
                       </span>
-                    )}
-                  </span>
+                      {parts.length > 0 && (
+                        <span className="font-sans font-normal text-slate-500 shrink-0">
+                          {' '}
+                          · {parts.join(', ')}
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="font-mono font-bold text-indigo-700 truncate">
+                      {String(o.orderCode || '—')}
+                      {parts.length > 0 && (
+                        <span className="font-sans font-normal text-slate-500">
+                          {' '}
+                          · {parts.join(', ')}
+                        </span>
+                      )}
+                    </span>
+                  )}
                   <span className="font-mono tabular-nums text-slate-600 shrink-0">
                     {amount.toLocaleString('vi-VN')} đ
                   </span>

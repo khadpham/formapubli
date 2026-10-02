@@ -986,29 +986,29 @@ export function DailyFairSettlementModal({
 
                   {/* Bảng sách kiểm kê */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                    <div className="px-3 py-2.5 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-[11px] text-amber-900 flex-1 min-w-[260px]">
+                    <div className="p-3 sm:p-3.5 bg-amber-50 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <p className="text-[11px] text-amber-900 leading-relaxed flex-1 min-w-0">
                         Cột “Kiểm kê thực tế” chưa có dữ liệu: hệ thống chưa lưu số đếm, và
                         quy trình hiện tại không đếm sách cuối ngày. Số tồn dùng để đối chiếu là
                         <strong> tồn lý thuyết</strong> = tồn trong kho − số đã bán.
                       </p>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
                         {/* Chip lọc nhanh sách sắp hết */}
                         <button
                           type="button"
                           aria-pressed={stocktakeOnlyLow}
                           onClick={() => setStocktakeOnlyLow((prev) => !prev)}
-                          className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
+                          className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shadow-sm ${
                             stocktakeOnlyLow
                               ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200'
                               : 'bg-white hover:bg-rose-50/50 text-slate-700 border-slate-300'
                           }`}
                           title="Chỉ hiển thị các đầu sách có tồn lý thuyết ≤ 5 cuốn"
                         >
-                          <Flame className={`w-3.5 h-3.5 ${stocktakeOnlyLow ? 'text-rose-600' : 'text-amber-500'}`} />
+                          <Flame className={`w-3.5 h-3.5 shrink-0 ${stocktakeOnlyLow ? 'text-rose-600' : 'text-amber-500'}`} />
                           <span>Sắp hết (≤ 5)</span>
                           <span
-                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                               stocktakeOnlyLow ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-600'
                             }`}
                           >
@@ -1020,21 +1020,21 @@ export function DailyFairSettlementModal({
                         <button
                           type="button"
                           onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
-                          className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
+                          className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shadow-sm ${
                             stocktakeSortMode === 'ASC'
-                              ? 'bg-rose-50/80 text-rose-800 border-rose-300'
-                              : 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                              ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-300 ring-2 ring-indigo-100'
                           }`}
                           title="Đổi chiều sắp xếp tồn lý thuyết"
                         >
                           {stocktakeSortMode === 'ASC' ? (
                             <>
-                              <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
+                              <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                               <span>Tồn: {sortLabel('ASC')}</span>
                             </>
                           ) : (
                             <>
-                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                               <span>Tồn: {sortLabel('DESC')}</span>
                             </>
                           )}
@@ -1057,9 +1057,9 @@ export function DailyFairSettlementModal({
                               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); } }}
                               aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : 'descending'}
                               title={`Bấm để đổi chiều sắp xếp tồn lý thuyết. Đang xếp: ${sortLabel(stocktakeSortMode)}`}
-                              className="p-3 text-center w-36 cursor-pointer select-none hover:bg-slate-200 transition-colors"
+                              className="p-3 text-center min-w-[130px] cursor-pointer select-none hover:bg-slate-200 transition-colors"
                             >
-                              <div className="flex items-center justify-center gap-1.5">
+                              <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
                                 <span>Tồn lý thuyết</span>
                                 {stocktakeSortMode === 'ASC' ? (
                                   <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
@@ -1067,7 +1067,7 @@ export function DailyFairSettlementModal({
                                   <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                 )}
                               </div>
-                              <span className="block font-normal text-[10px] text-slate-500">
+                              <span className="block font-normal text-[10px] text-slate-500 whitespace-nowrap">
                                 {stocktakeSortMode === 'ASC' ? '▲ Bé → Lớn' : stocktakeSortMode === 'DESC' ? '▼ Lớn → Bé' : 'Bấm để xếp'}
                               </span>
                             </th>
