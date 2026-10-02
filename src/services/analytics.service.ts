@@ -255,7 +255,7 @@ export class AnalyticsService {
    * và trả thêm `totalGiftQty`. Mặc định false giữ hành vi cũ cho tab "Bán hàng"
    * (không được đổi một số nào); true thì bảng chỉ còn hàng khách thực mua.
    */
-  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = false) {
+  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true) {
     const conds = [
       eq(orders.status, 'COMPLETED'),
       sql`${orders.discountRate} < 1`,
@@ -270,7 +270,10 @@ export class AnalyticsService {
     // chạy nhất" dù không đem về đồng nào. Nhưng CẦN biết quà đã phát bao
     // nhiêu ⇒ `totalGiftQty` ở dưới, cùng bộ lọc (kho + ngày + COMPLETED) để
     // hai con số cùng nói về MỘT tập đơn, không lệch nhau.
-    if (excludeGifts) conds.push(sql`${orderItems.isGiftLine} = 0`);
+    if (excludeGifts) {
+      conds.push(sql`${orderItems.isGiftLine} = 0`);
+      conds.push(sql`${orderItems.totalAmount} > 0`);
+    }
     const rows = await db
       .select({
         editionId: orderItems.editionId,

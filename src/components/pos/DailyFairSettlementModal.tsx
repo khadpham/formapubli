@@ -777,10 +777,17 @@ export function DailyFairSettlementModal({
                       thứ bán được bao nhiêu, không phải thứ chiết khấu bao nhiêu.
                       Tab Chiết Khấu giữ bảng đơn vượt trần + cảnh báo tỷ lệ. */}
                   <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-                    <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <TrendingUp className="w-4 h-4 text-emerald-600" />
-                      Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng
-                    </h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingUp className="w-4 h-4 text-emerald-600" />
+                        Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng
+                      </h4>
+                      {data.giftSummary?.totalGiftCopies > 0 && (
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                          Tách riêng {data.giftSummary.totalGiftCopies} quà tặng
+                        </span>
+                      )}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                       {data.topSellers?.map((seller: any, idx: number) => (
                         <div
@@ -824,6 +831,17 @@ export function DailyFairSettlementModal({
                         </div>
                       ))}
                     </div>
+
+                    {data.giftSummary?.totalGiftCopies > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span className="font-medium text-slate-600">
+                          🎁 Quà tặng kèm đã phát trong ngày (không tính vào bán chạy):
+                        </span>
+                        <span className="font-bold font-mono text-rose-700">
+                          {data.giftSummary.totalGiftCopies} món ({data.giftSummary.items?.map((g: any) => `${g.title} ×${g.copies}`).join(', ')})
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* KPI Cards */}
@@ -1888,6 +1906,11 @@ export function DailyFairSettlementModal({
                     )}
                   </tbody>
                 </table>
+                {data.giftSummary?.totalGiftCopies > 0 && (
+                  <p className="mt-1.5 text-[11px] text-slate-600 italic">
+                    * Đã phát {data.giftSummary.totalGiftCopies} phần quà tặng kèm ({data.giftSummary.items?.map((g: any) => `${g.title}: ${g.copies}`).join(', ')}) — không tính vào doanh số bán chạy.
+                  </p>
+                )}
               </div>
             </div>
 
