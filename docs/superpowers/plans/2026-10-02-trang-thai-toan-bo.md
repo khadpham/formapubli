@@ -463,3 +463,29 @@ vào sách, KHÔNG phải hệ thống tự thêm sách. Nếu muốn phiếu gh
 3. Nghiệm thu tầng 3 trên production: tạo 1 đơn có duyệt chiết khấu 100% tại
    kho hội chợ, kiểm màn biên lai hiện đúng tên kho + "1 cuốn".
 4. Cân nhắc thêm dòng "Quà tặng" riêng trên phiếu (chưa làm, cần chủ quyết).
+
+## 5. Kết quả deploy (chiều 02/10/2026)
+
+| Việc | Kết quả |
+|---|---|
+| Commit | `85acbb1` trên `fix/discount-approval-order-code` (chưa merge `main`, không đụng commit trên `main`) |
+| Migration `0035` lên production | ✅ chạy `npx tsx scripts/apply-0035-prod.ts` — orders 111 → 111, approvals 20 → 20 (không mất dữ liệu), `foreign_key_check` sạch, `integrity_check ok` |
+| Build | ✅ `npm run build` sạch |
+| Deploy | ✅ worker `formapubli`, Version ID **`ba03a1c7-e532-4d46-bd78-8e97e5523024`** |
+| Smoke HTTP | ✅ `GET /` → 200; `GET /api/auth/me` → `AUTH_REQUIRED` (worker + binding DB đang sống) |
+| Chưa làm | Chưa merge vào `main`; chưa nghiệm thu bằng tay trên điện thoại; chưa chạy `verify-pos-live.ts` (sẽ tạo 1 đơn thật — cần chủ quyết) |
+
+### Cách nghiệm thu trên điện thoại (2 phút)
+1. Mở POS, chọn kho **Hội chợ Hồ gươm**.
+2. Bán 1 cuốn có chiết khấu 100% (duyệt một chạm) → màn "Bán Hàng Thành Công" phải hiện:
+   - `Kho xuất: Hội chợ Hồ gươm` (không phải "Kho Quỳnh Mai")
+   - `Tổng số sách: 1 cuốn`
+   - `MÃ ĐƠN:` dạng `ORD261002xxxx` (13 ký tự)
+3. In biên lai → cùng hai số đó.
+
+### Quy tắc mới rút ra (đừng viết lại)
+- **Cấm map cứng `warehouseId → tên kho`.** Kho hội chợ được tạo mới theo từng sự kiện
+  (`wh-kho-hoi-cho-ho-guom`, `wh-kho-dh-ha-noi-thang-10-2026`) nên mọi map cứng đều
+  sẽ in nhầm tên. Lấy tên từ `/api/warehouses`, thiếu thì hiện MÃ kho.
+- **"Số sách" ≠ `totalQuantity`.** `totalQuantity` = tổng mọi dòng hàng gồm quà hàng
+  hóa. Muốn số cuốn thì dùng `bookQuantity` (server đếm dòng có `edition_id`).
