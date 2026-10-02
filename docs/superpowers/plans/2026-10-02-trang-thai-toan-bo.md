@@ -553,3 +553,30 @@ Nhánh `feat/settlement-overhaul`, 6 commit, `tsc` sạch, **7/7 suite cách ly 
 2. Tab Kiểm Kê mở ra đã xếp tồn bé→lớn, không cần bấm.
 3. Bấm `In Báo Cáo` → giấy có mục IV (đã bán) và VI (sắp hết), cùng xếp tồn bé→lớn.
 4. Trạng Thái Hội Chợ → chọn 1 kho, đóng mở lại thì kho còn đúng, ngày về hôm nay.
+
+## 8. Deploy + review (02/10/2026 18:49)
+
+| Việc | Kết quả |
+|---|---|
+| Version ID | **`3cec35f9-d86d-4bc7-8d06-9a25c9176e61`** (100% traffic) |
+| main | `9a90226` — đã rebase lên `99725cf` của agent khác rồi mới push |
+| Kiểm chứng HTTP thật | Đăng nhập 200 · `/` 200 · live-monitor lọc kho + chọn ngày OK · `largestOrder` OK · `pendingQr` có mặt |
+| Số tiền thật | Hồ Gươm 02/10: thực thu 11.570.400đ = 1.644.900đ tiền mặt + 9.925.500đ chuyển khoản ✓ |
+
+### Đã chạy review độc lập — tìm ra 8 lỗi, đã sửa hết
+| # | Lỗi | Hậu quả |
+|---|---|---|
+| 1 | Chọn "Tất cả kho hội chợ" không có tác dụng (ref fallback về prop) | Quản lý tưởng xem cả hội chợ, thực ra xem 1 gian hàng |
+| 2 | Đổi kho/ngày không nạp lại, chờ poll 10–40s | Chọn "hôm qua" thấy số hôm nay |
+| 3 | `itemCount` đếm SỐ DÒNG `order_items` | Đơn 3 dòng × 5 cuốn ra "3 SP" thay vì 15 |
+| 4 | Đơn lớn nhất không có tie-break | Thẻ nhảy qua lại khi hoà tiền |
+| 5 | Bản in ra mục VI trước mục V | Biên bản khách in sai thứ tự |
+| 6 | Test pending-qr hỏng 17/24 giờ trong ngày | CI đỏ bất ngờ |
+| 7 | Test để default `payment_method` giả | Case sau đỏ với nguyên nhân sai |
+| 8 | Dead code 3 biến | Gây nhiễu |
+
+**Nguyên nhân gốc khiến lỗi lọt:** test tự dùng **cùng giá trị sai** với code nên vẫn xanh — `pendingQr` lọc `QR_TRANSFER` trong khi hệ thống thật dùng `BANK_TRANSFER` ⇒ tính năng **luôn = 0**. Đã sửa và bổ sung assert chặn đúng lớp lỗi này.
+
+### Bài học đã lưu
+1. **Test dùng chung hằng/giá trị với code = test không bảo chứng được gì.** Giá trị phải lấy từ nguồn thật (schema), và nên có 1 test "phá code có chủ đích" để chứng minh test bắt lỗi.
+2. **Mọi thao tác trước khi deploy phải chạy lại sau rebase** — main tiến thêm 3 lần trong lúc làm.
