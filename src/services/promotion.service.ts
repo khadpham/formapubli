@@ -121,23 +121,26 @@ export const PromotionService = {
     await assertWarehouse(input.warehouseId);
 
     const id = `promo-${crypto.randomUUID()}`;
-    await db.insert(promotions).values({
-      id,
-      name,
-      isActive: input.isActive !== false,
-      startsAt: input.startsAt || null,
-      endsAt: input.endsAt || null,
-      warehouseId: input.warehouseId || null,
-    });
-    for (const g of gifts) {
-      await db.insert(promotionGifts).values({
-        id: `pg-${crypto.randomUUID()}`,
-        promotionId: id,
-        minSubtotal: g.minSubtotal,
-        productId: g.productId,
-        giftQuantity: g.giftQuantity,
+    // Bọc transaction: lỗi giữa vòng lặp không được để lại campaign THIẾU quà.
+    await db.transaction(async (tx) => {
+      await tx.insert(promotions).values({
+        id,
+        name,
+        isActive: input.isActive !== false,
+        startsAt: input.startsAt || null,
+        endsAt: input.endsAt || null,
+        warehouseId: input.warehouseId || null,
       });
-    }
+      for (const g of gifts) {
+        await tx.insert(promotionGifts).values({
+          id: `pg-${crypto.randomUUID()}`,
+          promotionId: id,
+          minSubtotal: g.minSubtotal,
+          productId: g.productId,
+          giftQuantity: g.giftQuantity,
+        });
+      }
+    });
     return { id, name };
   },
 
@@ -168,19 +171,24 @@ export const PromotionService = {
       await db.update(promotions).set({ warehouseId: input.warehouseId || null }).where(eq(promotions.id, id));
     }
     if (input.gifts !== undefined) {
-      if (!input.gifts.length) throw AppError.invalid('Cần ít nhất một dòng quà.');
-      input.gifts.forEach(assertGift);
-      await assertProductsExist(input.gifts);
-      await db.delete(promotionGifts).where(eq(promotionGifts.promotionId, id));
-      for (const g of input.gifts) {
-        await db.insert(promotionGifts).values({
-          id: `pg-${crypto.randomUUID()}`,
-          promotionId: id,
-          minSubtotal: g.minSubtotal,
-          productId: g.productId,
-          giftQuantity: g.giftQuantity,
-        });
-      }
+      const nextGifts = input.gifts;
+      if (!nextGifts.length) throw AppError.invalid('Cần ít nhất một dòng quà.');
+      nextGifts.forEach(assertGift);
+      await assertProductsExist(nextGifts);
+      // Bọc transaction: xoá-rồi-chèn-lại; lỗi giữa chừng KHÔNG được để campaign
+      // mất SẠCH quà (trước đây delete xong chèn lỗi là campaign rỗng).
+      await db.transaction(async (tx) => {
+        await tx.delete(promotionGifts).where(eq(promotionGifts.promotionId, id));
+        for (const g of nextGifts) {
+          await tx.insert(promotionGifts).values({
+            id: `pg-${crypto.randomUUID()}`,
+            promotionId: id,
+            minSubtotal: g.minSubtotal,
+            productId: g.productId,
+            giftQuantity: g.giftQuantity,
+          });
+        }
+      });
     }
     return { id };
   },

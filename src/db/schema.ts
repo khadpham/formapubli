@@ -27,6 +27,9 @@ export const products = sqliteTable('products', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   codeIdx: uniqueIndex('products_code_unique').on(table.code),
+  // 0031: partial unique WHERE barcode IS NOT NULL. Phải khai ở đây để schema
+  // khớp DB (trước đây thiếu ⇒ drizzle-kit generate coi là object lạ rồi xoá).
+  barcodeIdx: uniqueIndex('products_barcode_unique').on(table.barcode).where(sql`${table.barcode} IS NOT NULL`),
 }));
 
 // 0b. Promotions / promotion_gifts — chương trình khuyến mại (migration 0031).
