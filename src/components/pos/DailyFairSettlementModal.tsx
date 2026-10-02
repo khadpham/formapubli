@@ -1129,49 +1129,51 @@ export function DailyFairSettlementModal({
                       quy trình hiện tại không đếm sách cuối ngày. Số tồn dùng để đối chiếu là
                       <strong> tồn lý thuyết</strong> = tồn trong kho − số đã bán.
                     </p>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
-                          <th className="p-3 w-10 text-center">#</th>
-                          <th className="p-3">Ấn phẩm sách</th>
-                          <th className="p-3 text-right">Đã bán</th>
-                          <th className="p-3 text-center">Tồn lý thuyết</th>
-                          <th className="p-3 text-center w-32">Kiểm kê thực tế</th>
-                          <th className="p-3 text-center w-28">Chênh lệch</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {data.inventoryReconciliation?.map((it: any, idx: number) => {
-                          const actual = it.theoreticalStock;
+                    <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      <table className="w-full min-w-[620px] text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
+                            <th className="p-3 w-10 text-center">#</th>
+                            <th className="p-3">Ấn phẩm sách</th>
+                            <th className="p-3 text-right">Đã bán</th>
+                            <th className="p-3 text-center">Tồn lý thuyết</th>
+                            <th className="p-3 text-center w-32">Kiểm kê thực tế</th>
+                            <th className="p-3 text-center w-28">Chênh lệch</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {data.inventoryReconciliation?.map((it: any, idx: number) => {
+                            const actual = it.theoreticalStock;
 
-                          return (
-                            <tr key={it.editionId} className="hover:bg-slate-50">
-                              <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
-                              <td className="p-3">
-                                <p className="font-bold text-slate-800">
-                                  [{it.code}] {it.title}
-                                </p>
-                                <p className="text-[10px] text-slate-400 font-mono">
-                                  {it.productKind === 'GOODS' ? 'Giá bán' : 'Giá bìa'}: {(it.coverPrice || 0).toLocaleString('vi-VN')} đ
-                                </p>
-                              </td>
-                              <td className="p-3 text-right font-mono font-bold text-slate-600">
-                                {it.soldToday || 0}
-                              </td>
-                              <td className="p-3 text-center font-mono font-bold text-slate-900 bg-slate-50/50">
-                                {it.theoreticalStock}
-                              </td>
-                              <td className="p-3 text-center font-mono text-slate-400">
-                                {actual}
-                              </td>
-                              <td className="p-3 text-center">
-                                <span className="font-bold text-slate-400 font-mono">Chưa kiểm kê</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                            return (
+                              <tr key={it.editionId} className="hover:bg-slate-50">
+                                <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                                <td className="p-3">
+                                  <p className="font-bold text-slate-800">
+                                    [{it.code}] {it.title}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 font-mono">
+                                    {it.productKind === 'GOODS' ? 'Giá bán' : 'Giá bìa'}: {(it.coverPrice || 0).toLocaleString('vi-VN')} đ
+                                  </p>
+                                </td>
+                                <td className="p-3 text-right font-mono font-bold text-slate-600">
+                                  {it.soldToday || 0}
+                                </td>
+                                <td className="p-3 text-center font-mono font-bold text-slate-900 bg-slate-50/50">
+                                  {it.theoreticalStock}
+                                </td>
+                                <td className="p-3 text-center font-mono text-slate-400">
+                                  {actual}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className="font-bold text-slate-400 font-mono">Chưa kiểm kê</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   <div>
@@ -1231,64 +1233,66 @@ export function DailyFairSettlementModal({
                       </h4>
                     </div>
 
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-600 font-bold text-left border-b border-slate-200">
-                          <th className="p-3">Mã Đơn</th>
-                          <th className="p-3">Thu Ngân</th>
-                          <th className="p-3 text-right">Giá Gốc</th>
-                          <th className="p-3 text-center">{discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ CK' : 'Chiết Khấu'}</th>
-                          <th className="p-3 text-right">Thực Thu</th>
-                          <th className="p-3 text-center">Phương Thức</th>
-                          <th className="p-3">Người Duyệt</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {data.discountSupervision?.orders?.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="p-6 text-center text-slate-400 italic">
-                              Không có đơn hàng nào vượt trần chiết khấu 20% trong ngày.
-                            </td>
+                    <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      <table className="w-full min-w-[640px] text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-600 font-bold text-left border-b border-slate-200">
+                            <th className="p-3">Mã Đơn</th>
+                            <th className="p-3">Thu Ngân</th>
+                            <th className="p-3 text-right">Giá Gốc</th>
+                            <th className="p-3 text-center">{discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ CK' : 'Chiết Khấu'}</th>
+                            <th className="p-3 text-right">Thực Thu</th>
+                            <th className="p-3 text-center">Phương Thức</th>
+                            <th className="p-3">Người Duyệt</th>
                           </tr>
-                        ) : (
-                          data.discountSupervision?.orders?.map((ord: any) => (
-                            <tr key={ord.id} className="hover:bg-slate-50">
-                              <td className="p-3 font-mono font-bold text-slate-900">{ord.orderCode}</td>
-                              <td className="p-3 text-slate-600">{ord.cashierId}</td>
-                              <td className="p-3 text-right font-mono text-slate-500">
-                                {(ord.subtotal || 0).toLocaleString('vi-VN')} đ
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {data.discountSupervision?.orders?.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="p-6 text-center text-slate-400 italic">
+                                Không có đơn hàng nào vượt trần chiết khấu 20% trong ngày.
                               </td>
-                              <td className="p-3 text-center font-mono font-bold text-rose-600">
-                                {discountDisplayMode === 'PERCENT' ? (
-                                  <div>
-                                    <span>{Math.round((ord.discountRate || 0) * 100)}%</span>
-                                    <span className="block text-[10px] text-slate-400 font-normal">
-                                      -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <div>
-                                    <span>-{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ</span>
-                                    <span className="block text-[10px] text-slate-400 font-normal">
-                                      {Math.round((ord.discountRate || 0) * 100)}%
-                                    </span>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="p-3 text-right font-mono font-bold text-slate-900">
-                                {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
-                              </td>
-                              <td className="p-3 text-center">
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 font-mono">
-                                  {ord.approvalMethod}
-                                </span>
-                              </td>
-                              <td className="p-3 font-semibold text-slate-700">{ord.approvedBy}</td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          ) : (
+                            data.discountSupervision?.orders?.map((ord: any) => (
+                              <tr key={ord.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-mono font-bold text-slate-900">{ord.orderCode}</td>
+                                <td className="p-3 text-slate-600">{ord.cashierId}</td>
+                                <td className="p-3 text-right font-mono text-slate-500">
+                                  {(ord.subtotal || 0).toLocaleString('vi-VN')} đ
+                                </td>
+                                <td className="p-3 text-center font-mono font-bold text-rose-600">
+                                  {discountDisplayMode === 'PERCENT' ? (
+                                    <div>
+                                      <span>{Math.round((ord.discountRate || 0) * 100)}%</span>
+                                      <span className="block text-[10px] text-slate-400 font-normal">
+                                        -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <span>-{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ</span>
+                                      <span className="block text-[10px] text-slate-400 font-normal">
+                                        {Math.round((ord.discountRate || 0) * 100)}%
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right font-mono font-bold text-slate-900">
+                                  {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 font-mono">
+                                    {ord.approvalMethod}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-semibold text-slate-700">{ord.approvedBy}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
