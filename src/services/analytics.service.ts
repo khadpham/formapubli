@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
+import { db, orders, orderItems, editions, products, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like, inArray } from 'drizzle-orm';
 import { businessDateOf, createdAtBetween, VN_UTC_OFFSET_MIN } from './order.service';
 
@@ -249,8 +249,13 @@ export class AnalyticsService {
   /** Sách bán chạy theo kỳ tùy chọn: group order_items của đơn COMPLETED trong range.
    * Trả lời "cuốn nào bán chạy nhất hôm nay / tuần này / tháng này" cho Owner/Manager.
    * - JOIN truc tiep editions (khong IN-list → khong vuot 999 bien SQLite).
-   * - Loai tang/tai tro/0d nhu salesByEdition. Loc kho qua orders.warehouseId. */
-  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string) {
+   * - Loai tang/tai tro/0d nhu salesByEdition. Loc kho qua orders.warehouseId.
+   *
+   * `excludeGifts` (tham số 4, MẶC ĐỊNH false) tách dòng quà tặng ra khỏi bảng
+   * và trả thêm `totalGiftQty`. Mặc định false giữ hành vi cũ cho tab "Bán hàng"
+   * (không được đổi một số nào); true thì bảng chỉ còn hàng khách thực mua.
+   */
+  static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = false) {
     const conds = [
       eq(orders.status, 'COMPLETED'),
       sql`${orders.discountRate} < 1`,
@@ -259,11 +264,20 @@ export class AnalyticsService {
     ];
     if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
     conds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
+    // VÌ SAO LỌC QUÀ Ở ĐÂY: bảng "Top bán chạy" trả lời "khách MUA gì", mà dòng
+    // quà (`is_gift_line = 1`) không phải do khách chọn — nó do chương trình
+    // khuyến mại chèn vào. Tính chung, cuốn quà leo lên top 5 và thành "bán
+    // chạy nhất" dù không đem về đồng nào. Nhưng CẦN biết quà đã phát bao
+    // nhiêu ⇒ `totalGiftQty` ở dưới, cùng bộ lọc (kho + ngày + COMPLETED) để
+    // hai con số cùng nói về MỘT tập đơn, không lệch nhau.
+    if (excludeGifts) conds.push(sql`${orderItems.isGiftLine} = 0`);
     const rows = await db
       .select({
         editionId: orderItems.editionId,
-        code: editions.code,
-        title: editions.title,
+        // Tên/mã rơi về `products` cho dòng hàng hóa — sửa "mọi món gộp thành
+        // một nhóm tên '?'" do group theo `edition_id` NULL.
+        code: sql<string | null>`COALESCE(${editions.code}, ${products.code})`,
+        title: sql<string | null>`COALESCE(${editions.title}, ${products.name})`,
         qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
         revenue: sql<number>`COALESCE(SUM(${orderItems.totalAmount}), 0)`,
         orders: sql<number>`COUNT(DISTINCT ${orderItems.orderId})`,
@@ -271,14 +285,16 @@ export class AnalyticsService {
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .leftJoin(editions, eq(orderItems.editionId, editions.id))
+      .leftJoin(products, eq(orderItems.productId, products.id))
       .where(and(...conds))
-      .groupBy(orderItems.editionId);
+      .groupBy(sql`COALESCE(${orderItems.editionId}, ${orderItems.productId})`);
     const totalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const totalRevenue = rows.reduce((s, r) => s + Number(r.revenue || 0), 0);
     const out = rows.map((r) => ({
       editionId: r.editionId,
       code: r.code || '?',
-      title: r.title || '?',
+      // '—' chứ không '?': '?' đọc như mã hỏng, '—' đọc như "chưa có tên".
+      title: r.title || '—',
       qty: Number(r.qty || 0),
       orders: Number(r.orders || 0),
       revenue: Number(r.revenue || 0),
@@ -286,7 +302,24 @@ export class AnalyticsService {
       revenueShare: totalRevenue > 0 ? Number(r.revenue || 0) / totalRevenue : 0,
     }));
     out.sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
-    return { items: out.slice(0, Math.max(1, Math.min(100, topN))), totalQty, totalRevenue };
+    // Truy vấn thứ hai, chỉ khi UI cần con số quà. Mặc định `false` ⇒ không tốn
+    // query, và `0` giữ shape ổn định cho UI đọc một đường duy nhất.
+    let totalGiftQty = 0;
+    if (excludeGifts) {
+      const giftConds = [
+        eq(orders.status, 'COMPLETED'),
+        sql`${orderItems.isGiftLine} = 1`,
+      ];
+      if (warehouseId) giftConds.push(eq(orders.warehouseId, warehouseId));
+      giftConds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
+      const giftRows = await db
+        .select({ q: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+        .from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .where(and(...giftConds));
+      totalGiftQty = Number(giftRows[0]?.q || 0);
+    }
+    return { items: out.slice(0, Math.max(1, Math.min(100, topN))), totalQty, totalRevenue, totalGiftQty };
   }
 
   /** Ma trận dòng tiền: doanh thu theo kênh + COD phải thu/đã về + tài trợ đã rút. */

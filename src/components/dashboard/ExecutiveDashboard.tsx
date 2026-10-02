@@ -21,6 +21,17 @@ import { UserRole, USER_ROLES } from '@/lib/roles';
 import { parseDbTimestamp } from '@/lib/db-timestamp';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { LiveFairMonitorModal } from '@/components/dashboard/LiveFairMonitorModal';
+import { Revenue7DaysChart } from '@/components/dashboard/Revenue7DaysChart';
+import { HourlyTodayCard } from '@/components/dashboard/HourlyTodayCard';
+import { TopProductsCard } from '@/components/dashboard/TopProductsCard';
+import { TopOrdersCard } from '@/components/dashboard/TopOrdersCard';
+import { ChannelMixCard } from '@/components/dashboard/ChannelMixCard';
+import { PaymentMixCard } from '@/components/dashboard/PaymentMixCard';
+// Mọi phép tính ngày/giờ đã dời sang đây: trước đây mỗi màn hình tự viết một
+// bản và bản sai đã làm biểu đồ lệch 7 tiếng. Re-export `vnBusinessDay` để nơi
+// gọi cũ (và test) không phải đổi đường dẫn import.
+import { vnBusinessDay, shiftVnDay, vnDayFmt, vnHmFmt } from '@/lib/vn-time';
+export { vnBusinessDay };
 
 interface ExecutiveDashboardProps {
   currentRole: UserRole;
@@ -41,26 +52,10 @@ const WAREHOUSE_TYPE_LABEL: Record<string, string> = {
   IN_TRANSIT: 'Hàng đang chuyển',
 };
 
-// Mọi cột thời gian trong DB là UTC; ngày/giờ người dùng đọc là giờ Việt Nam
-// (UTC+7, không DST). `parseDbTimestamp` đọc được CẢ HAI họ timestamp đang
-// cùng tồn tại (ISO 'T' do app ghi và ' ' do SQLite CURRENT_TIMESTAMP ghi).
-const VN_TZ = 'Asia/Ho_Chi_Minh';
-const vnDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ });
-const vnHmFmt = new Intl.DateTimeFormat('en-GB', { timeZone: VN_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
-
-/** Ngày nghiệp vụ VN (YYYY-MM-DD) của một mốc thời gian, null nếu dữ liệu hỏng. */
-export function vnBusinessDay(value: string | Date | null | undefined): string | null {
-  const d = value instanceof Date ? value : parseDbTimestamp(value);
-  return d && !Number.isNaN(d.getTime()) ? vnDayFmt.format(d) : null;
-}
-
-/** Lùi/trượt một ngày nghiệp vụ (số ngày âm = về quá khứ). Không phụ thuộc múi giờ máy. */
-function shiftVnDay(day: string, deltaDays: number): string {
-  const [y, mo, d] = day.split('-').map(Number);
-  const t = new Date(Date.UTC(y, mo - 1, d + deltaDays));
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
-}
+// Mọi cột thời gian trong DB là UTC; ngày/giờ người đọc là giờ Việt Nam
+// (UTC+7, không DST). Các helper `vnBusinessDay` / `shiftVnDay` / `vnHmFmt` nay
+// nằm ở `@/lib/vn-time` (import ở đầu file) — dùng chung để bảng quản trị, báo
+// cáo chốt ngày và các biểu đồ mới không tự quy định lại "ngày hôm nay" riêng.
 
 /**
  * Gom doanh thu 7 ngày nghiệp vụ gần nhất.
@@ -70,6 +65,10 @@ function shiftVnDay(day: string, deltaDays: number): string {
  * "hôm nay" hụt trọn ca 00:00–07:00 và nuốt luôn 17:00–24:00 của hôm qua:
  * đơn 06:30 sáng 10/3 (UTC 23:30 ngày 9/3) rơi vào cột "9/3", cột "10/3" hiện
  * 0 đ. Nay cả khoá lẫn nhãn đều theo GIỜ VIỆT NAM.
+ *
+ * GIỮ LẠI hàm này vì `scripts/test-executive-reporting.ts` gọi trực tiếp để chốt
+ * lỗi múi giờ. Biểu đồ trên trang dùng `Revenue7DaysChart` (cùng khoá ngày, thêm
+ * số cuốn, số đơn và đường trung bình).
  */
 export function buildLast7DaysRevenue(orders: any[], now: Date = new Date()): DayRevenue[] {
   const today = vnBusinessDay(now) || vnDayFmt.format(new Date());
@@ -307,20 +306,26 @@ export function ExecutiveDashboard({
   // Không tự bịa số: cần thêm `books={matrixBooks}` ở MasterAppShell:333 và
   // render thẻ — cả hai đều ngoài phạm vi sửa của phiên này.
 
-  // Ticket 4: 3 chart SVG nhẹ tính từ orders/summary đã fetch — không lib, không API mới.
-  const last7Days = React.useMemo(() => buildLast7DaysRevenue(orders), [orders]);
+  // Sáu thẻ biểu đồ dưới đây tự tính từ `orders`/`summary` đã fetch — không thư
+  // viện chart, không gọi API mới. `buildLast7DaysRevenue` và `buildFiscalSplit`
+  // vẫn được export vì `scripts/test-executive-reporting.ts` gọi trực tiếp để chốt
+  // lỗi múi giờ và lỗi làm tròn tỷ lệ sổ kép.
+  //
+  // Ô KPI "Đơn Hàng Đã Chốt" gom thêm 2 con số nữa để một ô nói được ba thứ:
+  // số cuốn đã bán (cái mà đơn giá trị cao không nói) và giá trị đơn trung bình
+  // (cái phân biệt "bán nhiều đơn rẻ" với "bán ít đơn giá cao").
+  const soldQty = React.useMemo(
+    () => (orders as any[]).reduce((sum, o) => sum + (Number(o?.itemQty) || 0), 0),
+    [orders]
+  );
 
-  const maxDayTotal = Math.max(1, ...last7Days.map((d) => d.total));
-
-  const fiscalSplit = React.useMemo(() => buildFiscalSplit(summary), [summary]);
-
-  const topOrders = React.useMemo(() => {
-    return [...(orders as any[])]
-      .sort((a, b) => Number(b.finalAmount || 0) - Number(a.finalAmount || 0))
-      .slice(0, 5);
-  }, [orders]);
-
-  const maxTopAmount = Math.max(1, ...topOrders.map((o: any) => Number(o.finalAmount || 0)));
+  const avgOrderValue =
+    (orders as any[]).length > 0
+      ? Math.round(
+          (orders as any[]).reduce((sum, o) => sum + (Number(o?.finalAmount) || 0), 0) /
+            (orders as any[]).length
+        )
+      : 0;
 
   const isOwnerOrManager = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
@@ -555,8 +560,11 @@ export function ExecutiveDashboard({
           <p className="text-2xl font-extrabold text-slate-900 mt-2 font-mono">
             {summary?.totalOrders || 0} Đơn
           </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Khấu trừ thẻ kho tức thời 100%
+          {/* Số cuốn + giá trị đơn trung bình: hai con số phân biệt "bán nhiều đơn
+              rẻ" với "bán ít đơn giá cao" — thống kê số đơn đơn thuần không nói được. */}
+          <p className="text-xs text-slate-500 mt-1 font-mono">
+            {soldQty.toLocaleString('vi-VN')} cuốn
+            {avgOrderValue > 0 ? ` · TB ${avgOrderValue.toLocaleString('vi-VN')} đ/đơn` : ''}
           </p>
         </div>
       </div>
@@ -700,94 +708,27 @@ export function ExecutiveDashboard({
         )}
       </div>
 
-      {/* Ticket 4: 3 chart SVG nhẹ kiểu Power BI — trend 7 ngày, donut sổ kép, top 5 đơn */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Trend doanh thu 7 ngày */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Doanh thu 7 ngày</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">Hover từng cột xem số • Tính từ đơn đã fetch</p>
-          <div className="mt-3 flex items-end gap-1.5 h-28">
-            {last7Days.map((d) => (
-              <div key={d.key} className="flex-1 flex flex-col items-center gap-1" title={`${d.key}: ${d.total.toLocaleString('vi-VN')} đ`}>
-                <div
-                  className="w-full rounded-t-md bg-indigo-500/90 hover:bg-indigo-600 transition-colors"
-                  style={{ height: `${Math.max(4, Math.round((d.total / maxDayTotal) * 96))}px` }}
-                />
-                <span className="text-[9px] font-mono text-slate-400">{d.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* BIỂU ĐỒ — dải 1: xu hướng 7 ngày + nhịp bán trong ngày.
+          Ô donut "Cơ cấu Sổ Thuế vs Sổ Thực" đã bỏ: nó nói lại đúng hai ô Sổ
+          Kép nằm ngay phía trên nên không thêm thông tin nào. Chỗ trống đó nay
+          là "Top 5 bản bán" — thứ quản lý dùng được ngay để in thêm, chuẩn bị hàng.
+          Cả hai biểu đồ đều tự tính từ `orders` đã fetch, không gọi API mới. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Revenue7DaysChart orders={orders} />
+        <HourlyTodayCard orders={orders} />
+      </div>
 
-        {/* Donut cơ cấu sổ Thuế vs Thực */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cơ cấu Sổ Thuế vs Sổ Thực</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">Thuế VAT xanh lá • Nội bộ tím</p>
-          <div className="mt-3 flex items-center gap-4">
-            <svg width="96" height="96" viewBox="0 0 96 96" className="shrink-0">
-              <circle cx="48" cy="48" r="38" fill="none" stroke="#e2e8f0" strokeWidth="14" />
-              {fiscalSplit.total > 0 && (
-                <>
-                  <circle
-                    cx="48" cy="48" r="38" fill="none" stroke="#10b981" strokeWidth="14"
-                    strokeDasharray={`${(fiscalSplit.taxPct / 100) * 238.8} 238.8`}
-                    strokeLinecap="round" transform="rotate(-90 48 48)"
-                  />
-                  <circle
-                    cx="48" cy="48" r="38" fill="none" stroke="#8b5cf6" strokeWidth="14"
-                    strokeDasharray={`${(fiscalSplit.internalPct / 100) * 238.8} 238.8`}
-                    strokeDashoffset={`${-((fiscalSplit.taxPct / 100) * 238.8)}`}
-                    strokeLinecap="round" transform="rotate(-90 48 48)"
-                  />
-                </>
-              )}
-              <text x="48" y="52" textAnchor="middle" className="font-mono" fontSize="13" fontWeight="800" fill="#0f172a">
-                {fiscalSplit.total > 0 ? `${fiscalSplit.taxPct}%` : '—'}
-              </text>
-            </svg>
-            <div className="text-xs space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span className="text-slate-600">VAT: </span>
-                <span className="font-mono font-bold text-slate-900">{fiscalSplit.tax.toLocaleString('vi-VN')} đ</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
-                <span className="text-slate-600">Nội bộ: </span>
-                {isOwnerOrManager ? (
-                  <span className="font-mono font-bold text-slate-900">{fiscalSplit.internal.toLocaleString('vi-VN')} đ</span>
-                ) : (
-                  <span className="italic text-slate-400">Ẩn theo quyền</span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Top 5 đơn lớn nhất */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Top 5 đơn giá trị cao</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">Thanh ngang theo thực thu</p>
-          <div className="mt-3 space-y-2">
-            {topOrders.length === 0 ? (
-              <p className="text-xs text-slate-400">Chưa có đơn — mở POS tạo đơn đầu tiên.</p>
-            ) : (
-              topOrders.map((o: any) => (
-                <div key={o.id}>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-mono font-bold text-indigo-700 truncate">{o.orderCode}</span>
-                    <span className="font-mono text-slate-600">{Number(o.finalAmount || 0).toLocaleString('vi-VN')} đ</span>
-                  </div>
-                  <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500"
-                      style={{ width: `${Math.max(4, Math.round((Number(o.finalAmount || 0) / maxTopAmount) * 100))}%` }}
-                    />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+      {/* BIỂU ĐỒ — dải 2: bản bán chạy, đơn lớn nhất, cơ cấu kênh và thanh toán. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+        <TopProductsCard
+          warehouseId={selectedWarehouseId !== 'ALL' ? selectedWarehouseId : undefined}
+        />
+        <TopOrdersCard orders={orders} />
+        {/* Cột thứ ba xếp hai thẻ nhỏ chồng lên nhau ở màn rộng, tách ngang ở
+            màn vừa — để khoảng trống của ô donut không thành một ô trống. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+          <ChannelMixCard orders={orders} />
+          <PaymentMixCard orders={orders} />
         </div>
       </div>
 

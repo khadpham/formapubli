@@ -6,8 +6,8 @@ import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
 import { AppError } from '@/services/app-error';
-import { db, orders, warehouses, staffAccounts } from '@/db';
-import { eq } from 'drizzle-orm';
+import { db, orders, orderItems, warehouses, staffAccounts } from '@/db';
+import { eq, inArray, sql } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,11 +123,50 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    // Dashboard cần biết mỗi đơn có bao nhiêu cuốn để vẽ thẻ "Top 5 đơn giá trị cao"
+    // mà KHÔNG phải gọi N+1 `/api/orders/:id` cho từng dòng. Vì vậy gom một câu
+    // GROUP BY duy nhất rồi gắn ngược bằng Map. Đơn không có dòng hàng không xuất
+    // hiện trong kết quả ⇒ mặc định 0, đúng hợp đồng C1.
+    // `inArray([])` sẽ ném lỗi cú pháp SQL nên phải chặn trước cho danh sách rỗng.
+    //
+    // CHIA LÔ BATCH: `getOrders` KHÔNG giới hạn số dòng, nên `inArray` có thể sinh
+    // hàng chục nghìn tham số ràng buộc. SQLite giới hạn 32766 biến cho MỘT câu
+    // lệnh (libSQL kế thừa giới hạn này) ⇒ phạm vi đủ lớn sẽ văng 500 và CÁI
+    // dashboard chính — không phải một màn hăn phụ — chết theo. Chia lô 500 id/lô
+    // giữ câu lệnh ở mức an toàn với chi phí chỉ là vài vòng await tuần tự.
+    const ITEM_BATCH_SIZE = 500;
+    const orderIds = orderList.map((o: any) => o.id).filter(Boolean);
+    const itemAgg: any[] = [];
+    for (let i = 0; i < orderIds.length; i += ITEM_BATCH_SIZE) {
+      const batch = orderIds.slice(i, i + ITEM_BATCH_SIZE);
+      itemAgg.push(
+        ...(await db
+          .select({
+            orderId: orderItems.orderId,
+            qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+            lines: sql<number>`COUNT(*)`,
+            giftQty: sql<number>`COALESCE(SUM(CASE WHEN ${orderItems.isGiftLine} = 1 THEN ${orderItems.quantity} ELSE 0 END), 0)`,
+          })
+          .from(orderItems)
+          .where(inArray(orderItems.orderId, batch))
+          .groupBy(orderItems.orderId)),
+      );
+    }
+    const aggByOrder = new Map(itemAgg.map((r: any) => [r.orderId, r]));
+
     return NextResponse.json({
       success: true,
       role: userRole,
       fiscalScope: safeFiscalScope,
-      orders: orderList,
+      orders: orderList.map((o: any) => {
+        const agg: any = aggByOrder.get(o.id);
+        return {
+          ...o,
+          itemQty: agg ? Number(agg.qty) || 0 : 0,
+          itemLines: agg ? Number(agg.lines) || 0 : 0,
+          giftQty: agg ? Number(agg.giftQty) || 0 : 0,
+        };
+      }),
       summary,
     });
   } catch (error: any) {
