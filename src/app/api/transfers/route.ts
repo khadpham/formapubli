@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TransferService, DEFAULT_STALE_HOURS } from '@/services/transfer.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { recordAuditLog } from '@/lib/rbac-guard';
 import { requireSessionRole, resolveRequestIdentity, assertAssignedWarehouse, assertReadWarehouse, filterByAssignedWarehouse, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 

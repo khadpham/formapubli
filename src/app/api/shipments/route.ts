@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ShipmentService } from '@/services/shipment.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { recordAuditLog } from '@/lib/rbac-guard';
 import { requireSessionRole, resolveRequestIdentity, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 

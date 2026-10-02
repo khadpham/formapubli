@@ -48,8 +48,10 @@ export interface AuditLogParams {
 }
 
 /**
- * Trích xuất vai trò của người dùng từ Request Headers (x-formapubli-role).
- * Mặc định trả về ROLE_OWNER nếu môi trường local/dev chưa có hệ thống Auth bên ngoài.
+ * @deprecated CHỈ dùng cho test/dev — KHÔNG dùng để phân quyền. Mặc định trả
+ * ROLE_OWNER khi thiếu header (fail-open) nên là footgun leo quyền; mọi route
+ * thật phải dùng `requireSessionRole`/`resolveRequestIdentity` (session cookie).
+ * Đã gỡ hết import ở routes (2026-10-03). `test-rbac-audit` A1 khoá hành vi này.
  */
 export function extractUserRole(req: Request): UserRole {
   const headerRole = req.headers.get('x-formapubli-role') as UserRole | null;

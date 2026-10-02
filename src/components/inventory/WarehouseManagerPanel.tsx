@@ -288,7 +288,7 @@ export function WarehouseManagerPanel({
                           type="button"
                           onClick={() => saveName(w)}
                           disabled={busy}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                          className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                         >
                           <Check className="w-3 h-3" /> Lưu
                         </button>
@@ -296,7 +296,7 @@ export function WarehouseManagerPanel({
                           type="button"
                           onClick={() => setEditingId(null)}
                           disabled={busy}
-                          className="inline-flex items-center px-2 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                          className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
                         >
                           Huỷ
                         </button>

@@ -62,7 +62,7 @@ expect(
 );
 
 // 5. Nhãn ngắn đúng quy tắc dự án — không câu dài.
-for (const label of ['Ngung hoat dong', 'Mo lai', 'Xoa']) {
+for (const label of ['Ngưng hoạt động', 'Mở lại', 'Xoá']) {
   expect(panel.includes(label), `Panel có nhãn hành động "${label}"`);
 }
 for (const bad of ['Quản lý kho hàng', 'Quan ly kho hang', 'Xóa kho hàng', 'Ngưng hoạt động kho']) {
@@ -77,7 +77,7 @@ expect(
 );
 expect(
   /setDeleteBlock/.test(panel) &&
-    /Ngung hoat dong/.test(panel.slice(panel.indexOf('setDeleteBlock'))),
+    /Ngưng hoạt động/.test(panel.slice(panel.indexOf('setDeleteBlock'))),
   'Khi xóa bị chặn, panel mời dùng "Ngung hoat dong" làm đường thay thế'
 );
 

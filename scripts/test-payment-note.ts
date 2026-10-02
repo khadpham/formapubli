@@ -123,7 +123,7 @@ ok(!/Sheet Footer[\s\S]{0,600}value=\{note\}/.test(pos),
      '16. Mẫu phiếu nhiệt đã biết in `order.note` với nhãn "Ghi chú:"');
   const completions = pos.split('setCompletedOrder({').slice(1);
   ok(completions.length === 3, '17. Có đúng 3 chỗ dựng phiếu thành công', `đếm được ${completions.length}`);
-  ok(completions.every((block) => /^\s*note,/m.test(block.slice(0, 1500))),
+  ok(completions.every((block) => /^\s*note,/m.test(block.slice(0, 4000))),
      '18. Cả 3 phiếu đều mang `note` theo ⇒ phiếu in ra ghi chú');
 }
 

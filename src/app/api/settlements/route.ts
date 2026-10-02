@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SettlementService } from '@/services/settlement.service';
 import { ConsignmentService } from '@/services/consignment.service';
-import { extractUserRole, recordAuditLog } from '@/lib/rbac-guard';
+import { recordAuditLog } from '@/lib/rbac-guard';
 import { requireSessionRole, resolveRequestIdentity, resolveActorId, AuthError } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 

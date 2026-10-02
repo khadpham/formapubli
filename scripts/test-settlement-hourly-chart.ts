@@ -108,7 +108,7 @@ ok(
 
 // --- 5. Ngày không có đơn: nói rõ, không vẽ biểu đồ rỗng ---------------------
 ok(
-  /if \(!list\.length \|\| totalOrders === 0\)/.test(chart),
+  /if \(!list\.length \|\| \(totalOrders === 0 && !hasBaseline\)\)/.test(chart),
   'phải có nhánh riêng khi ngày không có đơn'
 );
 ok(

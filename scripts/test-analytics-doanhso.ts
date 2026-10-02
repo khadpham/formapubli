@@ -354,9 +354,14 @@ async function run() {
 
   // --- 3.6 topEditions: tổng khớp SQL gốc, và bỏ đúng nhóm bị loại.
   const te = await AnalyticsService.topEditions({ startDate: dayStartIso }, 100);
+  // SQL nền phải khớp ĐÚNG semantics của topEditions (analytics.service.ts:279-298):
+  // loại dòng quà (`is_gift_line=0`) và dòng 0đ (`total_amount>0`) — nếu thiếu,
+  // bất kỳ suite nào để lại dòng quà COMPLETED trong DB test chung sẽ làm assertion
+  // này đỏ dù service đúng (đã ghi nhận ở run-isolated.ts).
   const teTruth = await q1(
     `SELECT COALESCE(SUM(oi.quantity),0) n FROM order_items oi JOIN orders o ON o.id=oi.order_id
      WHERE o.status='COMPLETED' AND o.discount_rate<1 AND o.channel!='SPONSORSHIP' AND o.final_amount>0
+       AND oi.is_gift_line=0 AND oi.total_amount>0
        AND datetime(o.created_at) >= datetime('${dayStartIso}')`);
   ok(
     te.totalQty === teTruth,

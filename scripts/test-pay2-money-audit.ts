@@ -135,13 +135,18 @@ async function run() {
     const yDay = businessDateOf(new Date(Date.now() - 86_400_000));
     const allA: any[] = await db.select().from(orders).where(eq(orders.warehouseId, A));
     const paid = allA.filter((x) => x.status === 'COMPLETED' && x.channel !== 'SPONSORSHIP');
+    // `created_at` lưu UTC, nhưng dòng do SQLite `CURRENT_TIMESTAMP` ghi thiếu 'T'/'Z'
+    // nên `new Date()` hiểu nhầm là giờ LOCAL. Chuẩn hoá về UTC trước khi quy ra ngày
+    // nghiệp vụ VN — đúng quy ước của `createdAtBetween` (dùng `datetime()` coi cột là
+    // UTC). Nếu không, dòng timestamp họ SQLite do suite khác để lại sẽ lệch ngày.
+    const vnDay = (s: string) => businessDateOf(new Date(/[TZ]/.test(s) ? s : s.replace(' ', 'T') + 'Z'));
     for (const day of [today, yDay]) {
       const sum: any = await OrderService.getSalesSummary({ warehouseId: A, startDate: day, endDate: day });
-      const hand = paid.filter((x) => businessDateOf(new Date(x.createdAt)) === day).reduce((t, x) => t + x.finalAmount, 0);
+      const hand = paid.filter((x) => vnDay(x.createdAt) === day).reduce((t, x) => t + x.finalAmount, 0);
       ok(`A6 báo cáo doanh số ngày ${day} = Σ đơn COMPLETED của đúng ngày VN`, sum.totalRevenue === hand, `${sum.totalRevenue} vs ${hand}`);
       ok(
         `A6b báo cáo ngày ${day} không nuốt đơn 00:00–07:00 VN (7 tiếng đầu)`,
-        sum.totalOrders === paid.filter((x) => businessDateOf(new Date(x.createdAt)) === day).length,
+        sum.totalOrders === paid.filter((x) => vnDay(x.createdAt) === day).length,
         `${sum.totalOrders} đơn`
       );
     }

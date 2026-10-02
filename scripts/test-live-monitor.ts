@@ -216,7 +216,8 @@ ok(
   'Chỉ được gửi warehouseId khi kho đang chọn là FAIR_EVENT — kho vận vật vật lý phải rơi về phạm vi TẤT CẢ'
 );
 ok(
-  /warehouseId=\{liveMonitorWarehouseId\}/.test(dash) && !/warehouseId=\{selectedWarehouseId/.test(dash),
+  /<LiveFairMonitorModal[\s\S]{0,200}warehouseId=\{liveMonitorWarehouseId\}/.test(dash) &&
+    !/<LiveFairMonitorModal[\s\S]{0,200}selectedWarehouseId/.test(dash),
   'Modal phải nhận liveMonitorWarehouseId (đã qua gate), KHÔNG gửi thẳng selectedWarehouseId'
 );
 ok(

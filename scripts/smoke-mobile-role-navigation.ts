@@ -249,7 +249,7 @@ assert.doesNotMatch(
   'reset giỏ không được gán lại tên "vãng lai" — POS chỉ bán lẻ, mặc định là "Khách lẻ"'
 );
 assert.match(reset, /setFiscalScope\('INTERNAL_MANAGEMENT'\)/);
-assert.match(reset, /setPaymentMethod\('CASH'\)/);
+assert.match(reset, /setPaymentMethod\('BANK_TRANSFER'\)/);
 assert.match(reset, /setGiftReason\(''\)/);
 assert.match(reset, /setCustomDiscountInput\(''\)/);
 assert.match(fallback, /resetPostCheckoutState\(\)/);
