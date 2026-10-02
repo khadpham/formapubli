@@ -73,6 +73,7 @@ Người mở báo cáo lúc 22h phải cuộn qua 10 sản phẩm bán chạy m
 | D4 | Thêm dòng "đơn QR đang chờ xác nhận" vào Báo cáo Chốt Ngày (phương án A) | ✅ |
 | D5 | Bản in kiểm kê theo đúng thứ tự + bộ lọc đang xem, có ghi rõ | ✅ |
 | D6 | Trạng Thái Hội Chợ: nhớ kho đã chọn, KHÔNG nhớ ngày | ✅ |
+| D7 | Kiểm kê mặc định xếp **tồn bé → lớn**; bỏ chế độ "Mặc định" (thô) | ✅ |
 
 ---
 
@@ -131,14 +132,16 @@ Người mở báo cáo lúc 22h phải cuộn qua 10 sản phẩm bán chạy m
 
 ### 4.4 Báo Cáo Chốt Ngày — tab "Kiểm Kê"
 
-- Giữ nguyên bảng và 3 chế độ sắp xếp, chuyển sang dùng chung `sortedStocktakeList`.
-- Nút "Chỉ hiện tồn thấp" giữ nguyên, nhưng **phải hiện cảnh báo trên màn hình**: "Đang lọc: chỉ tồn ≤ 5 — bản in cũng chỉ có các dòng này."
+- **Mặc định xếp tồn bé → lớn (D7).** `stocktakeSortMode` khởi tạo `'ASC'` thay vì `'DEFAULT'`. Lý do: đang phải bấm nút thì mọi người sẽ bấm nút — thà mặc định luôn, và bản in mặc định khớp luôn.
+- **Bỏ chế độ "Mặc định" (thô)**: nút sắp xếp chỉ còn 2 trạng thái `Bé → Lớn` ⇄ `Lớn → Bé`. Không có đường về thứ tự thô vì thứ tự thô không mang ý nghĩa gì cho người đối chiếu, và bản in giờ phải khớp màn hình.
+- Xoá 2 đoạn tự chuyển sang ASC không còn tác dụng: khi mở tab Kiểm Kê (dòng 1203-1205) và khi bật lọc sắp hết (dòng 1198-1208 rút gọn còn phần bật/tắt).
+- Giữ nguyên bảng và nút "Sắp hết (≤ 5)", nhưng **phải hiện cảnh báo trên màn hình**: "Đang lọc: chỉ tồn ≤ 5 — bản in cũng chỉ có các dòng này."
 
 ### 4.5 Bản in kiểm kê (D5)
 
 - Bản in dùng `sortedStocktakeList` **thay cho** mảng thô (dòng 393).
 - Đầu bảng in thêm 2 dòng:
-  - `Thứ tự: Tồn bé → lớn` (hoặc `Lớn → bé`, hoặc `Mặc định`) và
+  - `Thứ tự: Tồn bé → lớn` (hoặc `Lớn → bé`) và
   - `Bộ lọc: chỉ tồn ≤ 5` nếu đang bật lọc.
 - Không in cột nào phụ thuộc `activeTab`; in đúng tab đang mở.
 
@@ -191,6 +194,8 @@ pendingQrTotal = SUM(finalAmount) của đơn thỏa ĐỒNG THỜI:
 | Mở nhầm ngày ở Trạng Thái Hội Chợ | Số liệu = 0 khi đang bán | Không nhớ ngày; tiêu đề luôn hiện ngày đang xem |
 | Bỏ nút "Đơn vị CK" làm vỡ chỗ khác | `discountDisplayMode` còn dùng ở dòng 859/861/1402/1424 | Xoá hẳn state, thay bằng 2 con số ở mọi chỗ |
 | Đổi mốc ngày làm lệch báo cáo cũ | Báo cáo ngày hôm qua dịch số | Chỉ đổi mốc TÍNH, không sửa dữ liệu cũ; test với đơn quanh nửa đêm |
+| Mặc định xếp mới làm người dùng "không tìm ra" | Nhân viên tưởng bảng lỗi | Nhãn thứ tự luôn hiện trên màn hình và trên giấy in, không chỉ bằng màu/icon |
+| Bỏ chế độ "Mặc định" thì không quay lại được thứ tự cũ | — | Chấp nhận: thứ tự thô không có ý nghĩa đối chiếu |
 
 ---
 
