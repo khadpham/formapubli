@@ -285,6 +285,136 @@ ok(
   '31. Hint kho rỗng nói "tải lại trang" (nút Làm mới không nạp lại /api/warehouses)'
 );
 
+// ---------------------------------------------------------------------------
+// 7. Task 5 — CSV giữ DÒNG SPONSORSHIP RIÊNG, không gộp vào doanh thu bán.
+//    Lỗi gốc: ai cũng lọc `channel !== 'SPONSORSHIP'` rồi tổng ⇒ quà tài trợ
+//    biến mất khỏi file, kế toán đối chiếu CSV với sổ thấy lệch mà không biết
+//    lệch ở đâu. Dòng tài trợ phải CÒN trong file, 0đ, nhãn tiếng Việt.
+// ---------------------------------------------------------------------------
+const csvSponsored = buildSalesCsv(
+  [
+    {
+      orderCode: 'DH-SPONSOR-1',
+      warehouseName: 'Kho 3 - Hội Chợ (Sự kiện)',
+      channel: 'SPONSORSHIP',
+      customerName: 'Hội Chợ Xuân Hà Nội',
+      paymentMethod: 'CASH',
+      subtotal: 0,
+      discountAmount: 0,
+      finalAmount: 0,
+      fiscalScope: 'INTERNAL_MANAGEMENT',
+      vatInvoiceCode: '',
+      createdAt: '2026-10-01T09:05:00.000Z',
+    },
+    {
+      orderCode: 'DH-BAN-1',
+      warehouseName: 'Kho 3 - Hội Chợ (Sự kiện)',
+      channel: 'FAIR_EVENT',
+      customerName: 'Nguyễn Văn A',
+      paymentMethod: 'CASH',
+      subtotal: 200000,
+      discountAmount: 0,
+      finalAmount: 200000,
+      fiscalScope: 'INTERNAL_MANAGEMENT',
+      vatInvoiceCode: '',
+      createdAt: '2026-10-01T09:10:00.000Z',
+    },
+  ],
+  'nv-bich'
+);
+const sponsoredLines = csvSponsored.split('\r\n');
+const sponsorLine = sponsoredLines.find((l) => l.includes('DH-SPONSOR-1')) || '';
+const sellLine = sponsoredLines.find((l) => l.includes('DH-BAN-1')) || '';
+ok(sponsoredLines.length >= 3, '32. CSV giữ CẢ dòng SPONSORSHIP lẫn dòng bán (không lọc mất)', `số dòng = ${sponsoredLines.length - 1}`);
+ok(sponsorLine.includes('"Tặng"'), '33. Dòng tài trợ hiện nhãn tiếng Việt "Tặng"', sponsorLine);
+ok(
+  sponsorLine.includes(',0,0,0,') && !sponsorLine.includes('200000'),
+  '34. Dòng tài trợ giữ 0đ và KHÔNG bị gộp tiền của dòng bán',
+  sponsorLine
+);
+ok(sellLine.includes(',200000,0,200000,'), '35. Dòng bán giữ nguyên tiền hàng/thực thu', sellLine);
+ok(
+  !/SPONSORSHIP/.test(csvSponsored),
+  '36. File CSV không lộ enum SPONSORSHIP thô (tiếng Việt thay thế)'
+);
+
+// ---------------------------------------------------------------------------
+// 8. Task 5 — RevenueAnalyticsPanel đi theo filter của tab, không tự đặt
+//    filter riêng. Lỗi gốc: panel fetch `view=channels` TRẦN ⇒ số toàn lịch
+//    sử đặt cạnh bảng đang lọc "7 ngày", người dùng đối chiếu thấy lệch.
+//    Quét SOURCE (bỏ comment) vì trạng thái chỉ tồn tại vài chục ms —
+//    test trình duyệt bắt không ổn định.
+// ---------------------------------------------------------------------------
+const PANEL_SRC = readFileSync(
+  path.resolve(process.cwd(), 'src/components/sales/RevenueAnalyticsPanel.tsx'),
+  'utf8'
+);
+/** Bỏ comment để quét không báo đỏ giả (chính comment giải thích lại chứa từ khoá). */
+const stripComments = (s: string) =>
+  s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('//'))
+    .join('\n');
+const PANEL_CODE = stripComments(PANEL_SRC);
+const LEDGER_PANEL_CALL = LEDGER_CODE.match(/<RevenueAnalyticsPanel[\s\S]*?\/>/)?.[0] || '';
+
+ok(
+  /startDate:\s*string/.test(PANEL_CODE) && /endDate:\s*string/.test(PANEL_CODE) &&
+    /warehouseId:\s*string/.test(PANEL_CODE) && /fiscalScope\?/.test(PANEL_CODE),
+  '37. Panel NHẬN filter từ tab qua props (startDate/endDate/warehouseId/fiscalScope), không tự đặt'
+);
+ok(
+  /set\('startDate'/.test(PANEL_CODE) && /set\('endDate'/.test(PANEL_CODE) &&
+    /set\('warehouseId'/.test(PANEL_CODE) && /set\('fiscalScope'/.test(PANEL_CODE) &&
+    // Query phải được GHÉP VÀO URL thật, không phải dựng rồi bỏ.
+    /view=\$\{view\}/.test(PANEL_CODE) && /q\.toString\(\)/.test(PANEL_CODE),
+  '38. Panel gửi kèm filter khi gọi /api/analytics (không fetch trần toàn lịch sử)'
+);
+ok(
+  !/view=channels/.test(PANEL_CODE),
+  '39. Không còn fetch view=channels trần (số toàn lịch sử đặt cạnh bảng lọc)'
+);
+ok(
+  /startDate=\{startDate\}/.test(LEDGER_PANEL_CALL) &&
+    /endDate=\{endDate\}/.test(LEDGER_PANEL_CALL) &&
+    /warehouseId=\{selectedWarehouse\}/.test(LEDGER_PANEL_CALL),
+  '40. Sổ Kép truyền filter ĐANG DÙNG xuống panel (dùng chung 1 state, không tạo state thứ hai)',
+  LEDGER_PANEL_CALL.replace(/\s+/g, ' ')
+);
+ok(
+  /channelLabel\(/.test(PANEL_CODE) && !/CHANNEL_LABELS/.test(PANEL_CODE),
+  '41. Panel dùng `channelLabel` dùng chung, không còn map nhãn kênh cứng trong file'
+);
+ok(
+  !/revenue-analytics/.test(PANEL_SRC),
+  '42. Không còn actorId hằng số "revenue-analytics" trong watermark CSV'
+);
+ok(
+  /actorId=\{actorId\}/.test(LEDGER_PANEL_CALL) && /actorId:\s*string/.test(PANEL_CODE),
+  '43. Watermark CSV ký NGƯỜI THẬT (actorId từ Sổ Kép, đọc /api/auth/me)'
+);
+ok(
+  /TỔNG/.test(PANEL_CODE),
+  '44. Bảng có dòng TỔNG ở cuối (mọi con số trên màn hình cộng tay lại được)'
+);
+ok(
+  /Tặng \/ Tài trợ/.test(PANEL_CODE) && /SPONSORSHIP/.test(PANEL_CODE),
+  '45. Dòng tài trợ hiển thị RIÊNG, không gộp vào doanh thu bán'
+);
+ok(
+  /salesRevenue/.test(PANEL_CODE),
+  '46. Tổng doanh thu lấy từ cashflow.salesRevenue (server loại SPONSORSHIP), không tự cộng byChannel'
+);
+ok(
+  /Đang tải/.test(PANEL_CODE) && /Chưa có đơn/.test(PANEL_CODE),
+  '47. Panel có trạng thái loading và empty RIÊNG (không hiện số 0 giả)'
+);
+ok(
+  /new AbortController\(\)/.test(PANEL_CODE),
+  '48. Fetch của panel có AbortController (bấm liên tiếp nhiều preset không bị response cũ ghi đè)'
+);
+
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
 if (failures > 0) process.exit(1);
 console.log('\n✅ Helper Doanh Số: ngày VN đúng tháng lịch, nhãn kênh tiếng Việt, CSV có dấu.');
