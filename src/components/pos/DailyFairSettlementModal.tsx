@@ -5,15 +5,12 @@ import { createPortal } from 'react-dom';
 import {
   Receipt,
   Banknote,
-  QrCode,
-  CreditCard,
   AlertTriangle,
   CheckCircle2,
   XCircle,
   Printer,
   Calendar,
   Building2,
-  TrendingUp,
   Package,
   Boxes,
   ShieldAlert,
@@ -22,10 +19,7 @@ import {
   X,
   Lock,
   Layers,
-  Percent,
-  Trophy,
   Coins,
-  ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Flame,
@@ -38,6 +32,7 @@ import {
   getStockRowHighlightClass,
   STOCK_THRESHOLD_WARNING,
 } from '@/lib/stock-highlight';
+import { sortByStock, filterLowStock, sortLabel } from '@/lib/stocktake-order';
 
 interface DailyFairSettlementModalProps {
   isOpen: boolean;
@@ -152,6 +147,105 @@ function paymentMethodLabel(method: string | null | undefined): string {
   return 'Thẻ';
 }
 
+/**
+ * ĐẦU TAB "TIỀN & KÉT" — số chủ đạo + 4 ô phụ + 2 dòng trạng thái.
+ *
+ * VÌ SAO ĐỨNG ĐẦU: câu hỏi đầu tiên của người mở báo cáo lúc cuối ngày là
+ * "hôm nay thu được bao nhiêu, két có khớp không". Trước đây con số này nằm
+ * sau thẻ "đơn lớn nhất" và bảng top 10 bán chạy, phải cuộn mới thấy.
+ *
+ * `pendingQr` TÁCH RIÊNG và ghi rõ "chưa ghi nhận": đó là tiền chuyển khoản
+ * còn chờ xác nhận, KHÔNG phải doanh thu. Ai cộng tay vào Thực thu sẽ báo
+ * cáo sai. Số này là ảnh chụp lúc mở báo cáo; lát nữa đơn thành COMPLETED
+ * sẽ nằm trong Thực thu của lần mở sau — đó là chuyện đúng.
+ */
+function MoneyHeader({ data }: { data: any }) {
+  const f = data?.financials || {};
+  const pb = data?.paymentBreakdown || {};
+  const rec = data?.cashboxReconciliation || {};
+  const pending = pb.pendingQr || { total: 0, ordersCount: 0 };
+  const variance = Number(rec.cashVariance || 0);
+
+  const cashState = rec.cashVariancePending
+    ? { text: '⏳ Chưa thể đối soát két (còn ca mở hoặc chưa đếm tiền thực tế)', cls: 'text-amber-700' }
+    : variance === 0
+      ? { text: '✓ Tiền kỳ vọng trong két khớp thực tế', cls: 'text-emerald-700' }
+      : { text: `⚠ Lệch két ${variance.toLocaleString('vi-VN')} đ`, cls: 'text-rose-700' };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold text-slate-500">Thực thu ngày {data?.reportDate || ''}</p>
+          <p className="text-3xl font-black font-mono text-emerald-700 leading-tight">
+            {(f.netSales || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[11px] text-slate-400">Tiền đã ghi nhận thanh toán</p>
+        </div>
+        <span
+          className={`shrink-0 px-2 py-1 rounded-lg text-[11px] font-bold ${
+            data?.hasOpenSession ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+          }`}
+        >
+          {data?.hasOpenSession ? '⚠ Còn ca chưa chốt' : '✓ Đã chốt ca 100%'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <p className="text-[11px] font-bold text-slate-500">Tiền mặt</p>
+          <p className="font-mono font-black text-sm text-emerald-700">
+            {(pb.cash?.sales || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[10px] text-slate-400">{pb.cash?.ordersCount || 0} đơn</p>
+        </div>
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <p className="text-[11px] font-bold text-slate-500">Chuyển khoản</p>
+          <p className="font-mono font-black text-sm text-indigo-700">
+            {(pb.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[10px] text-slate-400">{pb.qrTransfer?.ordersCount || 0} đơn</p>
+        </div>
+        {/* Cả hai đơn vị cùng lúc: xem tiền thật và xem tỉ lệ. Trước đây phải
+            bấm nút đổi đơn vị, dễ đọc nhầm "5%" thành tổng chiết khấu. */}
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
+          <p className="text-[11px] font-bold text-rose-700">Chiết khấu đã cấp</p>
+          <p className="font-mono font-black text-sm text-rose-700">
+            −{(f.totalDiscount || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[10px] text-rose-600 font-semibold">
+            tương đương {((f.averageDiscountRate || 0) * 100).toFixed(1)}%
+          </p>
+        </div>
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <p className="text-[11px] font-bold text-slate-500">Số đơn</p>
+          <p className="font-mono font-black text-sm text-slate-900">{f.totalOrdersCount || 0} đơn</p>
+          <p className="text-[10px] text-slate-400">
+            TB {(f.averageOrderValue || 0).toLocaleString('vi-VN')} đ
+          </p>
+        </div>
+      </div>
+
+      <p className={`text-xs font-bold ${cashState.cls}`}>
+        {cashState.text}
+        {!rec.cashVariancePending && (
+          <span className="font-mono text-slate-600">
+            {' '}
+            — {(rec.expectedCashTotal || 0).toLocaleString('vi-VN')} đ
+          </span>
+        )}
+      </p>
+
+      {pending.ordersCount > 0 && (
+        <p className="text-xs font-bold text-amber-700">
+          ⏳ {pending.ordersCount} đơn chuyển khoản chờ xác nhận —{' '}
+          {(pending.total || 0).toLocaleString('vi-VN')} đ (chưa ghi nhận vào Thực thu)
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function DailyFairSettlementModal({
   isOpen,
   onClose,
@@ -168,7 +262,6 @@ export function DailyFairSettlementModal({
   const [isLoading, setIsLoading] = useState(false);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
   const [warehouseList, setWarehouseList] = useState<any[]>([]);
-  const [discountDisplayMode, setDiscountDisplayMode] = useState<'PERCENT' | 'VND'>('PERCENT');
   // Ngày mặc định phải là NGÀY NGHIỆP VỤ VIỆT NAM. Trước đây dùng
   // `toISOString().slice(0,10)` là ngày UTC ⇒ từ 00:00 đến 07:00 giờ VN, modal mở
   // báo cáo của HÔM QUA, lệch hẳn với cron chốt ngày theo giờ VN.
@@ -179,6 +272,18 @@ export function DailyFairSettlementModal({
     () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
   );
   const [activeTab, setActiveTab] = useState<'FINANCIALS' | 'STOCKTAKE' | 'DISCOUNT'>('FINANCIALS');
+  // Nhớ tab đang xem: đóng modal rồi mở lại không nên mất chỗ đang đọc.
+  // `sessionStorage` (không phải `localStorage`) vì đây là trạng thái của phiên
+  // làm việc, không phải tuỳ chọn người dùng muốn giữ lâu dài.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('formapubli.settlement.tab');
+      if (saved === 'FINANCIALS' || saved === 'STOCKTAKE' || saved === 'DISCOUNT') setActiveTab(saved);
+    } catch { /* trình duyệt chặn storage: bỏ qua, dùng mặc định */ }
+  }, []);
+  useEffect(() => {
+    try { sessionStorage.setItem('formapubli.settlement.tab', activeTab); } catch { /* như trên */ }
+  }, [activeTab]);
 
   // Số đếm thực tế KHÔNG được lưu ở đâu: chỉ nằm trong useState này, không có
   // lệnh nào gửi đi. Chủ sở hữu đã quyết định (2026-09-29): cuối ngày không đếm
@@ -186,35 +291,22 @@ export function DailyFairSettlementModal({
   // theoreticalStock mà API đã trả sẵn. Nên bỏ ô nhập, chỉ hiện tồn lý thuyết và
   // nói rõ chưa kiểm kê, để không ai tưởng đã đếm.
   const [stocktakeNote, setStocktakeNote] = useState('');
-  // Sắp xếp bảng kiểm kê theo tồn lý thuyết: 'DEFAULT', 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
-  const [stocktakeSortMode, setStocktakeSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
+  // Sắp xếp bảng kiểm kê theo tồn lý thuyết. MẶC ĐỊNH 'ASC' (Bé → Lớn):
+  // người dùng luôn bấm nút này để xem sách sắp hết trước, nên thà mặc định
+  // luôn — bản in cũng xếp theo đúng thứ tự này. Chỉ còn 2 trạng thái vì
+  // thứ tự thô không mang ý nghĩa gì khi đối chiếu.
+  const [stocktakeSortMode, setStocktakeSortMode] = useState<'ASC' | 'DESC'>('ASC');
   // Lọc chỉ hiển thị các đầu sách sắp hết (tồn lý thuyết <= 5 cuốn)
   const [stocktakeOnlyLow, setStocktakeOnlyLow] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
 
-  // Danh sách kiểm kê có sắp xếp và lọc theo nhu cầu đối soát cuối ngày
+  // Danh sách kiểm kê có sắp xếp và lọc theo nhu cầu đối soát cuối ngày.
+  // Dùng CHUNG helper với bản in (`stocktake-order.ts`) để giấy in luôn khớp
+  // đúng cái người dùng đang đọc trên màn.
   const sortedStocktakeList = useMemo(() => {
     const list = Array.isArray(data?.inventoryReconciliation) ? data.inventoryReconciliation : [];
-    let res = list;
-    if (stocktakeOnlyLow) {
-      res = res.filter((it: any) => Number(it.theoreticalStock || 0) <= STOCK_THRESHOLD_WARNING);
-    }
-    if (stocktakeSortMode === 'ASC') {
-      res = [...res].sort((a: any, b: any) => {
-        const aT = Number(a.theoreticalStock || 0);
-        const bT = Number(b.theoreticalStock || 0);
-        if (aT !== bT) return aT - bT;
-        return (a.code || '').localeCompare(b.code || '');
-      });
-    } else if (stocktakeSortMode === 'DESC') {
-      res = [...res].sort((a: any, b: any) => {
-        const aT = Number(a.theoreticalStock || 0);
-        const bT = Number(b.theoreticalStock || 0);
-        if (aT !== bT) return bT - aT;
-        return (a.code || '').localeCompare(b.code || '');
-      });
-    }
-    return res;
+    const base = stocktakeOnlyLow ? filterLowStock(list) : list;
+    return sortByStock(base, stocktakeSortMode);
   }, [data?.inventoryReconciliation, stocktakeSortMode, stocktakeOnlyLow]);
 
   // Số lượng đầu sách có tồn lý thuyết <= 5 cuốn
@@ -390,8 +482,18 @@ export function DailyFairSettlementModal({
   const bandBarH = (n: number) => (n > 0 ? Math.max(6, Math.round((n / maxHourOrders) * BAND_PLOT_H)) : 2);
 
   // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
-  const soldOnlyRows: any[] = (data?.inventoryReconciliation || []).filter(
-    (it: any) => Number(it.soldToday || 0) > 0
+  // Xếp theo cột "Tồn còn" bé → lớn, dùng CHUNG hàm với màn hình kiểm kê, để
+  // người đối chiếu thấy đúng thứ tự đang đọc.
+  const soldOnlyRows: any[] = sortByStock(
+    (data?.inventoryReconciliation || []).filter((it: any) => Number(it.soldToday || 0) > 0),
+    'ASC'
+  );
+  // Bảng những cuốn CẦN ĐẾM lúc đóng thùng: tồn ≤ ngưỡng, xếp tồn bé → lớn.
+  // Cố ý KHÔNG phụ thuộc bộ lọc trên màn hình: giấy in phải luôn giống nhau bất
+  // kể người dùng đang bật/tắt gì, nếu không bản in và màn hẻ lệch nhau.
+  const lowStockRows: any[] = sortByStock(
+    filterLowStock(data?.inventoryReconciliation || []),
+    'ASC'
   );
   const soldTodayTotal =
     data?.financials?.totalItemsSold ??
@@ -553,26 +655,11 @@ export function DailyFairSettlementModal({
             )}
             <input
               type="date"
+              aria-label="Chọn ngày cần kết toán"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
-            <button
-              onClick={handlePrint}
-              disabled={isLoading || !data}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
-              title="In báo cáo chốt ngày"
-            >
-              <Printer className="w-4 h-4" />
-              <span>In Báo Cáo</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
-              title="Đóng"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
@@ -596,65 +683,33 @@ export function DailyFairSettlementModal({
           </div>
         )}
 
-        {/* Tab Navigation (ẩn khi in) — cuộn ngang gọn trên mobile, không tràn khung */}
-        <div className="no-print px-3 sm:px-6 pt-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <button
-              onClick={() => setActiveTab('FINANCIALS')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'FINANCIALS'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Banknote className="w-4 h-4" />
-              Doanh Số & Két Tiền
-            </button>
-            <button
-              onClick={() => setActiveTab('STOCKTAKE')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'STOCKTAKE'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Boxes className="w-4 h-4" />
-              Kiểm Kê Đóng Thùng
-            </button>
-            <button
-              onClick={() => setActiveTab('DISCOUNT')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'DISCOUNT'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <ShieldAlert className="w-4 h-4" />
-              Giám Sát Chiết Khấu
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              type="button"
-              onClick={() => setDiscountDisplayMode((prev) => (prev === 'PERCENT' ? 'VND' : 'PERCENT'))}
-              className="px-2.5 py-1 text-xs font-bold rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 shadow-sm transition"
-              title="Chuyển đổi cách hiển thị chiết khấu giữa % và số tiền VNĐ"
-            >
-              <Percent className="w-3.5 h-3.5 text-amber-600" />
-              <span>Đơn vị CK:</span>
-              <span className="font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-extrabold text-[11px]">
-                {discountDisplayMode === 'PERCENT' ? '%' : 'VNĐ'}
-              </span>
-            </button>
-
-            <button
-              onClick={fetchSettlement}
-              className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-slate-200 transition"
-              title="Tải lại số liệu"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
+        {/* Tab Navigation (ẩn khi in).
+            Dán đầu (sticky) + 3 ô luôn hiện: trước đây là 3 tab chữ dài trong
+            thanh cuộn ngang — trên điện thoại không có cách nào biết còn mục
+            nào ngoài màn hình, và dải nhãn dài làm nút trông như chữ. */}
+        <div className="no-print sticky top-0 z-10 px-3 sm:px-6 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
+          <div role="tablist" aria-label="Mục báo cáo" className="grid grid-cols-3 gap-1.5 bg-slate-200/60 p-1 rounded-xl">
+            {([
+              { key: 'FINANCIALS', label: 'Tiền & Két', Icon: Banknote },
+              { key: 'STOCKTAKE', label: 'Kiểm Kê', Icon: Boxes },
+              { key: 'DISCOUNT', label: 'Chiết Khấu', Icon: ShieldAlert },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={activeTab === t.key}
+                aria-label={t.label}
+                onClick={() => setActiveTab(t.key)}
+                className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeTab === t.key
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:bg-white/70'
+                }`}
+              >
+                <t.Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{t.label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -683,182 +738,7 @@ export function DailyFairSettlementModal({
               {/* TAB 1: DOANH SỐ & ĐỐI SOÁT KÉT TIỀN */}
               {activeTab === 'FINANCIALS' && (
                 <div className="space-y-5 animate-in fade-in duration-150">
-                  {/* ĐƠN GIÁ TRỊ CAO NHẤT — "điểm nhấn" của ngày: đơn lớn nhất
-                      để thu ngân/quản lý nhìn thấy ngay mà không phải lần trong
-                      danh sách. Không có đơn thì KHÔNG hiện thẻ rỗng. Thanh ngang
-                      = tỉ lệ đơn này chiếm bao nhiêu doanh thu thực thu. */}
-                  {data.highlight && (
-                    <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-3">
-                      <h4 className="font-extrabold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Trophy className="w-4 h-4 text-amber-600" />
-                        Đơn Giá Trị Cao Nhất
-                      </h4>
-
-                      <div className="flex flex-wrap items-end justify-between gap-2">
-                        <div>
-                          <p className="font-mono font-black text-base text-slate-900 leading-tight">
-                            {data.highlight.orderCode}
-                          </p>
-                          <p className="font-mono font-bold text-sm text-emerald-700">
-                            {(data.highlight.finalAmount || 0).toLocaleString('vi-VN')} đ
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-slate-700">
-                            TT: {paymentMethodLabel(data.highlight.paymentMethod)}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-slate-700">
-                            {data.highlight.itemCount || 0} SP
-                          </span>
-                          {vnHm(data.highlight.createdAt) && (
-                            <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-mono font-bold text-slate-700">
-                              {vnHm(data.highlight.createdAt)} giờ VN
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div
-                        role="img"
-                        aria-label={`Chiếm ${highlightShare.toFixed(1)}% doanh thu thực thu trong ngày`}
-                      >
-                        <div className="h-2.5 rounded-full bg-amber-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-amber-500"
-                            style={{ width: `${highlightBarWidth.toFixed(1)}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] font-bold text-amber-800 mt-1">
-                          Chiếm {highlightShare.toFixed(1)}% doanh thu thực thu trong ngày
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TOP 10 BÁN CHẠY — chuyển từ tab Chiết Khấu sang đây: nó là
-                      thứ bán được bao nhiêu, không phải thứ chiết khấu bao nhiêu.
-                      Tab Chiết Khấu giữ bảng đơn vượt trần + cảnh báo tỷ lệ. */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng
-                      </h4>
-                      {data.giftSummary?.totalGiftCopies > 0 && (
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                          Tách riêng {data.giftSummary.totalGiftCopies} quà tặng
-                        </span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      {data.topSellers?.map((seller: any, idx: number) => (
-                        <div
-                          key={seller.editionId}
-                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
-                                {idx + 1}
-                              </span>
-                              <div>
-                                <p className="font-bold text-slate-800 truncate max-w-[180px]">
-                                  [{seller.code}] {seller.title}
-                                </p>
-                                <p className="text-[10px] text-slate-400 font-mono">
-                                  {(seller.soldRevenue || 0).toLocaleString('vi-VN')} đ
-                                </p>
-                              </div>
-                            </div>
-                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs">
-                              {seller.soldCopies} cuốn
-                            </span>
-                          </div>
-                          {/* Thanh ngang CSS thuần (không lib): độ dài = số cuốn so
-                              với ấn phẩm bán chạy nhất. Chuẩn là chính danh sách
-                              này nên không cần trục số. */}
-                          <div
-                            role="img"
-                            aria-label={`${seller.soldCopies} cuốn, so với ấn phẩm bán chạy nhất trong ngày`}
-                            title={`${seller.soldCopies} cuốn so với ấn phẩm bán chạy nhất`}
-                            className="h-1.5 rounded-full bg-slate-200 overflow-hidden"
-                          >
-                            <div
-                              className="h-full rounded-full bg-emerald-500"
-                              style={{
-                                width: `${Math.round(((Number(seller.soldCopies) || 0) / maxTopCopies) * 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {data.giftSummary?.totalGiftCopies > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                        <span className="font-medium text-slate-600">
-                          🎁 Quà tặng kèm đã phát trong ngày (không tính vào bán chạy):
-                        </span>
-                        <span className="font-bold font-mono text-rose-700">
-                          {data.giftSummary.totalGiftCopies} món ({data.giftSummary.items?.map((g: any) => `${g.title} ×${g.copies}`).join(', ')})
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* KPI Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
-                      <p className="text-[11px] font-bold text-slate-500">Doanh thu gộp:</p>
-                      <p className="text-base font-black font-mono text-slate-900 mt-1">
-                        {(data.financials?.grossSales || 0).toLocaleString('vi-VN')} đ
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{data.financials?.totalOrdersCount || 0} đơn hàng</p>
-                    </div>
-
-                    <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80">
-                      <p className="text-[11px] font-bold text-amber-700">
-                        {discountDisplayMode === 'PERCENT' ? 'Chiết khấu bình quân:' : 'Tổng chiết khấu đã cấp:'}
-                      </p>
-                      {discountDisplayMode === 'PERCENT' ? (
-                        <>
-                          <p className="text-base font-black font-mono text-rose-600 mt-1">
-                            {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
-                          </p>
-                          <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
-                            Quy đổi tiền: -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-base font-black font-mono text-rose-600 mt-1">
-                            -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
-                          </p>
-                          <p className="text-[10px] text-amber-600 font-semibold mt-0.5">
-                            Tỷ lệ bình quân: {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
-                          </p>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
-                      <p className="text-[11px] font-bold text-emerald-800">Thực thu:</p>
-                      <p className="text-base font-black font-mono text-emerald-700 mt-1">
-                        {(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ
-                      </p>
-                      <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">Đã ghi nhận thanh toán</p>
-                    </div>
-
-                    <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-200/80">
-                      <p className="text-[11px] font-bold text-indigo-700">Phiên ca làm việc:</p>
-                      <p className="text-base font-black text-indigo-900 mt-1">
-                        {data.sessionsCount || 0} phiên
-                      </p>
-                      <p className="text-[10px] font-bold text-indigo-600 mt-0.5">
-                        {data.hasOpenSession ? '⚠️ Có phiên chưa chốt' : '✅ Đã chốt ca 100%'}
-                      </p>
-                    </div>
-                  </div>
+                  <MoneyHeader data={data} />
 
                   {/* Số đơn theo giờ — dùng CHUNG `hourlyInWindow`/`hourWin` với dải
                       giờ trên bản in, nên màn hình và giấy luôn nói cùng một câu.
@@ -869,51 +749,15 @@ export function DailyFairSettlementModal({
                     endHour={hourEndShown}
                   />
 
-                  {/* Cơ cấu thanh toán (Breakdown) */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-                    <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <CreditCard className="w-4 h-4 text-indigo-600" />
-                      Cơ Cấu Phương Thức Thanh Toán
-                    </h4>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Tiền mặt */}
-                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                            <Banknote className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900">Tiền Mặt</p>
-                            <p className="text-[11px] text-slate-400">
-                              {data.paymentBreakdown?.cash?.ordersCount || 0} đơn ({data.paymentBreakdown?.cash?.percentage || 0}%)
-                            </p>
-                          </div>
-                        </div>
-                        <p className="font-mono font-bold text-sm text-emerald-700">
-                          {(data.paymentBreakdown?.cash?.sales || 0).toLocaleString('vi-VN')} đ
-                        </p>
-                      </div>
-
-                      {/* Chuyển khoản QR */}
-                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-                            <QrCode className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900">Chuyển Khoản / VietQR</p>
-                            <p className="text-[11px] text-slate-400">
-                              {data.paymentBreakdown?.qrTransfer?.ordersCount || 0} đơn ({data.paymentBreakdown?.qrTransfer?.percentage || 0}%)
-                            </p>
-                          </div>
-                        </div>
-                        <p className="font-mono font-bold text-sm text-indigo-700">
-                          {(data.paymentBreakdown?.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Bán chạy nhất: đủ để người cầm biên bản biết món chủ lực
+                      trong ngày mà không phải cuộn qua cả bảng 10 dòng. Bảng đầy
+                      đủ đã chuyển sang màn Trạng Thái Hội Chợ. */}
+                  {(data?.topSellers || []).length > 0 && (
+                    <p className="text-xs font-bold text-slate-600">
+                      Bán chạy nhất: [{data.topSellers[0].code}] {data.topSellers[0].title} ·{' '}
+                      {data.topSellers[0].soldCopies} cuốn
+                    </p>
+                  )}
 
                   {/* Đối soát két tiền ca */}
                   <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
@@ -1159,15 +1003,8 @@ export function DailyFairSettlementModal({
                         {/* Chip lọc nhanh sách sắp hết */}
                         <button
                           type="button"
-                          onClick={() => {
-                            setStocktakeOnlyLow((prev) => {
-                              const next = !prev;
-                              if (next && stocktakeSortMode === 'DEFAULT') {
-                                setStocktakeSortMode('ASC');
-                              }
-                              return next;
-                            });
-                          }}
+                          aria-pressed={stocktakeOnlyLow}
+                          onClick={() => setStocktakeOnlyLow((prev) => !prev)}
                           className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
                             stocktakeOnlyLow
                               ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200'
@@ -1189,32 +1026,23 @@ export function DailyFairSettlementModal({
                         {/* Nút sắp xếp */}
                         <button
                           type="button"
-                          onClick={() => {
-                            setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'));
-                          }}
+                          onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
                           className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
                             stocktakeSortMode === 'ASC'
                               ? 'bg-rose-50/80 text-rose-800 border-rose-300'
-                              : stocktakeSortMode === 'DESC'
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
-                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-300'
                           }`}
                           title="Đổi chiều sắp xếp tồn lý thuyết"
                         >
                           {stocktakeSortMode === 'ASC' ? (
                             <>
                               <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
-                              <span>Tồn: Bé → Lớn</span>
-                            </>
-                          ) : stocktakeSortMode === 'DESC' ? (
-                            <>
-                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>Tồn: Lớn → Bé</span>
+                              <span>Tồn: {sortLabel('ASC')}</span>
                             </>
                           ) : (
                             <>
-                              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Sắp xếp tồn</span>
+                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Tồn: {sortLabel('DESC')}</span>
                             </>
                           )}
                         </button>
@@ -1232,20 +1060,18 @@ export function DailyFairSettlementModal({
                               scope="col"
                               role="button"
                               tabIndex={0}
-                              onClick={() => setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'))}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT')); } }}
-                              aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : stocktakeSortMode === 'DESC' ? 'descending' : 'none'}
-                              title="Bấm để sắp xếp tồn lý thuyết: Bé → Lớn (xem sách sắp hết) hoặc Lớn → Bé"
+                              onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); } }}
+                              aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : 'descending'}
+                              title={`Bấm để đổi chiều sắp xếp tồn lý thuyết. Đang xếp: ${sortLabel(stocktakeSortMode)}`}
                               className="p-3 text-center w-36 cursor-pointer select-none hover:bg-slate-200 transition-colors"
                             >
                               <div className="flex items-center justify-center gap-1.5">
                                 <span>Tồn lý thuyết</span>
                                 {stocktakeSortMode === 'ASC' ? (
                                   <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                ) : stocktakeSortMode === 'DESC' ? (
-                                  <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                 ) : (
-                                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                 )}
                               </div>
                               <span className="block font-normal text-[10px] text-slate-500">
@@ -1361,7 +1187,7 @@ export function DailyFairSettlementModal({
                             <th className="p-3">Mã Đơn</th>
                             <th className="p-3">Thu Ngân</th>
                             <th className="p-3 text-right">Giá Gốc</th>
-                            <th className="p-3 text-center">{discountDisplayMode === 'PERCENT' ? 'Tỷ Lệ CK' : 'Chiết Khấu'}</th>
+                            <th className="p-3 text-center">Chiết Khấu</th>
                             <th className="p-3 text-right">Thực Thu</th>
                             <th className="p-3 text-center">Phương Thức</th>
                             <th className="p-3">Người Duyệt</th>
@@ -1383,21 +1209,15 @@ export function DailyFairSettlementModal({
                                   {(ord.subtotal || 0).toLocaleString('vi-VN')} đ
                                 </td>
                                 <td className="p-3 text-center font-mono font-bold text-rose-600">
-                                  {discountDisplayMode === 'PERCENT' ? (
-                                    <div>
-                                      <span>{Math.round((ord.discountRate || 0) * 100)}%</span>
-                                      <span className="block text-[10px] text-slate-400 font-normal">
-                                        -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      <span>-{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ</span>
-                                      <span className="block text-[10px] text-slate-400 font-normal">
-                                        {Math.round((ord.discountRate || 0) * 100)}%
-                                      </span>
-                                    </div>
-                                  )}
+                                  {/* Tiền thật là số chính, tỉ lệ là số phụ. Trước đây
+                                      người dùng phải bấm nút đổi đơn vị để xem được
+                                      số còn lại, dễ đọc nhầm tỉ lệ thành tổng chiết khấu. */}
+                                  <span>
+                                    -{(ord.discountAmount || Math.round((ord.subtotal || 0) * (ord.discountRate || 0))).toLocaleString('vi-VN')} đ
+                                  </span>
+                                  <span className="block text-[10px] text-slate-400 font-normal">
+                                    {Math.round((ord.discountRate || 0) * 100)}%
+                                  </span>
                                 </td>
                                 <td className="p-3 text-right font-mono font-bold text-slate-900">
                                   {(ord.finalAmount || 0).toLocaleString('vi-VN')} đ
@@ -1419,6 +1239,41 @@ export function DailyFairSettlementModal({
               )}
             </>
           )}
+        </div>
+
+        {/* Chân modal dính đáy: nút In và Đóng luôn ở tầm tay.
+            Trước đây chúng nằm trên cùng, giữa báo cáo dài vài trăm dòng thì
+            phải cuộn hết lên mới bấm được — đúng lúc người dùng cần nhất. */}
+        <div className="no-print sticky bottom-0 z-10 shrink-0 px-3 sm:px-6 py-2 bg-slate-900 text-white flex items-center justify-between gap-2 border-t border-slate-700">
+          <button
+            onClick={fetchSettlement}
+            disabled={isLoading}
+            aria-label="Tải lại số liệu báo cáo"
+            title="Tải lại số liệu"
+            className="p-2 text-slate-300 hover:text-white rounded-xl hover:bg-slate-700 transition disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              disabled={isLoading || !data}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+              title="In báo cáo chốt ngày"
+            >
+              <Printer className="w-4 h-4" />
+              <span>In Báo Cáo</span>
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="Đóng báo cáo"
+              title="Đóng"
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-700 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* ============================================================== */}
@@ -1715,6 +1570,52 @@ export function DailyFairSettlementModal({
                   Ghi chú đóng thùng: {stocktakeNote}
                 </p>
               )}
+            </div>
+
+            {/* VI. SẮP HẾT — nhóm phải đếm lúc đóng thùng.
+                Trước đây bản in KHÔNG có bảng này: chỉ in ấn phẩm đã bán trong
+                ngày, nên cuốn sắp hết mà hôm nay không bán được cuốn nào không
+                có mặt trên giấy — đúng nhóm nhân viên cần đếm nhất. */}
+            <div className="print-block mb-4 font-sans">
+              <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
+                VI. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) — CẦN ĐẾM CUỐI NGÀY
+              </h3>
+              <table className="w-full border-collapse border border-slate-300 text-[11.5px]">
+                <thead>
+                  <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
+                    <th className="border border-slate-300 py-1 px-2 w-10">#</th>
+                    <th className="border border-slate-300 py-1 px-2 w-20">Mã</th>
+                    <th className="border border-slate-300 py-1 px-2 text-left">Tên ấn phẩm</th>
+                    <th className="border border-slate-300 py-1 px-2 w-24 text-right">Tồn còn</th>
+                    <th className="border border-slate-300 py-1 px-2 w-32 text-center">Số đếm thực tế</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lowStockRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="border border-slate-300 py-2 px-2 text-center text-slate-500 italic">
+                        Không có ấn phẩm nào tồn ≤ {STOCK_THRESHOLD_WARNING} cuốn.
+                      </td>
+                    </tr>
+                  ) : (
+                    lowStockRows.map((it: any, idx: number) => (
+                      <tr key={it.editionId}>
+                        <td className="border border-slate-300 py-1 px-2 text-center font-mono text-slate-600">{idx + 1}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-center font-mono font-bold text-slate-900">{it.code}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-slate-900">{it.title}</td>
+                        <td className="border border-slate-300 py-1 px-2 text-right font-mono font-bold text-slate-900">
+                          {it.theoreticalStock}
+                        </td>
+                        {/* Hệ thống KHÔNG lưu số đếm — để trống cho nhân viên điền tay. */}
+                        <td className="border border-slate-300 py-1 px-2" />
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              <p className="text-[11.5px] italic mt-1 text-slate-600">
+                Xếp theo tồn {sortLabel('ASC').toLowerCase()}. Số đếm thực tế do nhân viên điền tay — hệ thống chưa lưu số đếm.
+              </p>
             </div>
 
             {/* V. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT */}

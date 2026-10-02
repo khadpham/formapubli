@@ -13,14 +13,14 @@ export const dynamic = 'force-dynamic';
  *
  * Khác Báo Cáo Chốt Ngày ở 3 điểm, và đó là cả tính năng:
  *  1. Tự làm mới khi modal mở, không cần bấm (chốt ngày thì bấm tay một lần).
- *  2. Chỉ kho hội chợ, và TẤT CẢ kho hội chợ cùng lúc, không chọn 1 kho.
+ *  2. Mặc định TẤT CẢ kho hội chợ; có thể chọn 1 kho và 1 ngày (02/10/2026).
  *  3. Có đơn CHƯA ĐÓNG (`PENDING_CONFIRMATION`) — báo cáo ngày chỉ tính
  *     `COMPLETED` nên không bao giờ thấy trạng thái "đang chờ".
  *
- * Ngày nghiệp vụ theo GIỜ VIỆT NAM. Báo cáo chốt ngày dùng ngày UTC — hai nơi
- * có thể lệch nhau trong khung 00:00-07:00. Chọn giờ VN vì đây là màn hình
- * "lúc này ở hội chợ đang bán gì", và mốc ngày của kế toán là giờ VN. Sự lệch
- * được NÓI RÕ ngay trên modal chứ không giấu; Kế hoạch B sẽ thống nhất.
+ * Ngày nghiệp vụ theo GIỜ VIỆT NAM, giống hệt `businessDateOf` mà báo cáo
+ * chốt ngày dùng ⇒ hai nơi KHÔNG lệch nhau. (Trước đây comment ở đây nói
+ * báo cáo ngày dùng ngày UTC; đã kiểm `daily-settlement.service.ts` dùng
+ * `vnDayEquals` + `businessDateOf`, tức cũng là ngày VN. Comment cũ sai.)
  */
 
 const VN_TZ = 'Asia/Ho_Chi_Minh';
@@ -300,11 +300,37 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(sql`COALESCE(SUM(${orderItems.quantity}), 0)`))
       .limit(5);
 
+    // Đơn giá trị cao nhất trong ngày đang xem. Chuyển từ Báo Cáo Chốt Ngày
+    // sang đây vì nó thuộc loại "đang bán gì", không phải quyết toán tiền.
+    // `recentClosed` KHÔNG thay được: đó là đơn vừa đóng gần đây, không
+    // phải đơn lớn nhất.
+    const largestRows = await db
+      .select({
+        orderCode: orders.orderCode,
+        warehouseId: orders.warehouseId,
+        finalAmount: orders.finalAmount,
+        paymentMethod: orders.paymentMethod,
+        createdAt: orders.createdAt,
+        itemCount: sql<number>`COUNT(${orderItems.id})`,
+      })
+      .from(orders)
+      .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .where(
+        and(
+          inArray(orders.warehouseId, scopeIds),
+          eq(orders.status, 'COMPLETED'),
+          vnDayEq(orders.createdAt, date)
+        )
+      )
+      .groupBy(orders.id)
+      .orderBy(desc(orders.finalAmount))
+      .limit(1);
+
     return NextResponse.json({
       success: true,
       data: {
         businessDate: date,
-        timezoneNote: 'Ngày làm việc Việt Nam (UTC+7). Báo cáo chốt ngày dùng ngày UTC nên hai nơi có thể lệch nhau ở khung 00:00-07:00.',
+        timezoneNote: 'Ngày làm việc Việt Nam (UTC+7) — cùng mốc ngày với Báo Cáo Chốt Ngày, hai nơi không lệch nhau.',
         actorRole: session.role,
         fairWarehouses: fairRows,
         today: {
@@ -333,6 +359,16 @@ export async function GET(req: NextRequest) {
           copies: Number(r.copies || 0),
           revenue: Number(r.revenue || 0),
         })),
+        largestOrder: largestRows.length
+          ? {
+              orderCode: largestRows[0].orderCode,
+              warehouseName: whName(largestRows[0].warehouseId),
+              finalAmount: Number(largestRows[0].finalAmount || 0),
+              paymentMethod: largestRows[0].paymentMethod,
+              itemCount: Number(largestRows[0].itemCount || 0),
+              createdAt: largestRows[0].createdAt,
+            }
+          : null,
         generatedAt: new Date().toISOString(),
       },
     });
@@ -366,6 +402,7 @@ function emptyPayload(date: string) {
     pending: [],
     recentClosed: [],
     topSellers: [],
+    largestOrder: null,
     generatedAt: new Date().toISOString(),
   };
 }
