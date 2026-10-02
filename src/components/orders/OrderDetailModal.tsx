@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Receipt,
   X,
@@ -44,7 +44,11 @@ export function OrderDetailModal({
   const [voidError, setVoidError] = useState<string | null>(null);
   const [voidSuccess, setVoidSuccess] = useState<string | null>(null);
 
+  // Thế hệ request: đóng/mở đơn khác nhanh không để phản hồi cũ ghi đè.
+  const seqRef = useRef(0);
+
   const fetchOrderDetail = useCallback(async (id: string) => {
+    const seq = ++seqRef.current;
     setLoading(true);
     setError(null);
     setOrderDetail(null);
@@ -57,14 +61,16 @@ export function OrderDetailModal({
     try {
       const res = await fetch(`/api/orders/${id}`);
       const json = await res.json();
+      if (seq !== seqRef.current) return; // phản hồi cũ — bỏ, không ghi đè
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Không thể tải chi tiết đơn hàng.');
       }
       setOrderDetail(json);
     } catch (err: any) {
+      if (seq !== seqRef.current) return;
       setError(err?.message || 'Lỗi kết nối khi tải chi tiết đơn hàng.');
     } finally {
-      setLoading(false);
+      if (seq === seqRef.current) setLoading(false);
     }
   }, []);
 
@@ -72,6 +78,7 @@ export function OrderDetailModal({
     if (isOpen && orderId) {
       fetchOrderDetail(orderId);
     } else {
+      seqRef.current++; // huỷ hiệu lực phản hồi đang bay khi đóng/đổi đơn
       setOrderDetail(null);
       setError(null);
       setShowVoidConfirm(false);
