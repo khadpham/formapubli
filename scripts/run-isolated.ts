@@ -156,8 +156,12 @@ const ALL_SUITES = [
   // KHÔNG: đặt TRƯỚC suite cuối để suite cuối vẫn chạy trên DB đã có dữ liệu
   // này (mọi assertion của nó so với SQL gốc trên cùng DB nên vẫn đúng).
   'scripts/test-sales-scope-filter.ts',
-  // Báo cáo quà: chỉ tính đơn COMPLETED + tách tổng đã phát (Task 2). Chạy
-  // trước test-analytics-doanhso vì nó cũng đọc orders/order_items.
+  // Báo cáo quà: chỉ tính đơn COMPLETED + tách tổng đã phát (Task 2).
+  // THỨ TỰ BẮT BUỘC, KHÔNG ĐẢO: suite này tự dọn dữ liệu (try/finally) nên
+  // không vấn đề, nhưng các suite quà khác (test-gift-forgery…) để lại dòng quà
+  // của đơn COMPLETED trong DB test chung, và SQL gốc của assertion 3.6 ở
+  // test-analytics-doanhso không loại is_gift_line trong khi topEditions thì có
+  // ⇒ đặt sai chỗ là suite hậu kỳ này tự nó làm ĐỎ dữ liệu của suite sau.
   'scripts/test-gift-completed-only.ts',
   'scripts/test-analytics-doanhso.ts',
 ];

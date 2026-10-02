@@ -43,6 +43,7 @@ export const GiftReportService = {
     return {
       inStock: inStock.map((r) => ({ productId: r.productId, productName: r.productName, lineCount: Number(r.lineCount), totalQty: Number(r.totalQty) })),
       shortfall: shortfall.map((r) => ({ productId: r.productId, productName: r.productName, lineCount: Number(r.lineCount), totalQty: Number(r.totalQty) })),
+      /** Tổng mọi dòng quà của đơn COMPLETED trong kỳ = totalDelivered + totalShortfall. */
       totalQty: sumQty(rows),
       /** Quà đã phát (còn tồn). UI dùng làm tiêu đề "đã phát" (Task 6). */
       totalDelivered: sumQty(inStock),
