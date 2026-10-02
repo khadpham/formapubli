@@ -60,4 +60,16 @@ assert.ok(
   'dòng đơn chờ phải ghi rõ "chưa ghi nhận vào Thực thu"'
 );
 
+// Thanh tab dính đầu + chân modal có nút In: trên điện thoại, tab cũ là thanh
+// cuộn ngang không báo còn bao nhiêu mục, và nút In nằm trên cùng nên phải
+// cuộn lên mới bấm được.
+assert.ok(src.includes('sessionStorage'), 'nhớ tab đang xem qua sessionStorage');
+assert.ok(src.includes('sticky top-0'), 'thanh tab phải dính đầu');
+assert.ok(src.includes('sticky bottom-0'), 'chân modal phải dính đáy');
+assert.ok(src.includes('role="tablist"'), 'thanh tab phải là tablist để trình đọc màn hình hiểu');
+assert.ok(
+  src.includes('Tiền & Két'),
+  'tab phải có nhãn ngắn "Tiền & Két"'
+);
+
 console.log('✓ test-settlement-money-header PASS');

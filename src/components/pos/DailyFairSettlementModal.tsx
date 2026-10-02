@@ -272,6 +272,18 @@ export function DailyFairSettlementModal({
     () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
   );
   const [activeTab, setActiveTab] = useState<'FINANCIALS' | 'STOCKTAKE' | 'DISCOUNT'>('FINANCIALS');
+  // Nhớ tab đang xem: đóng modal rồi mở lại không nên mất chỗ đang đọc.
+  // `sessionStorage` (không phải `localStorage`) vì đây là trạng thái của phiên
+  // làm việc, không phải tuỳ chọn người dùng muốn giữ lâu dài.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('formapubli.settlement.tab');
+      if (saved === 'FINANCIALS' || saved === 'STOCKTAKE' || saved === 'DISCOUNT') setActiveTab(saved);
+    } catch { /* trình duyệt chặn storage: bỏ qua, dùng mặc định */ }
+  }, []);
+  useEffect(() => {
+    try { sessionStorage.setItem('formapubli.settlement.tab', activeTab); } catch { /* như trên */ }
+  }, [activeTab]);
 
   // Số đếm thực tế KHÔNG được lưu ở đâu: chỉ nằm trong useState này, không có
   // lệnh nào gửi đi. Chủ sở hữu đã quyết định (2026-09-29): cuối ngày không đếm
@@ -643,26 +655,11 @@ export function DailyFairSettlementModal({
             )}
             <input
               type="date"
+              aria-label="Chọn ngày cần kết toán"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
-            <button
-              onClick={handlePrint}
-              disabled={isLoading || !data}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
-              title="In báo cáo chốt ngày"
-            >
-              <Printer className="w-4 h-4" />
-              <span>In Báo Cáo</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-xl transition cursor-pointer"
-              title="Đóng"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
@@ -686,52 +683,33 @@ export function DailyFairSettlementModal({
           </div>
         )}
 
-        {/* Tab Navigation (ẩn khi in) — cuộn ngang gọn trên mobile, không tràn khung */}
-        <div className="no-print px-3 sm:px-6 pt-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <button
-              onClick={() => setActiveTab('FINANCIALS')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'FINANCIALS'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Banknote className="w-4 h-4" />
-              Doanh Số & Két Tiền
-            </button>
-            <button
-              onClick={() => setActiveTab('STOCKTAKE')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'STOCKTAKE'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Boxes className="w-4 h-4" />
-              Kiểm Kê Đóng Thùng
-            </button>
-            <button
-              onClick={() => setActiveTab('DISCOUNT')}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'DISCOUNT'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <ShieldAlert className="w-4 h-4" />
-              Giám Sát Chiết Khấu
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              onClick={fetchSettlement}
-              className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-slate-200 transition"
-              title="Tải lại số liệu"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
+        {/* Tab Navigation (ẩn khi in).
+            Dán đầu (sticky) + 3 ô luôn hiện: trước đây là 3 tab chữ dài trong
+            thanh cuộn ngang — trên điện thoại không có cách nào biết còn mục
+            nào ngoài màn hình, và dải nhãn dài làm nút trông như chữ. */}
+        <div className="no-print sticky top-0 z-10 px-3 sm:px-6 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
+          <div role="tablist" aria-label="Mục báo cáo" className="grid grid-cols-3 gap-1.5 bg-slate-200/60 p-1 rounded-xl">
+            {([
+              { key: 'FINANCIALS', label: 'Tiền & Két', Icon: Banknote },
+              { key: 'STOCKTAKE', label: 'Kiểm Kê', Icon: Boxes },
+              { key: 'DISCOUNT', label: 'Chiết Khấu', Icon: ShieldAlert },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={activeTab === t.key}
+                aria-label={t.label}
+                onClick={() => setActiveTab(t.key)}
+                className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeTab === t.key
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:bg-white/70'
+                }`}
+              >
+                <t.Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{t.label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -1261,6 +1239,41 @@ export function DailyFairSettlementModal({
               )}
             </>
           )}
+        </div>
+
+        {/* Chân modal dính đáy: nút In và Đóng luôn ở tầm tay.
+            Trước đây chúng nằm trên cùng, giữa báo cáo dài vài trăm dòng thì
+            phải cuộn hết lên mới bấm được — đúng lúc người dùng cần nhất. */}
+        <div className="no-print sticky bottom-0 z-10 shrink-0 px-3 sm:px-6 py-2 bg-slate-900 text-white flex items-center justify-between gap-2 border-t border-slate-700">
+          <button
+            onClick={fetchSettlement}
+            disabled={isLoading}
+            aria-label="Tải lại số liệu báo cáo"
+            title="Tải lại số liệu"
+            className="p-2 text-slate-300 hover:text-white rounded-xl hover:bg-slate-700 transition disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              disabled={isLoading || !data}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+              title="In báo cáo chốt ngày"
+            >
+              <Printer className="w-4 h-4" />
+              <span>In Báo Cáo</span>
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="Đóng báo cáo"
+              title="Đóng"
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-700 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* ============================================================== */}
