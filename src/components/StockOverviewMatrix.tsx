@@ -23,6 +23,10 @@ import {
   Check,
   Truck,
   FileCheck,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Flame,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef, useCallback, useTransition } from 'react';
 import { PortalToBody } from './PortalToBody';
@@ -39,6 +43,11 @@ import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { useRouter } from 'next/navigation';
+import {
+  getStockAlertBadge,
+  getStockRowHighlightClass,
+  STOCK_THRESHOLD_WARNING,
+} from '@/lib/stock-highlight';
 
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { matchActionShortcut } from '@/lib/keyboard';
@@ -157,6 +166,10 @@ export function StockOverviewMatrix({
   const [activeTab, setActiveTab] = useState<MainTabId>('MATRIX');
   // Ticket 3 MVP: tab kho kiểu Sheets — chỉ lọc hiển thị read-only, không đụng ledger.
   const [warehouseTab, setWarehouseTab] = useState<string>('ALL');
+  // Sắp xếp tồn kho: 'DEFAULT' (giữ nguyên SKU), 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
+  const [stockSortMode, setStockSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
+  // Lọc chỉ hiển thị các đầu sách sắp hết (tồn <= 5 cuốn)
+  const [onlyLowStock, setOnlyLowStock] = useState<boolean>(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
   // Menu tab gọn: thay vì dải 4 pill inline (bị bóp + tràn trên ~470px), ta dùng
@@ -368,35 +381,69 @@ export function StockOverviewMatrix({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [modalOpen, searchTerm, isScrolledPast, toggleListening]);
 
+  const getWarehouseStock = useCallback((b: MatrixBookItem, tab: string) => {
+    if (tab === 'ALL') return b.totalStock;
+    // Động theo mọi kho (kể cả kho hội chợ) — không hardcode 3 kho nữa.
+    return b.stockByWarehouse?.[tab] ?? 0;
+  }, []);
+
+  // Số lượng đầu sách có tồn <= 5 tại kho đang chọn (hoặc trên tổng tồn khi xem tất cả kho)
+  const lowStockCount = useMemo(() => {
+    return initialBooks.filter((b) => getWarehouseStock(b, warehouseTab) <= STOCK_THRESHOLD_WARNING).length;
+  }, [initialBooks, warehouseTab, getWarehouseStock]);
+
   const filteredBooks = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return initialBooks;
+    let result = initialBooks;
 
-    // Null-safe: bất kỳ bản ghi thiếu isbn/code nào cũng không được làm crash
-    // render (crash render = ô input trông như "gõ không ra chữ").
-    return initialBooks.filter((b) => {
-      try {
-        // 1. Khớp 4 số cuối hoặc toàn bộ ISBN
-        const isbn = String(b?.isbnLast4 ?? b?.isbn ?? '');
-        const fullIsbn = String(b?.isbn ?? '');
-        if (isbn.toLowerCase().includes(q) || fullIsbn.toLowerCase().includes(q)) return true;
-        // 2. Khớp mã SKU (H01, H02...)
-        if (String(b?.code ?? '').toLowerCase().includes(q)) return true;
-        // 3. Khớp mã viết tắt (bt, nbl, dddhc...)
-        if (b?.shortCode && String(b.shortCode).toLowerCase() === q) return true;
-        // 4. Khớp tiếng Việt không dấu trên Tên sách
-        if (matchesVietnameseSearch(b?.title, q)) return true;
-        // 5. Khớp tiếng Việt không dấu trên Tác giả
-        if (matchesVietnameseSearch(b?.author, q)) return true;
-        // 6. Khớp tiếng Việt không dấu trên Dịch giả
-        if (matchesVietnameseSearch(b?.translator, q)) return true;
-      } catch {
+    if (q) {
+      result = result.filter((b) => {
+        try {
+          // 1. Khớp 4 số cuối hoặc toàn bộ ISBN
+          const isbn = String(b?.isbnLast4 ?? b?.isbn ?? '');
+          const fullIsbn = String(b?.isbn ?? '');
+          if (isbn.toLowerCase().includes(q) || fullIsbn.toLowerCase().includes(q)) return true;
+          // 2. Khớp mã SKU (H01, H02...)
+          if (String(b?.code ?? '').toLowerCase().includes(q)) return true;
+          // 3. Khớp mã viết tắt (bt, nbl, dddhc...)
+          if (b?.shortCode && String(b.shortCode).toLowerCase() === q) return true;
+          // 4. Khớp tiếng Việt không dấu trên Tên sách
+          if (matchesVietnameseSearch(b?.title, q)) return true;
+          // 5. Khớp tiếng Việt không dấu trên Tác giả
+          if (matchesVietnameseSearch(b?.author, q)) return true;
+          // 6. Khớp tiếng Việt không dấu trên Dịch giả
+          if (matchesVietnameseSearch(b?.translator, q)) return true;
+        } catch {
+          return false;
+        }
         return false;
-      }
+      });
+    }
 
-      return false;
-    });
-  }, [searchTerm, initialBooks]);
+    // Lọc theo cờ sách sắp hết (tồn <= 5)
+    if (onlyLowStock) {
+      result = result.filter((b) => getWarehouseStock(b, warehouseTab) <= STOCK_THRESHOLD_WARNING);
+    }
+
+    // Sắp xếp tồn kho linh hoạt theo ngữ cảnh kho đang chọn
+    if (stockSortMode === 'ASC') {
+      result = [...result].sort((a, b) => {
+        const aStock = getWarehouseStock(a, warehouseTab);
+        const bStock = getWarehouseStock(b, warehouseTab);
+        if (aStock !== bStock) return aStock - bStock;
+        return (a.code || '').localeCompare(b.code || '');
+      });
+    } else if (stockSortMode === 'DESC') {
+      result = [...result].sort((a, b) => {
+        const aStock = getWarehouseStock(a, warehouseTab);
+        const bStock = getWarehouseStock(b, warehouseTab);
+        if (aStock !== bStock) return bStock - aStock;
+        return (a.code || '').localeCompare(b.code || '');
+      });
+    }
+
+    return result;
+  }, [searchTerm, initialBooks, onlyLowStock, stockSortMode, warehouseTab, getWarehouseStock]);
 
   const openAction = (action: 'RECEIPT' | 'DISPATCH' | 'TRANSFER', book: MatrixBookItem | null = null) => {
     const fallbackBook = book || initialBooks[0] || null;
@@ -437,12 +484,6 @@ export function StockOverviewMatrix({
     const list = localWarehouses || [];
     return { total: list.length, active: list.filter((w) => w.isActive !== false).length };
   }, [localWarehouses]);
-
-  const getWarehouseStock = (b: MatrixBookItem, tab: string) => {
-    if (tab === 'ALL') return b.totalStock;
-    // Động theo mọi kho (kể cả kho hội chợ) — không hardcode 3 kho nữa.
-    return b.stockByWarehouse?.[tab] ?? 0;
-  };
 
   // Nút "Làm mới" cho quản lý: NẠP LẠI DỮ LIỆU chứ không reload trang.
   // Reload cả trang xóa sạch mọi việc đang dở (phiếu nháp, ô tìm kiếm, tab
@@ -859,6 +900,72 @@ export function StockOverviewMatrix({
               {isRefreshing ? 'Đang tải…' : 'Làm mới'}
             </button>
           )}
+
+          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+          {/* Nút lọc nhanh: Sắp hết (<= 5 cuốn) */}
+          <button
+            type="button"
+            onClick={() => {
+              setOnlyLowStock((prev) => {
+                const next = !prev;
+                // Nếu bật lọc sắp hết mà chưa bật sort, tự động bật xếp Bé -> Lớn để xem sách cạn nhất trước
+                if (next && stockSortMode === 'DEFAULT') {
+                  setStockSortMode('ASC');
+                }
+                return next;
+              });
+            }}
+            title={onlyLowStock ? 'Bỏ lọc sách sắp hết, hiện lại toàn bộ' : 'Chỉ hiện các đầu sách có tồn kho ≤ 5 cuốn để kịp thời nhập thêm'}
+            className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 rounded-lg text-xs font-bold shadow-sm transition-all border cursor-pointer ${
+              onlyLowStock
+                ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200 shadow-rose-100'
+                : 'bg-white hover:bg-rose-50/50 text-slate-700 border-slate-300 hover:border-rose-200'
+            }`}
+          >
+            <Flame className={`w-3.5 h-3.5 shrink-0 ${onlyLowStock ? 'text-rose-600' : 'text-amber-500'}`} />
+            <span>Sắp hết (≤ 5)</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
+                onlyLowStock ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {lowStockCount}
+            </span>
+          </button>
+
+          {/* Nút đảo chiều sắp xếp tồn: Bé -> Lớn / Lớn -> Bé / Mặc định */}
+          <button
+            type="button"
+            onClick={() => {
+              setStockSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'));
+            }}
+            title="Đổi thứ tự sắp xếp tồn kho: Bé đến Lớn (xem sách sắp hết) hoặc Lớn đến Bé"
+            className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 rounded-lg text-xs font-bold shadow-sm transition-colors border cursor-pointer ${
+              stockSortMode === 'ASC'
+                ? 'bg-rose-50/80 text-rose-800 border-rose-300 ring-1 ring-rose-200'
+                : stockSortMode === 'DESC'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+            }`}
+          >
+            {stockSortMode === 'ASC' ? (
+              <>
+                <ArrowUp className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                <span>Tồn: Bé → Lớn</span>
+              </>
+            ) : stockSortMode === 'DESC' ? (
+              <>
+                <ArrowDown className="w-3.5 h-3.5 shrink-0 text-indigo-600" />
+                <span>Tồn: Lớn → Bé</span>
+              </>
+            ) : (
+              <>
+                <ArrowUpDown className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                <span>Sắp xếp tồn</span>
+              </>
+            )}
+          </button>
         </div>
         {/* Lớp nền đóng menu hành động (intent từ main): chặn click nhầm ra
             ngoài và đóng menu khi bấm khoảng trống. z-40 nằm dưới dropdown. */}
@@ -1117,72 +1224,149 @@ export function StockOverviewMatrix({
                       </th>
                     </>
                   ) : (
-                    <th className="px-3 py-3 text-right bg-indigo-50/50 font-bold text-indigo-900 w-32">
-                      {warehouseTab === 'wh-au-co' ? 'Kho Âu Cơ' : warehouseTab === 'wh-quynh-mai' ? 'Kho Quỳnh Mai' : 'Kho Hội Chợ'}
-                      <span className="block font-normal text-[10px] text-indigo-500">Tồn tại kho này</span>
+                    <th
+                      scope="col"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setStockSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStockSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT')); } }}
+                      aria-sort={stockSortMode === 'ASC' ? 'ascending' : stockSortMode === 'DESC' ? 'descending' : 'none'}
+                      title="Bấm để sắp xếp tồn tại kho này: Bé → Lớn (xem sách sắp hết) hoặc Lớn → Bé"
+                      className="px-3 py-3 text-right bg-indigo-50/70 font-bold text-indigo-900 w-36 cursor-pointer select-none hover:bg-indigo-100/70 transition-colors"
+                    >
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span>{warehouseTab === 'wh-au-co' ? 'Kho Âu Cơ' : warehouseTab === 'wh-quynh-mai' ? 'Kho Quỳnh Mai' : 'Kho Hội Chợ'}</span>
+                        {stockSortMode === 'ASC' ? (
+                          <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        ) : stockSortMode === 'DESC' ? (
+                          <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        ) : (
+                          <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        )}
+                      </div>
+                      <span className="block font-normal text-[10px] text-indigo-500">
+                        {stockSortMode === 'ASC' ? '▲ Bé → Lớn' : stockSortMode === 'DESC' ? '▼ Lớn → Bé' : 'Bấm để xếp tồn'}
+                      </span>
                     </th>
                   )}
-                  <th className="px-3 py-3 text-right font-black text-slate-900 w-28">
-                    Tổng tồn
+                  <th
+                    scope="col"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setStockSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStockSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT')); } }}
+                    aria-sort={stockSortMode === 'ASC' ? 'ascending' : stockSortMode === 'DESC' ? 'descending' : 'none'}
+                    title="Bấm để sắp xếp tổng tồn kho: Bé → Lớn (xem sách sắp hết) hoặc Lớn → Bé"
+                    className="px-3 py-3 text-right font-black text-slate-900 w-32 cursor-pointer select-none hover:bg-slate-100 transition-colors"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Tổng tồn</span>
+                      {stockSortMode === 'ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      ) : stockSortMode === 'DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      )}
+                    </div>
+                    <span className="block font-normal text-[10px] text-slate-400">
+                      {stockSortMode === 'ASC' ? '▲ Bé → Lớn' : stockSortMode === 'DESC' ? '▼ Lớn → Bé' : 'Bấm để xếp'}
+                    </span>
                   </th>
                   <th className="px-3 py-3 text-center w-28">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredBooks.map((b) => (
-                  <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-3 py-2.5 font-mono font-bold text-indigo-600">{b.code}</td>
-                    <td className="px-3 py-2.5">
-                      <div className="font-semibold text-slate-900">{b.title}</div>
-                      <div className="text-[11px] text-slate-400">{b.author}</div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded font-mono font-semibold">
-                        {b.shortCode || '-'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 font-mono">
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">
-                        {b.isbnLast4}
-                      </span>
-                    </td>
-                    {warehouseTab === 'ALL' ? (
-                      <>
-                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
-                          {b.stockAuCo.toLocaleString('vi-VN')}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-emerald-50/20 text-emerald-800">
-                          {b.stockQuynhMai.toLocaleString('vi-VN')}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-amber-50/20 text-amber-800">
-                          {b.stockDuPhong.toLocaleString('vi-VN')}
-                        </td>
-                      </>
-                    ) : (
-                      <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
-                        {getWarehouseStock(b, warehouseTab).toLocaleString('vi-VN')}
+                {filteredBooks.map((b) => {
+                  const currentStock = getWarehouseStock(b, warehouseTab);
+                  const isSortedLow = stockSortMode === 'ASC' || onlyLowStock;
+                  const rowHighlightClass = getStockRowHighlightClass(currentStock, isSortedLow);
+                  const stockBadge = getStockAlertBadge(currentStock);
+                  const totalBadge = getStockAlertBadge(b.totalStock);
+
+                  return (
+                    <tr key={b.id} className={`hover:bg-slate-50/80 transition-colors ${rowHighlightClass}`}>
+                      <td className="px-3 py-2.5 font-mono font-bold text-indigo-600">{b.code}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-semibold text-slate-900">{b.title}</div>
+                        <div className="text-[11px] text-slate-400">{b.author}</div>
                       </td>
-                    )}
-                    <td className="px-3 py-2.5 text-right font-mono font-black text-slate-900">
-                      {b.totalStock > 0 ? (
-                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          {b.totalStock.toLocaleString('vi-VN')}
+                      <td className="px-3 py-2.5">
+                        <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded font-mono font-semibold">
+                          {b.shortCode || '-'}
                         </span>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono">
+                        <span className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">
+                          {b.isbnLast4}
+                        </span>
+                      </td>
+                      {warehouseTab === 'ALL' ? (
+                        <>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
+                            {b.stockAuCo <= 3 && b.stockAuCo > 0 ? (
+                              <span className="text-rose-700 font-extrabold">{b.stockAuCo}</span>
+                            ) : b.stockAuCo === 0 ? (
+                              <span className="text-slate-300 font-normal">0</span>
+                            ) : (
+                              b.stockAuCo.toLocaleString('vi-VN')
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold bg-emerald-50/20 text-emerald-800">
+                            {b.stockQuynhMai <= 3 && b.stockQuynhMai > 0 ? (
+                              <span className="text-rose-700 font-extrabold">{b.stockQuynhMai}</span>
+                            ) : b.stockQuynhMai === 0 ? (
+                              <span className="text-slate-300 font-normal">0</span>
+                            ) : (
+                              b.stockQuynhMai.toLocaleString('vi-VN')
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold bg-amber-50/20 text-amber-800">
+                            {b.stockDuPhong <= 3 && b.stockDuPhong > 0 ? (
+                              <span className="text-rose-700 font-extrabold">{b.stockDuPhong}</span>
+                            ) : b.stockDuPhong === 0 ? (
+                              <span className="text-slate-300 font-normal">0</span>
+                            ) : (
+                              b.stockDuPhong.toLocaleString('vi-VN')
+                            )}
+                          </td>
+                        </>
                       ) : (
-                        <span className="text-slate-400">0</span>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold bg-indigo-50/20 text-indigo-800">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs ${stockBadge.bgClass} ${stockBadge.textClass} ${stockBadge.borderClass}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stockBadge.dotClass}`} />
+                            <span>{stockBadge.label}</span>
+                          </span>
+                        </td>
                       )}
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => openAction('TRANSFER', b)}
-                        className="px-2 py-1 whitespace-nowrap text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
-                      >
-                        Chuyển kho
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-3 py-2.5 text-right font-mono font-black text-slate-900">
+                        {warehouseTab === 'ALL' ? (
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs ${totalBadge.bgClass} ${totalBadge.textClass} ${totalBadge.borderClass}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${totalBadge.dotClass}`} />
+                            <span>{totalBadge.label}</span>
+                          </span>
+                        ) : (
+                          b.totalStock > 0 ? (
+                            <span className="text-slate-700 font-bold">
+                              {b.totalStock.toLocaleString('vi-VN')}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-normal">0</span>
+                          )
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => openAction('TRANSFER', b)}
+                          className="px-2 py-1 whitespace-nowrap text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
+                        >
+                          Chuyển kho
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {/* Gutter cuộn: chừa khoảng trống cuộn được để cột cuối (Thao tác) trượt

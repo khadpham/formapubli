@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Receipt,
@@ -25,10 +25,19 @@ import {
   Percent,
   Trophy,
   Coins,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Flame,
 } from 'lucide-react';
 import { parseDbTimestamp } from '@/lib/db-timestamp';
 import { HourlyOrdersChart } from './HourlyOrdersChart';
 import { CashboxAuditCountModal } from './CashboxAuditCountModal';
+import {
+  getStockAlertBadge,
+  getStockRowHighlightClass,
+  STOCK_THRESHOLD_WARNING,
+} from '@/lib/stock-highlight';
 
 interface DailyFairSettlementModalProps {
   isOpen: boolean;
@@ -177,7 +186,43 @@ export function DailyFairSettlementModal({
   // theoreticalStock mà API đã trả sẵn. Nên bỏ ô nhập, chỉ hiện tồn lý thuyết và
   // nói rõ chưa kiểm kê, để không ai tưởng đã đếm.
   const [stocktakeNote, setStocktakeNote] = useState('');
+  // Sắp xếp bảng kiểm kê theo tồn lý thuyết: 'DEFAULT', 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
+  const [stocktakeSortMode, setStocktakeSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
+  // Lọc chỉ hiển thị các đầu sách sắp hết (tồn lý thuyết <= 5 cuốn)
+  const [stocktakeOnlyLow, setStocktakeOnlyLow] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
+
+  // Danh sách kiểm kê có sắp xếp và lọc theo nhu cầu đối soát cuối ngày
+  const sortedStocktakeList = useMemo(() => {
+    const list = Array.isArray(data?.inventoryReconciliation) ? data.inventoryReconciliation : [];
+    let res = list;
+    if (stocktakeOnlyLow) {
+      res = res.filter((it: any) => Number(it.theoreticalStock || 0) <= STOCK_THRESHOLD_WARNING);
+    }
+    if (stocktakeSortMode === 'ASC') {
+      res = [...res].sort((a: any, b: any) => {
+        const aT = Number(a.theoreticalStock || 0);
+        const bT = Number(b.theoreticalStock || 0);
+        if (aT !== bT) return aT - bT;
+        return (a.code || '').localeCompare(b.code || '');
+      });
+    } else if (stocktakeSortMode === 'DESC') {
+      res = [...res].sort((a: any, b: any) => {
+        const aT = Number(a.theoreticalStock || 0);
+        const bT = Number(b.theoreticalStock || 0);
+        if (aT !== bT) return bT - aT;
+        return (a.code || '').localeCompare(b.code || '');
+      });
+    }
+    return res;
+  }, [data?.inventoryReconciliation, stocktakeSortMode, stocktakeOnlyLow]);
+
+  // Số lượng đầu sách có tồn lý thuyết <= 5 cuốn
+  const stocktakeLowCount = useMemo(() => {
+    const list = Array.isArray(data?.inventoryReconciliation) ? data.inventoryReconciliation : [];
+    return list.filter((it: any) => Number(it.theoreticalStock || 0) <= STOCK_THRESHOLD_WARNING).length;
+  }, [data?.inventoryReconciliation]);
+
   // Lý do chặn in, hiện ra màn hình. Trước đây handlePrint gọi window.print()
   // vô điều kiện nên bấm lúc chưa tải xong (hoặc tải lỗi) ra đúng MỘT TRANG
   // TRẮNG — người dùng tưởng máy in hỏng. Giữ thông báo ở state để nói rõ
@@ -1124,11 +1169,78 @@ export function DailyFairSettlementModal({
 
                   {/* Bảng sách kiểm kê */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                    <p className="px-3 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900">
-                      Cột “Kiểm kê thực tế” chưa có dữ liệu: hệ thống chưa lưu số đếm, và
-                      quy trình hiện tại không đếm sách cuối ngày. Số tồn dùng để đối chiếu là
-                      <strong> tồn lý thuyết</strong> = tồn trong kho − số đã bán.
-                    </p>
+                    <div className="px-3 py-2.5 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[11px] text-amber-900 flex-1 min-w-[260px]">
+                        Cột “Kiểm kê thực tế” chưa có dữ liệu: hệ thống chưa lưu số đếm, và
+                        quy trình hiện tại không đếm sách cuối ngày. Số tồn dùng để đối chiếu là
+                        <strong> tồn lý thuyết</strong> = tồn trong kho − số đã bán.
+                      </p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Chip lọc nhanh sách sắp hết */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStocktakeOnlyLow((prev) => {
+                              const next = !prev;
+                              if (next && stocktakeSortMode === 'DEFAULT') {
+                                setStocktakeSortMode('ASC');
+                              }
+                              return next;
+                            });
+                          }}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
+                            stocktakeOnlyLow
+                              ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200'
+                              : 'bg-white hover:bg-rose-50/50 text-slate-700 border-slate-300'
+                          }`}
+                          title="Chỉ hiển thị các đầu sách có tồn lý thuyết ≤ 5 cuốn"
+                        >
+                          <Flame className={`w-3.5 h-3.5 ${stocktakeOnlyLow ? 'text-rose-600' : 'text-amber-500'}`} />
+                          <span>Sắp hết (≤ 5)</span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                              stocktakeOnlyLow ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {stocktakeLowCount}
+                          </span>
+                        </button>
+
+                        {/* Nút sắp xếp */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'));
+                          }}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
+                            stocktakeSortMode === 'ASC'
+                              ? 'bg-rose-50/80 text-rose-800 border-rose-300'
+                              : stocktakeSortMode === 'DESC'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                          }`}
+                          title="Đổi chiều sắp xếp tồn lý thuyết"
+                        >
+                          {stocktakeSortMode === 'ASC' ? (
+                            <>
+                              <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Tồn: Bé → Lớn</span>
+                            </>
+                          ) : stocktakeSortMode === 'DESC' ? (
+                            <>
+                              <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Tồn: Lớn → Bé</span>
+                            </>
+                          ) : (
+                            <>
+                              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Sắp xếp tồn</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
                       <table className="w-full min-w-[620px] text-xs">
                         <thead>
@@ -1136,17 +1248,43 @@ export function DailyFairSettlementModal({
                             <th className="p-3 w-10 text-center">#</th>
                             <th className="p-3">Ấn phẩm sách</th>
                             <th className="p-3 text-right">Đã bán</th>
-                            <th className="p-3 text-center">Tồn lý thuyết</th>
+                            <th
+                              scope="col"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT'))}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'DEFAULT' ? 'ASC' : prev === 'ASC' ? 'DESC' : 'DEFAULT')); } }}
+                              aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : stocktakeSortMode === 'DESC' ? 'descending' : 'none'}
+                              title="Bấm để sắp xếp tồn lý thuyết: Bé → Lớn (xem sách sắp hết) hoặc Lớn → Bé"
+                              className="p-3 text-center w-36 cursor-pointer select-none hover:bg-slate-200 transition-colors"
+                            >
+                              <div className="flex items-center justify-center gap-1.5">
+                                <span>Tồn lý thuyết</span>
+                                {stocktakeSortMode === 'ASC' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                ) : stocktakeSortMode === 'DESC' ? (
+                                  <ArrowDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                ) : (
+                                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                )}
+                              </div>
+                              <span className="block font-normal text-[10px] text-slate-500">
+                                {stocktakeSortMode === 'ASC' ? '▲ Bé → Lớn' : stocktakeSortMode === 'DESC' ? '▼ Lớn → Bé' : 'Bấm để xếp'}
+                              </span>
+                            </th>
                             <th className="p-3 text-center w-32">Kiểm kê thực tế</th>
                             <th className="p-3 text-center w-28">Chênh lệch</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {data.inventoryReconciliation?.map((it: any, idx: number) => {
+                          {sortedStocktakeList.map((it: any, idx: number) => {
                             const actual = it.theoreticalStock;
+                            const isSortedLow = stocktakeSortMode === 'ASC' || stocktakeOnlyLow;
+                            const rowHighlightClass = getStockRowHighlightClass(Number(it.theoreticalStock || 0), isSortedLow);
+                            const badge = getStockAlertBadge(Number(it.theoreticalStock || 0));
 
                             return (
-                              <tr key={it.editionId} className="hover:bg-slate-50">
+                              <tr key={it.editionId} className={`hover:bg-slate-50 transition-colors ${rowHighlightClass}`}>
                                 <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
                                 <td className="p-3">
                                   <p className="font-bold text-slate-800">
@@ -1159,8 +1297,11 @@ export function DailyFairSettlementModal({
                                 <td className="p-3 text-right font-mono font-bold text-slate-600">
                                   {it.soldToday || 0}
                                 </td>
-                                <td className="p-3 text-center font-mono font-bold text-slate-900 bg-slate-50/50">
-                                  {it.theoreticalStock}
+                                <td className="p-3 text-center font-mono font-bold bg-slate-50/50">
+                                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${badge.dotClass}`} />
+                                    <span>{it.theoreticalStock}</span>
+                                  </span>
                                 </td>
                                 <td className="p-3 text-center font-mono text-slate-400">
                                   {actual}
