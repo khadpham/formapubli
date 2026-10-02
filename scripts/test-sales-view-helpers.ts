@@ -541,6 +541,29 @@ ok(
   '64. fix-dev-db-schema vá cột order_items.is_gift_shortfall (0032) — thiếu nó panel Quà lỗi SQL'
 );
 
+// ---------------------------------------------------------------------------
+// 10. Task 7 — ExecutiveDashboard dùng chung đường ống (tháng VN + nhãn kỳ).
+//    Lỗi gốc: fetch `/api/orders?fiscalScope=ALL` KHÔNG khoảng ngày ⇒ nạp toàn
+//    bộ lịch sử vào RAM, số dashboard lệch tab Doanh Số đúng bằng số đơn tài trợ.
+// ---------------------------------------------------------------------------
+const DASH_SRC = readFileSync(
+  path.resolve(process.cwd(), 'src/components/dashboard/ExecutiveDashboard.tsx'),
+  'utf8'
+);
+const DASH_CODE = stripComments(DASH_SRC);
+ok(
+  /monthPreset/.test(DASH_CODE) && /sales-view/.test(DASH_SRC),
+  '65. Dashboard lấy khoảng ngày từ helper tháng lịch dùng chung (không tự cắt ngày)'
+);
+ok(
+  /startDate/.test(DASH_CODE) && /api\/orders\?/.test(DASH_SRC),
+  '66. Fetch /api/orders của dashboard kèm startDate/endDate (không nạp toàn lịch sử)'
+);
+ok(
+  /Kỳ /.test(DASH_SRC),
+  '67. Dashboard hiện nhãn kỳ đang xem cạnh số tổng (không để số treo không kỳ)'
+);
+
 console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
 if (failures > 0) process.exit(1);
 console.log('\n✅ Helper Doanh Số: ngày VN đúng tháng lịch, nhãn kênh tiếng Việt, CSV có dấu.');
