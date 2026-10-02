@@ -57,7 +57,7 @@
   ): string;
   ```
 
-- [ ] **Step 1: Viết test kiểm tra ngưỡng tồn kho và màu sắc**
+- [x] **Step 1: Viết test kiểm tra ngưỡng tồn kho và màu sắc**
 
 Tạo file `scripts/test-stock-highlight.ts`:
 ```typescript
@@ -106,12 +106,12 @@ console.log('  ✅ 3. Row highlight đúng gradient theo số lượng tồn');
 console.log('\n=== TẤT CẢ CHECKS TASK 1 ĐẠT ===');
 ```
 
-- [ ] **Step 2: Chạy test để xác nhận test thất bại (Red)**
+- [x] **Step 2: Chạy test để xác nhận test thất bại (Red)**
 
 Run: `npx tsx scripts/test-stock-highlight.ts`
 Expected: FAIL (Cannot find module `../src/lib/stock-highlight`).
 
-- [ ] **Step 3: Triển khai helper `src/lib/stock-highlight.ts` (Green)**
+- [x] **Step 3: Triển khai helper `src/lib/stock-highlight.ts` (Green)**
 
 Tạo `src/lib/stock-highlight.ts`:
 ```typescript
@@ -206,12 +206,12 @@ export function getStockRowHighlightClass(qty: number, isSortedAsc: boolean): st
 }
 ```
 
-- [ ] **Step 4: Chạy test kiểm tra lại (Green)**
+- [x] **Step 4: Chạy test kiểm tra lại (Green)**
 
 Run: `npx tsx scripts/test-stock-highlight.ts`
 Expected: PASS (All checks pass).
 
-- [ ] **Step 5: Commit task 1**
+- [x] **Step 5: Commit task 1**
 
 ```bash
 git add src/lib/stock-highlight.ts scripts/test-stock-highlight.ts
@@ -225,7 +225,7 @@ git commit -m "feat(stock): them helper phan loai muc ton va highlight mau sac c
 **Files:**
 - Modify: `src/components/StockOverviewMatrix.tsx`
 
-- [ ] **Step 1: Bổ sung state và logic sắp xếp theo ngữ cảnh kho**
+- [x] **Step 1: Bổ sung state và logic sắp xếp theo ngữ cảnh kho**
 
 Trong `StockOverviewMatrix.tsx`:
 1. Thêm import:
@@ -246,7 +246,7 @@ Trong `StockOverviewMatrix.tsx`:
    - Nếu `stockSortMode === 'DESC'`: sắp xếp giảm dần theo `getWarehouseStock(b, warehouseTab)`.
    - Nếu `stockSortMode === 'DEFAULT'`: giữ nguyên thứ tự ban đầu.
 
-- [ ] **Step 2: Thêm thanh điều khiển sắp xếp & chip lọc nhanh trên Toolbar**
+- [x] **Step 2: Thêm thanh điều khiển sắp xếp & chip lọc nhanh trên Toolbar**
 
 Bổ sung ngay cạnh thanh tìm kiếm / dải tab kho:
 - Chip nút lọc nhanh: **`⚠️ Sắp hết (≤ 5 cuốn)`** kèm số lượng ấn phẩm đang bị cảnh báo:
@@ -306,7 +306,7 @@ Bổ sung ngay cạnh thanh tìm kiếm / dải tab kho:
   </button>
   ```
 
-- [ ] **Step 3: Gắn khả năng click sắp xếp trên Header cột của bảng**
+- [x] **Step 3: Gắn khả năng click sắp xếp trên Header cột của bảng**
 
 Tại tiêu đề cột "Tồn tại kho này" (khi xem 1 kho) và "Tổng tồn" (khi xem tất cả kho):
 - Biến tiêu đề cột thành nút bấm có thể click:
@@ -314,7 +314,7 @@ Tại tiêu đề cột "Tồn tại kho này" (khi xem 1 kho) và "Tổng tồn
   - Hiển thị icon mũi tên trạng thái: `▲` khi ASC, `▼` khi DESC, `↕` khi DEFAULT.
   - Đặt `aria-sort={stockSortMode === 'ASC' ? 'ascending' : stockSortMode === 'DESC' ? 'descending' : 'none'}`.
 
-- [ ] **Step 4: Áp dụng dải màu Sorted Gradient / Highlight trên từng dòng**
+- [x] **Step 4: Áp dụng dải màu Sorted Gradient / Highlight trên từng dòng**
 
 Tại thẻ `<tr key={b.id}>`:
 - Bổ sung class:
@@ -328,12 +328,12 @@ Tại thẻ `<tr key={b.id}>`:
   - Sách tồn 1–3 cuốn: hiện badge đỏ cam khẩn cấp.
   - Sách tồn 4–5 cuốn: hiện badge vàng cam cảnh báo.
 
-- [ ] **Step 5: Kiểm tra TypeScript & build**
+- [x] **Step 5: Kiểm tra TypeScript & build**
 
 Run: `npx tsc --noEmit`
 Expected: 0 errors.
 
-- [ ] **Step 6: Commit task 2**
+- [x] **Step 6: Commit task 2**
 
 ```bash
 git add src/components/StockOverviewMatrix.tsx
@@ -347,7 +347,7 @@ git commit -m "feat(matrix): them chuc nang sap xep ton be den lon va gradient h
 **Files:**
 - Modify: `src/components/pos/DailyFairSettlementModal.tsx`
 
-- [ ] **Step 1: Bổ sung state và logic sắp xếp trong Tab 2 (Kiểm Kê Đóng Thùng)**
+- [x] **Step 1: Bổ sung state và logic sắp xếp trong Tab 2 (Kiểm Kê Đóng Thùng)**
 
 Trong `DailyFairSettlementModal.tsx`:
 1. Thêm import helper `getStockAlertBadge` và `getStockRowHighlightClass` từ `@/lib/stock-highlight`.
@@ -360,7 +360,7 @@ Trong `DailyFairSettlementModal.tsx`:
    - Lọc các sách có `theoreticalStock <= 5` khi `stocktakeOnlyLow === true`.
    - Sắp xếp tăng dần / giảm dần theo `theoreticalStock` khi `stocktakeSortMode !== 'DEFAULT'`.
 
-- [ ] **Step 2: Thêm tiêu đề cột sắp xếp và chip lọc trên giao diện Tab 2**
+- [x] **Step 2: Thêm tiêu đề cột sắp xếp và chip lọc trên giao diện Tab 2**
 
 1. Tiêu đề cột `Tồn lý thuyết`:
    - Bấm vào để đảo chiều sắp xếp (Bé → Lớn / Lớn → Bé / Mặc định).
@@ -368,12 +368,12 @@ Trong `DailyFairSettlementModal.tsx`:
 2. Thêm chip lọc nhanh: `⚠️ Sắp hết (≤ 5)` ngay trên bảng sách kiểm kê.
 3. Áp dụng highlight màu đỏ-cam-vàng trên cột Tồn lý thuyết và dòng bảng tương tự ma trận kho.
 
-- [ ] **Step 3: Kiểm tra TypeScript**
+- [x] **Step 3: Kiểm tra TypeScript**
 
 Run: `npx tsc --noEmit`
 Expected: 0 errors.
 
-- [ ] **Step 4: Commit task 3**
+- [x] **Step 4: Commit task 3**
 
 ```bash
 git add src/components/pos/DailyFairSettlementModal.tsx
@@ -387,7 +387,7 @@ git commit -m "feat(settlement): ho tro sap xep va highlight ton ly thuyet trong
 **Files:**
 - Create: `scripts/test-stock-sorting-ui.ts`
 
-- [ ] **Step 1: Viết test kiểm tra tương tác sắp xếp, lọc và highlight**
+- [x] **Step 1: Viết test kiểm tra tương tác sắp xếp, lọc và highlight**
 
 Tạo `scripts/test-stock-sorting-ui.ts`:
 - Kiểm tra tính đúng đắn của logic sắp xếp với mảng sách mẫu (gồm các mức tồn 0, 2, 4, 5, 8, 12, 100):
@@ -399,19 +399,19 @@ Tạo `scripts/test-stock-sorting-ui.ts`:
   - `StockOverviewMatrix.tsx` có chứa `stockSortMode`, `onlyLowStock`, `aria-sort`, `getStockRowHighlightClass`.
   - `DailyFairSettlementModal.tsx` có chứa `stocktakeSortMode`, `getStockAlertBadge`.
 
-- [ ] **Step 2: Chạy test tích hợp**
+- [x] **Step 2: Chạy test tích hợp**
 
 Run: `npx tsx scripts/test-stock-sorting-ui.ts`
 Expected: PASS.
 
-- [ ] **Step 3: Chạy toàn bộ test suites hiện có của repo**
+- [x] **Step 3: Chạy toàn bộ test suites hiện có của repo**
 
 Run: `npx tsx scripts/test-stock-highlight.ts`
 Run: `npx tsx scripts/test-settlement-ui.ts`
 Run: `npx tsc --noEmit`
 Expected: Tất cả bài test đều XANH, TypeScript sạch.
 
-- [ ] **Step 4: Commit task 4**
+- [x] **Step 4: Commit task 4**
 
 ```bash
 git add scripts/test-stock-sorting-ui.ts
