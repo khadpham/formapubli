@@ -346,10 +346,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
       {/* Scope Switcher Banner (Chỉ cho phép Quản lý & Điều hành chuyển đổi) */}
       {!isTaxAccountant && canViewTaxScope ? (
-        <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl">
+        <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveScope('ALL')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold transition-all ${
               activeScope === 'ALL'
                 ? 'bg-white text-indigo-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -359,7 +359,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </button>
           <button
             onClick={() => setActiveScope('OFFICIAL_TAX')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold transition-all ${
               activeScope === 'OFFICIAL_TAX'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -369,7 +369,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </button>
           <button
             onClick={() => setActiveScope('INTERNAL_MANAGEMENT')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold transition-all ${
               activeScope === 'INTERNAL_MANAGEMENT'
                 ? 'bg-purple-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -397,7 +397,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       {/* Multi-Dimensional Filter Bar: Date Presets & Warehouse Filter */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         {/* Date Filter Presets */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
           <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             Thời gian:
@@ -445,7 +445,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         </div>
 
         {/* Warehouse Filter */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto min-w-0">
           <span className="text-xs font-bold text-slate-500 shrink-0 flex items-center gap-1">
             <Building2 className="w-3.5 h-3.5 text-slate-400" />
             Kho hàng:
@@ -575,7 +575,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             </div>
           </div>
           {/* Slicer kenh ban kieu pivot */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
             <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               Kênh:
