@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Bước 5 — OLAP read-only (0 migration).
- * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions
+ * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions|stock-summary
  *   &startDate=&endDate=&top=20&warehouseId=
+ *   (view=top-editions nhận thêm &excludeGifts=1 để bỏ dòng quà tặng)
  * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).
  */
 export async function GET(req: NextRequest) {
@@ -44,14 +45,21 @@ export async function GET(req: NextRequest) {
     if (view === 'top-editions') {
       const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));
       const warehouseId = searchParams.get('warehouseId') || undefined;
-      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId) });
+      // Chỉ '1' mới bật: thiếu/thêm rác → false ⇒ hành vi cũ, không đổi số.
+      const excludeGifts = searchParams.get('excludeGifts') === '1';
+      return NextResponse.json({ success: true, data: await AnalyticsService.topEditions(range, top, warehouseId, excludeGifts) });
     }
     if (view === 'stock-summary') {
       const warehouseId = searchParams.get('warehouseId') || undefined;
       return NextResponse.json({ success: true, data: await AnalyticsService.stockSummary(warehouseId) });
     }
     return NextResponse.json(
-      { success: false, error: 'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary).' },
+      {
+        success: false,
+        error:
+          'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary). ' +
+          'top-editions nhận thêm startDate, endDate, top, warehouseId và excludeGifts=1 (bỏ dòng quà tặng).',
+      },
       { status: 400 }
     );
   } catch (error: any) {

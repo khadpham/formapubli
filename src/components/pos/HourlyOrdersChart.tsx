@@ -50,11 +50,33 @@ export function HourlyOrdersChart({
   rows,
   startHour,
   endHour,
+  baseline,
+  currentHour,
+  hideHeader = false,
   className = '',
 }: {
   rows: HourlyBucket[];
   startHour: number;
   endHour: number;
+  /**
+   * Số đơn BÌNH QUÂN của các ngày trước, index = giờ 0..23; `null` = giờ đó
+   * không có dữ liệu để so ⇒ không vẽ. Không truyền ⇒ không vẽ gì thêm, giữ
+   * nguyên hành vi cũ cho báo cáo chốt ngày.
+   */
+  baseline?: Array<number | null>;
+  /**
+   * Giờ hiện tại 0..23. Giờ LỚN HƠN ⇒ "chưa tới": chỉ vẽ khung đứt, không tô màu,
+   * không ghi số 0 — vì 0 ở đó là "chưa bán", khác hẳn 0 ở giờ đã qua là "hết giờ
+   * mà không ai mua". Không truyền ⇒ không phân biệt, mọi giờ coi như đã qua.
+   */
+  currentHour?: number | null;
+  /**
+   * Giấu khối tiêu đề bên trong. Thẻ bọc (`HourlyTodayCard` trên bảng quản trị)
+   * đã có tiêu đề riêng kèm chú giải về đường TB và khung "chưa tới" — để cả hai
+   * cùng hiện thì thẻ có hai tiêu đề chồng nhau. Không truyền ⇒ giữ nguyên, báo
+   * cáo chốt ngày không đổi.
+   */
+  hideHeader?: boolean;
   className?: string;
 }) {
   const [locked, setLocked] = useState<number | null>(null);
@@ -73,7 +95,21 @@ export function HourlyOrdersChart({
     const totalOrders = list.reduce((s, r) => s + r.orders, 0);
     const totalSales = list.reduce((s, r) => s + r.sales, 0);
     const maxOrders = list.reduce((m, r) => Math.max(m, r.orders), 0);
-    const yMax = niceCeil(maxOrders);
+
+    // Đường TB các ngày trước, theo đúng thứ tự cột đang vẽ. `-1` = giờ đó không
+    // có số để so (`null` trong `baseline`) — giữ lỗ hổng thay vì điền 0, vì 0
+    // là một con số thật (không ai mua ở giờ đó), điền 0 sẽ kéo đường xuống sát
+    // đáy rồi bịa ra "giờ đó không bán được" trong khi dữ liệu chỉ thiếu.
+    const baseValues: number[] = list.map((r) => {
+      const raw = Array.isArray(baseline) ? baseline[r.hour] : null;
+      const v = raw == null ? null : Number(raw);
+      return v != null && Number.isFinite(v) && v > 0 ? v : -1;
+    });
+
+    // Trần trục Y phải chứa cả đường TB: một ngày đông hơn mức TB nhiều (ví dụ
+    // 4 đơn so TB 6) mà trục chỉ kéo tới 4 thì đường TB vẽ ra ngoài khung.
+    const baseMax = baseValues.reduce((m, v) => Math.max(m, v), 0);
+    const yMax = niceCeil(Math.max(maxOrders, baseMax));
     // `peak` = giờ nhiều đơn nhất; luôn có mặt để dùng làm mốc khi chưa chọn giờ.
     const peak = list.reduce<HourlyBucket & { orders: number } | null>(
       (best, r) => (best == null || r.orders > best.orders ? r : best),
@@ -100,25 +136,53 @@ export function HourlyOrdersChart({
     // Nhãn giờ mỗi `labelStep` giờ một nhãn để không chồng lên nhau khi khung 24h.
     const labelStep = Math.max(1, Math.ceil(n / 15));
 
+    // Cắt đường thành từng đoạn LIÊN TỤC có số. Một `<polyline>` duy nhất bỏ
+    // luôn các giờ trống sẽ nối thẳng từ giờ có dữ liệu sang giờ có dữ liệu
+    // kế tiếp, tạo ra một đoạn thẳng đi xuyên qua giờ không có dữ liệu.
+    const baselineRuns: Array<Array<{ x: number; y: number }>> = [];
+    let run: Array<{ x: number; y: number }> = [];
+    baseValues.forEach((v, i) => {
+      if (v < 0) {
+        if (run.length) baselineRuns.push(run);
+        run = [];
+        return;
+      }
+      run.push({
+        x: PAD_L + i * slot + slot / 2,
+        y: BASE_Y - (v / yMax) * PLOT_H,
+      });
+    });
+    if (run.length) baselineRuns.push(run);
+
     return {
 list, totalOrders, maxOrders, yMax, peak, quiet,
       openHours, salesPerOpenHour, slot, barW, labelStep,
+      baselineRuns,
+      baselineTotal: baseValues.reduce((s, v) => s + Math.max(0, v), 0),
     };
-  }, [rows]);
+  }, [rows, baseline]);
 
   const {
     list, totalOrders, maxOrders, yMax, peak, quiet,
     openHours, salesPerOpenHour, slot, barW, labelStep,
+    baselineRuns, baselineTotal,
   } = model;
+
+  const hasBaseline = baselineRuns.length > 0;
 
   const activeHour = hover ?? locked ?? peak?.hour ?? null;
   const active = activeHour == null ? null : list.find((r) => r.hour === activeHour) ?? null;
 
   const money = (n: number) => n.toLocaleString('vi-VN');
+  // TB là số thập phân ⇒ ép tối đa 1 chữ số sau dấu phẩy để không in "12,333333".
+  const money1 = (n: number) => n.toLocaleString('vi-VN', { maximumFractionDigits: 1 });
   const hourLabel = (h: number) => `${h}h`;
   const rangeLabel = `${startHour}h–${endHour}h`;
+  const nowHour = typeof currentHour === 'number' && Number.isFinite(currentHour) ? currentHour : null;
 
-  if (!list.length || totalOrders === 0) {
+  // Chỉ mở trạng thái rỗng khi KHÔNG có gì để vẽ. Có đường TB mà bỏ trống thì
+  // mất đúng thứ người xem cần: hôm nay chưa bán được gì so với mức thường ngày.
+  if (!list.length || (totalOrders === 0 && !hasBaseline)) {
     return (
       <div className={`bg-white rounded-2xl border border-slate-200 p-5 ${className}`}>
         <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -141,17 +205,24 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
 
   return (
     <div className={`bg-white rounded-2xl border border-slate-200 p-5 space-y-4 ${className}`}>
-      {/* Đầu: tiêu đề + khung giờ đang xét */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-            <BarChart3 className="w-4 h-4 text-indigo-600" />
-            Đơn Hàng Theo Giờ
-          </h4>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Số đơn mỗi giờ · {rangeLabel} · giờ Việt Nam
-          </p>
-        </div>
+      {/* Đầu: tiêu đề + khung giờ đang xét. `hideHeader` chỉ giấu TIÊU ĐỀ, vẫn
+          giữ ô "Tổng N đơn" — thẻ bọc không có ô đó. */}
+      <div className={`flex items-start justify-between gap-3 ${hideHeader ? '' : ''}`}>
+        {hideHeader ? (
+          <span className="sr-only">
+            Đơn Hàng Theo Giờ · {rangeLabel} · giờ Việt Nam
+          </span>
+        ) : (
+          <div>
+            <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              Đơn Hàng Theo Giờ
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Số đơn mỗi giờ · {rangeLabel} · giờ Việt Nam
+            </p>
+          </div>
+        )}
         <span className="shrink-0 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1">
           Tổng {totalOrders} đơn
         </span>
@@ -202,7 +273,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-auto"
         role="img"
-        aria-label={`Biểu đồ số đơn hàng theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${peak?.orders ?? 0} đơn.`}
+        aria-label={`Biểu đồ số đơn hàng theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${peak?.orders ?? 0} đơn.${hasBaseline ? ` Đường nét đứt là số đơn bình quân của các ngày trước, tổng ${money1(baselineTotal)} đơn trong khung giờ này.` : ''}${nowHour != null ? ` Các giờ sau ${nowHour}h là chưa tới.` : ''}`}
       >
         {/* Lưới ngang + nhãn trục Y. Đường 0 luôn kẻ đậm hơn: đó là mặt đất. */}
         {[0, 0.5, 1].map((f) => {
@@ -239,6 +310,10 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
           const x = cx - barW / 2;
           const isPeak = peak != null && r.hour === peak.hour && r.orders > 0;
           const isActive = r.hour === activeHour;
+          // "Chưa tới": giờ chưa tới nắm. Giờ đã qua không có đơn vẫn giữ vạch
+          // xám 2px như cũ — đó là "đã bán 0", khác hẳn "chưa bán được gì".
+          const isFuture = nowHour != null && r.hour > nowHour;
+          const isNow = nowHour != null && r.hour === nowHour;
           const barH =
             r.orders > 0 ? Math.max(5, (r.orders / yMax) * PLOT_H) : 2;
           return (
@@ -256,6 +331,22 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                 onMouseLeave={() => setHover(null)}
                 onClick={() => setLocked((p) => (p === r.hour ? null : r.hour))}
               />
+              {/* Khung đứt của giờ chưa tới: chỉ viền, không tô, không ghi số 0 —
+                  người xem phải hiểu đây là "chưa có dữ liệu", không phải "bán 0". */}
+              {isFuture ? (
+                <rect
+                  x={x}
+                  y={PAD_T}
+                  width={barW}
+                  height={PLOT_H}
+                  rx={Math.min(4, barW / 2)}
+                  fill="none"
+                  stroke="#e2e8f0"
+                  strokeWidth="1"
+                  strokeDasharray="2 3"
+                  pointerEvents="none"
+                />
+              ) : null}
               {r.orders > 0 ? (
                 <rect
                   x={x}
@@ -264,8 +355,8 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                   height={barH}
                   rx={Math.min(4, barW / 2)}
                   fill={isActive ? '#4338ca' : isPeak ? '#f59e0b' : '#6366f1'}
-                  stroke={isActive ? '#1e1b4b' : isPeak ? '#b45309' : 'none'}
-                  strokeWidth={isActive ? 1.5 : isPeak ? 1 : 0}
+                  stroke={isActive || isNow ? '#4338ca' : isPeak ? '#b45309' : 'none'}
+                  strokeWidth={isActive || isNow ? 1.5 : isPeak ? 1 : 0}
                   pointerEvents="none"
                 />
               ) : (
@@ -275,11 +366,11 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                   width={barW}
                   height={2}
                   rx={1}
-                  fill="#e2e8f0"
+                  fill={isNow ? '#4338ca' : '#e2e8f0'}
                   pointerEvents="none"
                 />
               )}
-              {r.orders > 0 && (
+              {r.orders > 0 && !isFuture && (
                 <text
                   x={cx}
                   y={BASE_Y - barH - 5}
@@ -299,7 +390,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                   textAnchor="middle"
                   fontSize="10"
                   fontWeight={isActive ? '800' : '500'}
-                  fill={isActive ? '#4338ca' : '#94a3b8'}
+                  fill={isActive ? '#4338ca' : isFuture ? '#cbd5e1' : '#94a3b8'}
                   pointerEvents="none"
                 >
                   {hourLabel(r.hour)}
@@ -308,6 +399,23 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
             </g>
           );
         })}
+
+        {/* Đường TB các ngày trước — vẽ SAU (trên mặt) các cột, không vẽ trước:
+            cột cao hơn sẽ che mất đoạn đường, mà đường mới là đường cần đọc. */}
+        {baselineRuns.map((run, ri) => (
+          <polyline
+            key={`baseline-${ri}`}
+            points={run.map((p) => `${p.x},${p.y}`).join(' ')}
+            fill="none"
+            stroke="#94a3b8"
+            strokeWidth="1.5"
+            strokeDasharray="3 3"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            pointerEvents="none"
+          />
+        ))}
+
 
         {/* Vạch nhắc giờ đang xem — đọc giá trị khi rê chuột/bấm ở dải số bên dưới */}
         {active && (
@@ -346,10 +454,39 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
         ) : (
           <span className="text-slate-400">Rê chuột hoặc bấm vào một cột để xem chi tiết giờ đó.</span>
         )}
+        {/* Chú giải + đối chiếu. Chỉ hiện khi THỰC SỰ có đường TB: một đường nét
+            đứt không có nhãn thì người xạ tưởng là lỗi vẽ. */}
+        {hasBaseline ? (
+          <>
+            <span className="inline-flex items-center gap-1 text-slate-500">
+              <svg width="18" height="6" aria-hidden="true" className="shrink-0">
+                <line x1="0" y1="3" x2="18" y2="3" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 3" />
+              </svg>
+              TB các ngày trước
+            </span>
+            <span className="text-slate-600">
+              Hôm nay: <strong className="font-bold font-mono text-slate-800">{totalOrders}</strong> đơn · TB:{' '}
+              <strong className="font-bold font-mono text-slate-800">{money1(baselineTotal)}</strong> đơn
+              <strong
+                className="font-bold font-mono ml-1"
+                style={{ color: totalOrders - baselineTotal >= 0 ? '#059669' : '#e11d48' }}
+              >
+                {totalOrders - baselineTotal >= 0 ? '+' : '-'}
+                {money1(Math.abs(totalOrders - baselineTotal))}
+              </strong>
+            </span>
+          </>
+        ) : null}
       </div>
 
       {/* Nhận xét đọc được ngay: cao điểm chiếm bao nhiêu, giờ nào vắng */}
       <p className="text-[11px] text-slate-500 leading-relaxed">
+        {totalOrders === 0 ? (
+          <>
+            Hôm nay chưa có đơn nào
+            {hasBaseline ? '. Đường nét đứt là mức bình quân các ngày trước.' : '.'}
+          </>
+        ) : null}
         {peak && peak.orders > 0 ? (
           <>
             Giờ <strong className="font-bold text-slate-700">{hourLabel(peak.hour)}</strong> bán nhiều nhất (
