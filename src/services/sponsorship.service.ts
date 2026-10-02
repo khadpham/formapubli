@@ -1,4 +1,5 @@
 import { db, orders, orderItems, editions, sponsorshipFunds, sponsorshipDrawdowns } from '../db';
+import { AppError } from './app-error';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
@@ -24,13 +25,13 @@ export class SponsorshipService {
   }) {
     const { sponsorName, amountReceived, quotaType, partnerId, createdBy = 'staff-admin', note, actorRole = 'ROLE_OWNER' } = params;
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw new Error('Chỉ Manager/Owner được mở quỹ tài trợ.');
+      throw AppError.forbidden('Chỉ Manager/Owner được mở quỹ tài trợ.');
     }
-    if (!sponsorName || !sponsorName.trim()) throw new Error('Thiếu tên nhà tài trợ.');
-    if (!(amountReceived > 0)) throw new Error('Tiền tài trợ phải > 0.');
-    if (quotaType !== 'CAPPED' && quotaType !== 'OPEN') throw new Error('quotaType phải là CAPPED hoặc OPEN.');
+    if (!sponsorName || !sponsorName.trim()) throw AppError.invalid('Thiếu tên nhà tài trợ.');
+    if (!(amountReceived > 0)) throw AppError.invalid('Tiền tài trợ phải > 0.');
+    if (quotaType !== 'CAPPED' && quotaType !== 'OPEN') throw AppError.invalid('quotaType phải là CAPPED hoặc OPEN.');
     const limit = quotaType === 'CAPPED' ? (params.quotaLimit ?? amountReceived) : 0;
-    if (quotaType === 'CAPPED' && !(limit > 0)) throw new Error('Quỹ CAPPED bắt buộc có quotaLimit > 0.');
+    if (quotaType === 'CAPPED' && !(limit > 0)) throw AppError.invalid('Quỹ CAPPED bắt buộc có quotaLimit > 0.');
 
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const id = params.id || `fund-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -55,7 +56,7 @@ export class SponsorshipService {
 
   static async getFund(fundId: string) {
     const rows = await db.select().from(sponsorshipFunds).where(eq(sponsorshipFunds.id, fundId)).limit(1);
-    if (rows.length === 0) throw new Error('Không tìm thấy quỹ tài trợ.');
+    if (rows.length === 0) throw AppError.invalid('Không tìm thấy quỹ tài trợ.');
     return rows[0];
   }
 
@@ -74,26 +75,26 @@ export class SponsorshipService {
     actorRole?: string;
   }) {
     const { fundId, editionId, warehouseId, quantity, drawnBy = 'staff-admin', note, actorRole = 'ROLE_OWNER' } = params;
-    if (actorRole === 'ROLE_TAX') throw new Error('Kế toán thuế không được rút sách tài trợ.');
+    if (actorRole === 'ROLE_TAX') throw AppError.forbidden('Kế toán thuế không được rút sách tài trợ.');
     // V4.1 S1.2: guard kho bán dùng chung (đọc DB).
-    await WarehouseService.assertSellable(warehouseId).catch((e) => { throw new Error(e.message); });
-    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Số lượng rút phải nguyên > 0.');
+    await WarehouseService.assertSellable(warehouseId);
+    if (!Number.isInteger(quantity) || quantity <= 0) throw AppError.invalid('Số lượng rút phải nguyên > 0.');
 
     const fund = await this.getFund(fundId);
-    if (fund.status !== 'ACTIVE') throw new Error(`Quỹ đang ở trạng thái ${fund.status}, không rút được.`);
+    if (fund.status !== 'ACTIVE') throw AppError.conflict(`Quỹ đang ở trạng thái ${fund.status}, không rút được.`);
 
     const edRows = await db.select({ id: editions.id, coverPrice: editions.coverPrice }).from(editions).where(eq(editions.id, editionId)).limit(1);
-    if (edRows.length === 0) throw new Error('Ấn bản không tồn tại.');
+    if (edRows.length === 0) throw AppError.invalid('Ấn bản không tồn tại.');
     const cover = edRows[0].coverPrice || 0;
     const drawnValue = quantity * cover;
 
     // Báo sớm cho thu ngân (nhanh, thân thiện) — nhưng KHÔNG phải chốt chặn.
     // Chốt chặn thật nằm trong transaction (UPDATE có điều kiện bên dưới).
     if (fund.quotaType === 'CAPPED' && drawnValue > (fund.balanceRemaining || 0)) {
-      throw new Error(`Vượt hạn mức quỹ: còn ${(fund.balanceRemaining || 0).toLocaleString('vi-VN')}đ, cần ${drawnValue.toLocaleString('vi-VN')}đ.`);
+      throw AppError.atp(`Vượt hạn mức quỹ: còn ${(fund.balanceRemaining || 0).toLocaleString('vi-VN')}đ, cần ${drawnValue.toLocaleString('vi-VN')}đ.`);
     }
     const avail = await InventoryService.getBalance(editionId, warehouseId, 'NEW');
-    if (avail < quantity) throw new Error(`Không đủ tồn để rút: còn ${avail}, cần ${quantity}.`);
+    if (avail < quantity) throw AppError.atp(`Không đủ tồn để rút: còn ${avail}, cần ${quantity}.`);
 
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const orderId = `ord-spf-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -121,10 +122,10 @@ export class SponsorshipService {
           .from(sponsorshipFunds)
           .where(eq(sponsorshipFunds.id, fundId))
           .limit(1);
-        if (fundRows.length === 0) throw new Error('Không tìm thấy quỹ tài trợ.');
+        if (fundRows.length === 0) throw AppError.invalid('Không tìm thấy quỹ tài trợ.');
         const fundTx = fundRows[0];
         if (fundTx.status === 'CLOSED') {
-          throw new Error(`Quỹ đang ở trạng thái ${fundTx.status}, không rút được.`);
+          throw AppError.conflict(`Quỹ đang ở trạng thái ${fundTx.status}, không rút được.`);
         }
         const subtotal = drawnValue;
         await tx.insert(orders).values({
@@ -207,7 +208,7 @@ export class SponsorshipService {
           // Đợt rút song song đã giành số dư trước (hoặc quỹ vừa cạn) ⇒ rollback
           // trọn vẹn: không đơn, không bút toán kho, không dòng drawdown.
           const cur = fundTx.balanceRemaining || 0;
-          throw new Error(
+          throw AppError.atp(
             `Vượt hạn mức quỹ: còn ${cur.toLocaleString('vi-VN')}đ, cần ${drawnValue.toLocaleString('vi-VN')}đ.`
           );
         }
@@ -220,10 +221,10 @@ export class SponsorshipService {
   /** Đóng quỹ (ngừng rút; số dư CAPPED còn lại bảo lưu theo thỏa thuận ngoài). */
   static async closeFund(fundId: string, actorRole: string) {
     if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
-      throw new Error('Chỉ Manager/Owner được đóng quỹ.');
+      throw AppError.forbidden('Chỉ Manager/Owner được đóng quỹ.');
     }
     const fund = await this.getFund(fundId);
-    if (fund.status === 'CLOSED') throw new Error('Quỹ đã đóng.');
+    if (fund.status === 'CLOSED') throw AppError.conflict('Quỹ đã đóng.');
     await db.update(sponsorshipFunds).set({ status: 'CLOSED', closedAt: new Date().toISOString() }).where(eq(sponsorshipFunds.id, fundId));
     return { fundId, status: 'CLOSED' };
   }

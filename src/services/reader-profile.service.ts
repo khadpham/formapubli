@@ -1,4 +1,5 @@
 import { db, customers, customerOwnedBooks, customerSubscriptions, customerTags, editions, orderItems, orders, works } from '../db';
+import { AppError } from './app-error';
 import { and, desc, eq, sql, inArray } from 'drizzle-orm';
 
 /**
@@ -31,7 +32,7 @@ export interface ReaderMatch {
 export class ReaderProfileService {
   static async getReaderProfile(customerId: string): Promise<ReaderProfile> {
     const cust = (await db.select().from(customers).where(eq(customers.id, customerId)).limit(1))[0];
-    if (!cust) throw new Error(`Không tìm thấy độc giả ${customerId}.`);
+    if (!cust) throw AppError.invalid(`Không tìm thấy độc giả ${customerId}.`);
 
     const tags = (
       await db.select({ tag: customerTags.tag }).from(customerTags).where(eq(customerTags.customerId, customerId))
@@ -107,9 +108,9 @@ export class ReaderProfileService {
   /** Tra editionId từ mã SKU (cho UI nhập mã thay vì ID kỹ thuật). */
   static async resolveEditionByCode(code: string): Promise<string> {
     const clean = `${code || ''}`.trim();
-    if (!clean) throw new Error('Thiếu mã ấn bản.');
+    if (!clean) throw AppError.invalid('Thiếu mã ấn bản.');
     const ed = (await db.select({ id: editions.id }).from(editions).where(eq(editions.code, clean)).limit(1))[0];
-    if (!ed) throw new Error(`Không tìm thấy ấn bản mã ${clean}.`);
+    if (!ed) throw AppError.invalid(`Không tìm thấy ấn bản mã ${clean}.`);
     return ed.id;
   }
 
@@ -120,7 +121,7 @@ export class ReaderProfileService {
    */
   static async matchReadersForEdition(editionId: string, limit = 50): Promise<ReaderMatch[]> {
     const ed = (await db.select().from(editions).where(eq(editions.id, editionId)).limit(1))[0];
-    if (!ed) throw new Error(`Không tìm thấy ấn bản ${editionId}.`);
+    if (!ed) throw AppError.invalid(`Không tìm thấy ấn bản ${editionId}.`);
     const work = (await db.select().from(works).where(eq(works.id, ed.workId)).limit(1))[0];
     const category = work?.category || null;
     const author = work?.author || null;

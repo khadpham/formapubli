@@ -1,4 +1,5 @@
 import { db, seasonalBundles, bundleItems, editions } from '../db';
+import { AppError } from './app-error';
 import { InventoryService } from './inventory.service';
 import { eq } from 'drizzle-orm';
 
@@ -46,8 +47,8 @@ export class BundleService {
     const bundle = (
       await db.select().from(seasonalBundles).where(eq(seasonalBundles.id, bundleId)).limit(1)
     )[0];
-    if (!bundle) throw new Error(`Không tìm thấy combo ${bundleId}.`);
-    if (!bundle.isActive) throw new Error(`Combo ${bundle.code} đã ngừng bán.`);
+    if (!bundle) throw AppError.invalid(`Không tìm thấy combo ${bundleId}.`);
+    if (!bundle.isActive) throw AppError.conflict(`Combo ${bundle.code} đã ngừng bán.`);
 
     const items = await db
       .select({
@@ -64,7 +65,7 @@ export class BundleService {
       .where(eq(bundleItems.bundleId, bundleId));
 
     const mandatory = items.filter((i) => i.isMandatory);
-    if (mandatory.length === 0) throw new Error(`Combo ${bundle.code} chưa có linh kiện bắt buộc.`);
+    if (mandatory.length === 0) throw AppError.invalid(`Combo ${bundle.code} chưa có linh kiện bắt buộc.`);
     return { bundle, items: mandatory };
   }
 
@@ -105,13 +106,13 @@ export class BundleService {
 
   /** Chặn cứng khi thiếu linh kiện, nêu đích danh đầu sách cạn. */
   static async validateAvailability(bundleId: string, warehouseId: string, qty: number) {
-    if (qty <= 0) throw new Error('Số lượng combo phải lớn hơn 0.');
+    if (qty <= 0) throw AppError.invalid('Số lượng combo phải lớn hơn 0.');
     const avail = await this.getAvailability(bundleId, warehouseId);
     if (avail.available < qty) {
       const shorts = avail.components
         .filter((c) => c.possibleBoxes < qty)
         .map((c) => `[${c.code}] chỉ còn ${c.stock} cuốn (cần ${c.requiredPerBox * qty} cho ${qty} bộ)`);
-      throw new Error(
+      throw AppError.atp(
         `Hộp sách không khả dụng: ${shorts.join('; ')} — không đủ đóng bộ!`
       );
     }
@@ -127,7 +128,7 @@ export class BundleService {
   static async priceLines(bundleId: string, qty: number): Promise<PricedBundleLine[]> {
     const { bundle, items } = await this.getBundle(bundleId);
     const sumCover = items.reduce((s, i) => s + (i.coverPrice ?? 0) * (i.quantityInBundle ?? 1), 0);
-    if (sumCover <= 0) throw new Error(`Combo ${bundle.code} có tổng giá bìa linh kiện bằng 0.`);
+    if (sumCover <= 0) throw AppError.invalid(`Combo ${bundle.code} có tổng giá bìa linh kiện bằng 0.`);
 
     const perBox = bundle.comboPrice;
     let allocatedBox = 0;
@@ -164,14 +165,14 @@ export class BundleService {
     createdId?: string;
   }) {
     const { code, seasonName, releaseDate, comboPrice, items } = params;
-    if (!items || items.length === 0) throw new Error('Combo phải có ít nhất 1 linh kiện.');
-    if (comboPrice <= 0) throw new Error('Giá combo phải lớn hơn 0.');
+    if (!items || items.length === 0) throw AppError.invalid('Combo phải có ít nhất 1 linh kiện.');
+    if (comboPrice <= 0) throw AppError.invalid('Giá combo phải lớn hơn 0.');
 
     const id = params.createdId || `bun-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const covers = await Promise.all(
       items.map(async (it) => {
         const ed = (await db.select().from(editions).where(eq(editions.id, it.editionId)).limit(1))[0];
-        if (!ed) throw new Error(`Không tìm thấy linh kiện ${it.editionId}.`);
+        if (!ed) throw AppError.invalid(`Không tìm thấy linh kiện ${it.editionId}.`);
         return ed.coverPrice ?? 0;
       })
     );

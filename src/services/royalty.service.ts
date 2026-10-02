@@ -1,4 +1,5 @@
 import { db, rightsContracts, editions, orderItems, orders, inventoryLedger } from '../db';
+import { AppError } from './app-error';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { businessDateOf, createdAtBetween } from './order.service';
 
@@ -142,14 +143,14 @@ export class RoyaltyService {
     const advanceAmount = params.advanceAmount ?? 0;
     const royaltyBasis: RoyaltyBasis = params.royaltyBasis ?? 'NET_SOLD';
 
-    if (!contractNumber.trim()) throw new Error('Thiếu mã hợp đồng.');
-    if (!(royaltyRate > 0 && royaltyRate < 1)) throw new Error('royalty_rate phải trong (0, 1).');
+    if (!contractNumber.trim()) throw AppError.invalid('Thiếu mã hợp đồng.');
+    if (!(royaltyRate > 0 && royaltyRate < 1)) throw AppError.invalid('royalty_rate phải trong (0, 1).');
     if (!ROYALTY_BASES.includes(royaltyBasis)) {
-      throw new Error(`royalty_basis không hợp lệ: ${royaltyBasis}. Chỉ chấp nhận NET_SOLD hoặc COVER_PRICE.`);
+      throw AppError.invalid(`royalty_basis không hợp lệ: ${royaltyBasis}. Chỉ chấp nhận NET_SOLD hoặc COVER_PRICE.`);
     }
-    if (!(printQuota > 0)) throw new Error('print_quota phải lớn hơn 0.');
-    if (advanceAmount < 0) throw new Error('advance_amount không được âm.');
-    if (expirationDate <= effectiveDate) throw new Error('expiration_date phải sau effective_date.');
+    if (!(printQuota > 0)) throw AppError.invalid('print_quota phải lớn hơn 0.');
+    if (advanceAmount < 0) throw AppError.invalid('advance_amount không được âm.');
+    if (expirationDate <= effectiveDate) throw AppError.invalid('expiration_date phải sau effective_date.');
 
     const id = `RC-${contractNumber}`;
     await db.insert(rightsContracts).values({
@@ -172,11 +173,11 @@ export class RoyaltyService {
   }
 
   static async terminateContract(contractId: string, actorId: string, reason: string) {
-    if (!reason || !reason.trim()) throw new Error('Chấm dứt hợp đồng bắt buộc ghi lý do.');
+    if (!reason || !reason.trim()) throw AppError.invalid('Chấm dứt hợp đồng bắt buộc ghi lý do.');
     const existing = (
       await db.select().from(rightsContracts).where(eq(rightsContracts.id, contractId)).limit(1)
     )[0];
-    if (!existing) throw new Error(`Không tìm thấy hợp đồng ${contractId}.`);
+    if (!existing) throw AppError.invalid(`Không tìm thấy hợp đồng ${contractId}.`);
     await db
       .update(rightsContracts)
       .set({ terminated: true, terminateReason: reason.trim() })
@@ -206,7 +207,7 @@ export class RoyaltyService {
     const c = (
       await db.select().from(rightsContracts).where(eq(rightsContracts.id, contractId)).limit(1)
     )[0];
-    if (!c) throw new Error(`Không tìm thấy hợp đồng ${contractId}.`);
+    if (!c) throw AppError.invalid(`Không tìm thấy hợp đồng ${contractId}.`);
     const editionIds = await this.editionIdsOfWork(c.workId);
     if (editionIds.length === 0) return 0;
     const rows = await db
@@ -226,7 +227,7 @@ export class RoyaltyService {
     const c = (
       await db.select().from(rightsContracts).where(eq(rightsContracts.id, contractId)).limit(1)
     )[0];
-    if (!c) throw new Error(`Không tìm thấy hợp đồng ${contractId}.`);
+    if (!c) throw AppError.invalid(`Không tìm thấy hợp đồng ${contractId}.`);
     const printed = await this.printedInTerm(contractId);
     const remaining = c.printQuota - printed;
     return {
@@ -262,7 +263,7 @@ export class RoyaltyService {
   static async royaltyStatement(contractId: string): Promise<RoyaltyStatement> {    const c = (
       await db.select().from(rightsContracts).where(eq(rightsContracts.id, contractId)).limit(1)
     )[0];
-    if (!c) throw new Error(`Không tìm thấy hợp đồng ${contractId}.`);
+    if (!c) throw AppError.invalid(`Không tìm thấy hợp đồng ${contractId}.`);
 
     // Chặn ngay ở cổng đọc: `royalty_rate` là hệ số nhân tiền thật. Giá trị hỏng
     // (NaN / null / âm / ≥1) sẽ biến `accrued` và `payable` thành NaN rồi in ra
@@ -270,7 +271,7 @@ export class RoyaltyService {
     // import cũ hoặc sửa tay trong DB, nên phải chặn lúc ĐỌC nữa.
     const rate = Number(c.royaltyRate);
     if (!Number.isFinite(rate) || rate <= 0 || rate >= 1) {
-      throw new Error(
+      throw AppError.invalid(
         `royalty_rate của hợp đồng ${c.contractNumber} không hợp lệ (${c.royaltyRate}). ` +
           `Phải nằm trong (0, 1) — sửa hợp đồng rồi tính lại bảng kê.`
       );

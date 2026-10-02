@@ -1,5 +1,6 @@
 import { db } from '../db';
 import { rmaTickets, editions, works, warehouses, orders } from '../db/schema';
+import { AppError } from './app-error';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
 
@@ -58,7 +59,7 @@ export class RmaService {
     } = params;
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
-      throw new Error('Số lượng sách lỗi/cách ly phải là số nguyên lớn hơn 0.');
+      throw AppError.invalid('Số lượng sách lỗi/cách ly phải là số nguyên lớn hơn 0.');
     }
 
       const ticketId = `RMA-${new Date().toISOString().substring(0, 10).replace(/-/g, '')}-${crypto.randomUUID().substring(0, 6).toUpperCase()}`;
@@ -74,11 +75,11 @@ export class RmaService {
           .from(editions)
           .where(eq(editions.id, editionId))
           .limit(1);
-        if (balanceRows.length === 0) throw new Error('Ấn bản không tồn tại.');
+        if (balanceRows.length === 0) throw AppError.invalid('Ấn bản không tồn tại.');
 
         const currentNewBalance = await InventoryService.getBalance(editionId, warehouseId, 'NEW', tx);
         if (currentNewBalance < quantity) {
-          throw new Error(
+          throw AppError.atp(
             `Kho không đủ tồn NEW để chuyển sang cách ly (Yêu cầu: ${quantity}, Hiện có: ${currentNewBalance}).`
           );
         }
@@ -171,12 +172,12 @@ export class RmaService {
       .limit(1);
 
     if (tickets.length === 0) {
-      throw new Error(`Không tìm thấy phiếu RMA với mã [${ticketId}].`);
+      throw AppError.invalid(`Không tìm thấy phiếu RMA với mã [${ticketId}].`);
     }
 
     const ticket = tickets[0];
     if (ticket.status === 'RESOLVED' || ticket.status === 'SCRAPPED') {
-      throw new Error(`Phiếu RMA [${ticketId}] đã được giải quyết từ trước.`);
+      throw AppError.conflict(`Phiếu RMA [${ticketId}] đã được giải quyết từ trước.`);
     }
 
     return await db.transaction(async (tx) => {
@@ -190,7 +191,7 @@ export class RmaService {
         WHERE id = ${ticketId} AND status = 'QUARANTINED'
       `);
       if (claim.rowsAffected !== 1) {
-        throw new Error(`Phiếu RMA [${ticketId}] đã được giải từ giao dịch khác.`);
+        throw AppError.conflict(`Phiếu RMA [${ticketId}] đã được giải từ giao dịch khác.`);
       }
 
       // Thực hiện bút toán kho tùy theo hướng giải quyết:

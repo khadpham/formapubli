@@ -1,4 +1,5 @@
 import { db, customers, customerTags } from '../db';
+import { AppError } from './app-error';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 
 // Bước 3 — Tag chuẩn hóa tệp CRM (allowlist server-side, không cho tag tự do)
@@ -14,15 +15,15 @@ export type CustomerTag = (typeof VALID_CUSTOMER_TAGS)[number];
 export class CustomerTagService {
   static assertValidTag(tag: string): asserts tag is CustomerTag {
     if (!VALID_CUSTOMER_TAGS.includes(tag as CustomerTag)) {
-      throw new Error(`Tag không hợp lệ: ${tag} (chỉ nhận: ${VALID_CUSTOMER_TAGS.join(', ')}).`);
+      throw AppError.invalid(`Tag không hợp lệ: ${tag} (chỉ nhận: ${VALID_CUSTOMER_TAGS.join(', ')}).`);
     }
   }
 
   static async assign(customerId: string, tag: string, actorRole = 'ROLE_OWNER') {
-    if (actorRole === 'ROLE_TAX') throw new Error('Kế toán thuế không được gắn tag khách hàng.');
+    if (actorRole === 'ROLE_TAX') throw AppError.forbidden('Kế toán thuế không được gắn tag khách hàng.');
     this.assertValidTag(tag);
     const cust = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, customerId)).limit(1);
-    if (cust.length === 0) throw new Error('Khách hàng không tồn tại.');
+    if (cust.length === 0) throw AppError.invalid('Khách hàng không tồn tại.');
     const existing = await db.select().from(customerTags).where(
       and(eq(customerTags.customerId, customerId), eq(customerTags.tag, tag))
     ).limit(1);
@@ -32,7 +33,7 @@ export class CustomerTagService {
   }
 
   static async unassign(customerId: string, tag: string, actorRole = 'ROLE_OWNER') {
-    if (actorRole === 'ROLE_TAX') throw new Error('Kế toán thuế không được gỡ tag khách hàng.');
+    if (actorRole === 'ROLE_TAX') throw AppError.forbidden('Kế toán thuế không được gỡ tag khách hàng.');
     this.assertValidTag(tag);
     await db.delete(customerTags).where(
       and(eq(customerTags.customerId, customerId), eq(customerTags.tag, tag))
@@ -51,9 +52,9 @@ export class CustomerTagService {
    */
   static async filterByTags(tags: string[], match: 'any' | 'all' = 'any', limit = 500) {
     const clean = Array.from(new Set(tags.map((t) => `${t}`.trim()).filter(Boolean)));
-    if (clean.length === 0) throw new Error('Cần ít nhất 1 tag để lọc.');
+    if (clean.length === 0) throw AppError.invalid('Cần ít nhất 1 tag để lọc.');
     for (const t of clean) this.assertValidTag(t);
-    if (match !== 'any' && match !== 'all') throw new Error(`match phải là 'any' hoặc 'all'.`);
+    if (match !== 'any' && match !== 'all') throw AppError.invalid(`match phải là 'any' hoặc 'all'.`);
 
     if (match === 'any') {
       const rows = await db

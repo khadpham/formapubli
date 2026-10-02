@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { db, editions, orderItems, orders } from '../db';
+import { AppError } from './app-error';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { AnalyticsService } from './analytics.service';
 import { OrderService, cutoffInstantOf, createdAtBetween } from './order.service';
@@ -26,7 +27,7 @@ export interface MonthRange {
 
 export function monthRangeOf(year: number, month: number): MonthRange {
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
-    throw new Error(`Tháng không hợp lệ: ${year}-${month}`);
+    throw AppError.invalid(`Tháng không hợp lệ: ${year}-${month}`);
   }
   // Ranh giới tháng theo GIỜ VIỆT NAM, không phải UTC.
   //

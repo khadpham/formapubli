@@ -1,4 +1,5 @@
 import { db, editions, inventoryLedger, orders, stockBalances, warehouses } from '../db';
+import { AppError } from './app-error';
 import { eq, and, or, sql, inArray, isNull } from 'drizzle-orm';
 
 /**
@@ -155,7 +156,7 @@ export class ForecastService {
     warehouseId?: string
   ): Promise<ForecastItem> {
     const ed = (await db.select().from(editions).where(eq(editions.id, editionId)).limit(1))[0];
-    if (!ed) throw new Error(`Không tìm thấy ấn bản ${editionId}.`);
+    if (!ed) throw AppError.invalid(`Không tìm thấy ấn bản ${editionId}.`);
 
     const sales = await this.salesByEdition(windowDays);
     const soldQty = sales.get(editionId) ?? 0;

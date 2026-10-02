@@ -1,4 +1,5 @@
 import { db, consignmentStatements, consignmentPayments } from '../db';
+import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { businessDateOf } from './order.service';
@@ -50,7 +51,7 @@ export class SettlementService {
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
     const paid = await this.paidAmount(statementId);
     return {
       statementId,
@@ -89,26 +90,26 @@ export class SettlementService {
     // lấy ngày UTC, nên khoản thu lúc 00:00–07:00 VN bị ghi nhận vào HÔM TRƯỚC.
     const paidAt = params.paidAt || businessDateOf(new Date());
 
-    if (!amount || amount <= 0) throw new Error('Số tiền thu phải lớn hơn 0.');
+    if (!amount || amount <= 0) throw AppError.invalid('Số tiền thu phải lớn hơn 0.');
     if (paymentMethod !== 'CASH' && paymentMethod !== 'BANK_TRANSFER') {
-      throw new Error('Hình thức chỉ chấp nhận CASH hoặc BANK_TRANSFER.');
+      throw AppError.invalid('Hình thức chỉ chấp nhận CASH hoặc BANK_TRANSFER.');
     }
-    if (!reference || !reference.trim()) throw new Error('Bắt buộc kèm mã tham chiếu giao dịch (reference).');
-    if (!receivedBy || !receivedBy.trim()) throw new Error('Bắt buộc ghi rõ người thu tiền.');
+    if (!reference || !reference.trim()) throw AppError.invalid('Bắt buộc kèm mã tham chiếu giao dịch (reference).');
+    if (!receivedBy || !receivedBy.trim()) throw AppError.invalid('Bắt buộc ghi rõ người thu tiền.');
     // `paid_at` đi thẳng vào sổ AR và là cột người kế toán lọc theo ngày. Trước đây
     // nhận nguyên chuỗi từ client không kiểm ⇒ gõ "hôm qua" hay "01/10/2026" là
     // phiếu thu nằm ở ngày không tồn tại, mọi báo cáo tuổi nợ sau đó lệch. Chặn ở
     // cửa, đúng ngày nghiệp vụ Việt Nam.
     if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt.trim())) {
-      throw new Error(`Ngày tiền về phải có dạng YYYY-MM-DD (nhận "${paidAt}").`);
+      throw AppError.invalid(`Ngày tiền về phải có dạng YYYY-MM-DD (nhận "${paidAt}").`);
     }
 
     const stmt = (
       await db.select().from(consignmentStatements).where(eq(consignmentStatements.id, statementId)).limit(1)
     )[0];
-    if (!stmt) throw new Error(`Không tìm thấy kỳ đối soát ${statementId}.`);
+    if (!stmt) throw AppError.invalid(`Không tìm thấy kỳ đối soát ${statementId}.`);
     if (stmt.status !== 'CONFIRMED' && stmt.status !== 'PAID') {
-      throw new Error(`Kỳ ${statementId} chưa chốt (${stmt.status}), chỉ thu tiền kỳ đã CONFIRMED.`);
+      throw AppError.conflict(`Kỳ ${statementId} chưa chốt (${stmt.status}), chỉ thu tiền kỳ đã CONFIRMED.`);
     }
 
     return await withDbRetry(async () =>
@@ -116,7 +117,7 @@ export class SettlementService {
         const paid = await this.paidAmount(statementId, tx);
         const remaining = (stmt.totalReceivable ?? 0) - paid;
         if (amount > remaining) {
-          throw new Error(
+          throw AppError.conflict(
             `Vượt dư nợ: kỳ ${statementId} còn nợ ${remaining.toLocaleString('vi-VN')} đ, không thu ${amount.toLocaleString('vi-VN')} đ.`
           );
         }
@@ -158,12 +159,12 @@ export class SettlementService {
 
   /** VOID phiếu thu sai: giữ record, hoàn hạn mức, lùi PAID về CONFIRMED. */
   static async voidPayment(paymentId: string, actorId: string, reason: string) {
-    if (!reason || !reason.trim()) throw new Error('VOID bắt buộc ghi rõ lý do.');
+    if (!reason || !reason.trim()) throw AppError.invalid('VOID bắt buộc ghi rõ lý do.');
     const pay = (
       await db.select().from(consignmentPayments).where(eq(consignmentPayments.id, paymentId)).limit(1)
     )[0];
-    if (!pay) throw new Error(`Không tìm thấy phiếu thu ${paymentId}.`);
-    if (pay.status !== 'ACTIVE') throw new Error(`Phiếu ${paymentId} đã ở trạng thái ${pay.status}.`);
+    if (!pay) throw AppError.invalid(`Không tìm thấy phiếu thu ${paymentId}.`);
+    if (pay.status !== 'ACTIVE') throw AppError.conflict(`Phiếu ${paymentId} đã ở trạng thái ${pay.status}.`);
 
     return await withDbRetry(async () =>
       db.transaction(async (tx) => {

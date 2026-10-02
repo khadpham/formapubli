@@ -1,6 +1,7 @@
 import { db } from '../db';
 import { counterAllocations, editions, works, warehouses, stockBalances } from '../db/schema';
 import { eq, and, sql, desc, asc, inArray } from 'drizzle-orm';
+import { AppError } from './app-error';
 
 
 export interface CreateAllocationItem {
@@ -175,7 +176,7 @@ export class AllocationService {
     warehouseId: string
   ) {
     if (!warehouseId || !warehouseId.trim()) {
-      throw new Error('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
+      throw AppError.invalid('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
     }
     const allocs = await db
       .select()
@@ -228,7 +229,7 @@ export class AllocationService {
     warehouseId: string
   ): Promise<number> {
     if (!warehouseId || !warehouseId.trim()) {
-      throw new Error('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
+      throw AppError.invalid('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
     }
     let touched = 0;
     for (const item of items) {
