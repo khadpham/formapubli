@@ -414,7 +414,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
 
             {/* Chú thích pháp lý cuối trang */}
             <div className="mt-8 pt-4 border-t border-dashed border-slate-300 text-center font-sans text-[10px] text-slate-400">
-              Chứng từ bất biến được tạo tự động bởi Formapubli OS | Bản quyền lưu hành nội bộ và giao dịch thương mại.
+              Chứng từ bất biến được tạo tự động bởi FORMApubli | Bản quyền lưu hành nội bộ và giao dịch thương mại.
             </div>
           </div>
         </div>

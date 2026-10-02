@@ -82,11 +82,11 @@ export function enforceFiscalScope(
     return 'OFFICIAL_TAX';
   }
 
-  // 2. Thu ngân / Thủ kho: Không có thẩm quyền xem báo cáo gộp toàn công ty
+  // 2. Thu ngân / Thủ kho: LUÔN bị ép về INTERNAL_MANAGEMENT — kể cả khi xin
+  // thẳng `OFFICIAL_TAX`. Trước đây nhánh này chỉ chặn ALL/INTERNAL nên xin
+  // thẳng OFFICIAL_TAX là lọt sổ thuế. Cùng luật với `SalesLedgerView`.
   if (userRole === 'ROLE_CASHIER' || userRole === 'ROLE_WAREHOUSE') {
-    if (requestedScope === 'ALL' || requestedScope === 'INTERNAL_MANAGEMENT') {
-      return 'INTERNAL_MANAGEMENT'; // Giới hạn trong phạm vi nội bộ tác nghiệp tại quầy
-    }
+    return 'INTERNAL_MANAGEMENT'; // Chỉ trong phạm vi nội bộ tác nghiệp tại quầy
   }
 
   // 3. Chủ quản lý / Giám đốc: Toàn quyền truy cập theo yêu cầu

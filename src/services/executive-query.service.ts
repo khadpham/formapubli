@@ -1,9 +1,9 @@
 import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances } from '@/db';
 import { ForecastService, RunoutLevel } from './forecast.service';
-import { OrderService } from './order.service';
+import { OrderService, createdAtBetween } from './order.service';
 import { InventoryService } from './inventory.service';
 import { removeAccents } from '@/lib/vietnamese';
-import { eq, desc, sql, and, gte, inArray, ne } from 'drizzle-orm';
+import { eq, desc, sql, and, inArray, ne } from 'drizzle-orm';
 
 export interface QueryStockParams {
   editionId?: string;
@@ -680,7 +680,10 @@ export class ExecutiveQueryService {
     // totalOrders (va lech tien neu don do co doanh thu).
     const breakdownConds = [
       eq(orders.status, 'COMPLETED'),
-      gte(orders.createdAt, cutoff),
+      // Dùng CHUNG helper ngày với getSalesSummary (chuẩn hoá qua datetime())
+      // thay vì so chuỗi thô — nếu không, breakdown lệch tổng summary khi cột
+      // có timestamp họ 'YYYY-MM-DD HH:MM:SS'.
+      ...createdAtBetween(orders.createdAt, cutoff, undefined),
       sql`${orders.channel} != 'SPONSORSHIP'`,
     ];
     if (fiscalScope !== 'ALL') breakdownConds.push(eq(orders.fiscalScope, fiscalScope));

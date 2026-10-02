@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { db, editions, orderItems, orders } from '../db';
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { AnalyticsService } from './analytics.service';
-import { OrderService, cutoffInstantOf } from './order.service';
+import { OrderService, cutoffInstantOf, createdAtBetween } from './order.service';
 import { ForecastService } from './forecast.service';
 import {
   callGeminiJsonRaw,
@@ -90,8 +90,8 @@ async function topEditions(range: { startDate: string; endDate: string }, topN =
     .where(
       and(
         eq(orders.status, 'COMPLETED'),
-        gte(orders.createdAt, range.startDate),
-        lte(orders.createdAt, range.endDate)
+        // Helper ngày chung (chuẩn hoá datetime()) thay vì so chuỗi thô.
+        ...createdAtBetween(orders.createdAt, range.startDate, range.endDate)
       )
     )
     .groupBy(orderItems.editionId)

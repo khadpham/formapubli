@@ -284,18 +284,19 @@ async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
   let pendingCleaned = 0;
 
 
-  for (const wh of target) {
-    // --- Bước 0: dọn đơn PENDING_CONFIRMATION đã HẾT HẠN (P2 sửa 2026-09-29) ---
-    // Không có bước này thì một đơn chuyển khoản quầy hết hạn sau 30 phút
-    // vẫn giữ dòng PENDING ⇒ chặn autoCloseSession (bước 1) ⇒ ca vẫn OPEN
-    // ⇒ chặn closeDay (bước 2). Một đơn kẹt tê cả đường ống của kho này.
-    try {
-      const cleaned = await OrderService.cleanupExpiredPending();
-      if (cleaned > 0) pendingCleaned += cleaned;
-    } catch (e: any) {
-      errors.push({ warehouse: wh.code, step: 'CLEANUP_PENDING', error: e?.message || String(e) });
-    }
+  // --- Bước 0: dọn đơn PENDING_CONFIRMATION đã HẾT HẠN (P2 sửa 2026-09-29) ---
+  // `cleanupExpiredPending()` quét TOÀN CỤC (không theo kho) nên gọi MỘT lần
+  // ngoài vòng lặp — trước đây gọi trong vòng lặp: N kho = N lần cùng một việc.
+  // Không có bước này thì đơn chuyển khoản quầy hết hạn vẫn giữ PENDING ⇒
+  // chặn autoCloseSession (bước 1) ⇒ ca vẫn OPEN ⇒ chặn closeDay (bước 2).
+  try {
+    const cleaned = await OrderService.cleanupExpiredPending();
+    if (cleaned > 0) pendingCleaned += cleaned;
+  } catch (e: any) {
+    errors.push({ warehouse: 'ALL', step: 'CLEANUP_PENDING', error: e?.message || String(e) });
+  }
 
+  for (const wh of target) {
     // --- Bước 1: chốt các ca quá giờ của kho này ---
     try {
       const check = await CashboxService.getStaleOpenShiftCheck({

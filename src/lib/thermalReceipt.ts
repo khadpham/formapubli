@@ -196,7 +196,7 @@ export function printThermalReceipt(
     <body>
       <div class="container">
         <div class="text-center">
-          <div style="font-size: ${headerFontSize}; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">FORMAPUBLI OS</div>
+          <div style="font-size: ${headerFontSize}; font-weight: 900; letter-spacing: 0.5px;">FORMApubli</div>
           <div style="font-size: 9px; font-weight: 500;">HỆ THỐNG XUẤT BẢN & PHÁT HÀNH SÁCH</div>
           <div style="font-size: 9px;">Hotline: ${COMPANY_HOTLINE} | Hà Nội</div>
           <div class="divider-solid"></div>

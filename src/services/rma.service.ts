@@ -76,7 +76,7 @@ export class RmaService {
           .limit(1);
         if (balanceRows.length === 0) throw new Error('Ấn bản không tồn tại.');
 
-        const currentNewBalance = await InventoryService.getBalance(editionId, warehouseId, 'NEW');
+        const currentNewBalance = await InventoryService.getBalance(editionId, warehouseId, 'NEW', tx);
         if (currentNewBalance < quantity) {
           throw new Error(
             `Kho không đủ tồn NEW để chuyển sang cách ly (Yêu cầu: ${quantity}, Hiện có: ${currentNewBalance}).`
