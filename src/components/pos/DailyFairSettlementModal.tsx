@@ -455,18 +455,7 @@ export function DailyFairSettlementModal({
                absolute để ra khỏi khung cắt. */
             width: 100%;
             background: white !important;
-            /* LỀ TRANG THẬT — đặt bằng padding của khối in, KHÔNG dựa vào @page
-               margin. Đo thật trên trang đang chạy: @page margin của ta không
-               thắng được khối 80mm trong globals.css (biên bản sát mép trái,
-               dính đỉnh từ trang 2) dù đặt cùng thứ tự và có !important —
-               style của component không bảo đảm đứt sau globals trong <head>.
-               Còn padding thì theo chuẩn fragmentation: padding-left/right LẶP
-               ở mọi trang ⇒ lề trái/phải chắc chắn đúng; padding-top chỉ hiện ở
-               trang đầu, nên lề trên của các trang sau do padding-top của TỪNG
-               khối nội dung (rule .print-block bên dưới) đảm nhiệm — khối nào
-               mở đầu trang thì khối đó mang lề trên.
-               Vì vậy @page phải để margin 0, nếu không hai lề cộng dồn. */
-            padding: 12mm 10mm !important;
+            padding: 0 !important;
             margin: 0 !important;
             overflow: visible !important;
             max-height: none !important;
@@ -480,17 +469,20 @@ export function DailyFairSettlementModal({
           .no-print {
             display: none !important;
           }
-          /* CHỐNG TRÀN NGANG — đo thật bằng Chromium headless ở khổ in 190mm
-             (719px) với dữ liệu nặng: bảng II tràn 30px, ghi chú đóng thùng tràn
-             42px. Chrome thấy nội dung rộng hơn khổ in thì co nhỏ CẢ TRANG
-             (hệ số bóp đo được 0.96 / 0.9446) — đúng triệu chứng "cột nội dung
-             chỉ ~1/2 chiều ngang giấy, chữ teo nhỏ toàn trang".
-             PHẢI dùng "anywhere", KHÔNG dùng "break-word": chuỗi một từ dài hơn cả ô
-             (mã đơn 45 ký tự không có khoảng trắng, ghi chú gõ tay không gãy)
-             chỉ "anywhere" ngắt được; đo cả hai, "break-word" không giảm tràn chút nào. */
           #printable-settlement-report table,
           #printable-settlement-report svg {
             max-width: 100%;
+          }
+          #printable-settlement-report table {
+            break-inside: auto;
+            page-break-inside: auto;
+          }
+          #printable-settlement-report thead {
+            display: table-header-group;
+          }
+          #printable-settlement-report tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           #printable-settlement-report td,
           #printable-settlement-report th,
@@ -500,54 +492,24 @@ export function DailyFairSettlementModal({
           #printable-settlement-report strong {
             overflow-wrap: anywhere;
           }
-          /* Biên bản gọn: mỗi khối nằm trọn trong một trang, không để trình
-             duyệt cắt ngang giữa chừng (bảng dài sẽ vỡ, bản in loạn dòng). */
+          /* Các khối nhỏ gọn nằm trọn trong 1 trang */
           #printable-settlement-report .print-block {
             break-inside: avoid;
             page-break-inside: avoid;
-            /* Lề TRÊN cho mọi trang: padding-top chỉ hiện ở trang đầu, nên mỗi
-               khối nội dung mang lề trên của chính nó — khối nào rơi xuống đầu
-               trang mới thì lề trên xuất hiện đúng ở đó. */
-            padding-top: 12mm;
           }
-          /* Khối đầu tiên đã có lề trên từ padding của chính nó ở trên. */
-/* LỀ TRANG THẬT của bản in nằm ở @page margin — theo chuẩn, margin của
-             @page lặp ở MỌI trang, còn padding của phần tử thì không (xem khối
-             in ở trên). Khối in hoá đơn nhiệt cũng đặt @page trong @media print
-             với margin 0mm !important — không giữ !important ở đây thì biên bản
-             A4 mất lề, vì rule !important thắng cả rule thường đến sau nó.
-             LƯU Ý: comment trong khối style này không dùng ngoặc nhọn, test đọc
-             file bằng regex sẽ dừng sớm ở dấu đóng ngoặc. */
-          /* GỠ ÉP 80MM CỦA PHIẾU NHIỆT K80 — đây là thủ phạm gốc của lỗi "bản in
-             chiếm 42% chiều ngang, dính mép". globals.css đặt sẵn trong
-             @media print: html và body bị ép width 80mm !important cho hóa đơn
-             nhiệt K80, kèm mọi con trực tiếp của body bị display none !important.
-             Rule đó áp cho
-             MỌI lần in trên toàn app nên biên bản A4 cũng bị ép còn 80mm = 302px
-             so với 718px vùng in A4 ⇒ 42%. Đo thật trên trang đang chạy:
-             width của html/body/#printable đều bằng 302.359px, và rule khớp chính
-             là dòng ép 80mm đó.
-             Sửa ở đây chứ không đụng globals.css: hóa đơn nhiệt đang dùng thật ở
-             POS, sửa globals là phá chức năng đang chạy. Selector dùng :has() để
-             có độ đặc hiệu CAO HƠN (1,0,1) nên thắng hẳn (0,0,1) của globals. */
+          /* Khối bảng lớn nhiều dòng (Mục IV tồn sách) cho phép ngắt trang tự nhiên */
+          #printable-settlement-report .print-table-block {
+            break-inside: auto;
+            page-break-inside: auto;
+          }
           html:has(#printable-settlement-report),
           body:has(#printable-settlement-report) {
-            /* width: auto một mình chưa đủ — nó cho 100% bề rộng màn hình
-               (1440px) trong khi vùng in A4 chỉ 190mm (718px), Chrome lại co
-               trang. max-width theo đúng vùng in giữ mọi trường hợp: khi in
-               thật viewport đã là 718px, khi render PDF thì bị chặn ở 718px. */
-            /* max-width 210mm = đúng bề rộng tờ A4 (không trừ lề, vì lề do
-               padding của khối in đảm nhiệm). Đặt 190mm sẽ tạo lề phải dư
-               10mm so với lề trái — đo thật ra lệch đúng bằng 10mm. */
             width: auto !important;
             max-width: 210mm !important;
           }
           @page {
             size: A4 portrait !important;
-            /* margin 0: lề đã do padding của khối in đảm nhiệm (xem khối in ở
-               trên). Để @page margin khác 0 là hai lề cộng dồn thành lề
-               khổng lồ, và lề của globals vẫn có thể thắng ở đây. */
-            margin: 0 !important;
+            margin: 12mm 10mm !important;
           }
         }
       `}</style>
@@ -1695,7 +1657,7 @@ export function DailyFairSettlementModal({
             </div>
 
             {/* IV. TỒN SÁCH CUỐI NGÀY */}
-            <div className="print-block mb-4 font-sans">
+            <div className="print-table-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
                 IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
               </h3>
