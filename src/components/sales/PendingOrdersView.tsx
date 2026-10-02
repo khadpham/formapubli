@@ -337,11 +337,11 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto min-w-0">
           <select
             value={selectedWarehouse}
             onChange={(e) => setSelectedWarehouse(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            className="flex-1 sm:flex-initial min-w-0 max-w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="ALL">Tất cả kho xuất</option>
             {Object.entries(warehouseNames).map(([id, name]) => (
@@ -352,7 +352,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            className="flex-1 sm:flex-initial min-w-0 max-w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="ALL">Tất cả kênh</option>
             <option value="FAIR_EVENT">Tại quầy hội chợ</option>

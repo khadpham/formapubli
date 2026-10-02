@@ -191,6 +191,16 @@ async function main() {
     console.log(`✓ 0032: đã thêm ${table}.${col}`);
   }
 
+  // --- 0036: thứ tự sắp xếp kho
+  const COLS_0036: [string, string, string][] = [
+    ['warehouses', 'sort_order', 'integer DEFAULT 0'],
+  ];
+  for (const [table, col, decl] of COLS_0036) {
+    if (await hasColumn(table, col)) continue;
+    await db.execute(`ALTER TABLE \`${table}\` ADD \`${col}\` ${decl}`);
+    console.log(`✓ 0036: đã thêm ${table}.${col}`);
+  }
+
   // --- Chứng minh trigger thật sự chạy trên DB dev
   const ed = await q(`SELECT id FROM editions LIMIT 1`);
   const wh = await q(`SELECT id FROM warehouses LIMIT 1`);

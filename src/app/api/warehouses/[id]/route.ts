@@ -49,6 +49,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.isSellableOnPos !== undefined ? { isSellableOnPos: body.isSellableOnPos } : {}),
       ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
       ...(body.qrTransferTemplate !== undefined ? { qrTransferTemplate: body.qrTransferTemplate } : {}),
+      ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
     });
 
     // Ngưng / mở lại là thao tác nhạy cảm: phải có vết riêng trong nhật ký hoạt

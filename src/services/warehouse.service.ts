@@ -1,5 +1,5 @@
 import { db, documentSequences, warehouses, bankAccounts } from '../db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, asc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 
@@ -37,13 +37,17 @@ export class WarehouseService {
     return await txOrDb
       .select()
       .from(warehouses)
-      .where(and(eq(warehouses.isActive, true), eq(warehouses.isSellableOnPos, true)));
+      .where(and(eq(warehouses.isActive, true), eq(warehouses.isSellableOnPos, true)))
+      .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
   }
 
   /** Danh sách tất cả các kho (kể cả đã ngưng) — màn hình quản trị cần thấy
    * kho đã ngưng để bật lại được. */
   static async listAll(txOrDb: any = db): Promise<WarehouseRow[]> {
-    return await txOrDb.select().from(warehouses);
+    return await txOrDb
+      .select()
+      .from(warehouses)
+      .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
   }
 
   /** VietQR offline: list TK active + default của kho (1 TK dùng N kho, 1 kho đổi TK tay lúc bán). */
@@ -76,7 +80,7 @@ export class WarehouseService {
    */
   static async updateWarehouse(
     warehouseId: string,
-    patch: { name?: string; address?: string | null; isSellableOnPos?: boolean; isActive?: boolean; qrTransferTemplate?: string | null },
+    patch: { name?: string; address?: string | null; isSellableOnPos?: boolean; isActive?: boolean; qrTransferTemplate?: string | null; sortOrder?: number },
     txOrDb: any = db
   ): Promise<WarehouseRow> {
     const wh = await this.getWarehouse(warehouseId, txOrDb);
@@ -94,6 +98,7 @@ export class WarehouseService {
     }
     if (patch.isSellableOnPos !== undefined) set.isSellableOnPos = patch.isSellableOnPos === true;
     if (patch.isActive !== undefined) set.isActive = patch.isActive === true;
+    if (patch.sortOrder !== undefined) set.sortOrder = patch.sortOrder;
     if (Object.keys(set).length === 0) throw AppError.invalid('Không có gì để cập nhật.');
     await txOrDb.update(warehouses).set(set).where(eq(warehouses.id, warehouseId));
     return (await this.getWarehouse(warehouseId, txOrDb))!;

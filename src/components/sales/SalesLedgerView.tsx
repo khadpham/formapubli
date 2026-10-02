@@ -12,6 +12,10 @@ import {
   Search,
   FileSpreadsheet,
   Percent,
+  Eye,
+  X,
+  AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
@@ -76,6 +80,19 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // Mã nhân viên THẬT đóng watermark mọi lượt xuất CSV. Trước đây ghi cứng
   // 'cashier-pos' ⇒ không lượt xuất nào truy vết được về người đã bấm.
   const [actorId, setActorId] = useState<string>('');
+
+  // Chi tiết đơn hàng và Hủy đơn
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [orderDetail, setOrderDetail] = useState<any | null>(null);
+  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
+  const [orderDetailError, setOrderDetailError] = useState<string | null>(null);
+
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidForce, setVoidForce] = useState(false);
+  const [voidLoading, setVoidLoading] = useState(false);
+  const [voidError, setVoidError] = useState<string | null>(null);
+  const [voidSuccess, setVoidSuccess] = useState<string | null>(null);
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
   // Spec §5: thu ngân KHÔNG được thấy nút chọn Sổ Thuế — server ép INTERNAL cho
@@ -286,6 +303,72 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     URL.revokeObjectURL(url);
   };
 
+  const openOrderDetail = async (id: string) => {
+    setSelectedOrderId(id);
+    setOrderDetail(null);
+    setOrderDetailLoading(true);
+    setOrderDetailError(null);
+    setShowVoidConfirm(false);
+    setVoidReason('');
+    setVoidForce(false);
+    setVoidError(null);
+    setVoidSuccess(null);
+
+    try {
+      const res = await fetch(`/api/orders/${id}`);
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Không thể tải chi tiết đơn hàng.');
+      }
+      setOrderDetail(json);
+    } catch (err: any) {
+      setOrderDetailError(err.message || 'Lỗi kết nối khi tải chi tiết đơn hàng.');
+    } finally {
+      setOrderDetailLoading(false);
+    }
+  };
+
+  const handleVoidOrder = async () => {
+    if (!selectedOrderId) return;
+    if (!voidReason || voidReason.trim().length < 5) {
+      setVoidError('Vui lòng nhập lý do hủy đơn cụ thể (tối thiểu 5 ký tự).');
+      return;
+    }
+
+    setVoidLoading(true);
+    setVoidError(null);
+    try {
+      const res = await fetch(`/api/orders/${selectedOrderId}/void`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: voidReason.trim(),
+          force: voidForce,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Hủy đơn hàng thất bại.');
+      }
+      setVoidSuccess('Đã hủy đơn hàng và hoàn trả tồn kho thành công.');
+      if (orderDetail?.order) {
+        setOrderDetail({
+          ...orderDetail,
+          order: {
+            ...orderDetail.order,
+            status: 'CANCELLED',
+            note: (orderDetail.order.note ? orderDetail.order.note + ' | ' : '') + `[HỦY ĐƠN: ${voidReason.trim()}]`,
+          },
+        });
+      }
+      setShowVoidConfirm(false);
+      fetchOrders();
+    } catch (err: any) {
+      setVoidError(err.message || 'Lỗi khi gửi yêu cầu hủy đơn.');
+    } finally {
+      setVoidLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -346,10 +429,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
       {/* Scope Switcher Banner (Chỉ cho phép Quản lý & Điều hành chuyển đổi) */}
       {!isTaxAccountant && canViewTaxScope ? (
-        <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl">
+        <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveScope('ALL')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold transition-all ${
               activeScope === 'ALL'
                 ? 'bg-white text-indigo-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -359,7 +442,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </button>
           <button
             onClick={() => setActiveScope('OFFICIAL_TAX')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold transition-all ${
               activeScope === 'OFFICIAL_TAX'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -369,7 +452,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </button>
           <button
             onClick={() => setActiveScope('INTERNAL_MANAGEMENT')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit whitespace-nowrap py-2 px-3 rounded-xl text-xs font-bold transition-all ${
               activeScope === 'INTERNAL_MANAGEMENT'
                 ? 'bg-purple-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -397,7 +480,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       {/* Multi-Dimensional Filter Bar: Date Presets & Warehouse Filter */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         {/* Date Filter Presets */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
           <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             Thời gian:
@@ -445,7 +528,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         </div>
 
         {/* Warehouse Filter */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto min-w-0">
           <span className="text-xs font-bold text-slate-500 shrink-0 flex items-center gap-1">
             <Building2 className="w-3.5 h-3.5 text-slate-400" />
             Kho hàng:
@@ -575,7 +658,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             </div>
           </div>
           {/* Slicer kenh ban kieu pivot */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
             <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               Kênh:
@@ -618,19 +701,20 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                 <th className="p-3.5">Thực Thu</th>
                 <th className="p-3.5">Phân Loại Sổ</th>
                 <th className="p-3.5">Thời Gian</th>
+                <th className="p-3.5 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading && orders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400">
+                  <td colSpan={11} className="p-8 text-center text-slate-400">
                     <span className="inline-block h-4 w-40 rounded bg-slate-200 animate-pulse align-middle" />
                     <span className="ml-2">Đang tải danh sách đơn…</span>
                   </td>
                 </tr>
               ) : visibleOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400">
+                  <td colSpan={11} className="p-8 text-center text-slate-400">
                     Không tìm thấy đơn hàng nào phù hợp với bộ lọc.
                   </td>
                 </tr>
@@ -697,6 +781,17 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                     <td className="p-3.5 text-slate-500 font-mono text-[11px]">
                       {vnHour(ord.createdAt)}
                     </td>
+                    <td className="p-3.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => openOrderDetail(ord.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-xs font-bold transition-colors cursor-pointer border border-sky-200"
+                        title="Xem chi tiết đơn hàng"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Xem</span>
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -737,6 +832,292 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         fiscalScope={scopeParam === 'ALL' ? undefined : scopeParam}
         actorId={actorId}
       />
+
+      {/* Modal Chi Tiết Đơn Hàng & Thao Tác Hủy Đơn An Toàn */}
+      {selectedOrderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <Receipt className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Chi Tiết Đơn Hàng {orderDetail?.order?.orderCode ? `· ${orderDetail.order.orderCode}` : ''}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Thông tin chứng từ bán hàng, phân loại sổ và danh mục ấn phẩm
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedOrderId(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200/60 transition cursor-pointer"
+                title="Đóng cửa sổ"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5">
+              {orderDetailLoading ? (
+                <div className="py-12 text-center text-slate-400">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto text-indigo-500 mb-2" />
+                  <p className="text-sm font-medium">Đang tải chi tiết đơn hàng…</p>
+                </div>
+              ) : orderDetailError ? (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-800 font-medium">
+                  {orderDetailError}
+                </div>
+              ) : orderDetail?.order ? (
+                <>
+                  {voidSuccess && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-800 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{voidSuccess}</span>
+                    </div>
+                  )}
+
+                  {/* Order Overview Meta Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200/70 text-xs">
+                    <div>
+                      <span className="text-slate-400 block font-medium">Trạng thái:</span>
+                      {orderDetail.order.status === 'COMPLETED' ? (
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                          Hoàn tất
+                        </span>
+                      ) : orderDetail.order.status === 'CANCELLED' ? (
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800">
+                          Đã hủy
+                        </span>
+                      ) : (
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">
+                          {orderDetail.order.status}
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Thời gian:</span>
+                      <span className="font-bold text-slate-800">{vnHour(orderDetail.order.createdAt)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Kho xuất:</span>
+                      <span className="font-bold text-slate-800">{orderDetail.order.warehouseName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Thu ngân:</span>
+                      <span className="font-bold text-slate-800">{orderDetail.order.cashierName}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Kênh bán:</span>
+                      <span className="font-bold text-slate-800">{channelLabel(orderDetail.order.channel)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Thanh toán:</span>
+                      <span className="font-bold text-slate-800">{paymentLabel(orderDetail.order.paymentMethod)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Phân loại sổ:</span>
+                      <span className="font-bold text-slate-800">{fiscalScopeLabel(orderDetail.order.fiscalScope)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Khách hàng:</span>
+                      <span className="font-bold text-slate-800">{orderDetail.order.customerName || 'Khách lẻ'}</span>
+                    </div>
+                  </div>
+
+                  {orderDetail.order.note && (
+                    <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-900">
+                      <strong>Ghi chú:</strong> {orderDetail.order.note}
+                    </div>
+                  )}
+
+                  {/* Items Table */}
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Danh mục ấn phẩm & quà tặng ({orderDetail.items?.length || 0})
+                    </h4>
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100">
+                          <tr>
+                            <th className="p-3">Sản phẩm</th>
+                            <th className="p-3 text-center">Số lượng</th>
+                            <th className="p-3 text-right">Giá bìa</th>
+                            <th className="p-3 text-right">Chiết khấu</th>
+                            <th className="p-3 text-right">Đơn giá</th>
+                            <th className="p-3 text-right">Thành tiền</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(orderDetail.items || []).map((it: any) => (
+                            <tr key={it.id} className="hover:bg-slate-50/50">
+                              <td className="p-3">
+                                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                  <span>{it.productName || it.productId}</span>
+                                  {it.isGiftLine && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-pink-100 text-pink-700">
+                                      Quà tặng
+                                    </span>
+                                  )}
+                                  {it.isGiftShortfall && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                      Hết tồn
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono">{it.productCode || it.productId}</span>
+                              </td>
+                              <td className="p-3 text-center font-bold font-mono">{it.quantity}</td>
+                              <td className="p-3 text-right font-mono text-slate-500">
+                                {Number(it.unitCoverPrice || 0).toLocaleString('vi-VN')} đ
+                              </td>
+                              <td className="p-3 text-right font-mono text-amber-600">
+                                {it.unitDiscountRate ? `${Math.round(it.unitDiscountRate * 100)}%` : '0%'}
+                              </td>
+                              <td className="p-3 text-right font-mono text-slate-700">
+                                {Number(it.unitSellingPrice || 0).toLocaleString('vi-VN')} đ
+                              </td>
+                              <td className="p-3 text-right font-mono font-bold text-slate-900">
+                                {Number(it.totalAmount || 0).toLocaleString('vi-VN')} đ
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Financial Summary Breakdown */}
+                  <div className="flex justify-end">
+                    <div className="w-full sm:w-72 space-y-1.5 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                      <div className="flex justify-between text-slate-500">
+                        <span>Tổng tiền niêm yết:</span>
+                        <span className="font-mono">{Number(orderDetail.order.subtotal || 0).toLocaleString('vi-VN')} đ</span>
+                      </div>
+                      <div className="flex justify-between text-amber-600">
+                        <span>Chiết khấu:</span>
+                        <span className="font-mono">-{Number(orderDetail.order.discountAmount || 0).toLocaleString('vi-VN')} đ</span>
+                      </div>
+                      <div className="border-t border-slate-200 pt-1.5 flex justify-between font-extrabold text-sm text-emerald-700">
+                        <span>Thực thu:</span>
+                        <span className="font-mono">{Number(orderDetail.order.finalAmount || 0).toLocaleString('vi-VN')} đ</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section Hủy Đơn Hàng cho Quản lý / Chủ */}
+                  {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') &&
+                    orderDetail.order.status === 'COMPLETED' && (
+                      <div className="border-t border-slate-200 pt-4">
+                        {!showVoidConfirm ? (
+                          <div className="flex justify-between items-center bg-rose-50/50 border border-rose-200/60 p-3.5 rounded-2xl">
+                            <div>
+                              <h5 className="text-xs font-bold text-rose-900">Thao tác Quản trị</h5>
+                              <p className="text-[11px] text-rose-600">
+                                Hủy đơn quét nhầm / sai lệch để hoàn tồn kho và điều chỉnh doanh thu
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowVoidConfirm(true);
+                                setVoidError(null);
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hủy đơn</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-rose-50 border border-rose-300 p-4 rounded-2xl space-y-3">
+                            <div className="flex items-start gap-2 text-rose-900">
+                              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                              <div>
+                                <h5 className="text-xs font-extrabold">Xác nhận Hủy Đơn Hàng Hoàn Tất</h5>
+                                <p className="text-[11px] text-rose-700 mt-0.5">
+                                  Hành động này sẽ: (1) Trả 100% sách & quà về kho xuất qua bút toán Thẻ kho RETURN_INBOUND; (2) Trừ khỏi doanh số ca đang mở; (3) Lưu nhật ký kiểm toán.
+                                </p>
+                              </div>
+                            </div>
+
+                            {voidError && (
+                              <div className="p-2.5 bg-rose-100 border border-rose-300 rounded-xl text-xs text-rose-900 font-bold">
+                                {voidError}
+                              </div>
+                            )}
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Lý do hủy đơn (bắt buộc):
+                              </label>
+                              <input
+                                type="text"
+                                value={voidReason}
+                                onChange={(e) => setVoidReason(e.target.value)}
+                                placeholder="Ví dụ: Quét nhầm phương thức thanh toán, khách đổi ý..."
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+                              />
+                            </div>
+
+                            {currentRole === 'ROLE_OWNER' && (
+                              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-rose-800">
+                                <input
+                                  type="checkbox"
+                                  checked={voidForce}
+                                  onChange={(e) => setVoidForce(e.target.checked)}
+                                  className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+                                />
+                                <span>Xác nhận cưỡng chế nếu ca két đã đóng (Chủ doanh nghiệp phê duyệt)</span>
+                              </label>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <button
+                                type="button"
+                                disabled={voidLoading}
+                                onClick={() => {
+                                  setShowVoidConfirm(false);
+                                  setVoidError(null);
+                                }}
+                                className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition cursor-pointer"
+                              >
+                                Đóng
+                              </button>
+                              <button
+                                type="button"
+                                disabled={voidLoading}
+                                onClick={handleVoidOrder}
+                                className="flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-sm transition disabled:opacity-50 cursor-pointer"
+                              >
+                                {voidLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                                <span>Xác nhận hủy đơn</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                </>
+              ) : null}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/70 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedOrderId(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

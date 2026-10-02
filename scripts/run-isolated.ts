@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { setupTestDb, TEST_DB_FILE } from './setup-test-db';
 
 const ALL_SUITES = [
+  'scripts/test-void-completed-order.ts',
   'scripts/smoke-mobile-role-navigation.ts',
   'scripts/test-discount-guard.ts',
   'scripts/test-manager-approval-drawer.ts',
