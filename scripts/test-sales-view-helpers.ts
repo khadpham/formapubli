@@ -569,6 +569,13 @@ ok(
   '67. Dashboard hiện nhãn kỳ đang xem cạnh số tổng (không để số treo không kỳ)'
 );
 
-console.log(`\nTổng ${checks} kiểm tra — đạt ${checks - failures}, lỗi ${failures}.`);
+ok(
+  /canViewTaxScope/.test(LEDGER_SRC) && /Thu ngân chỉ xem sổ nội bộ/.test(LEDGER_SRC),
+  '68. Thu ngân KHÔNG thấy nút Sổ Thuế (server ép INTERNAL — để nút là hứa sai)'
+);
+ok(
+  /zeroValueCount/.test(LEDGER_SRC) && /đơn quà 0đ/.test(LEDGER_SRC),
+  '69. Thẻ tổng ghi rõ số đơn quà 0đ khi có (totalOrders gồm cả đơn không tiền)'
+);
 if (failures > 0) process.exit(1);
 console.log('\n✅ Helper Doanh Số: ngày VN đúng tháng lịch, nhãn kênh tiếng Việt, CSV có dấu.');

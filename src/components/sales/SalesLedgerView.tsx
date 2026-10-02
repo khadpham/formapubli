@@ -78,6 +78,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [actorId, setActorId] = useState<string>('');
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
+  // Spec §5: thu ngân KHÔNG được thấy nút chọn Sổ Thuế — server ép INTERNAL cho
+  // thu ngân nên để nút đó là hứa một thứ rồi trả thứ khác (cashier bấm "Sổ Thuế"
+  // mà cột toàn "Sổ Quản trị Nội bộ"). Chỉ Owner/Manager được chuyển sổ.
+  const canViewTaxScope = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   // Sổ đang xem: kế toán thuế bị ÉP OFFICIAL_TAX (xem useEffect bên dưới), người
   // khác tự chọn. 'ALL' = xem cả hai sổ. MỘT nơi tính, dùng lại cho cả danh sách
   // lẫn các panel con — không để mỗi panel tự suy luận lại.
@@ -227,6 +231,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // Gioi han so dong hien thi de bang gon trong 1 man hinh (cuon doc xem tiep)
   const visibleOrders = pageSize === -1 ? filteredOrders : filteredOrders.slice(0, pageSize);
 
+  // Đơn quà 0đ (tặng 100%) vẫn đếm vào totalOrders của server — ghi rõ để người
+  // đọc không tưởng "N đơn = N đơn có tiền".
+  const zeroValueCount = orders.filter((o) => Number(o?.finalAmount) === 0).length;
+
   const avgDiscountPercent =
     summary && summary.totalSubtotal > 0
       ? ((summary.totalDiscount / summary.totalSubtotal) * 100).toFixed(1)
@@ -337,7 +345,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       </div>
 
       {/* Scope Switcher Banner (Chỉ cho phép Quản lý & Điều hành chuyển đổi) */}
-      {!isTaxAccountant ? (
+      {!isTaxAccountant && canViewTaxScope ? (
         <div className="flex items-center p-1.5 bg-slate-200/80 rounded-2xl max-w-xl">
           <button
             onClick={() => setActiveScope('ALL')}
@@ -370,11 +378,18 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             Sổ Quản Trị Nội Bộ
           </button>
         </div>
-      ) : (
+      ) : isTaxAccountant ? (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 font-medium">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>
             Chế độ Kế Toán Thuế đang kích hoạt: Hệ thống tự động áp dụng bộ lọc cách ly, chỉ trích xuất các đơn hàng có hóa đơn VAT hợp pháp.
+          </span>
+        </div>
+      ) : (
+        <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center gap-2 font-medium">
+          <ShieldCheck className="w-4 h-4 text-slate-500" />
+          <span>
+            Thu ngân chỉ xem sổ nội bộ đơn của mình.
           </span>
         </div>
       )}
@@ -514,7 +529,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           <p className="text-[10px] text-slate-400 mt-0.5">
             {loading && !summary
               ? 'Đang tải…'
-              : `${(summary?.totalOrders ?? 0).toLocaleString('vi-VN')} đơn hoàn tất · doanh thu gộp chưa trừ hoàn`}
+              : `${(summary?.totalOrders ?? 0).toLocaleString('vi-VN')} đơn hoàn tất · doanh thu gộp chưa trừ hoàn${zeroValueCount > 0 ? ` · gồm ${zeroValueCount.toLocaleString('vi-VN')} đơn quà 0đ` : ''}`}
           </p>
           <p className="text-[10px] text-slate-400">
             Thẻ tổng theo kho/ngày/sổ; nút kênh và ô tìm kiếm chỉ lọc bảng bên dưới.
