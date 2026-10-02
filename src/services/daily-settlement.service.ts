@@ -84,6 +84,39 @@ export class DailySettlementService {
       .from(orders)
       .where(and(...orderConditions));
 
+    // 2b. Đơn CHUYỂN KHOẢN đang chờ xác nhận trong ngày.
+    //
+    // BÁO CÁO KHÔNG ĐƯỢC CỘNG khoản này vào Thực thu — nó chưa ghi nhận.
+    // Bắt buộc loại đơn quá hạn: TTL là 48h (`order.service.ts` PENDING_TTL_HOURS)
+    // và đơn hết hạn VẪN CÒN trong DB với status PENDING_CONFIRMATION (chỉ đổi
+    // sang CANCELLED khi ai đó bấm xác nhận), trong khi ATP đã nhả giữ chỗ từ
+    // lâu. Tính bằng SUM thuần sẽ thổi phồng số tiền chờ.
+    const pendingRows = await txOrDb
+      .select({
+        finalAmount: orders.finalAmount,
+        paymentMethod: orders.paymentMethod,
+        createdAt: orders.createdAt,
+        paymentExpiresAt: orders.paymentExpiresAt,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.warehouseId, warehouseId),
+          eq(orders.status, 'PENDING_CONFIRMATION'),
+          vnDayEquals(orders.createdAt, targetDate)
+        )
+      );
+
+    let pendingQrTotal = 0;
+    let pendingQrCount = 0;
+    for (const r of pendingRows) {
+      const method = (r.paymentMethod || '').toUpperCase();
+      if (method !== 'QR_TRANSFER' && method !== 'COUNTER_TRANSFER') continue;
+      if (OrderService.isPendingExpired(r)) continue;
+      pendingQrTotal += r.finalAmount || 0;
+      pendingQrCount++;
+    }
+
     // 3. Tính toán số liệu tài chính & cơ cấu thanh toán
     let grossSales = 0;
     let totalDiscount = 0;
@@ -559,6 +592,13 @@ export class DailySettlementService {
           sales: qrTransferSales,
           ordersCount: qrTransferOrdersCount,
           percentage: netSales > 0 ? Math.round((qrTransferSales / netSales) * 100) : 0,
+        },
+        // CHƯA GHI NHẬN — tách riêng, không cộng vào `netSales`. Là ảnh chụp lúc
+        // mở báo cáo: đơn này sau này thành COMPLETED sẽ nằm trong Thực thu của
+        // lần mở sau (đó là đúng), nên UI phải ghi rõ "chưa ghi nhận".
+        pendingQr: {
+          total: pendingQrTotal,
+          ordersCount: pendingQrCount,
         },
         card: {
           sales: cardSales,
