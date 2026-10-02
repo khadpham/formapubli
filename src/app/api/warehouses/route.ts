@@ -83,6 +83,7 @@ export async function GET(req: NextRequest) {
         qrTransferTemplate: (w as any).qrTransferTemplate || null,
         stockQuantity: stockMap.get(w.id) || 0,
         defaultBankAccountId: (w as any).defaultBankAccountId || null,
+        sortOrder: (w as any).sortOrder ?? 0,
       })),
     });
   } catch (error: any) {

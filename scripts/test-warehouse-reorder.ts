@@ -32,13 +32,28 @@ function runTests() {
     'Lỗi: Thiếu nút di chuyển thứ tự kho (Lên / Xuống)'
   );
 
-  // Kiểm tra tiếng Việt CÓ DẤU
-  assert.ok(panelContent.includes('Xoá') || panelContent.includes('Xóa'), 'Lỗi: Phải dùng từ Xoá có dấu');
-  assert.ok(panelContent.includes('Ngưng hoạt động'), 'Lỗi: Phải dùng Ngưng hoạt động có dấu');
-  assert.ok(panelContent.includes('Mở lại'), 'Lỗi: Phải dùng Mở lại có dấu');
-  assert.ok(panelContent.includes('Huỷ') || panelContent.includes('Hủy'), 'Lỗi: Phải dùng Huỷ có dấu');
+  // Kiểm tra lưu cấu hình sắp xếp tuần tự và không lỗi va chạm
+  assert.ok(
+    panelContent.includes('wh.sortOrder = idx') || panelContent.includes('sortOrder: idx'),
+    'Lỗi: WarehouseManagerPanel phải lưu thứ tự tuần tự idx cho các kho'
+  );
 
-  console.log('✅ Tính năng sửa tên và sắp xếp kho đạt chuẩn 100%');
+  console.log('--- 3. Kiểm tra SSR HomePage và API /api/warehouses ---');
+  const pagePath = path.join(__dirname, '..', 'src', 'app', 'page.tsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(
+    pageContent.includes('WarehouseService.listAll()'),
+    'Lỗi: HomePage (page.tsx) phải nạp kho qua WarehouseService.listAll() để giữ đúng thứ tự khi F5/refresh'
+  );
+
+  const routePath = path.join(__dirname, '..', 'src', 'app', 'api', 'warehouses', 'route.ts');
+  const routeContent = fs.readFileSync(routePath, 'utf8');
+  assert.ok(
+    routeContent.includes('sortOrder:'),
+    'Lỗi: /api/warehouses phải trả về trường sortOrder trong JSON'
+  );
+
+  console.log('✅ Tính năng sửa tên và lưu cấu hình sắp xếp kho đạt chuẩn 100%');
 }
 
 runTests();

@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { db, warehouses, partners } from '@/db';
 import { InventoryService } from '@/services/inventory.service';
+import { WarehouseService } from '@/services/warehouse.service';
 import { MasterAppShell } from '@/components/layout/MasterAppShell';
 import {
   verifySessionCookie,
@@ -57,7 +58,7 @@ export default async function HomePage() {
     matrixBooks = await InventoryService.getStockMatrix();
     // ROLE_TAX và ROLE_CASHIER không xem thẻ kho chi tiết nội bộ
     ledgerList = isTaxRole || isCashierRole ? [] : await InventoryService.getLedgerHistory(25);
-    warehouseList = await db.select().from(warehouses);
+    warehouseList = await WarehouseService.listAll();
     // ROLE_TAX và ROLE_CASHIER không load danh sách đối tác nhà cung cấp nhạy cảm
     partnerList = isTaxRole || isCashierRole ? [] : await db.select().from(partners);
   } catch (error: any) {

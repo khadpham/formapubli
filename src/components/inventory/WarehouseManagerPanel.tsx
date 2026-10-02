@@ -115,32 +115,34 @@ export function WarehouseManagerPanel({
     const targetIndex = direction === 'UP' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= warehouses.length) return;
     const current = warehouses[index];
-    const target = warehouses[targetIndex];
-    if (!current || !target) return;
+    if (!current) return;
 
+    // 1. Tạo mảng mới theo thứ tự đã đổi
+    const newList = [...warehouses];
+    const [moved] = newList.splice(index, 1);
+    newList.splice(targetIndex, 0, moved);
+
+    // 2. Cập nhật giao diện tức thì (Optimistic UI)
+    setWarehouses(newList);
     setBusyId(current.id);
     setError(null);
-    try {
-      const currentOrder = current.sortOrder ?? index;
-      const targetOrder = target.sortOrder ?? targetIndex;
-      const newCurrentOrder = targetOrder === currentOrder ? targetIndex : targetOrder;
-      const newTargetOrder = targetOrder === currentOrder ? index : currentOrder;
 
-      await Promise.all([
-        fetch(`/api/warehouses/${encodeURIComponent(current.id)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sortOrder: newCurrentOrder }),
-        }),
-        fetch(`/api/warehouses/${encodeURIComponent(target.id)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sortOrder: newTargetOrder }),
-        }),
-      ]);
+    try {
+      // 3. Chuẩn hóa và lưu sortOrder tuần tự 0, 1, 2, ... cho toàn bộ danh sách để loại bỏ hoàn toàn va chạm mốc 0 cũ
+      await Promise.all(
+        newList.map((wh, idx) => {
+          wh.sortOrder = idx;
+          return fetch(`/api/warehouses/${encodeURIComponent(wh.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sortOrder: idx }),
+          });
+        })
+      );
       await afterChange(`Đã đổi vị trí kho [${current.name}].`);
     } catch (e: any) {
       setError(e?.message || 'Đổi vị trí kho thất bại.');
+      await load();
     } finally {
       setBusyId(null);
     }
