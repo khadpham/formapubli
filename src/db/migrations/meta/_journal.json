@@ -252,6 +252,13 @@
       "when": 1790600011000,
       "tag": "0035_order_discount_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790600012000,
+      "tag": "0036_warehouse_sort_order",
+      "breakpoints": true
     }
   ],
   "version": "7"

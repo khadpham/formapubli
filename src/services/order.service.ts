@@ -1878,6 +1878,135 @@ return {
     });
   }
 
+  /**
+   * Hủy đơn COMPLETED → CANCELLED (Dành cho Quản lý / Chủ doanh nghiệp).
+   *
+   * Nghiệp vụ an toàn tuyệt đối:
+   * 1. Phân quyền: Cấm Thu ngân; Quản lý chỉ hủy trong ca OPEN; Chủ được cưỡng chế ca CLOSED nếu có forceCloseBypass.
+   * 2. Thẻ kho (Ledger): Bất biến - không xoá dòng cũ, tạo bút toán RETURN_INBOUND (+quantityDelta) hoàn trả đủ sách và quà.
+   * 3. Sổ dòng tiền: Ca mở tự động loại trừ khỏi calculateSessionStats (do lọc status = 'COMPLETED').
+   * 4. Kiểm toán: Ghi nhận audit_logs chi tiết.
+   */
+  static async voidCompletedOrder(params: {
+    orderId: string;
+    actorRole: string;
+    actorId?: string;
+    reason: string;
+    forceCloseBypass?: boolean;
+    actorContext?: ActorContext;
+  }) {
+    let { orderId, actorRole, actorId, reason, forceCloseBypass, actorContext } = params;
+    if (actorContext) { actorRole = actorContext.role; }
+    const resolvedActorId = actorContext?.staffId ?? actorId;
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      throw AppError.invalid('Lý do hủy đơn bắt buộc (tối thiểu 5 ký tự).');
+    }
+
+    const isPrivileged = actorRole === 'ROLE_OWNER' || actorRole === 'ROLE_MANAGER';
+    if (!isPrivileged) {
+      throw AppError.forbidden('Thu ngân không có quyền hủy đơn đã hoàn tất. Vui lòng liên hệ Quản lý.');
+    }
+
+    return await withDbRetry(async () => {
+      return await db.transaction(async (tx) => {
+        const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+        const ord = rows[0];
+
+        if (ord.status === 'CANCELLED') {
+          return { orderId, orderCode: ord.orderCode, status: 'CANCELLED' as const, isIdempotent: true };
+        }
+        if (ord.status !== 'COMPLETED') {
+          throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, chỉ có thể hủy đơn COMPLETED.`);
+        }
+
+        let wasShiftClosed = false;
+        if (ord.cashboxSessionId) {
+          const sessionRows = await tx
+            .select()
+            .from(cashboxSessions)
+            .where(eq(cashboxSessions.id, ord.cashboxSessionId))
+            .limit(1);
+          const cashbox = sessionRows[0];
+          if (cashbox && cashbox.status === 'CLOSED') {
+            wasShiftClosed = true;
+            if (actorRole !== 'ROLE_OWNER') {
+              throw AppError.conflict(
+                'Két ca của đơn này đã đóng. Chỉ Chủ doanh nghiệp mới có quyền duyệt hủy đơn của ca đã đóng.'
+              );
+            }
+            if (!forceCloseBypass) {
+              throw AppError.conflict(
+                'Két ca của đơn này đã đóng. Thao tác hủy đơn sẽ làm lệch số liệu biên bản bàn giao két. Cần xác nhận cưỡng chế để tiếp tục.'
+              );
+            }
+          }
+        }
+
+        const lines = await tx
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, orderId));
+
+        // Hoàn trả thẻ kho: loại trừ quà ảo thiếu tồn (isGiftShortfall)
+        const returnItems = lines
+          .filter((ln) => !ln.isGiftShortfall && ln.quantity > 0)
+          .map((ln) => {
+            const isBook = !ln.productId.startsWith('pr-');
+            return {
+              editionId: ln.productId,
+              isBook,
+              quantityDelta: ln.quantity, // Dương: hoàn trả vào kho
+              condition: 'NEW' as const,
+            };
+          });
+
+        if (returnItems.length > 0) {
+          await InventoryService.recordMovementsBatch(
+            returnItems,
+            {
+              warehouseId: ord.warehouseId,
+              eventType: 'RETURN_INBOUND',
+              documentRef: ord.orderCode,
+              note: `Hoàn kho do hủy đơn ${ord.orderCode} (lý do: ${reason.trim()})`,
+              actorId: resolvedActorId,
+              correlationId: orderId,
+              idempotencyPrefix: `idem-void-${orderId}-`,
+            },
+            tx
+          );
+        }
+
+        const noteUpdate = `${ord.note ? ord.note + ' | ' : ''}[HỦY ĐƠN: ${reason.trim()}]`;
+        const updateRes: any = await tx.run(sql`
+          UPDATE orders
+          SET status = 'CANCELLED',
+              note = ${noteUpdate}
+          WHERE id = ${orderId} AND status = 'COMPLETED'
+        `);
+
+        if (updateRes.rowsAffected !== 1) {
+          throw AppError.conflict('Trạng thái đơn đã thay đổi trong lúc đang hủy. Vui lòng tải lại trang.');
+        }
+
+        await tx
+          .insert(auditLogs)
+          .values({
+            id: `aud-order-void-${orderId}-${Date.now()}`,
+            action: 'ORDER_VOIDED',
+            actorRole,
+            actorId: resolvedActorId || `unattributed:${actorRole}`,
+            resource: `/api/orders/${orderId}/void`,
+            details: `Hủy ${ord.orderCode} (lý do: ${reason.trim()})${wasShiftClosed ? ' [CẢNH BÁO: CA ĐÃ ĐÓNG]' : ''}`,
+          })
+          .onConflictDoNothing({ target: auditLogs.id });
+
+        return { orderId, orderCode: ord.orderCode, status: 'CANCELLED' as const, isIdempotent: false };
+      });
+    });
+  }
+
   /** Owner/Manager xử lý mọi đơn; Cashier chỉ xử lý đơn có cashierId của chính mình. */
   private static assertOrderActor(
     ord: { cashierId: string | null },
