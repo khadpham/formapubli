@@ -1,14 +1,14 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
-**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `e0d08a31` (thoát modal qua backdrop + nút/vùng đóng máy quét + đồng bộ main) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
+**Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `1e05338c` (bật cuộn ngang bảng kiểm kê đóng thùng, giám sát CK, chuyển kho trên mobile + đồng bộ main) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
 |---|---|
 | Repo gốc | `D:\Data Project\formapubli` |
 | **Worktree đang làm** | `D:\Data Project\formapubli` |
 | Branch | `main` |
-| HEAD | `9dadb85` |
-| Production version đang chạy | `e0d08a31-23a6-42c0-a7b8-e9e1e13a1d7c` (deploy trưa 02/10: thoát modal qua backdrop + nút/vùng đóng máy quét mã vạch; site sống 200 OK) |
+| HEAD | `4aa9203` |
+| Production version đang chạy | `1e05338c-1993-4dbe-9014-49148d7b5d41` (deploy trưa 02/10: cuộn ngang bảng kiểm kê đóng thùng, giám sát chiết khấu, chuyển kho trên điện thoại; site sống 200 OK) |
 
 > **NGƯỜI ĐỌC PHẢI LÀM ĐƯỢC NGAY, KHÔNG PHẢI SUY LUẬN.** Mọi con số dưới đây là số đo được, không phải ước lượng. Lệnh copy chạy được nguyên văn.
 
