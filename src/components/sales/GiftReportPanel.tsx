@@ -122,20 +122,22 @@ export function GiftReportPanel({ currentRole, from, to }: GiftReportPanelProps)
         </div>
       )}
 
-      {loading && inStock.length === 0 && shortfall.length === 0 ? (
-        <p className="text-xs text-slate-500">Đang tải báo cáo quà...</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-          <div>
-            <p className="font-bold text-emerald-700 mb-1">Quà đã phát (còn tồn)</p>
-            {renderRows(inStock, 'Không có quà đã phát trong kỳ này.')}
+      {/* Lỗi ⇒ KHÔNG vẽ "không có quà": lúc đó ta chưa biết là rỗng hay tải hỏng. */}
+      {!error &&
+        (loading && inStock.length === 0 && shortfall.length === 0 ? (
+          <p className="text-xs text-slate-500">Đang tải báo cáo quà...</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <p className="font-bold text-emerald-700 mb-1">Quà đã phát (còn tồn)</p>
+              {renderRows(inStock, 'Không có quà đã phát trong kỳ này.')}
+            </div>
+            <div>
+              <p className="font-bold text-rose-700 mb-1">Quà hết tồn chưa phát</p>
+              {renderRows(shortfall, 'Không có quà hết tồn trong kỳ này.')}
+            </div>
           </div>
-          <div>
-            <p className="font-bold text-rose-700 mb-1">Quà hết tồn chưa phát</p>
-            {renderRows(shortfall, 'Không có quà hết tồn trong kỳ này.')}
-          </div>
-        </div>
-      )}
+        ))}
 
       <p className="text-[11px] text-slate-400">
         Chỉ tính đơn hoàn tất, theo đúng khoảng ngày đang lọc ở bảng Doanh Số.
