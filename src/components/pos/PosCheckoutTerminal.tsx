@@ -83,6 +83,7 @@ import { priceLine } from '@/lib/pricing';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { PortalToBody } from '@/components/PortalToBody';
 import { printThermalReceipt, PaperPreset } from '@/lib/thermalReceipt';
+import { resolveReceiptSummary } from '@/lib/receipt-summary';
 
 /** Nhắc thu ngân khi thanh toán số được gọi mà chưa có ảnh xác nhận. */
 const NEED_PROOF_MESSAGE = 'Chuyển khoản cần ảnh xác nhận. Bấm nút Chụp ảnh xác nhận.';
@@ -431,6 +432,18 @@ export function PosCheckoutTerminal({
     };
   }, [completedOrder?.orderCode]);
 
+  /**
+   * Đơn đã bán + hai số liệu mà bản gốc hiển thị sai (tên kho, tổng số sách) —
+   * dùng chung cho màn "Bán Hàng Thành Công" lẫn phiếu in. Quy tắc và bằng chứng
+   * lỗi (đã đo trên production) nằm ở `resolveReceiptSummary`.
+   */
+  const receiptOrder = useMemo(() => {
+    if (!completedOrder) return null;
+    return {
+      ...completedOrder,
+      ...resolveReceiptSummary(completedOrder, sellableWarehouses),
+    };
+  }, [completedOrder, sellableWarehouses]);
   useEffect(() => {
     if (!completedOrder || !autoPrintOnCheckout) return;
     const orderCode = String(completedOrder.orderCode || completedOrder.id || '');
@@ -442,7 +455,7 @@ export function PosCheckoutTerminal({
       // có tên; nay in tên thật, thiếu thì lùi về mã nhân viên, KHÔNG bao giờ in
       // chuỗi vai trò giả.
       printThermalReceipt(
-        { ...completedOrder, cashierName: cashierFullName || undefined },
+        { ...receiptOrder, cashierName: cashierFullName || undefined },
         paperPreset,
         currentRole,
         receiptFooterText
@@ -450,7 +463,7 @@ export function PosCheckoutTerminal({
       autoPrintedOrderCodes.current.add(orderCode);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [completedOrder, autoPrintOnCheckout, paperPreset, currentRole, receiptFooterText, cashierFullName]);
+  }, [completedOrder, receiptOrder, autoPrintOnCheckout, paperPreset, currentRole, receiptFooterText, cashierFullName]);
 
   // Mốc chờ cho lệnh ghi két tiền (30/09). Mạng hội chợ chập chờn, `fetch` không
   // mốc chờ sẽ treo vô hạn và khoá nút "Khóa Két & Kết Ca" ở "Đang chốt...".
@@ -490,6 +503,15 @@ export function PosCheckoutTerminal({
   const [isApprovalPending, setIsApprovalPending] = useState(false);
   // requestId yêu cầu đang chờ (do modal tạo) — cần để gọi API CANCEL trước khi mở khóa
   const [pendingApprovalRequestId, setPendingApprovalRequestId] = useState<string | null>(null);
+  /**
+   * Mã đơn THẬT mà server cấp cho yêu cầu duyệt chiết khấu (`data.orderCode`).
+   *
+   * VÌ SAO cần giữ: `activeOrderCode` là mã máy tự sinh, server KHÔNG dùng nó
+   * làm `orders.order_code` mà cấp mã 13 ký tự trong DB. Đơn có duyệt thì mã
+   * đơn = mã của yêu cầu, nên giữ lại đây chỉ để dự phòng khi response chốt
+   * đơn thiếu `orderCode` — không bao giờ ghi đè bằng mã máy.
+   */
+  const [approvedOrderCode, setApprovedOrderCode] = useState<string | null>(null);
   const [isCancellingApproval, setIsCancellingApproval] = useState(false);
   const [approvalCancelError, setApprovalCancelError] = useState<string | null>(null);
   // Luồng chuyển khoản/QR theo đơn thật: tạo đơn PENDING → QR → chụp ảnh → xác nhận.
@@ -538,6 +560,7 @@ export function PosCheckoutTerminal({
     setPendingDiscountRate(null);
     setPendingApprovalRequestId(null);
     setApprovedDiscountRequestId(null);
+    setApprovedOrderCode(null);
     setIsManagerOverride(false);
     setCustomerName('Khách lẻ');
     setFiscalScope('INTERNAL_MANAGEMENT');
@@ -674,6 +697,7 @@ export function PosCheckoutTerminal({
     setPendingDiscountRate(null);
     setPendingApprovalRequestId(null);
     setApprovedDiscountRequestId(null);
+    setApprovedOrderCode(null);
     setIsManagerOverride(false);
     setDiscountRate(0);
     setIsGift(false);
@@ -1721,6 +1745,8 @@ export function PosCheckoutTerminal({
     ? { orderCode: transferSession.orderCode, quantity: transferSession.qrSnapshot.orderQuantity ?? 0 }
     : null;
   const qrItemCount = transferSession ? frozenOrderForQr!.quantity : totalCopies;
+
+
   const approvalPricedCart = useMemo(
     () => cart.map((item) => priceLine(item.coverPrice, pendingDiscountRate ?? discountRate, item.quantity)),
     [cart, discountRate, pendingDiscountRate]
@@ -2046,7 +2072,10 @@ export function PosCheckoutTerminal({
         const session: TransferPaymentSession = {
           mode: 'ONLINE',
           orderId: resData.data?.orderId || resData.data?.id || orderUuid,
-          orderCode: resData.data?.orderCode || orderCode,
+          // Mã đơn = mã server vừa cấp. Rơi về mã của yêu cầu duyệt (cũng do
+          // server cấp, và chính là mã server dùng cho đơn này) trước khi rơi
+          // về mã máy — mã máy là mã KHÔNG tồn tại trong DB.
+          orderCode: resData.data?.orderCode || approvedOrderCode || orderCode,
           idempotencyKey,
           warehouseId: selectedWarehouseId,
           // Số tiền PHẢI lấy từ server, không lấy `finalAmount` tính ở client.
@@ -2071,6 +2100,7 @@ export function PosCheckoutTerminal({
             content: '',
             orderQuantity: Number(resData.data?.pricedQuantity ?? resData.data?.totalQuantity ?? totalCopies),
           },
+          bookQuantity: Number(resData.data?.bookQuantity) || undefined,
           // Đóng băng danh sách mặc hàng và TổNG TIỀN vào chính phiên. Xem giải
           // thích ở `items` trong TransferPaymentSession: nếu không, phiếu thu in
           // `items` từ GIỎ ĐANG SỐNG, mà giỏ rỗng sau khi F5 ⇒ phiếu có tổng
@@ -2172,6 +2202,11 @@ export function PosCheckoutTerminal({
 
       setCompletedOrder({
         ...resData.data,
+        // Mã trên phiếu phải là mã server cấp (`...resData.data` đã có sẵn).
+        // Chỉ khi response thiếu mã mới rơi về mã của yêu cầu duyệt — với đơn có
+        // duyệt, đó CHÍNH LÀ mà server gán cho `orders.order_code`; tuyệt đối
+        // không ghi đè bằng mã máy tự sinh.
+        orderCode: resData.data?.orderCode || approvedOrderCode,
         items: [...cart],
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
@@ -2336,6 +2371,9 @@ export function PosCheckoutTerminal({
         // từ PHIÊN ĐÃ ĐÓNG BĂNG (đúng bằng số lúc tạo đơn) + số của giỏ.
         finalAmount: session.amount,
         totalQuantity: session.qrSnapshot.orderQuantity ?? totalCopies,
+        // "Tổng số sách" phải là số CUỐN, không phải tổng số dòng hàng (dòng quà
+        // hàng hóa không phải sách). Số sách đã đóng băng lúc tạo phiên.
+        bookQuantity: session.bookQuantity ?? session.qrSnapshot.orderQuantity,
         // Danh sách sách và TỔNG TIỀN lấy từ PHIÊN ĐÃ ĐÓNG BĂNG, không phải từ
         // giỏ đang sống. Sau khi F5 giữa chừng lúc chờ chuyển khoản, giỏ đã rỗng
         // còn phiên vẫn giữ đơn đúng ⇒ bản cũ in ra tổng tiền ĐÚNG nhưng bảng
@@ -3904,13 +3942,7 @@ export function PosCheckoutTerminal({
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Kho xuất:</span>
-                <span>
-                  {completedOrder.warehouseId === 'wh-au-co'
-                    ? 'Kho Âu Cơ'
-                    : completedOrder.warehouseId === 'wh-du-phong'
-                    ? 'Kho Hội Chợ'
-                    : 'Kho Quỳnh Mai'}
-                </span>
+                <span>{receiptOrder?.warehouseName}</span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Phân loại sổ:</span>
@@ -3920,7 +3952,7 @@ export function PosCheckoutTerminal({
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Tổng số sách:</span>
-                <span>{completedOrder.totalQuantity} cuốn</span>
+                <span>{receiptOrder?.bookQuantity} cuốn</span>
               </div>
               <div className="flex justify-between font-black text-sm pt-2 border-t border-slate-200 text-emerald-700">
                 <span>THỰC THU:</span>
@@ -4014,7 +4046,7 @@ export function PosCheckoutTerminal({
                 type="button"
                 onClick={() =>
                   printThermalReceipt(
-                    { ...completedOrder, cashierName: cashierFullName || undefined },
+                    { ...receiptOrder, cashierName: cashierFullName || undefined },
                     paperPreset,
                     currentRole,
                     receiptFooterText
@@ -4406,11 +4438,15 @@ export function PosCheckoutTerminal({
           quantity: item.quantity,
           unitPrice: item.coverPrice,
         }))}
-        onRequestCreated={setPendingApprovalRequestId}
+        onRequestCreated={(requestId, orderCode) => {
+          setPendingApprovalRequestId(requestId);
+          if (orderCode) setApprovedOrderCode(orderCode);
+        }}
         onApproved={(data) => {
           if (!pendingApprovalRequestId || pendingApprovalRequestId !== data.requestId) return;
           setIsApprovalPending(false);
           setApprovedDiscountRequestId(data.requestId);
+          if (data.orderCode) setApprovedOrderCode(data.orderCode);
           setPendingApprovalRequestId(null);
           setIsManagerOverride(true);
           setDiscountRate(data.rate);

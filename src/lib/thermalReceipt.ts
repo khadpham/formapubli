@@ -15,13 +15,30 @@ export type PaperPreset = 'K80' | 'K57';
 export interface PrintableReceiptOrder {
   orderCode: string;
   customerName?: string;
+  /**
+   * TÊN kho do POS truyền vào (POS đã có danh sách kho từ `/api/warehouses`).
+   * Phiếu in KHÔNG tự bịa tên kho: bảng tra cứng cứng ở đây chỉ biết 3 mã kho văn
+   * phòng, còn hội chợ dùng mã riêng (`wh-kho-hoi-cho-ho-guom`,
+   * `wh-kho-dh-ha-noi-thang-10-2026`) nên mọi đơn hội chợ rơi vào nhánh dự phòng
+   * và in ra tên kho SAI. Sai tên kho trên phiếu là sai chỗ giao hàng ⇒ mất tiền
+   * thật. Không có tên thì in MÃ kho: người đọc phiếu tra được, còn bịa tên thì không.
+   */
   warehouseId?: string;
+  warehouseName?: string;
   fiscalScope?: string;
   paymentMethod?: string;
   discountRate?: number;
   subtotal?: number;
   discountAmount?: number;
   finalAmount: number;
+  /**
+   * "Tổng số sách" = số CUỐN SÁCH, không phải số DÒNG HÀNG. Ở hội chợ mỗi đơn đều
+   * kèm quà hàng hóa (bookmark, móc khoá — dòng `edition_id = NULL`), nên cộng
+   * `totalQuantity` in ra "2 cuốn" cho một đơn chỉ có 1 cuốn.
+   * `bookQuantity` do server tính (nguồn sự thật); thiếu thì lùi về `totalQuantity`
+   * để phiếu cũ và đơn offline vẫn in được.
+   */
+  bookQuantity?: number;
   totalQuantity: number;
   date?: string;
   cashierId?: string;
@@ -63,7 +80,10 @@ export function printThermalReceipt(
   const subtotal = safeNumber(order.subtotal);
   const discountAmount = safeNumber(order.discountAmount);
   const finalAmount = safeNumber(order.finalAmount);
-  const totalQuantity = Math.max(0, Math.floor(safeNumber(order.totalQuantity)));
+  const totalQuantity = Math.max(
+    0,
+    Math.floor(safeNumber(order.bookQuantity ?? order.totalQuantity))
+  );
   const isK57 = preset === 'K57';
   const paperWidthMm = isK57 ? '57mm' : '80mm';
   const contentWidthMm = isK57 ? '48mm' : '72mm';
@@ -71,17 +91,7 @@ export function printThermalReceipt(
   const headerFontSize = isK57 ? '12px' : '13px';
   const titleFontSize = isK57 ? '10px' : '11px';
 
-  // KHÔNG có nhánh else suy đoán tên kho. Trước đây kho lạ (kho hội chợ) bị in
-  // nhầm thành "Kho Âu Cơ" — cùng lớp lỗi đã sửa ở modal mở két. Trên phiếu
-  // bán hàng thì sai tên kho là sai chỗ giao hàng, tức mất tiền thật.
-  // In mã kho thay vì bịa tên: người đọc phiếu nhìn thấy đúng mã và tra được.
-  const KNOWN_WAREHOUSE_NAMES: Record<string, string> = {
-    'wh-au-co': 'Kho 1 - Âu Cơ',
-    'wh-du-phong': 'Kho 3 - Hội Chợ',
-    'wh-quynh-mai': 'Kho 2 - Quỳnh Mai',
-  };
-  const warehouseName =
-    KNOWN_WAREHOUSE_NAMES[order.warehouseId || ''] || `Kho ${order.warehouseId || 'không rõ'}`;
+  const warehouseName = (order.warehouseName || '').trim() || `Kho ${order.warehouseId || 'không rõ'}`;
 
   const paymentName =
     order.paymentMethod === 'CASH'

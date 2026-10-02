@@ -245,6 +245,13 @@
       "when": 1790600010000,
       "tag": "0034_promotion_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790600011000,
+      "tag": "0035_order_discount_approval",
+      "breakpoints": true
     }
   ],
   "version": "7"

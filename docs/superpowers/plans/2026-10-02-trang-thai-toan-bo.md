@@ -385,3 +385,81 @@ Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút to�
 | 7 | Nghiệm thu tầng 3 trên prod: quét SP-001..004 ra đơn thật | ⏳ Sáng mai, máy thật (chưa làm — cố ý không tạo đơn rác tối nay) |
 | 8 | Mục 8.5 ghi bù sổ kho Hồ Gươm | **Chạy khi kho đóng (sau hội chợ)** |
 | 9 | Báo "xanh" để mở lộ trình cửa sổ | Sau bước 7 |
+
+---
+
+# BỔ SUNG 02/10/2026 (chiều) — MÃ ĐƠN DUYỆT CHIẾT KHẤU + BIÊN LAI SAI SỐ
+
+Nhánh `fix/discount-approval-order-code` trong worktree `D:\Data Project\formapubli-dashboard`.
+**CHƯA COMMIT, CHƯA DEPLOY.** Production chạy version cũ.
+
+## 1. Đã làm xong
+
+### 1.1 Mã đơn của yêu cầu duyệt chiết khấu (server cấp, không phải máy POS)
+Lỗi: `PosCheckoutTerminal` sinh mã 29 ký tự ở máy, `order.service` lại cấp mã
+13 ký tự ⇒ **mã trên giấy ≠ mã trong hệ thống**, và `discount_approval_requests`
+không nối được với `orders` (báo cáo đối soát ca nối bằng mã nên 0 khớp).
+
+| Việc | File |
+|---|---|
+| Tách bộ cấp mã ra `src/services/order-code.ts` (tránh vòng import với `discount-approval.service`) | mới |
+| `createRequest` cấp mã thật ngay lúc tạo yêu cầu, `cartHash` khoá theo mã đó | `discount-approval.service.ts` |
+| Mã phiếu tạm của máy POS tách sang cột mới `discount_approval_requests.client_order_code` | `0035` + schema |
+| Đơn có duyệt dùng lại đúng mã của yêu cầu; ghi `orders.discount_approval_id` | `order.service.ts` |
+| `assertSameOrderContent` không so mã client với đơn có duyệt (tránh IDEMPOTENCY_CONFLICT giả khi POS bấm lại) | `order.service.ts` |
+
+Migration **`0035_order_discount_approval.sql`**: `orders.discount_approval_id` +
+`discount_approval_requests.client_order_code` + 2 index. Chỉ ADD COLUMN NULLABLE
+⇒ an toàn, không backfill, không khóa bảng ghi.
+
+**BẮT BUỘC trước khi deploy:** chạy `npx tsx scripts/apply-0035-prod.ts`
+(coordinator). Script idempotent, đã dry-run trên bản sao DB: cả nhánh "cột đã có"
+lẫn nhánh "chưa có" đều chạy đúng, `foreign_key_check` sạch.
+
+### 1.2 Hai lỗi màn "Bán Hàng Thành Công" + phiếu in (báo cáo của chủ, đã đo trên production)
+
+| Lỗi | Nguyên nhân đã xác minh | Sửa |
+|---|---|---|
+| **Kho xuất sai** | Màn biên lai map cứng 2 mã kho văn phòng rồi `else 'Kho Quỳnh Mai'`. Kho hội chợ thật là `wh-kho-hoi-cho-ho-guom` / `wh-kho-dh-ha-noi-thang-10-2026` ⇒ **mọi đơn hội chợ in tên kho khác** | Tra tên trong danh sách kho POS; không tra được thì in MÃ kho, không bịa tên. `thermalReceipt.ts` bỏ bảng tra cứng cứng, nhận `warehouseName` từ POS |
+| **Tổng số sách = 2 khi chỉ bán 1 cuốn** | `totalQuantity` cộng MỌI dòng, kể cả dòng quà HÀNG HÓA. Đo thật: `ORD261002000V` = 1 sách (135.000đ) + 1 quà bookmark (`order_items.edition_id = NULL`) | Server trả `bookQuantity` (đếm dòng có `edition_id`); màn hình + phiếu in dùng số này |
+
+Quy tắc dùng chung một chỗ: `src/lib/receipt-summary.ts` → `resolveReceiptSummary`.
+
+**Cần biết:** hội chợ Hồ Gươm và ĐH Hà Nội tháng 10/2026 đều đang chạy chương
+trình tặng hàng hóa 1 món/đơn. Thông báo "2 cuốn" là do DÒNG QUÀ HÀNG HÓA bị đếm
+vào sách, KHÔNG phải hệ thống tự thêm sách. Nếu muốn phiếu ghi rõ, cần tách dòng
+"Quà tặng" — hiện chưa làm (chưa có yêu cầu).
+
+## 2. Kiểm chứng đã chạy
+
+- `npx tsc --noEmit` → 0 lỗi.
+- `scripts/test-receipt-warehouse-and-book-count.ts` (mới, 20 assertions) PASS.
+- Xanh: `test-s3-discount-approval`, `test-s4-settlement`, `test-settlement`,
+  `test-discount-checkout-atomic`, `test-discount-guard`, `test-order-code-13`,
+  `test-receipt-hotline-cashier`, `test-online-orders`, `test-order-sales`,
+  `test-order-guards`, `test-pos-cash-integrity`, `test-pos-money-integrity`,
+  `test-cashbox-close-shift`, `test-cashbox-audit-count`, `test-gift-approval-hash`,
+  `test-gift-offline`, `test-transfer-payment-flow`,
+  `test-transfer-payment-adversarial`, `test-goods-in-pos-catalog`,
+  `test-s2-pos-catalog`, `test-offline-engine`, `test-pos-qr-content`,
+  `test-pos-cashier-name`, `test-manager-approval-drawer`.
+- DB dev trong worktree đã vá 0035 (`fix-dev-db-schema.ts` nay biết 0035).
+- **Chưa** chạy `npm run build`, **chưa** nghiệm thu tầng 3
+  (`verify-pos-live.ts`), **chưa** kiểm bằng tay trên điện thoại.
+
+## 3. Test đã sửa (không hạ assertion)
+
+`test-s3-discount-approval.ts`:
+- `shortCode` nay kiểm theo mã server thay vì literal `'4821'`; thêm assert mã đơn
+  13 ký tự + `clientOrderCode` giữ mã phiếu tạm.
+- Case 9: assert `discountApprovalId` được ghi vào đơn.
+- Case "retry idempotency": đổi MỨC CHIẾT KHẤU thay vì mã đơn để tạo xung đột —
+  từ 0035 mã đơn là của server nên đổi mã không còn là xung đột (đúng ý đồ).
+
+## 4. Việc tiếp theo
+
+1. Coordinator: `npx tsx scripts/apply-0035-prod.ts` **trước** khi deploy.
+2. `npm run build` trên đúng worktree này (dừng `next dev` trước nếu đang chạy).
+3. Nghiệm thu tầng 3 trên production: tạo 1 đơn có duyệt chiết khấu 100% tại
+   kho hội chợ, kiểm màn biên lai hiện đúng tên kho + "1 cuốn".
+4. Cân nhắc thêm dòng "Quà tặng" riêng trên phiếu (chưa làm, cần chủ quyết).

@@ -97,6 +97,16 @@ export interface TransferPaymentSession {
   items?: Array<{ editionId: string; code: string; title: string; quantity: number; price: number }>;
   subtotal?: number;
   discountAmount?: number;
+  /**
+   * Số CUỐN SÁCH của đơn, do server tính lúc tạo (`bookQuantity`).
+   *
+   * Phiếu ghi "Tổng số sách" mà `totalQuantity` cộng cả dòng quà HÀNG HÓA (bookmark,
+   * móc khoá — dòng `edition_id = NULL`), nên đơn 1 cuốn ở hội chợ in ra "2 cuốn".
+   * Đóng băng số sách vào phiên vì sau khi F5 thì giỏ rỗng, không còn cách nào tính
+   * lại. Phiên cũ (lưu trước khi có trường này) không có giá trị ⇒ dùng
+   * `qrSnapshot.orderQuantity`.
+   */
+  bookQuantity?: number;
 }
 
 export interface TransferPaymentModalProps {

@@ -24,6 +24,7 @@ async function run() {
   const {
     DiscountApprovalService,
     generateCanonicalCartHash,
+    extractShortCode,
   } = await import('../src/services/discount-approval.service');
   const { OrderService, CashboxService } = await import('../src/services/order.service');
   const { POST: approvalPost, GET: approvalGet } = await import('../src/app/api/pos/discount-approvals/[id]/route');
@@ -145,7 +146,17 @@ async function run() {
   assert.equal(req1.originalAmount, 500000);
   assert.equal(req1.discountAmount, 125000);
   assert.equal(req1.finalAmount, 375000);
-  assert.equal(req1.shortCode, '4821');
+  assert.equal(req1.shortCode, extractShortCode(req1.orderCode));
+  // 0035: MÃ ĐƠN do SERVER cấp, không phải mã phiếu tạm của máy thu ngân. Mã
+  // thu ngân đọc cho quản lý ghi ra giấy phải BẰNG mã trong hệ thống — nếu còn là
+  // mã 29 ký tự sinh ở máy thì phiếu giấy không tra được và báo cáo đối soát ca
+  // không nối được đơn với yêu cầu đã duyệt.
+  assert.match(
+    req1.orderCode,
+    /^ORD\d{6}[0-9A-Z]{4}$/,
+    'order_code phải là mã 13 ký tự do server cấp'
+  );
+  assert.equal(req1.clientOrderCode, orderCode1, 'Mã phiếu tạm của máy POS phải được giữ riêng');
   assert.ok(req1.qrToken, 'Phải có signed qrToken');
 
   const roundingRequest = await DiscountApprovalService.createRequest({
@@ -195,7 +206,7 @@ async function run() {
     await DiscountApprovalService.approveRequest({
       requestId: req2.id,
       method: 'SHORTCODE_BOUND',
-      shortCode: '4821',
+      shortCode: req2.shortCode,
       actorContext: CASHIER,
     });
   } catch (err: any) {
@@ -222,7 +233,7 @@ async function run() {
   const approvedReq2 = await DiscountApprovalService.approveRequest({
     requestId: req2.id,
     method: 'SHORTCODE_BOUND',
-    shortCode: '4821',
+    shortCode: req2.shortCode,
     actorContext: MGR,
   });
   assert.equal(approvedReq2.status, 'APPROVED');
@@ -395,7 +406,12 @@ async function run() {
     discountApprovalId: req7.id,
     items: [{ editionId: 'ed-h01', quantity: 2 }],
   });
-  assert.equal(orderWithApproval.orderCode, orderCode7);
+  assert.equal(orderWithApproval.orderCode, req7.orderCode);
+  assert.equal(
+    orderWithApproval.discountApprovalId,
+    req7.id,
+    'Đơn phải ghi đường nối tới yêu cầu duyệt (0035) — không suy ra lại từ mã'
+  );
   assert.equal((await DiscountApprovalService.getRequest(req7.id)).status, 'CONSUMED');
   const replayedOrder = await OrderService.createOrder({
     id: 'order-approval-replay-1',
@@ -418,7 +434,11 @@ async function run() {
       idempotencyKey: 'idem-approval-1',
       warehouseId: 'wh-au-co',
       channel: 'RETAIL_OFFICE',
-      discountRate: 0.25,
+      // Đổi MỨC CHIẾT KHẤU chứ không đổi mã: từ 0035, `orderCode` của request là
+      // mã do server cấp và thắng mọi mã client gửi lên, nên đổi mã KHÔNG còn là
+      // xung đột nữa (đúng như mong muốn: máy POS không tự ý đổi mã đơn đã duyệt).
+      // Nội dung đơn khác đi vẫn phải bị chặn — đây mới là thứ cần canh.
+      discountRate: 0.3,
       paymentMethod: 'CASH',
       actorContext: CASHIER,
       discountApprovalId: req7.id,
@@ -607,7 +627,7 @@ async function run() {
         'content-type': 'application/json',
         Cookie: `${SESSION_COOKIE_NAME}=${cashierToken}`,
       },
-      body: JSON.stringify({ action: 'APPROVE', method: 'SHORTCODE_BOUND', shortCode: '7780' }),
+      body: JSON.stringify({ action: 'APPROVE', method: 'SHORTCODE_BOUND', shortCode: req10.shortCode }),
     }) as any,
     { params: { id: req10.id } }
   );

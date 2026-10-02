@@ -269,6 +269,17 @@ export const stockBalances = sqliteTable('stock_balances', {
 export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(), // UUID v7 or unique client ID
   orderCode: text('order_code').notNull().unique(), // e.g. ORD-20260911-0001
+  /**
+   * Yêu cầu duyệt chiết khấu đã tiêu thụ cho đơn này (migration 0033).
+   *
+   * VÌ SAO cần: trước đây đơn và yêu cầu duyệt chỉ có thể nối qua `order_code`,
+   * nhưng `discount_approval_requests.order_code` lại do MÁY thu ngân sinh còn
+   * `orders.order_code` do server cấp ⇒ hai mã không bao giờ trùng. Hệ quả: báo
+   * cáo đối soát ca gắn nhầm mọi đơn vượt trần là "quản lý duyệt tại quầy", và
+   * sau sự cố không dựng lại được đơn nào đã được duyệt. Cột này là đường nối
+   * chân lý, không suy diễn từ mã.
+   */
+  discountApprovalId: text('discount_approval_id'),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   channel: text('channel').notNull().default('FAIR_EVENT'), // FAIR_EVENT, RETAIL_OFFICE, WHOLESALE_PARTNER, ONLINE
   partnerId: text('partner_id').references(() => partners.id), // Đại lý / Đối tác phân phối sỉ nếu bán buôn
@@ -307,6 +318,8 @@ export const orders = sqliteTable('orders', {
   createdAtIdx: index('idx_orders_created_at').on(table.createdAt),
   trackingCodeIdx: index('idx_orders_tracking_code').on(table.trackingCode),
   shippingStatusIdx: index('idx_orders_shipping_status').on(table.shippingStatus),
+  // 0035: tra cứu "đơn nào đã dùng yêu cầu duyệt này" (đối soát ca, chống dùng lại).
+  discountApprovalIdx: index('idx_orders_discount_approval').on(table.discountApprovalId),
 }));
 
 // 13. Order Line Items (Chi tiết từng sản phẩm trong đơn)
@@ -742,7 +755,20 @@ export const idempotencyKeys = sqliteTable('idempotency_keys', {
 // 33. Discount Approval Requests (Duyệt chiết khấu POS thông minh — V4.1 S3)
 export const discountApprovalRequests = sqliteTable('discount_approval_requests', {
   id: text('id').primaryKey(),
+  /**
+   * MÃ ĐƠN THẬT (13 ký tự `ORD`+`YYMMDD`+base36) do SERVER cấp ngay lúc tạo yêu
+   * cầu, và CHÍNH LÀ mã ghi vào `orders.order_code` khi chốt đơn.
+   */
   orderCode: text('order_code').notNull(),
+  /**
+   * Mã phiếu tạm do MÁY thu ngân sinh (29 ký tự dạng
+   * `ORD-20261002-BFC3DCBC00CB7738`). Chỉ dùng làm khoá nhận diện "phiên giỏ hàng"
+   * để bấm nút hai lần không sinh hai yêu cầu — KHÔNG phải mã đơn, không in ra phiếu.
+   *
+   * Trước 0035, cột này là `order_code` và mã phiếu tạm nằm đúng chỗ của mã đơn thật
+   * ⇒ không có đường nối nào giữa yêu cầu đã duyệt và đơn đã bán.
+   */
+  clientOrderCode: text('client_order_code'),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
   cashierId: text('cashier_id').notNull(),
   cartHash: text('cart_hash').notNull(),
@@ -763,6 +789,7 @@ export const discountApprovalRequests = sqliteTable('discount_approval_requests'
 }, (table) => ({
   statusIdx: index('idx_disc_appr_status').on(table.status, table.expiresAt),
   orderIdx: index('idx_disc_appr_order').on(table.orderCode),
+  clientOrderIdx: index('idx_disc_appr_client_order').on(table.clientOrderCode),
   whIdx: index('idx_disc_appr_warehouse').on(table.warehouseId),
 }));
 

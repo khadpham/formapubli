@@ -3,6 +3,10 @@ import { and, desc, eq, gt, inArray, lte, or, sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 import { hashString } from '../lib/export-hash';
 import { priceLine } from '../lib/pricing';
+import { allocateOrderCode } from './order-code';
+// `vnDayFmt` chứ không phải `businessDateOf` từ `./order.service`: order.service đã
+// import file này, lấy từ đó sẽ thành vòng import chỉ nổ lúc chạy thật.
+import { vnDayFmt } from '../lib/vn-time';
 
 export interface CartItemInput {
   editionId: string;
@@ -204,8 +208,14 @@ export async function verifyQrJwt(token: string): Promise<Record<string, any>> {
 export class DiscountApprovalService {
   /**
    * Thu ngân tạo yêu cầu duyệt chiết khấu đặc biệt (chiết khấu > 20% hoặc chính sách quầy).
+   *
+   * `orderCode` ở đây là MÃ PHIẾU TẠM do máy thu ngân sinh, KHÔNG phải mã đơn thật.
+   * Nó chỉ làm khoá nhận diện "phiên giỏ hàng này" để bấm nút hai lần không sinh hai
+   * yêu cầu. MÃ ĐƠN THẬT do server cấp (`allocateOrderCode`) và đó mới là giá trị
+   * ghi vào `order_code` và trả về cho client — xem `clientOrderCode` ở schema.
    */
   static async createRequest(params: {
+    /** Mã phiếu tạm của máy thu ngân (khoá nhận diện phiên), KHÔNG phải mã đơn. */
     orderCode: string;
     warehouseId: string;
     cashierId: string;
@@ -218,7 +228,9 @@ export class DiscountApprovalService {
       return db.transaction((tx) => this.createRequest({ ...params, txOrDb: tx }));
     }
     const {
-      orderCode,
+      // `orderCode` của caller là MÃ PHIẾU TẠM (sinh ở máy thu ngân). Đặt tên lại
+      // ngay ở đây để không lẫn với mã đơn thật do server cấp bên dưới.
+      orderCode: clientOrderCode,
       warehouseId,
       cashierId,
       items,
@@ -289,23 +301,23 @@ export class DiscountApprovalService {
     const finalAmount = pricedLines.reduce((sum, line) => sum + line.finalAmount, 0);
     const discountAmount = originalAmount - finalAmount;
 
-    const cartHash = generateCanonicalCartHash(
-      canonicalItems,
-      requestedDiscountRate,
-      warehouseId,
-      orderCode
-    );
+// KHÔNG tính `cartHash` ở đây: hash phải khoá theo MÃ ĐƠN THẬT (mã mà
+    // `assertValidForCheckout` dùng lúc chốt đơn sẽ tính lại), mà mã đơn thật chỉ
+    // biết được sau bước "còn yêu cầu cũ nào không" bên dưới — bấm lại nút duyệt
+    // trong cùng phiên thì dùng lại mã của yêu cầu cũ, không cấp mã mới.
+    const hashFor = (orderCodeForHash: string) =>
+      generateCanonicalCartHash(canonicalItems, requestedDiscountRate, warehouseId, orderCodeForHash);
 
     const now = new Date();
     const nowIso = now.toISOString();
 
-    // Kiểm tra xem đơn hàng này đã có yêu cầu duyệt nào trước đó không
+    // Yêu cầu đang mở của CHÍNH PHIÊN GIỎ NÀY (khoá = mã phiếu tạm của máy POS).
     const existing = await txOrDb
       .select()
       .from(discountApprovalRequests)
       .where(
         and(
-          eq(discountApprovalRequests.orderCode, orderCode),
+          eq(discountApprovalRequests.clientOrderCode, clientOrderCode),
           eq(discountApprovalRequests.warehouseId, warehouseId),
           eq(discountApprovalRequests.cashierId, cashierId),
           or(
@@ -324,15 +336,15 @@ export class DiscountApprovalService {
       // Nếu giỏ hàng và discount rate giống hệt, và vẫn còn hạn -> trả về luôn
       if (
         isStillValid &&
-        prev.cartHash === cartHash &&
+        prev.cartHash === hashFor(prev.orderCode) &&
         Math.abs(prev.requestedDiscountRate - requestedDiscountRate) < 0.0001
       ) {
-        const shortCode = extractShortCode(orderCode);
+        const shortCode = extractShortCode(prev.orderCode);
         const qrToken = await signQrJwt({
           reqId: prev.id,
           nonce: prev.nonce,
           cartHash: prev.cartHash,
-          orderCode,
+          orderCode: prev.orderCode,
           warehouseId,
           rate: prev.requestedDiscountRate,
           exp: Math.floor(new Date(prev.expiresAt).getTime() / 1000),
@@ -368,6 +380,18 @@ export class DiscountApprovalService {
     const id = crypto.randomUUID();
     const nonce = randomHex(8);
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString(); // 5 phút TTL
+
+    // MÃ ĐƠN THẬT, do server cấp NGAY LÚC TẠO YÊU CẦU — không đợi tới lúc chốt đơn.
+    //
+    // VÌ SAO phải cấp ở đây: mã đơn là thứ thu ngân ĐỌC TO ra cho quản lý ghi
+    // lên phiếu, và là thứ báo cáo đối soát ca dùng để nối. Nếu để tới lúc chốt
+    // đơn thì mỗi bên có một mã khác nhau. Nay mã của yêu cầu CHÍNH LÀ mã của đơn,
+    // quản lý ghi đúng mã trên phiếu là mã trong hệ thống.
+    //
+    // Cấp ở đây (trong transaction của `createRequest`) nên khi bấm "Duyệt" rồi đổi
+    // giỏ hàng, số thứ tự bị rollback và không để lại lỗ hổng trong mã đơn.
+    const orderCode = await allocateOrderCode(txOrDb, vnDayFmt.format(now));
+    const cartHash = hashFor(orderCode);
     const shortCode = extractShortCode(orderCode);
 
     const qrToken = await signQrJwt({
@@ -382,7 +406,8 @@ export class DiscountApprovalService {
 
     const newRow = {
       id,
-      orderCode,
+      orderCode, // mã đơn THẬT (13 ký tự, server cấp)
+      clientOrderCode: clientOrderCode ?? null, // mã phiếu tạm của máy thu ngân
       warehouseId,
       cashierId,
       cartHash,

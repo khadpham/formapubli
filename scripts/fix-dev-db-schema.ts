@@ -158,6 +158,25 @@ async function main() {
     console.log(`✓ 0031: đã thêm ${table}.${col}`);
   }
 
+  // --- 0035: đường nối phê duyệt chiết khấu ↔ đơn.
+  // Thiếu 2 cột này thì MỌI đơn có phê duyệt trả 500 (Drizzle SELECT đọc đúng
+  // danh sách cột của bảng), nên phải vá tay cho DB dev giống 0031.
+  const COLS_0035: [string, string, string][] = [
+    ['orders', 'discount_approval_id', 'text'],
+    ['discount_approval_requests', 'client_order_code', 'text'],
+  ];
+  for (const [table, col, decl] of COLS_0035) {
+    if (await hasColumn(table, col)) continue;
+    await db.execute(`ALTER TABLE \`${table}\` ADD \`${col}\` ${decl}`);
+    console.log(`✓ 0035: đã thêm ${table}.${col}`);
+  }
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS idx_orders_discount_approval ON orders (discount_approval_id)`
+  );
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS idx_disc_appr_client_order ON discount_approval_requests (client_order_code)`
+  );
+
   // --- Chứng minh trigger thật sự chạy trên DB dev
   const ed = await q(`SELECT id FROM editions LIMIT 1`);
   const wh = await q(`SELECT id FROM warehouses LIMIT 1`);

@@ -9,6 +9,10 @@ import { isLeaseEnforcedRole, isLeaseEnforcementEnabled } from '../lib/auth-sess
 import { AppError } from './app-error';
 import { ActorContext } from './actor-context';
 import { DiscountApprovalService } from './discount-approval.service';
+import { allocateOrderCode, isPosOrderCode, toBase36 } from './order-code';
+// `toBase36` nằm ở `./order-code` nhưng vẫn export lại từ đây: `scripts/test-order-code-13.ts`
+// import nó từ đây, và đổi đường dẫn import của test không phải việc của bản sửa này.
+export { toBase36 };
 import { generateUUIDv7 } from '../lib/uuidv7';
 import { parseDbTimestamp } from '../lib/db-timestamp';
 import { priceLine } from '../lib/pricing';
@@ -127,6 +131,23 @@ function requiresPaymentProof(paymentMethod: string | null | undefined): boolean
  */
 function pricedQuantityOf(lines: Array<{ quantity: number; isGiftLine?: boolean | null }>): number {
   return lines.reduce((sum, i) => sum + (!i.isGiftLine ? Number(i.quantity || 0) : 0), 0);
+}
+
+/**
+ * Số CUỐN SÁCH thật trong đơn — dòng có `edition_id` (0032 cho phép hàng hóa như
+ * bookmark, móc khoá nằm ở `order_items` với `edition_id = NULL`).
+ *
+ * VÌ SAO cần riêng `totalQuantity`: phiếu in và màn "Bán Hàng Thành Công" ghi
+ * "Tổng số sách", mà `totalQuantity` cộng MỌI dòng. Ở hội chợ mỗi đơn đều kèm
+ * 1 quà hàng hóa, nên thu ngân bán 1 cuốn mà phiếu báo "2 cuốn" — đúng bằng cái
+ * báo động giống hệt việc hệ thống tự thêm sách vào đơn. Đã đo trên production:
+ * ORD261002000V bán 1 cuốn + tặng 1 bookmark mà `totalQuantity = 2`.
+ *
+ * `pricedQuantityOf` không thay được: nó loại dòng quà, còn dòng quà SÁCH vẫn
+ * phải được tính vào "tổng số sách" (khách có thật sự nhận cuốn đó).
+ */
+function bookQuantityOf(lines: Array<{ quantity: number; editionId?: string | null }>): number {
+  return lines.reduce((sum, i) => sum + (i.editionId ? Number(i.quantity || 0) : 0), 0);
 }
 
 /**
@@ -286,11 +307,13 @@ export class OrderService {
           warehouseId: existingPre[0].warehouseId,
           customerName: existingPre[0].customerName,
           subtotal: existingPre[0].subtotal,
+          discountApprovalId: (existingPre[0] as any).discountApprovalId ?? null,
           discountAmount: existingPre[0].discountAmount,
           finalAmount: existingPre[0].finalAmount,
           fiscalScope: existingPre[0].fiscalScope,
           itemsCount: existingLines.length,
           totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          bookQuantity: bookQuantityOf(existingLines),
           pricedQuantity: pricedQuantityOf(existingLines),
           status: existingPre[0].status,
           isDuplicate: true,
@@ -457,11 +480,13 @@ export class OrderService {
           warehouseId: existingPre[0].warehouseId,
           customerName: existingPre[0].customerName,
           subtotal: existingPre[0].subtotal,
+            discountApprovalId: (existingPre[0] as any).discountApprovalId ?? null,
           discountAmount: existingPre[0].discountAmount,
           finalAmount: existingPre[0].finalAmount,
           fiscalScope: existingPre[0].fiscalScope,
           itemsCount: existingLines.length,
           totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+          bookQuantity: bookQuantityOf(existingLines),
           pricedQuantity: pricedQuantityOf(existingLines),
           status: existingPre[0].status,
           isDuplicate: true,
@@ -793,11 +818,13 @@ return {
             warehouseId: existing[0].warehouseId,
             customerName: existing[0].customerName,
             subtotal: existing[0].subtotal,
+            discountApprovalId: (existing[0] as any).discountApprovalId ?? null,
             discountAmount: existing[0].discountAmount,
             finalAmount: existing[0].finalAmount,
             fiscalScope: existing[0].fiscalScope,
             itemsCount: existingLines.length,
             totalQuantity: existingLines.reduce((sum, i) => sum + i.quantity, 0),
+            bookQuantity: bookQuantityOf(existingLines),
             pricedQuantity: pricedQuantityOf(existingLines),
             status: existing[0].status,
             isDuplicate: true,
@@ -999,7 +1026,24 @@ return {
         //   · trước khối duyệt chiết khấu vì `createDiscountApproval` cần orderCode
         //     vào đúng bản ghi mà quản lý sẽ đọc
         // `params.orderCode` vẫn được tôn trọng (dữ liệu nhập tay / sửa đơn).
-        const orderCode = params.orderCode || (await allocateOrderCode(tx, businessDateOf(new Date())));
+        //
+        // ĐƠN CÓ PHÊ DUYỆT dùng lại ĐÚNG mã mà yêu cầu đã cấp, không cấp mã mới.
+        // Trước đây mã của yêu cầu do máy thu ngân tự sinh (29 ký tự) còn mã đơn do
+        // server cấp (13 ký tự) ⇒ thu ngân đọc mã cho quản lý một đằng, quản lý đối
+        // chiếu trên phiếu một nẻo, và báo cáo đối soát ca nối hai bảng bằng
+        // `orderCode` nên không khớp đơn nào. Nay mã yêu cầu CHÍNH LÀ mã đơn.
+        //
+        // `isPosOrderCode` chặn yêu cầu CŨ (mã 29 ký tự sinh ở máy): với chúng vẫn
+        // phải cấp mã mới, nếu không sẽ đẩy mã sai định dạng vào cột UNIQUE.
+        const approvalOrderCode = await (async () => {
+          if (!params.discountApprovalId) return undefined;
+          const appr = await DiscountApprovalService.getRequest(params.discountApprovalId, tx);
+          return isPosOrderCode(appr.orderCode) ? appr.orderCode! : undefined;
+        })();
+
+        const orderCode =
+          approvalOrderCode ??
+          (params.orderCode || (await allocateOrderCode(tx, businessDateOf(new Date()))));
 
         if (params.discountApprovalId) {
           const hasUnexpectedLineDiscount = preparedItems.some(
@@ -1043,6 +1087,11 @@ return {
         await tx.insert(orders).values({
           id: orderId,
           orderCode,
+          // Đường nối phê duyệt ↔ đơn. Trước đây bảng `orders` KHÔNG có cột này,
+          // nên sau sự cố không dựng lại được đơn nào đã được duyệt; báo cáo đối
+          // soát ca buộc phải nối bằng `order_code` mà hai bảng lại không bao giờ
+          // trùng mã (xem `daily-settlement.service.ts`).
+          discountApprovalId: params.discountApprovalId ?? null,
           warehouseId,
           channel,
           partnerId,
@@ -1158,6 +1207,9 @@ return {
           // chợ) ⇒ phiếu in ra KHÔNG có dòng thu ngân, im lặng, khó phát hiện.
           cashierId: effCashierId,
           warehouseId,
+          // Đường nối phê duyệt ↔ đơn trả về cho client (và cho test) kiểm chứng:
+          // trước 0035 không có cách nào hỏi "đơn này đã dùng yêu cầu duyệt nào".
+          discountApprovalId: params.discountApprovalId ?? null,
           customerName,
           subtotal: calculatedSubtotal,
           discountAmount: calculatedDiscountAmount,
@@ -1167,6 +1219,7 @@ return {
           paymentExpiresAt,
           itemsCount: preparedItems.length,
           totalQuantity: preparedItems.reduce((sum, i) => sum + i.quantity, 0),
+          bookQuantity: bookQuantityOf(preparedItems),
           pricedQuantity: pricedQuantityOf(preparedItems),
           isDuplicate: false,
         };
@@ -1187,7 +1240,12 @@ return {
     const ord = (await txOrDb.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
     if (!ord) return;
 
-    if (want.orderCode && ord.orderCode !== want.orderCode) {
+    // Đơn CÓ phê duyệt: mã đơn do server cấp khi tạo yêu cầu, KHÔNG phải mã máy POS
+    // gửi lên. Nên không so mã của client với đơn đã có — nếu so, mọi lần POS thử
+    // lại cùng `idempotencyKey` (mạng hội chợ chập chờn, bấm lại nút) sẽ sinh
+    // IDEMPOTENCY_CONFLICT giả, dù đơn y hệt.
+    const ordHasApproval = Boolean((ord as any).discountApprovalId);
+    if (want.orderCode && !ordHasApproval && ord.orderCode !== want.orderCode) {
       throw AppError.idempotency(
         `Idempotency-Key đã gắn với đơn ${ord.orderCode} có mã đơn khác (${want.orderCode} vs ${ord.orderCode}).`
       );
@@ -2063,7 +2121,6 @@ export const VN_TZ = 'Asia/Ho_Chi_Minh';
 export const VN_UTC_OFFSET_MIN = 7 * 60;
 
 /** Ký tự base36: 0-9 rồi A-Z. Số thứ tự đơn trong ngày viết bằng hệ này. */
-const BASE36_DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 /**
  * Số nguyên → chuỗi base36 đệm `width` ký tự.
@@ -2071,60 +2128,6 @@ const BASE36_DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
  * Nhờ base36, số thứ tự tự động "tràn" sang chữ cái: 9999 = `23P`, 10000 = `23Q`.
  * Nên KHÔNG cần nhánh xử lý riêng cho giới hạn 9999 — 36^4 = 1.679.616 đơn/ngày.
  */
-export function toBase36(n: number, width = 4): string {
-  if (!Number.isFinite(n) || n < 0) throw new Error(`Số thứ tự đơn không hợp lệ: ${n}`);
-  // TRÀN CHIỀU RỘNG: 36^4 = 1.679.616. Vượt mốc này thì chuỗi dài hơn `width` và mã
-  // đơn vượt 13 ký tự — mà `order_code` là UNIQUE, nên lỗ hổng số ở đây còn hơn
-  // là mã dài sai định dạng. Báo lỗi tường minh thay vì lặng lẽ sinh mã 14 ký tự.
-  const cap = Math.pow(36, width);
-  if (n >= cap) {
-    throw new Error(
-      `Vượt quá ${cap - 1} đơn/ngày (số thứ tự ${n}) — cần mở rộng bề ngang mã đơn.`
-    );
-  }
-  let s = '';
-  let v = Math.floor(n);
-  while (v > 0) {
-    s = BASE36_DIGITS[v % 36] + s;
-    v = Math.floor(v / 36);
-  }
-  return s.padStart(width, '0');
-}
-
-/**
- * Cấp mã đơn 13 ký tự: `ORD` + `YYMMDD` + số thứ tự base36 4 ký tự.
- * Ví dụ `ORD2609290001`, và `ORD26092923P` khi vượt 9999.
- *
- * Số thứ tự lấy bằng MỘT câu `UPDATE ... RETURNING` ngay trong transaction đang
- * tạo đơn. Câu đó nguyên tử ở tầng DB nên hai máy POS ở hội chợ không thể nhận
- * trùng số — đây là lý do bộ đếm phải nằm ở DB chứ không đếm ở máy. Nếu insert
- * đơn sau đó hỏng (thiếu tồn, trùng idempotency) thì transaction rollback và số
- * đó được dùng lại, không để lại lỗ hổng.
- *
- * Phải giữ tiền tố `ORD`: `compactOrderCode` dùng nó để nhận diện mã và lấy 8
- * ký tự cuối cho nội dung QR chuyển khoản. Bỏ tiền tố thì nội dung đó rơi về
- * nhánh hash, đối soát tự động theo nội dung sẽ có nguy cơ trùng.
- */
-async function allocateOrderCode(tx: any, day: string): Promise<string> {
-  const yymmdd = day.replace(/-/g, '').slice(2); // '2026-09-29' -> '260929'
-  // `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` qua API bảng của Drizzle.
-  // Câu lệnh này NGUYÊN TẢ ở tầng DB: hai phiên chạy song song không thể nhận
-  // cùng một `last_seq` (giống `UPDATE ... RETURNING` nhưng tự tạo dòng ngày đầu).
-  const rows = await tx
-    .insert(dailyOrderCounters)
-    .values({ day, lastSeq: 1 })
-    .onConflictDoUpdate({
-      target: dailyOrderCounters.day,
-      set: { lastSeq: sql`${dailyOrderCounters.lastSeq} + 1` },
-    })
-    .returning({ lastSeq: dailyOrderCounters.lastSeq });
-
-  const seq = Number(rows?.[0]?.lastSeq ?? 0);
-  if (!seq || seq < 1) {
-    throw new Error('Không cấp được số thứ tự đơn hàng — kiểm tra bảng daily_order_counters.');
-  }
-  return `ORD${yymmdd}${toBase36(seq, 4)}`;
-}
 
 export function businessDateOf(instant: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ }).format(instant);

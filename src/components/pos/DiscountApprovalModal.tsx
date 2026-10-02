@@ -31,8 +31,8 @@ interface DiscountApprovalModalProps {
   finalAmount?: number;
   items: CartItemSnapshot[];
   /** F1: báo requestId ngay khi tạo yêu cầu để POS gọi được API CANCEL khi hủy. */
-  onRequestCreated?: (requestId: string) => void;
-  onApproved: (data: { requestId: string; rate: number; method: string }) => void;
+  onRequestCreated?: (requestId: string, orderCode?: string) => void;
+  onApproved: (data: { requestId: string; rate: number; method: string; orderCode?: string }) => void;
   onTerminal?: (status: 'REJECTED' | 'EXPIRED', requestId: string | null) => void;
   onClose: () => void;
   onCancel?: () => void;
@@ -62,6 +62,17 @@ export function DiscountApprovalModal({
   const [rejectedReason, setRejectedReason] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
+  /**
+   * Mã đơn THẬT do server cấp lúc tạo yêu cầu (`data.orderCode`).
+   *
+   * VÌ SAO cần riêng: prop `orderCode` là mã MÁY THU NGÂN tự sinh
+   * (`createOrderCode()`), chỉ dùng làm khoá tạm cho endpoint. Từ 29/09 server đã
+   * không dùng mã đó nữa mà tự cấp mã 13 ký tự trong DB ⇒ hiện prop cho thu
+   * ngân là MỘT MÃ KHÔNG TỒN TẠI, quản lý đọc mã khác trên phiếu. Mọi chỗ hiện
+   * mã cho người phải lấy từ đây; chỉ khi server chưa trả (offline/mock cũ) mới
+   * rơi về prop.
+   */
+  const [serverOrderCode, setServerOrderCode] = useState<string | null>(null);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const approvalTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -121,7 +132,10 @@ export function DiscountApprovalModal({
      setStatus('LOADING');
     setErrorMessage(null);
     setRejectedReason(null);
-      const requestController = new AbortController();
+     // Mỗi lần mở modal là một yêu cầu MỚI, mỗi yêu cầu có mã đơn riêng do
+     // server cấp ⇒ xoá mã cũ, không được hiện mã của yêu cầu trước.
+     setServerOrderCode(null);
+    const requestController = new AbortController();
      requestAbortRef.current = requestController;
      const requestTimeout = window.setTimeout(() => requestController.abort(), 15000);
 
@@ -144,10 +158,15 @@ export function DiscountApprovalModal({
           throw new Error(json.message || 'Không thể tạo yêu cầu duyệt chiết khấu');
         }
 
-         if (isMounted && generation === requestGenerationRef.current) {
-          const req = json.data;
+          if (isMounted && generation === requestGenerationRef.current) {
+      const req = json.data;
+      // Mỗi lần poll lại đọc mã từ server: đây là mã sẽ khớp với
+      // `orders.order_code` lúc chốt đơn, không phải mã máy tự sinh.
+      if (req.orderCode) setServerOrderCode(req.orderCode);
+
           setRequestId(req.id);
-          onRequestCreatedRef.current?.(req.id);
+          onRequestCreatedRef.current?.(req.id, req.orderCode);
+          setServerOrderCode(req.orderCode || null);
           setExpiresAt(req.expiresAt);
           setStatus('PENDING');
 
@@ -207,6 +226,7 @@ export function DiscountApprovalModal({
             requestId: req.id,
             rate: req.requestedDiscountRate,
             method: req.approvalMethod || 'ONE_TOUCH',
+            orderCode: req.orderCode,
           });
           onCloseRef.current();
         }, 1200);
@@ -283,6 +303,9 @@ export function DiscountApprovalModal({
   const minutes = Math.floor(secondsRemaining / 60);
   const seconds = secondsRemaining % 60;
   const timeFormatted = `${minutes}:${String(seconds).padStart(2, '0')}`;
+  // Mã hiện cho thu ngân/đối chiếu: mã server trước, prop (mã máy) chỉ là
+  // chốt chặn cuối cho lúc chưa có phản hồi nào — tránh hiện `undefined`.
+  const displayOrderCode = serverOrderCode || orderCode;
 
   return createPortal(
     <div
@@ -326,7 +349,7 @@ export function DiscountApprovalModal({
         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Mã đơn hàng:</span>
-            <span className="font-mono font-bold text-slate-800">{orderCode}</span>
+            <span className="font-mono font-bold text-slate-800">{displayOrderCode}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Mức chiết khấu xin duyệt:</span>

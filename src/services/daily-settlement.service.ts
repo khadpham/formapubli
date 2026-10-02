@@ -122,24 +122,77 @@ export class DailySettlementService {
     // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%)
     const overCapOrders = dayOrders.filter((ord: any) => (ord.discountRate || 0) >= 0.2);
 
-    // Bổ sung thông tin phê duyệt từ discount_approval_requests nếu có
+    // Bổ sung thông tin phê duyệt từ discount_approval_requests nếu có.
+    //
+    // VÌ SAO KHÔNG NỐI BẰNG `order_code`:
+    // `discount_approval_requests.order_code` là mã MÁY THU NGÂN tự sinh lúc
+    // xin duyệt (`ORD-20261002-BFC3DCBC00CB7738`), còn `orders.order_code` là mã
+    // SERVER cấp (`ORD261002000T`). Hai hệ sinh mã khác nhau ⇒ hai chuỗi này
+    // không bao giờ bằng nhau. Trước đây tra `approvalMap.get(ord.orderCode)`
+    // nên LUÔN ra `undefined` ⇒ mọi đơn vượt trần 20% bị gắn nhãn
+    // `DIRECT_OVERRIDE` / "Quản lý quầy" dù đã qua quy trình xin duyệt thật
+    // (đo production: 3 đơn ≥20%, 0 khớp) — sai sự thật trên giấy tờ đối soát.
+    // Đường nối CHÂN LÝ là `orders.discount_approval_id` = id yêu cầu phê duyệt
+    // (migration 0033, cột nullable ⇒ đọc `(ord as any).discountApprovalId` để
+    // chạy được cả với DB cũ chưa có cột).
+    //
+    // Phạm vi truy vấn: lấy yêu cầu PHÊ DUYỆT trong ngày D **cộng** các yêu cầu
+    // mà đơn trong ngày D thực sự trỏ tới (qua `discount_approval_id`). Không có
+    // vế sau thì một yêu cầu lúc 23:50 hôm trước sinh ra đơn lúc 00:10 hôm sau
+    // sẽ rơi ngoài bộ lọc ngày và đơn hợp lệ lại bị gắn nhãn "quản lý tự áp".
+    const linkedApprovalIds: string[] = Array.from(
+      new Set<string>(
+        (dayOrders as any[])
+          .map((o: any) => o?.discountApprovalId)
+          .filter((v: any): v is string => typeof v === 'string' && v.length > 0)
+      )
+    );
+
     const approvalRows = await txOrDb
       .select()
       .from(discountApprovalRequests)
       .where(
         and(
           eq(discountApprovalRequests.warehouseId, warehouseId),
-          vnDayEquals(discountApprovalRequests.createdAt, targetDate)
+          linkedApprovalIds.length > 0
+            ? or(
+                vnDayEquals(discountApprovalRequests.createdAt, targetDate),
+                sql`${discountApprovalRequests.id} IN (${sql.join(
+                  linkedApprovalIds.map((id: string) => sql`${id}`),
+                  sql`, `
+                )})`
+              )
+            : vnDayEquals(discountApprovalRequests.createdAt, targetDate)
         )
       );
 
-    const approvalMap = new Map<string, any>();
-    for (const appr of approvalRows) {
-      approvalMap.set(appr.orderCode, appr);
+    // Ưu tiên `discount_approval_id`; GIỮ fallback theo `order_code` cho đơn tạo
+    // trước khi có cột (dữ liệu cũ vẫn phải ra con số đúng nếu tình cờ trùng).
+    // Ưu tiên đúng phải THẮNG khi cả hai cùng tồn tại.
+    const approvalById = new Map<string, any>();
+    const approvalByOrderCode = new Map<string, any>();
+    for (const appr of approvalRows as any[]) {
+      approvalById.set(appr.id, appr);
+      if (!approvalByOrderCode.has(appr.orderCode)) approvalByOrderCode.set(appr.orderCode, appr);
     }
 
+    // Chỉ yêu cầu ĐÃ ĐƯỢC DUYỆT mới là nguồn của chiết khấu trên đơn. Yêu cầu
+    // `PENDING`/`REJECTED`/`EXPIRED` gắn `approvalMethod`/`approved_by` vào đơn
+    // là gán sai (đơn đó không được duyệt với mức đó) — bỏ qua, để dòng rơi về
+    // nhánh không-xác-định bên dưới.
+    const isUsableApproval = (a: any) =>
+      !!a && (a.status === 'APPROVED' || a.status === 'CONSUMED');
+
     const enrichedOverCapOrders = overCapOrders.map((ord: any) => {
-      const appr = approvalMap.get(ord.orderCode);
+      // Ưu tiên đúng THẮNG: chỉ chuyển sang fallback `order_code` khi nối chính
+      // (`discount_approval_id`) không cho ra yêu cầu đã duyệt nào.
+      const byId = ord?.discountApprovalId ? approvalById.get(ord.discountApprovalId) : undefined;
+      const matched = isUsableApproval(byId)
+        ? byId
+        : (() => {
+            const fb = approvalByOrderCode.get(ord.orderCode);
+            return isUsableApproval(fb) ? fb : undefined;
+          })();
       return {
         id: ord.id,
         orderCode: ord.orderCode,
@@ -149,8 +202,14 @@ export class DailySettlementService {
         discountAmount: ord.discountAmount,
         finalAmount: ord.finalAmount,
         createdAt: ord.createdAt,
-        approvalMethod: appr?.approvalMethod || 'DIRECT_OVERRIDE',
-        approvedBy: appr?.approvedBy || 'Quản lý quầy',
+        // KHÔNG tìm thấy phê duyệt nào đi kèm đơn ⇒ KHÔNG đủ căn cứ để nói đơn đó
+        // do quản lý tự áp tại quầy: `isManagerOverride` chỉ tồn tại ở state React
+        // của POS (`PosCheckoutTerminal.tsx`), không được ghi xuống bảng `orders`,
+        // và `approval_method` của yêu cầu cũng không có giá trị `DIRECT_OVERRIDE`.
+        // Vì vậy GIỮ NGUYÊN nhãn cũ cho tới khi có cột phân biệt; đổi nhãn ở đây
+        // là bịa dữ liệu.
+        approvalMethod: matched?.approvalMethod || 'DIRECT_OVERRIDE',
+        approvedBy: matched?.approvedBy || 'Quản lý quầy',
       };
     });
 
