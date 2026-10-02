@@ -151,6 +151,11 @@ const ALL_SUITES = [
   // SUITE CUỐI: tạo ấn bản AB-* và bán chạy thật trong DB test dùng chung, nên
   // phải chạy SAU test-monthly-digest — digest lấy top 5 ấn bản bán chạy, thêm
   // dòng của suite này sẽ đẩy ấn bản của suite đó ra khỏi top 5.
+  // Tạo 2 đơn COMPLETED ở kho chính (1 sổ nội bộ + 1 sổ thuế) rồi so tổng
+  // `byChannel`/`cashflow` có/không filter — chạy SAU `test-analytics-doanhso`?
+  // KHÔNG: đặt TRƯỚC suite cuối để suite cuối vẫn chạy trên DB đã có dữ liệu
+  // này (mọi assertion của nó so với SQL gốc trên cùng DB nên vẫn đúng).
+  'scripts/test-sales-scope-filter.ts',
   'scripts/test-analytics-doanhso.ts',
 ];
 

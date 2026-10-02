@@ -11,6 +11,19 @@ export interface DateRange {
 }
 
 /**
+ * Bộ lọc phạm vi của tab Doanh Số: kho + sổ kế toán.
+ *
+ * VÌ SAO CẦN: `byChannel`/`cashflow` trước đây chỉ lọc ngày ⇒ số liệu trộn
+ * MỌI kho và CẢ HAI sổ (thuế + nội bộ), nên tổng trên bảng không khớp tổng
+ * sổ kế mà người dùng đang mở. `opts` là tham số CỘNG THÊM: không truyền thì
+ * y hệt cũ (toàn hệ thống), truyền thì chỉ tính đúng kho + đúng sổ.
+ */
+export interface AnalyticsScope {
+  warehouseId?: string;
+  fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+}
+
+/**
 /**
  * So khớp ngày nghiệp vụ VIỆT NAM cho mọi truy vấn báo cáo ở đây.
  *
@@ -27,11 +40,16 @@ export interface DateRange {
  * Dùng lại `createdAtBetween` của `order.service` (helper ĐÃ CÓ sẵn) thay vì
  * viết lần thứ ba. Nó tự phân biệt ngày trần (so ngày nghiệp vụ +7 giờ) với mốc
  * ISO đầy đủ (so mốc UTC).
+ *
+ * Trả về MẢNG điều kiện (không phải `and(...)`) vì `cashflow` dùng đúng bộ
+ * điều kiện này cho truy vấn COD — một chỗ, không hai bản sao.
  */
-function rangeConds(table: typeof orders, range: DateRange) {
+function rangeConds(table: typeof orders, range: DateRange, scope: AnalyticsScope = {}) {
   const conds = [eq(table.status, 'COMPLETED')];
+  if (scope.warehouseId) conds.push(eq(table.warehouseId, scope.warehouseId));
+  if (scope.fiscalScope) conds.push(eq(table.fiscalScope, scope.fiscalScope));
   conds.push(...createdAtBetween(table.createdAt, range.startDate, range.endDate));
-  return and(...conds);
+  return conds;
 }
 
 /**
@@ -114,8 +132,9 @@ export class AnalyticsService {
     };
   }
 
-  /** Doanh thu + số đơn theo kênh (COMPLETED). SPONSORSHIP hiện 0đ nhưng vẫn liệt kê minh bạch. */
-  static async byChannel(range: DateRange = {}) {
+  /** Doanh thu + số đơn theo kênh (COMPLETED). SPONSORSHIP hiện 0đ nhưng vẫn liệt kê minh bạch.
+   *  `opts` lọc thêm kho + sổ kế toán (xem `AnalyticsScope`); không truyền thì y hệt cũ. */
+  static async byChannel(range: DateRange = {}, opts: AnalyticsScope = {}) {
     const rows = await db
       .select({
         channel: orders.channel,
@@ -124,7 +143,7 @@ export class AnalyticsService {
         subtotal: sql<number>`COALESCE(SUM(${orders.subtotal}), 0)`,
       })
       .from(orders)
-      .where(rangeConds(orders, range))
+      .where(and(...rangeConds(orders, range, opts)))
       .groupBy(orders.channel);
     const totalRevenue = rows.reduce((s, r) => s + Number(r.revenue || 0), 0);
     return rows.map((r) => ({
@@ -326,10 +345,11 @@ export class AnalyticsService {
   }
 
   /** Ma trận dòng tiền: doanh thu theo kênh + COD phải thu/đã về + tài trợ đã rút. */
-  static async cashflow(range: DateRange = {}) {
-    const channels = await this.byChannel(range);
-    const codConds = [eq(orders.status, 'COMPLETED')];
-    codConds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
+  static async cashflow(range: DateRange = {}, opts: AnalyticsScope = {}) {
+    const channels = await this.byChannel(range, opts);
+    // COD phải theo CÙNG bộ lọc kho + sổ như doanh thu, nếu không tổng dòng tiền
+    // trộn COD của kho khác/sổ khác với doanh thu đang xem.
+    const codConds = rangeConds(orders, range, opts);
     const codRows = await db
       .select({ codStatus: orders.codStatus, total: sql<number>`COALESCE(SUM(${orders.codAmount}), 0)` })
       .from(orders)
