@@ -19,10 +19,7 @@ const stockOf = (r: { theoreticalStock?: number | null }): number => Number(r.th
  * Dùng CHUNG cho màn hình và bản in: đó là cách bảo đảm giấy in khớp đúng
  * cái người dùng đang đọc trên màn.
  */
-export function sortByStock<T extends { theoreticalStock?: number | null }>(
-  rows: T[],
-  dir: 'ASC' | 'DESC'
-): T[] {
+export function sortByStock<T extends StocktakeRow>(rows: T[], dir: 'ASC' | 'DESC'): T[] {
   const sign = dir === 'ASC' ? 1 : -1;
   return [...rows].sort((a, b) => {
     const diff = (stockOf(a) - stockOf(b)) * sign;
@@ -32,7 +29,7 @@ export function sortByStock<T extends { theoreticalStock?: number | null }>(
 }
 
 /** Ấn phẩm sắp hết — nhóm phải đếm lúc đóng thùng. */
-export function filterLowStock<T extends { theoreticalStock?: number | null }>(rows: T[]): T[] {
+export function filterLowStock<T extends StocktakeRow>(rows: T[]): T[] {
   return rows.filter((r) => stockOf(r) <= STOCK_THRESHOLD_WARNING);
 }
 

@@ -152,6 +152,105 @@ function paymentMethodLabel(method: string | null | undefined): string {
   return 'Thẻ';
 }
 
+/**
+ * ĐẦU TAB "TIỀN & KÉT" — số chủ đạo + 4 ô phụ + 2 dòng trạng thái.
+ *
+ * VÌ SAO ĐỨNG ĐẦU: câu hỏi đầu tiên của người mở báo cáo lúc cuối ngày là
+ * "hôm nay thu được bao nhiêu, két có khớp không". Trước đây con số này nằm
+ * sau thẻ "đơn lớn nhất" và bảng top 10 bán chạy, phải cuộn mới thấy.
+ *
+ * `pendingQr` TÁCH RIÊNG và ghi rõ "chưa ghi nhận": đó là tiền chuyển khoản
+ * còn chờ xác nhận, KHÔNG phải doanh thu. Ai cộng tay vào Thực thu sẽ báo
+ * cáo sai. Số này là ảnh chụp lúc mở báo cáo; lát nữa đơn thành COMPLETED
+ * sẽ nằm trong Thực thu của lần mở sau — đó là chuyện đúng.
+ */
+function MoneyHeader({ data }: { data: any }) {
+  const f = data?.financials || {};
+  const pb = data?.paymentBreakdown || {};
+  const rec = data?.cashboxReconciliation || {};
+  const pending = pb.pendingQr || { total: 0, ordersCount: 0 };
+  const variance = Number(rec.cashVariance || 0);
+
+  const cashState = rec.cashVariancePending
+    ? { text: '⏳ Chưa thể đối soát két (còn ca mở hoặc chưa đếm tiền thực tế)', cls: 'text-amber-700' }
+    : variance === 0
+      ? { text: '✓ Tiền kỳ vọng trong két khớp thực tế', cls: 'text-emerald-700' }
+      : { text: `⚠ Lệch két ${variance.toLocaleString('vi-VN')} đ`, cls: 'text-rose-700' };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold text-slate-500">Thực thu ngày {data?.reportDate || ''}</p>
+          <p className="text-3xl font-black font-mono text-emerald-700 leading-tight">
+            {(f.netSales || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[11px] text-slate-400">Tiền đã ghi nhận thanh toán</p>
+        </div>
+        <span
+          className={`shrink-0 px-2 py-1 rounded-lg text-[11px] font-bold ${
+            data?.hasOpenSession ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+          }`}
+        >
+          {data?.hasOpenSession ? '⚠ Còn ca chưa chốt' : '✓ Đã chốt ca 100%'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <p className="text-[11px] font-bold text-slate-500">Tiền mặt</p>
+          <p className="font-mono font-black text-sm text-emerald-700">
+            {(pb.cash?.sales || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[10px] text-slate-400">{pb.cash?.ordersCount || 0} đơn</p>
+        </div>
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <p className="text-[11px] font-bold text-slate-500">Chuyển khoản</p>
+          <p className="font-mono font-black text-sm text-indigo-700">
+            {(pb.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[10px] text-slate-400">{pb.qrTransfer?.ordersCount || 0} đơn</p>
+        </div>
+        {/* Cả hai đơn vị cùng lúc: xem tiền thật và xem tỉ lệ. Trước đây phải
+            bấm nút đổi đơn vị, dễ đọc nhầm "5%" thành tổng chiết khấu. */}
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
+          <p className="text-[11px] font-bold text-rose-700">Chiết khấu đã cấp</p>
+          <p className="font-mono font-black text-sm text-rose-700">
+            −{(f.totalDiscount || 0).toLocaleString('vi-VN')} đ
+          </p>
+          <p className="text-[10px] text-rose-600 font-semibold">
+            tương đương {((f.averageDiscountRate || 0) * 100).toFixed(1)}%
+          </p>
+        </div>
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <p className="text-[11px] font-bold text-slate-500">Số đơn</p>
+          <p className="font-mono font-black text-sm text-slate-900">{f.totalOrdersCount || 0} đơn</p>
+          <p className="text-[10px] text-slate-400">
+            TB {(f.averageOrderValue || 0).toLocaleString('vi-VN')} đ
+          </p>
+        </div>
+      </div>
+
+      <p className={`text-xs font-bold ${cashState.cls}`}>
+        {cashState.text}
+        {!rec.cashVariancePending && (
+          <span className="font-mono text-slate-600">
+            {' '}
+            — {(rec.expectedCashTotal || 0).toLocaleString('vi-VN')} đ
+          </span>
+        )}
+      </p>
+
+      {pending.ordersCount > 0 && (
+        <p className="text-xs font-bold text-amber-700">
+          ⏳ {pending.ordersCount} đơn chuyển khoản chờ xác nhận —{' '}
+          {(pending.total || 0).toLocaleString('vi-VN')} đ (chưa ghi nhận vào Thực thu)
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function DailyFairSettlementModal({
   isOpen,
   onClose,
@@ -683,182 +782,7 @@ export function DailyFairSettlementModal({
               {/* TAB 1: DOANH SỐ & ĐỐI SOÁT KÉT TIỀN */}
               {activeTab === 'FINANCIALS' && (
                 <div className="space-y-5 animate-in fade-in duration-150">
-                  {/* ĐƠN GIÁ TRỊ CAO NHẤT — "điểm nhấn" của ngày: đơn lớn nhất
-                      để thu ngân/quản lý nhìn thấy ngay mà không phải lần trong
-                      danh sách. Không có đơn thì KHÔNG hiện thẻ rỗng. Thanh ngang
-                      = tỉ lệ đơn này chiếm bao nhiêu doanh thu thực thu. */}
-                  {data.highlight && (
-                    <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-3">
-                      <h4 className="font-extrabold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Trophy className="w-4 h-4 text-amber-600" />
-                        Đơn Giá Trị Cao Nhất
-                      </h4>
-
-                      <div className="flex flex-wrap items-end justify-between gap-2">
-                        <div>
-                          <p className="font-mono font-black text-base text-slate-900 leading-tight">
-                            {data.highlight.orderCode}
-                          </p>
-                          <p className="font-mono font-bold text-sm text-emerald-700">
-                            {(data.highlight.finalAmount || 0).toLocaleString('vi-VN')} đ
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-slate-700">
-                            TT: {paymentMethodLabel(data.highlight.paymentMethod)}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-slate-700">
-                            {data.highlight.itemCount || 0} SP
-                          </span>
-                          {vnHm(data.highlight.createdAt) && (
-                            <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-mono font-bold text-slate-700">
-                              {vnHm(data.highlight.createdAt)} giờ VN
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div
-                        role="img"
-                        aria-label={`Chiếm ${highlightShare.toFixed(1)}% doanh thu thực thu trong ngày`}
-                      >
-                        <div className="h-2.5 rounded-full bg-amber-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-amber-500"
-                            style={{ width: `${highlightBarWidth.toFixed(1)}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] font-bold text-amber-800 mt-1">
-                          Chiếm {highlightShare.toFixed(1)}% doanh thu thực thu trong ngày
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TOP 10 BÁN CHẠY — chuyển từ tab Chiết Khấu sang đây: nó là
-                      thứ bán được bao nhiêu, không phải thứ chiết khấu bao nhiêu.
-                      Tab Chiết Khấu giữ bảng đơn vượt trần + cảnh báo tỷ lệ. */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        Top 10 Ấn Phẩm Bán Chạy Nhất Tại Gian Hàng
-                      </h4>
-                      {data.giftSummary?.totalGiftCopies > 0 && (
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                          Tách riêng {data.giftSummary.totalGiftCopies} quà tặng
-                        </span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      {data.topSellers?.map((seller: any, idx: number) => (
-                        <div
-                          key={seller.editionId}
-                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono text-[10px] flex items-center justify-center">
-                                {idx + 1}
-                              </span>
-                              <div>
-                                <p className="font-bold text-slate-800 truncate max-w-[180px]">
-                                  [{seller.code}] {seller.title}
-                                </p>
-                                <p className="text-[10px] text-slate-400 font-mono">
-                                  {(seller.soldRevenue || 0).toLocaleString('vi-VN')} đ
-                                </p>
-                              </div>
-                            </div>
-                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold font-mono text-xs">
-                              {seller.soldCopies} cuốn
-                            </span>
-                          </div>
-                          {/* Thanh ngang CSS thuần (không lib): độ dài = số cuốn so
-                              với ấn phẩm bán chạy nhất. Chuẩn là chính danh sách
-                              này nên không cần trục số. */}
-                          <div
-                            role="img"
-                            aria-label={`${seller.soldCopies} cuốn, so với ấn phẩm bán chạy nhất trong ngày`}
-                            title={`${seller.soldCopies} cuốn so với ấn phẩm bán chạy nhất`}
-                            className="h-1.5 rounded-full bg-slate-200 overflow-hidden"
-                          >
-                            <div
-                              className="h-full rounded-full bg-emerald-500"
-                              style={{
-                                width: `${Math.round(((Number(seller.soldCopies) || 0) / maxTopCopies) * 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {data.giftSummary?.totalGiftCopies > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                        <span className="font-medium text-slate-600">
-                          🎁 Quà tặng kèm đã phát trong ngày (không tính vào bán chạy):
-                        </span>
-                        <span className="font-bold font-mono text-rose-700">
-                          {data.giftSummary.totalGiftCopies} món ({data.giftSummary.items?.map((g: any) => `${g.title} ×${g.copies}`).join(', ')})
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* KPI Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
-                      <p className="text-[11px] font-bold text-slate-500">Doanh thu gộp:</p>
-                      <p className="text-base font-black font-mono text-slate-900 mt-1">
-                        {(data.financials?.grossSales || 0).toLocaleString('vi-VN')} đ
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{data.financials?.totalOrdersCount || 0} đơn hàng</p>
-                    </div>
-
-                    <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80">
-                      <p className="text-[11px] font-bold text-amber-700">
-                        {discountDisplayMode === 'PERCENT' ? 'Chiết khấu bình quân:' : 'Tổng chiết khấu đã cấp:'}
-                      </p>
-                      {discountDisplayMode === 'PERCENT' ? (
-                        <>
-                          <p className="text-base font-black font-mono text-rose-600 mt-1">
-                            {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
-                          </p>
-                          <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
-                            Quy đổi tiền: -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-base font-black font-mono text-rose-600 mt-1">
-                            -{(data.financials?.totalDiscount || 0).toLocaleString('vi-VN')} đ
-                          </p>
-                          <p className="text-[10px] text-amber-600 font-semibold mt-0.5">
-                            Tỷ lệ bình quân: {((data.financials?.averageDiscountRate || 0) * 100).toFixed(1)}%
-                          </p>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
-                      <p className="text-[11px] font-bold text-emerald-800">Thực thu:</p>
-                      <p className="text-base font-black font-mono text-emerald-700 mt-1">
-                        {(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ
-                      </p>
-                      <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">Đã ghi nhận thanh toán</p>
-                    </div>
-
-                    <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-200/80">
-                      <p className="text-[11px] font-bold text-indigo-700">Phiên ca làm việc:</p>
-                      <p className="text-base font-black text-indigo-900 mt-1">
-                        {data.sessionsCount || 0} phiên
-                      </p>
-                      <p className="text-[10px] font-bold text-indigo-600 mt-0.5">
-                        {data.hasOpenSession ? '⚠️ Có phiên chưa chốt' : '✅ Đã chốt ca 100%'}
-                      </p>
-                    </div>
-                  </div>
+                  <MoneyHeader data={data} />
 
                   {/* Số đơn theo giờ — dùng CHUNG `hourlyInWindow`/`hourWin` với dải
                       giờ trên bản in, nên màn hình và giấy luôn nói cùng một câu.
@@ -869,51 +793,15 @@ export function DailyFairSettlementModal({
                     endHour={hourEndShown}
                   />
 
-                  {/* Cơ cấu thanh toán (Breakdown) */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-                    <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <CreditCard className="w-4 h-4 text-indigo-600" />
-                      Cơ Cấu Phương Thức Thanh Toán
-                    </h4>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Tiền mặt */}
-                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                            <Banknote className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900">Tiền Mặt</p>
-                            <p className="text-[11px] text-slate-400">
-                              {data.paymentBreakdown?.cash?.ordersCount || 0} đơn ({data.paymentBreakdown?.cash?.percentage || 0}%)
-                            </p>
-                          </div>
-                        </div>
-                        <p className="font-mono font-bold text-sm text-emerald-700">
-                          {(data.paymentBreakdown?.cash?.sales || 0).toLocaleString('vi-VN')} đ
-                        </p>
-                      </div>
-
-                      {/* Chuyển khoản QR */}
-                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-                            <QrCode className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900">Chuyển Khoản / VietQR</p>
-                            <p className="text-[11px] text-slate-400">
-                              {data.paymentBreakdown?.qrTransfer?.ordersCount || 0} đơn ({data.paymentBreakdown?.qrTransfer?.percentage || 0}%)
-                            </p>
-                          </div>
-                        </div>
-                        <p className="font-mono font-bold text-sm text-indigo-700">
-                          {(data.paymentBreakdown?.qrTransfer?.sales || 0).toLocaleString('vi-VN')} đ
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Bán chạy nhất: đủ để người cầm biên bản biết món chủ lực
+                      trong ngày mà không phải cuộn qua cả bảng 10 dòng. Bảng đầy
+                      đủ đã chuyển sang màn Trạng Thái Hội Chợ. */}
+                  {(data?.topSellers || []).length > 0 && (
+                    <p className="text-xs font-bold text-slate-600">
+                      Bán chạy nhất: [{data.topSellers[0].code}] {data.topSellers[0].title} ·{' '}
+                      {data.topSellers[0].soldCopies} cuốn
+                    </p>
+                  )}
 
                   {/* Đối soát két tiền ca */}
                   <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
