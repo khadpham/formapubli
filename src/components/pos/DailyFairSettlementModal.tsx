@@ -174,16 +174,20 @@ function MoneyHeader({ data }: { data: any }) {
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      {/* `flex-wrap` + `min-w-0`: số tiền `text-3xl` có độ rộng tối thiểu lớn.
+          Trước đây hàng này không xuống dòng và div trái không co được, nên chip
+          "Đã chốt ca 100%" bị đẩy lệm ra ngoài thẻ, thừa khoảng trống bên phải.
+          Nay màn hẹp thì chip xuống hàng dưới thay vì tràn ra ngoài. */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
           <p className="text-[11px] font-bold text-slate-500">Thực thu ngày {data?.reportDate || ''}</p>
-          <p className="text-3xl font-black font-mono text-emerald-700 leading-tight">
+          <p className="text-2xl sm:text-3xl font-black font-mono text-emerald-700 leading-tight break-words">
             {(f.netSales || 0).toLocaleString('vi-VN')} đ
           </p>
           <p className="text-[11px] text-slate-400">Tiền đã ghi nhận thanh toán</p>
         </div>
         <span
-          className={`shrink-0 px-2 py-1 rounded-lg text-[11px] font-bold ${
+          className={`shrink-0 whitespace-nowrap max-w-full px-2 py-1 rounded-lg text-[11px] font-bold ${
             data?.hasOpenSession ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
           }`}
         >
@@ -594,6 +598,10 @@ export function DailyFairSettlementModal({
             width: auto !important;
             max-width: 210mm !important;
           }
+          /* NGUỒN DUY NHẤT của lề A4 là globals.css. Khối 80mm ở đó khai
+             @page với margin 0mm có !important; nếu khối A4 ở đây thiếu
+             !important thì lề bị mất sạch (đã đo thật: 0.00mm). Giữ hai
+             chỗ cùng giá trị là vô hại; sửa lề thì sửa ở globals.css. */
           @page {
             size: A4 portrait !important;
             margin: 12mm 10mm !important;

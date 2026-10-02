@@ -51,6 +51,7 @@ const ALL_SUITES = [
   'scripts/test-stocktake-order.ts',
   'scripts/test-settlement-money-header.ts',
   'scripts/test-settlement-print-stocktake.ts',
+  'scripts/test-settlement-print-margin-and-chip.ts',
   'scripts/test-live-monitor-scope.ts',
   'scripts/test-settlement-royalty-audit.ts',
   'scripts/test-order-sales.ts',
