@@ -344,7 +344,25 @@ export class AnalyticsService {
     return { items: out.slice(0, Math.max(1, Math.min(100, topN))), totalQty, totalRevenue, totalGiftQty };
   }
 
-  /** Ma trận dòng tiền: doanh thu theo kênh + COD phải thu/đã về + tài trợ đã rút. */
+  /**
+   * Ma trận dòng tiền: doanh thu theo kênh + COD phải thu/đã về + tài trợ đã rút.
+   *
+   * MỖI CHÂN CỦA MA TRẬN PHẢI NÓI VỀ CÙNG MỘT TẬP ĐƠN. Trước đây `salesRevenue`
+   * đã lọc kho + sổ còn `completedRefunds` chỉ lọc ngày ⇒ `netRevenue` cộng doanh
+   * thu của kho A với tiền hoàn của kho B (mà trên màn hình lại đang lọc kho A).
+   * Người dùng thấy "lãi âm"/"lãi quá lớn" mà không có dòng nào giải thích.
+   * Nay cả hai chân lọc theo CÙNG một `opts`.
+   *
+   * - COD (`codPending`/`codReceived`): trên bảng `orders` ⇒ theo cả kho + sổ.
+   * - Hoàn tiền (`completedRefunds` → `netRevenue`): `return_orders` KHÔNG có
+   *   cột kho/sổ, nên join qua `order_id` sang `orders` để lọc theo cùng bộ điều
+   *   kiện. Inner join an toàn: `return_orders.order_id` là FK NOT NULL.
+   * - Tài trợ (`sponsorshipDrawnValue/Qty`): lọc theo `sponsorship_drawdowns.warehouse_id`
+   *   nhưng CỐ Ý KHÔNG lọc theo `fiscalScope` — quỹ tài trợ nằm ở TẦNG TRƯỚC sổ
+   *   kế toán (tiền vào quỹ không mang nhãn thuế/nội bộ), nên lọc sổ ở đây sẽ
+   *   làm số tiền đã rút biến mất khỏi ma trận. Ghi rõ ở đây để người sau không
+   *   "sửa cho khớp" rồi làm sai nghiệp vụ.
+   */
   static async cashflow(range: DateRange = {}, opts: AnalyticsScope = {}) {
     const channels = await this.byChannel(range, opts);
     // COD phải theo CÙNG bộ lọc kho + sổ như doanh thu, nếu không tổng dòng tiền
@@ -361,7 +379,9 @@ export class AnalyticsService {
       if (r.codStatus === 'PENDING') codPending = Number(r.total || 0);
       if (r.codStatus === 'RECEIVED') codReceived = Number(r.total || 0);
     }
+    // Quỹ tài trợ: lọc kho (rút từ kho nào) + ngày, KHÔNG lọc sổ — xem JSDoc hàm.
     const spfConds = [];
+    if (opts.warehouseId) spfConds.push(eq(sponsorshipDrawdowns.warehouseId, opts.warehouseId));
     spfConds.push(...createdAtBetween(sponsorshipDrawdowns.createdAt, range.startDate, range.endDate));
     const spfRows = await db
       .select({
@@ -372,11 +392,17 @@ export class AnalyticsService {
       .where(spfConds.length > 0 ? and(...spfConds) : undefined);
     const sponsorshipDrawnValue = Number(spfRows[0]?.value || 0);
     const sponsorshipDrawnQty = Number(spfRows[0]?.qty || 0);
+    // Hoàn tiền: lọc phiếu hoàn theo ngày + trạng thái, rồi join sang `orders`
+    // để lọc kho + sổ — cùng bộ điều kiện với doanh thu, nếu không `netRevenue`
+    // trộn chân tiền của tập đơn khác với doanh thu đang xem.
     const refundConds = [eq(returnOrders.status, 'COMPLETED')];
     refundConds.push(...createdAtBetween(returnOrders.createdAt, range.startDate, range.endDate));
+    if (opts.warehouseId) refundConds.push(eq(orders.warehouseId, opts.warehouseId));
+    if (opts.fiscalScope) refundConds.push(eq(orders.fiscalScope, opts.fiscalScope));
     const refundRows = await db
       .select({ total: sql<number>`COALESCE(SUM(${returnOrders.refundAmount}), 0)` })
       .from(returnOrders)
+      .innerJoin(orders, eq(returnOrders.orderId, orders.id))
       .where(and(...refundConds));
     const completedRefunds = Number(refundRows[0]?.total || 0);
 

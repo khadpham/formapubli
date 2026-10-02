@@ -8,8 +8,14 @@ export const dynamic = 'force-dynamic';
 /**
  * Bước 5 — OLAP read-only (0 migration).
  * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions|stock-summary
- *   &startDate=&endDate=&top=20&warehouseId=&fiscalScope=OFFICIAL_TAX|INTERNAL_MANAGEMENT
- *   (view=top-editions nhận thêm &excludeGifts=1 để bỏ dòng quà tặng)
+ *   &startDate=&endDate=
+ *
+ * Tham số RIÊNG theo từng view (không phải view nào cũng nhận hết):
+ *   channels, cashflow : startDate, endDate, warehouseId, fiscalScope(OFFICIAL_TAX|INTERNAL_MANAGEMENT)
+ *   top-editions       : startDate, endDate, top, warehouseId, excludeGifts=0 (bỏ dòng quà tặng)
+ *   stock-summary      : warehouseId
+ *   consignment        : startDate, endDate  (kho ký gửi suy ra từ mẫu id wh-consign-*, không nhận warehouseId/fiscalScope)
+ *   trending           : top               (tuần hiện tại, không nhận startDate/endDate/warehouseId/fiscalScope)
  * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).
  */
 export async function GET(req: NextRequest) {
@@ -68,8 +74,9 @@ export async function GET(req: NextRequest) {
         success: false,
         error:
           'view không hợp lệ (channels | trending | consignment | cashflow | top-editions | stock-summary). ' +
-          'top-editions nhận thêm startDate, endDate, top, warehouseId và excludeGifts=1 (bỏ dòng quà tặng). ' +
-          'Mọi view nhận warehouseId và fiscalScope (OFFICIAL_TAX | INTERNAL_MANAGEMENT).',
+          'channels/cashflow nhận startDate, endDate, warehouseId, fiscalScope (OFFICIAL_TAX | INTERNAL_MANAGEMENT). ' +
+          'top-editions nhận startDate, endDate, top, warehouseId, excludeGifts=0. ' +
+          'stock-summary nhận warehouseId; consignment nhận startDate, endDate; trending nhận top.',
       },
       { status: 400 }
     );
