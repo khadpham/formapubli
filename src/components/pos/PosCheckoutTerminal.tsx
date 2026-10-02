@@ -320,7 +320,8 @@ export function PosCheckoutTerminal({
   const [promoCampaigns, setPromoCampaigns] = useState<PromotionCampaign[]>([]);
   const [dismissedGiftProductIds, setDismissedGiftProductIds] = useState<ReadonlySet<string>>(new Set());
   const [discountRate, setDiscountRate] = useState(0.0);
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'QR_CODE'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'QR_CODE'>('BANK_TRANSFER');
+  const [cashReceived, setCashReceived] = useState<number | ''>('');
   const [fiscalScope, setFiscalScope] = useState<'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX'>('INTERNAL_MANAGEMENT');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -564,7 +565,8 @@ export function PosCheckoutTerminal({
     setIsManagerOverride(false);
     setCustomerName('Khách lẻ');
     setFiscalScope('INTERNAL_MANAGEMENT');
-    setPaymentMethod('CASH');
+    setPaymentMethod('BANK_TRANSFER');
+    setCashReceived('');
     setGiftReason('');
     setCustomDiscountInput('');
     setActiveOrderCode(createOrderCode());
@@ -3788,6 +3790,75 @@ export function PosCheckoutTerminal({
                   </button>
                 </div>
               )}
+
+              {isWideCheckout && paymentMethod === 'CASH' && (
+                <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 hidden lg:block">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-bold text-slate-600">
+                      Tiền nhận từ khách:
+                    </label>
+                    <div className="relative flex-1 max-w-[150px]">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={cashReceived !== '' ? Number(cashReceived).toLocaleString('vi-VN') : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          setCashReceived(raw ? Number(raw) : '');
+                        }}
+                        placeholder="0 đ"
+                        aria-label="Tiền nhận từ khách"
+                        className="w-full px-2.5 py-1 text-right font-mono font-bold text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Nút gợi ý mốc tiền nhanh */}
+                  <div className="grid grid-cols-4 gap-1">
+                    {[200000, 500000, 1000000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCashReceived(preset)}
+                        className={`py-1 px-1 text-center font-mono text-[11px] font-bold rounded-lg border transition cursor-pointer ${
+                          cashReceived === preset
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {preset >= 1000000 ? '1.000.000' : preset === 500000 ? '500.000' : '200.000'}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCashReceived(isGift ? 0 : finalAmount)}
+                      className={`py-1 px-1 text-center text-[11px] font-bold rounded-lg border transition cursor-pointer ${
+                        cashReceived === (isGift ? 0 : finalAmount)
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                    >
+                      Đủ tiền
+                    </button>
+                  </div>
+
+                  {/* Dòng tính tiền trả khách */}
+                  {cashReceived !== '' && (
+                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-600">Tiền trả khách:</span>
+                      {Number(cashReceived) >= (isGift ? 0 : finalAmount) ? (
+                        <span className="font-mono font-black text-sm text-emerald-700">
+                          +{(Number(cashReceived) - (isGift ? 0 : finalAmount)).toLocaleString('vi-VN')} đ
+                        </span>
+                      ) : (
+                        <span className="font-mono font-bold text-xs text-rose-600">
+                          Còn thiếu: -{((isGift ? 0 : finalAmount) - Number(cashReceived)).toLocaleString('vi-VN')} đ
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -4713,6 +4784,75 @@ export function PosCheckoutTerminal({
                   >
                     Ảnh thanh toán
                   </button>
+                </div>
+              )}
+
+              {!isWideCheckout && paymentMethod === 'CASH' && (
+                <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-bold text-slate-600">
+                      Tiền nhận từ khách:
+                    </label>
+                    <div className="relative flex-1 max-w-[150px]">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={cashReceived !== '' ? Number(cashReceived).toLocaleString('vi-VN') : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          setCashReceived(raw ? Number(raw) : '');
+                        }}
+                        placeholder="0 đ"
+                        aria-label="Tiền nhận từ khách mobile"
+                        className="w-full px-2.5 py-1.5 text-right font-mono font-bold text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Nút gợi ý mốc tiền nhanh */}
+                  <div className="grid grid-cols-4 gap-1">
+                    {[200000, 500000, 1000000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCashReceived(preset)}
+                        className={`py-1.5 px-1 text-center font-mono text-[11px] font-bold rounded-lg border transition cursor-pointer ${
+                          cashReceived === preset
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {preset >= 1000000 ? '1.000.000' : preset === 500000 ? '500.000' : '200.000'}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCashReceived(isGift ? 0 : finalAmount)}
+                      className={`py-1.5 px-1 text-center text-[11px] font-bold rounded-lg border transition cursor-pointer ${
+                        cashReceived === (isGift ? 0 : finalAmount)
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                    >
+                      Đủ tiền
+                    </button>
+                  </div>
+
+                  {/* Dòng tính tiền trả khách */}
+                  {cashReceived !== '' && (
+                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-600">Tiền trả khách:</span>
+                      {Number(cashReceived) >= (isGift ? 0 : finalAmount) ? (
+                        <span className="font-mono font-black text-sm text-emerald-700">
+                          +{(Number(cashReceived) - (isGift ? 0 : finalAmount)).toLocaleString('vi-VN')} đ
+                        </span>
+                      ) : (
+                        <span className="font-mono font-bold text-xs text-rose-600">
+                          Còn thiếu: -{((isGift ? 0 : finalAmount) - Number(cashReceived)).toLocaleString('vi-VN')} đ
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
