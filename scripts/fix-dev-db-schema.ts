@@ -177,6 +177,20 @@ async function main() {
     `CREATE INDEX IF NOT EXISTS idx_disc_appr_client_order ON discount_approval_requests (client_order_code)`
   );
 
+  // --- 0032: dấu vết quà HẾT TỒN trên dòng đơn.
+  // Thiếu cột này thì `GiftReportService.summary` (và mọi SELECT đọc bảng
+  // `order_items` qua Drizzle) lỗi SQL ⇒ panel Quà trên màn Doanh Số hỏng,
+  // trong khi production đã có (0032 đã áp). DDL lấy NGUYÊN VĂN từ
+  // src/db/migrations/0032_sellable_goods.sql, không tự suy đoán.
+  const COLS_0032: [string, string, string][] = [
+    ['order_items', 'is_gift_shortfall', 'integer NOT NULL DEFAULT 0'],
+  ];
+  for (const [table, col, decl] of COLS_0032) {
+    if (await hasColumn(table, col)) continue;
+    await db.execute(`ALTER TABLE \`${table}\` ADD \`${col}\` ${decl}`);
+    console.log(`✓ 0032: đã thêm ${table}.${col}`);
+  }
+
   // --- Chứng minh trigger thật sự chạy trên DB dev
   const ed = await q(`SELECT id FROM editions LIMIT 1`);
   const wh = await q(`SELECT id FROM warehouses LIMIT 1`);
