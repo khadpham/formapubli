@@ -6,7 +6,7 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import {
   Activity, AlertTriangle, Banknote, Landmark, CalendarDays, CheckCircle2, Clock,
-  DoorOpen, MapPin, RefreshCw, ShieldAlert, TrendingUp, X,
+  DoorOpen, MapPin, RefreshCw, ShieldAlert, TrendingUp, Trophy, X,
 } from 'lucide-react';
 
 /**
@@ -49,6 +49,11 @@ interface MonitorPayload {
     paymentMethod: string; createdAt: string | null;
   }>;
   topSellers: Array<{ code: string; title: string; copies: number; revenue: number }>;
+  /** Đơn giá trị cao nhất trong ngày đang xem — chuyển từ Báo Cáo Chốt Ngày sang. */
+  largestOrder: {
+    orderCode: string; warehouseName: string; finalAmount: number;
+    paymentMethod: string; itemCount: number; createdAt: string | null;
+  } | null;
   generatedAt: string;
 }
 
@@ -94,6 +99,28 @@ export function LiveFairMonitorModal({
   const [notice, setNotice] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  // Kho đang xem. Mặc định rỗng = TẤT CẢ kho hội chợ.
+  // Nhớ qua localStorage: người dùng hay xem 1 kho hội chợ cụ thể, mở lại
+  // thấy đúng kho đó thì không phải chọn lại.
+  const [scopeWarehouseId, setScopeWarehouseId] = useState<string>('');
+  // Ngày đang xem. KHÔNG nhớ — mỗi lần mở về hôm nay, vì mở nhầm ngày cũ
+  // khiến người dùng tưởng hôm nay chưa bán được gì (số liệu = 0).
+  const [viewDate, setViewDate] = useState<string>(() =>
+    new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+  );
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('formapubli.liveMonitor.warehouseId');
+      if (saved) setScopeWarehouseId(saved);
+    } catch { /* trình duyệt chặn storage: bỏ qua */ }
+  }, []);
+  useEffect(() => {
+    try {
+      if (scopeWarehouseId) localStorage.setItem('formapubli.liveMonitor.warehouseId', scopeWarehouseId);
+    } catch { /* như trên */ }
+  }, [scopeWarehouseId]);
+
   const panelRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
   const approvalTriggerRef = useRef<HTMLButtonElement | null>(null);
   const aliveRef = useRef(true);
@@ -106,6 +133,13 @@ export function LiveFairMonitorModal({
   // commit của lần render đã gán.
   const warehouseIdRef = useRef(warehouseId);
   warehouseIdRef.current = warehouseId;
+  // Tương tự cho ngày đang xem: response về sau khi đổi ngày thì bỏ.
+  const viewDateRef = useRef(viewDate);
+  viewDateRef.current = viewDate;
+  // Kho dùng cho lần nạp: ưu tiên lựa chọn trong modal, không có thì lấy prop
+  // từ dashboard (giữ tương thích với nơi gọi cũ).
+  const scopeWarehouseIdRef = useRef(scopeWarehouseId || warehouseId || '');
+  scopeWarehouseIdRef.current = scopeWarehouseId || warehouseId || '';
 
   // Drawer duyệt chiết khấu cũng render ra document.body, cùng cấp với modal
   // monitor. useModalFocusTrap chỉ đánh dấu inert lên #app-main-content, không
@@ -133,14 +167,18 @@ export function LiveFairMonitorModal({
   }, []);
 
   const load = useCallback(async () => {
-    // Kho của LẦN NẠP NÀY. Phải chụp lại vì `load` đóng bằng `warehouseId` lúc tạo:
-    // so trong closure là so với chính nó, luôn bằng ⇒ vô dụng.
-    const scope = warehouseId;
+    // Kho + ngày của LẦN NẠP NÀY. Phải chụp lại vì `load` đóng bằng state lúc
+    // tạo: so trong closure là so với chính nó, luôn bằng ⇒ vô dụng.
+    const scope = scopeWarehouseIdRef.current;
+    const date = viewDateRef.current;
     try {
       // Có kho đang chọn thì giới hạn phạm vi 1 kho, khác hẳn URL cũ (TẤT CẢ).
-      const url = scope
-        ? `/api/pos/live-monitor?warehouseId=${encodeURIComponent(scope)}`
-        : '/api/pos/live-monitor';
+      // Luôn gửi kèm ngày: server mặc định là hôm nay, nhưng gửi tường minh
+      // để ngày trên màn khớp đúng ngày server tính.
+      const qs = new URLSearchParams();
+      if (scope) qs.set('warehouseId', scope);
+      qs.set('date', date);
+      const url = `/api/pos/live-monitor?${qs.toString()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) {
         const j = await res.json().catch(() => null);
@@ -148,10 +186,10 @@ export function LiveFairMonitorModal({
       }
       const j = await res.json();
       if (!aliveRef.current) return;
-      // Fetch kho cũ về sau khi đã đổi kho: BỎ, đừng set state. `aliveRef` không
-      // chặn được chuyện này — nó chỉ đổi khi ĐÓNG modal, còn đổi kho thì modal
-      // vẫn mở ⇒ không có state nào báo là lần nạp này đã lỗi thời.
-      if (scope !== warehouseIdRef.current) return;
+      // Fetch kho/ngày cũ về sau khi đã đổi: BỎ, đừng set state. `aliveRef` không
+      // chặn được chuyện này — nó chỉ đổi khi ĐÓNG modal, còn đổi kho/ngày thì
+      // modal vẫn mở ⇒ không có state nào báo là lần nạp này đã lỗi thời.
+      if (scope !== scopeWarehouseIdRef.current || date !== viewDateRef.current) return;
       setData(j.data);
       setLastUpdatedAt(new Date().toISOString());
       setIsStale(false);
@@ -159,12 +197,12 @@ export function LiveFairMonitorModal({
       backoffRef.current = 0;
     } catch (e: any) {
       if (!aliveRef.current) return;
-      if (scope !== warehouseIdRef.current) return; // lỗi của kho cũ không liên quan kho mới
+      if (scope !== scopeWarehouseIdRef.current || date !== viewDateRef.current) return;
       setError(e?.message || 'Không tải được trạng thái.');
       // Mạng hội chợ yếu: giãn dần thay vì dội 10 giây/lần cho tới khi hết pin.
       backoffRef.current = Math.min(backoffRef.current + 1, BACKOFF_MS.length - 1);
     }
-  }, [warehouseId]);
+  }, []);
 
   const schedule = useCallback(() => {
     if (pollRef.current) clearTimeout(pollRef.current);
@@ -281,8 +319,8 @@ export function LiveFairMonitorModal({
   const showStaleBanner = isStale || (!!error && !!data);
   // Tên kho lấy từ chính payload (server đã trả kèm fairWarehouses) — không cần
   // thêm prop thứ hai. Chỉ hiện khi đã có tên: đừng in ra id thô cho người dùng.
-  const scopeName = warehouseId
-    ? data?.fairWarehouses?.find((w) => w.id === warehouseId)?.name || null
+  const scopeName = scopeWarehouseId
+    ? data?.fairWarehouses?.find((w) => w.id === scopeWarehouseId)?.name || null
     : null;
   // Khi lỗi thì `data` chưa có ⇒ chưa biết tên, chỉ còn id. Vẫn phải nói rõ đang
   // xem kho nào, nếu không người dùng tưởng lỗi nằm ở "hệ thống".
@@ -347,6 +385,48 @@ export function LiveFairMonitorModal({
                 <X className="w-5 h-5" />
               </button>
             </div>
+          </div>
+
+          {/* Chọn kho + ngày. Trước đây màn này chỉ xem được TẤT CẢ kho hội chợ
+              và chỉ hôm nay — không có đường vào một kho cụ thể. */}
+          <div className="no-print shrink-0 px-4 py-2 bg-white border-b border-slate-200 flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+              <MapPin className="w-3.5 h-3.5 text-indigo-500" />
+              Kho
+              <select
+                aria-label="Chọn kho hội chợ"
+                value={scopeWarehouseId}
+                onChange={(e) => setScopeWarehouseId(e.target.value)}
+                className="text-xs font-bold px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="">Tất cả kho hội chợ</option>
+                {(data?.fairWarehouses || []).map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+              <Clock className="w-3.5 h-3.5 text-indigo-500" />
+              Ngày
+              <input
+                type="date"
+                aria-label="Chọn ngày"
+                value={viewDate}
+                onChange={(e) => setViewDate(e.target.value)}
+                className="text-xs font-bold px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              />
+            </label>
+
+            {/* Chọn ngày khác hôm nay thì nhắc rõ, không để người dùng tưởng
+                số liệu 0 là "hôm nay chưa bán được gì". */}
+            {viewDate !== new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }) && (
+              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-2 py-1">
+                Đang xem ngày {viewDate}, không phải hôm nay
+              </span>
+            )}
           </div>
 
           {scopeName && (
@@ -547,8 +627,43 @@ export function LiveFairMonitorModal({
                 </Block>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* 5. Top sản phẩm */}
-                  <Block icon={TrendingUp} title="Bán chạy nhất hôm nay">
+                  {/* 5a. Đơn lớn nhất — chuyển từ Báo Cáo Chốt Ngày sang đây vì nó
+                      thuộc loại "đang bán gì", không phải quyết toán tiền cuối ngày. */}
+                  <Block icon={Trophy} title="Đơn lớn nhất">
+                    {!data.largestOrder ? (
+                      <Empty text="Chưa có đơn nào trong ngày đang xem." />
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-end justify-between gap-2">
+                          <div>
+                            <p className="font-mono font-black text-base text-slate-900">
+                              {data.largestOrder.orderCode}
+                            </p>
+                            <p className="font-mono font-bold text-sm text-emerald-700">
+                              {money(data.largestOrder.finalAmount)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 justify-end">
+                            <span className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] font-bold text-slate-700">
+                              {PAY_LABEL[(data.largestOrder.paymentMethod || 'CASH').toUpperCase()] || 'Khác'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] font-bold text-slate-700">
+                              {data.largestOrder.itemCount} SP
+                            </span>
+                          </div>
+                        </div>
+                        {t && t.revenue > 0 && (
+                          <p className="text-[11px] font-bold text-slate-500">
+                            Chiếm {((data.largestOrder.finalAmount / t.revenue) * 100).toFixed(1)}% doanh thu
+                            ngày {data.businessDate}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </Block>
+
+                  {/* 5b. Top sản phẩm */}
+                  <Block icon={TrendingUp} title="Bán chạy nhất">
                     {data.topSellers.length === 0 ? (
                       <Empty text="Chưa có bán hôm nay." />
                     ) : (
