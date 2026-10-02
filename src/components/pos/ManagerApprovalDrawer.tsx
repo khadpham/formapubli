@@ -268,8 +268,12 @@ export function ManagerApprovalDrawer({
       : 'Mọi kho';
 
   return createPortal(
+    // z-[95]: drawer MỞ CHỒNG từ Trạng Thái Hội Chợ (z-[85]) phải nằm TRÊN nó.
+    // Trước đây z-[70] ⇒ tấm nền drawer chui DƯỚI overlay monitor, mà panel
+    // monitor lại bị `inert` khi drawer mở ⇒ không còn điểm chạm nào tới được,
+    // màn hình điện thoại đơ cứng (không phím Esc để thoát như desktop).
     <div
-      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150"
+      className="fixed inset-0 z-[95] bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
