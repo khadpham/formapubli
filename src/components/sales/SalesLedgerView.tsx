@@ -78,6 +78,12 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   const [actorId, setActorId] = useState<string>('');
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
+  // Sổ đang xem: kế toán thuế bị ÉP OFFICIAL_TAX (xem useEffect bên dưới), người
+  // khác tự chọn. 'ALL' = xem cả hai sổ. MỘT nơi tính, dùng lại cho cả danh sách
+  // lẫn các panel con — không để mỗi panel tự suy luận lại.
+  const scopeParam: 'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT' = isTaxAccountant
+    ? 'OFFICIAL_TAX'
+    : activeScope;
 
   // Tải danh mục kho động từ server
   useEffect(() => {
@@ -175,7 +181,6 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     setLoading(true);
     setLoadError(null);
     try {
-      const scopeParam = isTaxAccountant ? 'OFFICIAL_TAX' : activeScope;
       const params = new URLSearchParams();
       params.set('fiscalScope', scopeParam);
       if (selectedWarehouse !== 'ALL') {
@@ -696,8 +701,17 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       {/* Sach ban chay nhat (OWNER/MANAGER) — tra loi "cuon nao ban chay nhat hom nay/tuan nay/thang nay" */}
       <TopEditionsPanel currentRole={currentRole} />
 
-      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang */}
-      <RevenueAnalyticsPanel currentRole={currentRole} />
+      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang.
+          Dùng CHUNG bo loc cua tab (kho/ngay/so) va actor that cua Sổ Kép: panel khong
+          tu dat filter rieng, nen so cua no luon khop bang so tren bang. */}
+      <RevenueAnalyticsPanel
+        currentRole={currentRole}
+        startDate={startDate}
+        endDate={endDate}
+        warehouseId={selectedWarehouse}
+        fiscalScope={scopeParam === 'ALL' ? undefined : scopeParam}
+        actorId={actorId}
+      />
     </div>
   );
 }
