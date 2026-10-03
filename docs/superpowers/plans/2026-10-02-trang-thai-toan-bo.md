@@ -48,7 +48,7 @@
 
 **Việc đã xong sau bàn giao (8 commit):** UI cài đặt mốc `7fc1ab2` → giỏ POS badge Quà `709cad9` → B3 `efa5e0e` → duyệt quà tay `53ecc1e` → báo cáo quà `812745c` + fix gitignore `285e4e4` → fix test regex `e7343d5` → fix kho product_id `3185edb`.
 
-**Việc kế tiếp cần chủ (03/10):** gửi mã vạch thật cho `ed-h66` (Tristram Shandy) + `ed-h85` (Đốt kho tái bản). Chi tiết mục 8.7.
+**Việc kế tiếp cần chủ:** ~~gửi mã vạch thật cho `ed-h66`~~ → **đã nhận và đã sửa 03/10** (mục 11). Còn `ed-h85` — chủ bảo **bỏ qua**.
 
 ---
 
@@ -296,7 +296,7 @@ Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút to�
 
 1. Nút **"Tặng thêm"** trong giỏ POS (quà tay tự phục vụ) — **ĐÃ LÀM XONG** trên nhánh `feat/tang-them-qua-tay` (`90e972a`, test `test-manual-gift-approval` 11/11). Chủ quyết **không cần merge** — giữ nhánh để tham khảo.
 2. ~~`scripts/probe-ordercode-length.ts`~~ — **không tồn tại**, xoá khỏi danh sách.
-3. **Còn treo:** sửa ISBN `ed-h66` + `ed-h85` (chủ sẽ gửi mã vạch thật), validate checksum ISBN-13 khi nhập, cột "so với hôm qua" trên khối tiền.
+3. **Còn treo:** `ed-h85` (chủ bảo bỏ qua lần này), validate checksum ISBN-13 khi nhập, cột "so với hôm qua" trên khối tiền.
 
 ---
 
@@ -654,13 +654,13 @@ Một sự cố phạm vi đã bắt được: preview OCR đầu dùng `main` *
 ### 🔶 Việc TREO, cần chủ quyết
 | Việc | Nguyên nhân |
 |---|---|
-| Sửa ISBN `ed-h66` (Tristram Shandy) | Mã in trên sách chưa được quét. Tôi **không** đoán: `9786044449685` chỉ suy ra từ checksum 12 số đầu, CSV chỉ có 1 dòng, web không có bản NXB Hà Nội 2025 |
-| Sửa ISBN `ed-h85` (Đốt kho tái bản) | Chủ sẽ tự cập nhật. Hệ thống hiện lưu 14 số |
+| ~~Sửa ISBN `ed-h66` (Tristram Shandy)~~ | ✅ **XONG 03/10** — mục 11 |
+| `ed-h85` (Đốt kho tái bản) | ⛔ **Chủ bảo bỏ qua lần này.** Hệ thống vẫn lưu 14 số, vẫn `is_active=0` |
 | Validate checksum ISBN-13 khi nhập | Chủ để sau. Đây chính là nguyên nhân gốc làm sách Wittgenstein không quét được |
 | Cột "so với hôm qua" ▲▼ trên khối tiền | Để giữ diff nhỏ, làm ở đợt sau |
 
 ### 🟡 Việc của AGENT KHÁC, không đụng vào
-- `D:\Data Project\formapubli` (worktree chính): đang có 2 file docs `doanh-so-overhaul` sửa dở + 1 script tạm `scripts/tmp-probe-isbn.ts` **untracked**.
+- `D:\Data Project\formapubli` (worktree chính): đang có 2 file docs `doanh-so-overhaul` sửa dở (đã commit 03/10) + script tạm `scripts/tmp-probe-isbn.ts` (đã xoá 03/10).
 - `D:\Data Project\formapubli-promo`: nhánh `fix/remove-order-notifications`, chưa merge, có `scripts/probe-ordercode-length.ts` untracked.
 - `D:\Data Project\formapubli-sales`: nhánh `agent/b-doanh-so-overhaul`.
 
@@ -671,3 +671,44 @@ Một sự cố phạm vi đã bắt được: preview OCR đầu dùng `main` *
 2. **`tsc` không validate CSS.** Lỗi `}` thừa làm cả repo không build được mà test vẫn xanh.
 3. **Deploy phải đo bằng thứ chạy thật**, không tin bằng mắt: lề A4 đo được 0.00mm → 10.05mm.
 4. **Review độc lập bắt được 9 lỗi** mà tự test không bắt được.
+
+---
+
+## 11. SỬA MÃ VẠCH ISBN (03/10/2026)
+
+Chủ cầm sách lên, đọc mã vạch in thật. Ghi thẳng production (Turso), tồn kho **không đổi**.
+
+| Mã ấn bản | Sách | Trước | Sau | Kết quả |
+|---|---|---|---|---|
+| **`TP0030`** (`ed-h66`) | Tristram Shandy | `9786044449689` ❌ | **`9786044449869`** | ✅ đã sửa |
+| `HH034` (`ed-h41`) | Cháu trai Wittgenstein | `9786049679377` | (không đổi) | ✅ **đã đúng sẵn** |
+| `H85` (`ed-h85`) | Đốt kho tái bản | `9786320317631 3` (14 số) | — | ⛔ **chủ bảo bỏ qua** |
+
+Script: `scripts/fix-isbn-ed-h66-prod.ts` (idempotent, mặc định DRY-RUN, chặn trước khi
+ghi nếu mã đích sai checksum hoặc đã thuộc ấn bản khác). Cùng khuôn với
+`scripts/fix-isbn-ed-h41-prod.ts`.
+
+### Hai bài học rút ra từ việc này
+
+**1. Suy checksum KHÔNG phải là quét mã.** Mã `9786044449685` hợp lệ checksum và
+tôi đã từng ghi vào docs là "mã đúng". Nó **sai thật** — mã thật là `…89869`.
+Vì `…89689` sai ở **12 số đầu** chứ không phải ở số kiểm, nên "ép lại số kiểm"
+vẫn ra một số hợp lệ — nhưng là số của một cuốn sách khác. Checksum chỉ bắt được
+sai ở **1 chữ số cuối**, không bắt được sai ở 12 số đầu.
+
+**2. Cùng một dạng lỗi, hai cuốn khác nhau.** Cả `ed-h41` và `ed-h66` đều là
+**đảo cặp số ở vị trí 11–12** (`68` ↔ `86`) khi nhập tay:
+`9768049679377` → `9786049679377`, và `9786044449689` → `9786044449869`.
+⇒ Mã nguồn có lỗi nhập tay có hệ thống, **nên kiểm tra cả danh mục**, không chỉ
+cuốn người dùng vấp.
+
+**3. Sửa DB mà quên CSV thì sẽ bị ghi đè.** `scripts/seed.ts:180` đọc
+`data_tabs/sheet1_danhmuc_gid_0.csv` và `insert(editions).onConflictDoUpdate({target: editions.code})`
+⇒ chạy lại seed là mất. Đã sửa cả CSV dòng 67. `seed.ts` cũng tự suy
+`isbn_last4 = isbn.slice(-4)` nên đã sửa luôn `isbn_last4` trong DB cho khớp
+(nếu không, cột tra cứu `idx_editions_isbn_last4` và nhãn "Đuối:" trong UI sẽ sai).
+
+### Còn treo
+
+- **Validate checksum ISBN-13 lúc nhập** — chủ để sau. Đây mới là nguyên nhân gốc.
+- **`ed-h85`** (Đốt kho tái bản, 14 số) — chủ bảo bỏ qua lần này.
