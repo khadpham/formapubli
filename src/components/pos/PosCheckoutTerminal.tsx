@@ -199,6 +199,10 @@ export function PosCheckoutTerminal({
   // (server cũng chặn, đây là lớp thứ hai để UX rõ ràng).
   const [lockedWarehouseId, setLockedWarehouseId] = useState<string | null>(null);
   const [lockedWarehouseName, setLockedWarehouseName] = useState<string>('');
+  // Kho POS được phép theo tài khoản (rỗng = mọi kho sellable). Lọc ở client,
+  // chặn ở server (`/api/cashbox` OPEN).
+  const [allowedWarehouseIds, setAllowedWarehouseIds] = useState<string[]>([]);
+  const [allowedMissing, setAllowedMissing] = useState<string[]>([]);
   // Tên thật của thu ngân đang đăng nhập. Lấy từ /api/auth/me (session đã có sẵn
   // fullName) thay vì dựng chuỗi từ vai trò — dựng từ vai trò ra chuỗi giả như
   // "User-ROLE_CASHIER" và lẫn tên kho, thu ngân không biết ca đang mở là của ai.
@@ -213,6 +217,10 @@ export function PosCheckoutTerminal({
         // Tên phải lấy TRƯỚC khi rẽ nhánh kho: một thu ngân chưa được gán kho vẫn
         // có tên, và đó đúng là ca cần nhận. Rẽ sớm ở đây là mất tên.
         setCashierFullName(j?.data?.fullName || '');
+        const allowed: string[] = Array.isArray((j?.data as any)?.allowedWarehouseIds)
+          ? (j.data as any).allowedWarehouseIds.filter((x: any) => `${x || ''}`.trim())
+          : [];
+        if (allowed.length > 0) setAllowedWarehouseIds(allowed);
         const wid = j?.data?.assignedWarehouseId;
         if (!wid) return;
         setLockedWarehouseId(wid);
@@ -690,7 +698,14 @@ export function PosCheckoutTerminal({
     isOpenShiftModalOpen || isCloseShiftModalOpen || isSettlementModalOpen ||
     isPhotoGalleryOpen;
   const selectedWarehouseIdRef = useRef(selectedWarehouseId);
+  const allowedWarehouseIdsRef = useRef(allowedWarehouseIds);
   const cartFrozenRef = useRef(isCartFrozen);
+  useEffect(() => {
+    selectedWarehouseIdRef.current = selectedWarehouseId;
+  }, [selectedWarehouseId]);
+  useEffect(() => {
+    allowedWarehouseIdsRef.current = allowedWarehouseIds;
+  }, [allowedWarehouseIds]);
   useEffect(() => {
     selectedWarehouseIdRef.current = selectedWarehouseId;
   }, [selectedWarehouseId]);
@@ -1028,10 +1043,14 @@ export function PosCheckoutTerminal({
         const res = await fetch('/api/warehouses');
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          setSellableWarehouses(json.data);
+          const allowedNow = allowedWarehouseIdsRef.current;
+          const visible =
+            allowedNow.length > 0 ? json.data.filter((w: any) => allowedNow.includes(w.id)) : json.data;
+          setSellableWarehouses(visible);
           setSelectedWarehouseId((prev) =>
-            json.data.some((w: any) => w.id === prev) ? prev : json.data[0].id
+            visible.some((w: any) => w.id === prev) ? prev : visible[0]?.id ?? prev
           );
+          setAllowedMissing(allowedNow.filter((id) => !json.data.some((w: any) => w.id === id)));
         }
       } catch {
         // offline: giữ fallback cứng trong selector
@@ -2774,6 +2793,11 @@ export function PosCheckoutTerminal({
                 </option>
               ))}
             </select>
+            )}
+            {allowedMissing.length > 0 && (
+              <p className="text-[11px] font-bold text-amber-700">
+                Kho được gán đã ngưng/bị ẩn ({allowedMissing.join(', ')}) — liên hệ quản lý.
+              </p>
             )}
           </div>
 
