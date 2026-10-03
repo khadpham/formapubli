@@ -158,6 +158,8 @@ interface PosCheckoutTerminalProps {
   actorId?: string;
   isShellInteractionBlocked?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  /** Báo cho shell biết thanh giỏ nổi mobile có hiển thị — chỉ chừa khoảng đáy khi cần. */
+  onMobileBarVisibleChange?: (visible: boolean) => void;
   onOrderCompleted?: () => void;
   /** Don nhap tu Copilot (prepare_sale_draft) — op vao gio 1 lan duy nhat. */
   externalDraft?: {
@@ -184,6 +186,7 @@ export function PosCheckoutTerminal({
   actorId,
   isShellInteractionBlocked = false,
   onBusyChange,
+  onMobileBarVisibleChange,
   onOrderCompleted,
   externalDraft,
   onDraftApplied,
@@ -692,6 +695,15 @@ export function PosCheckoutTerminal({
     onBusyChange?.(isSubmitting || isInteractionLocked || isPosOverlayOpen);
     return () => onBusyChange?.(false);
   }, [isInteractionLocked, isPosOverlayOpen, isSubmitting, onBusyChange]);
+
+  // Thanh giỏ nổi mobile chỉ render khi có hàng. Báo lên shell để `main` chỉ chừa
+  // khoảng đáy ĐÚNG LÚC (tránh blank trắng khi giỏ trống).
+  useEffect(() => {
+    onMobileBarVisibleChange?.(cart.length > 0);
+  }, [cart.length, onMobileBarVisibleChange]);
+  useEffect(() => {
+    return () => onMobileBarVisibleChange?.(false);
+  }, [onMobileBarVisibleChange]);
 
   const clearApprovalState = (closeModal = true) => {
     setIsApprovalPending(false);

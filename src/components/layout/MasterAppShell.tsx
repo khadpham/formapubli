@@ -68,6 +68,8 @@ export function MasterAppShell({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isPosCheckoutBusy, setIsPosCheckoutBusy] = useState(false);
+  // Thanh giỏ nổi mobile của POS có hiển thị không — quyết định khoảng chừa đáy.
+  const [posMobileBar, setPosMobileBar] = useState(false);
   // Copilot 3 trang thai: closed (bong bong) • mini (chat nho goc phai) • full (drawer phai).
   const [copilotView, setCopilotView] = useState<'closed' | 'mini' | 'full'>('closed');
   // Don nhap tu Copilot (prepare_sale_draft) → op vao gio POS khi qua tab POS.
@@ -113,8 +115,15 @@ export function MasterAppShell({
   let mainBottomPadding = 'pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-8';
   let fabBottom = 'bottom-[max(1.5rem,env(safe-area-inset-bottom))]';
   if (effectiveTab === 'pos') {
-    mainBottomPadding = canUseCopilot ? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8';
-    if (canUseCopilot) fabBottom = 'bottom-[calc(max(1rem,env(safe-area-inset-bottom))_+_5.5rem)]';
+    if (posMobileBar) {
+      // Có thanh giỏ nổi: chừa chỗ cho thanh + nút FAB (nếu có).
+      mainBottomPadding = canUseCopilot ? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8';
+      if (canUseCopilot) fabBottom = 'bottom-[calc(max(1rem,env(safe-area-inset-bottom))_+_5.5rem)]';
+    } else {
+      // Giỏ trống ⇒ thanh giỏ KHÔNG render. Chỉ chừa đủ cho nút FAB nếu có,
+      // không thì dùng mặc định — tránh khoảng trắng trống ở đáy.
+      mainBottomPadding = canUseCopilot ? 'pb-20 lg:pb-8' : 'pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-8';
+    }
   } else if (canUseCopilot) {
     mainBottomPadding = 'pb-28 lg:pb-8';
   }
@@ -366,6 +375,7 @@ export function MasterAppShell({
                actorId={session?.actorId}
                isShellInteractionBlocked={isMobileSidebarOpen}
               onBusyChange={setIsPosCheckoutBusy}
+              onMobileBarVisibleChange={setPosMobileBar}
               externalDraft={posDraft}
               onDraftApplied={() => setPosDraft(null)}
               onOrderCompleted={() => {

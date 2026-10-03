@@ -154,6 +154,29 @@ check('open cashbox state is visually obvious (left accent border + filled pill)
 });
 
 // ---------------------------------------------------------------------------
+// 5. Khoảng chừa đáy KHÔNG được cứng: chỉ chừa khi thanh giỏ nổi THỰC SỰ hiển thị.
+//    Lỗi thật: `main` POS chừa pb-32/pb-44 nhưng thanh giỏ chỉ render khi cart>0
+//    ⇒ giỏ trống thì khoảng chừa thành blank trắng ở đáy.
+// ---------------------------------------------------------------------------
+const shellPath = path.join(process.cwd(), 'src', 'components', 'layout', 'MasterAppShell.tsx');
+const shell = fs.readFileSync(shellPath, 'utf8');
+
+check('POS reports mobile bottom-bar visibility up to the shell', () => {
+  assert(
+    /onMobileBarVisibleChange\?\.\(cart\.length > 0\)/.test(content),
+    'PosCheckoutTerminal phải báo cho shell biết thanh giỏ nổi có hiển thị hay không',
+  );
+});
+
+check('app shell gates POS bottom padding on the cart bar (no permanent blank)', () => {
+  assert(shell.includes('posMobileBar'), 'MasterAppShell phải theo dõi posMobileBar');
+  assert(
+    /effectiveTab === 'pos'[\s\S]{0,400}posMobileBar/.test(shell),
+    'padding POS phải phụ thuộc posMobileBar, không được chừa cứng pb-32/pb-44',
+  );
+});
+
+// ---------------------------------------------------------------------------
 console.log('');
 if (failures.length > 0) {
   console.log('======================================================');
