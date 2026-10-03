@@ -199,6 +199,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-webhook.ts',
   // Shopee Task 8: mock escrow, seed 1 đơn DELIVERED + giá vốn trong DB test.
   'scripts/test-shopee-escrow.ts',
+  // Shopee Task 9: công tắc COD (mặc định tắt).
+  'scripts/test-shopee-cod-flag.ts',
 ];
 
 function suiteShortName(p: string): string {

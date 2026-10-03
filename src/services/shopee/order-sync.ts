@@ -16,6 +16,11 @@ export interface ShopeeSyncConfig {
   baseUrl: string;
   /** Kho xuất hàng Shopee (cấu hình — hiện tại kho Âu Cơ). CẤM hardcode. */
   warehouseId: string;
+  /**
+   * COD đang bật? Mặc định TẮT (Anh chốt) — đơn COD khi tắt sẽ vào cách ly
+   * với lý do rõ ràng thay vì lọt vào kho. Bật sau không cần migration.
+   */
+  codEnabled?: boolean;
   fetchFn?: typeof fetch;
 }
 
@@ -196,6 +201,10 @@ async function ingestOne(
   }
 
   const isCod = d.payment_method === 'COD';
+  if (isCod && !cfg.codEnabled) {
+    result.quarantined.push({ orderSn: d.order_sn, sku: '', reason: 'COD đang tắt — bật cờ mới xử lý' });
+    return;
+  }
   const finalAmount = resolved.reduce((s, r) => s + r.qty * r.discounted, 0);
   const subtotal = resolved.reduce((s, r) => s + r.qty * r.original, 0);
   const addr = d.recipient_address;

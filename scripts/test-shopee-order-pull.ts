@@ -42,6 +42,7 @@ const CFG = {
   partnerKey: 'test-partner-key',
   baseUrl: 'https://partner.test-stable.shopeemobile.com',
   warehouseId: WAREHOUSE,
+  codEnabled: true,
 };
 
 async function stockOf(editionId: string): Promise<number> {
