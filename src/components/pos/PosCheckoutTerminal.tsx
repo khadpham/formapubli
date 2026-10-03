@@ -3092,7 +3092,7 @@ export function PosCheckoutTerminal({
       )}
 
       {/* Main Split-View: Left Products (2 Cols) + Right Cart (1 Col) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left Side: Search & Book Catalog Selection */}
         <div className="lg:col-span-7 space-y-3 md:space-y-4">
           {/* Search Box with Voice Mic — STICKY: thứ NỔI khi cuộn danh mục, không phải nút chọn kho. Offset bằng chiều cao header app. */}
@@ -3439,7 +3439,7 @@ export function PosCheckoutTerminal({
         </div>
 
         {/* Right Side: Order Cart & Checkout Controls */}
-        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20">
+        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
