@@ -189,6 +189,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-oauth-refresh.ts',
   // Shopee Task 3: chỉ đụng kho wh-au-co + đơn mới kênh SHOPEE trong DB test.
   'scripts/test-shopee-order-pull.ts',
+  // Shopee Task 4: seed 3 đơn guard, chỉ đọc — an toàn cuối chuỗi.
+  'scripts/test-shopee-revenue-guard.ts',
 ];
 
 function suiteShortName(p: string): string {

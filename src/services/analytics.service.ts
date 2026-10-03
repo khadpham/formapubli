@@ -1,6 +1,7 @@
 import { db, orders, orderItems, editions, products, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like, inArray } from 'drizzle-orm';
 import { businessDateOf, createdAtBetween, VN_UTC_OFFSET_MIN } from './order.service';
+import { shopeeDeliveredOnly } from './shopee/revenue-guard';
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
 // (orders/order_items/ledger). Không copy ngày→tuần→tháng, không bảng mới.
@@ -45,7 +46,7 @@ export interface AnalyticsScope {
  * điều kiện này cho truy vấn COD — một chỗ, không hai bản sao.
  */
 function rangeConds(table: typeof orders, range: DateRange, scope: AnalyticsScope = {}) {
-  const conds = [eq(table.status, 'COMPLETED')];
+  const conds = [eq(table.status, 'COMPLETED'), shopeeDeliveredOnly()];
   if (scope.warehouseId) conds.push(eq(table.warehouseId, scope.warehouseId));
   if (scope.fiscalScope) conds.push(eq(table.fiscalScope, scope.fiscalScope));
   conds.push(...createdAtBetween(table.createdAt, range.startDate, range.endDate));
@@ -171,7 +172,7 @@ export class AnalyticsService {
         // Cửa sổ tuần là MỐC UTC (`mondayOf().toISOString()`) nên `createdAtBetween`
         // tự dùng nhánh so mốc UTC. Không được so chuỗi thô: cột này có cả dòng
         // SQLite (' ') lẫn dòng ISO ('T'), mà 'T' > ' ' nên so thô là sai.
-        .where(and(eq(orders.status, 'COMPLETED'), ...createdAtBetween(orders.createdAt, from, to)))
+        .where(and(eq(orders.status, 'COMPLETED'), shopeeDeliveredOnly(), ...createdAtBetween(orders.createdAt, from, to)))
         .groupBy(orderItems.editionId);
       const map = new Map<string, { qty: number; revenue: number }>();
       for (const r of rows) {
@@ -278,6 +279,7 @@ export class AnalyticsService {
   static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true, fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT') {
     const conds = [
       eq(orders.status, 'COMPLETED'),
+      shopeeDeliveredOnly(),
       sql`${orders.discountRate} < 1`,
       sql`${orders.channel} != 'SPONSORSHIP'`,
       sql`${orders.finalAmount} > 0`,
