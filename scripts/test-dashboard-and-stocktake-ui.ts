@@ -131,8 +131,29 @@ async function runTest() {
   );
   console.log('✓ 5. SalesLedgerView.tsx tái sử dụng thành công OrderDetailModal dùng chung.');
 
+  // 6. Header modal chi tiết đơn phải XUỐNG DÒNG, không cắt cụt mã đơn / tên khách.
+  //    Lỗi thật: `truncate` (= nowrap + ellipsis) ép tiêu đề "Chi Tiết Đơn Hàng ·
+  //    ORD..." thành 1 dòng nên mã đơn 13 ký tự bị cắt, người dùng không đọc được.
+  const headerStart = orderDetailContent.indexOf('id="order-detail-title"');
+  const headerEnd = orderDetailContent.indexOf('</p>', headerStart);
+  const headerBlock = headerStart >= 0 ? orderDetailContent.slice(headerStart, headerEnd + 4) : '';
+  assert.ok(
+    headerBlock.length > 0 && !headerBlock.includes('truncate'),
+    'Tiêu đề/phụ đề modal chi tiết phải cho xuống dòng, KHÔNG dùng truncate (mã đơn dài không được cắt)'
+  );
+  assert.ok(
+    headerBlock.includes('break-words'),
+    'Tiêu đề modal chi tiết phải có break-words để mã đơn dài tự xuống dòng'
+  );
+  const custLine = orderDetailContent.split('\n').find((l) => l.includes("orderDetail.order.customerName || 'Khách lẻ'")) || '';
+  assert.ok(
+    custLine.length > 0 && !custLine.includes('truncate'),
+    'Tên khách hàng trong modal chi tiết không được cắt bằng truncate'
+  );
+  console.log('✓ 6. Header OrderDetailModal xuống dòng đúng, không cắt cụt mã đơn / tên khách.');
+
   console.log('\n========================================');
-  console.log('TẤT CẢ 5 BÀI KIỂM THỬ ĐÃ PASS 100%!');
+  console.log('TẤT CẢ 6 BÀI KIỂM THỬ ĐÃ PASS 100%!');
   console.log('========================================');
 }
 

@@ -620,7 +620,7 @@ export function DailyFairSettlementModal({
               <h3 className="font-extrabold text-sm sm:text-base flex items-center gap-2 whitespace-nowrap">
                 Báo Cáo Chốt Ngày
               </h3>
-              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+              <p className="text-[11px] sm:text-xs text-slate-400 break-words">
                 Kho: <strong className="text-white">{activeWarehouseName}</strong>
                 <span className="hidden sm:inline"> | </span>
                 <span className="ml-1 sm:ml-0">Ngày: <span className="font-mono text-amber-300">{shownReportDate}</span></span>

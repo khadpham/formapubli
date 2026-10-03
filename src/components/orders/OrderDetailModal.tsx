@@ -154,10 +154,10 @@ export function OrderDetailModal({
               <Receipt className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <h3 id="order-detail-title" className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
+              <h3 id="order-detail-title" className="text-sm sm:text-base font-extrabold text-slate-900 break-words leading-snug">
                 Chi Tiết Đơn Hàng {orderDetail?.order?.orderCode ? `· ${orderDetail.order.orderCode}` : ''}
               </h3>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-500 break-words leading-snug">
                 Thông tin chứng từ bán hàng, phân loại sổ và danh mục ấn phẩm
               </p>
             </div>
@@ -238,7 +238,7 @@ export function OrderDetailModal({
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Khách hàng:</span>
-                  <span className="font-bold text-slate-800 truncate block">{orderDetail.order.customerName || 'Khách lẻ'}</span>
+                  <span className="font-bold text-slate-800 break-words block">{orderDetail.order.customerName || 'Khách lẻ'}</span>
                 </div>
               </div>
 
