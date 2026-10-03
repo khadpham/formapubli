@@ -266,6 +266,13 @@
       "when": 1790600013000,
       "tag": "0037_staff_allowed_warehouses",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": 7,
+      "when": 1790600014000,
+      "tag": "0038_shopee_shop_tokens",
+      "breakpoints": true
     }
   ],
   "version": "7"

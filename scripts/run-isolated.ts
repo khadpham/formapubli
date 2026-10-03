@@ -182,6 +182,9 @@ const ALL_SUITES = [
   // `test-analytics-doanhso` theo yêu cầu brief để không mở cửa sổ dữ liệu lệch.
   'scripts/test-top-gifts-locked.ts',
   'scripts/test-analytics-doanhso.ts',
+  // Shopee skeleton (Task 1): chỉ đụng bảng mới shopee_shop_tokens + hàm thuần
+  // ký HMAC — không chạm dữ liệu chung nên đứng cuối an toàn.
+  'scripts/test-shopee-auth-foundation.ts',
 ];
 
 function suiteShortName(p: string): string {

@@ -862,3 +862,13 @@ export const dailyOrderCounters = sqliteTable('daily_order_counters', {
   lastSeq: integer('last_seq').notNull().default(0),
 });
 
+
+export const shopeeShopTokens = sqliteTable('shopee_shop_tokens', {
+  shopId: integer('shop_id').primaryKey(),
+  shopName: text('shop_name'),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  expiredAt: integer('expired_at').notNull(),
+  refreshExpiredAt: integer('refresh_expired_at').notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
