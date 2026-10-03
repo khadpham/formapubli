@@ -4916,7 +4916,7 @@ export function PosCheckoutTerminal({
           type="button"
           onClick={openScanner}
           title="Quét mã thêm vào giỏ"
-          className="lg:hidden fixed bottom-24 left-4 z-40 w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 flex items-center justify-center active:scale-95 transition-all"
+          className="lg:hidden fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-4 z-40 w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 flex items-center justify-center active:scale-95 transition-all"
         >
           <Camera className="w-6 h-6" />
         </button>

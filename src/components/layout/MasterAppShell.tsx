@@ -120,9 +120,9 @@ export function MasterAppShell({
       mainBottomPadding = canUseCopilot ? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8';
       if (canUseCopilot) fabBottom = 'bottom-[calc(max(1rem,env(safe-area-inset-bottom))_+_5.5rem)]';
     } else {
-      // Giỏ trống ⇒ thanh giỏ KHÔNG render. Chỉ chừa đủ cho nút FAB nếu có,
-      // không thì dùng mặc định — tránh khoảng trắng trống ở đáy.
-      mainBottomPadding = canUseCopilot ? 'pb-20 lg:pb-8' : 'pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-8';
+      // Giỏ trống ⇒ thanh giỏ KHÔNG render, NHƯNG vẫn có nút camera (mọi role) và
+      // nút AI Copilot (quản lý/chủ) nổi ở đáy ⇒ chừa đủ pb-24 để không đè nội dung.
+      mainBottomPadding = 'pb-24 lg:pb-8';
     }
   } else if (canUseCopilot) {
     mainBottomPadding = 'pb-28 lg:pb-8';

@@ -176,6 +176,24 @@ check('app shell gates POS bottom padding on the cart bar (no permanent blank)',
   );
 });
 
+check('empty-cart POS reserves room for the floating action buttons', () => {
+  assert(
+    shell.includes("'pb-24 lg:pb-8'"),
+    'giỏ trống vẫn phải chừa pb-24 cho nút camera / AI Copilot nổi',
+  );
+});
+
+check('mobile camera FAB sits LOW (no high bottom-24 anchor over content)', () => {
+  assert(
+    !/fixed bottom-24 left-4/.test(content),
+    'nút quét nổi không được neo bottom-24 — nó chỉ hiện khi giỏ trống (không có thanh giỏ)',
+  );
+  assert(
+    /fixed bottom-\[max\(1\.5rem,env\(safe-area-inset-bottom\)\)\] left-4/.test(content),
+    'nút quét nổi phải nằm sát đáy (bottom-6 + safe-area)',
+  );
+});
+
 // ---------------------------------------------------------------------------
 console.log('');
 if (failures.length > 0) {
