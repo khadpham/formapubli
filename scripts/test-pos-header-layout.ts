@@ -176,10 +176,21 @@ check('app shell gates POS bottom padding on the cart bar (no permanent blank)',
   );
 });
 
-check('empty-cart POS reserves room for the floating action buttons', () => {
+check('empty-cart POS reserves room for the floating camera shortcut', () => {
   assert(
-    shell.includes("'pb-24 lg:pb-8'"),
-    'giỏ trống vẫn phải chừa pb-24 cho nút camera / AI Copilot nổi',
+    shell.includes("'pb-20 lg:pb-8'"),
+    'giỏ trống vẫn phải chừa pb-20 cho nút quét camera nổi',
+  );
+});
+
+check('AI Copilot has NO floating FAB (moved to the header)', () => {
+  assert(
+    !/fixed [^`"]*from-indigo-600 to-violet-500/.test(shell),
+    'không còn nút AI Copilot nổi ở đáy',
+  );
+  assert(
+    shell.includes('flex items-center gap-1.5 px-2 sm:px-3'),
+    'nút AI Copilot trên header phải hiện cả trên mobile',
   );
 });
 

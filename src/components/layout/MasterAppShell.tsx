@@ -113,19 +113,11 @@ export function MasterAppShell({
   // Thẩm quyền dùng Copilot: ROLE_OWNER hoặc ROLE_MANAGER (CEO vận hành)
   const canUseCopilot = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   let mainBottomPadding = 'pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-8';
-  let fabBottom = 'bottom-[max(1.5rem,env(safe-area-inset-bottom))]';
+  // AI Copilot đã lên header ⇒ KHÔNG còn nút nổi trên các tab thường (hết dải trống).
+  // POS vẫn có 2 thứ nổi ở đáy: thanh giỏ (khi có hàng) và nút quét camera (khi giỏ
+  // trống) ⇒ chỉ chừa vừa đủ cho đúng thứ đang hiện.
   if (effectiveTab === 'pos') {
-    if (posMobileBar) {
-      // Có thanh giỏ nổi: chừa chỗ cho thanh + nút FAB (nếu có).
-      mainBottomPadding = canUseCopilot ? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8';
-      if (canUseCopilot) fabBottom = 'bottom-[calc(max(1rem,env(safe-area-inset-bottom))_+_5.5rem)]';
-    } else {
-      // Giỏ trống ⇒ thanh giỏ KHÔNG render, NHƯNG vẫn có nút camera (mọi role) và
-      // nút AI Copilot (quản lý/chủ) nổi ở đáy ⇒ chừa đủ pb-24 để không đè nội dung.
-      mainBottomPadding = 'pb-24 lg:pb-8';
-    }
-  } else if (canUseCopilot) {
-    mainBottomPadding = 'pb-28 lg:pb-8';
+    mainBottomPadding = posMobileBar ? 'pb-32 lg:pb-8' : 'pb-20 lg:pb-8';
   }
 
   // S-01: heartbeat giữ lease cashier (5 phút/lần). 401 → mở lại login
@@ -323,7 +315,7 @@ export function MasterAppShell({
                 disabled={isPosCheckoutBusy || isMobileSidebarOpen}
                 aria-hidden={isPosCheckoutBusy || isMobileSidebarOpen}
                 onClick={() => setCopilotView('mini')}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
                 title="Mở Executive AI Copilot (Alt+C)"
               >
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
@@ -450,19 +442,8 @@ export function MasterAppShell({
         />
       )}
 
-      {/* Bong bong Copilot goc phai duoi — hien khi dong, mo mini 1 cham */}
-      {canUseCopilot && copilotView === 'closed' && (
-        <button
-          type="button"
-          disabled={isPosCheckoutBusy || isMobileSidebarOpen}
-          aria-hidden={isPosCheckoutBusy || isMobileSidebarOpen}
-          onClick={() => setCopilotView('mini')}
-                title={`Mở Executive AI Copilot (${getShortcutLabel('C', { alt: true })})`}
-          className={`fixed ${fabBottom} right-4 lg:bottom-6 lg:right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-xl shadow-indigo-600/30 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
-        >
-          <Sparkles className="w-6 h-6 animate-pulse" />
-        </button>
-      )}
+      {/* Nút AI Copilot đã đưa lên thanh header (cạnh chuông) — KHÔNG còn nút nổi,
+          nên không còn dải trống ở đáy mọi tab (yêu cầu 03/10/2026). */}
 
       {/* Executive AI Copilot: mini chat + full drawer */}
       {currentRole && (
