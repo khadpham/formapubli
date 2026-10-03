@@ -665,6 +665,8 @@ export const staffAccounts = sqliteTable('staff_accounts', {
   isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
   // Kho được phân công phụ trách (đặc biệt thu ngân hội chợ). Quản lý gán được.
   assignedWarehouseId: text('assigned_warehouse_id').references(() => warehouses.id),
+  // Danh sách kho POS được phép (JSON array id). Trống = mọi kho sellable (hành vi cũ).
+  allowedWarehouseIds: text('allowed_warehouse_ids').default('[]').notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   roleIdx: index('idx_staff_role').on(table.role),
