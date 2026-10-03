@@ -1,6 +1,9 @@
 # Quy Chuẩn Red-Team & Negative Testing (BẮT BUỘC — hiệu lực từ đợt vá security-patch-01, 09/2026)
 
-> Bối cảnh: 23 suites xanh 100% nhưng bộ probes adversarial vẫn khui ra 9 lỗ hổng P0/P1 + 1 bug bundle.
+> **QUY CHUẨN NÀY VẪN CÒN HIỆU LỰC.** Chỉ số "23 suites" ở dưới là của 09/2026 —
+> số suite hiện tại đếm trong `scripts/run-isolated.ts`, đừng đọc số trong docs.
+>
+> Bối cảnh: lúc đó 23 suites xanh 100% nhưng bộ probes adversarial vẫn khui ra 9 lỗ hổng P0/P1 + 1 bug bundle.
 > Nguyên nhân gốc không phải thiếu test, mà là thiếu **đúng loại test**.
 > File này là luật. Mọi PR đụng tiền/kho/quyền mà vi phạm sẽ bị từ chối merge.
 
@@ -56,7 +59,7 @@ cashier/warehouse bị giới hạn đúng scope. Không có test scope = chưa 
 ### R5. Gate red-team trước merge nhạy cảm
 PR đụng 4 nhóm (tiền, kho, quyền, đối soát) phải chạy bộ probes tương đương
 trên DB review dùng một lần, lưu output JSON làm bằng chứng.
-Thư mục `review.tmp/` (đang ignore) là nơi chứa probes + baseline + output.
+Thư mục `review.tmp/` (đã loại khỏi `tsconfig.json`) là nơi chứa probes + baseline + output.
 
 ---
 
