@@ -66,3 +66,19 @@ export function isbnBlockReason(raw: string): string | null {
   if (ISBN_EXEMPTIONS[normalizeIsbn(raw)]) return null;
   return `ISBN '${raw}' không hợp lệ — phải đúng 13 chữ số và số kiểm phải khớp`;
 }
+
+/**
+ * Cặp ấn bản CỐ Ý dùng chung một ISBN — biết trước, đã được xác minh là tái bản
+ * của cùng một tác phẩm, không phải nhập nhầm. Dùng cho health check: cặp đã
+ * biết thì bỏ qua, cặp MỚI xuất hiện thì báo đỏ (nghĩa là có người vừa nhập
+ * trùng mà không biết — cần hỏi, không tự ý "chấp nhận").
+ */
+export const ISBN_DUPLICATE_EXEMPTIONS: Record<string, string> = {
+  '9786044737690':
+    'HH032 "Le Spleen de Paris (Bìa tím)" 2022 13,5cm + HH042 "(Tái bản) - Bìa trắng" 2023 12,5cm — cùng tác phẩm, NXB tái bản chung mã.',
+};
+
+/** `null` = cặp trùng đã được miễn. Trả lý do khi cặp trùng mới (chưa từng biết). */
+export function isbnDuplicateReason(isbn: string): string | null {
+  return ISBN_DUPLICATE_EXEMPTIONS[normalizeIsbn(isbn)] ?? null;
+}

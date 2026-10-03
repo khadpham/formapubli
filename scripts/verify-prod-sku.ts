@@ -1,7 +1,21 @@
 import fs from 'node:fs';
 import { createClient } from '@libsql/client';
+import {
+  isbnBlockReason,
+  isbnDuplicateReason,
+  ISBN_EXEMPTIONS,
+  ISBN_DUPLICATE_EXEMPTIONS,
+} from '../src/lib/isbn';
 
-/** XÁC MINH SAU MIGRATION TRÊN PRODUCTION — chỉ đọc. */
+/**
+ * HEALTH CHECK PRODUCTION — chỉ đọc, không ghi gì.
+ *
+ * Chạy TRƯỚC mỗi hội chợ. Đây là cổng hỏi "dữ liệu còn đúng không", KHÔNG phải
+ * kiểm tra "sau migration một lần" — nên ở đây KHÔNG có con số gắn cứng nào.
+ * Trước đây gắn `88 ấn bản / 22 đơn / 440 dòng tồn` và báo đỏ chỉ vì đơn đã
+ * >100: script báo hỏng chứ không phát hiện hỏng. Mọi khẳng định ở đây phải đúng
+ * mãi mãi khi nghiệp vụ lớn lên.
+ */
 const env = Object.fromEntries(
   fs.readFileSync('.env', 'utf8')
     .split(/\r?\n/)
@@ -22,24 +36,26 @@ async function main() {
   };
 
   console.log('=== TOAN VEN ===');
+  // KHÔNG gắn con số: danh mục/đơn/tồn lớn dần theo thời gian, gắn số ⇒ báo đỏ
+  // giả. Chỉ kiểm tra thứ KHÔNG được xảy ra.
   const n = await q(`SELECT COUNT(*) n FROM editions`);
-  check(Number(n[0].n) === 88, `88 ấn bản (thực tế ${n[0].n})`);
-  const o = await q(`SELECT COUNT(*) n FROM orders`);
-  check(Number(o[0].n) === 22, `22 đơn còn nguyên (thực tế ${o[0].n})`);
+  check(Number(n[0].n) > 0, `danh mục ấn bản không rỗng (thực tế ${n[0].n})`);
   const w = await q(`SELECT COUNT(*) n FROM works`);
-  check(Number(w[0].n) === 87, `87 tác phẩm (thực tế ${w[0].n})`);
-  const sb = await q(`SELECT COUNT(*) n FROM stock_balances`);
-  // 405 bản ghi cũ + 7 sách mới × 5 kho = 35 ⇒ 440. Trước đây tôi assert 405 và
-  // báo FAIL dù dữ liệu ĐÚNG — số bản ghi tăng chính là do 7 sách mới.
-  check(Number(sb[0].n) === 440, `440 bản ghi tồn kho (405 cũ + 7 sách mới × 5 kho) — thực tế ${sb[0].n}`);
+  check(Number(w[0].n) > 0, `danh mục tác phẩm không rỗng (thực tế ${w[0].n})`);
   const neg = await q(`SELECT COUNT(*) n FROM stock_balances WHERE physical_quantity < 0`);
   check(Number(neg[0].n) === 0, `0 tồn kho âm (thực tế ${neg[0].n})`);
 
   console.log('\n=== KHOA NGOAI / THAM CHIEU ===');
   const fk = await q(`PRAGMA foreign_key_check`);
   check(fk.length === 0, `không vi phạm khoá ngoại (${fk.length})`);
+  // Dòng quà hàng hóa có `edition_id = NULL` CỐ Ý (quà áp sẵn theo chương
+  // trình, không phải ấn bản sách) — 95 dòng trên production. Check cũ quên
+  // điều này nên báo ĐỎ GIẢ ("95 mồ côi") trên chính dữ liệu đúng. Chỉ dòng
+  // CÓ `edition_id` mà trỏ vào ấn bản không tồn tại mới là mồ côi thật.
   const orphan = await q(
-    `SELECT COUNT(*) n FROM order_items i LEFT JOIN editions e ON e.id = i.edition_id WHERE e.id IS NULL`
+    `SELECT COUNT(*) n FROM order_items i
+       LEFT JOIN editions e ON e.id = i.edition_id
+      WHERE i.edition_id IS NOT NULL AND e.id IS NULL`
   );
   check(Number(orphan[0].n) === 0, `order_items không mồ côi (${orphan[0].n})`);
   const dup = await q(`SELECT code, COUNT(*) n FROM editions GROUP BY code HAVING n > 1`);
@@ -53,25 +69,79 @@ async function main() {
     `SELECT COUNT(*) n FROM editions WHERE code GLOB 'H[0-7][0-9]'`
   );
   check(Number(oldCodes[0].n) === 0, `không còn mã cũ H01–H79 (thực tế còn ${oldCodes[0].n})`);
-  const newBooks = await q(`SELECT COUNT(*) n FROM editions WHERE code GLOB 'H8[2-8]'`);
-  check(Number(newBooks[0].n) === 7, `đủ 7 sách mới H82–H88 (thực tế ${newBooks[0].n})`);
-  const t34 = await q(`SELECT code, title FROM editions WHERE code IN ('HH001','TP0006','TP105')`);
-  check(t34.length === 3, `mã mới HH001/TP0006/TP105 tồn tại (${t34.length})`);
   const t34b = await q(`SELECT COUNT(*) n FROM editions WHERE id = 'ed-h01'`);
   check(Number(t34b[0].n) === 1, `ed-h01 vẫn giữ nguyên id (đơn cũ không đứt liên kết)`);
 
   console.log('\n=== ISBN ===');
-  // H85 "Đốt kho" TRÙNG tựa với TP104 và có ISBN 14 số. User nói "tạm thời cho
-  // phép trùng" nên giữ nguyên, KHÔNG tự bịa số. Ghi rõ để không quên.
-  const badIsbn = await q(
-    `SELECT code, isbn FROM editions WHERE isbn NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'`
-  );
-  const expectedLeft = badIsbn.length === 1 && (badIsbn[0] as any).code === 'H85';
+  // 1. SAI CHỈNH SỐ KIỂM / sai độ dài ⇒ ĐỎ, trừ mã trong `ISBN_EXEMPTIONS`
+  // (mỗi mục ghi rõ lý do). H85 "Đốt kho" là mã 14 số, chủ bảo bỏ qua 03/10/2026
+  // — KHÔNG tự bịa số thay cho NXB.
+  const allIsbn = await q(`SELECT code, isbn FROM editions WHERE isbn IS NOT NULL`);
+  const badIsbn = (allIsbn as any[]).filter((r) => isbnBlockReason(r.isbn));
   check(
-    expectedLeft,
-    `chỉ còn đúng 1 ISBN chưa chuẩn (H85, chờ user) — thực tế ${badIsbn.length}`
+    badIsbn.length === 0,
+    `mọi ISBN đều 13 số + số kiểm khớp (trừ danh sách miễn) — thực tế ${badIsbn.length} lỗi`
   );
-  badIsbn.slice(0, 5).forEach((r: any) => console.log(`        ${r.code} = '${r.isbn}'`));
+  for (const r of badIsbn.slice(0, 10)) {
+    console.log(`        ${r.code} = '${r.isbn}' — ${isbnBlockReason(r.isbn)}`);
+  }
+  // Danh sách miễn phải "còn sống": mỗi mã miễn phải thật sự tồn tại trong DB,
+  // nếu không thì miễn đó chỉ là dòng chết che mất một lỗi sắp xảy ra.
+  for (const isbn of Object.keys(ISBN_EXEMPTIONS)) {
+    const hit = (allIsbn as any[]).filter((r) => r.isbn === isbn);
+    check(hit.length > 0, `mã miễn ${isbn} còn tồn tại trong danh mục (${hit.map((h) => h.code).join('/') || 'KHÔNG — miễn đã chết'})`);
+  }
+
+  // 2. TRÙNG ISBN — hợp lệ (NXB tái bản chung mã) nên KHÔNG chặn, nhưng cặp mới
+  //    xuất hiện thì ĐỎ: có nghĩa là ai đó vừa nhập trùng mà không biết.
+  const dupIsbn = await q(
+    `SELECT isbn, COUNT(*) n FROM editions WHERE isbn IS NOT NULL GROUP BY isbn HAVING n > 1`
+  );
+  for (const row of dupIsbn as any[]) {
+    const reason = isbnDuplicateReason(row.isbn);
+    check(
+      Boolean(reason),
+      reason
+        ? `ISBN trùng đã xác minh: ${row.isbn} x${row.n}`
+        : `ISBN trùng CHƯA TỪNG BIẾT ${row.isbn} x${row.n} — cần xác minh rồi ghi lý do vào ISBN_DUPLICATE_EXEMPTIONS`
+    );
+  }
+  for (const isbn of Object.keys(ISBN_DUPLICATE_EXEMPTIONS)) {
+    const hit = dupIsbn.find((d: any) => d.isbn === isbn);
+    if (!hit) {
+      console.log(`        ℹ️  ${isbn} đã nằm trong danh sách miễn nhưng DB không còn cặp trùng nào — xoá khỏi ISBN_DUPLICATE_EXEMPTIONS`);
+    }
+  }
+
+  // 3. DOANH SỐ TÁCH THEO ẤN BẢN (90 ngày). Đây là câu trả lời cho câu hỏi
+  //    "có nên tạo mặc định tĩnh cho ISBN trùng không?" — quyết bằng số liệu bán
+  //    hàng thật, không đoán. Ghi ra file để so sánh qua các kỳ hội chợ.
+  if (dupIsbn.length > 0) {
+    console.log('\n--- Doanh số 90 ngày, tách theo ấn bản (quyết định mặc định tĩnh) ---');
+    for (const row of dupIsbn as any[]) {
+      const reason = isbnDuplicateReason(row.isbn);
+      if (reason) console.log(`        miễn: ${reason}`);
+      const s = await q(
+        `SELECT e.code, e.publication_year, e.cover_price,
+                COALESCE(SUM(CASE WHEN o.status = 'COMPLETED'
+                                   AND o.created_at >= datetime('now','-90 days')
+                                  THEN i.quantity ELSE 0 END),0) qty,
+                COUNT(DISTINCT CASE WHEN o.status = 'COMPLETED'
+                                     AND o.created_at >= datetime('now','-90 days')
+                                    THEN o.id END) don
+           FROM editions e
+           LEFT JOIN order_items i ON i.edition_id = e.id
+           LEFT JOIN orders o ON o.id = i.order_id
+          WHERE e.isbn = ?
+          GROUP BY e.id
+          ORDER BY qty DESC`,
+        row.isbn
+      );
+      for (const r of s as any[]) {
+        console.log(`        ${row.isbn} · ${r.code} · ${r.publication_year} · ${r.cover_price}đ → ${r.qty} cuốn / ${r.don} đơn`);
+      }
+    }
+  }
 
   // isbnLast4 phải khớp 4 số cuối — quét mã vạch dựa vào cột này.
   const mismatch = await q(
