@@ -3098,7 +3098,7 @@ export function PosCheckoutTerminal({
             placeholder={
               isListening
                 ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
-                : 'Gõ 3 số cuối ISBN, tên sách hoặc mã…'
+                : 'Gõ 3 số cuối ISBN, tên sách, mã, chữ đầu…'
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -3184,7 +3184,7 @@ export function PosCheckoutTerminal({
               placeholder={
                 isListening
                   ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
-                  : 'Gõ 3 số cuối ISBN, tên hoặc mã…'
+                  : 'Gõ 3 số cuối ISBN, tên, mã, chữ đầu…'
               }
               className={`w-full pl-10 pr-44 py-3 bg-white border rounded-2xl text-sm font-medium outline-none shadow-sm min-h-[48px] transition-all ${
                 isListening
