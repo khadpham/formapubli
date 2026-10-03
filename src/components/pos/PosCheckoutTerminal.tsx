@@ -2856,12 +2856,9 @@ export function PosCheckoutTerminal({
 
   return (
     <div className="space-y-6">
-      {/* Mobile: panel sticky duy nhất chứa thông tin ca + điều khiển.
-          TRƯỚC: card "Top Header Controls" nằm riêng dưới đây, nhưng cả 2 child của nó
-          (tiêu đề `hidden md:block` và controls `${shiftPanelExpanded} md:flex`) đều bị ẩn
-          trên điện thoại => chỉ còn khung bo trắng rỗng. Nay card đó là `hidden md:flex`
-          và các controls nằm ngay trong panel sticky này, chỉ hiện khi panel mở. */}
-      <div className="md:hidden sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] z-30 -mx-3 px-3 pt-2 pb-1 bg-slate-50/95 backdrop-blur-md">
+      {/* Mobile: panel chọn kho nằm TRONG luồng, không sticky — chỉ thanh tìm kiếm mới nổi khi cuộn.
+          Card "Top Header Controls" là `hidden md:flex`; các controls nằm trong panel này, hiện khi mở. */}
+      <div className="md:hidden -mx-3 px-3 pt-2 pb-1">
         <button
           type="button"
           onClick={() => setShiftPanelExpanded((v) => !v)}
@@ -3040,8 +3037,8 @@ export function PosCheckoutTerminal({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Side: Search & Book Catalog Selection */}
         <div className="lg:col-span-7 space-y-3 md:space-y-4">
-          {/* Search Box with Voice Mic */}
-          <div ref={searchContainerRef} className="relative">
+          {/* Search Box with Voice Mic — STICKY: thứ NỔI khi cuộn danh mục, không phải nút chọn kho. Offset bằng chiều cao header app. */}
+          <div ref={searchContainerRef} className="sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] md:top-[max(4rem,calc(2.75rem_+_env(safe-area-inset-top)))] z-20">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-5 h-5" />
             </div>

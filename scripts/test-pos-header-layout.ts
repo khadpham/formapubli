@@ -21,11 +21,23 @@ function check(label: string, fn: () => void) {
 
 const slice = (from: number, to: number) => content.slice(from, to);
 
-const stickyIdx = content.indexOf('md:hidden sticky top-[max(3.5rem');
+// Panel chọn kho trên mobile phải NẰM TRONG luồng (KHÔNG sticky). Chỉ thanh tìm kiếm
+// mới được nổi khi cuộn. (Người dùng yêu cầu 2026-10-03.)
+const mobilePanelIdx = content.indexOf('panel chọn kho nằm TRONG luồng');
 const cardIdx = content.indexOf('hidden md:flex bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row');
+const searchStickyIdx = content.indexOf('sticky top-[max(3.5rem');
 
-check('mobile sticky panel exists', () => {
-  assert(stickyIdx > -1, 'sticky mobile panel (md:hidden sticky top-[max(3.5rem...) not found');
+check('mobile warehouse panel exists and is NOT sticky', () => {
+  assert(mobilePanelIdx > -1, 'mobile warehouse panel (panel chọn kho …) not found');
+  const divIdx = content.indexOf('<div', mobilePanelIdx);
+  const openTag = content.slice(divIdx, content.indexOf('>', divIdx));
+  assert(!openTag.includes('sticky'), 'nút chọn kho KHÔNG được sticky — thứ nổi phải là search bar');
+});
+
+check('POS search bar IS sticky (the floating element)', () => {
+  assert(searchStickyIdx > -1, 'search container must be sticky (sticky top-[max(3.5rem...) not found)');
+  const searchTag = content.slice(Math.max(0, searchStickyIdx - 260), searchStickyIdx + 120);
+  assert(searchTag.includes('searchContainerRef'), 'sticky search wrapper must be the searchContainerRef element');
 });
 
 // ---------------------------------------------------------------------------
@@ -57,16 +69,16 @@ check('controls are extracted into a single shared element', () => {
   assert(firstMount !== lastMount, 'posHeaderControls must be mounted in two places: mobile sticky panel and desktop card');
 });
 
-check('first posHeaderControls mount is inside the mobile sticky panel', () => {
+check('first posHeaderControls mount is inside the mobile warehouse panel', () => {
   assert(cardIdx > -1, 'desktop header card not found');
   assert(
-    firstMount > stickyIdx && firstMount < cardIdx,
-    `mobile controls mount (char ${firstMount}) must sit between the sticky panel (${stickyIdx}) and the desktop card (${cardIdx})`,
+    firstMount > mobilePanelIdx && firstMount < cardIdx,
+    `mobile controls mount (char ${firstMount}) must sit between the mobile panel (${mobilePanelIdx}) and the desktop card (${cardIdx})`,
   );
 });
 
 check('mobile controls render only when shiftPanelExpanded', () => {
-  const mobileRegion = slice(stickyIdx, cardIdx);
+  const mobileRegion = slice(mobilePanelIdx, cardIdx);
   assert(
     /shiftPanelExpanded && \(/.test(mobileRegion) && mobileRegion.includes(controlsMount),
     'inside the mobile sticky panel the controls must be rendered behind a `shiftPanelExpanded && (...)` guard',
@@ -74,7 +86,7 @@ check('mobile controls render only when shiftPanelExpanded', () => {
 });
 
 check('collapsed mobile state renders no card/frame at all', () => {
-  const mobileRegion = slice(stickyIdx, cardIdx);
+  const mobileRegion = slice(mobilePanelIdx, cardIdx);
   const cardishFrames = mobileRegion.match(/bg-white rounded-2xl border border-slate-200\/80 shadow-sm p-3/g) ?? [];
   assert(
     cardishFrames.length === 1,
