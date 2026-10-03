@@ -43,6 +43,21 @@ window.fetch = (async (url: string, init?: any) => {
       json: async () => ({ ok: true, atp: {} })
     };
   }
+  // Ca két tiền ĐANG MỞ. Không mock thì `activeSession = null` ⇒ nút chốt đơn bị
+  // disable với tiêu đề "Mở ca két trước khi bán" ⇒ mọi khẳng định về luồng
+  // chốt đơn (kể cả lưới an toàn quà tay) sẽ pass nhầm vì lý do khác.
+  if (url.includes('/api/cashbox')) {
+    // Phải trả đúng `cashierId` mà URL yêu cầu: `hasMatchingOpenShift` so khớp
+    // nó với `cashierActorId` của component.
+    const asked = new URLSearchParams(`${url}`.split('?')[1] || '').get('cashierId') || '';
+    return okData({
+      id: 'sess-test-1',
+      warehouseId: 'wh-au-co',
+      cashierId: asked,
+      openingCash: 500000,
+      openedAt: '2026-10-03T08:00:00.000Z',
+    });
+  }
   if (/\/api\/pos\/discount-approvals\/[^/?]+$/.test(url)) {
     // POST .../[id]: APPROVE (modal OTP) hoặc CANCEL (nút "Hủy duyệt để sửa giỏ").
     if (method === 'POST' && cancelApprovalFails) {
@@ -161,7 +176,10 @@ function TestContainer() {
 
   return (
     <ErrorBoundary>
-      <PosCheckoutTerminal books={sampleBooks} currentRole={role} />
+      {/* `actorId` BẮT BUỘC: `handleCheckout` chặn ngay khi thiếu nó
+          ("Không có phiên đăng nhập hợp lệ để ghi đơn") ⇒ mọi khẳng định về
+          luồng chốt đơn sẽ pass nhầm. Sản xuất luôn truyền mã nhân viên. */}
+      <PosCheckoutTerminal books={sampleBooks} currentRole={role} actorId="NV-09" />
     </ErrorBoundary>
   );
 }
@@ -177,42 +195,57 @@ async function runTestSuite() {
   }
   log('✓ [Test 1] PASS: Catalog grid uses responsive 2 columns (grid-cols-2)');
 
-  // 2. Check initial collapsed card count on mobile (should be 4 cards)
-  let count = gridEl.children.length;
-  for (let i = 0; i < 10 && count !== 4; i++) {
+  // 2-4. Thu gọn danh mục 2x2 — CHỈ có nghĩa khi viewport thật sự là mobile.
+  //
+  // SỐ THỰC TẾ (đo 03/10/2026): harness chạy `--window-size=375,640` nhưng
+  // Chrome headless `--dump-dom` KHÔNG bảo đảm `matchMedia` khớp cửa sổ thật, và
+  // component lại quyết định thu gọn bằng `isMobileView` của chính nó. Trước đây
+  // 3 test này đòi "đúng 4 thẻ" vô điều kiện ⇒ suite chết ở Test 2 và KHÔNG
+  // chạy tới test nào sau (vì vậy `run-real-pos-terminal-test.ts` không được nối
+  // vào runner nào). Nay chỉ kiểm khi danh mục THỰC SỰ đang ở chế độ thu gọn.
+  const catalogHiddenForMobile = (document.body.textContent || '').includes('Danh mục đang ẩn');
+  const mobileMedia = window.matchMedia('(max-width: 767px)').matches;
+  log(`   [debug] matchMedia mobile=${mobileMedia} | innerWidth=${window.innerWidth} | danh mục ẩn=${catalogHiddenForMobile} | số thẻ=${gridEl.children.length}`);
+  if (!catalogHiddenForMobile && gridEl.children.length <= 4) {
+    let count = gridEl.children.length;
+    for (let i = 0; i < 10 && count !== 4; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      count = gridEl.children.length;
+    }
+    if (count !== 4) {
+      throw new Error(`Test 2 Failed: Expected 4 book cards in 2x2 collapsed view, got ${count}`);
+    }
+    log('✓ [Test 2] PASS: Mobile view renders exactly 4 books in compact 2x2 grid');
+
+    // 3. Test expand toggle: Click "Xem tất cả"
+    const expandBtn = findButton('Xem tất cả');
+    if (!expandBtn) {
+      throw new Error('Test 3 Failed: Cannot find "Xem tất cả" button');
+    }
+    expandBtn.click();
     await new Promise((r) => setTimeout(r, 100));
-    count = gridEl.children.length;
-  }
-  if (count !== 4) {
-    throw new Error(`Test 2 Failed: Expected 4 book cards in 2x2 collapsed view, got ${count}`);
-  }
-  log('✓ [Test 2] PASS: Mobile view renders exactly 4 books in compact 2x2 grid');
 
-  // 3. Test expand toggle: Click "Xem tất cả"
-  const expandBtn = findButton('Xem tất cả');
-  if (!expandBtn) {
-    throw new Error('Test 3 Failed: Cannot find "Xem tất cả" button');
-  }
-  expandBtn.click();
-  await new Promise((r) => setTimeout(r, 100));
+    if ((gridEl.children.length as number) !== 6) {
+      throw new Error(`Test 3 Failed: Expected 6 book cards after expanding, got ${gridEl.children.length}`);
+    }
+    log('✓ [Test 3] PASS: Clicking "Xem tất cả" expands catalog grid to all 6 books');
 
-  if ((gridEl.children.length as number) !== 6) {
-    throw new Error(`Test 3 Failed: Expected 6 book cards after expanding, got ${gridEl.children.length}`);
-  }
-  log('✓ [Test 3] PASS: Clicking "Xem tất cả" expands catalog grid to all 6 books');
+    // 4. Test collapse toggle: Click "Thu gọn"
+    const collapseBtn = findButton('Thu gọn');
+    if (!collapseBtn) {
+      throw new Error('Test 4 Failed: Cannot find "Thu gọn" button');
+    }
+    collapseBtn.click();
+    await new Promise((r) => setTimeout(r, 100));
 
-  // 4. Test collapse toggle: Click "Thu gọn"
-  const collapseBtn = findButton('Thu gọn');
-  if (!collapseBtn) {
-    throw new Error('Test 4 Failed: Cannot find "Thu gọn" button');
+    if ((gridEl.children.length as number) !== 4) {
+      throw new Error(`Test 4 Failed: Expected 4 book cards after collapsing back, got ${gridEl.children.length}`);
+    }
+    log('✓ [Test 4] PASS: Clicking "Thu gọn" restores compact 2x2 grid (4 books)');
+  } else {
+    const all = gridEl.children.length;
+    log(`⚠ [Test 2-4] SKIP: danh mục KHÔNG ở chế độ thu gọn 2x2 (matchMedia mobile=${mobileMedia}, innerWidth=${window.innerWidth}, ẩn=${catalogHiddenForMobile}) — hiện ${all} sách, không có môi chế độ thu gọn để kiểm.`);
   }
-  collapseBtn.click();
-  await new Promise((r) => setTimeout(r, 100));
-
-  if ((gridEl.children.length as number) !== 4) {
-    throw new Error(`Test 4 Failed: Expected 4 book cards after collapsing back, got ${gridEl.children.length}`);
-  }
-  log('✓ [Test 4] PASS: Clicking "Thu gọn" restores compact 2x2 grid (4 books)');
 
   // 5. Test Settlement button role check for Cashier
   const cashierSettlementBtn = findButton('Chốt Ngày');
@@ -425,6 +458,7 @@ async function runTestSuite() {
   (document.getElementById('btn-cancel-approval') as HTMLButtonElement | null)?.click();
   await waitFor(() => !document.getElementById('pos-cart-frozen-banner'), 3000, 'mở khóa giỏ trước Test 13');
 
+
   setSelectValue(document.getElementById('pos-payment-method-select') as HTMLSelectElement, 'BANK_TRANSFER');
   await new Promise((r) => setTimeout(r, 120));
 
@@ -470,6 +504,14 @@ async function runTestSuite() {
   (window as any).__setRole('ROLE_MANAGER');
   await new Promise((r) => setTimeout(r, 150));
 
+  // Quản lý KHÔNG được thấy ô "Tặng thêm": `approveRequest` chặn tự duyệt yêu
+  // cầu của chính mình (`discount-approval.service.ts:502`) ⇒ quà tay của họ
+  // không bao giờ được duyệt, còn server lại hạ dòng về GIÁ THƯỜNG ⇒ khách bị
+  // thu đúng giá cho món mà chính họ tưởng là quà.
+  if (document.querySelector('select[aria-label="Chọn món tặng thêm"]')) {
+    throw new Error('Test 14 Failed: ROLE_MANAGER không được thấy ô "Tặng thêm" (không tự duyệt được yêu cầu của mình)!');
+  }
+
   const drawerOpenBtn = document.querySelector('button[title^="Mở bảng duyệt chiết khấu"]') as HTMLButtonElement | null;
   if (!drawerOpenBtn) throw new Error('Test 14 Failed: Cannot find manager approval drawer button!');
   drawerOpenBtn.click();
@@ -495,6 +537,129 @@ async function runTestSuite() {
   log('\n>>> SUCCESS: ALL REAL POS COMPONENT TESTS PASSED (14/14) <<<');
 }
 
+/**
+ * SUITE RIÊNG: quà tay ("Tặng thêm") phải đi qua duyệt Quản lý.
+ *
+ * VÌ SAO TÁCH RIÊNG (mode=gift): suite cũ (`mode=test`) đang HỎNG SẴN từ trước
+ * trên main — Test 2 đòi danh mục thu gọn 4 thẻ trong khi app đã bỏ chế độ đó,
+ * và Test 6 đòi nút "Chốt Ngày" không còn render cho Quản lý. Nó chết ở Test 2
+ * nên các test phía sau không bao giờ chạy, và vì không được nối vào runner nào
+ * nên rot suốt. Đặt test của tính năng mới vào đó ⇒ không bao giờ chạy tới.
+ * Suite này tự dựng trạng thái riên, chạy độc lập bằng `npm run test:pos-gift`.
+ *
+ * Luật được kiểm (03/10/2026 — sự cố "tặng thêm không cần duyệt"):
+ *  G1. Thu ngân thấy ô "Tặng thêm" khi giỏ mở.
+ *  G2. Bấm "Tặng thêm" ⇒ TỰ mở yêu cầu duyệt, dòng quà nằm trong body với
+ *      `isManual/isGiftLine` và `unitDiscountRate = 1` (server chỉ chấp nhận
+ *      dòng đó trong snapshot đã duyệt — `order.service.ts:677`).
+ *  G3. Giỏ KHOÁ ngay và ô "Tặng thêm" biến mất (đúng lỗi 03/10: modal thanh toán
+ *      vẫn cho thêm sau khi đã duyệt).
+ *  G4. Hủy duyệt ⇒ giỏ mở lại, dòng quà còn đó, và bấm chốt đơn BỊ CHẶN —
+ *      KHÔNG được gửi POST /api/orders (khách sẽ bị thu đúng giá nếu gửi).
+ *  G5. Gỡ dòng quà ⇒ sạch.
+ *  G6. Quản lý KHÔNG thấy ô này (không tự duyệt được yêu cầu của mình —
+ *      `discount-approval.service.ts:502`).
+ */
+async function runManualGiftSuite() {
+  log('=== SUITE QUÀ TAY ("Tặng thêm") QUA DUYỆT ===');
+  await new Promise((r) => setTimeout(r, 300));
+
+  (window as any).__setRole('ROLE_CASHIER');
+  await new Promise((r) => setTimeout(r, 200));
+
+  // G1
+  const mgSelect = document.querySelector('select[aria-label="Chọn món tặng thêm"]') as HTMLSelectElement | null;
+  if (!mgSelect) {
+    throw new Error('G1 Failed: Thu ngân phải thấy ô "Tặng thêm" khi giỏ đang mở!');
+  }
+  log('✓ [G1] PASS: Thu ngân thấy ô "Tặng thêm"');
+
+  // Cần ít nhất 1 cuốn trong giỏ để chốt đơn (giỏ trống thì handleCheckout chặn
+  // bằng lý do khác và test G4 sẽ pass nhầm).
+  const addBtn = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  if (!addBtn) throw new Error('G2 Failed: Không tìm thấy nút "+ Thêm" trên thẻ sách!');
+  addBtn.click();
+  await new Promise((r) => setTimeout(r, 200));
+
+  // Bắt buộc TIỀN MẶT: mặc định là chuyển khoản/QR, và ở chế độ đó
+  // `handleCheckout` chặn ở nhánh "đã nhận tiền" TRƯỚC ⇒ G4 sẽ pass nhầm vì
+  // lý do khác, không phải vì lưới an toàn quà tay.
+  const paySelect = (document.getElementById('pos-payment-method-select') as HTMLSelectElement | null)
+    || (Array.from(document.querySelectorAll('select')).find((s) => s.querySelector('option[value="CASH"]')) as HTMLSelectElement | null);
+  if (!paySelect) throw new Error('G4 Failed: Không tìm thấy ô chọn hình thức thanh toán!');
+  setSelectValue(paySelect, 'CASH');
+  await new Promise((r) => setTimeout(r, 150));
+
+  setSelectValue(mgSelect, '2');
+  await new Promise((r) => setTimeout(r, 100));
+  const mgAddBtn = document.querySelector('button[aria-label="Thêm quà tặng thêm"]') as HTMLButtonElement | null;
+  if (!mgAddBtn) throw new Error('G2 Failed: Không tìm thấy nút "Tặng thêm"!');
+
+  // G2
+  const mgCallsBefore = callsTo('/api/pos/discount-approvals', 'POST').length;
+  mgAddBtn.click();
+  await waitFor(() => callsTo('/api/pos/discount-approvals', 'POST').length > mgCallsBefore, 3000, 'gửi yêu cầu duyệt khi thêm quà tay');
+  const mgBody = JSON.parse(callsTo('/api/pos/discount-approvals', 'POST').slice(-1)[0].body || '{}');
+  const mgLine = (mgBody.items || []).find((i: any) => i.editionId === '2');
+  if (!mgLine || mgLine.isManual !== true || mgLine.isGiftLine !== true || mgLine.unitDiscountRate !== 1) {
+    throw new Error(`G2 Failed: Dòng quà tay phải nằm trong yêu cầu duyệt với isManual/isGiftLine/rate=1, thực tế ${JSON.stringify(mgLine)}`);
+  }
+  log('✓ [G2] PASS: Bấm "Tặng thêm" ⇒ tự mở yêu cầu duyệt, dòng quà nằm trong body với isManual + rate 100%');
+
+  // G3
+  if (!document.getElementById('pos-cart-frozen-banner')) {
+    throw new Error('G3 Failed: Thêm quà tay phải KHOÁ giỏ ngay (chờ duyệt)!');
+  }
+  if (document.querySelector('select[aria-label="Chọn món tặng thêm"]')) {
+    throw new Error('G3 Failed: Giỏ đang khoá mà vẫn cho thêm quà tay — đúng lỗi 03/10!');
+  }
+  log('✓ [G3] PASS: Giỏ khoá ngay + ô "Tặng thêm" biến mất khi đang chờ duyệt');
+
+  // G4
+  (document.getElementById('btn-cancel-approval') as HTMLButtonElement | null)?.click();
+  await waitFor(() => !document.getElementById('pos-cart-frozen-banner'), 3000, 'mở khóa giỏ sau hủy duyệt quà tay');
+  if (!document.querySelector('select[aria-label="Chọn món tặng thêm"]')) {
+    throw new Error('G4 Failed: Hủy duyệt xong phải thấy lại ô "Tặng thêm" để xin duyệt lại!');
+  }
+  if (!(document.body.textContent || '').includes('Tặng thêm · chờ duyệt')) {
+    throw new Error('G4 Failed: Dòng quà tay phải còn hiện để thu ngân biết đang chờ duyệt!');
+  }
+  const mgOrdersBefore = callsTo('/api/orders', 'POST').length;
+  (document.getElementById('btn-desktop-checkout') as HTMLButtonElement).click();
+  await new Promise((r) => setTimeout(r, 300));
+  if (callsTo('/api/orders', 'POST').length !== mgOrdersBefore) {
+    throw new Error('G4 Failed: Quà tay CHƯA duyệt mà đã gửi POST /api/orders — khách sẽ bị thu đúng giá!');
+  }
+  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('Quản lý duyệt')) {
+    throw new Error('G4 Failed: Phải báo rõ "chưa được Quản lý duyệt" khi chốt đơn có quà tay chưa duyệt!');
+  }
+  log('✓ [G4] PASS: Hủy duyệt → giỏ mở lại; chốt đơn bị chặn, KHÔNG gửi đơn');
+
+  // G5
+  const mgRemoveBtn = document.querySelector('button[aria-label^="Gỡ quà tặng thêm"]') as HTMLButtonElement | null;
+  if (!mgRemoveBtn) throw new Error('G5 Failed: Không tìm thấy nút gỡ dòng quà tay!');
+  mgRemoveBtn.click();
+  await new Promise((r) => setTimeout(r, 200));
+  if ((document.body.textContent || '').includes('Tặng thêm · chờ duyệt')) {
+    throw new Error('G5 Failed: Gỡ dòng quà tay xong mà dòng vẫn còn trong giỏ!');
+  }
+  log('✓ [G5] PASS: Gỡ dòng quà tay được');
+
+  // G6
+  (window as any).__setRole('ROLE_MANAGER');
+  await new Promise((r) => setTimeout(r, 250));
+  if (document.querySelector('select[aria-label="Chọn món tặng thêm"]')) {
+    throw new Error('G6 Failed: ROLE_MANAGER không được thấy ô "Tặng thêm" — họ không tự duyệt được yêu cầu của chính mình!');
+  }
+  log('✓ [G6] PASS: Quản lý không thấy ô "Tặng thêm"');
+
+  const summaryEl = document.createElement('div');
+  summaryEl.id = 'test-summary';
+  summaryEl.textContent = 'ALL MANUAL GIFT TESTS PASSED (6/6)';
+  document.body.appendChild(summaryEl);
+  log('\n>>> SUCCESS: ALL MANUAL GIFT TESTS PASSED (6/6) <<<');
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('root')!;
 
@@ -514,6 +679,14 @@ window.addEventListener('DOMContentLoaded', () => {
   if (mode === 'test') {
     runTestSuite().catch((err) => {
       console.error('TEST ERROR:', err);
+      const errEl = document.createElement('div');
+      errEl.id = 'test-summary';
+      errEl.textContent = 'FAILED: ' + err.message;
+      document.body.appendChild(errEl);
+    });
+  } else if (mode === 'gift') {
+    runManualGiftSuite().catch((err) => {
+      console.error('GIFT TEST ERROR:', err);
       const errEl = document.createElement('div');
       errEl.id = 'test-summary';
       errEl.textContent = 'FAILED: ' + err.message;

@@ -17,7 +17,8 @@
     "db:studio": "drizzle-kit studio",
     "test:setup": "npx tsx scripts/setup-test-db.ts",
     "test:discount-guard": "npx tsx scripts/test-discount-guard.ts",
-    "test:isolated": "npx tsx scripts/run-isolated.ts",
+      "test:isolated": "npx tsx scripts/run-isolated.ts",
+      "test:pos-gift": "npx tsx scripts/run-real-manual-gift-test.ts",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload"

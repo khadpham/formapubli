@@ -1779,23 +1779,40 @@ export function PosCheckoutTerminal({
     setDismissedGiftProductIds((prev) => new Set([...Array.from(prev), productId]));
   };
 
-  // ⛔ TẠM ẨN TOÀN BỘ "Tặng thêm" (03/10/2026, chủ doanh nghiệp yêu cầu ẩn).
+  // "Tặng thêm" (quà TAY): thu ngân tự chọn món ngoài chương trình, BẮT BUỘC
+  // đi qua duyệt Quản lý. Cờ tắt toàn bộ tính năng khi cần sửa lại luồng.
+  const MANUAL_GIFT_ENABLED = true;
+
+  // Ô "Tặng thêm" CHỈ hiện cho thu ngân, và chỉ khi giỏ không bị khoá.
   //
-  // LÝ DO (đã rà soát, không phải cảm tính):
-  //  1. `addManualGift` KHÔNG hề mở yêu cầu duyệt. Mọi đường mở
-  //     `isDiscountApprovalModalOpen` đều nằm trong `handleRequestDiscount`
-  //     (:1239) — mà hàm đó không được gọi bởi "Tặng thêm". ⇒ `manualGifts`
-  //     không bao giờ có `discountApprovalId` ⇒ server
-  //     (`order.service.ts:677`) hạ dòng về DÒNG THƯỜNG ⇒ KHÁCH BỊ THU ĐÚNG
-  //     GIÁ cho món mà thu ngân tin là quà. Chỉ ghi `isGiftClaimedRejected`
-  //     vào audit, không báo lỗi ra màn hình.
-  //  2. Nhãn "0 đ (sau duyệt)" nói dối: không có bước duyệt nào cả.
-  //  3. Modal "Chi tiết Đơn & Thanh toán" (:4939) vẫn hiện ô "Tặng thêm món…"
-  //     khi giỏ đã khoá/đã duyệt — thêm được sau khi duyệt là vô lý.
-  //  4. Giỏ không khoá sau duyệt vì không có duyệt cho quà tay.
+  // VÌ SAO KHÔNG CHO QUẢN LÝ/CHỦ QUẦY: `approveRequest` chặn tự phê duyệt
+  // yêu cầu của chính mình (`discount-approval.service.ts:502`). Quà tay của họ
+  // sẽ không bao giờ được duyệt, còn server thì hạ dòng chưa duyệt về GIÁ THƯỜNG
+  // ⇒ thu ngân tưởng tặng 0đ, khách bị thu đúng giá. Ẩn ô đi thành gọn hơn là
+  // để một cái bẫy tiền.
   //
-  // BẬT LẠI: đổi cờ này thành `true` — phải sửa cả 4 điểm trên, không chỉ cờ.
-  const MANUAL_GIFT_ENABLED = false;
+  // `isManagerOverride` KHÔNG được dùng ở đây: sau khi duyệt xong
+  // `onApproved` bật cờ đó (`:4748`), nên điều kiện có nó sẽ làm ô biến mất
+  // đúng lúc thu ngân còn cần thấy dòng quà đang chờ.
+  const canRequestManualGift = MANUAL_GIFT_ENABLED && currentRole === 'ROLE_CASHIER';
+  const showManualGiftUi = canRequestManualGift && !isInteractionLocked;
+
+  // Thêm quà tay ⇒ MỞ DUYỆT NGAY, không có đường nào khác.
+  //
+  // LÝ DO: server chỉ bán 0đ cho dòng nằm trong snapshot đã duyệt
+  // (`order.service.ts:677`). Trước đây `addManualGift` chỉ nhét dòng vào state,
+  // không mở modal duyệt ⇒ không có `discountApprovalId` ⇒ server hạ dòng về
+  // dòng thường và KHÁCH BỊ THU ĐÚNG GIÁ, trong khi màn hình ghi "0 đ (sau duyệt)".
+  //
+  // `pendingDiscountRate = 0` hợp lệ vì `createRequest` cho phép rate 0 khi đơn
+  // có ít nhất 1 dòng quà tay (`discount-approval.service.ts:248`). Giá trị này
+  // KHÔNG phải 0 của `discountRate` — nó chỉ là con số quản lý nhìn thấy.
+  const requestManualGiftApproval = () => {
+    setApprovalCancelError(null);
+    setPendingDiscountRate(discountRate > 0 ? discountRate : 0);
+    setIsApprovalPending(true);
+    setIsDiscountApprovalModalOpen(true);
+  };
 
   // Quà TAY ("Tặng thêm"): thu ngân tự chọn món ngoài chương trình. Không tự
   // bán 0đ được — phải đi qua duyệt quản lý (discountApprovalId); server chỉ
@@ -1811,6 +1828,7 @@ export function PosCheckoutTerminal({
       return [...prev, { editionId: book.id, quantity: 1 }];
     });
     setManualGiftPick('');
+    if (canRequestManualGift) requestManualGiftApproval();
   };
   const removeManualGift = (editionId: string) => {
     if (isInteractionLocked) return;
@@ -1943,6 +1961,17 @@ export function PosCheckoutTerminal({
       checkoutLockRef.current = false;
       setIsSubmitting(false);
       setErrorMessage('Đơn Tặng sách bắt buộc nhập lý do (ví dụ: Quà tặng sự kiện).');
+      return;
+    }
+    // ⛔ Lưới an toàn cuối cùng cho quà TAY. Đã có modal duyệt mở ngay khi thêm,
+    // nhưng một đường nào đó bỏ qua (duyệt bị từ chối, hủy duyệt, phiên cũ khôi
+    // phục) vẫn có thể chốt đơn có `manualGifts`. Server sẽ hạ dòng về giá
+    // thường ⇒ KHÁCH BỊ THU ĐÚNG GIÁ cho món mà thu ngân tin là quà, và không
+    // ai báo lỗi. Chặn ở đây thành chỉ báo rõ ràng.
+    if (manualGifts.length > 0 && !approvedDiscountRequestId) {
+      checkoutLockRef.current = false;
+      setIsSubmitting(false);
+      setErrorMessage('Còn quà tặng thêm chưa được Quản lý duyệt. Bấm "Tặng thêm" để xin duyệt lại, hoặc gỡ dòng quà.');
       return;
     }
     // Chuyển khoản/QR: KHÔNG chốt tiền trước. Tạo đơn PENDING trước, hiện QR theo
@@ -3704,8 +3733,8 @@ export function PosCheckoutTerminal({
               ))}
             </div>
 
-              {/* Quà TAY ("Tặng thêm") — ẨN, xem MANUAL_GIFT_ENABLED */}
-              {MANUAL_GIFT_ENABLED && manualGiftLines.map((g) => (
+              {/* Quà TAY ("Tặng thêm") — chỉ thu ngân, và ẩn khi giỏ đang khoá */}
+              {showManualGiftUi && manualGiftLines.map((g) => (
                 <div
                   key={`manual-${g.editionId}`}
                   className="p-2.5 rounded-xl bg-violet-50/70 border border-violet-200 flex items-center justify-between gap-2"
@@ -3728,7 +3757,7 @@ export function PosCheckoutTerminal({
                   </button>
                 </div>
               ))}
-              {MANUAL_GIFT_ENABLED && (
+              {showManualGiftUi && (
               <div className="flex items-stretch gap-1.5">
                 <select
                   value={manualGiftPick}
@@ -4956,7 +4985,7 @@ export function PosCheckoutTerminal({
                 ))}
               </div>
 
-                {MANUAL_GIFT_ENABLED && manualGiftLines.map((g) => (
+                {showManualGiftUi && manualGiftLines.map((g) => (
                   <div key={`manual-${g.editionId}`} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 bg-violet-50/60 rounded-lg px-1.5">
                     <div className="truncate flex-1 pr-2">
                       <span className="font-bold text-slate-800 truncate block">
@@ -4975,7 +5004,7 @@ export function PosCheckoutTerminal({
                     </button>
                   </div>
                 ))}
-                {MANUAL_GIFT_ENABLED && (
+                {showManualGiftUi && (
                 <div className="flex items-stretch gap-1.5 py-1">
                   <select
                     value={manualGiftPick}
@@ -5186,5 +5215,8 @@ export function PosCheckoutTerminal({
     </div>
   );
 }
+
+
+
 
 
