@@ -1,7 +1,7 @@
 # Spec: Overhaul tab Doanh Số & Sổ Kép (nguồn số liệu chung)
 
 - Ngày: 2026-10-02 · Phạm vi B mở rộng (tab Doanh Số + ExecutiveDashboard/digest, chung tầng dữ liệu)
-- Cách B (gom tầng dữ liệu chung trước) · Trạng thái: đã duyệt thiết kế, chờ plan
+- Cách B (gom tầng dữ liệu chung trước) · **Trạng thái 03/10: ĐÃ CÓ PLAN** — xem `docs/superpowers/plans/2026-10-02-doanh-so-overhaul-plan.md`. **Kiểm trạng thái thật bằng `git log`, không tin dòng này.**
 - Không đụng: đơn W (giữ PENDING), so chuỗi thô ở digest/query (latent, 0/117 dòng ảnh hưởng)
 
 ## 1. Vấn đề (bằng chứng)
