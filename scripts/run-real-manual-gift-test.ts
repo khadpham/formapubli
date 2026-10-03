@@ -35,7 +35,10 @@ fs.writeFileSync(
   <style>.font-mono { font-family: monospace; }</style>
 </head>
 <body class="bg-slate-100 p-2 text-slate-800">
-  <div id="root"></div>
+  <!-- p-3 khớp sản xuất: MasterAppShell bọc POS trong main.p-3, còn bên trong POS
+       có khối "-mx-3 px-3" cân bằng đúng lớp padding đó. Thiếu nó thì mọi phép đo
+       bề rộng trong suite này lệch 12px so với app thật. -->
+  <div id="root" class="p-3"></div>
   <div id="test-logs" style="font-family: monospace; white-space: pre-wrap; display: none;"></div>
   <script src="file:///${bundlePath.replace(/\\/g, '/')}"></script>
 </body>

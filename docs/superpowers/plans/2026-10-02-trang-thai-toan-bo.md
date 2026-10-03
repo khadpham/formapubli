@@ -785,3 +785,21 @@ vẫn cho thêm". Rà soát tìm ra **4 lỗi, trong đó lỗi 1 là lỗi MẤ
 - **Thu ngân mất thói quen tặng tay**: sau khi Quản lý duyệt xong, giỏ khoá và
   dòng quà không gỡ được nữa (đúng luật, nhưng cần báo lại thu ngân).
 - **Suite component POS cũ vẫn đỏ** ở Test 2/Test 6 — chưa sửa vì ngoài phạm vi.
+
+## 13. VỆ SINH TEST POS (04/10/2026, sau mục 12)
+
+Đã làm, **không đụng `src/`** ⇒ **không cần deploy**. Chi tiết ở
+`docs/superpowers/plans/2026-10-04-ve-sinh-test-pos.md`. Tóm tắt:
+
+- `scripts/run-isolated.ts` nay chạy **cả 2 suite component** (Chrome headless) sau
+  danh sách DB. `--list` liệt kê chúng. Thiếu Chrome ⇒ báo **BỎ QUA** (không đỏ),
+  trừ khi đặt `POS_REQUIRE_CHROME=1`.
+- Suite POS cũ **xanh 14/14 trở lại** sau 5 sửa đúng bản chất: nhãn nút
+  "Chốt Ngày"→"Báo Cáo Ngày", padding `p-3` của harness cho khớp `<main>` thật,
+  selector không phụ thuộc thứ tự DOM, thông báo lỗi hủy duyệt đã đổi, luồng
+  chuyển khoản giờ bắt **chụp ảnh** chứ không phải nút "Đã nhận tiền".
+- **Nguyên nhân rot gốc**: `--window-size=375,640` bị Chrome ép về 500px rồi đổi
+  lần nữa sau khi trang mount ⇒ `isMobileView` đảo giữa chừng ⇒ danh mục biến mất
+  ⇒ mọi test phía sau chết. Đã đổi sang cửa sổ cố định `--window-size=1280,900`.
+  Đây là loại lỗi mà người đọc log test không bao giờ đoán ra — nên giờ thông báo
+  lỗi của Test 7 in ra **thủ phạm cụ thể** thay vì chỉ nói "tràn ngang".

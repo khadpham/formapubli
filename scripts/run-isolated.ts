@@ -184,6 +184,28 @@ const ALL_SUITES = [
   'scripts/test-analytics-doanhso.ts',
 ];
 
+/**
+ * Suite kiểm thử COMPONENT TRÊN TRÌNH DUYỆT THẬT (Chrome headless + esbuild).
+ *
+ * VÌ SAO tách khỏi `ALL_SUITES` mà vẫn nối vào cùng runner: chúng không đụng DB
+ * (fetch bị chặn ngay trong page) nên không cần `DATABASE_URL`, nhưng chạy
+ * sau danh sách DB là an toàn nhất — và quan trọng hơn: **chúng phải nằm trong
+ * danh sách**, vì đó chính là nguyên nhân suite POS cũ chết âm thầm suốt thời
+ * gian qua (không ai gọi ⇒ không ai thấy đỏ ⇒ không ai sửa).
+ *
+ * Cần Google Chrome cài ở đường dẫn mặc định. Thiếu Chrome ⇒ runner báo cáo
+ * suite đó là BỎ QUA (không đánh dấu đỏ), vì đây là phụ thuộc môi trường, không
+ * phải lỗi code. Muốn ép chạy thì đặt `POS_REQUIRE_CHROME=1`.
+ */
+const BROWSER_SUITES = [
+  'scripts/run-real-manual-gift-test.ts',
+  'scripts/run-real-pos-terminal-test.ts',
+];
+
+function chromeInstalled(): boolean {
+  return fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe');
+}
+
 function suiteShortName(p: string): string {
   return path.basename(p, '.ts');
 }
@@ -201,8 +223,10 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.includes('--list')) {
-    console.log('Suites kiểm thử cách ly:');
+    console.log('Suites kiểm thử cách ly (DB):');
     for (const s of ALL_SUITES) console.log(` - ${suiteShortName(s)} (${s})`);
+    console.log('Suites kiểm thử component (Chrome headless, cần Google Chrome):');
+    for (const s of BROWSER_SUITES) console.log(` - ${suiteShortName(s)} (${s})`);
     return;
   }
 
@@ -211,15 +235,15 @@ async function main() {
   // phía sau vẫn chạy; cuối chuỗi liệt kê suite lỗi và exit code khác 0.
   // Mặc định chạy hết chuỗi rồi mới tổng kết. Xem vòng lặp bên dưới để biết vì sao.
   const stopFirst = args.includes('--stop-first');
-  const suites = onlyArg
-    ? ALL_SUITES.filter((s) =>
-        onlyArg
-          .slice('--only='.length)
-          .split(',')
-          .map((x) => x.trim())
-          .includes(suiteShortName(s))
-      )
-    : ALL_SUITES;
+  const onlyNames = onlyArg
+    ? onlyArg
+        .slice('--only='.length)
+        .split(',')
+        .map((x) => x.trim())
+    : null;
+  const picked = (list: string[]) =>
+    onlyNames ? list.filter((s) => onlyNames.includes(suiteShortName(s))) : list;
+  const suites = [...picked(ALL_SUITES), ...picked(BROWSER_SUITES)];
 
   if (suites.length === 0) {
     console.error(`⛔ --only không khớp suite nào. Dùng --list để xem danh sách.`);
@@ -239,6 +263,18 @@ async function main() {
   const failedSuites: { suite: string; status: number | null }[] = [];
   for (const suite of suites) {
     console.log(`\n▶ Chạy suite cách ly: ${suite}`);
+    const isBrowserSuite = BROWSER_SUITES.includes(suite);
+    if (isBrowserSuite && !chromeInstalled()) {
+      if (process.env.POS_REQUIRE_CHROME === '1') {
+        console.error(`❌ ${suite} cần Google Chrome nhưng không tìm thấy (POS_REQUIRE_CHROME=1).`);
+        failed = 1;
+        failedSuites.push({ suite, status: 1 });
+        if (stopFirst) break;
+        continue;
+      }
+      console.log(`⏩ BỎ QUA ${suite}: máy này không có Google Chrome ở đường dẫn mặc định.`);
+      continue;
+    }
     const isWin = process.platform === 'win32';
     const command = isWin ? 'cmd.exe' : 'npx';
     const cmdArgs = isWin ? ['/c', 'npx', 'tsx', suite] : ['tsx', suite];
@@ -256,12 +292,14 @@ async function main() {
       const clearArgs = isWin
         ? ['/c', 'npx', 'tsx', 'scripts/clear-login-buckets.ts']
         : ['tsx', 'scripts/clear-login-buckets.ts'];
+      if (!isBrowserSuite) {
       spawnSync(command, clearArgs, {
         cwd: process.cwd(),
         env: { ...process.env, DATABASE_URL: suiteDb },
         stdio: 'ignore',
         shell: false,
       });
+      }
     }
     // Một suite có thể CHẾT Ở TẦNG NATIVE (0xC0000005 ACCESS_VIOLATION) sau khi
     // đã in "PASS" — tiến trình bị Windows hạ giữa lúc thoát. Đây KHÔNG phải

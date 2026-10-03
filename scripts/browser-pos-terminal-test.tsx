@@ -247,22 +247,30 @@ async function runTestSuite() {
     log(`⚠ [Test 2-4] SKIP: danh mục KHÔNG ở chế độ thu gọn 2x2 (matchMedia mobile=${mobileMedia}, innerWidth=${window.innerWidth}, ẩn=${catalogHiddenForMobile}) — hiện ${all} sách, không có môi chế độ thu gọn để kiểm.`);
   }
 
-  // 5. Test Settlement button role check for Cashier
-  const cashierSettlementBtn = findButton('Chốt Ngày');
+  // 5. Nút báo cáo ngày phải khuất với thu ngân.
+  //
+  // TÊN NÚT ĐÃ ĐỔI có chủ ý: "Chốt Ngày" → "Báo Cáo Ngày". Nút này chỉ MỞ báo
+  // cáo read-only, ngày do máy chốt lúc 23:59 (`PosCheckoutTerminal.tsx:3013`).
+  // Ghi "Chốt Ngày" khiến người dùng tưởng đã chốt xong.
+  //
+  // LƯU Ý: trước đây test này tìm "Chốt Ngày" nên với ROLE_CASHIER luôn ra
+  // `null` ⇒ **pass xong vì tìm nhầm tên**, còn ROLE_MANAGER thì đỏ ⇒ cả suite
+  // chết. Đổi tên là đủ, và giờ phải so BẰNG TÊN ĐÚNG để test có nghĩa.
+  const cashierSettlementBtn = findButton('Báo Cáo Ngày');
   if (cashierSettlementBtn) {
-    throw new Error('Test 5 Failed: "Chốt Ngày" button must NOT be rendered for ROLE_CASHIER');
+    throw new Error('Test 5 Failed: nút "Báo Cáo Ngày" must NOT be rendered for ROLE_CASHIER');
   }
-  log('✓ [Test 5] PASS: "Chốt Ngày" button is strictly hidden for ROLE_CASHIER');
+  log('✓ [Test 5] PASS: nút "Báo Cáo Ngày" bị khuất với ROLE_CASHIER');
 
-  // 6. Switch role to ROLE_MANAGER and verify Settlement button renders
+  // 6. Switch role to ROLE_MANAGER and verify the settlement button renders
   (window as any).__setRole('ROLE_MANAGER');
   await new Promise((r) => setTimeout(r, 150));
 
-  const managerSettlementBtn = findButton('Chốt Ngày');
+  const managerSettlementBtn = findButton('Báo Cáo Ngày');
   if (!managerSettlementBtn) {
-    throw new Error('Test 6 Failed: "Chốt Ngày" button MUST be rendered for ROLE_MANAGER');
+    throw new Error('Test 6 Failed: nút "Báo Cáo Ngày" MUST be rendered for ROLE_MANAGER');
   }
-  log('✓ [Test 6] PASS: "Chốt Ngày" button correctly renders for ROLE_MANAGER');
+  log('✓ [Test 6] PASS: nút "Báo Cáo Ngày" hiện với ROLE_MANAGER');
 
   // 7. Measure horizontal overflow and right-edge bounds at 320px, 375px, 390px
   const rootEl = document.getElementById('root')!;
@@ -276,7 +284,25 @@ async function runTestSuite() {
     const scrollW = rootEl.scrollWidth;
     const clientW = rootEl.clientWidth;
     if (scrollW > clientW) {
-      throw new Error(`Test 7 Failed: Horizontal overflow detected at ${w}px! scrollWidth (${scrollW}) > clientWidth (${clientW})`);
+      // Báo rõ THỦ PHẠM. Nếu không, người sửa phải tự mò trong DOM rồi đoán —
+      // và kinh nghiệm 03/10 cho thấy chính vì thông báo chung chung này mà
+      // suite chết âm thầm, không ai sửa nổi.
+      const rootRect = rootEl.getBoundingClientRect();
+      const offenders = Array.from(rootEl.querySelectorAll<HTMLElement>('*'))
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { el, over: r.right - rootRect.right, w: r.width, right: r.right };
+        })
+        .filter((x) => x.over > 1)
+        .sort((a, b) => b.over - a.over)
+        .slice(0, 5)
+        .map(
+          (x) =>
+            `<${x.el.tagName.toLowerCase()} class="${String(x.el.className).slice(0, 60)}"> tràn ${Math.round(x.over)}px (r=${Math.round(x.right)})`
+        );
+      throw new Error(
+        `Test 7 Failed: tràn ngang ở ${w}px! scrollWidth=${scrollW} > clientWidth=${clientW}. Thủ phạm: ${offenders.join(' | ') || 'không xác định'}`
+      );
     }
 
     const cards = rootEl.querySelectorAll('.grid.grid-cols-2 > div');
@@ -310,7 +336,7 @@ async function runTestSuite() {
   (window as any).__setRole('ROLE_CASHIER');
   await new Promise((r) => setTimeout(r, 100));
 
-  const firstBookAddBtn = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  const firstBookAddBtn = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
   if (!firstBookAddBtn) {
     throw new Error('Test 9 Failed: Cannot find "+ Thêm" button on first book card!');
   }
@@ -389,7 +415,7 @@ async function runTestSuite() {
   // 11. CANCEL lỗi (409/timeout) -> giỏ VẪN khóa, không mở sớm (A1-F)
   log('\n--- Test 11: CANCEL API lỗi -> giỏ giữ khóa ---');
   (window as any).__setCancelApprovalFails(true);
-  const addBtn11 = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  const addBtn11 = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
   if (!addBtn11) throw new Error('Test 11 Failed: Cannot find "+ Thêm" button!');
   addBtn11.click();
   await new Promise((r) => setTimeout(r, 120));
@@ -403,8 +429,12 @@ async function runTestSuite() {
   if (!document.getElementById('pos-cart-frozen-banner')) {
     throw new Error('Test 11 Failed: CANCEL lỗi thì giỏ PHẢI còn khóa (không mở sớm)!');
   }
-  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('tải lại')) {
-    throw new Error('Test 11 Failed: Phải hiển thị lỗi từ server khi hủy thất bại!');
+  // Nội dung lỗi ĐÃ ĐỔI: câu "…tải lại…" không còn trong code. Test bám chữ
+  // ⇒ đỏ dù hành vi vẫn đúng. Bám vào BẢN CHẤT: phải có thông báo lỗi và phải
+  // nói rõ giữ nguyên trạng thái (tức là KHÔNG mở khoá giỏ).
+  const cancelErr11 = `${document.getElementById('pos-error-message')?.textContent || ''}`.trim();
+  if (!cancelErr11 || !cancelErr11.includes('hủy')) {
+    throw new Error(`Test 11 Failed: Phải hiển thị lỗi khi hủy thất bại, thực tế "${cancelErr11}"`);
   }
 
   (window as any).__setCancelApprovalFails(false);
@@ -414,7 +444,7 @@ async function runTestSuite() {
 
   // 12. Đã được Quản lý duyệt -> giỏ VẪN khóa (giữ đúng phê duyệt) nhưng ĐƯỢC chốt đơn
   log('\n--- Test 12: đã duyệt -> giỏ vẫn khóa, được phép chốt đơn ---');
-  const addBtn12 = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  const addBtn12 = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
   if (!addBtn12) throw new Error('Test 12 Failed: Cannot find "+ Thêm" button!');
   addBtn12.click();
   await new Promise((r) => setTimeout(r, 120));
@@ -464,23 +494,29 @@ async function runTestSuite() {
 
   const ordersBefore = callsTo('/api/orders', 'POST').length;
   const checkout13 = document.getElementById('btn-desktop-checkout') as HTMLButtonElement;
+
+  // LUỒNG ĐÃ ĐỔI (đo 04/10/2026). Bản cũ của test này đòi thông báo "Đã nhận
+  // tiền" rồi bấm `#btn-money-received` — nhưng POS **không còn** bước đó:
+  // chuyển khoản/QR giờ bắt CHỤP ẢNH xác nhận ngay
+  // (`PosCheckoutTerminal.tsx:2671` mở camera, nhãn nút là "Chụp ảnh xác nhận"),
+  // đơn tạo ở trạng thái chờ, và việc xác nhận đã nhận tiền nằm ở màn "Đơn Chờ"
+  // (`PendingOrdersView`), nằm NGOÀI component này. Nên test bám vào hành vi
+  // ĐANG CÓ, và bám vào thứ quan trọng: **chưa có ảnh thì không được tạo đơn**.
+  const digitalLabel = `${checkout13.textContent || ''}`.trim();
+  if (!digitalLabel.includes('Chụp ảnh')) {
+    throw new Error(`Test 13 Failed: nút chốt đơn chuyển khoản phải nói rõ cần chụp ảnh, thực tế "${digitalLabel}"`);
+  }
+
   checkout13.click();
   await new Promise((r) => setTimeout(r, 250));
   if (callsTo('/api/orders', 'POST').length !== ordersBefore) {
-    throw new Error('Test 13 Failed: Chưa xác nhận "Đã nhận tiền" thì KHÔNG được gửi POST /api/orders!');
+    throw new Error('Test 13 Failed: Chưa chụp ảnh xác nhận mà ĐÃ gửi POST /api/orders — đơn chờ tiền thật!');
   }
-  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('Đã nhận tiền')) {
-    throw new Error('Test 13 Failed: Phải báo yêu cầu xác nhận "Đã nhận tiền"!');
+  const captureInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+  if (!captureInput) {
+    throw new Error('Test 13 Failed: Không có ô chọn ảnh xác nhận — luồng chuyển khoản không mở được camera!');
   }
-
-  const moneyReceivedBtn = document.getElementById('btn-money-received') as HTMLButtonElement | null;
-  if (!moneyReceivedBtn) throw new Error('Test 13 Failed: Cannot find "#btn-money-received" toggle!');
-  moneyReceivedBtn.click();
-  await new Promise((r) => setTimeout(r, 100));
-
-  checkout13.click();
-  await waitFor(() => callsTo('/api/orders', 'POST').length > ordersBefore, 3000, 'gửi đơn sau khi xác nhận đã nhận tiền');
-  log('✓ [Test 13] PASS: Chuyển khoản/QR bắt buộc xác nhận tay "Đã nhận tiền" trước khi chốt đơn');
+  log('✓ [Test 13] PASS: Chuyển khoản/QR bắt buộc chụp ảnh xác nhận; chưa có ảnh thì KHÔNG tạo đơn');
 
   // 14. F4: Drawer Quản lý hiện cartSnapshot (giỏ đã khóa) của yêu cầu chờ duyệt
   log('\n--- Test 14: drawer Quản lý hiện cartSnapshot ---');
@@ -512,7 +548,9 @@ async function runTestSuite() {
     throw new Error('Test 14 Failed: ROLE_MANAGER không được thấy ô "Tặng thêm" (không tự duyệt được yêu cầu của mình)!');
   }
 
-  const drawerOpenBtn = document.querySelector('button[title^="Mở bảng duyệt chiết khấu"]') as HTMLButtonElement | null;
+  // Nhãn `title` của nút đã đổi: "Mở bảng duyệt chiết khấu" → "Duyệt chiết khấu
+  // POS — …" (PosCheckoutTerminal.tsx:3283). Selector cũ ⇒ không tìm thấy nút.
+  const drawerOpenBtn = document.querySelector('button[title^="Duyệt chiết khấu POS"]') as HTMLButtonElement | null;
   if (!drawerOpenBtn) throw new Error('Test 14 Failed: Cannot find manager approval drawer button!');
   drawerOpenBtn.click();
   await waitFor(() => !!document.getElementById('btn-view-cart-req-drawer-1'), 4000, 'nút xem giỏ trong drawer');
@@ -576,7 +614,7 @@ async function runManualGiftSuite() {
 
   // Cần ít nhất 1 cuốn trong giỏ để chốt đơn (giỏ trống thì handleCheckout chặn
   // bằng lý do khác và test G4 sẽ pass nhầm).
-  const addBtn = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+  const addBtn = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
   if (!addBtn) throw new Error('G2 Failed: Không tìm thấy nút "+ Thêm" trên thẻ sách!');
   addBtn.click();
   await new Promise((r) => setTimeout(r, 200));
@@ -697,7 +735,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   } else if (mode === 'sheet') {
     setTimeout(() => {
-      const addBtn = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+      const addBtn = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
       if (addBtn) addBtn.click();
       setTimeout(() => {
         const floatBtn = document.getElementById('btn-open-mobile-checkout-sheet');
@@ -706,7 +744,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, 250);
   } else if (mode === 'frozen') {
     setTimeout(() => {
-      const addBtn = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+      const addBtn = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
       if (addBtn) addBtn.click();
       setTimeout(() => {
         const giftBtn = findButton('100%');
@@ -715,7 +753,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, 250);
   } else if (mode === 'payment-qr') {
     setTimeout(() => {
-      const addBtn = document.querySelector('.grid.grid-cols-2 button[aria-label^="Thêm"]') as HTMLButtonElement | null;
+      const addBtn = document.querySelector('button[aria-label*="vào giỏ"]') as HTMLButtonElement | null;
       if (addBtn) addBtn.click();
       setTimeout(() => {
         const select = (document.getElementById('pos-payment-method-select') as HTMLSelectElement | null);
@@ -727,3 +765,4 @@ window.addEventListener('DOMContentLoaded', () => {
     }, 250);
   }
 });
+

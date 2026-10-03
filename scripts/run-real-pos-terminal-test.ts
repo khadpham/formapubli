@@ -33,7 +33,12 @@ const htmlContent = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-slate-100 p-2 sm:p-4 text-slate-800 antialiased min-h-screen">
-  <div id="root"></div>
+  <!-- p-3 là BẮT BUỘC và phải giống hệt sản xuất: MasterAppShell.tsx:355 bọc POS
+       trong main.p-3. Bên trong POS có khối "-mx-3 px-3" (âm 12px rồi padding 12px)
+       để CÂN BẰNG đúng lớp padding đó. Harness mount vào div trần ⇒ mất 12px đệm
+       ⇒ đo ra "tràn ngang 12px" ở mọi khung 320/375/390px ⇒ Test 7 đỏ vì LÝ DO GIẢ.
+       Sửa đúng chỗ là thêm padding vào harness, KHÔNG sửa component. -->
+  <div id="root" class="p-3"></div>
   <div id="test-logs" style="font-family: monospace; white-space: pre-wrap; display: none;"></div>
   <script src="file:///${bundlePath.replace(/\\/g, '/')}"></script>
 </body>
@@ -41,7 +46,20 @@ const htmlContent = `<!DOCTYPE html>
 fs.writeFileSync(htmlPath, htmlContent, 'utf8');
 
 console.log('3. Running automated tests on REAL PosCheckoutTerminal inside Chrome Headless...');
-const testCmd = `"${chromePath}" --headless=new --no-sandbox --disable-gpu --run-all-compositor-stages-before-draw --window-size=375,640 --virtual-time-budget=6000 --dump-dom "file:///${htmlPath.replace(/\\/g, '/')}?mode=test"`;
+// Cửa sổ CỐ ĐỊNH, và phải RỘNG.
+//
+// VÌ SAO: trước đây là `--window-size=375,640`. Chrome headless `--dump-dom` ép
+// cửa sổ về 500px và **đổi kích thước một lần nữa sau khi trang đã mount** (CDN
+// Tailwind + font tải xong mới layout). `PosCheckoutTerminal` nghe
+// `matchMedia('(max-width: 767px)')` để quyết định `isMobileView`, nên nó đọc
+// `false` lúc mount rồi `true` sau đó ⇒ danh mục **biến mất giữa chừng suite**,
+// các test phía sau chết. Test 2 in ra `matchMedia mobile=true` trong khi
+// component vẫn đang ở chế độ desktop — đúng dấu hiệu race này.
+//
+// 1280px là viewport desktop ổn định: danh mục luôn hiện, không phụ thuộc thứ tự
+// thời gian. Các khẳng định THUỘC MOBILE (danh mục thu gọn 2×2) tự báo skip
+// thay vì đoán.
+const testCmd = `"${chromePath}" --headless=new --no-sandbox --disable-gpu --run-all-compositor-stages-before-draw --window-size=1280,900 --virtual-time-budget=6000 --dump-dom "file:///${htmlPath.replace(/\\/g, '/')}?mode=test"`;
 const domOutput = execSync(testCmd, { encoding: 'utf8' });
 
 console.log('\n--- Chrome Headless Test Execution Logs ---');
