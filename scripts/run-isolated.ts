@@ -185,6 +185,8 @@ const ALL_SUITES = [
   // Shopee skeleton (Task 1): chỉ đụng bảng mới shopee_shop_tokens + hàm thuần
   // ký HMAC — không chạm dữ liệu chung nên đứng cuối an toàn.
   'scripts/test-shopee-auth-foundation.ts',
+  // Shopee Task 2: mock mạng 100%, chỉ đụng bảng shopee_shop_tokens.
+  'scripts/test-shopee-oauth-refresh.ts',
 ];
 
 function suiteShortName(p: string): string {
