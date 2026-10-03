@@ -74,8 +74,8 @@ This repository is configured with two always-on frameworks:
 The user tests on a real phone. A localhost-only dev server is useless to them.
 
 - Always start the dev server with `npm run dev:lan` (`next dev -H 0.0.0.0`), never bare `npm run dev`.
-- Always report the LAN URL, not just `localhost`. LAN IP on this machine: `192.168.1.22` (Wi-Fi, MediaTek MT7921). MÁY CÓ THỂ ĐỔI IP — chạy `Get-NetIPAddress -AddressFamily IPv4` để lấy IP hiện tại, đừng dùng IP cũ trong tài liệu. Cẩn thậng: `172.20.x.x` là adapter ảo (Hyper-V/WSL), KHÔNG phải IP điện thoại dùng được — phải lấy IP của adapter Wi-Fi/Ethernet có `Status = Up`.
-- Give the user both: `http://localhost:3000` for the desktop, `http://192.168.1.22:3000` for the phone.
+- Always report the LAN URL, not just `localhost`. LAN IP on this machine: `192.168.1.8` (Wi-Fi; đổi từ `192.168.1.22` ngày 03/10/2026 theo DHCP). MÁY CÓ THỂ ĐỔI IP — chạy `Get-NetIPAddress -AddressFamily IPv4` để lấy IP hiện tại, đừng dùng IP cũ trong tài liệu. Cẩn thậng: `172.20.x.x` là adapter ảo (Hyper-V/WSL), KHÔNG phải IP điện thoại dùng được — phải lấy IP của adapter Wi-Fi/Ethernet có `Status = Up`.
+- Give the user both: `http://localhost:3000` for the desktop, `http://192.168.1.8:3000` for the phone.
 - Never assume a UI fix is verified until it is measured in a real browser (`orca eval` / `orca screenshot`).
   A green source-level test suite has already shipped an invisible dropdown once; the assertion was green and
   the menu was 6597px below the viewport.
