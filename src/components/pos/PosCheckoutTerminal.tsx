@@ -2942,7 +2942,7 @@ export function PosCheckoutTerminal({
       </div>
 
       {/* Top Header Controls — chỉ desktop (md trở lên): tiêu đề bên trái, controls bên phải */}
-      <div className="hidden md:flex bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+      <div className="hidden md:flex bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm flex-row items-center justify-between gap-2">
         <div className="hidden md:block">
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-emerald-600" />
