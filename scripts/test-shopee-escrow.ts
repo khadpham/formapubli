@@ -44,7 +44,7 @@ const CFG = {
   warehouseId: 'wh-au-co',
 };
 
-async function seedDeliveredShopeeOrder(): Promise<{ editionId: string }> {
+async function seedDeliveredShopeeOrder(tag: string): Promise<{ editionId: string }> {
   const eds = await db.select({ id: editions.id }).from(editions).limit(1);
   const editionId = eds[0].id;
   // Giá vốn 60k cho cuốn giá bìa 96k.
@@ -52,7 +52,7 @@ async function seedDeliveredShopeeOrder(): Promise<{ editionId: string }> {
   const orderId = randomUUID();
   await db.insert(orders).values({
     id: orderId,
-    orderCode: 'ORD261004E001',
+    orderCode: `ORD261004E${tag}1`,
     warehouseId: 'wh-au-co',
     channel: 'SHOPEE',
     customerName: 'Test Escrow',
@@ -62,7 +62,7 @@ async function seedDeliveredShopeeOrder(): Promise<{ editionId: string }> {
     status: 'COMPLETED',
     shippingStatus: 'DELIVERED',
     cashierId: 'test-escrow',
-    idempotencyKey: 'shopee-SN-ESCROW-1',
+    idempotencyKey: `shopee-SN-ESCROW-${tag}`,
     createdAt: new Date().toISOString(),
   });
   await db.insert(orderItems).values({
@@ -80,18 +80,20 @@ async function seedDeliveredShopeeOrder(): Promise<{ editionId: string }> {
 }
 
 async function main() {
+  const TAG = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-3);
+  const SN1 = `SN-ESCROW-${TAG}`;
   await new TursoTokenStorage(SHOP).store({
     access_token: 'acc-escrow-test',
     refresh_token: 'ref-escrow-test',
     expired_at: Date.now() + 4 * 3600 * 1000,
     shop_id: SHOP,
   });
-  await seedDeliveredShopeeOrder();
+  await seedDeliveredShopeeOrder(TAG);
 
   const fake = createFakeShopeeFetch({ orders: [] });
   const cfg = { ...CFG, fetchFn: fake.fn };
 
-  const r = await syncEscrow(cfg, 'SN-ESCROW-1');
+  const r = await syncEscrow(cfg, SN1);
   eq2('tiền khách trả', r.buyerTotal, 192000);
   eq2('tiền thực về', r.escrowAmount, 179360);
   eq2('phí hoa hồng', r.commissionFee, 15360);
@@ -103,15 +105,16 @@ async function main() {
   const rows = await db
     .select()
     .from(shopeeOrderFinance)
-    .where(eq(shopeeOrderFinance.orderSn, 'SN-ESCROW-1'))
+    .where(eq(shopeeOrderFinance.orderSn, SN1))
     .limit(1);
   eq2('lưu bảng đối soát', rows.length, 1);
   eq2('bảng ghi đúng escrow', rows[0]?.escrowAmount, 179360);
 
   // Đơn chưa giao → từ chối đối soát.
+  const SN2 = `SN-ESCROW2-${TAG}`;
   await db.insert(orders).values({
     id: randomUUID(),
-    orderCode: 'ORD261004E002',
+    orderCode: `ORD261004E${TAG}2`,
     warehouseId: 'wh-au-co',
     channel: 'SHOPEE',
     customerName: 'Test Escrow 2',
@@ -121,12 +124,12 @@ async function main() {
     status: 'COMPLETED',
     shippingStatus: 'CREATED',
     cashierId: 'test-escrow',
-    idempotencyKey: 'shopee-SN-ESCROW-2',
+    idempotencyKey: `shopee-${SN2}`,
     createdAt: new Date().toISOString(),
   });
   let code = '';
   try {
-    await syncEscrow(cfg, 'SN-ESCROW-2');
+    await syncEscrow(cfg, SN2);
   } catch (e) {
     code = e instanceof AppError ? e.code : `NOT_APP_ERROR:${String(e)}`;
   }

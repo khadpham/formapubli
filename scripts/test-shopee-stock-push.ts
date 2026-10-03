@@ -12,7 +12,8 @@
  * Chạy: npx tsx scripts/run-isolated.ts --only=test-shopee-stock-push
  */
 import { assertIsolatedTestDb } from './test-guard';
-import { db, editions, shopeeItemMap } from '../src/db';
+import { eq, and } from 'drizzle-orm';
+import { db, editions, shopeeItemMap, stockBalances } from '../src/db';
 import { createFakeShopeeFetch } from './shopee-fake-api';
 import { pushStockToShopee } from '../src/services/shopee/stock-push';
 import { TursoTokenStorage } from '../src/services/shopee/token-store';
@@ -40,7 +41,19 @@ const CFG = {
   warehouseId: 'wh-au-co',
 };
 
+async function stockOf(editionId: string): Promise<number> {
+  const rows = await db
+    .select()
+    .from(stockBalances)
+    .where(
+      and(eq(stockBalances.productId, editionId), eq(stockBalances.warehouseId, 'wh-au-co'))
+    )
+    .limit(1);
+  return rows[0]?.physicalQuantity ?? 0;
+}
+
 async function main() {
+  const TAG = Date.now().toString(36).toUpperCase();
   await new TursoTokenStorage(SHOP).store({
     access_token: 'acc-stock-test',
     refresh_token: 'ref-stock-test',
@@ -51,15 +64,22 @@ async function main() {
   eq2('DB test có ít nhất 2 ấn bản', eds.length >= 2, true);
   const [A, B] = eds;
 
-  // Map A với item sàn; B cố tình chưa map.
-  await db.insert(shopeeItemMap).values({ shopId: SHOP, editionId: A.id, itemId: 1982736451, modelId: 0 });
+  // Map A với item sàn (upsert để chạy lại an toàn); B cố tình chưa map.
+  await db.insert(shopeeItemMap).values({ shopId: SHOP, editionId: A.id, itemId: 1982736451, modelId: 0 })
+    .onConflictDoUpdate({
+      target: [shopeeItemMap.shopId, shopeeItemMap.editionId],
+      set: { itemId: 1982736451, modelId: 0 },
+    });
+  void TAG;
 
   const fake = createFakeShopeeFetch({ orders: [] });
   const cfg = { ...CFG, fetchFn: fake.fn };
 
-  // Tồn A = 50 (mở đầu) → đẩy 48.
+  // Kỳ vọng tính từ tồn HIỆN TẠI (suite chạy lại trên DB bẩn vẫn đúng).
+  const balA = await stockOf(A.id);
+  const expectA = Math.max(0, balA - 2);
   const r1 = await pushStockToShopee(cfg, A.id);
-  eq2('đẩy tồn A = 50 − buffer 2', r1.pushed, 48);
+  eq2('đẩy tồn A = tồn hiện tại − buffer 2', r1.pushed, expectA);
   eq2('gọi đúng item_id sàn', r1.itemId, 1982736451);
   const stockCalls = fake.calls.filter((c) => c.includes('update_stock'));
   eq2('đã gọi API update_stock', stockCalls.length >= 1, true);

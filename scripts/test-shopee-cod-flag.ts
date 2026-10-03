@@ -51,6 +51,8 @@ async function stockOf(editionId: string): Promise<number> {
 }
 
 async function main() {
+  const TAG = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-4);
+  const SNC = `SN-COD-${TAG}`;
   await new TursoTokenStorage(SHOP).store({
     access_token: 'acc-cod-test',
     refresh_token: 'ref-cod-test',
@@ -65,7 +67,7 @@ async function main() {
   const fake = createFakeShopeeFetch({
     orders: [
       {
-        order_sn: 'SN-COD-1',
+        order_sn: SNC,
         order_status: 'READY_TO_SHIP',
         payment_method: 'COD',
         recipient: { name: 'Khách COD', phone: '0906', address: 'HN' },

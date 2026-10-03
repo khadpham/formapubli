@@ -57,6 +57,10 @@ async function stockOf(editionId: string): Promise<number> {
 }
 
 async function main() {
+  const TAG = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-4);
+  const SN1 = `SN-READY-${TAG}A`;
+  const SN2 = `SN-READY-${TAG}B`;
+  const SNW = `SN-WEIRD-${TAG}`;
   // Seed token còn hạn để luồng sync không phải refresh.
   await new TursoTokenStorage(SHOP).store({
     access_token: 'acc-sync-test',
@@ -77,7 +81,7 @@ async function main() {
   const fake = createFakeShopeeFetch({
     orders: [
       {
-        order_sn: 'SN-READY-1',
+        order_sn: SN1,
         order_status: 'READY_TO_SHIP',
         payment_method: 'PREPAID',
         recipient: { name: 'Khách Một', phone: '0901', address: 'Hà Nội' },
@@ -87,7 +91,7 @@ async function main() {
         ],
       },
       {
-        order_sn: 'SN-READY-2',
+        order_sn: SN2,
         order_status: 'READY_TO_SHIP',
         payment_method: 'COD',
         recipient: { name: 'Khách Hai', phone: '0902', address: 'Huế' },
@@ -96,7 +100,7 @@ async function main() {
         ],
       },
       {
-        order_sn: 'SN-WEIRD-1',
+        order_sn: SNW,
         order_status: 'READY_TO_SHIP',
         payment_method: 'PREPAID',
         recipient: { name: 'Khách Lạ', phone: '0903', address: 'Đà Nẵng' },
@@ -105,7 +109,7 @@ async function main() {
         ],
       },
       {
-        order_sn: 'SN-UNPAID-1',
+        order_sn: `SN-UNPAID-${TAG}`,
         order_status: 'UNPAID',
         payment_method: 'PREPAID',
         recipient: { name: 'Khách Treo', phone: '0904', address: 'SG' },
@@ -119,18 +123,18 @@ async function main() {
   const r1 = await pullShopeeOrders({ ...CFG, fetchFn: fake.fn }, 1700000000, 1700086400);
   eq2('kéo được 2 đơn hợp lệ', r1.pulled, 2);
   eq2('1 đơn SKU lạ vào cách ly', r1.quarantined.length, 1);
-  eq2('ghi đúng mã đơn lạ', r1.quarantined[0]?.orderSn, 'SN-WEIRD-1');
+  eq2('ghi đúng mã đơn lạ', r1.quarantined[0]?.orderSn, SNW);
 
   // Tồn trừ đúng tại Âu Cơ.
   eq2('sách A trừ 2', await stockOf(A.id), beforeA - 2);
   eq2('sách B trừ 1+3', await stockOf(B.id), beforeB - 4);
 
   // Đơn lưu đúng kênh + thanh toán.
-  const o1 = await db.select().from(orders).where(eq(orders.idempotencyKey, 'shopee-SN-READY-1')).limit(1);
+  const o1 = await db.select().from(orders).where(eq(orders.idempotencyKey, `shopee-${SN1}`)).limit(1);
   eq2('đơn 1 kênh SHOPEE', o1[0]?.channel, 'SHOPEE');
   eq2('đơn trả trước → BANK_TRANSFER', o1[0]?.paymentMethod, 'BANK_TRANSFER');
   eq2('đơn trả trước shipping CREATED', o1[0]?.shippingStatus, 'CREATED');
-  const o2 = await db.select().from(orders).where(eq(orders.idempotencyKey, 'shopee-SN-READY-2')).limit(1);
+  const o2 = await db.select().from(orders).where(eq(orders.idempotencyKey, `shopee-${SN2}`)).limit(1);
   eq2('đơn COD → COD', o2[0]?.paymentMethod, 'COD');
   eq2('đơn COD có codAmount', o2[0]?.codAmount, 3 * 45000);
   eq2('đơn COD codStatus PENDING', o2[0]?.codStatus, 'PENDING');
@@ -139,7 +143,7 @@ async function main() {
   const led = await db
     .select()
     .from(inventoryLedger)
-    .where(eq(inventoryLedger.documentRef, 'SHOPEE_SN-READY-1'));
+    .where(eq(inventoryLedger.documentRef, `SHOPEE_${SN1}`));
   eq2('có bút toán DISPATCH_SALE đơn 1', led.length > 0, true);
   eq2(
     'tổng xuất đơn 1 = 3 cuốn',

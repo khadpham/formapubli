@@ -53,10 +53,16 @@ async function seedOrder(opts: {
 }
 
 async function main() {
-  const tag = Date.now().toString(36).toUpperCase();
-  await seedOrder({ code: `ORD261004G${tag.slice(0, 3)}`, channel: 'FAIR_EVENT', shipping: 'NONE', amount: 100000 });
-  await seedOrder({ code: `ORD261004H${tag.slice(0, 3)}`, channel: 'SHOPEE', shipping: 'CREATED', amount: 200000 });
-  await seedOrder({ code: `ORD261004K${tag.slice(0, 3)}`, channel: 'SHOPEE', shipping: 'DELIVERED', amount: 300000 });
+  // DB chung có đơn SHOPEE của suite khác → đo chênh lệch trước/sau seed,
+  // tuyệt đối chính xác và không phụ thuộc thứ tự chạy.
+  const beforeSummary = await OrderService.getSalesSummary({ channel: 'SHOPEE' } as any);
+  const beforeChannels = await AnalyticsService.byChannel({});
+  const beforeShopee = beforeChannels.find((c) => c.channel === 'SHOPEE')?.revenue ?? 0;
+
+  const tag = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase();
+  await seedOrder({ code: `ORD261004G${tag}`, channel: 'FAIR_EVENT', shipping: 'NONE', amount: 100000 });
+  await seedOrder({ code: `ORD261004H${tag}`, channel: 'SHOPEE', shipping: 'CREATED', amount: 200000 });
+  await seedOrder({ code: `ORD261004K${tag}`, channel: 'SHOPEE', shipping: 'DELIVERED', amount: 300000 });
 
   // Mức unit của guard.
   eq2('quầy COMPLETED được tính', isCountedRevenue({ channel: 'FAIR_EVENT', shippingStatus: 'NONE' }), true);
@@ -66,11 +72,11 @@ async function main() {
   // Mức service: lọc đúng kênh SHOPEE — tuyệt đối chính xác kể cả khi DB
   // chung có đơn của suite khác (không suite nào tạo kênh SHOPEE).
   const summary = await OrderService.getSalesSummary({ channel: 'SHOPEE' } as any);
-  eq2('getSalesSummary kênh SHOPEE chỉ tính đơn DELIVERED', summary.totalRevenue, 300000);
+  eq2('getSalesSummary kênh SHOPEE chỉ tính đơn DELIVERED', summary.totalRevenue - beforeSummary.totalRevenue, 300000);
 
   const channels = await AnalyticsService.byChannel({});
   const shopee = channels.find((c) => c.channel === 'SHOPEE');
-  eq2('byChannel: doanh thu SHOPEE chỉ tính đơn DELIVERED', shopee?.revenue, 300000);
+  eq2('byChannel: doanh thu SHOPEE chỉ tính đơn DELIVERED', (shopee?.revenue ?? 0) - beforeShopee, 300000);
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {

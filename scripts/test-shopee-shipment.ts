@@ -46,7 +46,7 @@ async function seedShopeeOrder(sn: string, shipping: string) {
   const id = randomUUID();
   await db.insert(orders).values({
     id,
-    orderCode: `ORD261004S${sn.slice(-3)}`,
+    orderCode: `ORD261004S${sn.replace(/[^A-Z0-9]/g, '').slice(-4)}${String(Date.now() % 1296).padStart(2, '0')}`,
     warehouseId: 'wh-au-co',
     channel: 'SHOPEE',
     customerName: 'Test Ship',
@@ -64,49 +64,51 @@ async function seedShopeeOrder(sn: string, shipping: string) {
 }
 
 async function main() {
+  const TAG = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const SN = `SN-SHIP-${TAG}`;
   await new (await import('../src/services/shopee/token-store')).TursoTokenStorage(SHOP).store({
     access_token: 'acc-ship-test',
     refresh_token: 'ref-ship-test',
     expired_at: Date.now() + 4 * 3600 * 1000,
     shop_id: SHOP,
   });
-  await seedShopeeOrder('SN-SHIP-1', 'CREATED');
+  await seedShopeeOrder(SN, 'CREATED');
 
   const fake = createFakeShopeeFetch({ orders: [] });
   const cfg = { ...CFG, fetchFn: fake.fn };
 
   // 1. Lấy tham số giao hàng.
-  const param = await getShippingParameter(cfg, 'SN-SHIP-1');
+  const param = await getShippingParameter(cfg, SN);
   eq2('shipper tới lấy (pickup)', param.mode, 'pickup');
   eq2('có địa chỉ lấy hàng', param.addressId, 998877);
 
   // 2. Thu ngân KHÔNG được bấm giao.
   let code = '';
   try {
-    await shipShopeeOrder(cfg, 'SN-SHIP-1', 'ROLE_CASHIER', 'cashier-1');
+    await shipShopeeOrder(cfg, SN, 'ROLE_CASHIER', 'cashier-1');
   } catch (e) {
     code = e instanceof AppError ? e.code : `NOT_APP_ERROR:${String(e)}`;
   }
   eq2('thu ngân bị chặn bấm giao', code, 'FORBIDDEN');
 
   // 3. Thủ kho bấm giao: trạng thái + tracking cập nhật.
-  const shipped = await shipShopeeOrder(cfg, 'SN-SHIP-1', 'ROLE_WAREHOUSE', 'keeper-1');
+  const shipped = await shipShopeeOrder(cfg, SN, 'ROLE_WAREHOUSE', 'keeper-1');
   eq2('tracking khớp mã fake', shipped.trackingCode, 'SPXVN0123456789');
-  const row = await db.select().from(orders).where(eq(orders.idempotencyKey, 'shopee-SN-SHIP-1')).limit(1);
+  const row = await db.select().from(orders).where(eq(orders.idempotencyKey, `shopee-${SN}`)).limit(1);
   eq2('shipping chuyển PICKED_UP', row[0]?.shippingStatus, 'PICKED_UP');
   eq2('carrier lưu SPX', row[0]?.carrier, 'SPX');
 
   // 4. Ship lại đơn đã giao → từ chối (không gọi API lần 2).
   let code2 = '';
   try {
-    await shipShopeeOrder(cfg, 'SN-SHIP-1', 'ROLE_WAREHOUSE', 'keeper-1');
+    await shipShopeeOrder(cfg, SN, 'ROLE_WAREHOUSE', 'keeper-1');
   } catch (e) {
     code2 = e instanceof AppError ? e.code : `NOT_APP_ERROR:${String(e)}`;
   }
   eq2('đơn đã giao không ship lại', code2, 'STATE_CONFLICT');
 
   // 5. Vận đơn A6 đúng tracking.
-  const pdf = await getAwbPdf(cfg, 'SN-SHIP-1');
+  const pdf = await getAwbPdf(cfg, SN);
   eq2('vận đơn có nội dung', pdf.byteLength > 0, true);
   eq2('vận đơn ghi đúng tracking', Buffer.from(pdf).toString('utf-8').includes('SPXVN0123456789'), true);
 

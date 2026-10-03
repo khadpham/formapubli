@@ -61,6 +61,8 @@ async function stockOf(editionId: string): Promise<number> {
 }
 
 async function main() {
+  const TAG = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-4);
+  const SNP = `SN-PUSH-${TAG}`;
   await new TursoTokenStorage(SHOP).store({
     access_token: 'acc-push-test',
     refresh_token: 'ref-push-test',
@@ -73,7 +75,7 @@ async function main() {
   const before = await stockOf(E.id);
 
   // 1. Verify chữ ký.
-  const rawNew = JSON.stringify({ code: 1, shop_id: SHOP, data: { order_sn: 'SN-PUSH-1', status: 'READY_TO_SHIP' } });
+  const rawNew = JSON.stringify({ code: 1, shop_id: SHOP, data: { order_sn: SNP, status: 'READY_TO_SHIP' } });
   eq2('chữ ký đúng → true', verifyShopeeWebhook(rawNew, signBody(rawNew), URL, PARTNER_KEY), true);
   eq2('chữ ký sai → false', verifyShopeeWebhook(rawNew, 'deadbeef', URL, PARTNER_KEY), false);
   eq2('thiếu key → false', verifyShopeeWebhook(rawNew, signBody(rawNew), URL, ''), false);
@@ -81,7 +83,7 @@ async function main() {
   const fake = createFakeShopeeFetch({
     orders: [
       {
-        order_sn: 'SN-PUSH-1',
+        order_sn: SNP,
         order_status: 'READY_TO_SHIP',
         payment_method: 'PREPAID',
         recipient: { name: 'Khách Push', phone: '0905', address: 'HN' },
@@ -101,18 +103,18 @@ async function main() {
   eq2('push lại không trừ thêm', await stockOf(E.id), before - 2);
 
   // 3. Push hủy → hoàn kho + CANCELLED.
-  const rawCancel = JSON.stringify({ code: 1, shop_id: SHOP, data: { order_sn: 'SN-PUSH-1', status: 'CANCELLED' } });
+  const rawCancel = JSON.stringify({ code: 1, shop_id: SHOP, data: { order_sn: SNP, status: 'CANCELLED' } });
   const outC = await handleShopeePush(cfg, JSON.parse(rawCancel));
   eq2('push hủy → cancelled', outC, 'order-cancelled');
   eq2('hoàn kho đủ 2 cuốn', await stockOf(E.id), before);
-  const ord = await db.select().from(orders).where(eq(orders.idempotencyKey, 'shopee-SN-PUSH-1')).limit(1);
+  const ord = await db.select().from(orders).where(eq(orders.idempotencyKey, `shopee-${SNP}`)).limit(1);
   eq2('đơn chuyển CANCELLED', ord[0]?.status, 'CANCELLED');
 
   // 4. Push tracking.
-  const rawTrack = JSON.stringify({ code: 2, shop_id: SHOP, data: { order_sn: 'SN-PUSH-1', tracking_number: 'SPXVN999' } });
+  const rawTrack = JSON.stringify({ code: 2, shop_id: SHOP, data: { order_sn: SNP, tracking_number: 'SPXVN999' } });
   const outT = await handleShopeePush(cfg, JSON.parse(rawTrack));
   eq2('push tracking → updated', outT, 'tracking-updated');
-  const ord2 = await db.select().from(orders).where(eq(orders.idempotencyKey, 'shopee-SN-PUSH-1')).limit(1);
+  const ord2 = await db.select().from(orders).where(eq(orders.idempotencyKey, `shopee-${SNP}`)).limit(1);
   eq2('tracking cập nhật', ord2[0]?.trackingCode, 'SPXVN999');
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
