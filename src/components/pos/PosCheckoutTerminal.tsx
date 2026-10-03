@@ -3098,13 +3098,13 @@ export function PosCheckoutTerminal({
             placeholder={
               isListening
                 ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
-                : 'Tìm theo tên không dấu, 4 số cuối, mã SKU hoặc bấm Micro...'
+                : 'Gõ 3 số cuối ISBN, tên sách hoặc mã…'
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setIsInputFocused(true)}
             onBlur={() => setIsInputFocused(false)}
-            className={`flex-1 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
+            className={`flex-1 min-w-0 text-sm font-medium bg-transparent border-none focus:outline-none transition-colors ${
               isListening
                 ? 'text-rose-950 font-semibold placeholder:text-rose-600'
                 : 'text-slate-900 placeholder-slate-400'
@@ -3800,7 +3800,7 @@ export function PosCheckoutTerminal({
                   </span>
                 </div>
                 <div className="grid grid-cols-5 gap-1.5">
-                  {[0, 5, 10, 15, 20].map((pct) => {
+                  {[5, 10, 15, 20].map((pct) => {
                     const rate = pct / 100;
                     const isLockedForCashier = currentRole === 'ROLE_CASHIER' && !isManagerOverride && rate >= 0.2;
                     const isActive = Math.round(discountRate * 100) === pct && !isGift;
