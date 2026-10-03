@@ -113,6 +113,21 @@ async function main() {
     }
   }
 
+  // Tiền đề của mọi thứ liên quan tới quét trùng ISBN: các bản trùng phải KHÁC
+  // NHAU Ở TÊN. `HH032` = "(Bìa tím)" và `HH042` = "(Tái bản) - Bìa trắng" là
+  // tiêu chí duy nhất để thu ngân chọn đúng (works.title thì cả hai đều là
+  // "Le Spleen de Paris"). Ai đó sửa `editions.title` cho giống nhau là modal
+  // thành vô dụng, mà không có gì đỏ.
+  for (const row of dupIsbn as any[]) {
+    const names = (await q(`SELECT code, title FROM editions WHERE isbn = ? ORDER BY code`, row.isbn)) as any[];
+    const titles = new Set(names.map((n) => (n.title || '').trim()));
+    check(
+      titles.size === names.length,
+      `các ấn bản trùng ISBN ${row.isbn} có TÊN KHÁC NHAU (${names.length} bản, ${titles.size} tên) — giống nhau là modal mù`
+    );
+    names.forEach((n) => console.log(`        ${n.code}: "${n.title}"`));
+  }
+
   // 3. DOANH SỐ TÁCH THEO ẤN BẢN (90 ngày). Đây là câu trả lời cho câu hỏi
   //    "có nên tạo mặc định tĩnh cho ISBN trùng không?" — quyết bằng số liệu bán
   //    hàng thật, không đoán. Ghi ra file để so sánh qua các kỳ hội chợ.

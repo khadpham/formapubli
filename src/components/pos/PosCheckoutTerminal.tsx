@@ -232,6 +232,11 @@ export function PosCheckoutTerminal({
   // V4.1 S2.1/S2.2/S2.3: kho bán + ATP nạp từ server (fallback cứng khi offline)
   const [sellableWarehouses, setSellableWarehouses] = useState<Array<{ id: string; code: string; name: string; warehouseType: string }>>([]);
   const [catalogAtp, setCatalogAtp] = useState<Record<string, { atp: number; soldToday: number }>>({});
+  // ATP trên là của KHO NÀO. Không có nó thì đổi kho xong, trong lúc chờ (và cả
+  // khi request lỗi) POS vẫn đọc tồn của KHO CŨ. Trước 03/10 hậu quả chỉ là
+  // hiện sai con số; từ hôm nay `getBookStock` còn quyết định tự chọn ấn bản khi
+  // quét mã trùng ISBN ⇒ tồn của kho cũ có thể chọn nhầm ấn bản lúc hội chợ.
+  const [catalogAtpWarehouse, setCatalogAtpWarehouse] = useState<string | null>(null);
   const [catalogReady, setCatalogReady] = useState(false);
   const [showAllBooks, setShowAllBooks] = useState(false); // mặc định ẩn sách hết hàng tại kho
   // Danh mục thu gọn mặc định (scan-first trên mobile): chỉ hiện vài món đầu.
@@ -1052,10 +1057,16 @@ export function PosCheckoutTerminal({
           const map: Record<string, { atp: number; soldToday: number }> = {};
           for (const it of json.data.items) map[it.editionId] = { atp: it.atp, soldToday: it.soldToday };
           setCatalogAtp(map);
+          setCatalogAtpWarehouse(selectedWarehouseId);
           setCatalogReady(true);
         }
       } catch {
-        if (!cancelled) setCatalogReady(false);
+        if (!cancelled) {
+          // KHÔNG xoá `catalogAtp`: cùng một kho thì đó vẫn là số gần nhất đúng,
+          // và POS có chế độ offline chính thức. Đổi kho thì tự động bị bỏ qua
+          // nhờ `catalogAtpWarehouse` (xem `getBookStock`).
+          setCatalogReady(false);
+        }
       }
     })();
     return () => {
@@ -1277,7 +1288,11 @@ export function PosCheckoutTerminal({
   // (mảng tồn theo kho thay vì 3 con số) — không vá tên kho ở đây vì kho hội chợ
   // được tạo mới theo từng sự kiện, không có danh sách đóng.
   const getBookStock = (book: BookItem): number => {
-    const hit = catalogAtp[book.id];
+    // Chỉ tin ATP khi nó ĐÚNG là của kho đang chọn. Đổi kho xong nhưng chưa nạp
+    // xong (hoặc nạp lỗi) thì `catalogAtp` còn là của KHO CŨ — đọc nó là hiện
+    // tồn sai, và từ 03/10 còn quyết định tự chọn ấn bản khi quét mã trùng ISBN.
+    const hit =
+      catalogAtpWarehouse === selectedWarehouseId ? catalogAtp[book.id] : undefined;
     if (hit) return hit.atp;
     if (selectedWarehouseId === 'wh-au-co') return book.stockAuCo;
     if (selectedWarehouseId === 'wh-du-phong') return book.stockDuPhong;
@@ -2632,8 +2647,9 @@ export function PosCheckoutTerminal({
       if (e.key === 'Escape') {
         if (completedOrder) {
           setCompletedOrder(null);
-         } else if (ambiguousMatches) {
-           setAmbiguousMatches(null);
+} else if (ambiguousMatches) {
+            setAmbiguousMatches(null);
+            setAmbiguousPickKey(null);
           } else if (isScannerOpen) {
            setIsScannerOpen(false);
           } else if (isParserOpen) {
@@ -4214,6 +4230,12 @@ export function PosCheckoutTerminal({
                   <button
                     key={book.id}
                     type="button"
+                    // Ấn bản 0 tồn: KHÔNG cho bấm. Trước đây bấm thì
+                    // `handleAddToCart` từ chối, nhưng modal ĐÃ ĐÓNG và mã ĐÃ ĐƯỢC
+                    // GHI NHỚ ⇒ thu ngân phải quét lại từ đầu. Ở hội chợ, nơi
+                    // `getBookStock` có thể trả 0 cho mọi cuốn, mọi dòng đều là
+                    // 0 tồn — bấm là mất hết ca.
+                    disabled={stock <= 0}
                     onClick={() => {
                       handleAddToCart(book);
                       setScanToast({
@@ -4228,7 +4250,7 @@ export function PosCheckoutTerminal({
                       setAmbiguousPickKey(null);
                       setTimeout(() => setScanToast(null), 3000);
                     }}
-                    className="w-full text-left p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 transition-all flex items-center justify-between group cursor-pointer"
+                    className="w-full text-left p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 transition-all flex items-center justify-between group cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed disabled:hover:border-slate-200 disabled:hover:bg-transparent"
                   >
                     <div>
                       <div className="flex items-center gap-2">
@@ -4245,7 +4267,7 @@ export function PosCheckoutTerminal({
                       </p>
                     </div>
                     <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
-                      Chọn ➔
+                      {stock > 0 ? 'Chọn ➔' : 'Hết hàng'}
                     </span>
                   </button>
                 );

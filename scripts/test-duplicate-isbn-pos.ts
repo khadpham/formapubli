@@ -116,7 +116,26 @@ console.log('\n--- 7. Mã có gạch nối / mã lạ ---');
   const r = resolveScan('978-604-473-769-0', [hh032, hh042], allStock);
   eq('gạch nối được khử ⇒ khớp', r.kind, 'ambiguous');
   eq('mã không có trong danh mục ⇒ none', resolveScan('1111222233334', [hh032, hh042], allStock).kind, 'none');
-  eq('mã rỗng ⇒ none', resolveScan('', [hh032], allStock).kind, 'none');
+}
+
+console.log('\n--- 7b. Mã quét RỖNG không được khớp hàng hóa (`isbn = ""`) ---');
+{
+  // Hàng hóa đi qua POS với `isbn: ''` (LEFT JOIN editions, xem
+  // inventory.service.ts:1024). Nếu mã quét rỗng mà vẫn so `cleanIsbn ===
+  // cleanScanned` thì MỌI hàng hóa khớp ⇒ thêm nhầm món không ai cầm.
+  const goods: ScannableBook[] = [
+    { id: 'pr-1', code: 'HH001', title: 'Bookmark 5.000đ', isbn: '', isbnLast4: '', coverPrice: 5000 },
+    { id: 'pr-2', code: 'TP0042', title: 'Móc khoá 15.000đ', isbn: '', isbnLast4: '', coverPrice: 15000 },
+    { id: 'pr-3', code: 'TP0007', title: 'Quà tặng kèm', isbn: '', isbnLast4: '', coverPrice: 0 },
+  ];
+  eq('mã rỗng + 3 hàng hóa ⇒ none', resolveScan('', goods, allStock).kind, 'none');
+  eq('chỉ ký tự lạ ⇒ none', resolveScan('-', goods, allStock).kind, 'none');
+  eq('chỉ ký tự lạ + sách cùng lúc ⇒ không vơ sang hàng hóa', resolveScan('---', [hh032, ...goods], allStock).kind, 'none');
+  // Hàng hóa có SKU riêng thì vẫn quét được bằng SKU — không phải mất luôn.
+  eq('SKU hàng hóa vẫn quét được', resolveScan('TP0042', goods, allStock).kind, 'single');
+  // Sách thật vẫn quét được như cũ.
+  eq('quét 1 cuốn KHÔNG trùng ISBN (đường phổ biến nhất) ⇒ single', resolveScan('9786043687507', [hh032, hh042], allStock).kind, 'none');
+  eq('quét ISBN duy nhất của cuốn đó ⇒ single', resolveScan('9786043687507', [book({ id: 'ed-hh001', code: 'HH001', isbn: '9786043687507', isbnLast4: '7507' }), hh042], allStock).kind, 'single');
 }
 
 console.log('\n--- 8. D3: nhớ lựa chọn TRONG CA (sessionStorage), không nhớ vĩnh viễn ---');

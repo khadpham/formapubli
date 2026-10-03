@@ -13,8 +13,9 @@ const cases = [
   ['src/components/pos/DiscountApprovalModal.tsx', [['onCancel']]],
   ['src/components/pos/PosCheckoutTerminal.tsx', [
     ['setCompletedOrder'],
-    // Modal trùng mã vạch: đóng phải xoá cả danh sách ứng viên LẪN khoá mã đã
-    // quét, nếu không khoá sót lại sẽ ghi nhớ nhầm ở lần quét sau.
+    // Modal trùng mã vạch: mọi lối ra (backdrop, Escape, nút Hủy) đều phải xoá
+    // cả danh sách ứng viên LẪN khoá mã đã quét. Suite này chỉ chạy handler
+    // backdrop; nhánh Escape tự xoá cả hai trong component.
     ['setAmbiguousMatches', 'setAmbiguousPickKey'],
     ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],

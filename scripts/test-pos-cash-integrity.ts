@@ -83,6 +83,19 @@ ok(/resolveScan\(scannedCode, books, getBookStock/.test(pos),
   'POS phải gọi resolveScan() dùng chung — chép lại matcher là bản chép lệch logic');
 ok(!/cleanIsbn === cleanScanned/.test(pos),
   'POS không được tự chứa biểu thức so khớp ISBN nữa — luật chỉ nằm ở scan-resolve.ts');
+ok(/resolveScan\(scannedCode, books, getBookStock, readScanPick\(cleanScanned\)\)/.test(pos),
+  'POS phải truyền lựa chọn nhớ trong ca (sessionStorage) vào resolveScan — bỏ thì D3 chết âm thầm');
+ok(/writeScanPick\(ambiguousPickKey, book\.id\)/.test(pos),
+  'bấm chọn trong modal phải ghi nhớ ấn bản theo mã đã quét — không gì đỏ nếu thiếu');
+ok(/sessionStorage\.getItem\(scanPickKey\(cleanScanned\)\)/.test(pos) &&
+    /sessionStorage\.setItem\(scanPickKey\(cleanScanned\), editionId\)/.test(pos),
+  'lựa chọn ấn bản phải lưu trong sessionStorage (đóng tab là quên), không phải biến module');
+// Tồn quyết định cả việc tự chọn ấn bản ⇒ ATP của KHO KHÁC không được dùng.
+ok(/catalogAtpWarehouse === selectedWarehouseId \? catalogAtp\[book\.id\] : undefined/.test(pos),
+  'getBookStock phải bỏ qua ATP của kho khác — đổi kho xong mà chưa nạp xong thì tồn kho cũ quyết sai ấn bản');
+// Dòng 0 tồn trong modal trùng mã: bấm là mất modal + ghi nhớ nhầm.
+ok(/disabled=\{stock <= 0\}/.test(pos),
+  'ấn bản 0 tồn trong modal phải bị khoá — bấm sẽ đóng modal và ghi nhớ 1 cuốn không bán được');
 
 // --- 3. Phiếu thu phải lấy danh sách sách từ phiên đã đóng băng ---
 ok(/items\?: Array<\{ editionId/.test(modal), 'phiên chuyển khoản phải lưu danh sách mặc hàng');

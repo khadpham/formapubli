@@ -129,6 +129,17 @@ async function main() {
     `trong danh mục thật chỉ được còn đúng 1 ISBN không chuẩn (H85). Thực tế: ${JSON.stringify(realBad.map((r) => r.code))}`
   );
 
+  // --- 6. DB TEST KHÔNG ĐƯỢC LỆCH VỚI SEED ---
+  // `setup-test-db.ts` chép logic của `seed.ts` để dựng DB test. Chỉ chặn ở
+  // `seed.ts` thì dòng CSV hỏng vẫn vào DB test ⇒ 149 suite xanh trong khi
+  // production đã bỏ dòng đó, tức test nói dối. Suite này không chạy
+  // `setup-test-db.ts` (quá nặng), nên khoá bằng cách đòi CÙNG một lời gọi hàm.
+  const setup = fs.readFileSync(path.join(process.cwd(), 'scripts', 'setup-test-db.ts'), 'utf8');
+  ok(
+    /isbnBlockReason\(isbn\)/.test(setup),
+    'setup-test-db.ts phải dùng cùng cổng chặn ISBN với seed.ts'
+  );
+
   db.close();
   // CHỈ xoá CSV. File `.db` KHÔNG xoá được trong chính tiến trình này: libsql
   // `file:` giữ handle tới khi tiến trình thoát (đo thử: retry 10s vẫn EBUSY), và

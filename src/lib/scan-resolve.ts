@@ -47,6 +47,12 @@ export function resolveScan<B extends ScannableBook>(
 ): ScanResolution<B> {
   const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
 
+  // Mã quét rỗng là KHÔNG KHỚP AI, không phải "khớp mọi thứ". Biểu thức
+  // `cleanIsbn === cleanScanned` bên dưới sẽ khớp MỌI hàng hóa, vì hàng hóa
+  // (`products` LEFT JOIN `editions`) có `isbn = ''` — quét một mã rác không lọt
+  // qua bộ lọc của scanner (vd chuỗi `-` của Code39) là thêm nhầm món hàng.
+  if (!cleanScanned) return { kind: 'none' };
+
   const matched = books.filter((b) => {
     const cleanIsbn = b.isbn ? b.isbn.replace(/[^0-9X]/gi, '') : '';
     // Khớp 4 số cuối CHỈ hợp lệ khi mã quét ĐÚNG 4 ký tự. Trước đây điều kiện
