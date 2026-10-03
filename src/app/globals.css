@@ -179,4 +179,12 @@ body {
   }
 }
 
+/* DENSITY-COMPACT — token mật độ gọn cho vùng POS dày (đợt sau dùng chung). */
+.density-compact {
+  gap: 8px;
+}
+.density-compact > * {
+  min-width: 0;
+}
+
 
