@@ -1779,6 +1779,24 @@ export function PosCheckoutTerminal({
     setDismissedGiftProductIds((prev) => new Set([...Array.from(prev), productId]));
   };
 
+  // ⛔ TẠM ẨN TOÀN BỘ "Tặng thêm" (03/10/2026, chủ doanh nghiệp yêu cầu ẩn).
+  //
+  // LÝ DO (đã rà soát, không phải cảm tính):
+  //  1. `addManualGift` KHÔNG hề mở yêu cầu duyệt. Mọi đường mở
+  //     `isDiscountApprovalModalOpen` đều nằm trong `handleRequestDiscount`
+  //     (:1239) — mà hàm đó không được gọi bởi "Tặng thêm". ⇒ `manualGifts`
+  //     không bao giờ có `discountApprovalId` ⇒ server
+  //     (`order.service.ts:677`) hạ dòng về DÒNG THƯỜNG ⇒ KHÁCH BỊ THU ĐÚNG
+  //     GIÁ cho món mà thu ngân tin là quà. Chỉ ghi `isGiftClaimedRejected`
+  //     vào audit, không báo lỗi ra màn hình.
+  //  2. Nhãn "0 đ (sau duyệt)" nói dối: không có bước duyệt nào cả.
+  //  3. Modal "Chi tiết Đơn & Thanh toán" (:4939) vẫn hiện ô "Tặng thêm món…"
+  //     khi giỏ đã khoá/đã duyệt — thêm được sau khi duyệt là vô lý.
+  //  4. Giỏ không khoá sau duyệt vì không có duyệt cho quà tay.
+  //
+  // BẬT LẠI: đổi cờ này thành `true` — phải sửa cả 4 điểm trên, không chỉ cờ.
+  const MANUAL_GIFT_ENABLED = false;
+
   // Quà TAY ("Tặng thêm"): thu ngân tự chọn món ngoài chương trình. Không tự
   // bán 0đ được — phải đi qua duyệt quản lý (discountApprovalId); server chỉ
   // công nhận dòng nào nằm trong snapshot đã duyệt (approvedManual).
@@ -3686,8 +3704,8 @@ export function PosCheckoutTerminal({
               ))}
             </div>
 
-              {/* Quà TAY ("Tặng thêm") — thu ngân tự chọn, phải qua duyệt quản lý */}
-              {manualGiftLines.map((g) => (
+              {/* Quà TAY ("Tặng thêm") — ẨN, xem MANUAL_GIFT_ENABLED */}
+              {MANUAL_GIFT_ENABLED && manualGiftLines.map((g) => (
                 <div
                   key={`manual-${g.editionId}`}
                   className="p-2.5 rounded-xl bg-violet-50/70 border border-violet-200 flex items-center justify-between gap-2"
@@ -3710,6 +3728,7 @@ export function PosCheckoutTerminal({
                   </button>
                 </div>
               ))}
+              {MANUAL_GIFT_ENABLED && (
               <div className="flex items-stretch gap-1.5">
                 <select
                   value={manualGiftPick}
@@ -3734,6 +3753,7 @@ export function PosCheckoutTerminal({
                   Tặng thêm
                 </button>
               </div>
+              )}
             {/* Customer & Discount Controls */}
             <div className="pt-2 border-t border-slate-100 space-y-3">
               <div>
@@ -4936,7 +4956,7 @@ export function PosCheckoutTerminal({
                 ))}
               </div>
 
-                {manualGiftLines.map((g) => (
+                {MANUAL_GIFT_ENABLED && manualGiftLines.map((g) => (
                   <div key={`manual-${g.editionId}`} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 bg-violet-50/60 rounded-lg px-1.5">
                     <div className="truncate flex-1 pr-2">
                       <span className="font-bold text-slate-800 truncate block">
@@ -4955,6 +4975,7 @@ export function PosCheckoutTerminal({
                     </button>
                   </div>
                 ))}
+                {MANUAL_GIFT_ENABLED && (
                 <div className="flex items-stretch gap-1.5 py-1">
                   <select
                     value={manualGiftPick}
@@ -4979,6 +5000,7 @@ export function PosCheckoutTerminal({
                     Tặng thêm
                   </button>
                 </div>
+                )}
               {/* Payment selector */}
               <div>
                 <label className="text-[11px] font-bold text-slate-500 block mb-1">
