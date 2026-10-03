@@ -3184,9 +3184,9 @@ export function PosCheckoutTerminal({
               placeholder={
                 isListening
                   ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
-                  : 'Gõ 3 số cuối ISBN, tên, mã, chữ đầu…'
+                  : 'Gõ 3 số ISBN, chữ đầu, tác giả, tên sách'
               }
-              className={`w-full pl-10 pr-44 py-3 bg-white border rounded-2xl text-sm font-medium outline-none shadow-sm min-h-[48px] transition-all ${
+              className={`w-full pl-10 ${(currentRole === 'ROLE_MANAGER' || currentRole === 'ROLE_OWNER') ? 'pr-[132px]' : 'pr-[92px]'} py-3 bg-white border rounded-2xl text-sm font-medium outline-none shadow-sm min-h-[48px] transition-all ${
                 isListening
                   ? 'border-rose-500 ring-2 ring-rose-300'
                   : 'border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500'
