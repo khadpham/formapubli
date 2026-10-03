@@ -3369,7 +3369,7 @@ export function PosCheckoutTerminal({
             )}
           </div>
           )}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 max-h-[560px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[560px] overflow-y-auto pr-1">
             {(catalogExpanded || !isMobileView ? filteredBooks : filteredBooks.slice(0, CATALOG_COLLAPSED_COUNT)).map((b) => {
               const currentStock = getBookStock(b);
 
@@ -3380,7 +3380,7 @@ export function PosCheckoutTerminal({
                   key={b.id}
                   onClick={() => !isOutOfStock && handleAddToCart(b)}
                   title={b.title}
-                  className={`p-2.5 sm:p-3.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none min-h-[110px] ${
+                  className={`p-2.5 bg-white rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none min-h-[96px] ${
                     isOutOfStock
                       ? 'opacity-50 border-slate-200 cursor-not-allowed bg-slate-50/60'
                       : 'border-slate-200/80 hover:border-emerald-500 hover:shadow-md active:scale-[0.98]'
