@@ -195,6 +195,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-shipment.ts',
   // Shopee Task 6: mock update_stock, seed 1 dòng map trong DB test.
   'scripts/test-shopee-stock-push.ts',
+  // Shopee Task 7: push đơn/hủy/tracking qua fake, seed token + 1 đơn.
+  'scripts/test-shopee-webhook.ts',
 ];
 
 function suiteShortName(p: string): string {

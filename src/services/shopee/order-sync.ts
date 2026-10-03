@@ -99,16 +99,7 @@ export async function pullShopeeOrders(
   const result: PullResult = { pulled: 0, skipped: 0, quarantined: [] };
 
   // Danh mục ISBN/code để map SKU — đọc 1 lần cho cả đợt kéo.
-  const catalog = await withDbRetry(async () =>
-    db.select({ id: editions.id, isbn: editions.isbn, code: editions.code }).from(editions)
-  );
-  const editionOf = (sku: string): string | null => {
-    const hit = catalog
-      .filter((e) => e.isbn === sku || e.code === sku)
-      .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
-    // ISBN không UNIQUE (tái bản trùng ISBN): lấy id nhỏ nhất, ổn định.
-    return hit ? hit.id : null;
-  };
+  const editionOf = await buildCatalogResolver();
 
   let cursor = '';
   for (;;) {
@@ -123,21 +114,47 @@ export async function pullShopeeOrders(
     const ready = list.filter((o) => o.order_status === 'READY_TO_SHIP');
     result.skipped += list.length - ready.length;
     if (ready.length > 0) {
-      for (let i = 0; i < ready.length; i += 50) {
-        const batch = ready.slice(i, i + 50);
-        const detail = await shopeeGet(cfg, '/api/v2/order/get_order_detail', {
-          order_sn_list: batch.map((o) => o.order_sn).join(','),
-        });
-        const details: ShopeeOrderDetail[] = detail.order_list ?? [];
-        for (const d of details) {
-          await ingestOne(cfg, editionOf, d, result);
-        }
-      }
+      await ingestShopeeOrderSns(cfg, ready.map((o) => o.order_sn), editionOf, result);
     }
     if (!page.more) break;
     cursor = page.next_cursor || '';
   }
   return result;
+}
+
+/** Kéo chi tiết + nhập N đơn theo mã — dùng chung cho sync định kỳ và webhook. */
+export async function ingestShopeeOrderSns(
+  cfg: ShopeeSyncConfig,
+  orderSns: string[],
+  editionOf?: (sku: string) => string | null,
+  result?: PullResult
+): Promise<PullResult> {
+  const out = result ?? { pulled: 0, skipped: 0, quarantined: [] };
+  const resolve = editionOf ?? (await buildCatalogResolver());
+  for (let i = 0; i < orderSns.length; i += 50) {
+    const batch = orderSns.slice(i, i + 50);
+    const detail = await shopeeGet(cfg, '/api/v2/order/get_order_detail', {
+      order_sn_list: batch.join(','),
+    });
+    const details: ShopeeOrderDetail[] = detail.order_list ?? [];
+    for (const d of details) {
+      await ingestOne(cfg, resolve, d, out);
+    }
+  }
+  return out;
+}
+
+async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
+  const catalog = await withDbRetry(async () =>
+    db.select({ id: editions.id, isbn: editions.isbn, code: editions.code }).from(editions)
+  );
+  return (sku: string) => {
+    // ISBN không UNIQUE (tái bản trùng ISBN): lấy id nhỏ nhất, ổn định.
+    const hit = catalog
+      .filter((e) => e.isbn === sku || e.code === sku)
+      .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+    return hit ? hit.id : null;
+  };
 }
 
 async function ingestOne(
