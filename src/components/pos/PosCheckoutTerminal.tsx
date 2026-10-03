@@ -1794,7 +1794,12 @@ export function PosCheckoutTerminal({
   // `isManagerOverride` KHÔNG được dùng ở đây: sau khi duyệt xong
   // `onApproved` bật cờ đó (`:4748`), nên điều kiện có nó sẽ làm ô biến mất
   // đúng lúc thu ngân còn cần thấy dòng quà đang chờ.
-  const canRequestManualGift = MANUAL_GIFT_ENABLED && currentRole === 'ROLE_CASHIER';
+  // Ẩn khi đơn đang TẶNG 100%: mọi dòng đã 0đ hết, thêm quà tay vào chỉ tạo
+  // thêm một vòng duyệt vô nghĩa (và `onApproved` với rate = 1 sẽ bật lại chế
+  // độ tặng cả đơn).
+  const canRequestManualGift = MANUAL_GIFT_ENABLED && currentRole === 'ROLE_CASHIER' && !isGift;
+  // Ô CHỌN món chỉ hiện khi giỏ mở. Dòng quà đã thêm thì vẫn hiện (kèm nút Gỡ
+  // bị khoá) để thu ngân còn thấy mình đang xin duyệt món nào.
   const showManualGiftUi = canRequestManualGift && !isInteractionLocked;
 
   // Thêm quà tay ⇒ MỞ DUYỆT NGAY, không có đường nào khác.
@@ -1820,15 +1825,19 @@ export function PosCheckoutTerminal({
   const [manualGifts, setManualGifts] = useState<ManualGift[]>([]);
   const [manualGiftPick, setManualGiftPick] = useState('');
   const addManualGift = () => {
+    // Cả hai điều kiện phải chặn ở CỬA, không chỉ ẩn nút: nếu dòng lọt vào
+    // `manualGifts` mà không mở duyệt, thì `handleCheckout` chặn chốt đơn với
+    // câu bảo thu ngân bấm nút mà họ không thấy ⇒ kẹt cứng.
+    if (!canRequestManualGift || isInteractionLocked) return;
     const book = books.find((b) => b.id === manualGiftPick);
-    if (!book || isInteractionLocked) return;
+    if (!book) return;
     setManualGifts((prev) => {
       const ex = prev.find((g) => g.editionId === book.id);
       if (ex) return prev.map((g) => (g.editionId === book.id ? { ...g, quantity: g.quantity + 1 } : g));
       return [...prev, { editionId: book.id, quantity: 1 }];
     });
     setManualGiftPick('');
-    if (canRequestManualGift) requestManualGiftApproval();
+    requestManualGiftApproval();
   };
   const removeManualGift = (editionId: string) => {
     if (isInteractionLocked) return;
@@ -1859,18 +1868,6 @@ export function PosCheckoutTerminal({
         })
         .filter(Boolean) as CartItem[],
     [manualGifts, books]
-  );
-  // Dòng quà tay gửi kèm đơn online/offline: server tự xác minh lại qua
-  // approvedManual, dòng không duyệt bị hạ về giá thường (không báo lỗi).
-  const manualGiftOrderLines = useMemo(
-    () =>
-      manualGifts.map((g) => ({
-        editionId: g.editionId,
-        quantity: g.quantity,
-        unitDiscountRate: 1,
-        isGiftLine: true,
-      })),
-    [manualGifts]
   );
   const clearManualGifts = () => {
     setManualGifts([]);
@@ -3587,9 +3584,18 @@ export function PosCheckoutTerminal({
                     <p className="text-xs font-bold">🔒 Giỏ hàng đang tạm khóa</p>
                     <p className="text-[11px] text-amber-700">
                       {hasRealApprovalState ? (
-                        approvedDiscountRequestId
-                          ? `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
-                          : `Đang chờ Quản lý duyệt chiết khấu ${pendingDiscountRate ? Math.round(pendingDiscountRate * 100) + '%' : ''}. Không thể sửa giỏ.`
+                        manualGifts.length > 0 ? (
+                          // Đơn có quà tặng thêm: nói đúng việc đang chờ duyệt,
+                          // không phải "chiết khấu 0%" (đọc như vậy thu ngân tưởng
+                          // mình vừa xin duyệt nhầm).
+                          approvedDiscountRequestId
+                            ? 'Quản lý đã duyệt quà tặng thêm — giỏ tạm khóa để giữ đúng phê duyệt.'
+                            : 'Đang chờ Quản lý duyệt quà tặng thêm. Không thể sửa giỏ.'
+                        ) : approvedDiscountRequestId ? (
+                          `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
+                        ) : (
+                          `Đang chờ Quản lý duyệt chiết khấu ${Math.round((pendingDiscountRate || 0) * 100)}%. Không thể sửa giỏ.`
+                        )
                       ) : (
                         'Đang xử lý thanh toán, giỏ tạm khóa trong giây lát.'
                       )}
@@ -3733,8 +3739,9 @@ export function PosCheckoutTerminal({
               ))}
             </div>
 
-              {/* Quà TAY ("Tặng thêm") — chỉ thu ngân, và ẩn khi giỏ đang khoá */}
-              {showManualGiftUi && manualGiftLines.map((g) => (
+              {/* Quà TAY ("Tặng thêm") — dòng đã thêm vẫn hiện khi giỏ khoá,
+                  chỉ ô CHỌN món mới ẩn (xem showManualGiftUi) */}
+              {canRequestManualGift && manualGiftLines.map((g) => (
                 <div
                   key={`manual-${g.editionId}`}
                   className="p-2.5 rounded-xl bg-violet-50/70 border border-violet-200 flex items-center justify-between gap-2"
@@ -3749,9 +3756,11 @@ export function PosCheckoutTerminal({
                   </div>
                   <button
                     type="button"
+                    disabled={isInteractionLocked}
                     aria-label={`Gỡ quà tặng thêm: ${g.title}`}
+                    title={isInteractionLocked ? 'Giỏ đang khoá chờ Quản lý duyệt — hãy hủy duyệt để sửa giỏ' : undefined}
                     onClick={() => removeManualGift(g.editionId)}
-                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-violet-300 text-violet-800 text-[11px] font-bold hover:bg-violet-100"
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-violet-300 text-violet-800 text-[11px] font-bold hover:bg-violet-100 disabled:opacity-40"
                   >
                     Gỡ
                   </button>
@@ -4985,7 +4994,7 @@ export function PosCheckoutTerminal({
                 ))}
               </div>
 
-                {showManualGiftUi && manualGiftLines.map((g) => (
+                {canRequestManualGift && manualGiftLines.map((g) => (
                   <div key={`manual-${g.editionId}`} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 bg-violet-50/60 rounded-lg px-1.5">
                     <div className="truncate flex-1 pr-2">
                       <span className="font-bold text-slate-800 truncate block">
@@ -4996,9 +5005,11 @@ export function PosCheckoutTerminal({
                     </div>
                     <button
                       type="button"
+                      disabled={isInteractionLocked}
                       onClick={() => removeManualGift(g.editionId)}
                       aria-label={`Gỡ quà tặng thêm: ${g.title}`}
-                      className="shrink-0 px-2 py-1 rounded-lg bg-white border border-violet-300 text-violet-800 text-[10px] font-bold hover:bg-violet-100"
+                      title={isInteractionLocked ? 'Giỏ đang khoá chờ Quản lý duyệt — hãy hủy duyệt để sửa giỏ' : undefined}
+                      className="shrink-0 px-2 py-1 rounded-lg bg-white border border-violet-300 text-violet-800 text-[10px] font-bold hover:bg-violet-100 disabled:opacity-40"
                     >
                       Gỡ
                     </button>

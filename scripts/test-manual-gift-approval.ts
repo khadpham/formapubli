@@ -181,7 +181,10 @@ async function main() {
       orderCode: `ORD-MG-${Date.now()}-E`,
       warehouseId: WH,
       cashierId: CASHIER.staffId,
-      items: [{ ...bookLine, unitDiscountRate: 0.1 }, manualLine],
+      // Dòng sách KHÔNG gán `unitDiscountRate` — đúng như client gửi: client
+      // chỉ gán rate cho dòng quà, còn dòng thường dựa vào `discountRate` đơn
+      // (PosCheckoutTerminal.tsx). Gán rate ở đây sẽ che lỗi lệch payload.
+      items: [{ ...bookLine, unitDiscountRate: undefined }, manualLine],
       requestedDiscountRate: 0.1,
       actorContext: CASHIER,
     });
@@ -200,7 +203,7 @@ async function main() {
         paymentMethod: 'CASH',
         discountRate: 0.1,
         items: [
-          { editionId: BOOK_ID, quantity: 1, unitDiscountRate: 0.1 },
+          { editionId: BOOK_ID, quantity: 1 },
           { editionId: GIFT_ID, quantity: 1, unitDiscountRate: 1, isGiftLine: true },
         ],
         discountApprovalId: reqMixed.id,

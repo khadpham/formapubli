@@ -630,7 +630,10 @@ async function runManualGiftSuite() {
   if (callsTo('/api/orders', 'POST').length !== mgOrdersBefore) {
     throw new Error('G4 Failed: Quà tay CHƯA duyệt mà đã gửi POST /api/orders — khách sẽ bị thu đúng giá!');
   }
-  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('Quản lý duyệt')) {
+  // Khoản dài hơn: nhánh ATP cũng kết bằng câu "... Quản lý duyệt PIN" — khớp
+  // "Quản lý duyệt" thì test có thể xanh vì LÝ DO KHÁC. So đúng câu của lưới
+  // an toàn quà tay.
+  if (!`${document.getElementById('pos-error-message')?.textContent || ''}`.includes('chưa được Quản lý duyệt')) {
     throw new Error('G4 Failed: Phải báo rõ "chưa được Quản lý duyệt" khi chốt đơn có quà tay chưa duyệt!');
   }
   log('✓ [G4] PASS: Hủy duyệt → giỏ mở lại; chốt đơn bị chặn, KHÔNG gửi đơn');
