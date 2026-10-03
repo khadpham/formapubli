@@ -13,7 +13,7 @@
  *
  * Test thuần khiết, không đụng DB. Chạy: `npx tsx scripts/test-isbn.ts`
  */
-import { isbn13CheckDigit, isValidIsbn13, normalizeIsbn } from '../src/lib/isbn';
+import { isbn13CheckDigit, isValidIsbn13, normalizeIsbn, isbnBlockReason, ISBN_EXEMPTIONS } from '../src/lib/isbn';
 
 let pass = 0;
 let fail = 0;
@@ -90,6 +90,17 @@ console.log('\n--- 7. BẤT BIẾN: số kiểm là DUY NHẤT, đổi số cu�
 let validCount = 0;
 for (let d = 0; d < 10; d++) if (isValidIsbn13('978030640615' + d)) validCount++;
 eq('đúng 1 trong 10 số cuối hợp lệ', validCount, 1);
+
+console.log('\n--- 8. isbnBlockReason + danh sách miễn ---');
+eq('ISBN hợp lệ → không chặn', isbnBlockReason('9786044737690'), null);
+eq('ISBN hỏng → có lý do chặn', isbnBlockReason('9786044449689') !== null, true);
+eq('mã miễn H85 (14 số) → KHÔNG chặn', isbnBlockReason('97863203176313'), null);
+eq('mỗi mã miễn ghi rõ ấn bản/lý do', /ed-h85/i.test(ISBN_EXEMPTIONS['97863203176313']), true);
+eq(
+  'không được miễn trống — miễn mà không ghi lý do thì 6 tháng sau ai cũng quên',
+  Object.values(ISBN_EXEMPTIONS).every((r) => r && r.length > 20),
+  true
+);
 
 console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
 if (fail > 0) {

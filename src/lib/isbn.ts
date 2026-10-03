@@ -45,3 +45,24 @@ export function isValidIsbn13(raw: string): boolean {
   if (s.length !== 13 || /[^0-9]/.test(s)) return false;
   return Number(s[12]) === isbn13CheckDigit(s.slice(0, 12));
 }
+
+/**
+ * Mã CỐ Ý không theo chuẩn — biết trước, đã được chủ doanh nghiệp chấp nhận.
+ * KHUYẾN NGHỊ KHÔNG TỰ Ý THÊM VÀO ĐÂY: một dòng mới phải được sửa từ nguồn thật
+ * (đọc mã vạch trên bìa sách / tra CSV của NXB), không phải từ checksum.
+ */
+export const ISBN_EXEMPTIONS: Record<string, string> = {
+  '97863203176313':
+    'ed-h85 "Đốt kho" — CSV NXB ghi 14 số. Chủ bảo bỏ qua 03/10/2026, KHÔNG tự bịa số.',
+};
+
+/**
+ * `null` = được phép lọt (đạt chuẩn, hoặc nằm trong `ISBN_EXEMPTIONS` với lý do
+ * đã ghi). Trả về chuỗi lý do khi bị chặn — dùng chung cho cả seed (bỏ dòng +
+ * in cảnh báo) lẫn health check (báo đỏ) để hai nơi không lệch nhau.
+ */
+export function isbnBlockReason(raw: string): string | null {
+  if (isValidIsbn13(raw)) return null;
+  if (ISBN_EXEMPTIONS[normalizeIsbn(raw)]) return null;
+  return `ISBN '${raw}' không hợp lệ — phải đúng 13 chữ số và số kiểm phải khớp`;
+}

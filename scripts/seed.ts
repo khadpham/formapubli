@@ -2,7 +2,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db, works, editions, warehouses, partners, staffAccounts } from '../src/db';
 import { DEFAULT_STAFF_ACCOUNTS, hashStaffPasscodeV2 } from '../src/lib/auth-session';
+import { isbnBlockReason } from '../src/lib/isbn';
 
+/**
+ * ⚠ CẢNH BÁO TRƯỚC KHI CHẠY LẠI `seed.ts` (03/10/2026)
+ *
+ * `editions` được ghi bằng `onConflictDoUpdate({ target: editions.code })` ⇒ mỗi
+ * lần chạy GHI ĐÈ TOÀN BỘ 88 ấn bản, kể cả cột ISBN. Đây chính là đường vào của
+ * cả 2 lỗi ISBN sai đã lên production (`ed-h66` sai số kiểm, `ed-h41` đảo số
+ * 3–4). Giờ đã có cổng chặn checksum + báo cáo trùng ISBN, nhưng:
+ *
+ *   1. Sửa ISBN sai giữa chừng ở CSV sẽ bị GHI ĐÈ NGUỘI mỗi lần chạy seed.
+ *      Sửa phải đi qua script idempotent riêng (xem `fix-isbn-ed-h66-prod.ts`).
+ *   2. Trùng ISBN là HỢP LỆ (NXB tái bản chung mã) — `editions.isbn` cố ý không
+ *      UNIQUE. Seed chỉ báo cáo, không chặn.
+ *   3. GHI ĐÈ còn nặng hơn: dòng CSV thiếu mã sẽ KHÔNG xoá ấn bản cũ.
+ *
+ * Cột này ghi đè là CỐ Ý. Đừng "sửa cho chạy" bằng cách đổi `set` thành partial.
+ */
 
 function removeAccents(str: string): string {
   return str
@@ -142,7 +159,10 @@ async function main() {
   console.log(`✅ Seeded ${partnerData.length} partners.`);
 
   // 3. Parse Catalog CSV
-  const csvPath = path.join(process.cwd(), 'data_tabs', 'sheet1_danhmuc_gid_0.csv');
+  // SEED_CSV_PATH chỉ để test (scripts/test-seed-isbn-guard.ts) nạp CSV cố tình
+  // làm hỏng. Không set ⇒ đọc danh mục thật, y như mọi lần chạy.
+  const csvPath =
+    process.env.SEED_CSV_PATH || path.join(process.cwd(), 'data_tabs', 'sheet1_danhmuc_gid_0.csv');
   const fileContent = fs.readFileSync(csvPath, 'utf-8').replace(/^\uFEFF/, '');
   const lines = fileContent.split('\n').filter((l) => l.trim().length > 0);
 
@@ -151,6 +171,8 @@ async function main() {
 
   let insertedWorks = 0;
   let insertedEditions = 0;
+  const rejectedIsbn: string[] = [];
+  const isbnUsage = new Map<string, string[]>();
 
   for (const r of rows) {
     const [
@@ -171,6 +193,17 @@ async function main() {
     ] = r;
 
     if (!itemCode || !isbn) continue;
+
+    // CỔNG CHẶN ISBN (03/10/2026). Trước đây mọi dòng đều lọt thẳng xuống DB.
+    // Dòng sai ⇒ BỎ QUA và in cảnh báo to, KHÔNG insert: nhét vào thì lặp lại
+    // đúng lỗi đã mắc, và lần seed sau sẽ ghi đè lên bản sạch.
+    const blockReason = isbnBlockReason(isbn);
+    if (blockReason) {
+      rejectedIsbn.push(`   ${itemCode} "${title}" — ${blockReason}`);
+      continue;
+    }
+    if (!isbnUsage.has(isbn)) isbnUsage.set(isbn, []);
+    isbnUsage.get(isbn)!.push(itemCode);
 
     const coverPrice = parseFloat((rawPrice || '0').replace(/[^0-9]/g, '')) || 0;
     const pages = parseInt((rawPages || '').replace(/[^0-9]/g, ''), 10) || null;
@@ -233,6 +266,23 @@ async function main() {
   }
 
   console.log(`✅ Successfully seeded ${insertedWorks} works and ${insertedEditions} editions.`);
+
+  if (rejectedIsbn.length > 0) {
+    console.error(
+      `\n🚨🚨🚨 ĐÃ BỎ QUA ${rejectedIsbn.length} DÒNG CÓ ISBN KHÔNG HỢP LỆ 🚨🚨🚨`
+    );
+    console.error('   Danh mục THIẾU những cuốn này — phải sửa CSV từ nguồn thật');
+    console.error('   (đọc mã vạch trên bìa sách), KHÔNG suy ngược từ checksum:');
+    for (const line of rejectedIsbn) console.error(line);
+  }
+
+  // Trùng ISBN là HỢP LỆ (NXB tái bản chung mã) nên không chặn, nhưng phải THẤY:
+  // mỗi cặp là một chỗ POS phải hỏi thu ngân chọn ấn bản nào.
+  const shared = Array.from(isbnUsage.entries()).filter(([, codes]) => codes.length > 1);
+  if (shared.length > 0) {
+    console.log(`\nℹ️  ${shared.length} ISBN đang dùng cho NHIỀU ấn bản (hợp lệ — tái bản chung mã):`);
+    for (const [isbn, codes] of shared) console.log(`   ${isbn} → ${codes.length} ấn bản: ${codes.join(', ')}`);
+  }
 
   const shouldSeedStaff = process.env.SEED_DEFAULT_STAFF === 'true' || process.env.NODE_ENV === 'development';
   if (shouldSeedStaff) {

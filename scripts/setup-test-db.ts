@@ -33,6 +33,7 @@ import {
   DEFAULT_STAFF_ACCOUNTS,
   hashStaffPasscodeV2,
 } from '../src/lib/auth-session';
+import { isbnBlockReason } from '../src/lib/isbn';
 
 
 export const TEST_DB_FILE =
@@ -175,6 +176,15 @@ export async function setupTestDb(dbFile: string = TEST_DB_FILE) {
       author, translator, _vatCol, statusCol, category, rawYear, publisher,
     ] = r;
     if (!itemCode || !isbn) continue;
+
+    // CÙNG CỔNG CHẶN ISBN như `scripts/seed.ts`. File này cố ý chép lại logic
+    // seed (xem header) — nếu chỉ chặn ở seed.ts thì một dòng CSV hỏng vẫn vào
+    // DB test và test xanh trong khi production đã bỏ, tức là test nói dối.
+    const blockReason = isbnBlockReason(isbn);
+    if (blockReason) {
+      console.warn(`   ⚠️  setup-test-db bỏ qua dòng ISBN không hợp lệ: ${itemCode} "${title}" — ${blockReason}`);
+      continue;
+    }
 
     const coverPrice = parseFloat((rawPrice || '0').replace(/[^0-9]/g, '')) || 0;
     const pages = parseInt((rawPages || '').replace(/[^0-9]/g, ''), 10) || null;

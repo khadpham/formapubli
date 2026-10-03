@@ -39,6 +39,7 @@ const ALL_SUITES = [
   'scripts/test-products-rbac.ts',
   'scripts/test-price-normalize.ts',
   'scripts/test-isbn.ts',
+  'scripts/test-seed-isbn-guard.ts',
   'scripts/test-0032-preserves-data.ts',
   'scripts/test-s1-batch-transfer.ts',
   'scripts/test-s2-pos-catalog.ts',
