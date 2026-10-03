@@ -193,6 +193,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-revenue-guard.ts',
   // Shopee Task 5: mock logistics, seed 1 đơn SHIP trong DB test.
   'scripts/test-shopee-shipment.ts',
+  // Shopee Task 6: mock update_stock, seed 1 dòng map trong DB test.
+  'scripts/test-shopee-stock-push.ts',
 ];
 
 function suiteShortName(p: string): string {

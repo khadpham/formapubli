@@ -149,6 +149,17 @@ export function createFakeShopeeFetch(opts: { orders: FakeShopeeOrder[] }) {
           new TextEncoder().encode(`AWB-A6 ${tracking}`).buffer as ArrayBuffer,
       };
     }
+    if (u.pathname.endsWith('/api/v2/product/update_stock')) {
+      return {
+        ok: true,
+        json: async () => ({
+          error: '',
+          message: '',
+          // Shape theo SDK: success_list / failure_list.
+          response: { success_list: [{ model_id: 0 }], failure_list: [] },
+        }),
+      };
+    }
     throw new Error(`FAKE_UNHANDLED: ${u.pathname}`);
   }) as unknown as typeof fetch;
 

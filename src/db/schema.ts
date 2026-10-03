@@ -872,3 +872,13 @@ export const shopeeShopTokens = sqliteTable('shopee_shop_tokens', {
   refreshExpiredAt: integer('refresh_expired_at').notNull(),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const shopeeItemMap = sqliteTable('shopee_item_map', {
+  shopId: integer('shop_id').notNull(),
+  editionId: text('edition_id').notNull(),
+  itemId: integer('item_id').notNull(),
+  modelId: integer('model_id').notNull().default(0),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.shopId, table.editionId] }),
+}));
