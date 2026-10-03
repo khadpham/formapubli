@@ -187,6 +187,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-auth-foundation.ts',
   // Shopee Task 2: mock mạng 100%, chỉ đụng bảng shopee_shop_tokens.
   'scripts/test-shopee-oauth-refresh.ts',
+  // Shopee Task 3: chỉ đụng kho wh-au-co + đơn mới kênh SHOPEE trong DB test.
+  'scripts/test-shopee-order-pull.ts',
 ];
 
 function suiteShortName(p: string): string {
