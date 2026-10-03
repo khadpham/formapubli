@@ -28,6 +28,7 @@ const ALL_SUITES = [
   'scripts/test-no-order-notifications.ts',
   'scripts/test-gift-warehouse-scope.ts',
   'scripts/test-gift-shortfall.ts',
+  'scripts/test-manual-gift-approval.ts',
   'scripts/test-stock-matrix-goods.ts',
   'scripts/test-promotions-service.ts',
   'scripts/test-settlement-goods-display.ts',

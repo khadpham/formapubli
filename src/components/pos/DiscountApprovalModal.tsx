@@ -18,6 +18,11 @@ export interface CartItemSnapshot {
   editionId: string;
   quantity: number;
   unitPrice: number;
+  // Quà TAY ("Tặng thêm"): thu ngân tự thêm, quản lý duyệt trong cùng yêu cầu
+  // này. Server ép về 0đ và chỉ công nhận khi có đúng yêu cầu đã duyệt.
+  unitDiscountRate?: number;
+  isGiftLine?: boolean;
+  isManual?: boolean;
 }
 
 interface DiscountApprovalModalProps {
