@@ -370,7 +370,7 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
               Âm Thanh Phản Hồi & Cảnh Báo Vận Hành
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Phát âm thanh bíp khi quét barcode, thanh toán đơn hàng và thông báo tồn kho
+              Phát âm thanh bíp khi quét barcode, thanh toán đơn và thông báo tồn kho
             </p>
           </div>
 

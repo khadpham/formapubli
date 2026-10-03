@@ -90,7 +90,7 @@ async function runTests() {
   });
 
   // 3. Tạo đơn hàng COMPLETED có 2 cuốn sách + 1 quà tặng bình thường + 1 quà hết tồn (shortfall)
-  console.log('--- 3. Tạo đơn hàng COMPLETED ---');
+  console.log('--- 3. Tạo đơn COMPLETED ---');
   const orderRes = await OrderService.createOrder({
     warehouseId,
     cashierId,
@@ -105,7 +105,7 @@ async function runTests() {
 
   const orderId = orderRes.orderId;
   const orderCode = orderRes.orderCode;
-  console.log(`Đã tạo đơn hàng: ${orderCode} (ID: ${orderId})`);
+  console.log(`Đã tạo đơn: ${orderCode} (ID: ${orderId})`);
 
   // Bổ sung quà tặng vào orderItems
   await db.insert(orderItems).values([

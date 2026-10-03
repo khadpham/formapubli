@@ -135,7 +135,7 @@ export class AIOrderParserService {
       .join('\n');
     const catalogSummary = truncateCatalog(rawCatalogSummary);
     const systemPrompt =
-      'Bạn là trợ lý AI chuyên bóc tách đơn hàng tiếng Việt cho Formapubli.\n' +
+      'Bạn là trợ lý AI chuyên bóc tách đơn tiếng Việt cho Formapubli.\n' +
       'Trích xuất JSON chuẩn: { customerName, phone, address, items: [{editionId, code, title, quantity}], warnings: [] } khớp với danh mục:\n' +
       catalogSummary;
 
@@ -174,7 +174,7 @@ export class AIOrderParserService {
       .join('\n');
     const catalogSummary = truncateCatalog(rawCatalogSummary);
     const systemPrompt =
-      'Bóc tách đơn hàng Formapubli. Trả về JSON: { customerName, phone, address, items: [{editionId, code, title, quantity}], warnings: [] } khớp danh mục:\n' +
+      'Bóc tách đơn Formapubli. Trả về JSON: { customerName, phone, address, items: [{editionId, code, title, quantity}], warnings: [] } khớp danh mục:\n' +
       catalogSummary;
 
     const rawJson = await callOpenAIJsonRaw({

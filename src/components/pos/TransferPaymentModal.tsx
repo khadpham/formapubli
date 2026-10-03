@@ -408,7 +408,7 @@ export function TransferPaymentModal({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Ghi chú đơn (không bắt buộc)…"
-            aria-label="Ghi chú đơn hàng"
+            aria-label="Ghi chú đơn"
             className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
           />
           <button

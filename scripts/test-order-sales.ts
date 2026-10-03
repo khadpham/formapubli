@@ -131,7 +131,7 @@ async function runTests() {
     vatInvoiceRequired: true,
     vatInvoiceCode: 'HD-2026-0089',
     cashierId: 'ketoan-thue',
-    note: 'Đơn hàng mua thư viện doanh nghiệp, xuất VAT qua tài khoản ngân hàng công ty',
+    note: 'Đơn mua thư viện doanh nghiệp, xuất VAT qua tài khoản ngân hàng công ty',
     items: [
       { editionId: bookA.id, quantity: 5 },
     ],
@@ -158,7 +158,7 @@ async function runTests() {
     console.error('❌ THẤT BẠI: Lẽ ra phải chặn lỗi xuất âm kho!');
     process.exit(1);
   } catch (err: any) {
-    console.log(`🛡️ CHẶN THÀNH CÔNG: Hệ thống đã từ chối đơn hàng vượt tồn kho!`);
+    console.log(`🛡️ CHẶN THÀNH CÔNG: Hệ thống đã từ chối đơn vượt tồn kho!`);
     console.log(`   Thông báo lỗi: "${err.message}"`);
   }
 

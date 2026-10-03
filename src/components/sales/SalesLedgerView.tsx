@@ -252,7 +252,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // ký đúng người đang đăng nhập.
   const exportToCSV = () => {
     if (filteredOrders.length === 0) {
-      alert('Không có dữ liệu đơn hàng để xuất CSV.');
+      alert('Không có dữ liệu đơn để xuất CSV.');
       return;
     }
     if (!actorId) {
@@ -393,7 +393,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 font-medium">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>
-            Chế độ Kế Toán Thuế đang kích hoạt: Hệ thống tự động áp dụng bộ lọc cách ly, chỉ trích xuất các đơn hàng có hóa đơn VAT hợp pháp.
+            Chế độ Kế Toán Thuế đang kích hoạt: Hệ thống tự động áp dụng bộ lọc cách ly, chỉ trích xuất các đơn có hóa đơn VAT hợp pháp.
           </span>
         </div>
       ) : (
@@ -619,7 +619,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10">
               <tr>
-                <th className="p-3.5">Mã Đơn Hàng</th>
+                <th className="p-3.5">Mã Đơn</th>
                 <th className="p-3.5">Kho Xuất</th>
                 <th className="p-3.5">Khách Hàng / Đại Lý</th>
                 <th className="p-3.5">Kênh</th>
@@ -643,7 +643,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               ) : visibleOrders.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="p-8 text-center text-slate-400">
-                    Không tìm thấy đơn hàng nào phù hợp với bộ lọc.
+                    Không tìm thấy đơn nào phù hợp với bộ lọc.
                   </td>
                 </tr>
               ) : (
@@ -714,7 +714,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                         type="button"
                         onClick={() => openOrderDetail(ord.id)}
                         className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-xs font-bold transition-colors cursor-pointer border border-sky-200"
-                        title="Xem chi tiết đơn hàng"
+                        title="Xem chi tiết đơn"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Xem</span>

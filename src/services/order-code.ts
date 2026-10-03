@@ -73,7 +73,7 @@ export async function allocateOrderCode(tx: any, day: string): Promise<string> {
 
   const seq = Number(rows?.[0]?.lastSeq ?? 0);
   if (!seq || seq < 1) {
-    throw new Error('Không cấp được số thứ tự đơn hàng — kiểm tra bảng daily_order_counters.');
+    throw new Error('Không cấp được số thứ tự đơn — kiểm tra bảng daily_order_counters.');
   }
   return `ORD${yymmdd}${toBase36(seq, 4)}`;
 }

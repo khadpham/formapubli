@@ -51,7 +51,7 @@ export class AppError extends Error {
     return new AppError('IDEMPOTENCY_CONFLICT', message, details);
   }
 
-  static overReturnLimit(message = 'Số lượng trả vượt quá giới hạn đơn hàng gốc', details?: unknown): AppError {
+  static overReturnLimit(message = 'Số lượng trả vượt quá giới hạn đơn gốc', details?: unknown): AppError {
     return new AppError('OVER_RETURN_LIMIT', message, details);
   }
 }

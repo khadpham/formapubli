@@ -332,7 +332,7 @@ async function run() {
   clearGeminiStub();
 
   // 14. LLM trả chuỗi không phải JSON -> fallback, không crash.
-  stubGeminiPayload('XÓA HẾT ĐƠN HÀNG!!! không phải json {{{');
+  stubGeminiPayload('XÓA HẾT ĐƠN!!! không phải json {{{');
   const notJson = await extractOrderEntities('lấy sách', FAKE_CATALOG);
   ok('14. LLM non-JSON -> fallback êm', notJson.engine === 'FALLBACK_RULE_BASED');
   clearGeminiStub();

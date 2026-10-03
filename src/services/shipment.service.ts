@@ -23,7 +23,7 @@ const ALLOWED_TRANSITIONS: Record<ShippingStatus, ShippingStatus[]> = {
 export class ShipmentService {
   static async getByOrder(orderId: string) {
     const rows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+    if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn.');
     return rows[0];
   }
 

@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return NextResponse.json(
-        { success: false, error: 'Vui lòng cung cấp nội dung text để bóc tách đơn hàng.' },
+        { success: false, error: 'Vui lòng cung cấp nội dung text để bóc tách đơn.' },
         { status: 400 }
       );
     }

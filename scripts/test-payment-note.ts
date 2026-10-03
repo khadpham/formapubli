@@ -89,7 +89,7 @@ ok(/note: string/.test(modal) && /setNote: \(value: string\) => void/.test(modal
 const onChanges = (pos.match(/onChange=\{\(e\) => setNote\(e\.target\.value\)\}/g) || []).length
   + (modal.match(/onChange=\{\(e\) => setNote\(e\.target\.value\)\}/g) || []).length;
 ok(onChanges === 3, '9. Cả 3 ô đều ghi vào cùng một `note`', `đếm được ${onChanges}`);
-ok(!/required/.test(between(pos, 'aria-label="Ghi chú đơn hàng"', 'aria-label="Ghi chú đơn hàng"')) || true,
+ok(!/required/.test(between(pos, 'aria-label="Ghi chú đơn"', 'aria-label="Ghi chú đơn"')) || true,
    '10. (kiểm bằng 11) Ô nhập không bắt buộc');
 {
   const noteBlocks: string[] = [];
@@ -105,8 +105,8 @@ ok(!/required/.test(between(pos, 'aria-label="Ghi chú đơn hàng"', 'aria-labe
 }
 ok(/placeholder="Ghi chú đơn \(không bắt buộc\)…"/.test(pos + modal),
    '11. Placeholder đúng chữ');
-ok((pos.match(/aria-label="Ghi chú đơn hàng"/g) || []).length === 2
-   && (modal.match(/aria-label="Ghi chú đơn hàng"/g) || []).length === 1,
+ok((pos.match(/aria-label="Ghi chú đơn"/g) || []).length === 2
+   && (modal.match(/aria-label="Ghi chú đơn"/g) || []).length === 1,
    '12. Đủ 3 aria-label, mỗi ô một cái');
 ok(/note,/.test(pos), '13. `note` vẫn được gửi trong body tạo đơn');
 

@@ -151,7 +151,7 @@ async function runMasterAudit() {
   } catch (err: any) {
     blockedEmptyOrder = true;
   }
-  assert(blockedEmptyOrder, 'Từ chối tạo đơn hàng rỗng (0 sản phẩm)');
+  assert(blockedEmptyOrder, 'Từ chối tạo đơn rỗng (0 sản phẩm)');
 
   // Edge case 2: Số lượng bán âm hoặc 0
   let blockedInvalidQty = false;
@@ -163,7 +163,7 @@ async function runMasterAudit() {
   } catch (err: any) {
     blockedInvalidQty = true;
   }
-  assert(blockedInvalidQty, 'Từ chối tạo đơn hàng có số lượng <= 0');
+  assert(blockedInvalidQty, 'Từ chối tạo đơn có số lượng <= 0');
 
   // Test Bán hàng thực tế: 1 cuốn đầu tiên của danh mục tại Kho Âu Cơ
   const initialStock = await InventoryService.getBalance(testEdition.id, khoAuCo.id, 'NEW');
@@ -185,7 +185,7 @@ async function runMasterAudit() {
   );
   assert(
     retailOrder.discountAmount === Math.round(retailOrder.subtotal * 0.1),
-    'Tính chiết khấu đơn hàng chuẩn xác 100%',
+    'Tính chiết khấu đơn chuẩn xác 100%',
     `Giá bìa: ${retailOrder.subtotal.toLocaleString()} đ | Giảm 10%: ${(retailOrder.discountAmount || 0).toLocaleString()} đ | Thực thu: ${retailOrder.finalAmount.toLocaleString()} đ`
   );
 

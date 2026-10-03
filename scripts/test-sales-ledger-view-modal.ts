@@ -13,17 +13,17 @@ function runTests() {
   // 1. Kiểm tra có cột Thao tác và Nút Xem
   assert.ok(
     content.includes('Thao tác') || content.includes('Thao Tác'),
-    'Lỗi: Thiếu tiêu đề cột Thao tác trong bảng đơn hàng'
+    'Lỗi: Thiếu tiêu đề cột Thao tác trong bảng đơn'
   );
   assert.ok(
     content.includes('Xem') && (content.includes('Eye') || content.includes('selectedOrderId') || content.includes('viewingOrder')),
-    'Lỗi: Thiếu nút hoặc chức năng Xem chi tiết đơn hàng'
+    'Lỗi: Thiếu nút hoặc chức năng Xem chi tiết đơn'
   );
 
   // 2. Kiểm tra có Modal xem chi tiết đơn hàng
   assert.ok(
     content.includes('/api/orders/') || content.includes('fetchOrderDetail'),
-    'Lỗi: Thiếu logic tải chi tiết đơn hàng từ API /api/orders/[id]'
+    'Lỗi: Thiếu logic tải chi tiết đơn từ API /api/orders/[id]'
   );
 
   // 3. Kiểm tra tính năng Hủy đơn cho Quản lý / Chủ

@@ -55,7 +55,7 @@ ok(
 );
 ok(/role="img"/.test(chart), 'svg phải có role="img"');
 ok(
-  /aria-label=\{`Biểu đồ số đơn hàng theo từng giờ/.test(chart),
+  /aria-label=\{`Biểu đồ số đơn theo từng giờ/.test(chart),
   'svg phải có aria-label nêu rõ giờ và giờ cao điểm (screen reader đọc được)'
 );
 
@@ -121,7 +121,7 @@ ok(
 );
 
 // --- 6. Bố cục: đọc được số mà không cần nhìn biểu đồ -----------------------
-ok(/Đơn Hàng Theo Giờ/.test(chart), 'phải có tiêu đề tiếng Việt có dấu');
+ok(/Đơn Theo Giờ/.test(chart), 'phải có tiêu đề tiếng Việt có dấu');
 ok(/Giờ cao điểm/.test(chart), 'phải có ô số Giờ cao điểm');
 ok(/đơn\/giờ/.test(chart), 'phải có ô số bình quân đơn/giờ');
 // Ô số thứ ba là TIỀN BÌNH QUÂN mỗi giờ BÁN, và mẫu số phải là số giờ THỰC SỰ

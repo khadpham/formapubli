@@ -131,26 +131,25 @@ async function runTest() {
   );
   console.log('✓ 5. SalesLedgerView.tsx tái sử dụng thành công OrderDetailModal dùng chung.');
 
-  // 6. Header modal chi tiết đơn phải XUỐNG DÒNG, không cắt cụt mã đơn / tên khách.
-  //    Lỗi thật: `truncate` (= nowrap + ellipsis) ép tiêu đề "Chi Tiết Đơn Hàng ·
-  //    ORD..." thành 1 dòng nên mã đơn 13 ký tự bị cắt, người dùng không đọc được.
+  // 6. Tiêu đề modal chi tiết đơn: GIỮ 1 DÒNG nhưng RÚT NGẮN chữ ("đơn hàng" -> "đơn")
+  //    và giảm cỡ chữ trên mobile để mã đơn 13 ký tự vẫn hiện đủ, không xuống 2 dòng.
   const headerStart = orderDetailContent.indexOf('id="order-detail-title"');
   const headerEnd = orderDetailContent.indexOf('</p>', headerStart);
   const headerBlock = headerStart >= 0 ? orderDetailContent.slice(headerStart, headerEnd + 4) : '';
+  assert.ok(headerBlock.length > 0, 'Phải tìm thấy header modal chi tiết đơn');
   assert.ok(
-    headerBlock.length > 0 && !headerBlock.includes('truncate'),
-    'Tiêu đề/phụ đề modal chi tiết phải cho xuống dòng, KHÔNG dùng truncate (mã đơn dài không được cắt)'
+    !headerBlock.includes('break-words') && headerBlock.includes('truncate'),
+    'Tiêu đề/phụ đề modal chi tiết phải GIỮ 1 DÒNG (truncate), không xuống 2 dòng'
   );
   assert.ok(
-    headerBlock.includes('break-words'),
-    'Tiêu đề modal chi tiết phải có break-words để mã đơn dài tự xuống dòng'
+    headerBlock.includes('Chi Tiết Đơn') && !/Đơn Hàng|đơn hàng/.test(headerBlock),
+    'Tiêu đề phải rút gọn "Chi Tiết Đơn" (bỏ chữ "hàng")'
   );
-  const custLine = orderDetailContent.split('\n').find((l) => l.includes("orderDetail.order.customerName || 'Khách lẻ'")) || '';
   assert.ok(
-    custLine.length > 0 && !custLine.includes('truncate'),
-    'Tên khách hàng trong modal chi tiết không được cắt bằng truncate'
+    headerBlock.includes('text-[13px]'),
+    'Tiêu đề phải giảm cỡ chữ trên mobile để vừa 1 dòng'
   );
-  console.log('✓ 6. Header OrderDetailModal xuống dòng đúng, không cắt cụt mã đơn / tên khách.');
+  console.log('✓ 6. Header OrderDetailModal 1 dòng, rút gọn "Chi Tiết Đơn", cỡ chữ nhỏ hơn.');
 
   console.log('\n========================================');
   console.log('TẤT CẢ 6 BÀI KIỂM THỬ ĐÃ PASS 100%!');

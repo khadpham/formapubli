@@ -31,7 +31,7 @@ function ok(label: string, cond: boolean, extra = '') {
 }
 
 ok(
-  'route không sinh mục thông báo đơn hàng nào',
+  'route không sinh mục thông báo đơn nào',
   !/kind:\s*['"]order['"]/.test(src),
   'còn dòng kind order'
 );

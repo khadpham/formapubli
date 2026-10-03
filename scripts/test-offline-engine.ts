@@ -107,7 +107,7 @@ async function testOfflineEngine() {
     paymentMethod: 'CASH',
     fiscalScope: 'INTERNAL_MANAGEMENT',
     cashierId: 'cashier-pos-test',
-    note: 'Đơn hàng tạo từ thiết bị mất mạng mô phỏng',
+    note: 'Đơn tạo từ thiết bị mất mạng mô phỏng',
     items: [
       {
         editionId: sampleEdition.id,
@@ -118,7 +118,7 @@ async function testOfflineEngine() {
 
   assert(
     createdOrder.orderId === offlineUuid && createdOrder.orderCode === offlineOrderCode,
-    'Đơn hàng ngoại tuyến ghi nhận thành công với mã UUID v7 từ máy khách',
+    'Đơn ngoại tuyến ghi nhận thành công với mã UUID v7 từ máy khách',
     `Mã đơn: ${createdOrder.orderCode} | ID: ${createdOrder.orderId}`
   );
 
@@ -157,7 +157,7 @@ async function testOfflineEngine() {
   const allInAuCoMatch = ordersInAuCo.every((o) => o.warehouseId === 'wh-au-co');
   assert(
     ordersInAuCo.length > 0 && allInAuCoMatch,
-    'Bộ lọc đơn hàng theo Kho hàng hoạt động chính xác 100%',
+    'Bộ lọc đơn theo Kho hàng hoạt động chính xác 100%',
     `Tìm thấy ${ordersInAuCo.length} đơn thuộc Kho Âu Cơ`
   );
 
@@ -168,7 +168,7 @@ async function testOfflineEngine() {
   });
   assert(
     todayOrders.length > 0,
-    'Bộ lọc đơn hàng theo Ngày hoạt động chính xác',
+    'Bộ lọc đơn theo Ngày hoạt động chính xác',
     `Số đơn phát sinh trong ngày: ${todayOrders.length}`
   );
 

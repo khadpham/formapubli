@@ -496,7 +496,7 @@ assert.match(approvalService, /assertTransitionApplied/);
 assert.match(approvalService, /const canonicalItems = items\.map/);
 assert.match(approvalService, /editions\.coverPrice/);
 assert.match(approvalService, /supersedeResult/);
-assert.match(approvalService, /Yêu cầu duyệt đã được sử dụng cho đơn hàng/);
+assert.match(approvalService, /Yêu cầu duyệt đã được sử dụng cho đơn/);
 assert.match(approvalService, /db\.transaction\(\(tx\) => this\.createRequest/);
 assert.match(approvalService, /originalAmount\?: number/);
 assert.match(approvalService, /eq\(discountApprovalRequests\.version, request\.version\)[\s\S]*gt\(discountApprovalRequests\.expiresAt, nowIso\)/);

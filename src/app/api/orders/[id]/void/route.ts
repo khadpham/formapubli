@@ -13,7 +13,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const session = await requireSessionRole(req, ALLOWED_VOID_ROLES);
     const { id } = await ctx.params;
     if (!id) {
-      return NextResponse.json({ success: false, error: 'Thiếu mã đơn hàng.' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Thiếu mã đơn.' }, { status: 400 });
     }
 
     const body = await req.json().catch(() => ({}));
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     return NextResponse.json({
       success: true,
-      message: 'Đã hủy đơn hàng và hoàn trả tồn kho thành công.',
+      message: 'Đã hủy đơn và hoàn trả tồn kho thành công.',
       data: result,
     });
   } catch (error: any) {

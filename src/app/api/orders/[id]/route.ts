@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     // Cùng luật như GET /api/orders: thủ kho không xem doanh số, thu ngân chỉ xem đơn của mình.
     if (userRole === 'ROLE_WAREHOUSE') {
-      return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Thủ kho không có quyền xem doanh số đơn hàng.' }, { status: 403 });
+      return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Thủ kho không có quyền xem doanh số đơn.' }, { status: 403 });
     }
     if (userRole === 'ROLE_CASHIER' && `${order.cashierId}` !== `${session.actorId}`) {
       return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Thu ngân chỉ xem được đơn do chính mình tạo.' }, { status: 403 });

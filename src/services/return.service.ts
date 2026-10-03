@@ -160,7 +160,7 @@ export class ReturnService {
         if (ordRows.length === 0) throw AppError.invalid('Đơn gốc không tồn tại.');
         const origin: any = ordRows[0];
         if (origin.status !== 'COMPLETED') {
-          throw AppError.conflict(`Không thể lập phiếu trả cho đơn hàng có trạng thái '${origin.status}'. Đơn hàng phải ở trạng thái 'COMPLETED'.`);
+          throw AppError.conflict(`Không thể lập phiếu trả cho đơn có trạng thái '${origin.status}'. Đơn phải ở trạng thái 'COMPLETED'.`);
         }
 
         // Map orderItemId -> dòng đơn (để validate + snapshot giá server).

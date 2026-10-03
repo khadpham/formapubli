@@ -101,10 +101,10 @@ async function runP0Tests() {
 
   const countOrdersAfter = (await db.select().from(orders)).length;
   if (orderThrew && countOrdersBefore === countOrdersAfter) {
-    console.log(`✅ TEST 2 ĐẠT: Khi 1 sản phẩm thiếu hàng, toàn bộ đơn hàng và thẻ kho tự động rollback 100% (0 đơn rác phát sinh).`);
+    console.log(`✅ TEST 2 ĐẠT: Khi 1 sản phẩm thiếu hàng, toàn bộ đơn và thẻ kho tự động rollback 100% (0 đơn rác phát sinh).`);
     passedTests++;
   } else {
-    throw new Error(`TEST 2 THẤT BẠI: Đơn hàng bị ghi rác một phần!`);
+    throw new Error(`TEST 2 THẤT BẠI: Đơn bị ghi rác một phần!`);
   }
 
   // TEST 3: Kiểm thử Lá Chắn Server-side RBAC Guard

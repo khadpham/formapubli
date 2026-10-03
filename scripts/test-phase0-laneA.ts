@@ -193,7 +193,7 @@ async function run() {
     idempotencyKey: uniq('idem-order-auth'),
   }, { Cookie: cashierCookie });
 
-  test('11. Client gửi cashierId lậu trong body đơn hàng được chuẩn hóa an toàn', orderRes.status === 200 && orderRes.body?.data?.orderCode);
+  test('11. Client gửi cashierId lậu trong body đơn được chuẩn hóa an toàn', orderRes.status === 200 && orderRes.body?.data?.orderCode);
 
   // -------------------------------------------------------------------------
   // CA 12: Phân quyền Analytics: Không cookie -> 401; Cashier cookie -> 403

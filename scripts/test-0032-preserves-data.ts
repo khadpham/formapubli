@@ -92,7 +92,7 @@ async function main() {
   for (const s of statements) await db.execute(s);
   ok(`chạy ${statements.length} câu không lỗi`, true);
 
-  console.log('\n--- 3. DỮ LIỆU ĐƠN HÀNG còn nguyên? ---');
+  console.log('\n--- 3. DỮ LIỆU ĐƠN còn nguyên? ---');
   const snapAfter = await rows(`SELECT * FROM order_items WHERE order_id='ord-32' ORDER BY id`);
   ok('đủ 2 dòng', snapAfter.length === 2, `thực tế=${snapAfter.length}`);
   for (const b of snapBefore) {

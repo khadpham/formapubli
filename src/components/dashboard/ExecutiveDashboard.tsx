@@ -404,7 +404,7 @@ export function ExecutiveDashboard({
             onClick={fetchDashboardData}
             disabled={loading}
             aria-busy={loading}
-            title="Đọc lại số liệu đơn hàng từ server"
+            title="Đọc lại số liệu đơn từ server"
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors shrink-0 cursor-pointer ${
               loading
                 ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-progress'
@@ -577,7 +577,7 @@ export function ExecutiveDashboard({
         <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Đơn Hàng Đã Chốt
+              Đơn Đã Chốt
             </span>
             <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
               <ShoppingCart className="w-5 h-5" />
@@ -766,7 +766,7 @@ export function ExecutiveDashboard({
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="font-extrabold text-slate-900 text-base">
-              Đơn Hàng Gần Đây & Bút Toán Khấu Trừ Kho
+              Đơn Gần Đây & Bút Toán Khấu Trừ Kho
             </h3>
             <p className="text-xs text-slate-500">
               Nhật ký bán hàng và cờ phân loại Sổ Kép tài chính
@@ -798,7 +798,7 @@ export function ExecutiveDashboard({
               {orders.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-6 text-center text-slate-400">
-                    Chưa có đơn hàng nào được ghi nhận. Hãy mở Quầy POS để tạo đơn bán đầu tiên!
+                    Chưa có đơn nào được ghi nhận. Hãy mở Quầy POS để tạo đơn bán đầu tiên!
                   </td>
                 </tr>
               ) : (

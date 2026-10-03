@@ -31,7 +31,7 @@ async function main() {
   const t = await q(`SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`);
   console.log('  Tổng số bảng:', Number(t[0].n));
 
-  console.log('\n═══ 3. ĐƠN HÀNG — có tạo được không ═══');
+  console.log('\n═══ 3. ĐƠN — có tạo được không ═══');
   const st = await q(
     `SELECT status, COUNT(*) n FROM orders GROUP BY status ORDER BY n DESC`
   );

@@ -187,7 +187,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
       <div className={`bg-white rounded-2xl border border-slate-200 p-5 ${className}`}>
         <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
           <BarChart3 className="w-4 h-4 text-indigo-600" />
-          Đơn Hàng Theo Giờ
+          Đơn Theo Giờ
         </h4>
         <p className="mt-4 text-xs text-slate-500 flex items-center gap-2">
           <Clock className="w-4 h-4 text-slate-300" />
@@ -210,13 +210,13 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
       <div className={`flex items-start justify-between gap-3 ${hideHeader ? '' : ''}`}>
         {hideHeader ? (
           <span className="sr-only">
-            Đơn Hàng Theo Giờ · {rangeLabel} · giờ Việt Nam
+            Đơn Theo Giờ · {rangeLabel} · giờ Việt Nam
           </span>
         ) : (
           <div>
             <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <BarChart3 className="w-4 h-4 text-indigo-600" />
-              Đơn Hàng Theo Giờ
+              Đơn Theo Giờ
             </h4>
             <p className="text-[11px] text-slate-400 mt-1">
               Số đơn mỗi giờ · {rangeLabel} · giờ Việt Nam
@@ -273,7 +273,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-auto"
         role="img"
-        aria-label={`Biểu đồ số đơn hàng theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${peak?.orders ?? 0} đơn.${hasBaseline ? ` Đường nét đứt là số đơn bình quân của các ngày trước, tổng ${money1(baselineTotal)} đơn trong khung giờ này.` : ''}${nowHour != null ? ` Các giờ sau ${nowHour}h là chưa tới.` : ''}`}
+        aria-label={`Biểu đồ số đơn theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${peak?.orders ?? 0} đơn.${hasBaseline ? ` Đường nét đứt là số đơn bình quân của các ngày trước, tổng ${money1(baselineTotal)} đơn trong khung giờ này.` : ''}${nowHour != null ? ` Các giờ sau ${nowHour}h là chưa tới.` : ''}`}
       >
         {/* Lưới ngang + nhãn trục Y. Đường 0 luôn kẻ đậm hơn: đó là mặt đất. */}
         {[0, 0.5, 1].map((f) => {

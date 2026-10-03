@@ -245,7 +245,7 @@ function addInfoOf(payload: string): string {
   throw new Error('không tìm thấy tag 62 trong payload');
 }
 
-const RAW = 'Chuyển khoản đơn hàng của khách lẻ 0912345678'; // 41 ký tự, có dấu
+const RAW = 'Chuyển khoản đơn của khách lẻ 0912345678'; // 41 ký tự, có dấu
 const encoded = addInfoOf(
   generateVietQRPayload({ bankBin: '970436', accountNo: '3180281056609', amount: 150000, content: RAW })
 );

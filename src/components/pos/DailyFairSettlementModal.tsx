@@ -620,7 +620,7 @@ export function DailyFairSettlementModal({
               <h3 className="font-extrabold text-sm sm:text-base flex items-center gap-2 whitespace-nowrap">
                 Báo Cáo Chốt Ngày
               </h3>
-              <p className="text-[11px] sm:text-xs text-slate-400 break-words">
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
                 Kho: <strong className="text-white">{activeWarehouseName}</strong>
                 <span className="hidden sm:inline"> | </span>
                 <span className="ml-1 sm:ml-0">Ngày: <span className="font-mono text-amber-300">{shownReportDate}</span></span>
@@ -1169,7 +1169,7 @@ export function DailyFairSettlementModal({
                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                     <div className="bg-slate-100 px-4 py-3 border-b border-slate-200">
                       <h4 className="font-bold text-xs text-slate-800 uppercase">
-                        Đơn Hàng Duyệt Chiết Khấu Từ Trần Cho Phép (≥ 20%) ({data.discountSupervision?.overCapOrdersCount || 0})
+                        Đơn Duyệt Chiết Khấu Từ Trần Cho Phép (≥ 20%) ({data.discountSupervision?.overCapOrdersCount || 0})
                       </h4>
                     </div>
 
@@ -1190,7 +1190,7 @@ export function DailyFairSettlementModal({
                           {data.discountSupervision?.orders?.length === 0 ? (
                             <tr>
                               <td colSpan={7} className="p-6 text-center text-slate-400 italic">
-                                Không có đơn hàng nào vượt trần chiết khấu 20% trong ngày.
+                                Không có đơn nào vượt trần chiết khấu 20% trong ngày.
                               </td>
                             </tr>
                           ) : (
@@ -1313,7 +1313,7 @@ export function DailyFairSettlementModal({
             {/* I. CHỈ SỐ KINH DOANH & PHÂN TÍCH ĐƠN HÀNG */}
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                I. CHỈ SỐ KINH DOANH & PHÂN TÍCH ĐƠN HÀNG
+                I. CHỈ SỐ KINH DOANH & PHÂN TÍCH ĐƠN
               </h3>
               <div className="grid grid-cols-2 gap-x-10 gap-y-1 text-[12px] text-slate-700">
                 <div className="flex justify-between items-baseline py-0.5 border-b border-slate-100">
@@ -1321,7 +1321,7 @@ export function DailyFairSettlementModal({
                   <strong className="font-mono text-slate-950 font-bold">{(data.financials?.netSales || 0).toLocaleString('vi-VN')} đ</strong>
                 </div>
                 <div className="flex justify-between items-baseline py-0.5 border-b border-slate-100">
-                  <span>- Tổng số đơn hàng bán ra:</span>
+                  <span>- Tổng số đơn bán ra:</span>
                   <strong className="text-slate-950">
                     <span className="font-mono font-bold">{totalOrdersCount}</span> đơn ({cashOrdersCount} TM · {qrTransferOrdersCount} CK)
                   </strong>
@@ -1348,7 +1348,7 @@ export function DailyFairSettlementModal({
                 </div>
 
                 <div className="flex justify-between items-baseline py-0.5 border-b border-slate-100">
-                  <span>- Cơ cấu đơn hàng:</span>
+                  <span>- Cơ cấu đơn:</span>
                   <strong className="text-slate-900 font-semibold">
                     {cashOrdersCount} TM ({cashOrdersShare}%) · {qrTransferOrdersCount} CK ({qrOrdersShare}%)
                   </strong>
@@ -1627,7 +1627,7 @@ export function DailyFairSettlementModal({
                       {vnHm(data.highlight.createdAt) ? ` (${vnHm(data.highlight.createdAt)})` : ''}
                     </span>
                   ) : (
-                    <span className="text-slate-500 italic">- Không có đơn hàng phát sinh trong ngày.</span>
+                    <span className="text-slate-500 italic">- Không có đơn phát sinh trong ngày.</span>
                   )}
                 </div>
                 <div className="py-0.5">

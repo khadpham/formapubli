@@ -856,7 +856,7 @@ export function PosCheckoutTerminal({
         if (nextReviewOrders.length > 0) {
           setSyncToast(`⚠️ ${nextReviewOrders.length} đơn cần xác nhận lại trước khi đồng bộ.`);
         } else if (successCount > 0) {
-        setSyncToast(`🎉 Đã đồng bộ thành công ${successCount} đơn hàng ngoại tuyến lên máy chủ!`);
+        setSyncToast(`🎉 Đã đồng bộ thành công ${successCount} đơn ngoại tuyến lên máy chủ!`);
         setTimeout(() => setSyncToast(null), 4000);
         if (onOrderCompleted) onOrderCompleted();
       }
@@ -943,7 +943,7 @@ export function PosCheckoutTerminal({
 
     const handleOnline = () => {
       setIsOnline(true);
-      setSyncToast('🟢 Đã có kết nối mạng trở lại! Đang tự động đồng bộ đơn hàng...');
+      setSyncToast('🟢 Đã có kết nối mạng trở lại! Đang tự động đồng bộ đơn...');
       syncPendingOrdersRef.current();
     };
 
@@ -2009,7 +2009,7 @@ export function PosCheckoutTerminal({
         );
         setTimeout(() => setSyncToast(null), 6000);
       } catch (err: any) {
-        setErrorMessage('Lỗi lưu đơn hàng ngoại tuyến: ' + err.message);
+        setErrorMessage('Lỗi lưu đơn ngoại tuyến: ' + err.message);
       }
     };
 
@@ -2068,7 +2068,7 @@ export function PosCheckoutTerminal({
           }),
         });
         const resData = await response.json();
-        if (!resData.success) throw new Error(resData.error || 'Lỗi tạo đơn hàng');
+        if (!resData.success) throw new Error(resData.error || 'Lỗi tạo đơn');
         setTransferErrorMessage(null);
         setTransferOfflineOrderId(null);
         const session: TransferPaymentSession = {
@@ -2199,7 +2199,7 @@ export function PosCheckoutTerminal({
 
       const resData = await response.json();
       if (!resData.success) {
-        throw new Error(resData.error || 'Lỗi tạo đơn hàng');
+        throw new Error(resData.error || 'Lỗi tạo đơn');
       }
 
       setCompletedOrder({
@@ -2687,7 +2687,7 @@ export function PosCheckoutTerminal({
                 onClick={syncPendingOrders}
                 disabled={isSyncing || !isOnline}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
-                title={isOnline ? "Bấm để đồng bộ đơn hàng lên máy chủ ngay" : "Cần có mạng internet để đồng bộ"}
+                title={isOnline ? "Bấm để đồng bộ đơn lên máy chủ ngay" : "Cần có mạng internet để đồng bộ"}
               >
                 <CloudUpload className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span>{isSyncing ? 'Đang sync...' : `${pendingOfflineCount} đơn chờ`}</span>
@@ -3762,7 +3762,7 @@ export function PosCheckoutTerminal({
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Ghi chú đơn (không bắt buộc)…"
-                    aria-label="Ghi chú đơn hàng"
+                    aria-label="Ghi chú đơn"
                     className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -3992,7 +3992,7 @@ export function PosCheckoutTerminal({
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs font-medium space-y-1">
                 <div className="flex items-center gap-1.5 font-bold text-amber-800">
                   <WifiOff className="w-4 h-4 text-amber-600" />
-                  <span>Đơn hàng ngoại tuyến (Chưa sync lên server)</span>
+                  <span>Đơn ngoại tuyến (Chưa sync lên server)</span>
                 </div>
                 <p className="text-[11px] text-amber-700 leading-relaxed">
                   Dữ liệu đã lưu an toàn vào IndexedDB với khóa thời gian UUID v7. Hệ thống sẽ tự động đồng bộ và khấu trừ kho máy chủ ngay khi có mạng trở lại.
@@ -4667,7 +4667,7 @@ export function PosCheckoutTerminal({
                   <ShoppingCart className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 id="mobile-checkout-title" className="text-xs font-extrabold text-slate-900">Chi tiết Đơn hàng & Thanh toán</h3>
+                  <h3 id="mobile-checkout-title" className="text-xs font-extrabold text-slate-900">Chi tiết Đơn & Thanh toán</h3>
                   <p className="text-[10px] text-slate-500 font-medium">
                     {totalCopies} cuốn • Giảm {Math.round(discountRate * 100)}%
                   </p>
@@ -4758,7 +4758,7 @@ export function PosCheckoutTerminal({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Ghi chú đơn (không bắt buộc)…"
-                  aria-label="Ghi chú đơn hàng"
+                  aria-label="Ghi chú đơn"
                   className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>

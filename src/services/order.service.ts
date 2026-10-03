@@ -387,7 +387,7 @@ export class OrderService {
     // FIX-03: trần chiết khấu tầng service (API route có thể bị bypass khi gọi trực tiếp).
     // Ngoại lệ duy nhất: discount == 1 kèm cờ isGift (đơn tặng, validate riêng bên dưới).
     if (!Number.isFinite(discountRate) || discountRate < 0 || discountRate > 1) {
-      throw AppError.invalid('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
+      throw AppError.invalid('Chiết khấu đơn phải nằm trong khoảng 0 - 100%.');
     }
     for (const it of looseItems) {
       const r = it.unitDiscountRate ?? discountRate;
@@ -403,7 +403,7 @@ export class OrderService {
     const isGift = rawGift;
     const giftReason = `${(params as any).giftReason ?? ''}`.trim();
     if (discountRate > 1 || discountRate < 0) {
-      throw AppError.invalid('Chiết khấu đơn hàng phải nằm trong khoảng 0 - 100%.');
+      throw AppError.invalid('Chiết khấu đơn phải nằm trong khoảng 0 - 100%.');
     }
     if (isGift) {
       if (discountRate !== 1) {
@@ -430,7 +430,7 @@ export class OrderService {
       bundleOrders.reduce((sum, b) => sum + b.quantity, 0);
 
     if ((!items || items.length === 0) && (!params.bundles || params.bundles.length === 0)) {
-      throw AppError.invalid('Đơn hàng phải có ít nhất 1 đầu sách hoặc 1 combo.');
+      throw AppError.invalid('Đơn phải có ít nhất 1 đầu sách hoặc 1 combo.');
     }
 
     // Với đơn combo (bundles > 0): nếu caller truyền idempotencyKey và đơn đã tồn tại trong DB:
@@ -1174,7 +1174,7 @@ return {
                 ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
                 : isGift
                 ? `Tặng sách (QUÀ TẶNG) đơn ${orderCode} (${giftReason || 'Quà tặng sự kiện'})`
-                : `Bán đơn hàng ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
+                : `Bán đơn ${orderCode} (${fiscalScope === 'OFFICIAL_TAX' ? 'Hóa đơn VAT' : 'Nội bộ'})`,
               actorId: effCashierId,
               correlationId: orderId,
               idempotencyKey: `idem-stock-${orderId}-${lineIdx}-${item.editionId}`,
@@ -1609,7 +1609,7 @@ return {
       const result = await db.transaction(async (tx) => {
         // 1. Đọc lại order trong transaction
         const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn.');
         const ord = rows[0];
 
         // 1b. Phân quyền ngay trong transaction (route không phải lớp bảo vệ duy nhất)
@@ -1814,7 +1814,7 @@ return {
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
         const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn.');
         const ord = rows[0];
 
         this.assertOrderActor(ord, actorRole, resolvedActorId, 'hủy');
@@ -1911,7 +1911,7 @@ return {
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
         const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn hàng.');
+        if (rows.length === 0) throw AppError.invalid('Không tìm thấy đơn.');
         const ord = rows[0];
 
         if (ord.status === 'CANCELLED') {

@@ -206,8 +206,8 @@ ok(goStart > 0 && goEnd > goStart && goEnd - goStart < 1200,
    '37b. Khoanh đúng hàm điều hướng của nút giỏ trong máy quét (cắt theo cặp ngoặc)');
 const goToCheckout = goStart > 0 && goEnd > goStart ? pos.slice(goStart, goEnd) : '';
 ok(/setIsMobileCheckoutSheetOpen\(true\)/.test(goToCheckout)
-   && /Chi tiết Đơn hàng & Thanh toán/.test(pos),
-   '38. Nút giỏ mở ĐÚNG hộp "Chi tiết Đơn hàng & Thanh toán" (cùng hộp nút giỏ xanh ở màn POS mở), không phải chốt thẳng');
+   && /Chi tiết Đơn & Thanh toán/.test(pos),
+   '38. Nút giỏ mở ĐÚNG hộp "Chi tiết Đơn & Thanh toán" (cùng hộp nút giỏ xanh ở màn POS mở), không phải chốt thẳng');
 ok(/window\.matchMedia\('\(min-width: 1024px\)'\)\.matches/.test(goToCheckout)
    && /handleCheckoutButtonClick\(\)/.test(goToCheckout),
    '39. Hộp đó chỉ hiện trên dọc (lg:hidden) ⇒ desktop phải rơi về đường thanh toán thẳng, không bấm lệnh mà thấy không');

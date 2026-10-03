@@ -283,7 +283,7 @@ export function printThermalReceipt(
 
         <div class="text-center" style="margin-top: 8px; font-size: 9px; line-height: 1.4;">
           <div>${escapeHtml(safeReceiptFooterText)}</div>
-          <div style="font-size: 8px; color: #444; margin-top: 2px;">Mọi thắc mắc về đơn hàng xin liên hệ hotline CSKH ${COMPANY_HOTLINE}</div>
+          <div style="font-size: 8px; color: #444; margin-top: 2px;">Mọi thắc mắc về đơn xin liên hệ hotline CSKH ${COMPANY_HOTLINE}</div>
           <div style="margin-top: 6px; font-family: monospace; font-size: 8px; letter-spacing: 2px;">*** ${escapeHtml(order.orderCode)} ***</div>
         </div>
       </div>

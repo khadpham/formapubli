@@ -441,7 +441,7 @@ export async function POST(req: NextRequest) {
               details: `Từ chối đơn chiết khấu: ${err?.message || 'giỏ/kho/mức giảm không khớp phê duyệt'} (approval: ${discountApprovalId}).`,
             });
             return NextResponse.json(
-              { success: false, code: 'FORBIDDEN', error: err?.message || 'Phê duyệt không khớp đơn hàng.' },
+              { success: false, code: 'FORBIDDEN', error: err?.message || 'Phê duyệt không khớp đơn.' },
               { status: 403 }
             );
           }
@@ -628,7 +628,7 @@ export async function POST(req: NextRequest) {
       actorRole: userRole,
       actorId: actorHeader,
       resource: '/api/orders',
-      details: `Tạo đơn hàng ${result.orderCode} (${safeFiscalScope}) - Thực thu: ${result.finalAmount}`,
+      details: `Tạo đơn ${result.orderCode} (${safeFiscalScope}) - Thực thu: ${result.finalAmount}`,
     });
 
 

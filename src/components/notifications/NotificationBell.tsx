@@ -25,7 +25,7 @@ const HIDDEN_NONE: Set<string> = new Set();
 const AREA_BY_KIND: Record<string, string> = {
   approval: 'Duyệt chiết khấu',
   'approval-result': 'Duyệt chiết khấu',
-  order: 'Đơn hàng',
+  order: 'Đơn',
   shift: 'Ca làm',
   staff: 'Nhân sự',
   pos: 'POS',

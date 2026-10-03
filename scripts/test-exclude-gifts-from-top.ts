@@ -89,7 +89,7 @@ async function main() {
   await db.execute({ sql: `INSERT INTO stock_balances (id, edition_id, product_id, warehouse_id, condition, physical_quantity) VALUES (?, NULL, ?, ?, 'NEW', 50)`, args: ['sb-bm', BOOKMARK, WH] });
   ok('thiết lập dữ liệu ban đầu xong', true);
 
-  console.log('\n--- 2. Tạo đơn hàng: Bán 1 Sách A, 2 Sách B, TẶNG KÈM 5 Bookmark (isGiftLine = true, giá 0đ) ---');
+  console.log('\n--- 2. Tạo đơn: Bán 1 Sách A, 2 Sách B, TẶNG KÈM 5 Bookmark (isGiftLine = true, giá 0đ) ---');
   const today = businessDateOf(new Date());
   const orderId = `ord-test-gift-${Date.now()}`;
   const orderCode = `ORD-${Date.now().toString().slice(-8)}`;
@@ -127,7 +127,7 @@ async function main() {
   await db.execute({ sql: `UPDATE stock_balances SET physical_quantity = physical_quantity - 2 WHERE product_id = ? AND warehouse_id = ?`, args: [BOOK_B, WH] });
   await db.execute({ sql: `UPDATE stock_balances SET physical_quantity = physical_quantity - 5 WHERE product_id = ? AND warehouse_id = ?`, args: [BOOKMARK, WH] });
 
-  ok('đơn hàng tạo thành công với 5 bookmark tặng kèm', true);
+  ok('đơn tạo thành công với 5 bookmark tặng kèm', true);
 
   console.log('\n--- 3. Kiểm tra Báo cáo chốt ngày (DailySettlementService) ---');
   const settlement: any = await DailySettlementService.getDailyFairSettlement({ warehouseId: WH, date: today });

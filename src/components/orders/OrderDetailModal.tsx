@@ -63,12 +63,12 @@ export function OrderDetailModal({
       const json = await res.json();
       if (seq !== seqRef.current) return; // phản hồi cũ — bỏ, không ghi đè
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Không thể tải chi tiết đơn hàng.');
+        throw new Error(json.error || 'Không thể tải chi tiết đơn.');
       }
       setOrderDetail(json);
     } catch (err: any) {
       if (seq !== seqRef.current) return;
-      setError(err?.message || 'Lỗi kết nối khi tải chi tiết đơn hàng.');
+      setError(err?.message || 'Lỗi kết nối khi tải chi tiết đơn.');
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
@@ -105,10 +105,10 @@ export function OrderDetailModal({
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Không thể hủy đơn hàng.');
+        throw new Error(data.error || 'Không thể hủy đơn.');
       }
 
-      setVoidSuccess('Đã hủy đơn hàng thành công! Toàn bộ tồn kho đã được hoàn trả.');
+      setVoidSuccess('Đã hủy đơn thành công! Toàn bộ tồn kho đã được hoàn trả.');
       setShowVoidConfirm(false);
 
       // Cập nhật trạng thái đơn hàng hiện tại trên modal
@@ -127,7 +127,7 @@ export function OrderDetailModal({
         onOrderVoided(orderId);
       }
     } catch (err: any) {
-      setVoidError(err?.message || 'Lỗi xử lý hủy đơn hàng.');
+      setVoidError(err?.message || 'Lỗi xử lý hủy đơn.');
     } finally {
       setVoidLoading(false);
     }
@@ -154,10 +154,10 @@ export function OrderDetailModal({
               <Receipt className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <h3 id="order-detail-title" className="text-sm sm:text-base font-extrabold text-slate-900 break-words leading-snug">
-                Chi Tiết Đơn Hàng {orderDetail?.order?.orderCode ? `· ${orderDetail.order.orderCode}` : ''}
+              <h3 id="order-detail-title" className="text-[13px] sm:text-base font-extrabold text-slate-900 truncate">
+                Chi Tiết Đơn {orderDetail?.order?.orderCode ? `· ${orderDetail.order.orderCode}` : ''}
               </h3>
-              <p className="text-[11px] text-slate-500 break-words leading-snug">
+              <p className="text-[11px] text-slate-500 truncate">
                 Thông tin chứng từ bán hàng, phân loại sổ và danh mục ấn phẩm
               </p>
             </div>
@@ -178,7 +178,7 @@ export function OrderDetailModal({
           {loading ? (
             <div className="py-12 text-center text-slate-400">
               <RefreshCw className="w-8 h-8 animate-spin mx-auto text-indigo-500 mb-2" />
-              <p className="text-sm font-medium">Đang tải chi tiết đơn hàng…</p>
+              <p className="text-sm font-medium">Đang tải chi tiết đơn…</p>
             </div>
           ) : error ? (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-800 font-medium flex items-center gap-2">
@@ -238,7 +238,7 @@ export function OrderDetailModal({
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Khách hàng:</span>
-                  <span className="font-bold text-slate-800 break-words block">{orderDetail.order.customerName || 'Khách lẻ'}</span>
+                  <span className="font-bold text-slate-800 truncate block">{orderDetail.order.customerName || 'Khách lẻ'}</span>
                 </div>
               </div>
 
@@ -352,7 +352,7 @@ export function OrderDetailModal({
                       <div className="flex items-start gap-2 text-rose-900">
                         <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                         <div>
-                          <h5 className="text-xs font-extrabold">Xác nhận Hủy Đơn Hàng Hoàn Tất</h5>
+                          <h5 className="text-xs font-extrabold">Xác nhận Hủy Đơn Hoàn Tất</h5>
                           <p className="text-[11px] text-rose-700 mt-0.5">
                             Hành động này sẽ: (1) Trả 100% sách & quà về kho xuất qua bút toán Thẻ kho RETURN_INBOUND; (2) Trừ khỏi doanh số ca đang mở; (3) Lưu nhật ký kiểm toán.
                           </p>

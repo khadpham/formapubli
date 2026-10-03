@@ -56,7 +56,7 @@ const QUICK_PROMPT_CHIPS = [
   },
   {
     label: '📊 Doanh số 30 ngày',
-    query: 'Báo cáo doanh số và đơn hàng trong 30 ngày qua (cả 2 sổ)?',
+    query: 'Báo cáo doanh số và đơn trong 30 ngày qua (cả 2 sổ)?',
   },
   {
     label: '⚠️ Sách cạn kho',

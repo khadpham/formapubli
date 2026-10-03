@@ -132,7 +132,7 @@ export class WarehouseService {
       .limit(1);
     if (usedByOrders.length > 0) {
       throw AppError.conflict(
-        `Kho [${wh.code}] đã có đơn hàng nên không xóa được (giữ lịch sử). Hãy dùng "Ngưng hoạt động".`
+        `Kho [${wh.code}] đã có đơn nên không xóa được (giữ lịch sử). Hãy dùng "Ngưng hoạt động".`
       );
     }
     const usedByLedger = await txOrDb

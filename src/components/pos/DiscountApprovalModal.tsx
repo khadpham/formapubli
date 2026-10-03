@@ -348,7 +348,7 @@ export function DiscountApprovalModal({
         {/* Thông tin đơn hàng & Chiết khấu */}
         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500">Mã đơn hàng:</span>
+            <span className="text-slate-500">Mã đơn:</span>
             <span className="font-mono font-bold text-slate-800">{displayOrderCode}</span>
           </div>
           <div className="flex items-center justify-between text-xs">

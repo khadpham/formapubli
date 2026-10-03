@@ -190,7 +190,7 @@ async function run() {
     db
   );
 
-  assert.strictEqual(report.financials.totalOrdersCount, 2, 'Tổng 2 đơn hàng');
+  assert.strictEqual(report.financials.totalOrdersCount, 2, 'Tổng 2 đơn');
   assert.strictEqual(report.financials.grossSales, 1400000, 'Doanh thu gộp 1.400.000 đ');
   assert.strictEqual(report.financials.totalDiscount, 200000, 'Tổng chiết khấu 200.000 đ');
   assert.strictEqual(report.financials.netSales, 1200000, 'Doanh thu thực thu 1.200.000 đ');

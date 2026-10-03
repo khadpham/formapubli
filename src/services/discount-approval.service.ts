@@ -516,7 +516,7 @@ export class DiscountApprovalService {
       const expectedShortCode = extractShortCode(request.orderCode);
       if (!shortCode || shortCode.toUpperCase() !== expectedShortCode) {
         throw AppError.invalid(
-          `Mã 4 số '${shortCode}' không khớp với đơn hàng (kỳ vọng: ${expectedShortCode})`
+          `Mã 4 số '${shortCode}' không khớp với đơn (kỳ vọng: ${expectedShortCode})`
         );
       }
     } else if (method === 'QR_JWT') {
@@ -679,7 +679,7 @@ export class DiscountApprovalService {
       return this.getRequest(requestId, txOrDb);
     }
     if (request.status === 'CONSUMED') {
-      throw AppError.conflict('Yêu cầu duyệt đã được sử dụng cho đơn hàng, không thể hủy.');
+      throw AppError.conflict('Yêu cầu duyệt đã được sử dụng cho đơn, không thể hủy.');
     }
     // MERGE: origin/main chặn trạng thái đã kết thúc (REJECTED/EXPIRED/SUPERSEDED)
     // bằng 409. Bản c-login-ux trả 200 kèm record cũ, khiến hủy hai lần im lặng
