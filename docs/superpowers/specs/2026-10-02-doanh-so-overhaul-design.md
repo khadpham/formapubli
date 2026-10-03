@@ -1,8 +1,8 @@
 # Spec: Overhaul tab Doanh Số & Sổ Kép (nguồn số liệu chung)
 
-- Ngày: 2026-10-02 · Phạm vi A (chỉ tab Doanh Số) · Cách B (gom tầng dữ liệu chung trước)
-- Trạng thái: đã duyệt thiết kế 4 phần, chưa viết plan, chưa đụng code
-- Không đụng: đơn W (giữ PENDING), ExecutiveDashboard/digest, so chuỗi thô ở digest/query (latent)
+- Ngày: 2026-10-02 · Phạm vi B mở rộng (tab Doanh Số + ExecutiveDashboard/digest, chung tầng dữ liệu)
+- Cách B (gom tầng dữ liệu chung trước) · Trạng thái: đã duyệt thiết kế, chờ plan
+- Không đụng: đơn W (giữ PENDING), so chuỗi thô ở digest/query (latent, 0/117 dòng ảnh hưởng)
 
 ## 1. Vấn đề (bằng chứng)
 
@@ -30,20 +30,19 @@ Các chỗ so chuỗi thô ở digest/query là rủi ro tiềm ẩn, KHÔNG ph�
 
 ## 3. Kiến trúc: tầng dữ liệu chung
 
-### 3.1 Client — một filter, một lần fetch
+### 3.1 Client — một filter, fetch đúng nguồn
 
 - Filter duy nhất ở cấp tab: ngày VN (từ/đến), kho, kênh, sổ (fiscalScope).
-- Hook mới `useSalesDataset`: fetch `GET /api/orders` 1 lần với filter trên;
-  summary dùng `data.summary` server trả (hiện đã có, đang bị bỏ qua);
-  `itemQty/itemLines/giftQty` đã có sẵn từ batch agg của route.
-- 4 panel (`SalesLedgerView`, `RevenueAnalyticsPanel`, `TopEditionsPanel`,
-  `GiftReportPanel`) nhận data qua props, KHÔNG tự fetch, KHÔNG tự cộng tổng.
+- Mỗi nguồn số liệu fetch đúng một lần với cùng filter: danh sách + tổng từ
+  `GET /api/orders` (dùng `data.summary` server, không cộng client);
+  breakdown kênh/dòng tiền từ `GET /api/analytics`; quà từ `/api/reports/gifts`.
+- 4 panel nhận filter + data qua props, KHÔNG tự đặt filter riêng, KHÔNG tự cộng tổng.
 - `PendingOrdersView` giữ nguyên (nguồn riêng đã đúng sau deploy `ebb0f91c`).
 
 ### 3.2 Server — sửa tối thiểu để luật khớp
 
 - `GET /api/analytics`: nhận `startDate/endDate/warehouseId/fiscalScope`, đẩy vào
-  `analytics.service` (channels, cashflow, consignment đều phải theo filter tab).
+  `analytics.service` (channels, cashflow theo đủ filter; consignment range-only vì tồn ký gửi là vật lý, không chia sổ).
 - `gift-report.service`: thêm `o.status = 'COMPLETED'` + nhận `from/to`
   (service đã lọc ngày VN đúng, client chưa gửi).
 - Top bán chạy: mặc định `excludeGifts=1` (API đã hỗ trợ, `analytics/route.ts:49`);
@@ -91,6 +90,16 @@ Các chỗ so chuỗi thô ở digest/query là rủi ro tiềm ẩn, KHÔNG ph�
 - Chỉ đơn COMPLETED; tách quà hết tồn; nút "Thử lại" khi lỗi; render `lineCount`
   và fallback tên khi `productName` null.
 
+### 4.5 ExecutiveDashboard + digest (phạm vi B mở rộng)
+
+- Dashboard dùng chung đường ống filter/summary của §3 (cùng tập đơn, cùng ngày VN),
+  không fetch toàn bộ lịch sử không lọc (`ExecutiveDashboard.tsx:195` hiện nạp
+  `GET /api/orders?fiscalScope=ALL` không khoảng ngày — vừa sai số vừa nguy cơ treo).
+- Số "Tổng tiền/đơn" trên dashboard phải bằng số tab Doanh Số cùng filter
+  (hiện lệch đúng bằng số đơn tài trợ, mục E.21 báo cáo rà soát).
+- Không đụng so chuỗi thô trong `executive-digest.service` / `executive-query.service`
+  (latent); chỉ thêm test canh: báo đỏ khi xuất hiện dòng `created_at` non-Z đầu tiên.
+
 ## 5. Phân quyền (giữ nguyên server, sửa UI cho khớp)
 
 - Server đã đúng: TAX ép `OFFICIAL_TAX`, warehouse trả rỗng, cashier lọc theo mình.
@@ -112,7 +121,8 @@ Không hạ assertion để xanh. Không log PIN/secret.
 
 ## 7. Không làm đợt này (ghi rõ để khỏi mở rộng)
 
-- ExecutiveDashboard/digest (phạm vi B, việc khác).
-- So chuỗi thô ở `executive-digest.service` / `executive-query.service` (latent, 0 dòng ảnh hưởng).
-- Phân trang/limit `getOrders` (chỉ làm nếu đo thấy timeout thật).
+- So chuỗi thô ở `executive-digest.service` / `executive-query.service` (latent, 0 dòng ảnh hưởng;
+  chỉ có test canh).
+- Phân trang/limit `getOrders` riêng lẻ — Dashboard hết nạp toàn bộ sau §4.5 nên chỉ làm
+  tiếp nếu đo thấy timeout thật ở chỗ khác.
 - Đổi công thức doanh thu gộp→ròng (cần chủ quyết nghiệp vụ riêng).

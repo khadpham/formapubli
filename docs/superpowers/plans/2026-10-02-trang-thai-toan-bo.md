@@ -1,5 +1,20 @@
 # TÀI LIỆU BÀN GIAO — Cổng 3 Khuyến Mại + Hàng Hóa
 
+> ## ⛔ TÀI LIỆU LỊCH SỬ — KHÔNG LÀM NGUỒN NGỮ CẢNH
+>
+> Đây là bản ghi trạng thái **ngày 02/10/2026**, giữ lại làm vì chứa phân tích
+> gốc rễ và bài học. **Các số liệu trong đây đã cũ.** Trước khi tin bất kỳ dòng nào:
+>
+> | Loại | Thay bằng |
+> |---|---|
+> | Số suite (125 / 124/125 / 146) | `scripts/run-isolated.ts` là nguồn sự thật — tự đếm, đừng đọc số trong docs |
+> | HEAD (`4aa9203` / `3185edb` / `e2f231d`) | `git log --oneline -1` |
+> | Worktree `formapubli-orch` / `-promo` / `-sales` / `-dashboard` | **đã xoá hết.** Chỉ còn `D:\Data Project\formapubli` trên `main` |
+> | `scripts/probe-ordercode-length.ts` | không tồn tại |
+> | "CHƯA DEPLOY" ở mục 1–9 | đã deploy nhiều lần, xem mục 8–10 và `npx wrangler versions list` |
+>
+> **Trạng thái hiện tại: đọc `docs/superpowers/plans/2026-10-02-trang-thai-toan-bo.md` mục 10 và `git log`.**
+
 **Ngày:** 02/10/2026 · **Trạng thái:** ✅ ĐÃ DEPLOY `1e05338c` (bật cuộn ngang bảng kiểm kê đóng thùng, giám sát CK, chuyển kho trên mobile + đồng bộ main) · **Độc giả:** agent tiếp nhận, phải làm tiếp được NGAY
 
 | Hạng mục | Giá trị |
@@ -18,22 +33,22 @@
 
 | Nhóm | Làm được gì | Chưa làm gì | Rủi ro |
 |---|---|---|---|
-| **Hàng hóa** | ✅ Đầy đủ: bảng `products`, API, UI Cài Đặt → Quản trị → Hàng Hóa, E2E **33/33** | Chưa bán được trên production (code bán chưa deploy) | Migration đã lên production nhưng code bán hàng hóa **chưa deploy** |
-| **Cổng 3 — engine** | ✅ Hàm thuần khiết, mô hình bậc thang, `test-promotion-engine` **32/32** | — | Không |
-| **Cổng 3 — server** | ✅ 5 lỗi đã sửa, 5 test khoá lại (20/20, 20/20, 21/21, 12/12) + B3 quà hết tồn (7/7) + nối `approvedManual` (8.3) | Nút "Tặng thêm" trong giỏ POS chưa có | Client có thể gửi cờ quà giả — **đã chặn** |
-| **Cổng 3 — UI** | ✅ Màn hình cài đặt mốc (Cài Đặt → Khuyến Mãi, chủ đã tự tìm thấy) + mốc 0đ "đơn bất kỳ" (engine 37/37) + giỏ POS badge "Quà"/"Bỏ quà"/"Tặng thêm · chờ duyệt" | Nút "Tặng thêm" nằm nhánh riêng CHƯA deploy | Không — UI chỉ đọc/gợi ý, server tự xác minh lại |
+| **Hàng hóa** | ✅ Đầy đủ: bảng `products`, API, UI Cài Đặt → Quản trị → Hàng Hóa, E2E **33/33** | ~~Chưa bán được trên production~~ → **đã deploy 02/10 tối** | Không |
+| **Cổng 3 — engine** | ✅ Hàm thuần khiết, mô hình bậc thang, `test-promotion-engine` xanh | — | Không |
+| **Cổng 3 — server** | ✅ 5 lỗi đã sửa + B3 quà hết tồn + nối `approvedManual` | — | Client có thể gửi cờ quà giả — **đã chặn** |
+| **Cổng 3 — UI** | ✅ Màn hình cài đặt mốc + mốc 0đ "đơn bất kỳ" + giỏ POS badge "Quà"/"Bỏ quà"/"Tặng thêm · chờ duyệt" | Nút "Tặng thêm" **đã xong** trên nhánh `feat/tang-them-qua-tay`, chủ không cần merge | Không — UI chỉ đọc/gợi ý, server tự xác minh lại |
 | **Cổng 3 — báo cáo quà** | ✅ `GET /api/reports/gifts` + panel tách còn tồn / hết tồn | — | Không |
 | **Cổng 3 — deploy** | ✅ **ĐÃ DEPLOY tối 02/10** (`55a82ca4`, từ merge `1d95371`) | Nghiệm thu quét SP thật chưa làm (cần máy thật) | Rollback sẵn sàng: `npx wrangler rollback <id>` |
-| **Test suite** | 124/125 xanh (+ tsc 0 + build sạch trên đúng cây deploy, kèm suite `test-autoclose-shift` của main) | `test-pay2-money-audit.ts` đỏ | Đã chứng minh flaky có sẵn từ trước, không phải hồi quy |
+| **Test suite** | Số suite **không ghi cứng ở docs** — xem `scripts/run-isolated.ts` | Số "124/125" là của 02/10, đã cũ | Đừng tin con số trong docs, hãy chạy |
 | **Sổ kho** | `stock_balances` ĐÚNG (440 dòng, 0 âm) | 🔴 ledger Hồ Gươm lệch **87 bút toán RECEIPT** (để sau hội chợ) | Hàng vật lý đúng; **thiếu sổ, không thiếu hàng** |
-| **Báo cáo chốt ngày** | ✅ Hiện đúng mã/tên/giá hàng hóa (`test-settlement-goods-display` 11/11; nhãn "Giá bán" cho GOODS, key theo product_id) | — | Lỗi thấy trên ảnh chụp: 4 dòng SP hiện `[]` + 0đ vì chỉ đọc `editions` |
-| **Hàng hóa mẫu prod** | ✅ SP-001..004 (Bookmark 5k, Móc khoá 15k, Gói quà 50k, Túi Tote 150k), mỗi món 100 cái × 2 kho (Hồ Gươm + ĐH Hà Nội), 8 bút toán OPENING_BALANCE khớp 8 dòng tồn | Chưa bán được (chờ deploy code) | Không — dữ liệu tượng trưng, chủ duyệt |
+| **Báo cáo chốt ngày** | ✅ Đã overhaul 02/10 tối (deploy `95eba1d5`) | — | — |
+| **Hàng hóa mẫu prod** | ✅ SP-001..004, mỗi món 100 cái × 2 kho, 8 bút toán OPENING_BALANCE khớp 8 dòng tồn | — | Dữ liệu tượng trưng, chủ duyệt |
 | **Backup** | ✅ `backup-prod.ts` + `restore-prod.ts`, đã khôi phục thật 6/6 bảng khớp | — | Trước đây KHÔNG có script backup Turso |
-| **TypeScript** | `npx tsc --noEmit` **0 lỗi** (sau commit mới nhất `3185edb`) | — | — |
+| **TypeScript** | `npx tsc --noEmit` phải 0 lỗi | — | — |
 
 **Việc đã xong sau bàn giao (8 commit):** UI cài đặt mốc `7fc1ab2` → giỏ POS badge Quà `709cad9` → B3 `efa5e0e` → duyệt quà tay `53ecc1e` → báo cáo quà `812745c` + fix gitignore `285e4e4` → fix test regex `e7343d5` → fix kho product_id `3185edb`.
 
-**Việc kế tiếp duy nhất cần chủ quyết:** deploy hay không (xem mục 12).
+**Việc kế tiếp cần chủ (03/10):** gửi mã vạch thật cho `ed-h66` (Tristram Shandy) + `ed-h85` (Đốt kho tái bản). Chi tiết mục 8.7.
 
 ---
 
@@ -43,17 +58,17 @@
 
 | # | Quy tắc | Lệnh kiểm tra |
 |---|---|---|
-| 1 | ⛔ **KHÔNG BAO GIỜ commit lên `main`.** Quy tắc của chủ doanh nghiệp. Đã vi phạm 1 lần. | `git branch --show-current` → phải trả `feat/khuyen-mai-san-pham` |
-| 2 | Mỗi lần commit **phải chạy** `git branch --show-current` trước | như trên |
-| 3 | ⛔ **Không đụng** `D:\Data Project\formapubli` — agent khác đang làm SONG SANG ở đó (nhánh `main`) | Kiểm tra `workdir` mọi lệnh |
-| 4 | Chỉ sửa file trong `D:\Data Project\formapubli-promo` | `Test-Path 'D:\Data Project\formapubli-promo'` = True |
+| 1 | ✅ **`main` LUÔN là code mới nhất.** Chủ đổi quy tắc 02/10/2026: **được commit lên `main`**, push sau khi `tsc` + test + build sạch. Luật cũ "không bao giờ commit lên main" **ĐÃ BỊ BỎ** | `git status --porcelain` phải rỗng ngay trước khi push |
+| 2 | Nhánh riêng chỉ dùng khi **đang làm song song với agent khác** (ràng buộc bên dưới). Làm một mình thì commit thẳng `main` | `git branch --show-current` |
+| 3 | ⛔ **Không được ăn vào cây nguồn của lệnh deploy khi cây đó bẩn.** `npm run deploy` đọc **working tree**, không đọc git — đã từng nuốt code chưa commit của agent khác lên production | `git status --porcelain` ngay trước `npm run deploy` |
+| 4 | Chỉ sửa file trong `D:\Data Project\formapubli` (worktree chính) trừ khi đã tạo worktree riêng có `node_modules` thật | xem mục "Worktree" bên dưới |
 | 5 | Deploy chỉ khi: **đã đọc kết quả test** + `tsc` sạch + build sạch | xem bài học 1 |
 
 ### 2.2 Lệnh chạy được nguyên văn
 
 | Việc | Lệnh |
 |---|---|
-| Chạy TOÀN BỘ test suite | `npx tsx scripts/run-isolated.ts` — **~13 phút**, **125 suite**, cách ly bằng `formapubli_test.db` |
+| Chạy TOÀN BỘ test suite | `npx tsx scripts/run-isolated.ts` — lâu, cách ly bằng `formapubli_test.db`. **Số suite đọc từ `scripts/run-isolated.ts`**, đừng ghi cứng trong docs |
 | Chạy 1 suite | `DATABASE_URL=file:formapubli_test.db npx tsx scripts/<file>.ts` |
 | Type check | `npx tsc --noEmit` |
 | Deploy | `npm run deploy` |
@@ -151,7 +166,7 @@ Integrity `ok` · FK sạch · đủ **3 trigger**.
 
 ---
 
-## 6. ✅ ĐÃ XONG — Cổng 3 Khuyến Mại (LÕI XONG, 🔴 CHƯA DEPLOY)
+## 6. ✅ Cổng 3 Khuyến Mại (lúc bàn giao: LÕI XONG, 🔴 CHƯA DEPLOY — **đã deploy 02/10 tối, xem mục 8–10**)
 
 Engine: `src/lib/promotion-engine.ts` — hàm **thuần khiết, không query DB**.
 Mô hình **BẬC THANG**: chỉ mốc **CAO NHẤT** đạt được được kích hoạt.
@@ -277,25 +292,23 @@ Quà hết tồn **vẫn cho thanh toán** nhưng **KHÔNG ghi `stock_balances`*
 
 Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút toán OPENING_BALANCE — 8 bút toán khớp 8 dòng tồn). Khi nạp phát hiện bug kho (xem bài học 9) và đã sửa trong `3185edb`.
 
-### 8.7 Còn mở (nhỏ, không chặn deploy)
+### 8.7 Còn mở (nhỏ, không chặn deploy) — **cập nhật 03/10**
 
-1. Nút **"Tặng thêm"** trong giỏ POS (quà tay tự phục vụ) — engine + server đã sẵn (8.3), chỉ thiếu nút bấm.
-2. `scripts/probe-ordercode-length.ts` (untracked, không phải của đợt này — để nguyên, không commit).
+1. Nút **"Tặng thêm"** trong giỏ POS (quà tay tự phục vụ) — **ĐÃ LÀM XONG** trên nhánh `feat/tang-them-qua-tay` (`90e972a`, test `test-manual-gift-approval` 11/11). Chủ quyết **không cần merge** — giữ nhánh để tham khảo.
+2. ~~`scripts/probe-ordercode-length.ts`~~ — **không tồn tại**, xoá khỏi danh sách.
+3. **Còn treo:** sửa ISBN `ed-h66` + `ed-h85` (chủ sẽ gửi mã vạch thật), validate checksum ISBN-13 khi nhập, cột "so với hôm qua" trên khối tiền.
 
 ---
 
-## 9. LỘ TRÌNH CỬA SỔ
+## 9. LỘ TRÌNH CỬA SỔ (đã đóng 02/10 tối)
 
-| Điều kiện | Trạng thái hiện tại |
+| Điều kiện | Trạng thái |
 |---|---|
-| **Chưa ai được nhập hàng hóa vào kho** cho tới khi có xác nhận "xanh" | ⚠️ ĐÃ NHẬP MẪU theo lệnh chủ (SP-001..004, 100×2 kho) — nhưng **chưa bán được** vì code Cổng 3 chưa deploy |
-| Migration `0031`–`0033` đã áp | ✅ Nhưng **chưa deploy code Cổng 3** |
+| Nhập hàng hóa mẫu vào kho | ✅ ĐÃ NẠP theo lệnh chủ (SP-001..004, 100×2 kho) |
+| Migration `0031`–`0033` | ✅ đã áp |
+| Deploy code Cổng 3 (bán hàng hóa) | ✅ **đã deploy 02/10 tối** (`55a82ca4`) — mục 8, 9, 10 |
 
-**Sau khi "xanh" bao gồm:** Cổng 3 deploy xong + hàng hóa mẫu bán được trên production (quét SP-001..004 ra đơn thật).
-
-**Lý do:** hàng hóa chưa bán được trên production. Điều kiện này do **agent giám sát** đặt ra và **đã được chủ đồng ý**.
-
-**Sau khi "xanh" bao gồm:** Cổng 3 deploy xong + hàng hóa bán được trên production.
+> Mục này viết lúc 02/10 buổi chiều, khi code chưa deploy. **Đã đóng xong.** Chi tiết các lần deploy: mục 8, 9, 10.
 
 ---
 
@@ -349,7 +362,7 @@ Nạp bằng `scripts/seed-goods-prototype.ts` (idempotent theo `code`, bút to�
 
 | File | Vai trò |
 |---|---|
-| `scripts/run-isolated.ts` | Chạy full suite (125 suite, ~13 phút) |
+| `scripts/run-isolated.ts` | Chạy full suite (danh sách suite nằm ngay trong file này) |
 | `scripts/backup-prod.ts` | Backup production (chỉ đọc) |
 | `scripts/restore-prod.ts` | Khôi phục (dry-run mặc định) |
 | `scripts/apply-00XX-prod.ts` | Áp migration production |

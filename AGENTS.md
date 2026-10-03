@@ -2,15 +2,40 @@
 
 ## 0. PROJECT STATE — READ FIRST (mọi session/agent, trước mọi việc)
 
-- Đọc ngay: `docs/superpowers/plans/2026-09-25-handoff-state.md` (trạng thái,
-  branches, việc còn lại, gotchas). Việc đang chờ user nằm ở mục 5 của doc đó.
-- Vai trò: A = review (không code), B = server/merge/deploy (push refspec +
-  verify), C = UI (không checkout/push — B commit hộ).
+- Đọc ngay: `docs/superpowers/plans/2026-10-02-trang-thai-toan-bo.md` — **mục 10**
+  (tổng kết + bài học) và mục 8.7 (việc còn treo). Đừng đọc số liệu cũ ở
+  mục 1–9 của file đó: phần đó là bản ghi ngày 02/10, đã lỗi thời.
+  - Tài liệu cũ hơn đã nằm ở `docs/archive/` — chỉ tra cứu lịch sử, KHÔNG
+    phải nguồn ngữ cảnh. Xem `docs/archive/README.md` để biết vì sao bị bỏ.
+  - **Số suite không ghi cứng ở đây.** Nguồn sự thật là `scripts/run-isolated.ts`.
+- **`main` là nguồn sự thật.** Chủ đổi quy tắc 02/10/2026: **được commit lên
+  `main`** để main luôn là code mới nhất. Luật cũ "không bao giờ commit lên
+  `main`" **đã bị bỏ** — đừng làm ngược lại.
+- Nhánh riêng chỉ dùng khi **làm song song với agent khác**. Làm một mình
+  thì commit thẳng `main`.
 - BẤT BIẾN, CẤM ĐỤNG: `[vars] NEXT_PRIVATE_MINIMAL_MODE="1"` trong `wrangler.toml`;
   twin backslash `@libsql\\client` trong `next.config.mjs`; KHÔNG commit
   secret/token (kể cả `scripts/deploy-cloudflare.ts`).
 - Test: suite DB chung → `npx tsx scripts/run-isolated.ts --only=...`;
   không hạ assertion để xanh; không log PIN/giá trị secret.
+- ⛔ **TEST KHÔNG ĐƯỢC DÙNG CHUNG HẰNG/GIÁ TRỊ VỚI CODE.** Đây là nguyên nhân
+  gốc khiến bug lọt lên production 02/10: `paymentBreakdown.pendingQr` lọc
+  `QR_TRANSFER` trong khi hệ thống thật dùng `BANK_TRANSFER` ⇒ tính năng luôn
+  = 0 mà test vẫn xanh vì test dùng *cùng* giá trị sai.
+  Giá trị hằng **phải lấy từ nguồn thật** (`src/db/schema.ts`, migration).
+  Trước khi tin test xanh, **cắt 1 chỗ trong code và xem test có đỏ không.**
+- **Giá trị hằng phải tra nguồn thật, KHÔNG ghi nhớ.** Vài giá trị dễ sai đã
+  từng làm bug lọt production:
+  | Cột | Giá trị thật | Nguồn |
+  |---|---|---|
+  | `orders.payment_method` | `CASH` \| `BANK_TRANSFER` \| `QR_CODE` (chấp nhận thêm `TRANSFER` cũ) | `src/db/schema.ts` dòng `paymentMethod` |
+  | `orders.status` | đọc trực tiếp từ `schema.ts`, không suy từ nhãn UI | `src/db/schema.ts` |
+  | Sự kiện `inventory_ledger` | `RECEIPT` \| `DISPATCH_SALE` \| `DISPATCH_GIFT` \| `ADJUSTMENT` \| `RETURN_INBOUND` | `src/db/migrations/*.sql` |
+  **KHÔNG có** `QR_TRANSFER`, `COUNTER_TRANSFER`, `RECEIVE`, `SALE_FULFILL`,
+  `STOCKTAKE_ADJUST`. Gặp tên lạ trong code cũ/docs ⇒ tra schema, đừng đoán.
+- ⛔ **`tsc` KHÔNG validate CSS.** Thêm vào checklist trước khi push: nếu
+  sửa file `.css` thì **phải chạy `npm run build`** — `tsc` sạch không có
+  nghĩa là build được. Lỗi `}` thừa đã làm cả repo không build.
 - TÊN TRONG UI: ngắn, dọn, **tiếng Việt CÓ DẤU**. Ví dụ đúng: "Mở Kho",
   "Xoá Kho", "Ngưng hoạt động", "Ma trận", "Cần xác nhận", "Không tìm thấy",
   "Kiểm tra tồn kho". Cấm nhãn dài kiểu "Quản lý kho hàng hội chợ / gian hàng
@@ -84,9 +109,14 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
     **Cách đúng: copy thật, hoặc cài riêng từng worktree.** Nếu buộc dùng
     junction để tiết kiệm, phải `cmd /c rmdir <link>` (rdmdir trên junction chỉ
     gỡ link) **trước**, rồi mới `git worktree remove`.
-  Quy tắc bắt buộc từ 2026-09-29:
-  - Coordinator làm việc ở worktree riêng `D:\Data Project\formapubli-orch`
-    (nhánh `orch/plan-b`). Không bao giờ sửa trong `D:\Data Project\formapubli`.
+  Quy tắc bắt buộc (từ 2026-09-29, **đã sửa 03/10/2026**):
+  - ⛔ **KHÔNG có worktree `formapubli-orch` nữa — nó đã bị xoá.** Cũng đã xoá
+    `formapubli-promo`, `-sales`, `-dashboard`. **Hiện chỉ còn MỘT cây:
+    `D:\Data Project\formapubli` trên `main`** (kiểm bằng `git worktree list`).
+    Luật cũ "Coordinator làm ở worktree riêng, không bao giờ sửa trong
+    `formapubli`" **không còn đúng** — làm một mình thì sửa thẳng ở đây.
+  - Worktree riêng chỉ tạo khi **thật sự làm song song với agent khác**, và
+    phải có `node_modules` thật (copy hoặc `npm install --include=dev` riêng).
   - **Chỉ deploy khi working tree nguồn của lệnh deploy SẠCH.** Chạy
     `git status --porcelain` ngay trước `npm run deploy`; nếu có dòng lạ thuộc
     việc người khác thì **dừng**, không deploy.
@@ -96,7 +126,12 @@ The user tests on a real phone. A localhost-only dev server is useless to them.
   - Muốn bảo hiểm code chưa commit của agent khác: lưu `git diff -- <file>` ra
     ngoài repo, **không** commit hộ, **không** stash (stash sẽ gỡ file khỏi
     working tree của họ và làm hỏng công việc đang dở).
-- ⚠️ **Luôn truyền `workdir` khi chạy lệnh trong worktree.** Đã dính **2 lần**
+- ⛔ **`background_process` BỎ QUA tham số `workdir` trên máy này.** Đã dính 2
+  lần: `npm run dev:lan` truyền `workdir` vẫn khởi động ở `D:\Data Project\
+  formapubli` và ghi vào `.next` của worktree chính ⇒ **phục vụ nhầm code**.
+  Cách đúng: `Set-Location -LiteralPath '<worktree>'` **trong chính lệnh**.
+  Dấu hiệu phát hiện: so `LastWriteTime` của `.next` ở các cây.
+- ⚠️ **Shell tool: luôn truyền `workdir`.** Đã dính **2 lần**
   trong một ngày: gọi `Test-Path 'node_modules\...'` mà không kèm `workdir` ⇒
   PowerShell chạy ở thư mục gốc của session (`D:\Data Project\formapubli`, vốn
   chưa bao giỜ có `node_modules`) ⇒ báo "KHÔNG" ⇒ tưởng `node_modules` bị mất

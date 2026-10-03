@@ -184,7 +184,7 @@ pendingQrTotal = SUM(finalAmount) của đơn thỏa ĐỒNG THỜI:
 
 ### 5.2 Chuẩn hoá ngày nghiệp vụ VN (D3)
 
-- `daily-settlement.service.ts` hiện lấy ngày UTC; `live-monitor/route.ts` lấy ngày VN. Trong khung 00:00-07:00 hai bên lệch nhau — chính comment đầu file route đã tự thừa nhận.
+- ~~`daily-settlement.service.ts` hiện lấy ngày UTC~~ — **ĐÃ KIỂM 02/10: `daily-settlement` ĐÃ dùng `vnDayEquals` (ngày VN) từ trước.** Chỉ có **comment** trong `live-monitor/route.ts` nói ngược lại là sai. Không có lỗi logic ngày ở đây.
 - Sửa: mốc ngày nghiệp vụ của `daily-settlement` về giờ VN, dùng cùng cách tính `businessDateOf`/`vnToday` đang có sẵn ở `order.service.ts`.
 - Ngày báo cáo được chọn (mặc định hôm nay) giữ nguyên cơ chế hiện có.
 
@@ -207,7 +207,7 @@ pendingQrTotal = SUM(finalAmount) của đơn thỏa ĐỒNG THỜI:
 
 ## 7. Kiểm thử
 
-1. `scripts/test-settlement-report-header.ts` (mới) — khối tiền đầu tab: đúng số từ payload, không mất ô nào khi đổi chiết khấu %/đ.
+1. `scripts/test-settlement-money-header.ts` (mới) — khối tiền đầu tab: đúng số từ payload, không mất ô nào khi đổi chiết khấu %/đ. **Tên file đúng là `test-settlement-money-header.ts`** — `test-settlement-report-header.ts` không tồn tại.
 2. `scripts/test-pending-qr-total.ts` (mới) — 4 ca: đơn chờ hạn (loại), đơn chờ còn hạn (tính), đơn tiền mặt chờ (loại), đơn ngoài ngày (loại).
 3. Cập nhật `scripts/test-s3-discount-approval.ts` — thêm khẳng định bản in kiểm kê theo thứ tự đang lọc.
 4. Kiểm thử tay trên điện thoại: mở report ở 2 kho khác nhau, mở Trạng Thái Hội Chợ ở 2 kho, bấm In, đối chiếu thứ tự dòng.

@@ -1,5 +1,18 @@
 # Kế Hoạch Triển Khai: Cải Tiến POS Thực Chiến, Quản Trị Kho Vận & Cơ Chế Hủy Đơn An Toàn
 
+> ## ✅ ĐÃ TRIỂN KHAI XONG (cập nhật 03/10/2026)
+>
+> **Checkbox dưới đây chưa được tick là vì plan viết trước khi code — không phải việc còn
+> treo.** Toàn bộ đã lên `main`. Khi đọc, đừng tick lại; hãy kiểm bằng `git log`.
+>
+> | Việc | Bằng chứng trên `main` |
+> |---|---|
+> | `voidCompletedOrder` (hủy đơn đã hoàn tất) | `src/services/order.service.ts` + `POST /api/orders/[id]/void` |
+> | Hoàn thẻ kho `RETURN_INBOUND` | có trong `order.service.ts`, test `test-void-completed-order` |
+> | Các suite `scripts/test-*.ts` nêu trong plan | đều **đã đăng ký** trong `scripts/run-isolated.ts` |
+>
+> Spec đi kèm vẫn đúng và còn giá trị tham khảo: `docs/superpowers/specs/2026-10-02-pos-counter-and-order-management-design.md`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Giải quyết triệt để 8 vấn đề vận hành quầy thực tế: thanh toán VietQR mặc định, bộ tính tiền mặt/thối tiền, sửa & sắp xếp kho, lề in tồn sách A4, responsive chip mobile, xem hóa đơn và cơ chế Hủy đơn đã hoàn tất an toàn 100% về Thẻ kho (Ledger) và Sổ dòng tiền.

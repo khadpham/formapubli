@@ -1,5 +1,17 @@
 # Overhaul Báo Cáo Chốt Ngày + Trạng Thái Hội Chợ — Kế hoạch triển khai
 
+> ## ⛔ CẢNH BÁO — ĐÃ SỬA 03/10/2026, ĐỌC TRƯỚC KHI LÀM THEO
+>
+> Bản gốc của plan này viết `QR_TRANSFER` / `COUNTER_TRANSFER` cho `payment_method`.
+> **Hai giá trị đó không tồn tại trong hệ thống** — nó là nguyên nhân khiến
+> `pendingQr` luôn = 0 mà test vẫn xanh (vì test dùng *cùng* giá trị sai).
+> Giá trị thật lấy từ `src/db/schema.ts` `orders.paymentMethod`:
+> **`CASH` | `BANK_TRANSFER` | `QR_CODE`** (kèm `TRANSFER` cũ vẫn được chấp nhận).
+>
+> Đã sửa 3 chỗ trong plan. Code thật ở `src/services/daily-settlement.service.ts:122`
+> đã đúng từ trước. **Không sửa ngược lại thành giá trị cũ.**
+> Chi tiết bài học: `docs/superpowers/plans/2026-10-02-trang-thai-toan-bo.md` mục 10.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Mở Báo Cáo Chốt Ngày là thấy ngay tiền thu + két có khớp không; bản in có đủ bảng "sắp hết" và xếp mọi bảng theo tồn bé → lớn; Trạng Thái Hội Chợ chọn được 1 kho / 1 ngày và nhận 2 khối "bán chạy" chuyển sang.
@@ -85,7 +97,7 @@ async function run() {
   const mk = async (id: string, over: any) => {
     await db.insert(schema.orders).values({
       id, code: id.toUpperCase(), orderCode: id.toUpperCase(), warehouseId: WH,
-      status: 'PENDING_CONFIRMATION', paymentMethod: 'QR_TRANSFER',
+      status: 'PENDING_CONFIRMATION', paymentMethod: 'BANK_TRANSFER',
       subtotal: 100000, discountAmount: 0, finalAmount: 100000,
       createdAt: new Date().toISOString(), ...over,
     } as any);
@@ -98,7 +110,7 @@ async function run() {
   await mk('o-expired', { paymentExpiresAt: '2000-01-01T00:00:00.000Z' });  // quá hạn → LOẠI
   await mk('o-cash', { paymentMethod: 'CASH' });                            // tiền mặt chờ → LOẠI
   await mk('o-yesterday', { createdAt: yesterdayLate });                    // ngoài ngày → LOẠI
-  await mk('o-done', { status: 'COMPLETED', paymentMethod: 'QR_TRANSFER' }); // đã chốt → LOẠI
+  await mk('o-done', { status: 'COMPLETED', paymentMethod: 'BANK_TRANSFER' }); // đã chốt → LOẠI
 
   const r: any = await DailySettlementService.getDailyFairSettlement({ warehouseId: WH, date: vnToday });
   assert.equal(r.paymentBreakdown.pendingQr.ordersCount, 1, 'chỉ đúng 1 đơn QR còn hạn trong ngày');
@@ -145,7 +157,7 @@ Trong `src/services/daily-settlement.service.ts`, ngay sau khối tính `dayOrde
     let pendingQrCount = 0;
     for (const r of pendingRows) {
       const method = (r.paymentMethod || '').toUpperCase();
-      if (method !== 'QR_TRANSFER' && method !== 'COUNTER_TRANSFER') continue;
+      if (method !== 'BANK_TRANSFER' && method !== 'QR_CODE' && method !== 'TRANSFER') continue;
       if (OrderService.isPendingExpired(r)) continue;
       pendingQrTotal += r.finalAmount || 0;
       pendingQrCount++;
