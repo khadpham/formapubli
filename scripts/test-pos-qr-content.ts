@@ -265,5 +265,10 @@ ok(
 ok(resolveTransferContent({ ...base, template: 'DH {SL} {MA}' }) !== resolveTransferContent({ ...base, template: null }),
   'có mẫu ≠ không mẫu: không có đường nào bị mẫu mặc định ghi đè');
 
+console.log('\n[#10] VietQrPay ẩn dãy payload EMV thô, vẫn hiện dòng số tiền');
+ok(!/break-all/.test(viet), 'KHÔNG render dãy payload thô (break-all) dưới mã QR');
+ok(!/\{payload\}/.test(viet), 'không còn chỗ in biến payload ra màn hình');
+ok(/toLocaleString\('vi-VN'\)\} đ/.test(viet), 'VẪN giữ dòng số tiền dưới mã QR (không xoá nhầm)');
+
 console.log(`\n${fail === 0 ? '🎉' : '💥'} Nội dung QR POS: ${pass}/${pass + fail} PASS`);
 assert.equal(fail, 0, `${fail} case FAIL`);

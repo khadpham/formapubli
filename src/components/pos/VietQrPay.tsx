@@ -157,7 +157,6 @@ export function VietQrPay({
   }, [template, initialContent, itemCount, warehouseName, warehouseCode, effectiveManual, locked]);
 
   const [qrUrl, setQrUrl] = useState('');
-  const [payload, setPayload] = useState('');
   const [source, setSource] = useState<BankAccountSource>('NONE');
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [serverSaysEmpty, setServerSaysEmpty] = useState(false);
@@ -229,7 +228,7 @@ export function VietQrPay({
     const req = ++reqRef.current;
     const acc = list.find((b) => b.id === selectedId);
     if (!acc || amount <= 0) {
-      setQrUrl(''); setPayload('');
+      setQrUrl('');
       onQrRef.current?.(null);
       return;
     }
@@ -240,7 +239,6 @@ export function VietQrPay({
     // nên chuỗi này đưa vào payload không đổi một byte nào.
     const qrContent = normalizeVietqrContent(content);
     const p = generateVietQRPayload({ bankBin: acc.bankBin, accountNo: acc.accountNo, amount, content: qrContent });
-    setPayload(p);
     QRCode.toDataURL(p, { width: 280, margin: 1 })
       .then((url) => {
         if (req !== reqRef.current) return;
@@ -290,7 +288,6 @@ export function VietQrPay({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={qrUrl} alt="VietQR thanh toán" className="w-[200px] h-[200px] rounded-xl border border-slate-200 bg-white" />
           <div className="text-xs font-mono font-bold text-slate-800">{amount.toLocaleString('vi-VN')} đ{acc ? ` → ${acc.accountNo}` : ''}</div>
-          <div className="text-[10px] text-slate-400 break-all px-2 text-center">{payload}</div>
         </div>
       ) : (
         <div className="text-[11px] text-slate-500">
