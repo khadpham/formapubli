@@ -896,3 +896,20 @@ export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
   netProfit: real('net_profit'),
   syncedAt: text('synced_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const shopeeSettings = sqliteTable('shopee_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const shopeeQuarantine = sqliteTable('shopee_quarantine', {
+  id: text('id').primaryKey(),
+  orderSn: text('order_sn').notNull(),
+  sku: text('sku').notNull().default(''),
+  reason: text('reason').notNull(),
+  resolved: integer('resolved').notNull().default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  unresolvedIdx: index('idx_quarantine_unresolved').on(table.resolved, table.createdAt),
+}));

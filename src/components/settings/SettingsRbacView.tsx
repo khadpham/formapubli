@@ -25,6 +25,8 @@ import { ActivityLogView } from './ActivityLogView';
 import { BankAccountsManager } from './BankAccountsManager';
 import { GoodsCatalogManager } from '@/components/products/GoodsCatalogManager';
 import { PromotionsManager } from './PromotionsManager';
+import { ShopeePanel } from './ShopeePanel';
+import { ShoppingBag } from 'lucide-react';
 
 interface SettingsRbacViewProps {
   sessionRole?: UserRole;
@@ -32,11 +34,25 @@ interface SettingsRbacViewProps {
 
 // 'activity' (Nhat Ky Hoat Dong) giu lai tu main; 'shortcuts' da bi go
 // tinh goc login-ux loai bo khoi Settings (contract scripts/smoke-mobile-role-navigation.ts).
-type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'promotions' | 'appearance' | 'language' | 'sound' | 'printer';
+type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'promotions' | 'appearance' | 'language' | 'sound' | 'printer' | 'shopee';
 
 export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   const { canManageAccounts, canManageBanks, canManagePrinter } = getSettingsAccess(sessionRole);
   const [activeSubTab, setActiveSubTab] = useState<SettingsTab>(canManageAccounts ? 'staff' : 'appearance');
+  // Mục Shopee ẩn theo cờ server (SHOPEE_UI_ENABLED) — tắt thì không ai thấy nút.
+  const [showShopee, setShowShopee] = useState(false);
+  const canSeeShopee =
+    sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER' || sessionRole === 'ROLE_WAREHOUSE';
+
+  useEffect(() => {
+    if (!canSeeShopee) return;
+    fetch('/api/shopee/status')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success && j.data?.uiEnabled) setShowShopee(true);
+      })
+      .catch(() => {});
+  }, [canSeeShopee]);
 
   useEffect(() => {
     setActiveSubTab((prev) => {
@@ -252,6 +268,19 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                   Nhật Ký Hoạt Động
                 </button>
               )}
+              {showShopee && canSeeShopee && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('shopee')}
+                  aria-current={activeSubTab === 'shopee' ? 'page' : undefined}
+                  className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
+                    activeSubTab === 'shopee' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  Shopee
+                </button>
+              )}
             </div>
           )}
         </nav>
@@ -275,6 +304,11 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
 
       {/* TAB: HANG HOA */}
       {activeSubTab === 'goods' && canManageAccounts && <GoodsCatalogManager />}
+
+      {/* TAB: SHOPEE (ẩn theo cờ server SHOPEE_UI_ENABLED) */}
+      {activeSubTab === 'shopee' && showShopee && canSeeShopee && sessionRole && (
+        <ShopeePanel sessionRole={sessionRole} />
+      )}
 
       {/* TAB 3: THEME & DENSITY */}
       {activeSubTab === 'appearance' && (

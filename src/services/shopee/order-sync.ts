@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
-import { db, editions, orders, orderItems } from '@/db';
+import { and, eq } from 'drizzle-orm';
+import { db, editions, orders, orderItems, shopeeQuarantine } from '@/db';
 import { withDbRetry } from '@/lib/db-retry';
 import { vnDayOf } from '@/lib/vn-time';
 import { allocateOrderCode } from '../order-code';
@@ -8,6 +8,7 @@ import { InventoryService } from '../inventory.service';
 import { generateShopeeSign } from './sign';
 import { TursoTokenStorage } from './token-store';
 import { refreshShopeeTokenOnce } from './auth';
+import { getShopeeConfig } from './shop-config';
 
 export interface ShopeeSyncConfig {
   shopId: number;
@@ -98,7 +99,15 @@ export async function pullShopeeOrders(
   timeFrom: number,
   timeTo: number
 ): Promise<PullResult> {
-  if (!cfg.warehouseId) {
+  // Cấu hình runtime (DB) làm nền; giá trị truyền tường minh luôn thắng —
+  // nhờ vậy test và cron dùng chung một đường mà không hardcode kho.
+  const shopCfg = await getShopeeConfig();
+  const eff: ShopeeSyncConfig = {
+    ...cfg,
+    warehouseId: cfg.warehouseId || shopCfg.warehouseId,
+    codEnabled: cfg.codEnabled ?? shopCfg.codEnabled,
+  };
+  if (!eff.warehouseId) {
     throw new Error('Thiếu warehouseId: kho xuất Shopee phải cấu hình rõ.');
   }
   const result: PullResult = { pulled: 0, skipped: 0, quarantined: [] };
@@ -119,7 +128,7 @@ export async function pullShopeeOrders(
     const ready = list.filter((o) => o.order_status === 'READY_TO_SHIP');
     result.skipped += list.length - ready.length;
     if (ready.length > 0) {
-      await ingestShopeeOrderSns(cfg, ready.map((o) => o.order_sn), editionOf, result);
+      await ingestShopeeOrderSns(eff, ready.map((o) => o.order_sn), editionOf, result);
     }
     if (!page.more) break;
     cursor = page.next_cursor || '';
@@ -135,6 +144,13 @@ export async function ingestShopeeOrderSns(
   result?: PullResult
 ): Promise<PullResult> {
   const out = result ?? { pulled: 0, skipped: 0, quarantined: [] };
+  const shopCfg = await getShopeeConfig();
+  const eff: ShopeeSyncConfig = {
+    ...cfg,
+    warehouseId: cfg.warehouseId || shopCfg.warehouseId,
+    codEnabled: cfg.codEnabled ?? shopCfg.codEnabled,
+  };
+  if (!eff.warehouseId) throw new Error('Thiếu warehouseId: kho xuất Shopee phải cấu hình rõ.');
   const resolve = editionOf ?? (await buildCatalogResolver());
   for (let i = 0; i < orderSns.length; i += 50) {
     const batch = orderSns.slice(i, i + 50);
@@ -143,7 +159,7 @@ export async function ingestShopeeOrderSns(
     });
     const details: ShopeeOrderDetail[] = detail.order_list ?? [];
     for (const d of details) {
-      await ingestOne(cfg, resolve, d, out);
+      await ingestOne(eff, resolve, d, out);
     }
   }
   return out;
@@ -160,6 +176,30 @@ async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
       .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
     return hit ? hit.id : null;
   };
+}
+
+/** Ghi đơn lỗi vào hàng đợi để UI hiển thị — đã có dòng chưa xử lý thì thôi. */
+async function quarantine(orderSn: string, sku: string, reason: string): Promise<ShopeeQuarantine> {
+  const q = { orderSn, sku, reason };
+  const existing = await withDbRetry(async () =>
+    db
+      .select({ id: shopeeQuarantine.id })
+      .from(shopeeQuarantine)
+      .where(
+        and(
+          eq(shopeeQuarantine.orderSn, orderSn),
+          eq(shopeeQuarantine.sku, sku),
+          eq(shopeeQuarantine.resolved, 0)
+        )
+      )
+      .limit(1)
+  );
+  if (existing.length === 0) {
+    await withDbRetry(async () =>
+      db.insert(shopeeQuarantine).values({ id: randomUUID(), orderSn, sku, reason })
+    );
+  }
+  return q;
 }
 
 async function ingestOne(
@@ -185,7 +225,7 @@ async function ingestOne(
     const sku = it.model_sku || it.item_sku || '';
     const editionId = editionOf(sku);
     if (!editionId) {
-      result.quarantined.push({ orderSn: d.order_sn, sku, reason: 'SKU không khớp ISBN/code' });
+      result.quarantined.push(await quarantine(d.order_sn, sku, 'SKU không khớp ISBN/code'));
       return; // Cách ly CẢ đơn — không trừ nửa vời.
     }
     resolved.push({
@@ -196,13 +236,13 @@ async function ingestOne(
     });
   }
   if (resolved.length === 0) {
-    result.quarantined.push({ orderSn: d.order_sn, sku: '', reason: 'Đơn không có dòng hàng' });
+    result.quarantined.push(await quarantine(d.order_sn, '', 'Đơn không có dòng hàng'));
     return;
   }
 
   const isCod = d.payment_method === 'COD';
   if (isCod && !cfg.codEnabled) {
-    result.quarantined.push({ orderSn: d.order_sn, sku: '', reason: 'COD đang tắt — bật cờ mới xử lý' });
+    result.quarantined.push(await quarantine(d.order_sn, '', 'COD đang tắt — bật cờ mới xử lý'));
     return;
   }
   const finalAmount = resolved.reduce((s, r) => s + r.qty * r.discounted, 0);

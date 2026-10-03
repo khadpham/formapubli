@@ -84,6 +84,7 @@ export function channelLabel(channel: string | null | undefined): string {
     RETAIL_ONLINE_WEB: 'Website',
     WHOLESALE_PARTNER: 'Bán sỉ',
     ONLINE: 'Online',
+    SHOPEE: 'Shopee',
     SPONSORSHIP: 'Tặng',
   };
   return KNOWN[key] || 'Kênh khác';
