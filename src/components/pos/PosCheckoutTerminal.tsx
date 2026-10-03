@@ -348,8 +348,6 @@ export function PosCheckoutTerminal({
   const [isParserImporting, setIsParserImporting] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
   const [ambiguousMatches, setAmbiguousMatches] = useState<BookItem[] | null>(null);
-  // Mã đã quét dẫn tới modal, để ghi/nhớ lựa chọn theo đúng mã đó.
-  const [ambiguousPickKey, setAmbiguousPickKey] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(0);
   const [legacyOfflineCount, setLegacyOfflineCount] = useState<number>(0);
@@ -559,7 +557,6 @@ export function PosCheckoutTerminal({
     setIsMobileCheckoutSheetOpen(false);
     setIsScannerOpen(false);
     setAmbiguousMatches(null);
-    setAmbiguousPickKey(null);
     setCart([]);
     // Belt & braces: lock là ref (không re-render khi đổi) nên mọi đường xong
     // đơn đều phải thả tay ở đây, không chỉ trông chờ finally của handler.
@@ -1290,7 +1287,8 @@ export function PosCheckoutTerminal({
   const getBookStock = (book: BookItem): number => {
     // Chỉ tin ATP khi nó ĐÚNG là của kho đang chọn. Đổi kho xong nhưng chưa nạp
     // xong (hoặc nạp lỗi) thì `catalogAtp` còn là của KHO CŨ — đọc nó là hiện
-    // tồn sai, và từ 03/10 còn quyết định tự chọn ấn bản khi quét mã trùng ISBN.
+    // tồn sai, và từ 03/10 modal còn KHOÁ dòng 0 tồn ⇒ khoá nhầm cả cuốn đang
+    // có hàng.
     const hit =
       catalogAtpWarehouse === selectedWarehouseId ? catalogAtp[book.id] : undefined;
     if (hit) return hit.atp;
@@ -1300,36 +1298,15 @@ export function PosCheckoutTerminal({
     return 0;
   };
 
-  // Lựa chọn ấn bản trong CA (sessionStorage): hết ca là hỏi lại từ đầu.
-  // Không ghi vĩnh viễn — bản thắng áp đảo có thể đổi theo mùa, và "mặc định tĩnh"
-  // là đoán (xem `src/lib/scan-resolve.ts`).
-  const scanPickKey = (cleanScanned: string) => `fp:scan-pick:${cleanScanned}`;
-  const readScanPick = (cleanScanned: string): string | null => {
-    try {
-      return sessionStorage.getItem(scanPickKey(cleanScanned));
-    } catch {
-      return null;
-    }
-  };
-  const writeScanPick = (cleanScanned: string, editionId: string) => {
-    try {
-      sessionStorage.setItem(scanPickKey(cleanScanned), editionId);
-    } catch {
-      /* tab ẩn / Safari private: quét sau sẽ hỏi lại, không hỏng */
-    }
-  };
-
   // Xử lý khi Súng Quét Mã Vạch Camera đọc được mã ISBN-13
   const handleBarcodeScan = (scannedCode: string) => {
     setErrorMessage(null);
     const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
 
     // Matcher dùng chung (`src/lib/scan-resolve.ts`) — cùng hàm mà test đang gọi.
-    // `getBookStock` truyền vào là CÙNG hàm modal dùng để hiện tồn, để phần nào
-    // thu ngân nhìn thấy và phần nào quyết định tự động không lệch nhau.
-    // Lựa chọn ấn bản trong ca (sessionStorage) nằm trong chính hàm này nên nó
-    // được test như mọi luật khác, thay vì nằm trong component không ai test.
-    const resolution = resolveScan(scannedCode, books, getBookStock, readScanPick(cleanScanned));
+    // Trên 1 ứng viên thì LUÔN hỏi (chủ chốt 03/10/2026, xem file đó): thu ngân
+    // là người biết mình đang cầm cuốn nào, tồn kho chỉ là dữ liệu server.
+    const resolution = resolveScan(scannedCode, books);
 
     if (resolution.kind === 'single') {
       const matchedBook = resolution.book;
@@ -1344,12 +1321,8 @@ export function PosCheckoutTerminal({
     }
 
     if (resolution.kind === 'ambiguous') {
-      // Vẫn còn nghi ngờ (nhiều bản còn tồn, chưa có lựa chọn nhớ trong ca) ⇒
-      // hỏi. Đừng tự chọn: 2 cuốn cùng giá 99.000đ thì chọn nhầm không lệch
-      // tiền, chỉ lệch tồn và ấn bản — im lặng và không sửa được bằng code.
       setIsScannerOpen(false);
       setAmbiguousMatches(resolution.all);
-      setAmbiguousPickKey(cleanScanned);
       return;
     }
 
@@ -2649,7 +2622,6 @@ export function PosCheckoutTerminal({
           setCompletedOrder(null);
 } else if (ambiguousMatches) {
             setAmbiguousMatches(null);
-            setAmbiguousPickKey(null);
           } else if (isScannerOpen) {
            setIsScannerOpen(false);
           } else if (isParserOpen) {
@@ -4200,7 +4172,7 @@ export function PosCheckoutTerminal({
       {ambiguousMatches && ambiguousMatches.length > 0 && mounted && createPortal(
         <div
           className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
-          onClick={(event) => { if (event.target === event.currentTarget) { setAmbiguousMatches(null); setAmbiguousPickKey(null); } }}
+          onClick={(event) => { if (event.target === event.currentTarget) { setAmbiguousMatches(null); } }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
             <div className="flex items-center gap-3 mb-4">
@@ -4243,11 +4215,7 @@ export function PosCheckoutTerminal({
                         code: book.code,
                         isbn: book.isbn || '',
                       });
-                      // Nhớ trong ca: quét lại mã này sẽ tự thêm đúng bản vừa
-                      // chọn, không mở modal lần nữa. Đóng tab là quên.
-                      if (ambiguousPickKey) writeScanPick(ambiguousPickKey, book.id);
                       setAmbiguousMatches(null);
-                      setAmbiguousPickKey(null);
                       setTimeout(() => setScanToast(null), 3000);
                     }}
                     className="w-full text-left p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 transition-all flex items-center justify-between group cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed disabled:hover:border-slate-200 disabled:hover:bg-transparent"
@@ -4276,7 +4244,7 @@ export function PosCheckoutTerminal({
 
             <button
               type="button"
-              onClick={() => { setAmbiguousMatches(null); setAmbiguousPickKey(null); }}
+              onClick={() => { setAmbiguousMatches(null); }}
               className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
             >
               Hủy Bỏ

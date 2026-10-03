@@ -14,9 +14,9 @@ const cases = [
   ['src/components/pos/PosCheckoutTerminal.tsx', [
     ['setCompletedOrder'],
     // Modal trùng mã vạch: mọi lối ra (backdrop, Escape, nút Hủy) đều phải xoá
-    // cả danh sách ứng viên LẪN khoá mã đã quét. Suite này chỉ chạy handler
-    // backdrop; nhánh Escape tự xoá cả hai trong component.
-    ['setAmbiguousMatches', 'setAmbiguousPickKey'],
+    // danh sách ứng viên. Suite này chỉ chạy handler backdrop; nhánh Escape tự xoá
+    // trong component. (03/10: khoá mã đã quét đã bị bỏ — chủ chốt LUÔN hỏi.)
+    ['setAmbiguousMatches'],
     ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],
     // 30/09: màn hình Đơn Chờ — lối ra khi chốt ca bị chặn. Thứ tự PHẢI khớp
@@ -62,7 +62,7 @@ for (const [file, expected] of cases) {
     click?.({ target: backdrop, currentTarget: backdrop });
     assert.deepEqual(calls.map(call => call.name), expected[index], `${file} #${index + 1}: tapping outside must run the existing close action`);
     for (const call of calls) {
-      if (['setCompletedOrder', 'setAmbiguousMatches', 'setAmbiguousPickKey', 'setPendingDiscountRate'].includes(call.name)) assert.equal(call.value, null);
+      if (['setCompletedOrder', 'setAmbiguousMatches', 'setPendingDiscountRate'].includes(call.name)) assert.equal(call.value, null);
       if (call.name.startsWith('setIs')) assert.equal(call.value, false);
     }
     const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : file.includes('DiscountApprovalModal') ? 'status' : null;

@@ -35,11 +35,8 @@ async function testBarcodeEngine() {
   // Dùng ĐÚNG hàm của production (`src/lib/scan-resolve.ts`), không chép lại.
   // Bản chép trước đây còn dùng `endsWith` vô điều kiện — khác hẳn code POS —
   // nên có thể xanh trên code sai (đúng cái lỗi AGENTS.md cấm).
-  // `stockOf` giả: bộ test này chỉ hỏi "mã này tra ra được ấn bản nào", tồn kho
-  // không thuộc phạm vi (xem `test-duplicate-isbn-pos.ts` cho phần tồn).
-  const stockOf = () => 1;
   const resolveBarcode = (scannedCode: string) => {
-    const r = resolveScan(scannedCode, allEditions, stockOf);
+    const r = resolveScan(scannedCode, allEditions);
     return r.kind === 'none' ? undefined : r.kind === 'single' ? r.book : r.all[0];
   };
 

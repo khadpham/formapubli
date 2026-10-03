@@ -7,20 +7,17 @@
  * production) nên test có thể xanh trên code sai. Đây là lỗi `AGENTS.md` cấm.
  * Giờ MỘT bản, cả POS lẫn test đều gọi hàm này.
  *
- * QUY TẮC PHÂN GIẢI — vì sao không có mặc định tĩnh:
- *   · >1 ấn bản cùng mã mà cả hai đều còn tồn ⇒ HỎI. Hệ thống không thể biết
- *     thu ngân đang cầm cuốn nào. Ở production, `HH032` và `HH042` cùng giá
- *     99.000đ ⇒ chọn nhầm KHÔNG lệch tiền, chỉ lệch tồn/ấn bản ⇒ càng khó phát
- *     hiện.
- *   · >1 ấn bản cùng mã mà CHỈ CÙNG CÌN 1 bản ⇒ tự chọn bản đó. Rủi ro = 0
- *     (bản kia hết hàng, không bán được), vẫn bỏ được 1 chạm thừa trong ca dày.
- *   · >1 ấn bản cùng mã, nhiều bản còn tồn, mà thu ngân ĐÃ CHỌN bản đó trong ca
- *     này (`rememberedEditionId`, đọc từ sessionStorage) và bản đó VẪN còn tồn ⇒
- *     tự chọn luôn. Chỉ nhớ trong ca, đóng tab là quên — không nhớ vĩnh viễn vì
- *     bản thắng áp đảo có thể đổi theo mùa.
- *
- * `stockOf` phải LÀ ĐÚNG hàm mà màn POS hiển thị tồn (xem `getBookStock`), nếu
- * không thì thu ngân nhìn thấy "còn hàng" mà hệ thống lại báo hết — hoặc ngược lại.
+ * QUY TẮC PHÂN GIẢI — TRÊN 1 ỨNG VIÊN THÌ LUÔN HỎI (chủ chốt 03/10/2026):
+ *   · >1 ấn bản cùng mã ⇒ HỎI, KHÔNG BAO GIỜ tự chọn, kể cả khi chỉ còn đúng 1
+ *     bản còn tồn. Hệ thống không biết thu ngân đang cầm cuốn nào; tồn kho chỉ
+ *     là dữ liệu server và ở kho hội chợ có thể sai (xem `getBookStock`), nên
+ *     dùng nó để suy ra "bản đó chắc là không bán được" vẫn là một phỏng đoán.
+ *     Ở production, `HH032` và `HH042` cùng giá 99.000đ ⇒ chọn nhầm KHÔNG lệch
+ *     tiền, chỉ lệch tồn/ấn bản ⇒ càng khó phát hiện. Modal đã khoá dòng 0 tồn
+ *     nên thu ngân thấy ngay bản nào bán được; bỏ 1 chạm trong ca dày là cái
+ *     giá không đáng trả.
+ *   · Không có `rememberedEditionId`: thu ngân muốn giảm thao tác thì tự bấm
+ *     nút nhớ trong modal, không để hệ thống tự chọn ngầm.
  */
 export interface ScannableBook {
   id: string;
@@ -37,13 +34,11 @@ export interface ScannableBook {
 export type ScanResolution<B extends ScannableBook> =
   | { kind: 'none' }
   | { kind: 'single'; book: B }
-  | { kind: 'ambiguous'; all: B[]; buyable: B[] };
+  | { kind: 'ambiguous'; all: B[] };
 
 export function resolveScan<B extends ScannableBook>(
   scannedCode: string,
-  books: readonly B[],
-  stockOf: (book: B) => number,
-  rememberedEditionId?: string | null
+  books: readonly B[]
 ): ScanResolution<B> {
   const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
 
@@ -70,14 +65,5 @@ export function resolveScan<B extends ScannableBook>(
 
   if (matched.length === 0) return { kind: 'none' };
   if (matched.length === 1) return { kind: 'single', book: matched[0] };
-
-  const buyable = matched.filter((b) => stockOf(b) > 0);
-  // Không còn nghi ngờ: đúng 1 bản còn tồn. Xét TRƯỚC lựa chọn nhớ, vì tồn kho
-  // là sự thật còn mãi còn vĩnh, còn "đã chọn trong ca" chỉ là phỏng đoán.
-  if (buyable.length === 1) return { kind: 'single', book: buyable[0] };
-  const remembered = rememberedEditionId
-    ? buyable.find((b) => b.id === rememberedEditionId)
-    : undefined;
-  if (remembered) return { kind: 'single', book: remembered };
-  return { kind: 'ambiguous', all: matched, buyable };
+  return { kind: 'ambiguous', all: matched };
 }

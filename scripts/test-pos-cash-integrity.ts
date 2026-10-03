@@ -79,20 +79,19 @@ ok(
 // Mã đầy đủ vẫn phải khớp được bằng ISBN đầy đủ.
 ok(/cleanIsbn === cleanScanned/.test(scan), 'vẫn phải khớp được ISBN đầy đủ');
 // POS phải GỌI hàm dùng chung, không tự chép lại matcher (nguồn của bug này).
-ok(/resolveScan\(scannedCode, books, getBookStock/.test(pos),
+ok(/resolveScan\(scannedCode, books\)/.test(pos),
   'POS phải gọi resolveScan() dùng chung — chép lại matcher là bản chép lệch logic');
 ok(!/cleanIsbn === cleanScanned/.test(pos),
   'POS không được tự chứa biểu thức so khớp ISBN nữa — luật chỉ nằm ở scan-resolve.ts');
-ok(/resolveScan\(scannedCode, books, getBookStock, readScanPick\(cleanScanned\)\)/.test(pos),
-  'POS phải truyền lựa chọn nhớ trong ca (sessionStorage) vào resolveScan — bỏ thì D3 chết âm thầm');
-ok(/writeScanPick\(ambiguousPickKey, book\.id\)/.test(pos),
-  'bấm chọn trong modal phải ghi nhớ ấn bản theo mã đã quét — không gì đỏ nếu thiếu');
-ok(/sessionStorage\.getItem\(scanPickKey\(cleanScanned\)\)/.test(pos) &&
-    /sessionStorage\.setItem\(scanPickKey\(cleanScanned\), editionId\)/.test(pos),
-  'lựa chọn ấn bản phải lưu trong sessionStorage (đóng tab là quên), không phải biến module');
-// Tồn quyết định cả việc tự chọn ấn bản ⇒ ATP của KHO KHÁC không được dùng.
+// Chủ chốt 03/10/2026: trên 1 ứng viên thì LUÔN hỏi thu ngân. Không tự chọn,
+// không nhớ trong ca — mọi đường "tự thêm" đều phải bị chặn ở mức source.
+ok(!/readScanPick|writeScanPick|scanPickKey|rememberedEditionId/.test(pos + scan),
+  'KHÔNG được có đường tự chọn ấn bản (sessionStorage, id nhớ) — chủ đã bác');
+ok(!/buyable/.test(scan),
+  'resolveScan không được suy ra "bản nào bán được" — tồn kho là dữ liệu server, không phải sự thật tuyệt đối');
+// Tồn hiển thị sai kho cũ ⇒ modal KHOÁ nhầm dòng đang có hàng (disabled).
 ok(/catalogAtpWarehouse === selectedWarehouseId \? catalogAtp\[book\.id\] : undefined/.test(pos),
-  'getBookStock phải bỏ qua ATP của kho khác — đổi kho xong mà chưa nạp xong thì tồn kho cũ quyết sai ấn bản');
+  'getBookStock phải bỏ qua ATP của kho khác — đổi kho xong mà chưa nạp xong thì tồn kho cũ khoá nhầm dòng đang có hàng');
 // Dòng 0 tồn trong modal trùng mã: bấm là mất modal + ghi nhớ nhầm.
 ok(/disabled=\{stock <= 0\}/.test(pos),
   'ấn bản 0 tồn trong modal phải bị khoá — bấm sẽ đóng modal và ghi nhớ 1 cuốn không bán được');
