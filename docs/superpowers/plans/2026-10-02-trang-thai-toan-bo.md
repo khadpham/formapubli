@@ -712,3 +712,76 @@ cuốn người dùng vấp.
 
 - **Validate checksum ISBN-13 lúc nhập** — chủ để sau. Đây mới là nguyên nhân gốc.
 - **`ed-h85`** (Đốt kho tái bản, 14 số) — chủ bảo bỏ qua lần này.
+
+## 12. QUÀ TAY "Tặng thêm" — BẮT BUỘC QUA DUYỆT (04/10/2026)
+
+**Đã xong, đã deploy.** Nhánh `fix/tang-them-qua-duyet` → `main` (`f61e335`),
+Worker `bca52ad7-36e5-4dcb-bf6a-fe1d94c50ffd`.
+
+### Lỗi đã sửa
+
+Chủ báo: "tặng thêm lúc nào cũng được, không có xét duyệt, và modal thanh toán
+vẫn cho thêm". Rà soát tìm ra **4 lỗi, trong đó lỗi 1 là lỗi MẤT TIỀN THẬT**:
+
+1. **`addManualGift` không hề mở yêu cầu duyệt.** Mọi đường mở
+   `isDiscountApprovalModalOpen` đều nằm trong `handleRequestDiscount`, mà hàm
+   đó không được gọi bởi "Tặng thêm" ⇒ không có `discountApprovalId`.
+2. **Khách bị thu ĐÚNG GIÁ cho món quà.** `order.service.ts:677` chỉ công nhận
+   dòng quà nằm trong snapshot đã duyệt; dòng tay không có ⇒ bị hạ về dòng
+   thường ở giá bìa, chỉ ghi `isGiftClaimedRejected` vào audit, **không báo lỗi
+   ra màn hình**. Màn hình lại ghi "0 đ (sau duyệt)".
+3. **Modal "Chi tiết Đơn & Thanh toán" vẫn cho thêm** sau khi giỏ đã khoá/duyệt.
+4. **Giỏ không khoá sau duyệt** vì không có bước duyệt cho quà tay.
+
+### Cách sửa (chỉ ở client, KHÔNG đụng server)
+
+- `addManualGift` → gọi `requestManualGiftApproval()`: mở modal duyệt ngay với
+  `pendingDiscountRate = discountRate || 0` (server cho phép rate 0 khi đơn có
+  dòng quà tay — `discount-approval.service.ts:248`).
+- Ô "Tặng thêm" **chỉ hiện cho `ROLE_CASHIER` và khi giỏ không khoá**
+  (`showManualGiftUi`). Quản lý/owner **không** thấy: `approveRequest` chặn tự
+  duyệt yêu cầu của chính mình (`:502`) ⇒ quà của họ không bao giờ được duyệt mà
+  server lại hạ về giá thường.
+- Dòng quà đã thêm **vẫn hiện** khi giỏ khoá (nút "Gỡ" bị khoá) để thu ngân
+  thấy mình đang xin duyệt món nào; chỉ ô chọn món mới ẩn.
+- `handleCheckout` chặn chốt đơn khi `manualGifts.length > 0 &&
+  !approvedDiscountRequestId` — lưới an toàn cuối, trả lời rõ bằng chữ.
+- Banner khoá giỏ nói đúng việc đang chờ duyệt ("duyệt quà tặng thêm" thay vì
+  "duyệt chiết khấu 0%").
+
+### Bằng chứng
+
+- `scripts/test-manual-gift-approval.ts`: thêm case **CK đơn 10% + quà tay**
+  (trước đó chỉ có case rate 0). 15/15 xanh.
+- Suite browser riêng `npm run test:pos-gift`
+  (`scripts/run-real-manual-gift-test.ts`, 6 khẳng định G1–G6) chạy trên
+  component THẬT trong Chrome headless: 6/6 xanh.
+- **Cắt code để kiểm test có bắt lỗi không (2 lần):** bỏ hook mở duyệt ⇒ G2 đỏ
+  ("Timeout chờ: gửi yêu cầu duyệt"); bỏ lưới an toàn trong `handleCheckout` ⇒
+  G4 đỏ ("Quà tay CHƯA duyệt mà đã gửi POST /api/orders").
+- 6 suite DB liên quan xanh (`test-gift-forgery`, `test-gift-approval-hash`,
+  `test-s3-discount-approval`, `test-discount-checkout-atomic`, `test-gift-offline`,
+  `test-gift-subtotal`); `npx tsc --noEmit` sạch.
+- `scripts/verify-pos-live.ts` (HTTP thật, chỉ đọc): **22/24**. Hai đỏ là dữ liệu
+  DB dev, không phải hồi quy: #9 danh mục POS trả 0 món, #15 mã đơn dev không
+  phải 13 lẫn 29 ký tự. Diff không đụng `src/app` lẫn `src/services` nên không
+  thể do thay đổi này.
+
+### Bài học
+
+- **Suite component POS đã ROT từ lâu và không ai biết**: `browser-pos-terminal-test.tsx`
+  chết ở Test 2 (`Test 6` cũng đỏ) nên **không test nào phía sau chạy tới**, và
+  nó **không được nối vào runner nào** (`run-isolated.ts` không gọi). Vì vậy test
+  của tính năng mới phải TÁCH suite riêng có npm script, không gài vào đó.
+- **Harness phải mô phỏng đủ điều kiện thật**: không mock `/api/cashbox` và không
+  truyền prop `actorId` thì nút chốt đơn bị disable và mọi khẳng định "chốt đơn bị
+  chặn" đều **xanh vì lý do khác**. Đã bổ sung cả hai vào harness.
+- `scripts/run-isolated.ts` **chưa** gọi `test:pos-gift` (cần Chrome + esbuild,
+  không hợp với suite DB). Nên chạy tay trước khi sửa POS. **Việc treo.**
+
+### Còn treo
+
+- **Nối `test:pos-gift` vào CI/runner** để không tái diễn rot.
+- **Thu ngân mất thói quen tặng tay**: sau khi Quản lý duyệt xong, giỏ khoá và
+  dòng quà không gỡ được nữa (đúng luật, nhưng cần báo lại thu ngân).
+- **Suite component POS cũ vẫn đỏ** ở Test 2/Test 6 — chưa sửa vì ngoài phạm vi.

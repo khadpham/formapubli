@@ -168,6 +168,60 @@ async function main() {
     ok('dòng quà tay 0đ, cờ đủ', Number(gl?.g) === 1 && Number(gl?.r) === 1 && Number(gl?.s) === 0 && Number(gl?.f) === 0, JSON.stringify(gl));
   }
 
+  console.log('\n--- 4b. Quà tay + chiết khấu đơn 10% cùng lúc ⇒ vẫn 201, quà 0đ ---');
+  // Khoản hở cũ: rate 0 là trường hợp duy nhất được test. Thu ngân có thể đã
+  // áp 10% (< 20% nên tự áp được, không cần duyệt) rồi mới thêm quà tay ⇒ đơn
+  // đi kèm CẢ duyệt lẫn chiết khấu đơn. Số tiền duyệt = giá gốc cả đơn + giá
+  // quà; tiền đơn = không có giá quà ⇒ `consumeApproval` chỉ chấp nhận khi lệch
+  // đúng bằng `manualGiftSubtotal` (discount-approval.service.ts:970).
+  let reqMixed: any = null;
+  err = '';
+  try {
+    reqMixed = await DiscountApprovalService.createRequest({
+      orderCode: `ORD-MG-${Date.now()}-E`,
+      warehouseId: WH,
+      cashierId: CASHIER.staffId,
+      // Dòng sách KHÔNG gán `unitDiscountRate` — đúng như client gửi: client
+      // chỉ gán rate cho dòng quà, còn dòng thường dựa vào `discountRate` đơn
+      // (PosCheckoutTerminal.tsx). Gán rate ở đây sẽ che lỗi lệch payload.
+      items: [{ ...bookLine, unitDiscountRate: undefined }, manualLine],
+      requestedDiscountRate: 0.1,
+      actorContext: CASHIER,
+    });
+  } catch (e: any) {
+    err = `${e?.message || e}`;
+  }
+  ok('xin duyệt kèm CK đơn 10% + quà tay', !!reqMixed?.id, err);
+  let orderMixed: any = null;
+  if (reqMixed) {
+    err = '';
+    try {
+      await DiscountApprovalService.approveRequest({ requestId: reqMixed.id, method: 'ONE_TOUCH', actorContext: MANAGER });
+      orderMixed = await OrderService.createOrder({
+        warehouseId: WH,
+        channel: 'RETAIL_OFFICE',
+        paymentMethod: 'CASH',
+        discountRate: 0.1,
+        items: [
+          { editionId: BOOK_ID, quantity: 1 },
+          { editionId: GIFT_ID, quantity: 1, unitDiscountRate: 1, isGiftLine: true },
+        ],
+        discountApprovalId: reqMixed.id,
+        note: 'MG-NOTE-mixed',
+        idempotencyKey: `idem-mg-mixed-${Date.now()}`,
+        actorContext: CASHIER,
+      });
+    } catch (e: any) {
+      err = `${e?.message || e}`;
+    }
+    ok('chốt đơn CK 10% + quà tay đã duyệt không bị chặn ở consumeApproval', !!orderMixed?.orderId, err);
+    if (orderMixed) {
+      ok('tiền đơn = CK 10% trên sách, không nhiễm giá quà', orderMixed.subtotal === BOOK_PRICE && orderMixed.finalAmount === BOOK_PRICE - BOOK_PRICE * 0.1, `sub=${orderMixed.subtotal} final=${orderMixed.finalAmount}`);
+      const glm = await q1(`SELECT is_gift_line g, unit_selling_price s FROM order_items WHERE order_id = ? AND product_id = ?`, [orderMixed.orderId, GIFT_ID]);
+      ok('dòng quà tay vẫn 0đ khi đơn có chiết khấu', Number(glm?.g) === 1 && Number(glm?.s) === 0, JSON.stringify(glm));
+    }
+  }
+
   console.log('\n--- 5. Quà tay không duyệt ⇒ hạ về dòng thường ---');
   let order2: any = null;
   err = '';
