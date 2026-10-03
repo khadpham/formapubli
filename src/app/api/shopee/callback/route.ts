@@ -30,5 +30,7 @@ export async function GET(req: NextRequest) {
       { status: 502 }
     );
   }
-  return NextResponse.redirect(new URL('/settings?shopee=ok', req.url));
+  // App chỉ có 1 route `/` (tab nội bộ trong MasterAppShell) — không có
+  // `/settings`. Trả Anh về trang chính kèm cờ để UI sau này đón.
+  return NextResponse.redirect(new URL('/?shopee=ok', req.url));
 }
