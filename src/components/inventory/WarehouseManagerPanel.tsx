@@ -189,6 +189,26 @@ export function WarehouseManagerPanel({
     }
   };
 
+  const setSellable = async (w: Warehouse, isSellableOnPos: boolean) => {
+    setBusyId(w.id);
+    setError(null);
+    setDeleteBlock(null);
+    try {
+      const res = await fetch(`/api/warehouses/${encodeURIComponent(w.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isSellableOnPos }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(j?.error || 'Cập nhật kho thất bại.');
+      await afterChange(j.message || `Đã cập nhật kho [${w.code}].`);
+    } catch (e: any) {
+      setError(e?.message || 'Cập nhật kho thất bại.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const remove = async (w: Warehouse) => {
     setBusyId(w.id);
     setError(null);
@@ -314,6 +334,13 @@ export function WarehouseManagerPanel({
                         >
                           {w.isActive ? 'Đang mở' : 'Đã khoá'}
                         </span>
+                        <span
+                          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            w.isSellableOnPos ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-600'
+                          }`}
+                        >
+                          {w.isSellableOnPos ? 'Đang bán' : 'Đã ẩn'}
+                        </span>
                         <span className="shrink-0 text-[11px] font-mono font-bold text-slate-700">
                           {Number(w.stockQuantity || 0).toLocaleString('vi-VN')} cuốn
                         </span>
@@ -406,6 +433,16 @@ export function WarehouseManagerPanel({
                           <Power className="w-3.5 h-3.5" /> Mở lại
                         </button>
                       )}
+
+                      <button
+                        type="button"
+                        onClick={() => setSellable(w, !w.isSellableOnPos)}
+                        disabled={busy}
+                        title={w.isSellableOnPos ? 'Ẩn kho khỏi POS' : 'Cho kho bán trên POS'}
+                        className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 min-h-[36px] px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                      >
+                        <Store className="w-3.5 h-3.5 text-indigo-600" /> {w.isSellableOnPos ? 'Ẩn khỏi POS' : 'Bán POS'}
+                      </button>
 
                       <button
                         type="button"
