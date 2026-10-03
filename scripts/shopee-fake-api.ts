@@ -21,6 +21,8 @@ export interface FakeShopeeOrder {
   order_sn: string;
   order_status: string;
   payment_method: 'PREPAID' | 'COD';
+  /** Đơn vị vận chuyển khách chọn (giữ nguyên từ Shopee, không đoán). */
+  carrier?: string;
   recipient: { name: string; phone: string; address: string };
   item_list: FakeShopeeItem[];
 }
@@ -75,6 +77,7 @@ export function createFakeShopeeFetch(opts: { orders: FakeShopeeOrder[] }) {
                 order_sn: o!.order_sn,
                 order_status: o!.order_status,
                 payment_method: o!.payment_method,
+                shipping_carrier: o!.carrier ?? 'SPX',
                 recipient_address: {
                   name: o!.recipient.name,
                   phone: o!.recipient.phone,
@@ -86,8 +89,68 @@ export function createFakeShopeeFetch(opts: { orders: FakeShopeeOrder[] }) {
         }),
       };
     }
+    if (u.pathname.endsWith('/api/v2/logistics/get_shipping_parameter')) {
+      return {
+        ok: true,
+        json: async () => ({
+          error: '',
+          message: '',
+          // Shape theo SDK schemas/logistics.ts GetShippingParameterResponseData.
+          response: {
+            info_needed: { pickup: ['address_id', 'pickup_time_id'], dropoff: [] },
+            pickup: {
+              address_list: [
+                {
+                  address_id: 998877,
+                  city: 'Hà Nội',
+                  district: 'Cầu Giấy',
+                  address: 'Kho Âu Cơ',
+                  address_flag: ['pickup_address', 'default_address'],
+                  time_slot_list: [{ pickup_time_id: 'SLOT-14-17', time_text: '14:00-17:00' }],
+                },
+              ],
+            },
+          },
+        }),
+      };
+    }
+    if (u.pathname.endsWith('/api/v2/logistics/ship_order')) {
+      return {
+        ok: true,
+        json: async () => ({
+          error: '',
+          message: '',
+          response: { package_number: 'PKG-FAKE-001' },
+        }),
+      };
+    }
+    if (u.pathname.endsWith('/api/v2/logistics/get_tracking_number')) {
+      return {
+        ok: true,
+        json: async () => ({
+          error: '',
+          message: '',
+          response: { tracking_number: 'SPXVN0123456789' },
+        }),
+      };
+    }
+    if (u.pathname.endsWith('/api/v2/logistics/create_shipping_document')) {
+      return {
+        ok: true,
+        json: async () => ({ error: '', message: '', response: { result: 'OK' } }),
+      };
+    }
+    if (u.pathname.endsWith('/api/v2/logistics/download_shipping_document')) {
+      const tracking = 'SPXVN0123456789';
+      return {
+        ok: true,
+        headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? 'application/pdf' : '') },
+        arrayBuffer: async () =>
+          new TextEncoder().encode(`AWB-A6 ${tracking}`).buffer as ArrayBuffer,
+      };
+    }
     throw new Error(`FAKE_UNHANDLED: ${u.pathname}`);
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   return { fn, calls };
 }

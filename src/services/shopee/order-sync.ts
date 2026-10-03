@@ -35,6 +35,7 @@ interface ShopeeOrderDetail {
   order_sn: string;
   order_status: string;
   payment_method: 'PREPAID' | 'COD' | string;
+  shipping_carrier?: string;
   recipient_address?: { name?: string; phone?: string; full_address?: string };
   item_list?: Array<{
     item_sku?: string;
@@ -181,6 +182,8 @@ async function ingestOne(
   const finalAmount = resolved.reduce((s, r) => s + r.qty * r.discounted, 0);
   const subtotal = resolved.reduce((s, r) => s + r.qty * r.original, 0);
   const addr = d.recipient_address;
+  // Đơn vị vận chuyển do khách chọn lúc checkout — giữ để lúc ship khỏi đoán.
+  const carrier = (d.shipping_carrier || '').trim().toUpperCase().slice(0, 32) || null;
 
   await withDbRetry(async () =>
     db.transaction(async (tx) => {
@@ -198,6 +201,7 @@ async function ingestOne(
         paymentMethod: isCod ? 'COD' : 'BANK_TRANSFER',
         status: 'COMPLETED',
         shippingStatus: 'CREATED',
+        carrier,
         codAmount: isCod ? finalAmount : 0,
         codStatus: isCod ? 'PENDING' : 'NONE',
         cashierId: 'system-shopee-sync',

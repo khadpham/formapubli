@@ -191,6 +191,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-order-pull.ts',
   // Shopee Task 4: seed 3 đơn guard, chỉ đọc — an toàn cuối chuỗi.
   'scripts/test-shopee-revenue-guard.ts',
+  // Shopee Task 5: mock logistics, seed 1 đơn SHIP trong DB test.
+  'scripts/test-shopee-shipment.ts',
 ];
 
 function suiteShortName(p: string): string {
