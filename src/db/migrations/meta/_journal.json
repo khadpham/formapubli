@@ -280,6 +280,13 @@
       "when": 1790600015000,
       "tag": "0039_shopee_item_map",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": 7,
+      "when": 1790600016000,
+      "tag": "0040_shopee_order_finance",
+      "breakpoints": true
     }
   ],
   "version": "7"

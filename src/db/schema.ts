@@ -882,3 +882,17 @@ export const shopeeItemMap = sqliteTable('shopee_item_map', {
 }, (table) => ({
   pk: primaryKey({ columns: [table.shopId, table.editionId] }),
 }));
+
+export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
+  orderSn: text('order_sn').primaryKey(),
+  buyerTotal: real('buyer_total').notNull().default(0),
+  escrowAmount: real('escrow_amount').notNull().default(0),
+  commissionFee: real('commission_fee').notNull().default(0),
+  transactionFee: real('transaction_fee').notNull().default(0),
+  serviceFee: real('service_fee').notNull().default(0),
+  sellerDiscount: real('seller_discount').notNull().default(0),
+  shopeeDiscount: real('shopee_discount').notNull().default(0),
+  cogs: real('cogs'),
+  netProfit: real('net_profit'),
+  syncedAt: text('synced_at').default(sql`CURRENT_TIMESTAMP`),
+});

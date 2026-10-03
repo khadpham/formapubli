@@ -160,6 +160,29 @@ export function createFakeShopeeFetch(opts: { orders: FakeShopeeOrder[] }) {
         }),
       };
     }
+    if (u.pathname.endsWith('/api/v2/payment/get_escrow_detail')) {
+      return {
+        ok: true,
+        json: async () => ({
+          error: '',
+          message: '',
+          // Tên trường theo SDK GetEscrowDetailOrderIncome.
+          response: {
+            order_income: {
+              buyer_total_amount: 192000,
+              escrow_amount: 179360,
+              commission_fee: 15360,
+              seller_transaction_fee: 7680,
+              service_fee: 9600,
+              seller_discount: 0,
+              voucher_from_seller: 0,
+              shopee_discount: 20000,
+              voucher_from_shopee: 0,
+            },
+          },
+        }),
+      };
+    }
     throw new Error(`FAKE_UNHANDLED: ${u.pathname}`);
   }) as unknown as typeof fetch;
 
