@@ -142,4 +142,41 @@ body {
   }
 }
 
+/* ==========================================================================
+   FIT-BAR — thanh nút chia đều, tự thu chữ khi hẹp (dùng chung toàn app)
+   Cách dùng: bọc thanh nút bằng `fit-bar`, mỗi nút thêm `fit-btn`,
+   nhãn chữ thêm `fit-label`, icon thêm `fit-icon`.
+   - Ưu tiên 1: dọn diện tích thừa (gap/padding nhỏ, nút min-w-0).
+   - Ưu tiên 2: chữ tự thu theo chiều rộng thanh (cqi) thay vì `...` sớm.
+   - `...` chỉ là lối thoát cuối khi đã thu tới 10px mà vẫn dài.
+   ========================================================================== */
+.fit-bar {
+  container-type: inline-size;
+}
+.fit-bar .fit-btn {
+  min-width: 0;
+}
+.fit-bar .fit-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(10px, 3.5cqi, 12px);
+}
+.fit-bar .fit-icon {
+  flex: none;
+}
+@container (max-width: 340px) {
+  .fit-bar .fit-btn {
+    gap: 4px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .fit-bar .fit-icon {
+    width: 14px;
+    height: 14px;
+  }
+}
+
 

@@ -681,7 +681,7 @@ export function DailyFairSettlementModal({
             thanh cuộn ngang — trên điện thoại không có cách nào biết còn mục
             nào ngoài màn hình, và dải nhãn dài làm nút trông như chữ. */}
         <div className="no-print sticky top-0 z-10 px-3 sm:px-6 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
-          <div role="tablist" aria-label="Mục báo cáo" className="grid grid-cols-3 gap-1.5 bg-slate-200/60 p-1 rounded-xl">
+          <div role="tablist" aria-label="Mục báo cáo" className="fit-bar grid grid-cols-3 gap-1 bg-slate-200/60 p-1 rounded-xl">
             {([
               { key: 'FINANCIALS', label: 'Tiền & Két', Icon: Banknote },
               { key: 'STOCKTAKE', label: 'Kiểm Kê', Icon: Boxes },
@@ -693,14 +693,14 @@ export function DailyFairSettlementModal({
                 aria-selected={activeTab === t.key}
                 aria-label={t.label}
                 onClick={() => setActiveTab(t.key)}
-                className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                className={`fit-btn flex items-center justify-center gap-1 px-1.5 py-2 rounded-lg font-bold transition cursor-pointer min-w-0 ${
                   activeTab === t.key
                     ? 'bg-white text-indigo-700 shadow-sm'
                     : 'text-slate-600 hover:bg-white/70'
                 }`}
               >
-                <t.Icon className="w-4 h-4 shrink-0" />
-                <span className="truncate">{t.label}</span>
+                <t.Icon className="fit-icon w-4 h-4 shrink-0" />
+                <span className="fit-label">{t.label}</span>
               </button>
             ))}
           </div>
