@@ -178,13 +178,16 @@ body {
     height: 14px;
   }
 }
-
-/* DENSITY-COMPACT — token mật độ gọn cho vùng POS dày (đợt sau dùng chung). */
-.density-compact {
-  gap: 8px;
-}
-.density-compact > * {
-  min-width: 0;
+/* Màn rất hẹp (≤300px): giấu icon để dành trọn chỗ cho chữ. */
+@container (max-width: 300px) {
+  .fit-bar .fit-icon {
+    display: none;
+  }
+  .fit-bar .fit-btn {
+    gap: 2px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
 }
 
 

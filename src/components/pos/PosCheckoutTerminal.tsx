@@ -3439,7 +3439,7 @@ export function PosCheckoutTerminal({
         </div>
 
         {/* Right Side: Order Cart & Checkout Controls */}
-        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20 lg:sticky lg:top-[max(4rem,calc(2.75rem+env(safe-area-inset-top)))] lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
