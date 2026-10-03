@@ -24,7 +24,14 @@ const slice = (from: number, to: number) => content.slice(from, to);
 // Panel chọn kho trên mobile phải NẰM TRONG luồng (KHÔNG sticky). Chỉ thanh tìm kiếm
 // mới được nổi khi cuộn. (Người dùng yêu cầu 2026-10-03.)
 const mobilePanelIdx = content.indexOf('panel chọn kho nằm TRONG luồng');
-const cardIdx = content.indexOf('hidden md:flex bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row');
+// Card desktop được neo theo NỘI DUNG (tiêu đề + 2 lần mount `posHeaderControls`),
+// KHÔNG copy nguyên chuỗi class. Trước đây test ghim cứng
+// `… p-3 md:p-5 … flex-col md:flex-row`; commit 677edb2 đổi card thành một hàng
+// (`flex-row items-center justify-between`) là test vỡ, dù UI vẫn đúng ý.
+// Ghim class nghĩa là mọi chỉnh sửa cosmetic sau này đều phải sửa test — đúng cái
+// bẫy đã gây ra lỗi này.
+const desktopTitleIdx = content.indexOf('Quầy Thu Ngân POS');
+const cardIdx = content.lastIndexOf('hidden md:flex', desktopTitleIdx);
 const searchStickyIdx = content.indexOf('sticky top-[max(3.5rem');
 
 check('mobile warehouse panel exists and is NOT sticky', () => {
@@ -44,8 +51,9 @@ check('POS search bar IS sticky (the floating element)', () => {
 // 1. The standalone card must not render on mobile at all (no empty frame).
 // ---------------------------------------------------------------------------
 check('standalone header card is hidden on mobile (hidden md:flex)', () => {
+  assert(desktopTitleIdx > -1, 'desktop POS page title "Quầy Thu Ngân POS" not found');
   assert(
-    content.includes('hidden md:flex bg-white rounded-2xl p-3 md:p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row'),
+    cardIdx > -1 && cardIdx < desktopTitleIdx,
     'Top Header Controls card must be `hidden md:flex` so it renders nothing on a phone',
   );
 });
@@ -102,14 +110,13 @@ check('collapsed mobile state renders no card/frame at all', () => {
 // 3. Desktop must be untouched: card shows title left, controls right.
 // ---------------------------------------------------------------------------
 check('desktop card still renders the page title and the controls', () => {
-  const cardStart = content.indexOf('hidden md:flex bg-white rounded-2xl p-3 md:p-5');
-  assert(cardStart > -1, 'desktop header card not found');
-  const desktopRegion = slice(cardStart, cardStart + 1200);
+  assert(cardIdx > -1, 'desktop header card not found');
+  const desktopRegion = slice(cardIdx, cardIdx + 1200);
   assert(desktopRegion.includes('Quầy Thu Ngân POS'), 'desktop card must still show the POS page title');
   assert(desktopRegion.includes('hidden md:block'), 'desktop title block must stay md-only');
   assert(desktopRegion.includes(controlsMount), 'desktop card must still mount the network + warehouse controls');
   assert(
-    desktopRegion.includes('flex-col md:flex-row items-start md:items-center justify-between'),
+    /flex-row items-center justify-between/.test(desktopRegion),
     'desktop card must keep title-left / controls-right layout',
   );
 });

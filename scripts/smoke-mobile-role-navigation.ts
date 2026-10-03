@@ -135,8 +135,23 @@ assert.match(shell, /\{currentRole && \(\s*<CopilotDrawer[\s\S]*?currentRole=\{c
 // currentTab phải được đồng bộ ngược từ effectiveTab, chỉ set khi hai bên lệch.
 assert.match(shell, /if \(currentTab !== effectiveTab\) setCurrentTab\(effectiveTab\);/);
 assert.match(shell, /\}, \[currentTab, effectiveTab\]\);/);
-assert.match(shell, /mainBottomPadding = canUseCopilot \? 'pb-44 lg:pb-8' : 'pb-32 lg:pb-8'/);
-assert.match(shell, /bottom-\[calc\(max\(1rem,env\(safe-area-inset-bottom\)\)_\+_5\.5rem\)\]/);
+// 03/10 (commit 2f96783): AI Copilot chuyển từ nút nổi (FAB) lên thanh header.
+// Luật mới PHẢI được canh ở đây, nếu không ai đó thêm lại FAB là không ai biết:
+//   1. Nút nằm trên header, hiện trên CẢ điện thoại (chỉ chữ bị ẩn, không ẩn nút).
+//   2. KHÔNG còn FAB — mọi tab role quản lý hết dải trống đáy.
+//   3. mainBottomPadding chỉ chừa cho POS (thanh giỏ / nút quét camera); tab
+//      thường dùng padding safe-area tối thiểu.
+assert.match(shell, /canUseCopilot && \(\s*<button[\s\S]{0,700}?title="Mở Executive AI Copilot \(Alt\+C\)"/);
+assert.match(shell, /<Sparkles className="w-3\.5 h-3\.5 text-indigo-600 animate-pulse"/,
+  'Nút Copilot trên header phải có icon lấp lánh để nhận ra khi chỉ còn icon trên mobile');
+assert.match(shell, /<span className="hidden sm:inline">AI Copilot<\/span>/,
+  'Mobile chỉ hiện icon: CHỮ ẩn, nút phải hiện (trước đây nút bị `hidden sm:flex` nên không bấm được trên điện thoại)');
+assert.doesNotMatch(shell, /fabBottom/,
+  'KHÔNG được còn FAB Copilot — nút đã lên header; quay lại FAB là hết dải trống đáy ở mọi tab');
+assert.match(shell, /let mainBottomPadding = 'pb-\[max\(1rem,env\(safe-area-inset-bottom\)\)\] lg:pb-8';/,
+  'Tab thường: chỉ chừa safe-area tối thiểu, không chừa chỗ cho FAB nữa');
+assert.match(shell, /mainBottomPadding = posMobileBar \? 'pb-32 lg:pb-8' : 'pb-20 lg:pb-8';/,
+  'POS: pb-32 khi giỏ có hàng, pb-20 khi giỏ trống — chừa cho nút quét camera');
 assert.match(shell, /isPosCheckoutBusy/);
 assert.match(shell, /actorId=\{session\?\.actorId\}/);
 assert.match(shell, /onBusyChange=\{setIsPosCheckoutBusy\}/);

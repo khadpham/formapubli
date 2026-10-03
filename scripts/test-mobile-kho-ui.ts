@@ -165,10 +165,19 @@ expect(
   /min-w-\[640px\]/.test(matrix) && /min-w-\[720px\]/.test(matrix),
   'Bảng có min-width nên cuộn ngang có ý nghĩa thay vì bóp vỡ chữ'
 );
-expect(/fixed \$\{fabBottom\} right-4/.test(shell), 'FAB Copilot vẫn fixed góc phải dưới');
+// 03/10 (commit 2f96783): AI Copilot đã lên thanh header ⇒ KHÔNG còn FAB ở đáy.
+// Test cũ đòi FAB phải còn, giờ đòi ngược lại: không được quay về FAB (hết dải
+// trống đáy ở mọi tab), và nút header phải hiện trên điện thoại.
+expect(!/fabBottom/.test(shell), 'FAB Copilot đã bỏ — nút nằm trên thanh header');
+expect(!/mainBottomPadding = 'pb-28 lg:pb-8'/.test(shell), 'Không chừa padding-bottom cho FAB nữa');
 expect(
-  /mainBottomPadding = 'pb-28 lg:pb-8'/.test(shell),
-  'Main vẫn chừa padding-bottom cho FAB'
+  /className="flex items-center gap-1\.5 px-2 sm:px-3 py-1\.5 rounded-full text-xs font-bold text-indigo-700/.test(shell) &&
+    !/canUseCopilot && \(\s*<button[^>]*?className="hidden sm:flex/.test(shell),
+  'Nút Copilot ở header phải hiện trên mobile (chỉ ẩn chữ, không ẩn cả nút)'
+);
+expect(
+  /mainBottomPadding = posMobileBar \? 'pb-32 lg:pb-8' : 'pb-20 lg:pb-8'/.test(shell),
+  'Chỉ POS mới chừa padding-bottom (thanh giỏ + nút quét camera); tab khác dùng safe-area'
 );
 
 // ---------------------------------------------------------------------------
