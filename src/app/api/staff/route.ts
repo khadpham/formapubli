@@ -4,6 +4,7 @@ import { eq, asc } from 'drizzle-orm';
 import {
   requireSessionRole,
   hashStaffPasscodeV2,
+  parseAllowedWarehouseIds,
 } from '@/lib/auth-session';
 import { AppError } from '@/services/app-error';
 import { UserRole } from '@/lib/roles';
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest) {
       role: staffAccounts.role,
       isActive: staffAccounts.isActive,
       assignedWarehouseId: staffAccounts.assignedWarehouseId,
+      allowedWarehouseIds: staffAccounts.allowedWarehouseIds,
         createdAt: staffAccounts.createdAt,
         sessionVersion: staffAccounts.sessionVersion,
       })
@@ -60,6 +62,7 @@ export async function GET(req: NextRequest) {
       const l: any = leaseMap.get(r.staffId);
       return {
         ...r,
+        allowedWarehouseIds: parseAllowedWarehouseIds((r as any).allowedWarehouseIds),
         lease: l
           ? {
               sessionId: l.sessionId,

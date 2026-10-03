@@ -10,6 +10,7 @@ interface StaffRow {
   role: UserRole;
   isActive: boolean;
   assignedWarehouseId?: string | null;
+  allowedWarehouseIds?: string[] | null;
   createdAt?: string;
   sessionVersion?: number;
   lease?: {
@@ -279,7 +280,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                           id ? `Gán ${r.staffId} phụ trách kho [${wh?.name || id}]?` : `Bỏ gán kho cho ${r.staffId}?`
                         );
                       }}
-                      className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold outline-none max-w-[190px]"
+                      className="px-2 py-1.5 bg-white border border-indigo-300 rounded-lg text-[11px] font-semibold outline-none max-w-[190px] mb-1"
                       title="Gán nhân viên phụ trách kho nào (quản lý trở lên)"
                     >
                       <option value="">— Chưa gán —</option>
@@ -289,6 +290,35 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                         </option>
                       ))}
                     </select>
+                    <div className="max-w-[190px] space-y-1">
+                      {warehouses.filter((w) => (w as any).isActive !== false).map((w) => {
+                        const cur: string[] = Array.isArray((r as any).allowedWarehouseIds)
+                          ? (r as any).allowedWarehouseIds
+                          : [];
+                        const checked = cur.includes(w.id);
+                        return (
+                          <label key={w.id} className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const next = e.target.checked ? [...cur, w.id] : cur.filter((x) => x !== w.id);
+                                mutate(
+                                  r.staffId,
+                                  { allowedWarehouseIds: next },
+                                  next.length > 0
+                                    ? `Cho ${r.staffId} bán ở ${next.length} kho?`
+                                    : `Bỏ giới hạn kho cho ${r.staffId} (bán mọi kho)?`
+                                );
+                              }}
+                              className="w-4 h-4 accent-indigo-600"
+                            />
+                            <span className="truncate">{w.name}</span>
+                          </label>
+                        );
+                      })}
+                      <p className="text-[10px] text-slate-400">Trống = bán mọi kho.</p>
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     {r.isActive ? (
