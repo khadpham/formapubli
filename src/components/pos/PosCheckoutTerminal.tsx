@@ -3184,9 +3184,9 @@ export function PosCheckoutTerminal({
               placeholder={
                 isListening
                   ? '🔴 Đang lắng nghe tiếng Việt... Hãy nói tên sách (ví dụ: Bệnh tưởng, HH001)'
-                  : 'Gõ tên không dấu (truong, benh), mã (HH001/TP0006), 4 số cuối (7507)...'
+                  : 'Gõ 3 số cuối ISBN, tên hoặc mã…'
               }
-              className={`w-full pl-10 pr-32 py-3 bg-white border rounded-2xl text-sm font-medium outline-none shadow-sm min-h-[48px] transition-all ${
+              className={`w-full pl-10 pr-44 py-3 bg-white border rounded-2xl text-sm font-medium outline-none shadow-sm min-h-[48px] transition-all ${
                 isListening
                   ? 'border-rose-500 ring-2 ring-rose-300'
                   : 'border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500'
@@ -3221,11 +3221,11 @@ export function PosCheckoutTerminal({
               >
                 <Camera className="w-4 h-4" />
               </button>
-              {/* Nút Dán Chat Khách (Smart Parser FB/Zalo) */}
+              {/* Nút Dán Chat Khách (Smart Parser FB/Zalo) — gọn trên điện thoại hẹp */}
               <button
                 type="button"
                 onClick={() => setIsParserOpen(true)}
-                className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 active:scale-95 transition-all min-h-[36px] min-w-[36px] hidden sm:flex items-center justify-center"
                 title="Dán chat khách, bóc đơn tự động (Alt + Shift + P)"
               >
                 <ClipboardPaste className="w-4 h-4" />
