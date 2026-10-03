@@ -15,6 +15,7 @@ import {
   verifySession,
   LeaseError,
   extractClientIp,
+  parseAllowedWarehouseIds,
 } from '@/lib/auth-session';
 import {
   checkDbDualLimit,
@@ -369,6 +370,7 @@ export async function POST(req: NextRequest) {
       ...(staffRow ? { sessionVersion: staffRow.sessionVersion ?? 1 } : {}),
       // Kho được gán: POS mở đúng kho này và không cho đổi (ràng buộc tại server).
       ...(staffRow ? { assignedWarehouseId: (staffRow as any).assignedWarehouseId ?? null } : {}),
+      ...(staffRow ? { allowedWarehouseIds: parseAllowedWarehouseIds((staffRow as any).allowedWarehouseIds) } : {}),
     });
 
     await recordAuditLog({
@@ -391,6 +393,7 @@ export async function POST(req: NextRequest) {
           sessionId,
           expiresAt,
           assignedWarehouseId: (staffRow as any)?.assignedWarehouseId ?? null,
+          allowedWarehouseIds: parseAllowedWarehouseIds((staffRow as any)?.allowedWarehouseIds),
       },
     });
 

@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
         sessionId: session.sessionId,
         expiresAt: session.expiresAt,
         assignedWarehouseId: session.assignedWarehouseId ?? null,
+        allowedWarehouseIds: session.allowedWarehouseIds ?? [],
       },
     });
   } catch (err: any) {

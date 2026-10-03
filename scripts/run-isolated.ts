@@ -81,6 +81,8 @@ const ALL_SUITES = [
     'scripts/test-batch-atp-limit.ts',
     'scripts/test-ux-crud-fixes.ts',
   'scripts/test-warehouse-lifecycle.ts',
+  'scripts/test-staff-allowed-scope.ts',
+  'scripts/test-staff-allowed-warehouses.ts',
   'scripts/test-autoclose-shift.ts',
   'scripts/test-cashbox-audit-count.ts',
   'scripts/test-cron-auto-close.ts',

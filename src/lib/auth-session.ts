@@ -17,6 +17,18 @@ export interface SessionPayload {
   // Kho được quản lý gán cho nhân viên. Ràng buộc: nhân viên chỉ được bán/điều
   // chuyển trong đúng kho này (null = tự chọn kho như trước).
   assignedWarehouseId?: string | null;
+  // Danh sách kho POS được phép (rỗng = mọi kho sellable). Lọc ở client, chặn ở server.
+  allowedWarehouseIds?: string[] | null;
+}
+
+export function parseAllowedWarehouseIds(raw: unknown): string[] {
+  if (!raw) return [];
+  try {
+    const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(v) ? Array.from(new Set(v.map((x) => `${x || ''}`.trim()).filter(Boolean))) : [];
+  } catch {
+    return [];
+  }
 }
 
 

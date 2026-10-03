@@ -112,6 +112,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
       }
     }
 
+    if (body.allowedWarehouseIds !== undefined) {
+      const raw = body.allowedWarehouseIds;
+      if (raw !== null && !Array.isArray(raw)) throw AppError.invalid('Danh sách kho không hợp lệ.');
+      const ids = Array.from(new Set(((raw ?? []) as any[]).map((x) => `${x || ''}`.trim()).filter(Boolean)));
+      if (ids.length > 0) {
+        const rows = await db.select({ id: warehouses.id, isActive: warehouses.isActive }).from(warehouses);
+        const ok = new Set(rows.filter((r) => r.isActive === true).map((r) => r.id));
+        const bad = ids.filter((id) => !ok.has(id));
+        if (bad.length > 0) throw AppError.invalid(`Kho không tồn tại hoặc đã ngưng: ${bad.join(', ')}.`);
+      }
+      patch.allowedWarehouseIds = JSON.stringify(ids);
+      notes.push(ids.length > 0 ? `cho phép ${ids.length} kho` : 'bỏ giới hạn kho');
+    }
+
     if (Object.keys(patch).length === 0) throw AppError.invalid('Không có gì để cập nhật.');
 
     await db.update(staffAccounts).set(patch).where(eq(staffAccounts.staffId, targetId));

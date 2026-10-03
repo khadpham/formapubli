@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashboxService } from '@/services/order.service';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, parseAllowedWarehouseIds } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { db, cashboxSessions } from '@/db';
 import { and, eq } from 'drizzle-orm';
@@ -113,6 +113,18 @@ export async function POST(req: NextRequest) {
             success: false,
             code: 'FORBIDDEN',
             error: 'Bạn được phân công phụ trách một kho khác. Không thể mở ca tại kho này.',
+          },
+          { status: 403 }
+        );
+      }
+      // Giới hạn kho: tài khoản bị tick kho chỉ được mở ca trong các kho đó.
+      const allowed = parseAllowedWarehouseIds((session as any).allowedWarehouseIds);
+      if (allowed.length > 0 && !allowed.includes(`${warehouseId}`)) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'FORBIDDEN',
+            error: 'Kho này không nằm trong danh sách được phép của tài khoản.',
           },
           { status: 403 }
         );
