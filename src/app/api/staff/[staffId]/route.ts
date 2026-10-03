@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, staffAccounts, activeSessions, warehouses } from '@/db';
 import { eq } from 'drizzle-orm';
-import { requireSessionRole, hashStaffPasscodeV2 } from '@/lib/auth-session';
+import { requireSessionRole, hashStaffPasscodeV2, parseAllowedWarehouseIds } from '@/lib/auth-session';
 import { UserRole } from '@/lib/roles';
 import { AppError } from '@/services/app-error';
 import { recordAuditLog } from '@/lib/rbac-guard';
@@ -52,6 +52,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
     const body = await req.json();
     const patch: Partial<typeof staffAccounts.$inferInsert> = {};
     const notes: string[] = [];
+
+    // Validate danh sách kho TRƯỚC mọi nhánh có tác dụng phụ (reset passcode
+    // xoá lease): PATCH gộp passcode + allowed lỗi không được đá máy khác văng oan.
+    if (body.allowedWarehouseIds !== undefined) {
+      const raw = body.allowedWarehouseIds;
+      if (raw !== null && !Array.isArray(raw)) throw AppError.invalid('Danh sách kho không hợp lệ.');
+      const ids = Array.from(new Set(((raw ?? []) as any[]).map((x) => `${x || ''}`.trim()).filter(Boolean)));
+      if (ids.length > 0) {
+        const rows = await db.select({ id: warehouses.id, isActive: warehouses.isActive }).from(warehouses);
+        const ok = new Set(rows.filter((r) => r.isActive === true).map((r) => r.id));
+        const bad = ids.filter((id) => !ok.has(id));
+        if (bad.length > 0) throw AppError.invalid(`Kho không tồn tại hoặc đã ngưng: ${bad.join(', ')}.`);
+        const locked = `${(body.assignedWarehouseId !== undefined ? body.assignedWarehouseId : (target as any).assignedWarehouseId) || ''}`.trim();
+        if (locked && !ids.includes(locked)) {
+          throw AppError.invalid('Danh sách kho được phép phải chứa kho đang gán cứng.');
+        }
+      }
+      patch.allowedWarehouseIds = JSON.stringify(ids);
+      notes.push(ids.length > 0 ? `cho phép ${ids.length} kho` : 'bỏ giới hạn kho');
+    }
 
     if (body.fullName !== undefined) {
       const name = `${body.fullName || ''}`.trim().slice(0, 80);
@@ -107,23 +127,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { staffId: s
         if (!wh[0] || wh[0].isActive !== true) {
           throw AppError.invalid('Kho được gán không tồn tại hoặc đã ngưng hoạt động.');
         }
+        const curAllowed = parseAllowedWarehouseIds((target as any).allowedWarehouseIds);
+        if (curAllowed.length > 0 && !curAllowed.includes(whId)) {
+          throw AppError.invalid('Kho được gán phải nằm trong danh sách kho được phép của tài khoản.');
+        }
         patch.assignedWarehouseId = whId;
         notes.push(`gán kho [${wh[0].code}]`);
       }
-    }
-
-    if (body.allowedWarehouseIds !== undefined) {
-      const raw = body.allowedWarehouseIds;
-      if (raw !== null && !Array.isArray(raw)) throw AppError.invalid('Danh sách kho không hợp lệ.');
-      const ids = Array.from(new Set(((raw ?? []) as any[]).map((x) => `${x || ''}`.trim()).filter(Boolean)));
-      if (ids.length > 0) {
-        const rows = await db.select({ id: warehouses.id, isActive: warehouses.isActive }).from(warehouses);
-        const ok = new Set(rows.filter((r) => r.isActive === true).map((r) => r.id));
-        const bad = ids.filter((id) => !ok.has(id));
-        if (bad.length > 0) throw AppError.invalid(`Kho không tồn tại hoặc đã ngưng: ${bad.join(', ')}.`);
-      }
-      patch.allowedWarehouseIds = JSON.stringify(ids);
-      notes.push(ids.length > 0 ? `cho phép ${ids.length} kho` : 'bỏ giới hạn kho');
     }
 
     if (Object.keys(patch).length === 0) throw AppError.invalid('Không có gì để cập nhật.');

@@ -1,6 +1,13 @@
 import { createClient } from '@libsql/client';
 async function main() {
-  const db = createClient({ url: 'file:formapubli.db' });
+  // BẮT BUỘC chạy qua run-isolated (DATABASE_URL=file:formapubli_test*.db).
+  // Đọc thẳng formapubli.db là chạm DB thật — cấm.
+  const url = process.env.DATABASE_URL;
+  if (!url || !url.includes('formapubli_test')) {
+    console.error('FAIL chi chay qua run-isolated (thieu DATABASE_URL test)');
+    process.exit(1);
+  }
+  const db = createClient({ url });
   const cols: any = await db.execute(`PRAGMA table_info(staff_accounts)`);
   const names = (cols.rows as any[]).map((r) => r.name);
   if (!names.includes('allowed_warehouse_ids')) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
 import { enforceFiscalScope, recordAuditLog } from '@/lib/rbac-guard';
-import { requireSessionRole } from '@/lib/auth-session';
+import { requireSessionRole, parseAllowedWarehouseIds } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { DiscountApprovalService } from '@/services/discount-approval.service';
@@ -291,6 +291,20 @@ export async function POST(req: NextRequest) {
           success: false,
           code: 'FORBIDDEN',
           error: `Bạn được phân công phụ trách kho [${whName[0]?.name || session.assignedWarehouseId}]. Không thể xuất hàng từ kho khác; liên hệ quản lý nếu cần đổi kho.`,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Giới hạn kho: tài khoản bị tick kho chỉ được xuất hàng trong các kho đó
+    // (kể cả không mở ca — chốt luôn ở đơn, không chỉ ở két).
+    const allowedOrder = parseAllowedWarehouseIds((session as any).allowedWarehouseIds);
+    if (allowedOrder.length > 0 && !allowedOrder.includes(`${warehouseId}`)) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'FORBIDDEN',
+          error: 'Kho này không nằm trong danh sách được phép của tài khoản.',
         },
         { status: 403 }
       );

@@ -28,5 +28,19 @@ ok(login.includes('allowedWarehouseIds'), 'login phai tra truong moi');
 ok(me.includes('allowedWarehouseIds'), 'me phai tra truong moi');
 ok(cashbox.includes('allowedWarehouseIds'), 'cashbox OPEN phai kiem list');
 ok(cashbox.includes('danh sách được phép'), 'cashbox phai bao tieng Viet ro rang');
+ok(
+  cashbox.indexOf('allowedWarehouseIds') < cashbox.indexOf('openSession'),
+  'cashbox phai kiem allowed TRUOC khi mo ket'
+);
+ok(
+  staffRoute.indexOf('Kho không tồn tại hoặc đã ngưng') < staffRoute.indexOf('db.update'),
+  'staff PATCH phai validate TRUOC khi ghi DB'
+);
+const orders = fs.readFileSync('src/app/api/orders/route.ts', 'utf8');
+ok(orders.includes('allowedWarehouseIds'), 'orders POST phai kiem list (khong mo ca van chan)');
+ok(
+  orders.indexOf('allowedWarehouseIds') < orders.indexOf('OrderService.createOrder'),
+  'orders phai kiem allowed TRUOC khi tao don'
+);
 
 console.log(`PASS scope kho theo tai khoan (${n} checks)`);

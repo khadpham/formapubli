@@ -664,6 +664,12 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
       }
     }
 
+    // Danh sách kho POS luôn đọc tươi từ DB (không tin snapshot trong token):
+    // quản lý đổi tick là hiệu lực ngay, không chờ đăng nhập lại.
+    if (rows.length > 0) {
+      sess.allowedWarehouseIds = parseAllowedWarehouseIds((rows[0] as any).allowedWarehouseIds);
+    }
+
     // S-01: cashier có sessionId (cấp sau deploy) phải có lease đang sống khớp
     // session — giữ máy cũ, chặn máy mới. Token legacy KHÔNG có sessionId
     // (ký trước deploy): grace cho qua, tự hết hạn ≤12h theo expiresAt —

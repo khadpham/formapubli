@@ -203,6 +203,8 @@ export function PosCheckoutTerminal({
   // chặn ở server (`/api/cashbox` OPEN).
   const [allowedWarehouseIds, setAllowedWarehouseIds] = useState<string[]>([]);
   const [allowedMissing, setAllowedMissing] = useState<string[]>([]);
+  // true khi đã biết allowed (kể cả offline/lỗi) — effect nạp kho chờ cờ này.
+  const [authReady, setAuthReady] = useState(false);
   // Tên thật của thu ngân đang đăng nhập. Lấy từ /api/auth/me (session đã có sẵn
   // fullName) thay vì dựng chuỗi từ vai trò — dựng từ vai trò ra chuỗi giả như
   // "User-ROLE_CASHIER" và lẫn tên kho, thu ngân không biết ca đang mở là của ai.
@@ -220,7 +222,7 @@ export function PosCheckoutTerminal({
         const allowed: string[] = Array.isArray((j?.data as any)?.allowedWarehouseIds)
           ? (j.data as any).allowedWarehouseIds.filter((x: any) => `${x || ''}`.trim())
           : [];
-        if (allowed.length > 0) setAllowedWarehouseIds(allowed);
+        setAllowedWarehouseIds(allowed);
         const wid = j?.data?.assignedWarehouseId;
         if (!wid) return;
         setLockedWarehouseId(wid);
@@ -234,7 +236,12 @@ export function PosCheckoutTerminal({
           })
           .catch(() => {});
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        // Cờ cho effect nạp kho: offline hay lỗi cũng phải mở (fallback cứng),
+        // nhưng KHÔNG được nạp kho trước khi biết allowed (race là lọt kho cấm).
+        if (alive) setAuthReady(true);
+      });
     return () => { alive = false; };
   }, []);
   // V4.1 S2.1/S2.2/S2.3: kho bán + ATP nạp từ server (fallback cứng khi offline)
@@ -707,9 +714,6 @@ export function PosCheckoutTerminal({
     allowedWarehouseIdsRef.current = allowedWarehouseIds;
   }, [allowedWarehouseIds]);
   useEffect(() => {
-    selectedWarehouseIdRef.current = selectedWarehouseId;
-  }, [selectedWarehouseId]);
-  useEffect(() => {
     cartFrozenRef.current = isCartFrozen;
   }, [isCartFrozen]);
   useEffect(() => {
@@ -1036,8 +1040,10 @@ export function PosCheckoutTerminal({
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedWarehouseId, isPendingOrdersOpen]);
 
-  // V4.1 S2.1: nạp kho bán động 1 lần khi mở quầy (thay hardcode 3 kho)
+  // V4.1 S2.1: nạp kho bán động khi mở quầy (thay hardcode 3 kho).
+  // Chờ authReady: nạp trước khi biết allowed là lọt kho cấm (race).
   useEffect(() => {
+    if (!authReady) return;
     (async () => {
       try {
         const res = await fetch('/api/warehouses');
@@ -1056,7 +1062,7 @@ export function PosCheckoutTerminal({
         // offline: giữ fallback cứng trong selector
       }
     })();
-  }, []);
+  }, [authReady]);
 
   // V4.1 S2.2/S2.3: nạp ATP + số bán hôm nay mỗi khi đổi kho (1 request)
   useEffect(() => {
@@ -2786,7 +2792,7 @@ export function PosCheckoutTerminal({
                     { id: 'wh-au-co', name: 'Kho 1 - Âu Cơ' },
                     { id: 'wh-du-phong', name: 'Kho 3 - Hội Chợ' },
                     { id: 'wh-quynh-mai', name: 'Kho 2 - Quỳnh Mai' },
-                  ]
+                  ].filter((w) => allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(w.id))
               ).map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
