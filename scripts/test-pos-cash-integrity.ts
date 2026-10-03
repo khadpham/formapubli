@@ -38,6 +38,10 @@ const strip = (p: string) =>
 const pos = strip('src/components/pos/PosCheckoutTerminal.tsx');
 const modal = strip('src/components/pos/TransferPaymentModal.tsx');
 const cache = strip('src/lib/bank-account-cache.ts');
+// Matcher quét mã đã tách ra module dùng chung (03/10/2026) — trước đây nó nằm
+// trong `pos`, và bản chép thứ hai trong `test-barcode-engine.ts` đã lệch logic
+// (dùng `endsWith` vô điều kiện). Kiểm phải trỏ đúng nơi luật còn nằm.
+const scan = strip('src/lib/scan-resolve.ts');
 
 let checks = 0;
 const ok = (c: boolean, m: string) => { checks++; assert.ok(c, m); };
@@ -64,15 +68,21 @@ ok(
 
 // --- 2. Khớp 4 số cuối chỉ hợp lệ khi mã quét ĐÚNG 4 ký tự ---
 ok(
-  !/cleanScanned\.endsWith\(b\.isbnLast4\)/.test(pos),
+  !/cleanScanned\.endsWith\(b\.isbnLast4\)/.test(pos) &&
+    !/cleanScanned\.endsWith\(b\.isbnLast4\)/.test(scan),
   'không được khớp 4 số cuối bằng endsWith trên mã dài — sẽ thêm nhầm ấn bản'
 );
 ok(
-  /cleanScanned\.length === 4/.test(pos),
+  /cleanScanned\.length === 4/.test(scan),
   'khớp 4 số cuối chỉ được phép khi mã quét đúng 4 ký tự'
 );
 // Mã đầy đủ vẫn phải khớp được bằng ISBN đầy đủ.
-ok(/cleanIsbn === cleanScanned/.test(pos), 'vẫn phải khớp được ISBN đầy đủ');
+ok(/cleanIsbn === cleanScanned/.test(scan), 'vẫn phải khớp được ISBN đầy đủ');
+// POS phải GỌI hàm dùng chung, không tự chép lại matcher (nguồn của bug này).
+ok(/resolveScan\(scannedCode, books, getBookStock/.test(pos),
+  'POS phải gọi resolveScan() dùng chung — chép lại matcher là bản chép lệch logic');
+ok(!/cleanIsbn === cleanScanned/.test(pos),
+  'POS không được tự chứa biểu thức so khớp ISBN nữa — luật chỉ nằm ở scan-resolve.ts');
 
 // --- 3. Phiếu thu phải lấy danh sách sách từ phiên đã đóng băng ---
 ok(/items\?: Array<\{ editionId/.test(modal), 'phiên chuyển khoản phải lưu danh sách mặc hàng');

@@ -84,6 +84,7 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { PortalToBody } from '@/components/PortalToBody';
 import { printThermalReceipt, PaperPreset } from '@/lib/thermalReceipt';
 import { resolveReceiptSummary } from '@/lib/receipt-summary';
+import { resolveScan } from '@/lib/scan-resolve';
 
 /** Nhắc thu ngân khi thanh toán số được gọi mà chưa có ảnh xác nhận. */
 const NEED_PROOF_MESSAGE = 'Chuyển khoản cần ảnh xác nhận. Bấm nút Chụp ảnh xác nhận.';
@@ -342,6 +343,8 @@ export function PosCheckoutTerminal({
   const [isParserImporting, setIsParserImporting] = useState(false);
   const [scanToast, setScanToast] = useState<{ title: string; code: string; isbn: string } | null>(null);
   const [ambiguousMatches, setAmbiguousMatches] = useState<BookItem[] | null>(null);
+  // Mã đã quét dẫn tới modal, để ghi/nhớ lựa chọn theo đúng mã đó.
+  const [ambiguousPickKey, setAmbiguousPickKey] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(0);
   const [legacyOfflineCount, setLegacyOfflineCount] = useState<number>(0);
@@ -551,6 +554,7 @@ export function PosCheckoutTerminal({
     setIsMobileCheckoutSheetOpen(false);
     setIsScannerOpen(false);
     setAmbiguousMatches(null);
+    setAmbiguousPickKey(null);
     setCart([]);
     // Belt & braces: lock là ref (không re-render khi đổi) nên mọi đường xong
     // đơn đều phải thả tay ở đây, không chỉ trông chờ finally của handler.
@@ -1262,46 +1266,16 @@ export function PosCheckoutTerminal({
     }
   }, [isListening, isScrolledPast]);
 
-  // Xử lý khi Súng Quét Mã Vạch Camera đọc được mã ISBN-13
-  const handleBarcodeScan = (scannedCode: string) => {
-    setErrorMessage(null);
-    const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
-
-    // Tìm toàn bộ các ấn bản trùng khớp trong danh mục 81 sách
-    const matchedBooks = books.filter((b) => {
-      const cleanIsbn = b.isbn ? b.isbn.replace(/[^0-9X]/gi, '') : '';
-      // Khớp 4 số cuối CHỈ hợp lệ khi mã quét ĐÚNG 4 ký tự. Trước đây điều kiện
-      // này nằm trong `||` vô điều kiện, nên quét ISBN-13 của một cuốn KHÔNG có
-      // trong danh mục, tình cờ trùng 4 số cuối với đúng một cuốn trong danh
-      // mục ⇒ thẻ ấn bản đó vào giỏ, trừ sai tồn kho và tính tiền theo GIÁ của
-      // cuốn khác. Mã đầy đủ mà không khớp thì phải là không khớp.
-      const last4Only = cleanScanned.length === 4 && b.isbnLast4 && cleanScanned === b.isbnLast4;
-      return (
-        cleanIsbn === cleanScanned ||
-        b.code.toLowerCase() === scannedCode.toLowerCase() ||
-        last4Only
-      );
-    });
-
-    if (matchedBooks.length === 1) {
-      const matchedBook = matchedBooks[0];
-      handleAddToCart(matchedBook);
-      setScanToast({
-        title: matchedBook.title,
-        code: matchedBook.code,
-        isbn: matchedBook.isbn || cleanScanned,
-      });
-      setTimeout(() => setScanToast(null), 3000);
-    } else if (matchedBooks.length > 1) {
-      setIsScannerOpen(false);
-      setAmbiguousMatches(matchedBooks);
-    } else {
-      setErrorMessage(`Không tìm thấy ấn bản nào trong danh mục có mã ISBN: ${scannedCode}`);
-    }
-  };
-
   // V4.1 S2.2: tồn hiển thị = ATP server khi đã nạp; offline fallback snapshot ma trận, kho lạ → 0.
   // Server là guard cuối lúc thanh toán nên số hiển thị chỉ để tìm nhanh, không quyết định được bán.
+  //
+  // ⚠ DANH SÁCH KHO LẠ TRẢ 0 (03/10/2026): kho hội chợ (`wh-kho-hoi-cho-ho-guom`,
+  // `wh-kho-dh-ha-noi-thang-10-2026`) và `wh-kho-nui-truc` KHÔNG nằm trong 3 mã
+  // dưới đây. Nếu `catalogAtp` chưa nạp (offline, hoặc kho vừa đổi), mọi cuốn ở
+  // các kho đó trả 0 ⇒ màn kho hiện "hết hàng" và modal trùng mã hiện "0 cuốn"
+  // cho MỌI ấn bản. Đó là số 0 GIẢ, không phải hết hàng. Cần sửa ở Kế hoạch 2
+  // (mảng tồn theo kho thay vì 3 con số) — không vá tên kho ở đây vì kho hội chợ
+  // được tạo mới theo từng sự kiện, không có danh sách đóng.
   const getBookStock = (book: BookItem): number => {
     const hit = catalogAtp[book.id];
     if (hit) return hit.atp;
@@ -1309,6 +1283,62 @@ export function PosCheckoutTerminal({
     if (selectedWarehouseId === 'wh-du-phong') return book.stockDuPhong;
     if (selectedWarehouseId === 'wh-quynh-mai') return book.stockQuynhMai;
     return 0;
+  };
+
+  // Lựa chọn ấn bản trong CA (sessionStorage): hết ca là hỏi lại từ đầu.
+  // Không ghi vĩnh viễn — bản thắng áp đảo có thể đổi theo mùa, và "mặc định tĩnh"
+  // là đoán (xem `src/lib/scan-resolve.ts`).
+  const scanPickKey = (cleanScanned: string) => `fp:scan-pick:${cleanScanned}`;
+  const readScanPick = (cleanScanned: string): string | null => {
+    try {
+      return sessionStorage.getItem(scanPickKey(cleanScanned));
+    } catch {
+      return null;
+    }
+  };
+  const writeScanPick = (cleanScanned: string, editionId: string) => {
+    try {
+      sessionStorage.setItem(scanPickKey(cleanScanned), editionId);
+    } catch {
+      /* tab ẩn / Safari private: quét sau sẽ hỏi lại, không hỏng */
+    }
+  };
+
+  // Xử lý khi Súng Quét Mã Vạch Camera đọc được mã ISBN-13
+  const handleBarcodeScan = (scannedCode: string) => {
+    setErrorMessage(null);
+    const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
+
+    // Matcher dùng chung (`src/lib/scan-resolve.ts`) — cùng hàm mà test đang gọi.
+    // `getBookStock` truyền vào là CÙNG hàm modal dùng để hiện tồn, để phần nào
+    // thu ngân nhìn thấy và phần nào quyết định tự động không lệch nhau.
+    // Lựa chọn ấn bản trong ca (sessionStorage) nằm trong chính hàm này nên nó
+    // được test như mọi luật khác, thay vì nằm trong component không ai test.
+    const resolution = resolveScan(scannedCode, books, getBookStock, readScanPick(cleanScanned));
+
+    if (resolution.kind === 'single') {
+      const matchedBook = resolution.book;
+      handleAddToCart(matchedBook);
+      setScanToast({
+        title: matchedBook.title,
+        code: matchedBook.code,
+        isbn: matchedBook.isbn || cleanScanned,
+      });
+      setTimeout(() => setScanToast(null), 3000);
+      return;
+    }
+
+    if (resolution.kind === 'ambiguous') {
+      // Vẫn còn nghi ngờ (nhiều bản còn tồn, chưa có lựa chọn nhớ trong ca) ⇒
+      // hỏi. Đừng tự chọn: 2 cuốn cùng giá 99.000đ thì chọn nhầm không lệch
+      // tiền, chỉ lệch tồn và ấn bản — im lặng và không sửa được bằng code.
+      setIsScannerOpen(false);
+      setAmbiguousMatches(resolution.all);
+      setAmbiguousPickKey(cleanScanned);
+      return;
+    }
+
+    setErrorMessage(`Không tìm thấy ấn bản nào trong danh mục có mã ISBN: ${scannedCode}`);
   };
 
   const selectedWarehouseType = useMemo(
@@ -4154,7 +4184,7 @@ export function PosCheckoutTerminal({
       {ambiguousMatches && ambiguousMatches.length > 0 && mounted && createPortal(
         <div
           className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
-          onClick={(event) => { if (event.target === event.currentTarget) setAmbiguousMatches(null); }}
+          onClick={(event) => { if (event.target === event.currentTarget) { setAmbiguousMatches(null); setAmbiguousPickKey(null); } }}
         >
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
             <div className="flex items-center gap-3 mb-4">
@@ -4168,7 +4198,16 @@ export function PosCheckoutTerminal({
             </div>
 
             <div className="space-y-2.5 my-4">
-              {ambiguousMatches.map((book) => {
+              {/* Bản in MỚI lên trên (`publicationYear` giảm dần, rồi `code` tăng dần
+                  để thứ tự ổn định). Thứ tự cũ là thứ tự quét bảng — thay đổi theo
+                  tên miền/truy vấn nên không có nghĩa gì cả cho người bán. */}
+              {[...ambiguousMatches]
+                .sort(
+                  (a, b) =>
+                    (b.publicationYear ?? 0) - (a.publicationYear ?? 0) ||
+                    a.code.localeCompare(b.code)
+                )
+                .map((book) => {
                 const stock = getBookStock(book);
 
                 return (
@@ -4182,7 +4221,11 @@ export function PosCheckoutTerminal({
                         code: book.code,
                         isbn: book.isbn || '',
                       });
+                      // Nhớ trong ca: quét lại mã này sẽ tự thêm đúng bản vừa
+                      // chọn, không mở modal lần nữa. Đóng tab là quên.
+                      if (ambiguousPickKey) writeScanPick(ambiguousPickKey, book.id);
                       setAmbiguousMatches(null);
+                      setAmbiguousPickKey(null);
                       setTimeout(() => setScanToast(null), 3000);
                     }}
                     className="w-full text-left p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 transition-all flex items-center justify-between group cursor-pointer"
@@ -4193,9 +4236,12 @@ export function PosCheckoutTerminal({
                           {book.code}
                         </span>
                         <span className="font-bold text-slate-900 text-sm">{book.title}</span>
+                        {book.publicationYear ? (
+                          <span className="text-[11px] font-medium text-slate-400">{book.publicationYear}</span>
+                        ) : null}
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Giá bìa: {book.coverPrice.toLocaleString('vi-VN')} đ • Tồn kho: <span className={stock > 0 ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>{stock} cuốn</span>
+                        {book.publicationYear ? `${book.publicationYear} • ` : ''}Giá bìa: {book.coverPrice.toLocaleString('vi-VN')} đ • Tồn kho: <span className={stock > 0 ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>{stock} cuốn</span>
                       </p>
                     </div>
                     <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
@@ -4208,7 +4254,7 @@ export function PosCheckoutTerminal({
 
             <button
               type="button"
-              onClick={() => setAmbiguousMatches(null)}
+              onClick={() => { setAmbiguousMatches(null); setAmbiguousPickKey(null); }}
               className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
             >
               Hủy Bỏ

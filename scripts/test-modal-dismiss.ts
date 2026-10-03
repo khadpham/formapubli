@@ -12,7 +12,11 @@ const cases = [
   ['src/components/auth/LoginModal.tsx', [['onCancel']]],
   ['src/components/pos/DiscountApprovalModal.tsx', [['onCancel']]],
   ['src/components/pos/PosCheckoutTerminal.tsx', [
-    ['setCompletedOrder'], ['setAmbiguousMatches'], ['setIsParserOpen'],
+    ['setCompletedOrder'],
+    // Modal trùng mã vạch: đóng phải xoá cả danh sách ứng viên LẪN khoá mã đã
+    // quét, nếu không khoá sót lại sẽ ghi nhớ nhầm ở lần quét sau.
+    ['setAmbiguousMatches', 'setAmbiguousPickKey'],
+    ['setIsParserOpen'],
     ['setIsOpenShiftModalOpen'], ['setIsCloseShiftModalOpen'],
     // 30/09: màn hình Đơn Chờ — lối ra khi chốt ca bị chặn. Thứ tự PHẢI khớp
     // thứ tự backdrop trong file (modal này nằm TRƯỚC bottom sheet).
@@ -57,7 +61,7 @@ for (const [file, expected] of cases) {
     click?.({ target: backdrop, currentTarget: backdrop });
     assert.deepEqual(calls.map(call => call.name), expected[index], `${file} #${index + 1}: tapping outside must run the existing close action`);
     for (const call of calls) {
-      if (['setCompletedOrder', 'setAmbiguousMatches', 'setPendingDiscountRate'].includes(call.name)) assert.equal(call.value, null);
+      if (['setCompletedOrder', 'setAmbiguousMatches', 'setAmbiguousPickKey', 'setPendingDiscountRate'].includes(call.name)) assert.equal(call.value, null);
       if (call.name.startsWith('setIs')) assert.equal(call.value, false);
     }
     const pending = file.includes('StockMovement') ? 'loading' : file.includes('RmaTicket') ? 'submitting' : file.includes('PosCheckout') && (index === 3 || index === 4) ? 'isSubmittingSession' : file.includes('DiscountApprovalModal') ? 'status' : null;

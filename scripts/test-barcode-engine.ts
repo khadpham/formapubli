@@ -1,4 +1,5 @@
 import { db, editions } from '../src/db';
+import { resolveScan } from '../src/lib/scan-resolve';
 import { assertIsolatedTestDb } from './test-guard';
 
 assertIsolatedTestDb('test-barcode-engine');
@@ -31,18 +32,16 @@ async function testBarcodeEngine() {
     }
   }
 
-  // Hàm chuẩn hóa & tra cứu mã vạch giống như logic trong PosCheckoutTerminal
-  function resolveBarcode(scannedCode: string) {
-    const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
-    return allEditions.find((b) => {
-      const cleanIsbn = b.isbn ? b.isbn.replace(/[^0-9X]/gi, '') : '';
-      return (
-        cleanIsbn === cleanScanned ||
-        b.code.toLowerCase() === scannedCode.toLowerCase() ||
-        (b.isbnLast4 && cleanScanned.endsWith(b.isbnLast4))
-      );
-    });
-  }
+  // Dùng ĐÚNG hàm của production (`src/lib/scan-resolve.ts`), không chép lại.
+  // Bản chép trước đây còn dùng `endsWith` vô điều kiện — khác hẳn code POS —
+  // nên có thể xanh trên code sai (đúng cái lỗi AGENTS.md cấm).
+  // `stockOf` giả: bộ test này chỉ hỏi "mã này tra ra được ấn bản nào", tồn kho
+  // không thuộc phạm vi (xem `test-duplicate-isbn-pos.ts` cho phần tồn).
+  const stockOf = () => 1;
+  const resolveBarcode = (scannedCode: string) => {
+    const r = resolveScan(scannedCode, allEditions, stockOf);
+    return r.kind === 'none' ? undefined : r.kind === 'single' ? r.book : r.all[0];
+  };
 
   // TEST 1: Quét mã vạch chuẩn 13 số liền EAN-13
   // ISBN là giá trị CỐ ĐỊNH của bản in (không đổi khi đổi mã SKU) → giữ nguyên,
