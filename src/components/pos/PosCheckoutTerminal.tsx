@@ -3030,7 +3030,7 @@ export function PosCheckoutTerminal({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 md:space-y-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
       {/* Mobile: panel chọn kho nằm TRONG luồng, không sticky — chỉ thanh tìm kiếm mới nổi khi cuộn.
           Card "Top Header Controls" là `hidden md:flex`; các controls nằm trong panel này, hiện khi mở. */}
       <div className="md:hidden -mx-3 px-3 pt-2 pb-1">
@@ -3058,16 +3058,13 @@ export function PosCheckoutTerminal({
         )}
       </div>
 
-      {/* Top Header Controls — chỉ desktop (md trở lên): tiêu đề bên trái, controls bên phải */}
-      <div className="hidden md:flex bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm flex-row items-center justify-between gap-2">
-        <div className="hidden md:block">
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-emerald-600" />
+      {/* Top Header Controls — desktop: toolbar 1 hàng gọn (thay card cao 90px). Phím tắt dồn vào title của ô tìm kiếm. */}
+      <div className="hidden md:flex bg-white rounded-xl px-3 py-2 border border-slate-200/80 shadow-sm flex-row items-center justify-between gap-2">
+        <div className="hidden md:block shrink-0">
+          <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4 text-emerald-600" />
             Quầy Thu Ngân POS
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Phím tắt <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">/</kbd> tìm sách | <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[11px]">Ctrl+Enter</kbd> thanh toán & trừ kho
-          </p>
         </div>
 
         {posHeaderControls}
@@ -3208,12 +3205,12 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
-      {/* Main Split-View: Left Products (2 Cols) + Right Cart (1 Col) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      {/* Main Split-View: desktop 2 cột scroll độc lập trong 100vh, trang ngoài không scroll. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0 lg:overflow-hidden">
         {/* Left Side: Search & Book Catalog Selection */}
-        <div className="lg:col-span-7 space-y-3 md:space-y-4">
-          {/* Search Box with Voice Mic — STICKY: thứ NỔI khi cuộn danh mục, không phải nút chọn kho. Offset bằng chiều cao header app. */}
-          <div ref={searchContainerRef} className="sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] md:top-[max(4rem,calc(2.75rem_+_env(safe-area-inset-top)))] z-20">
+        <div className="lg:col-span-7 space-y-3 md:space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1 lg:pb-2">
+          {/* Search Box with Voice Mic — mobile sticky theo header app; desktop sticky đỉnh cột scroll (lg:top-0). */}
+          <div ref={searchContainerRef} className="sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] md:top-[max(4rem,calc(2.75rem_+_env(safe-area-inset-top)))] lg:top-0 z-20">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-5 h-5" />
             </div>
@@ -3486,7 +3483,7 @@ export function PosCheckoutTerminal({
             )}
           </div>
           )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[560px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[560px] overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible lg:pr-0">
             {(catalogExpanded || !isMobileView ? filteredBooks : filteredBooks.slice(0, CATALOG_COLLAPSED_COUNT)).map((b) => {
               const currentStock = getBookStock(b);
 
@@ -3556,7 +3553,7 @@ export function PosCheckoutTerminal({
         </div>
 
         {/* Right Side: Order Cart & Checkout Controls */}
-        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20 lg:sticky lg:top-[max(4rem,calc(2.75rem+env(safe-area-inset-top)))] lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
+        <div id="cart-checkout-panel" className="lg:col-span-5 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between scroll-mt-20 lg:sticky lg:top-0 lg:h-full lg:min-h-0 lg:max-h-none lg:overflow-y-auto">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
