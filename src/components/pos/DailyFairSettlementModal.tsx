@@ -469,6 +469,20 @@ export function DailyFairSettlementModal({
   const bandSlot = BAND_W / Math.max(1, hourlyInWindow.length);
   /** Cao cột theo số đơn; giờ 0 đơn vẫn chừa 2 đơn vị để thấy mốc giờ trống. */
   const bandBarH = (n: number) => (n > 0 ? Math.max(6, Math.round((n / maxHourOrders) * BAND_PLOT_H)) : 2);
+  /** Thang riêng cho dải doanh thu (đơn vị đồng, khác thang đếm đơn ở trên). */
+  const maxHourSales = Math.max(1, ...hourlyInWindow.map((h: any) => Number(h.sales || 0)));
+  const peakSalesIndex = hourlyInWindow.reduce(
+    (best: number, h: any, i: number) => (Number(h.sales || 0) > Number(hourlyInWindow[best]?.sales || 0) ? i : best),
+    0
+  );
+  const bandBarHMoney = (n: number) => (n > 0 ? Math.max(6, Math.round((n / maxHourSales) * BAND_PLOT_H)) : 2);
+  /** Nhãn tiền gọn trên cột in (Tr/nghìn) — in đầy đủ tràn cột. */
+  const bandMoneyShort = (n: number) =>
+    n >= 1000000
+      ? `${(Math.round((n / 1000000) * 10) / 10).toLocaleString('vi-VN')}Tr`
+      : n >= 1000
+        ? `${Math.round(n / 1000)}N`
+        : `${n}`;
 
   // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
   // Xếp theo cột "Tồn còn" bé → lớn, dùng CHUNG hàm với màn hình kiểm kê, để
@@ -1721,6 +1735,92 @@ export function DailyFairSettlementModal({
                     return (
                       <text
                         key={`nhan-${h.hour}`}
+                        x={(i * bandSlot + bandSlot / 2).toFixed(2)}
+                        y={BAND_BASE_Y + 14}
+                        textAnchor="middle"
+                        fontSize="10"
+                        fontWeight="500"
+                        fill="#475569"
+                      >
+                        {hour}h
+                      </text>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              {/* Dải doanh thu theo giờ — cùng khung giờ với dải đơn ở trên,
+                  thang riêng theo đồng (không chung thang đếm đơn). In SVG thuần
+                  rect/text nên không mất hình khi tắt "Background graphics". */}
+              <div className="mt-2.5">
+                <p className="font-bold uppercase text-slate-800 text-[12px] mb-1">
+                  - Doanh thu theo giờ ({hourWin.start}h–{hourEndShown}h, giờ Việt Nam):
+                </p>
+                <svg
+                  viewBox={`0 0 ${BAND_W} ${BAND_H}`}
+                  className="w-full h-auto mt-1"
+                  fontFamily="monospace"
+                  role="img"
+                  aria-label={`Doanh thu theo từng giờ từ ${hourWin.start}h đến ${hourEndShown}h giờ Việt Nam`}
+                >
+                  {/* Trục đáy mỏng định vị biểu đồ */}
+                  <line x1="0" y1={BAND_BASE_Y} x2={BAND_W} y2={BAND_BASE_Y} stroke="#cbd5e1" strokeWidth="1" />
+
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const n = Number(h.sales || 0);
+                    const bh = bandBarHMoney(n);
+                    const x = (i * bandSlot + 4).toFixed(2);
+                    const wRect = Math.max(4, bandSlot - 8).toFixed(2);
+                    return n > 0 ? (
+                      <rect
+                        key={h.hour}
+                        x={x}
+                        y={BAND_BASE_Y - bh}
+                        width={wRect}
+                        height={bh}
+                        rx="3"
+                        fill="#059669"
+                      />
+                    ) : (
+                      <rect
+                        key={h.hour}
+                        x={x}
+                        y={BAND_BASE_Y - bh}
+                        width={wRect}
+                        height={bh}
+                        rx="1"
+                        fill="#cbd5e1"
+                      />
+                    );
+                  })}
+                  {/* Tiền thu trên các cột có phát sinh (nhãn gọn Tr/N) */}
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const n = Number(h.sales || 0);
+                    if (n <= 0) return null;
+                    const bh = bandBarHMoney(n);
+                    const isPeak = i === peakSalesIndex;
+                    return (
+                      <text
+                        key={`tien-${h.hour}`}
+                        x={(i * bandSlot + bandSlot / 2).toFixed(2)}
+                        y={BAND_BASE_Y - bh - 4}
+                        textAnchor="middle"
+                        fontSize={isPeak ? '10.5' : '9.5'}
+                        fontWeight={isPeak ? '900' : 'bold'}
+                        fill={isPeak ? '#064e3b' : '#334155'}
+                      >
+                        {bandMoneyShort(n)}
+                      </text>
+                    );
+                  })}
+                  {/* Nhãn giờ: mỗi 3 giờ một nhãn, cộng thêm hai đầu khung */}
+                  {hourlyInWindow.map((h: any, i: number) => {
+                    const hour = Number(h.hour);
+                    const isEnd = i === hourlyInWindow.length - 1;
+                    if (hour % 3 !== 0 && i !== 0 && !isEnd) return null;
+                    return (
+                      <text
+                        key={`nhan-tien-${h.hour}`}
                         x={(i * bandSlot + bandSlot / 2).toFixed(2)}
                         y={BAND_BASE_Y + 14}
                         textAnchor="middle"

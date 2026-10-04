@@ -598,13 +598,13 @@ export function ExecutiveDashboard({
         </div>
       </div>
 
-      {/* Middle Section: Cash Flow Breakdown & Quick Action Modules */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Dual-Bookkeeping Financial Breakdown.
-            Khi đang lọc MỘT kho thì cột trái ăn hết 3 cột: cột phải (danh sách
-            kho) đã bị ẩn vì nó chỉ liệt kê đúng cái kho đang chọn — giữ nó lại
-            là một cột trống trông vỡ layout. */}
-        <div className={`${selectedWarehouseId === 'ALL' ? 'lg:col-span-2' : 'lg:col-span-3'} bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4`}>
+      {/* Middle Section: Cash Flow Breakdown — full width. Thẻ "Kho Vận Vật Lý"
+          đã chuyển xuống dưới dải biểu đồ (chế độ ALL): nó liệt kê kho chứ
+          không phải số điều hành, để trên cùng vướng mắt. */}
+      <div className="grid grid-cols-1 gap-6">
+        {/* Dual-Bookkeeping Financial Breakdown — luôn ăn hết chiều rộng vì cột
+            phải (danh sách kho) đã chuyển xuống dưới. */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
@@ -679,62 +679,6 @@ export function ExecutiveDashboard({
             </div>
           </div>
         </div>
-
-        {/* Right Col: Quick Warehouse Navigation. ẨN khi đang lọc một kho — danh
-            sách này chỉ liệt kê từng kho, lọc 1 kho thì thẻ được khoá ấy chẳng
-            nói thêm được gì mà lại làm cột phải trống. */}
-        {selectedWarehouseId === 'ALL' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-amber-600" />
-              Kho Vận Vật Lý
-            </h3>
-            <button
-              onClick={() => onNavigateTab('inventory')}
-              className="text-xs font-bold text-amber-600 hover:text-amber-800 flex items-center gap-1"
-            >
-              Vào kho <ArrowUpRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {/* Trước đây 3 thẻ này viết CỨNG tên kho + mô tả — thêm kho thứ 4 là
-                sai ngay, còn kho bị xoá thì vẫn hiện. Nay dựng từ /api/warehouses. */}
-            {warehouses.length === 0 ? (
-              <p className="text-xs text-slate-400">Đang tải danh sách kho…</p>
-            ) : (
-              warehouses.map((w: any) => (
-                <div
-                  key={w.id}
-                  className={`p-3 rounded-xl border flex items-center justify-between ${
-                    w.id === selectedWarehouseId
-                      ? 'bg-amber-50 border-amber-300'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-900 truncate">{w.name}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {WAREHOUSE_TYPE_LABEL[w.warehouseType] || 'Kho'}
-                      {w.code ? ` · ${w.code}` : ''}
-                    </p>
-                  </div>
-                  <span
-                    className={`px-2 py-1 rounded-lg text-xs font-bold font-mono shrink-0 ml-2 ${
-                      w.isActive
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {w.isActive ? 'Hoạt động' : 'Ngưng'}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-        )}
       </div>
 
       {/* BIỂU ĐỒ — dải 1: xu hướng 7 ngày + nhịp bán trong ngày.
@@ -746,6 +690,61 @@ export function ExecutiveDashboard({
         <Revenue7DaysChart orders={orders} />
         <HourlyTodayCard orders={orders} />
       </div>
+
+      {/* Kho Vận Vật Lý — chỉ ở chế độ ALL, nằm DƯỚI dải biểu đồ. Dạng danh
+          sách ngang (2-3 cột) thay vì cột dọc hẹp như trước. */}
+      {selectedWarehouseId === 'ALL' && (
+      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-amber-600" />
+            Kho Vận Vật Lý
+          </h3>
+          <button
+            onClick={() => onNavigateTab('inventory')}
+            className="text-xs font-bold text-amber-600 hover:text-amber-800 flex items-center gap-1"
+          >
+            Vào kho <ArrowUpRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {/* Trước đây 3 thẻ này viết CỨNG tên kho + mô tả — thêm kho thứ 4 là
+              sai ngay, còn kho bị xoá thì vẫn hiện. Nay dựng từ /api/warehouses. */}
+          {warehouses.length === 0 ? (
+            <p className="text-xs text-slate-400">Đang tải danh sách kho…</p>
+          ) : (
+            warehouses.map((w: any) => (
+              <div
+                key={w.id}
+                className={`p-3 rounded-xl border flex items-center justify-between ${
+                  w.id === selectedWarehouseId
+                    ? 'bg-amber-50 border-amber-300'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900 truncate">{w.name}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {WAREHOUSE_TYPE_LABEL[w.warehouseType] || 'Kho'}
+                    {w.code ? ` · ${w.code}` : ''}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-1 rounded-lg text-xs font-bold font-mono shrink-0 ml-2 ${
+                    w.isActive
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {w.isActive ? 'Hoạt động' : 'Ngưng'}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+      )}
 
       {/* BIỂU ĐỒ — dải 2: bản bán chạy, đơn lớn nhất, cơ cấu kênh và thanh toán. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">

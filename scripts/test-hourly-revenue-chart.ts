@@ -59,4 +59,13 @@ ok(/>Tổng doanh thu</.test(chart) === false, 'không được lặp ô "Tổng
 ok(/Tổng \{money\(totalSales\)\} đ/.test(chart), 'badge tổng phải hiện tiền khi ở chế độ doanh thu');
 ok(/đ\/giờ/.test(chart), 'ô bình quân chế độ tiền phải ghi "đ/giờ"');
 
+// --- 5. Bản in: đủ 2 dải giờ (đơn + doanh thu), SVG thuần -------------------
+ok(/Doanh thu theo giờ/.test(modal), 'bản in phải có dải "Doanh thu theo giờ"');
+ok(/bandBarHMoney/.test(modal), 'dải tiền phải có thang riêng (không chung thang đếm đơn)');
+ok(/peakSalesIndex/.test(modal), 'dải tiền phải có giờ cao điểm tính theo tiền');
+ok(
+  /fill="#059669"/.test(modal),
+  'cột tiền in màu đặc qua fill SVG (không dùng màu nền CSS)'
+);
+
 console.log(`\n=== BIỂU ĐỒ DOANH THU THEO GIỜ: ${checks} assertions PASS ===\n`);

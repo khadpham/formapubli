@@ -65,9 +65,6 @@ export function buildRevenue7Days(orders: any[], now: Date = new Date()): DayBuc
 
 export function Revenue7DaysChart({ orders, className = '' }: { orders: any[]; className?: string }) {
   const days = React.useMemo(() => buildRevenue7Days(orders), [orders]);
-  const [mode, setMode] = React.useState<Mode>('revenue');
-  const [hover, setHover] = React.useState<number | null>(null);
-  const [pinned, setPinned] = React.useState<number | null>(null);
 
   const totalOrders = days.reduce((s, d) => s + d.orders, 0);
 
@@ -94,6 +91,69 @@ export function Revenue7DaysChart({ orders, className = '' }: { orders: any[]; c
     );
   }
 
+  const totalRevenue = days.reduce((s, d) => s + d.revenue, 0);
+  const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+  return (
+    <section
+      className={`rounded-2xl bg-white border border-slate-200/80 shadow-sm p-5 hover:shadow-md transition-shadow ${className}`}
+    >
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+            <BarChart3 className="w-4 h-4 text-indigo-500" aria-hidden="true" />
+            Doanh thu 7 ngày
+          </h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Biểu đồ trên đếm cuốn, biểu đồ dưới cộng tiền mỗi ngày. Rê chuột để xem chi tiết từng ngày.
+          </p>
+        </div>
+      </header>
+
+      {/* Trên là số cuốn, dưới là doanh thu — cùng dữ liệu, cùng khung ngày. */}
+      <div className="mt-3 space-y-5">
+        <div>
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Số cuốn</p>
+          <SevenDayChart days={days} mode="qty" />
+        </div>
+        <div>
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Doanh thu</p>
+          <SevenDayChart days={days} mode="revenue" />
+        </div>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-3 gap-2.5">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+          <p className="text-[10px] font-bold text-slate-500">Tổng 7 ngày</p>
+          <p className="text-sm font-black font-mono text-slate-900 tabular-nums">
+            {fmtCompactVnd(totalRevenue)}đ
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+          <p className="text-[10px] font-bold text-slate-500">TB mỗi đơn</p>
+          <p className="text-sm font-black font-mono text-slate-900 tabular-nums">
+            {fmtCompactVnd(aov)}đ
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+          <p className="text-[10px] font-bold text-slate-500">Tổng đơn</p>
+          <p className="text-sm font-black font-mono text-slate-900 tabular-nums">
+            {totalOrders.toLocaleString('vi-VN')} đơn
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Một dải cột 7 ngày theo đúng một chế độ (doanh thu HOẶC số cuốn).
+ * Tách ra để thẻ trên vẽ 2 dải chồng nhau mà không nhân đôi state/logic.
+ */
+function SevenDayChart({ days, mode }: { days: DayBucket[]; mode: Mode }) {
+  const [hover, setHover] = React.useState<number | null>(null);
+  const [pinned, setPinned] = React.useState<number | null>(null);
+
   const valueOf = (d: DayBucket) => (mode === 'revenue' ? d.revenue : d.qty);
   const values = days.map(valueOf);
   const max = Math.max(1, ...values);
@@ -102,7 +162,6 @@ export function Revenue7DaysChart({ orders, className = '' }: { orders: any[]; c
 
   const totalRevenue = days.reduce((s, d) => s + d.revenue, 0);
   const totalQty = days.reduce((s, d) => s + d.qty, 0);
-  const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
   const y = (v: number) => PLOT_BOTTOM - (v / max) * (PLOT_BOTTOM - PLOT_TOP);
   const avgY = y(avg);
@@ -137,42 +196,13 @@ export function Revenue7DaysChart({ orders, className = '' }: { orders: any[]; c
         };
 
   return (
-    <section
-      className={`rounded-2xl bg-white border border-slate-200/80 shadow-sm p-5 hover:shadow-md transition-shadow ${className}`}
-    >
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-            <BarChart3 className="w-4 h-4 text-indigo-500" aria-hidden="true" />
-            Doanh thu 7 ngày
-          </h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {mode === 'revenue'
-              ? 'Cột cao nhất được tô màu. Rê chuột để xem chi tiết từng ngày.'
-              : 'Đổi sang số cuốn để thấy lượng hàng thực bán ra.'}
-          </p>
-        </div>
-        <div role="group" aria-label="Chọn số liệu hiển thị" className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5 shrink-0">
-          {(['revenue', 'qty'] as Mode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              aria-label={m === 'revenue' ? 'Hiển thị theo doanh thu' : 'Hiển thị theo số cuốn'}
-              onClick={() => setMode(m)}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors focus-visible:ring-2 ring-indigo-500 ${
-                mode === m ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              {m === 'revenue' ? 'Doanh thu' : 'Số cuốn'}
-            </button>
-          ))}
-        </div>
-      </header>
-
+    <>
+      <span className="sr-only">
+        {mode === 'revenue' ? 'Doanh thu theo ngày' : 'Số cuốn theo ngày'} · 7 ngày gần nhất
+      </span>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto mt-3"
+        className="w-full h-auto mt-1"
         role="img"
         aria-label={ariaLabel}
       >
@@ -320,29 +350,6 @@ export function Revenue7DaysChart({ orders, className = '' }: { orders: any[]; c
           </span>
         )}
       </div>
-
-      <div className="mt-2.5 grid grid-cols-3 gap-2.5">
-        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-          <p className="text-[10px] font-bold text-slate-500">Tổng 7 ngày</p>
-          <p className="text-sm font-black font-mono text-slate-900 tabular-nums">
-            {fmtCompactVnd(totalRevenue)}đ
-          </p>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-          <p className="text-[10px] font-bold text-slate-500">TB mỗi ngày</p>
-          <p className="text-sm font-black font-mono text-slate-900 tabular-nums">
-            {mode === 'revenue' ? `${fmtCompactVnd(avg)}đ` : `${Math.round(avg)} cuốn`}
-          </p>
-        </div>
-        {totalOrders > 0 && (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-            <p className="text-[10px] font-bold text-slate-500">TB mỗi đơn</p>
-            <p className="text-sm font-black font-mono text-slate-900 tabular-nums">
-              {fmtCompactVnd(aov)}đ
-            </p>
-          </div>
-        )}
-      </div>
-    </section>
+    </>
   );
 }
