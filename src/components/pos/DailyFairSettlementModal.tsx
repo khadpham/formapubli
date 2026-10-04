@@ -742,6 +742,15 @@ export function DailyFairSettlementModal({
                     endHour={hourEndShown}
                   />
 
+                  {/* Doanh thu theo giờ — cùng dữ liệu/khung giờ với biểu đồ đơn
+                      ở trên, chỉ đổi chế độ vẽ sang tiền. */}
+                  <HourlyOrdersChart
+                    rows={hourlyInWindow}
+                    startHour={hourWin.start}
+                    endHour={hourEndShown}
+                    metric="sales"
+                  />
+
                   {/* Bán chạy nhất: đủ để người cầm biên bản biết món chủ lực
                       trong ngày mà không phải cuộn qua cả bảng 10 dòng. Bảng đầy
                       đủ đã chuyển sang màn Trạng Thái Hội Chợ. */}

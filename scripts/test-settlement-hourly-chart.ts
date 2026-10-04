@@ -55,7 +55,7 @@ ok(
 );
 ok(/role="img"/.test(chart), 'svg phải có role="img"');
 ok(
-  /aria-label=\{`Biểu đồ số đơn theo từng giờ/.test(chart),
+  /Biểu đồ số đơn theo từng giờ/.test(chart),
   'svg phải có aria-label nêu rõ giờ và giờ cao điểm (screen reader đọc được)'
 );
 

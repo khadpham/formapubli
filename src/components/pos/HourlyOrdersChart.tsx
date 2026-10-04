@@ -1,7 +1,12 @@
 'use client';
 
 /**
- * BIỂU ĐỒ CỘT "SỐ ĐƠN THEO GIỜ" cho tab Doanh Số của báo cáo chốt ngày.
+ * BIỂU ĐỒ CỘT THEO GIỜ cho tab Doanh Số của báo cáo chốt ngày.
+ *
+ * Hai chế độ qua prop `metric` (mặc định `orders` để giữ nguyên hành vi cũ):
+ * - `orders` → "Số Đơn Theo Giờ" (đếm đơn mỗi giờ).
+ * - `sales` → "Doanh Thu Theo Giờ" (tiền thu mỗi giờ, cùng dữ liệu `sales` đã
+ *   có sẵn trong từng bucket — không query thêm).
  *
  * Vì sao tự dựng SVG mà không dùng thư viện:
  * - Repo không cài sẵn chart lib nào (recharts/chart.js/victory… đều không có), thêm
@@ -53,6 +58,7 @@ export function HourlyOrdersChart({
   baseline,
   currentHour,
   hideHeader = false,
+  metric = 'orders',
   className = '',
 }: {
   rows: HourlyBucket[];
@@ -77,10 +83,16 @@ export function HourlyOrdersChart({
    * cáo chốt ngày không đổi.
    */
   hideHeader?: boolean;
+  /**
+   * Chế độ vẽ: `orders` đếm đơn, `sales` cộng tiền. `baseline` (nếu có) phải
+   * cùng đơn vị với chế độ đang vẽ — thẻ bọc tự truyền đúng loại.
+   */
+  metric?: 'orders' | 'sales';
   className?: string;
 }) {
   const [locked, setLocked] = useState<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const isSales = metric === 'sales';
 
   const model = useMemo(() => {
     const list = (Array.isArray(rows) ? rows : [])
@@ -95,6 +107,11 @@ export function HourlyOrdersChart({
     const totalOrders = list.reduce((s, r) => s + r.orders, 0);
     const totalSales = list.reduce((s, r) => s + r.sales, 0);
     const maxOrders = list.reduce((m, r) => Math.max(m, r.orders), 0);
+    // Giá trị VẼ theo chế độ: đơn hoặc tiền. Mọi peak/avg/trục Y đọc từ đây;
+    // các tổng gốc (totalOrders/totalSales) giữ nguyên tên cho test/source cũ.
+    const val = (r: { orders: number; sales: number }) => (isSales ? r.sales : r.orders);
+    const totalV = isSales ? totalSales : totalOrders;
+    const maxV = list.reduce((m, r) => Math.max(m, val(r)), 0);
 
     // Đường TB các ngày trước, theo đúng thứ tự cột đang vẽ. `-1` = giờ đó không
     // có số để so (`null` trong `baseline`) — giữ lỗ hổng thay vì điền 0, vì 0
@@ -109,15 +126,15 @@ export function HourlyOrdersChart({
     // Trần trục Y phải chứa cả đường TB: một ngày đông hơn mức TB nhiều (ví dụ
     // 4 đơn so TB 6) mà trục chỉ kéo tới 4 thì đường TB vẽ ra ngoài khung.
     const baseMax = baseValues.reduce((m, v) => Math.max(m, v), 0);
-    const yMax = niceCeil(Math.max(maxOrders, baseMax));
-    // `peak` = giờ nhiều đơn nhất; luôn có mặt để dùng làm mốc khi chưa chọn giờ.
-    const peak = list.reduce<HourlyBucket & { orders: number } | null>(
-      (best, r) => (best == null || r.orders > best.orders ? r : best),
+    const yMax = niceCeil(Math.max(maxV, baseMax));
+    // `peak` = giờ giá trị cao nhất; luôn có mặt để dùng làm mốc khi chưa chọn giờ.
+    const peak = list.reduce<(typeof list)[number] | null>(
+      (best, r) => (best == null || val(r) > val(best) ? r : best),
       null
     );
-    // Giờ có đơn nhưng ít nhất — "giờ lãng phí", có ích khi xếp ca/tăng người.
-    const quiet = list.filter((r) => r.orders > 0).reduce<typeof list[number] | null>(
-      (best, r) => (best == null || r.orders < best.orders ? r : best),
+    // Giờ có giá trị nhưng ít nhất — "giờ lãng phí", có ích khi xếp ca/tăng người.
+    const quiet = list.filter((r) => val(r) > 0).reduce<typeof list[number] | null>(
+      (best, r) => (best == null || val(r) < val(best) ? r : best),
       null
     );
 
@@ -155,15 +172,15 @@ export function HourlyOrdersChart({
     if (run.length) baselineRuns.push(run);
 
     return {
-list, totalOrders, maxOrders, yMax, peak, quiet,
+list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
       openHours, salesPerOpenHour, slot, barW, labelStep,
       baselineRuns,
       baselineTotal: baseValues.reduce((s, v) => s + Math.max(0, v), 0),
     };
-  }, [rows, baseline]);
+  }, [rows, baseline, isSales]);
 
   const {
-    list, totalOrders, maxOrders, yMax, peak, quiet,
+    list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
     openHours, salesPerOpenHour, slot, barW, labelStep,
     baselineRuns, baselineTotal,
   } = model;
@@ -174,6 +191,12 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
   const active = activeHour == null ? null : list.find((r) => r.hour === activeHour) ?? null;
 
   const money = (n: number) => n.toLocaleString('vi-VN');
+  // Trục Y và nhãn cột chế độ tiền có thể lên tới hàng triệu — in gọn (Tr/nghìn)
+  // để số không tràn cột. Dải chi tiết bên dưới vẫn in đầy đủ.
+  const moneyShort = (n: number) =>
+    isSales && n >= 1000
+      ? n.toLocaleString('vi-VN', { notation: 'compact', maximumFractionDigits: 1 })
+      : money(n);
   // TB là số thập phân ⇒ ép tối đa 1 chữ số sau dấu phẩy để không in "12,333333".
   const money1 = (n: number) => n.toLocaleString('vi-VN', { maximumFractionDigits: 1 });
   const hourLabel = (h: number) => `${h}h`;
@@ -187,7 +210,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
       <div className={`bg-white rounded-2xl border border-slate-200 p-5 ${className}`}>
         <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
           <BarChart3 className="w-4 h-4 text-indigo-600" />
-          Đơn Theo Giờ
+          {isSales ? 'Doanh Thu Theo Giờ' : 'Số Đơn Theo Giờ'}
         </h4>
         <p className="mt-4 text-xs text-slate-500 flex items-center gap-2">
           <Clock className="w-4 h-4 text-slate-300" />
@@ -200,8 +223,12 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
   // Cùng mẫu số với ô tiền bên dưới: số giờ THỰC SỰ CÓ ĐƠN. Chia `list.length`
   // (độ dài khung giờ) làm bình quân đơn luôn thấp hơn thực tế, vì khung kéo từ
   // giờ mở cửa tới giờ chốt ca nên có cả giờ nghỉ trưa không ai mua.
-  const avgPerHour = openHours > 0 ? totalOrders / openHours : 0;
-  const peakShare = peak && peak.orders > 0 ? Math.round((peak.orders / totalOrders) * 100) : 0;
+  const peakV = peak ? (isSales ? peak.sales : peak.orders) : 0;
+  const avgPerHour = openHours > 0 ? totalV / openHours : 0;
+  const peakShare = peakV > 0 && totalV > 0 ? Math.round((peakV / totalV) * 100) : 0;
+  // Chuỗi aria chế độ tiền dựng riêng để nhánh đơn giữ nguyên literal
+  // `Biểu đồ số đơn theo từng giờ` cho test/source cũ đọc được.
+  const salesAria = `Biểu đồ doanh thu theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${money(peakV)} đồng.${hasBaseline ? ` Đường nét đứt là doanh thu bình quân của các ngày trước, tổng ${money(Math.round(baselineTotal))} đồng trong khung giờ này.` : ''}${nowHour != null ? ` Các giờ sau ${nowHour}h là chưa tới.` : ''}`;
 
   return (
     <div className={`bg-white rounded-2xl border border-slate-200 p-5 space-y-4 ${className}`}>
@@ -210,21 +237,21 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
       <div className={`flex items-start justify-between gap-3 ${hideHeader ? '' : ''}`}>
         {hideHeader ? (
           <span className="sr-only">
-            Đơn Theo Giờ · {rangeLabel} · giờ Việt Nam
+            {isSales ? 'Doanh Thu Theo Giờ' : 'Số Đơn Theo Giờ'} · {rangeLabel} · giờ Việt Nam
           </span>
         ) : (
           <div>
             <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <BarChart3 className="w-4 h-4 text-indigo-600" />
-              Đơn Theo Giờ
+              {isSales ? 'Doanh Thu Theo Giờ' : 'Số Đơn Theo Giờ'}
             </h4>
             <p className="text-[11px] text-slate-400 mt-1">
-              Số đơn mỗi giờ · {rangeLabel} · giờ Việt Nam
+              {isSales ? 'Doanh thu mỗi giờ' : 'Số đơn mỗi giờ'} · {rangeLabel} · giờ Việt Nam
             </p>
           </div>
         )}
         <span className="shrink-0 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1">
-          Tổng {totalOrders} đơn
+          {isSales ? <>Tổng {money(totalSales)} đ</> : <>Tổng {totalOrders} đơn</>}
         </span>
       </div>
 
@@ -236,8 +263,10 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
           </p>
           <p className="text-sm font-black font-mono text-amber-800 mt-0.5">
             {peak ? hourLabel(peak.hour) : '—'}
-            {peak && peak.orders > 0 ? (
-              <span className="text-[10px] font-bold ml-1 text-amber-700">{peak.orders} đơn</span>
+            {peakV > 0 ? (
+              <span className="text-[10px] font-bold ml-1 text-amber-700">
+                {isSales ? `${money(peakV)} đ` : `${peakV} đơn`}
+              </span>
             ) : null}
           </p>
         </div>
@@ -246,18 +275,25 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
             <TrendingUp className="w-3 h-3" /> Bình quân
           </p>
           <p className="text-sm font-black font-mono text-slate-800 mt-0.5">
-            {avgPerHour.toFixed(1)}
-            <span className="text-[10px] font-bold ml-1 text-slate-500">đơn/giờ</span>
+            {isSales ? moneyShort(Math.round(avgPerHour)) : avgPerHour.toFixed(1)}
+            <span className="text-[10px] font-bold ml-1 text-slate-500">
+              {isSales ? 'đ/giờ' : 'đơn/giờ'}
+            </span>
           </p>
         </div>
         {/* Ô số này KHÔNG lặp lại tổng doanh thu (đã có ở KPI "Thực thu" phía
             trên và ở bản in) — lặp lại chỉ tốn chỗ. Thay bằng TIỀN BÌNH QUÂN
-            MỘT GIỜ BÁN, chia cho số giờ THỰC SỰ CÓ ĐƠN (xem `openHours`). */}
+            MỘT GIỜ BÁN, chia cho số giờ THỰC SỰ CÓ ĐƠN (xem `openHours`).
+            Chế độ tiền thì soi ngược lại: SỐ ĐƠN bình quân mỗi giờ bán. */}
         <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl px-3 py-2">
-          <p className="text-[10px] font-bold text-emerald-700">Doanh thu mỗi giờ bán</p>
+          <p className="text-[10px] font-bold text-emerald-700">
+            {isSales ? 'Số đơn mỗi giờ bán' : 'Doanh thu mỗi giờ bán'}
+          </p>
           <p className="text-sm font-black font-mono text-emerald-800 mt-0.5 break-words leading-tight">
-            {money(salesPerOpenHour)}
-            <span className="text-[10px] font-bold ml-0.5">đ</span>
+            {isSales
+              ? (openHours > 0 ? (totalOrders / openHours).toFixed(1) : '0')
+              : money(salesPerOpenHour)}
+            <span className="text-[10px] font-bold ml-0.5">{isSales ? 'đơn' : 'đ'}</span>
           </p>
           {/* Nói rõ mẫu số, không thì "bình quân" bị đọc nhầm là chia hết khung giờ
               — mà khung giờ luôn kéo từ giờ mở cửa tới giờ chốt ca, có cả giờ
@@ -273,7 +309,11 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-auto"
         role="img"
-        aria-label={`Biểu đồ số đơn theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${peak?.orders ?? 0} đơn.${hasBaseline ? ` Đường nét đứt là số đơn bình quân của các ngày trước, tổng ${money1(baselineTotal)} đơn trong khung giờ này.` : ''}${nowHour != null ? ` Các giờ sau ${nowHour}h là chưa tới.` : ''}`}
+        aria-label={
+          isSales
+            ? salesAria
+            : `Biểu đồ số đơn theo từng giờ từ ${startHour}h đến ${endHour}h giờ Việt Nam. Giờ cao điểm ${peak?.hour ?? 0}h với ${peakV} đơn.${hasBaseline ? ` Đường nét đứt là số đơn bình quân của các ngày trước, tổng ${money1(baselineTotal)} đơn trong khung giờ này.` : ''}${nowHour != null ? ` Các giờ sau ${nowHour}h là chưa tới.` : ''}`
+        }
       >
         {/* Lưới ngang + nhãn trục Y. Đường 0 luôn kẻ đậm hơn: đó là mặt đất. */}
         {[0, 0.5, 1].map((f) => {
@@ -299,7 +339,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                 fill="#94a3b8"
                 fontFamily="monospace"
               >
-                {v}
+                {moneyShort(v)}
               </text>
             </g>
           );
@@ -308,14 +348,15 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
         {list.map((r, i) => {
           const cx = PAD_L + i * slot + slot / 2;
           const x = cx - barW / 2;
-          const isPeak = peak != null && r.hour === peak.hour && r.orders > 0;
+          const rv = isSales ? r.sales : r.orders;
+          const isPeak = peak != null && r.hour === peak.hour && rv > 0;
           const isActive = r.hour === activeHour;
           // "Chưa tới": giờ chưa tới nắm. Giờ đã qua không có đơn vẫn giữ vạch
           // xám 2px như cũ — đó là "đã bán 0", khác hẳn "chưa bán được gì".
           const isFuture = nowHour != null && r.hour > nowHour;
           const isNow = nowHour != null && r.hour === nowHour;
           const barH =
-            r.orders > 0 ? Math.max(5, (r.orders / yMax) * PLOT_H) : 2;
+            rv > 0 ? Math.max(5, (rv / yMax) * PLOT_H) : 2;
           return (
             <g key={r.hour}>
               {/* Vùng bấm rộng = cả cột chiều cao: chạm chỗ trống phía trên cột vẫn
@@ -347,7 +388,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                   pointerEvents="none"
                 />
               ) : null}
-              {r.orders > 0 ? (
+              {rv > 0 ? (
                 <rect
                   x={x}
                   y={BASE_Y - barH}
@@ -370,7 +411,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                   pointerEvents="none"
                 />
               )}
-              {r.orders > 0 && !isFuture && (
+              {rv > 0 && !isFuture && (
                 <text
                   x={cx}
                   y={BASE_Y - barH - 5}
@@ -380,7 +421,7 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
                   fill={isActive ? '#1e1b4b' : '#475569'}
                   pointerEvents="none"
                 >
-                  {r.orders}
+                  {isSales ? moneyShort(rv) : rv}
                 </text>
               )}
               {i % labelStep === 0 && (
@@ -446,9 +487,11 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
             <span className="text-slate-600">
               chiếm{' '}
               <strong className="font-bold text-slate-800">
-                {totalOrders > 0 ? Math.round((active.orders / totalOrders) * 100) : 0}%
+                {isSales
+                  ? totalSales > 0 ? Math.round((active.sales / totalSales) * 100) : 0
+                  : totalOrders > 0 ? Math.round((active.orders / totalOrders) * 100) : 0}%
               </strong>{' '}
-              tổng đơn
+              {isSales ? 'tổng doanh thu' : 'tổng đơn'}
             </span>
           </>
         ) : (
@@ -465,8 +508,8 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
               TB các ngày trước
             </span>
             <span className="text-slate-600">
-              Hôm nay: <strong className="font-bold font-mono text-slate-800">{totalOrders}</strong> đơn · TB:{' '}
-              <strong className="font-bold font-mono text-slate-800">{money1(baselineTotal)}</strong> đơn
+              Hôm nay: <strong className="font-bold font-mono text-slate-800">{isSales ? money(totalV) : totalV}</strong> {isSales ? 'đ' : 'đơn'} · TB:{' '}
+              <strong className="font-bold font-mono text-slate-800">{isSales ? money(Math.round(baselineTotal)) : money1(baselineTotal)}</strong> {isSales ? 'đ' : 'đơn'}
               <strong
                 className="font-bold font-mono ml-1"
                 style={{ color: totalOrders - baselineTotal >= 0 ? '#059669' : '#e11d48' }}
@@ -487,15 +530,15 @@ list, totalOrders, maxOrders, yMax, peak, quiet,
             {hasBaseline ? '. Đường nét đứt là mức bình quân các ngày trước.' : '.'}
           </>
         ) : null}
-        {peak && peak.orders > 0 ? (
+        {peak && peakV > 0 ? (
           <>
             Giờ <strong className="font-bold text-slate-700">{hourLabel(peak.hour)}</strong> bán nhiều nhất (
-            <strong className="font-bold text-slate-700">{peakShare}%</strong> tổng đơn)
+            <strong className="font-bold text-slate-700">{peakShare}%</strong> {isSales ? 'tổng doanh thu' : 'tổng đơn'})
             {quiet && quiet.hour !== peak.hour ? (
               <>
-                {' · '}
+                {' '}
                 giờ vắng nhất là <strong className="font-bold text-slate-700">{hourLabel(quiet.hour)}</strong> (
-                {quiet.orders} đơn)
+                {isSales ? `${money(isSales ? quiet.sales : quiet.orders)} đ` : `${quiet.orders} đơn`})
               </>
             ) : null}
             .

@@ -114,6 +114,20 @@ export function HourlyTodayCard({
       }
       return withData > 0 ? sum / withData : null;
     });
+    // TB doanh thu: cùng mẫu số ngày với TB đơn ở trên để hai biểu đồ so được
+    // với nhau — ngày không bán ở giờ đó thì không mặt ở cả hai.
+    const salesBaseline: Array<number | null> = Array.from({ length: 24 }, (_, hour) => {
+      let sum = 0;
+      let withData = 0;
+      for (const day of prevDays) {
+        const cell = buckets.get(day)?.get(hour);
+        if (cell && cell.orders > 0) {
+          sum += cell.sales;
+          withData += 1;
+        }
+      }
+      return withData > 0 ? sum / withData : null;
+    });
 
     // Không tự tính cao điểm/thấp điểm ở đây: `HourlyOrdersChart` đã có sẵn ô
     // "Giờ cao điểm" và dòng nhận xét kèm giờ vắng nhất. Tính lần thứ hai ở thẻ
@@ -121,6 +135,7 @@ export function HourlyTodayCard({
     return {
       rows,
       baseline,
+      salesBaseline,
       startHour,
       endHour,
       todayOrders,
@@ -132,7 +147,7 @@ export function HourlyTodayCard({
   }, [orders]);
 
   const {
-    rows, baseline, startHour, endHour, todayOrders, hasBaseline, currentHour,
+    rows, baseline, salesBaseline, startHour, endHour, todayOrders, hasBaseline, currentHour,
   } = model;
 
   return (
@@ -146,7 +161,7 @@ export function HourlyTodayCard({
               Bán hàng theo giờ
             </h4>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Mỗi cột là số đơn trong một giờ
+              Biểu đồ trên đếm đơn, biểu đồ dưới cộng tiền mỗi giờ
               {hasBaseline ? ' · nét đứt là mức bình quân của 6 ngày trước' : ''}
               {currentHour != null ? ` · khung đứt là giờ chưa tới sau ${currentHour}h` : ''}.
             </p>
@@ -173,15 +188,30 @@ export function HourlyTodayCard({
                 để không có hai tiêu đề chồng nhau; biểu đồ bên trong vẫn giữ ô
                 "Tổng N đơn" và dòng nhận xét cao điểm / giờ vắng nhất của riêng nó,
                 nên thẻ bọc KHÔNG lặp lại dòng tóm tắt đó. */}
-            <div className="mt-3 [&>div]:border-0 [&>div]:shadow-none [&>div]:bg-transparent [&>div]:rounded-none [&>div]:p-0">
-              <HourlyOrdersChart
-                rows={rows}
-                startHour={startHour}
-                endHour={endHour}
-                baseline={baseline}
-                currentHour={currentHour}
-                hideHeader
-              />
+            <div className="mt-3 space-y-5 [&>div]:border-0 [&>div]:shadow-none [&>div]:bg-transparent [&>div]:rounded-none [&>div]:p-0">
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Số đơn</p>
+                <HourlyOrdersChart
+                  rows={rows}
+                  startHour={startHour}
+                  endHour={endHour}
+                  baseline={baseline}
+                  currentHour={currentHour}
+                  hideHeader
+                />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Doanh thu</p>
+                <HourlyOrdersChart
+                  rows={rows}
+                  startHour={startHour}
+                  endHour={endHour}
+                  baseline={salesBaseline}
+                  currentHour={currentHour}
+                  metric="sales"
+                  hideHeader
+                />
+              </div>
             </div>
           </>
         )}
