@@ -351,8 +351,12 @@ export function MasterAppShell({
 
 
         {/* Dynamic View Body — currentRole là cổng chặn DUY NHẤT. Không có phiên
-            thì không render bất kỳ màn nghiệp vụ nào, kể cả 1 khung hình. */}
-        <main className={`p-3 sm:p-4 md:p-8 max-w-7xl w-full mx-auto flex-1 ${mainBottomPadding}`}>
+            thì không render bất kỳ màn nghiệp vụ nào, kể cả 1 khung hình.
+            POS desktop full-viewport: nới max-w, giảm padding, khoá scroll trang
+            để 2 cột tự scroll trong 100vh. Tab khác nới nhẹ lên 1600px. */}
+        <main className={effectiveTab === 'pos'
+          ? `px-3 sm:px-4 lg:px-6 py-3 max-w-none w-full mx-auto flex-1 lg:h-[calc(100vh-4rem)] lg:overflow-hidden ${mainBottomPadding}`
+          : `p-3 sm:p-4 md:p-6 max-w-[1600px] w-full mx-auto flex-1 ${mainBottomPadding}`}>
           {currentRole && effectiveTab === 'dashboard' && (
             <ExecutiveDashboard
               currentRole={currentRole}
