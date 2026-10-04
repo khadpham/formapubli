@@ -375,10 +375,11 @@ async function probeTIK() {
 }
 
 // --------------------------------- strict: no allowlist configured ---
-// CP3-B1.2 (mục 2): KHÔNG đặt DIRECT_TRANSFER_ALLOWLIST — OWNER chuyển trực
-// tiếp giữa 2 kho vật lý vẫn FORBIDDEN; DB không có ledger/tồn thay đổi.
+// 04/10/2026 — allowlist tĩnh đã bỏ (kho hội chợ tạo động, sự cố tê liệt
+// chuyển kho): OWNER chuyển trực tiếp giữa 2 kho vật lý active KHÔNG cần
+// allowlist vẫn THÀNH CÔNG; chốt chặn còn lại là role + kho ảo + key.
 async function probeTStrict() {
-  console.log('--- T-STRICT: no allowlist -> OWNER physical transfer FORBIDDEN ---');
+  console.log('--- T-STRICT: no allowlist -> OWNER physical transfer SUCCEEDS ---');
   const { url, editionId } = await freshProbeDb('TSTRICT', 10);
   const before = await phys(url, editionId, 'wh-au-co');
   const r = await runSolo(url, 'directTransfer', {
@@ -387,13 +388,8 @@ async function probeTStrict() {
     quantity: 1, condition: 'NEW', documentRef: `DOC-STRICT-${Date.now()}`,
     actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: `cp3-strict-${Date.now()}`,
   });
-  ok('T-STRICT OWNER khong allowlist bi FORBIDDEN', !r.success && r.code === 'FORBIDDEN', `${r.code}: ${r.error}`);
-  ok('T-STRICT ton khong doi', (await phys(url, editionId, 'wh-au-co')) === before, `before=${before}`);
-  const { client, db } = localDb(url);
-  const led: any[] = await db.select().from(inventoryLedger);
-  client.close();
-  const movements = led.filter((l) => l.eventType === 'TRANSFER_OUT' || l.eventType === 'TRANSFER_IN');
-  ok('T-STRICT khong sinh ledger transfer', movements.length === 0, `transferLedgers=${movements.length}`);
+  ok('T-STRICT OWNER khong allowlist van THANH CONG', r.success, `${r.code}: ${r.error}`);
+  ok('T-STRICT ton tru 1', (await phys(url, editionId, 'wh-au-co')) === before - 1, `before=${before}`);
 }
 
 // --------------------------------- same key, different destination ---
@@ -518,12 +514,12 @@ async function probeFailClosed() {
     actorStaffId: 'cp3-cashier', actorRole: 'ROLE_CASHIER', idempotencyKey: `${k}-c`,
   }, allowEnv);
   ok('T-FC CASHIER bi FORBIDDEN', !cashier.success && cashier.code === 'FORBIDDEN', `${cashier.code}: ${cashier.error}`);
-  // 2. Cặp ngoài allowlist -> FORBIDDEN (role đúng, env thiếu cặp).
+  // 2. Kho không tồn tại -> INVALID_INPUT (role đúng, đích không có thật).
   const outside = await soloDirect({
-    ...base, toWarehouseId: 'wh-du-phong', documentRef: `DOC-${k}-o`,
+    ...base, toWarehouseId: 'wh-khong-ton-tai', documentRef: `DOC-${k}-o`,
     actorStaffId: 'cp3-owner', actorRole: 'ROLE_OWNER', idempotencyKey: `${k}-o`,
   }, allowEnv);
-  ok('T-FC cap ngoai allowlist bi FORBIDDEN', !outside.success && outside.code === 'FORBIDDEN', `${outside.code}: ${outside.error}`);
+  ok('T-FC kho khong ton tai bi INVALID_INPUT', !outside.success && outside.code === 'INVALID_INPUT', `${outside.code}: ${outside.error}`);
   // 3. Kho virtual -> FORBIDDEN.
   const virtual = await soloDirect({
     ...base, toWarehouseId: 'wh-in-transit', documentRef: `DOC-${k}-v`,

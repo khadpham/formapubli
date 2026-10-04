@@ -3,7 +3,7 @@ import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
-import { isDirectTransferAllowed, isForbiddenWarehouseFamily } from './direct-transfer-policy';
+import { isForbiddenWarehouseFamily } from './direct-transfer-policy';
 import { WarehouseService } from './warehouse.service';
 import { computeTransferDispatchFingerprint } from '../lib/transfer-fingerprint';
 
@@ -74,6 +74,55 @@ export interface TransferParams {
 }
 
 export class InventoryService {
+  /**
+   * Phân loại BOOK/GOODS theo NGUỒN THẬT (`products.productKind`).
+   * Hàng hóa không có dòng `editions` ⇒ rơi về legacy `editions` là BOOK
+   * (giữ fixture cũ/test CP3 không có dòng products vẫn chạy).
+   * Thiếu cả hai ⇒ caller báo INVALID thay vì để FK ném cryptic.
+   */
+  private static async resolveItemKinds(
+    ids: string[],
+    txOrDb: any
+  ): Promise<Map<string, 'BOOK' | 'GOODS'>> {
+    const uniq = Array.from(new Set(ids.map((x) => `${x || ''}`.trim()).filter(Boolean)));
+    const out = new Map<string, 'BOOK' | 'GOODS'>();
+    if (uniq.length === 0) return out;
+    const [prows, erows] = await Promise.all([
+      txOrDb.select({ id: products.id, productKind: products.productKind }).from(products).where(inArray(products.id, uniq)),
+      txOrDb.select({ id: editions.id }).from(editions).where(inArray(editions.id, uniq)),
+    ]);
+    for (const r of prows) out.set(`${r.id}`, r.productKind === 'GOODS' ? 'GOODS' : 'BOOK');
+    for (const r of erows) if (!out.has(`${r.id}`)) out.set(`${r.id}`, 'BOOK');
+    return out;
+  }
+
+  /**
+   * Chốt chặn cặp kho điều chuyển TRỰC TIẾP (1-cuốn lẫn hàng loạt).
+   * Thay allowlist tĩnh (mặc định rỗng ⇒ 403 mọi tuyến, kho hội chợ tạo động
+   * không bao giờ kịp cấu hình — sự cố 04/10/2026): cặp được phép khi 2 kho
+   * tồn tại + active + không thuộc họ ảo. Role/idempotency/audit giữ nguyên
+   * ở từng endpoint nên tư thế bảo mật thực tế không đổi (batch vốn đã mở).
+   */
+  private static async assertTransferPair(
+    fromWarehouseId: string,
+    toWarehouseId: string,
+    txOrDb: any
+  ): Promise<void> {
+    const from = `${fromWarehouseId || ''}`.trim();
+    const to = `${toWarehouseId || ''}`.trim();
+    if (!from || !to) throw AppError.invalid('Thiếu kho nguồn hoặc kho đích.');
+    if (from === to) throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
+    for (const w of [from, to]) {
+      if (isForbiddenWarehouseFamily(w)) {
+        throw AppError.forbidden(`Kho ${w} thuộc họ kho ảo/ký gửi/cách ly, không được điều chuyển trực tiếp.`);
+      }
+      const row = await WarehouseService.getWarehouse(w, txOrDb);
+      if (!row || (row as any).isActive !== true) {
+        throw AppError.invalid(`Kho ${w} không tồn tại hoặc đã ngưng hoạt động.`);
+      }
+    }
+  }
+
   /**
    * Lấy số dư tồn kho hiện tại của một ấn bản tại một kho cụ thể.
    * Hỗ trợ nhận context transaction `tx` hiện hành để đọc an toàn trong snapshot transaction.
@@ -163,9 +212,9 @@ export class InventoryService {
       tx: externalTx,
     } = params;
     const effActorId = params.actorContext?.staffId || actorId;
-    // 0033: mặc định `true` để MỌI call site cũ (chỉ bán sách) giữ nguyên hành
-    // vi. Chỉ `false` khi caller biết chắc đây là hàng hóa.
-    const isBook = params.isBook !== false;
+    // Sự thật loại sản phẩm lấy từ DB trong tx (hàng hóa ⇒ edition_id NULL).
+    // Param isBook chỉ là gợi ý tương thích ngược.
+    let effIsBook = params.isBook !== false;
 
     if (quantityDelta === 0) {
       throw AppError.invalid('Độ biến động tồn kho (quantityDelta) phải khác 0.');
@@ -179,7 +228,15 @@ export class InventoryService {
     }
 
     const executeWork = async (tx: any) => {
-      // 1. Ghi bút toán vào Sổ cái bất biến (Append-Only) trước để sinh ledgerId và ràng buộc kiểm toán
+      // 1. Phân loại BOOK/GOODS từ nguồn thật. Thiếu cả products lẫn editions
+      // ⇒ báo INVALID rõ ràng thay vì để FK editions(id) ném cryptic.
+      const kinds = await InventoryService.resolveItemKinds([editionId], tx);
+      const kind = kinds.get(`${editionId || ''}`.trim());
+      if (!kind) {
+        throw AppError.invalid(`Sản phẩm [${editionId}] không tồn tại trong danh mục.`);
+      }
+      effIsBook = kind === 'BOOK';
+      // 2. Ghi bút toán vào Sổ cái bất biến (Append-Only) trước để sinh ledgerId và ràng buộc kiểm toán
       const ledgerId = `led-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
       await tx.insert(inventoryLedger).values({
@@ -187,7 +244,7 @@ export class InventoryService {
         // 0033: `edition_id` nullable. Hàng hóa KHÔNG có dòng `editions` nên bút
         // toán phải để NULL — nếu ghi id hàng hóa vào đây thì FK `editions(id)`
         // vi phạm và cả đơn rollback.
-        editionId: isBook ? editionId : null,
+        editionId: effIsBook ? editionId : null,
         // 0033: `product_id` NOT NULL + FK `products(id)`. Sách có
         // `products.id === editions.id` nên đặt bằng `editionId` cho cả hai loại.
         productId: editionId,
@@ -229,7 +286,7 @@ export class InventoryService {
           // 0033: hàng hóa (GOODS) không có dòng `editions` ⇒ `edition_id` phải
           // NULL, nếu không FK `editions(id)` chặn. (Chỉ thấy khi bucket chưa
           // tồn tại — bucket đã có thì ON CONFLICT DO NOTHING bỏ qua.)
-          editionId: isBook ? editionId : null,
+          editionId: effIsBook ? editionId : null,
           // 0032: `product_id` NOT NULL + FK `products(id)`. Sách có
           // `products.id === editions.id`, nên đặt bằng `editionId`.
           productId: editionId,
@@ -516,8 +573,8 @@ export class InventoryService {
     }
 
     // CP3-B1.1 (mục 1): actorContext BẮT BUỘC và chỉ OWNER/MANAGER.
-    // Không suy role, không mặc định. Pair-allowlist + cấm virtual enforced
-    // ngay tại service qua isDirectTransferAllowed (mục 1).
+    // Không suy role, không mặc định. Chốt chặn cặp kho động
+    // (assertTransferPair trong tx ở dưới).
     const role = params.actorContext?.role;
     if (!params.actorContext || !params.actorContext.staffId?.trim()) {
       throw AppError.invalid('Thiếu actorContext cho thao tác chuyển kho trực tiếp.');
@@ -536,12 +593,12 @@ export class InventoryService {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác chuyển kho trực tiếp.');
     }
 
-    // CP3-B1.1 (mục 1): allowlist + cấm virtual NGAY TẠI SERVICE.
-    if (!isDirectTransferAllowed(fromWarehouseId, toWarehouseId)) {
-      throw AppError.forbidden(
-        `Tuyến chuyển kho trực tiếp từ [${fromWarehouseId}] tới [${toWarehouseId}] không nằm trong danh mục cho phép (allowlist). Vui lòng dùng luân chuyển 2 bước /api/transfers.`
-      );
-    }
+    // CP3-B1.1 (mục 1): allowlist tĩnh + cấm virtual NGAY TẠI SERVICE.
+    // 04/10/2026: allowlist tĩnh mặc định rỗng ⇒ 403 MỌI tuyến, kho hội chợ
+    // tạo động không bao giờ kịp cấu hình. Chuyển sang chốt chặn động
+    // (2 kho tồn tại + active + không họ ảo) — đúng chuẩn đường batch đã áp
+    // cho hội chợ. Role/idempotency/audit giữ nguyên.
+    // (Kiểm tra cặp kho chạy trong tx ở dưới.)
 
     const cleanCondition = condition;
     if (!documentRef || !`${documentRef}`.trim()) {
@@ -585,6 +642,8 @@ export class InventoryService {
 
     return await withDbRetry(() =>
       db.transaction(async (tx) => {
+        // Chốt chặn cặp kho động: tồn tại + active + không họ ảo.
+        await InventoryService.assertTransferPair(fromWarehouseId, toWarehouseId, tx);
         // Replay check: đối chiếu fingerprint đầy đủ + BẮT BUỘC đủ cả 2 chân.
         // Thiếu chân IN (partial) -> FAIL, không trả replay thành công.
         const { outLeg, inLeg } = await readLegs(tx);
@@ -757,6 +816,13 @@ export class InventoryService {
         // Số PCK do server cấp, cùng commit/rollback với phiếu.
         const pckCode = await WarehouseService.getNextDocumentCode('PCK', tx);
 
+        // Hàng hóa không có dòng `editions` ⇒ mọi chỗ ghi `edition_id` phải
+        // NULL (FK), và mọi WHERE tồn phải theo `product_id` (NULL không bao
+        // giờ khớp `IN (...)`). Sách có product_id === edition_id nên dùng
+        // product_id cho cả hai loại mà hành vi sách không đổi.
+        const kinds = await InventoryService.resolveItemKinds(merged.map((m) => m.editionId), tx);
+        const edOf = (id: string) => (kinds.get(id) === 'GOODS' ? null : id);
+
         // GHI GOM LÔ: 4 query bất kể số dòng.
         // Trước đây gọi recordMovement 2×/dòng (~5 query mỗi lần) → phiếu 5 dòng
         // là 50 query, vượt trần subrequest Cloudflare Worker → 500.
@@ -769,8 +835,8 @@ export class InventoryService {
           .insert(stockBalances)
           .values(
             merged.flatMap((it) => [
-              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: it.editionId, productId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
-              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: it.editionId, productId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: edOf(it.editionId), productId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
+              { id: `sb-${it.editionId}-${toId}-NEW`, editionId: edOf(it.editionId), productId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
             ])
           )
           // 0032: unique index đã sang product_id — xem giải thích ở recordMovement.
@@ -779,14 +845,14 @@ export class InventoryService {
         // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
         const ledgerRows = merged.flatMap((it) => ([
           {
-            id: crypto.randomUUID(), editionId: it.editionId, productId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
+            id: crypto.randomUUID(), editionId: edOf(it.editionId), productId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
             quantityDelta: -it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
             correlationId: batchKey, effectiveAt: nowIso,
             note: `Chuyển kho hàng loạt tới [${toId}] (${pckCode}). ${note}`.trim(),
             idempotencyKey: `${batchKey}-out-${it.editionId}`,
           },
           {
-            id: crypto.randomUUID(), editionId: it.editionId, productId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
+            id: crypto.randomUUID(), editionId: edOf(it.editionId), productId: it.editionId, warehouseId: toId, eventType: 'TRANSFER_IN',
             quantityDelta: it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
             correlationId: batchKey, effectiveAt: nowIso,
             note: `Tiếp nhận chuyển kho hàng loạt từ [${fromId}] (${pckCode}). ${note}`.trim(),
@@ -801,11 +867,11 @@ export class InventoryService {
           sql.join(merged.map((it) => sql`WHEN ${it.editionId} THEN ${delta(it.quantity)}`), sql.raw(' '));
         const outResult: any = await tx.run(sql`
           UPDATE stock_balances
-          SET physical_quantity = physical_quantity + CASE edition_id ${caseSql((q) => -q)} ELSE 0 END,
+          SET physical_quantity = physical_quantity + CASE product_id ${caseSql((q) => -q)} ELSE 0 END,
               updated_at = CURRENT_TIMESTAMP
           WHERE warehouse_id = ${fromId} AND condition = 'NEW'
-            AND edition_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
-            AND physical_quantity + CASE edition_id ${caseSql((q) => -q)} ELSE 0 END >= 0
+            AND product_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
+            AND physical_quantity + CASE product_id ${caseSql((q) => -q)} ELSE 0 END >= 0
         `);
         if (outResult.rowsAffected !== merged.length) {
           const { OrderService } = await import('./order.service');
@@ -826,10 +892,10 @@ export class InventoryService {
         // 4. Cộng tồn đích bằng CASE (1 query).
         await tx.run(sql`
           UPDATE stock_balances
-          SET physical_quantity = physical_quantity + CASE edition_id ${caseSql((q) => q)} ELSE 0 END,
+          SET physical_quantity = physical_quantity + CASE product_id ${caseSql((q) => q)} ELSE 0 END,
               updated_at = CURRENT_TIMESTAMP
           WHERE warehouse_id = ${toId} AND condition = 'NEW'
-            AND edition_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
+            AND product_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
         `);
 
         const ledgerByKey = new Map(ledgerRows.map((r: any) => [`${r.warehouseId}|${r.editionId}`, r.id]));
@@ -881,30 +947,19 @@ export class InventoryService {
     txOrDb: any = db
   ): Promise<{ ok: true } | { ok: false; staleItems: StaleItem[] }> {
     const { fromWarehouseId, toWarehouseId } = params;
-    if (!fromWarehouseId?.trim() || !toWarehouseId?.trim()) {
-      throw AppError.invalid('Thiếu kho nguồn hoặc kho đích.');
-    }
-    if (fromWarehouseId.trim() === toWarehouseId.trim()) {
-      throw AppError.invalid('Kho xuất và kho nhập phải khác nhau.');
-    }
-    for (const w of [fromWarehouseId.trim(), toWarehouseId.trim()]) {
-      const row = await WarehouseService.getWarehouse(w, txOrDb);
-      if (!row || row.isActive !== true) {
-        throw AppError.invalid(`Kho ${w} không tồn tại hoặc đã ngưng hoạt động.`);
-      }
-      if (isForbiddenWarehouseFamily(w)) {
-        throw AppError.forbidden(`Kho ${w} thuộc họ kho ảo/ký gửi/cách ly, không được điều chuyển trực tiếp.`);
-      }
-    }
+    // Chốt chặn cặp kho động, dùng chung với transfer() 1-cuốn.
+    await InventoryService.assertTransferPair(fromWarehouseId, toWarehouseId, txOrDb);
     const merged = this.normalizeBatchItems(params.items);
-    const existingEditions = await txOrDb
-      .select({ id: editions.id })
-      .from(editions)
-      .where(inArray(editions.id, merged.map((m) => m.editionId)));
-    if (existingEditions.length !== merged.length) {
-      const known = new Set(existingEditions.map((e: any) => e.id));
-      const unknown = merged.filter((m) => !known.has(m.editionId)).map((m) => m.editionId);
-      throw AppError.invalid(`Ấn bản không tồn tại trong danh mục: ${unknown.join(', ')}.`);
+    // Chấp nhận cả sách (`editions`) lẫn hàng hóa (`products`, không có dòng
+    // editions). Trước đây chỉ tra `editions` ⇒ hàng hóa như SP-001 bị từ
+    // chối "Sản phẩm không tồn tại" (sự cố 04/10/2026).
+    const kinds = await InventoryService.resolveItemKinds(
+      merged.map((m) => m.editionId),
+      txOrDb
+    );
+    const unknown = merged.filter((m) => !kinds.has(m.editionId)).map((m) => m.editionId);
+    if (unknown.length > 0) {
+      throw AppError.invalid(`Sản phẩm không tồn tại trong danh mục: ${unknown.join(', ')}.`);
     }
     const { OrderService } = await import('./order.service');
     // Batch ATP: 2 query cố định cho cả phiếu. Trước đây gọi getATP từng

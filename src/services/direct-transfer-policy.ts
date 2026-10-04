@@ -2,14 +2,17 @@
  * Direct Internal Transfer Policy (/api/inventory/transfer).
  * Single Source of Truth: docs/CP3_EXECUTION_PLAN.md §9.
  *
- * Rules:
+ * 04/10/2026 — allowlist tĩnh (mặc định rỗng ⇒ 403 MỌI tuyến) đã gây tê liệt
+ * chuyển kho thật: kho hội chợ tạo động không bao giờ kịp cấu hình, trong khi
+ * đường batch (cùng role OWNER/MANAGER, cùng hiệu ứng) vốn đã mở. Quy tắc hiện
+ * hành do InventoryService.assertTransferPair làm chủ: 2 kho tồn tại + active
+ * + không thuộc họ ảo. Các hàm allowlist dưới đây giữ lại để tương thích test
+ * cũ, không còn là chốt chặn.
+ *
+ * Rules (còn hiệu lực):
  * - Direct transfer is restricted to ROLE_OWNER and ROLE_MANAGER.
- * - Allowed warehouse pairs come from a server-side configuration.
- * - Pair comparison is bidirectional and normalized.
- * - The default allowlist is empty, so the endpoint fails closed until explicitly configured.
  * - Transit, consignment, quarantine, and other virtual warehouse families are always forbidden.
  * - The service enforces the rule; route-only enforcement is insufficient.
- * - UI hides the operation when no valid pair is configured.
  */
 
 import { UserRole } from '@/lib/roles';

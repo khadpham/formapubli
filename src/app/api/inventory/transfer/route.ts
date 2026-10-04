@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
-import { isDirectTransferAllowed } from '@/services/direct-transfer-policy';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
@@ -40,14 +39,9 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
       return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: 'quantity phải là số nguyên > 0.' }, { status: 400 });
     }
-    // CP3-D pair allowlist cho endpoint direct (SSOT §9): cặp ngoài allowlist
-    // (mặc định rỗng) hoặc kho virtual -> 403 fail-closed.
-    if (!isDirectTransferAllowed(fromWarehouseId, toWarehouseId)) {
-      return NextResponse.json(
-        { success: false, code: 'FORBIDDEN', error: `Tuyến chuyển kho trực tiếp [${fromWarehouseId} → ${toWarehouseId}] không nằm trong danh mục cho phép. Dùng luân chuyển 2 bước /api/transfers.` },
-        { status: 403 }
-      );
-    }
+    // Quy tắc cặp kho do SERVICE làm chủ duy nhất (2 kho active + không họ
+    // ảo; allowlist tĩnh đã bỏ 04/10/2026 vì kho hội chợ tạo động). Route chỉ
+    // kiểm tra hình thức input ở dưới.
 
     const result = await InventoryService.transfer({
       editionId,

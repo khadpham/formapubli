@@ -71,6 +71,7 @@ const ALL_SUITES = [
   'scripts/test-barcode-engine.ts',
   'scripts/test-camera-scanner.ts',
   'scripts/test-modal-dismiss.ts',
+  'scripts/test-transfer-goods-repro.ts',
   'scripts/test-mobile-kho-ui.ts',
   'scripts/test-batch-paste-parser.ts',
   'scripts/test-batch-paste-ui.ts',
