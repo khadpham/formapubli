@@ -23,6 +23,7 @@ DANH SÁCH CÔNG CỤ ĐƯỢC PHÉP DÙNG:
 4. query_cashbox_reconciliation(sessionId?, date?): Tra cứu đối soát tiền két ca quầy, số tiền thực đếm và chênh lệch.
 5. query_catalog(q?): Tra cứu DANH MỤC — sách của 1 tác giả, tựa bắt đầu bằng chữ X, top tác giả/sách bán chạy, liệt kê. Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
  6. query_product_flow(q?): NHIP BAN 1 MON — gio vang, ngay dinh, tong cuon/tien/don trong N ngay. Dung khi cau hoi nhac 1 mon CU THE kem gio/thoi diem (vd "gio vang cuon X?"). Luon truyen nguyen van cau hoi vao "q" de server tu phan giai mon.
+8. query_sales_lines(from?, to?, warehouseId?): MON BAN trong khung gio/ngay tuy y.
 7. prepare_sale_draft(q?): LÊN ĐƠN NHÁP từ ngôn ngữ tự nhiên (mã/tên sách + số lượng + khách). CHỈ tạo nháp đổ vào giỏ POS — TUYỆT ĐỐI không tạo đơn hoàn tất, không trừ kho, không áp chiết khấu. Người dùng tự bấm Thanh toán ở POS.
 `;
 
@@ -34,6 +35,7 @@ export const ToolCallSchema = z.object({
     'query_cashbox_reconciliation',
     'query_catalog',
     'query_product_flow',
+    'query_sales_lines',
     'prepare_sale_draft',
   ]),
   args: z.record(z.any()).default({}),
@@ -93,7 +95,8 @@ export class CopilotGuardrails {
       (plan.toolCall?.toolName === 'query_stock_level' ||
         plan.toolCall?.toolName === 'query_catalog' ||
         plan.toolCall?.toolName === 'query_product_flow' ||
-        plan.toolCall?.toolName === 'query_sales_summary')
+        plan.toolCall?.toolName === 'query_sales_summary' ||
+        plan.toolCall?.toolName === 'query_sales_lines')
     ) {
       try {
         const wh = await ExecutiveQueryService.resolveWarehouseFromText(question);
@@ -324,6 +327,44 @@ Trả về JSON chuẩn khớp schema:
     return null;
   }
 
+  /**
+   * Bóc khung giờ VN từ câu hỏi ("khung 15h 2 ngày trước", "sáng qua lúc 9h").
+   * Trả về mốc UTC {from, to} hoặc null khi không đủ giờ cụ thể.
+   */
+  static parseVnRange(text: string, nowMs: number = Date.now()): { from: string; to: string } | null {
+    const n = removeAccents((text || '').toLowerCase());
+    const hm = n.match(/\b(\d{1,2})\s*h\b/);
+    if (!hm) return null;
+    const hour = Number(hm[1]);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+    const todayVn = new Date(nowMs + 7 * 3_600_000).toISOString().slice(0, 10);
+    let day: string | null = null;
+    const back = n.match(/(\d+)\s*ngay truoc/);
+    if (back) {
+      day = new Date(Date.parse(`${todayVn}T00:00:00Z`) - Number(back[1]) * 86_400_000).toISOString().slice(0, 10);
+    } else if (/\bhom qua\b/.test(n)) {
+      day = new Date(Date.parse(`${todayVn}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    } else if (/\bhom nay\b/.test(n)) {
+      day = todayVn;
+    } else {
+      const dm = n.match(/\bngay\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+      if (dm) {
+        const dd = dm[1].padStart(2, '0');
+        const mm = dm[2].padStart(2, '0');
+        let yyyy = dm[3] || todayVn.slice(0, 4);
+        if (yyyy.length === 2) yyyy = '20' + yyyy;
+        const candidate = `${yyyy}-${mm}-${dd}`;
+        const d = new Date(`${candidate}T00:00:00Z`);
+        if (!Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === candidate) day = candidate;
+      } else {
+        day = todayVn;
+      }
+    }
+    if (!day) return null;
+    const fromMs = Date.parse(`${day}T00:00:00Z`) + (hour - 7) * 3_600_000;
+    return { from: new Date(fromMs).toISOString(), to: new Date(fromMs + 3_599_999).toISOString() };
+  }
+
   private static heuristicPlan(q: string): CopilotPlan {
     // Chuẩn hóa không dấu để câu hỏi gõ không dấu vẫn định tuyến đúng tool.
     const n = removeAccents(q.toLowerCase());
@@ -347,7 +388,14 @@ Trả về JSON chuẩn khớp schema:
         reason: 'Heuristic keyword match: reprint forecast',
       };
     }
-    if (n.includes('doanh thu') || n.includes('doanh so') || n.includes('so thue') || n.includes('so noi bo') || n.includes('ban duoc')) {
+    // Cu the truoc tong quat: cau khung-gio liet ke mon di truoc sales chung
+    // ("khung 15h ... ban duoc gi?" chua "ban duoc" nhung hoi MON, khong phai tong).
+    const hourListIntent = (() => {
+      const hasHour = /\b(\d{1,2})\s*h\b/.test(n);
+      const listIntent = n.includes('nhung') || n.includes('cuon nao') || n.includes('liet ke') || n.includes('ban gi') || n.includes('ban duoc gi') || n.includes('nhung gi');
+      return hasHour && listIntent && !n.includes('gio vang');
+    })();
+    if (n.includes('doanh thu') || n.includes('doanh so') || n.includes('so thue') || n.includes('so noi bo') || (n.includes('ban duoc') && !hourListIntent)) {
       return {
         action: 'CALL_TOOL',
         toolCall: {
@@ -384,7 +432,26 @@ Trả về JSON chuẩn khớp schema:
       };
     }
 
-    if (n.includes('ton kho') || n.includes('con bao nhieu') || n.includes('ve hang') || n.includes('kho au co') || /(^| )kho( |$)/.test(n)) {
+    // Khung gio cu the + hoi liet ke mon ("khung 15h 2 ngay truoc ban gi?").
+    // Dat TRUOC nhanh ton kho vi cau nao cung co chu "kho". "Gio vang" thuoc flow.
+    {
+      const hasHour = /\b(\d{1,2})\s*h\b/.test(n);
+      const listIntent = n.includes('nhung') || n.includes('nhung cuon') || n.includes('cuon nao') || n.includes('liet ke') || n.includes('ban gi') || n.includes('ban duoc gi') || n.includes('nhung gi');
+      const isGolden = n.includes('gio vang');
+      if (hasHour && listIntent && !isGolden) {
+        const range = CopilotGuardrails.parseVnRange(q);
+        if (range) {
+          return {
+            action: 'CALL_TOOL',
+            toolCall: { toolName: 'query_sales_lines', args: { from: range.from, to: range.to, q } },
+            reason: 'Heuristic keyword match: sales lines in time window',
+          };
+        }
+      }
+    }
+
+    // Ton kho: nhuong cau khung-gio liet ke mon + cau gio-vang (da xu ly tren).
+    if ((n.includes('ton kho') || n.includes('con bao nhieu') || n.includes('ve hang') || n.includes('kho au co') || /(^| )kho( |$)/.test(n)) && !hourListIntent && !n.includes('gio vang') && !n.includes('gio nao') && !n.includes('may gio')) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_stock_level', args: {} },
@@ -537,6 +604,17 @@ Trả về JSON chuẩn khớp schema:
           warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
         });
         break;
+
+      case 'query_sales_lines': {
+        const { AnalyticsService: AS } = await import('../analytics.service');
+        result = await AS.querySalesLines({
+          from: typeof args.from === 'string' ? args.from : undefined,
+          to: typeof args.to === 'string' ? args.to : undefined,
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
+          limit: this.numArg(args.limit, 20, 1, 50),
+        });
+        break;
+      }
 
       case 'prepare_sale_draft':
         result = await ExecutiveQueryService.prepareSaleDraft({

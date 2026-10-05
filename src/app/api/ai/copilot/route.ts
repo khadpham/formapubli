@@ -290,6 +290,17 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
 - Phạm vi: ${data.warehouseScope}
 - Tổng số cuốn khả dụng: **${data.totalAvailable}** cuốn (${data.itemsCount} ấn bản).`;
   }
+  if (toolName === 'query_sales_lines') {
+    const items = ((data as any).items || []).slice(0, 20);
+    if (items.length === 0) {
+      return `🧾 **Món bán trong khung hỏi**: chưa phát sinh đơn nào.`;
+    }
+    const lines = items.map(
+      (it: any, i: number) =>
+        `${i + 1}. **${it.code} - ${it.title}** — ${Number(it.qty || 0).toLocaleString('vi-VN')} cuốn (${Number(it.revenue || 0).toLocaleString('vi-VN')} đ)`
+    );
+    return `🧾 **Món bán trong khung hỏi** (tổng ${Number((data as any).totalQty || 0).toLocaleString('vi-VN')} cuốn):\n${lines.join('\n')}`;
+  }
   if (toolName === 'query_sales_summary') {
     const scope = (data as any).scopeLabel ? ` (${(data as any).scopeLabel})` : '';
     return `📊 **Báo cáo Doanh số${scope}**:

@@ -360,6 +360,65 @@ export class AnalyticsService {
     };
   }
 
+  /**
+   * query_sales_lines: món bán trong khung giờ/ngày tùy ý (vd "khung 15h
+   * 2 ngày trước ở kho X bán gì"). 1 query GROUP, cap 50 dòng.
+   */
+  static async querySalesLines(params: { from?: string; to?: string; warehouseId?: string; limit?: number } = {}): Promise<{
+    items: Array<{ code: string; title: string; qty: number; revenue: number; orders: number }>;
+    totalQty: number;
+    totalRevenue: number;
+    from: string | null;
+    to: string | null;
+  }> {
+    const from = typeof params.from === 'string' ? params.from : null;
+    const to = typeof params.to === 'string' ? params.to : null;
+    const limit = Math.min(50, Math.max(1, Math.floor(Number(params.limit) || 20)));
+    const warehouseId = typeof params.warehouseId === 'string' && params.warehouseId.trim() ? params.warehouseId.trim() : undefined;
+    if (!from || !to) {
+      return { items: [], totalQty: 0, totalRevenue: 0, from, to };
+    }
+    const conds = [
+      eq(orders.status, 'COMPLETED'),
+      sql`${orders.channel} != 'SPONSORSHIP'`,
+      sql`datetime(${orders.createdAt}) >= datetime(${from})`,
+      sql`datetime(${orders.createdAt}) <= datetime(${to})`,
+    ];
+    if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    const rows: any[] = await db
+      .select({
+        code: sql<string | null>`COALESCE(${editions.code}, ${products.code})`,
+        title: sql<string | null>`COALESCE(${editions.title}, ${products.name})`,
+        qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+        revenue: sql<number>`COALESCE(SUM(${orderItems.totalAmount}), 0)`,
+        orders: sql<number>`COUNT(DISTINCT ${orderItems.orderId})`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .leftJoin(editions, eq(orderItems.editionId, editions.id))
+      .leftJoin(products, eq(orderItems.productId, products.id))
+      .where(and(...conds))
+      .groupBy(sql`COALESCE(${orderItems.editionId}, ${orderItems.productId})`);
+    const items = rows
+      .map((r) => ({
+        code: r.code || '?',
+        title: r.title || '—',
+        qty: Number(r.qty || 0),
+        revenue: Number(r.revenue || 0),
+        orders: Number(r.orders || 0),
+      }))
+      .filter((r) => r.qty > 0)
+      .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+      .slice(0, limit);
+    return {
+      items,
+      totalQty: items.reduce((s, r) => s + r.qty, 0),
+      totalRevenue: items.reduce((s, r) => s + r.revenue, 0),
+      from,
+      to,
+    };
+  }
+
   static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true, fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT') {
     const conds = [
       eq(orders.status, 'COMPLETED'),

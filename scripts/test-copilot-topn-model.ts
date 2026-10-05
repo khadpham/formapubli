@@ -113,7 +113,17 @@ async function run() {
     assert.match(forced.scopeLabel, new RegExp(`ngày ${thisYear}-10-04`), 'server thắng năm bịa của LLM');
   }
 
-  // --- 2b. Runtime: "số sách bán được ngày X ở kho Y" → sales theo ngày+kho ---
+// --- 3. Câu hóc búa: khung giờ X ngày Y ở kho Z → liệt kê món đã bán ---
+  {
+    const { CopilotGuardrails: G2 } = await import('../src/services/ai/copilot-guardrails');
+    // Giả vờ hôm nay 06/10/2026: "2 ngày trước" = 04/10.
+    const fakeNow2 = Date.parse('2026-10-06T02:00:00.000Z');
+    const range = (G2 as any).parseVnRange('khung 15h 2 ngày trước bán được những cuốn nào?', fakeNow2);
+    assert.ok(range, 'phải bóc được khung giờ');
+    assert.equal(range.from, '2026-10-04T08:00:00.000Z', 'VN 15:00 = 08:00Z');
+    assert.equal(range.to, '2026-10-04T08:59:59.999Z', 'hết giờ 15 VN');
+    assert.equal((G2 as any).parseVnRange('hôm nay bán gì?', fakeNow2), null, 'không khung giờ thì null');
+  }
   {
     const yest = new Date(Date.now() + 7 * 3_600_000 - 86_400_000).toISOString().slice(0, 10);
     const stamp2 = Date.now();
@@ -144,6 +154,51 @@ async function run() {
       const { sql } = await import('drizzle-orm');
       await db.run(sql`DELETE FROM order_items WHERE id LIKE ${`oi-cpday-${stamp2}-%`}`);
       await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cpday-${stamp2}-%`}`);
+    }
+  }
+
+  // --- 3. Câu hóc búa: khung giờ cụ thể → liệt kê món (không vào tồn kho) ---
+  {
+    const twoDaysAgoVn = new Date(Date.now() + 7 * 3_600_000 - 2 * 86_400_000).toISOString().slice(0, 10);
+    const inIso = `${twoDaysAgoVn}T08:30:00.000Z`; // 15:30 VN
+    const outIso = `${twoDaysAgoVn}T01:00:00.000Z`; // 08:00 VN (ngoài khung)
+    const stamp3 = Date.now();
+    const targetEd = eds[0];
+    const otherEd = eds[1] || eds[0];
+    await db.insert(orders).values([
+      {
+        id: `ord-cpwin-${stamp3}-1`, orderCode: `CPW${stamp3}1`, idempotencyKey: `idem-cpwin-${stamp3}-1`,
+        warehouseId: 'wh-au-co', customerName: 'Khách khung', subtotal: 50000, discountRate: 0,
+        discountAmount: 0, finalAmount: 50000, paymentMethod: 'CASH', status: 'COMPLETED' as const,
+        cashierId: 'staff-admin', createdAt: inIso,
+      },
+      {
+        id: `ord-cpwin-${stamp3}-2`, orderCode: `CPW${stamp3}2`, idempotencyKey: `idem-cpwin-${stamp3}-2`,
+        warehouseId: 'wh-au-co', customerName: 'Khách khung', subtotal: 90000, discountRate: 0,
+        discountAmount: 0, finalAmount: 90000, paymentMethod: 'CASH', status: 'COMPLETED' as const,
+        cashierId: 'staff-admin', createdAt: outIso,
+      },
+    ] as any);
+    await db.insert(orderItems).values([
+      { id: `oi-cpwin-${stamp3}-1`, orderId: `ord-cpwin-${stamp3}-1`, editionId: targetEd.id, productId: targetEd.id, quantity: 3, unitCoverPrice: 10000, unitSellingPrice: 10000, totalAmount: 30000, isGiftLine: false },
+      { id: `oi-cpwin-${stamp3}-2`, orderId: `ord-cpwin-${stamp3}-2`, editionId: otherEd.id, productId: otherEd.id, quantity: 9, unitCoverPrice: 10000, unitSellingPrice: 10000, totalAmount: 90000, isGiftLine: false },
+    ] as any);
+    try {
+      const reqWin = new Request('http://localhost/api/ai/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+        body: JSON.stringify({ question: 'khung 15h 2 ngày trước bán được những cuốn nào ở kho hồ gươm?' }),
+      });
+      const resWin = await postCopilot(reqWin as any);
+      const payWin = await resWin.json();
+      assert.equal(resWin.status, 200, 'hỏi khung giờ phải 200');
+      assert.equal(payWin.data.toolUsed, 'query_sales_lines', 'phải vào tool dòng bán (không phải tồn kho)');
+      assert.match(payWin.data.answer, new RegExp(targetEd.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'đáp phải có món trong khung');
+      assert.doesNotMatch(payWin.data.answer, /^\s*[\{\[]/, 'đáp không mở đầu JSON');
+    } finally {
+      const { sql } = await import('drizzle-orm');
+      await db.run(sql`DELETE FROM order_items WHERE id LIKE ${`oi-cpwin-${stamp3}-%`}`);
+      await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cpwin-${stamp3}-%`}`);
     }
   }
 }
