@@ -87,6 +87,20 @@ async function run() {
     assert.match(payload.data.answer, /[Gg]iờ/, 'đáp phải nêu giờ');
     assert.doesNotMatch(payload.data.answer, /^\s*[\{\[]/, 'đáp không được mở đầu bằng JSON');
     assert.equal(payload.data.engine, 'nội bộ', 'heuristic không LLM phải báo đúng engine');
+
+    // Câu theo ý (không tên món): tự tìm món bán chạy nhất rồi xem giờ của nó.
+    const req2 = new Request('http://localhost/api/ai/copilot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      body: JSON.stringify({ question: 'Giờ vàng của cuốn sách bán chạy nhất là mấy giờ?' }),
+    });
+    const response2 = await postCopilot(req2 as any);
+    const payload2 = await response2.json();
+    assert.equal(response2.status, 200, 'hỏi bán chạy nhất phải 200');
+    assert.equal(payload2.data.toolUsed, 'query_product_flow', 'câu theo ý cũng vào tool nhịp bán');
+    assert.match(payload2.data.answer, /bán chạy nhất/, 'đáp phải nói rõ đang xem món bán chạy nhất');
+    assert.match(payload2.data.answer, /[Gg]iờ vàng/, 'đáp phải nêu giờ vàng');
+    assert.doesNotMatch(payload2.data.answer, /Không tìm thấy/, 'không được báo không tìm thấy');
   } finally {
     const { sql } = await import('drizzle-orm');
     await db.run(sql`DELETE FROM order_items WHERE id LIKE ${`oi-cpflow-${stamp}-%`}`);

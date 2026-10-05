@@ -179,12 +179,43 @@ export class ExecutiveQueryService {
     peakDay: { date: string; qty: number; revenue: number } | null;
     peakHour: number | null;
     warning?: string;
+    note?: string;
   }> {
     let pid = `${params.productId || ''}`.trim();
     let meta: { code: string | null; title: string | null } = { code: null, title: null };
+    let pickedNote = '';
     if (!pid && params.codeOrTitle) {
       const resolved = await this.resolveProductFromText(params.codeOrTitle);
-      if (!resolved) {
+      if (resolved) {
+        pid = resolved.productId;
+        meta = { code: resolved.code, title: resolved.title };
+      } else {
+        // Câu hỏi theo ý ("cuốn bán chạy nhất...") không chứa tên món: tìm món
+        // bán chạy nhất kỳ rồi xem nhịp của chính nó (2 bước trong 1 tool).
+        const normQ = removeAccents((params.codeOrTitle || '').toLowerCase());
+        const wantsBest = /ban chay nhat|ban nhieu nhat|ban tot nhat|ban manh nhat/.test(normQ);
+        if (wantsBest) {
+          const days = Math.min(92, Math.max(1, Math.floor(Number((params as any).windowDays) || 30)));
+          const nowVn = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+          const startVn = new Date(Date.parse(`${nowVn}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+          const { AnalyticsService: AS } = await import('./analytics.service');
+          const top: any = await AS.topEditions(
+            { startDate: startVn, endDate: nowVn },
+            1,
+            (params as any).warehouseId,
+            true,
+            undefined
+          );
+          const first = top?.items?.[0];
+          const bestPid = first?.productId || first?.editionId;
+          if (bestPid) {
+            pid = String(bestPid);
+            meta = { code: first.code || null, title: first.title || null };
+            pickedNote = ` (đang xem món bán chạy nhất: ${first.code || ''} ${first.title || ''})`;
+          }
+        }
+      }
+      if (!pid) {
         return {
           product: null,
           totals: { qty: 0, revenue: 0, orders: 0, activeDays: 0 },
@@ -193,8 +224,6 @@ export class ExecutiveQueryService {
           warning: `Không tìm thấy sản phẩm khớp với "${params.codeOrTitle}" trong danh mục.`,
         };
       }
-      pid = resolved.productId;
-      meta = { code: resolved.code, title: resolved.title };
     }
     if (!pid) {
       return {
@@ -240,6 +269,7 @@ export class ExecutiveQueryService {
       totals: { qty: tl.totals.qty, revenue: tl.totals.revenue, orders: tl.totals.orders, activeDays: tl.totals.activeDays },
       peakDay,
       peakHour,
+      note: pickedNote || undefined,
     };
   }
   static async resolveEditionFromText(text: string): Promise<{ editionId: string; code: string; title: string | null } | null> {

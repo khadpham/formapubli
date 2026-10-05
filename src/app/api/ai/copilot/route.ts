@@ -321,11 +321,12 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     const t = (data as any).totals || {};
     const peakDay = (data as any).peakDay;
     const peakHour = (data as any).peakHour;
+    const picked = (data as any).note || '';
     const title = p.code || p.title || 'món này';
     if (!t.orders) {
-      return `⏱️ **Nhịp Bán ${title}**: chưa phát sinh đơn nào trong kỳ xem.`;
+      return `⏱️ **Nhịp Bán ${title}**: chưa phát sinh đơn nào trong kỳ xem.${picked}`;
     }
-    return `⏱️ **Nhịp Bán ${title}${p.title && p.code ? ' - ' + p.title : ''}**:
+    return `⏱️ **Nhịp Bán ${title}${p.title && p.code ? ' - ' + p.title : ''}**${picked}:
 - Tổng: **${Number(t.qty || 0).toLocaleString('vi-VN')} cuốn** · **${Number(t.revenue || 0).toLocaleString('vi-VN')} đ** (${t.orders} đơn, ${t.activeDays} ngày có bán).
 - Giờ vàng: **${peakHour != null ? `${peakHour}h` : 'chưa rõ'}**${peakDay ? ` · Ngày đỉnh: **${peakDay.date}** (${Number(peakDay.qty || 0)} cuốn)` : ''}.`;
   }
