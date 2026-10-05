@@ -2,11 +2,17 @@ import { z } from 'zod';
 import { ExecutiveQueryService } from '../executive-query.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { removeAccents } from '@/lib/vietnamese';
-import { callGeminiWithFallback, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, resolveOpenAIModel, nullableString } from './llm-client';
+import { callCfWorkerAiJsonRaw, callGeminiWithFallback, callGroqChatJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, resolveOpenAIModel, nullableString } from './llm-client';
 
 export const COPILOT_SYSTEM_PROMPT = `
 Bạn là Executive AI Copilot — Trợ lý điều hành cấp cao của Nhà xuất bản Formapubli OS.
 Bạn đang phục vụ Ban Giám Đốc (ROLE_OWNER hoặc ROLE_MANAGER).
+
+MỤC TIÊU CUỘC TRÒ CHUYỆN: trả lời càng nhiều càng giàu ý nghĩa, ngôn ngữ tự nhiên, không cứng nhắc/giáo điều/nhạt nhẽo. Hãy nói như một người trợ lý thật ngồi cùng sếp — gợi thêm hướng đi nếu sếp có thể quan tâm, nhưng KHÔNG bịa số nào ngoài dữ liệu.
+
+LUÔN NẮM TRẠNG THÁI (context awareness): trước khi trả lời, biết rõ HÔM NAY LÀ NGÀY NÀO (prompt cung cấp giờ VN), và luôn gắn thời điểm mọi con số ra. Nếu câu hỏi nhắc thời gian tương đối ("hôm nay", "2 ngày trước", "tháng này") thì quy đổi ra ngày cụ thể trước khi tra.
+
+TÁCH LỚP KHI CẦN: câu hỏi nhiều ý thì trả lời từng ý, nêu rõ ý nào dùng số liệu gì. Nếu thấy thiếu ý cần hỏi rõ thì nói thẳng cái định hỏi lại, chứ không đoán bừa.
 
 NGUYÊN TẮC BẤT BIẾN (5 LỚP BẢO VỆ):
 1. CHỈ ĐỌC (READ-ONLY): Bạn KHÔNG có bất kỳ quyền hạn nào để sửa kho, xuất tiền, hủy đơn, hay thay đổi cấu hình. Ngoại lệ duy nhất: prepare_sale_draft CHỈ đổ nháp vào giỏ POS, đơn chỉ hoàn tất khi người dùng tự bấm Thanh toán. Mọi thao tác ghi/duyệt khác đều vượt quá thẩm quyền của bạn.
@@ -42,13 +48,31 @@ export const ToolCallSchema = z.object({
 });
 
 export const CopilotPlanSchema = z.object({
-  action: z.enum(['CALL_TOOL', 'DIRECT_ANSWER', 'REFUSE_OUT_OF_SCOPE']),
+  action: z.enum(['CALL_TOOL', 'DIRECT_ANSWER', 'REFUSE_OUT_OF_SCOPE', 'CALL_MANY']),
   toolCall: ToolCallSchema.optional(),
+  /** Câu hỏi nhiều ý: tách thành nhiều bước, mỗi bước 1 tool. */
+  steps: z
+    .array(
+      z.object({
+        toolName: ToolCallSchema.shape.toolName,
+        args: z.record(z.any()).default({}),
+      })
+    )
+    .optional(),
   directAnswer: nullableString(2000),
   reason: nullableString(500),
 });
 
 export type CopilotPlan = z.output<typeof CopilotPlanSchema>;
+
+/** Tool chap nhan `warehouseId` — dung chinh cho ca ke hoach 1 y va da y. */
+const WAREHOUSE_TOOLS = new Set([
+  'query_stock_level',
+  'query_catalog',
+  'query_product_flow',
+  'query_sales_summary',
+  'query_sales_lines',
+]);
 
 export class CopilotGuardrails {
   /**
@@ -68,53 +92,49 @@ export class CopilotGuardrails {
       }
       return plan;
     }
-    if (plan.action === 'CALL_TOOL' && plan.toolCall?.toolName === 'query_stock_level') {
-      const args = plan.toolCall.args || {};
-      if (!args.editionId) {
+    // Cau nhieu y (CALL_MANY) phai qua cung phep resolve ma sach / ten kho /
+    // ten san pham nhu cau 1 y — dung chung 1 vong lap cho ca 2 kieu ke hoach.
+    const targets: Array<{ toolName: string; args: Record<string, any> }> =
+      plan.action === 'CALL_TOOL' && plan.toolCall
+        ? [{ toolName: plan.toolCall.toolName, args: plan.toolCall.args || {} }]
+        : plan.action === 'CALL_MANY' && plan.steps
+          ? plan.steps.map((s) => ({ toolName: s.toolName, args: s.args || {} }))
+          : [];
+    for (const step of targets) {
+      if (!step.args.editionId) {
         try {
           const hit = await ExecutiveQueryService.resolveEditionFromText(question);
           if (hit) {
-            plan.toolCall.args = { ...args, editionId: hit.editionId };
+            step.args.editionId = hit.editionId;
             plan.reason = `Resolved edition ${hit.code} from question. ` + (plan.reason || '');
           } else if (/[a-z]{1,4}\d{1,4}|["“”]/i.test(question)) {
             // Chi chuyen codeOrTitle khi cau hoi co dau hieu sach cu the (ma H01,
             // ten trong ngoac kep). Cau tong quat ("Kho con bao nhieu cuon?")
             // giu bao cao chung, tranh warning sai.
-            plan.toolCall.args = { ...args, codeOrTitle: question.slice(0, 200) };
+            step.args.codeOrTitle = question.slice(0, 200);
           }
         } catch (err) {
           console.warn('[copilot] edition resolve failed:', err);
         }
       }
-      // Phan giai ten kho ("kho Au Co" → wh-au-co) de cau tra loi gon 1 kho.
+      // Phan giai ten kho ("kho Au Co" -> wh-au-co) de cau tra loi gon 1 kho.
       // Ap cho stock + catalog top + product flow (vd "ban chay kho ho guom").
-    }
-    if (
-      !plan.toolCall?.args?.warehouseId &&
-      plan.action === 'CALL_TOOL' &&
-      (plan.toolCall?.toolName === 'query_stock_level' ||
-        plan.toolCall?.toolName === 'query_catalog' ||
-        plan.toolCall?.toolName === 'query_product_flow' ||
-        plan.toolCall?.toolName === 'query_sales_summary' ||
-        plan.toolCall?.toolName === 'query_sales_lines')
-    ) {
-      try {
-        const wh = await ExecutiveQueryService.resolveWarehouseFromText(question);
-        if (wh) {
-          plan.toolCall.args = { ...plan.toolCall.args, warehouseId: wh.warehouseId };
-          plan.reason = `Resolved warehouse ${wh.warehouseId}. ` + (plan.reason || '');
-        }
-      } catch (err) {
-        console.warn('[copilot] warehouse resolve failed:', err);
-      }
-    }
-    if (plan.action === 'CALL_TOOL' && plan.toolCall?.toolName === 'query_product_flow') {
-      const args = plan.toolCall.args || {};
-      if (!args.productId) {
+      if (!step.args.warehouseId && WAREHOUSE_TOOLS.has(step.toolName)) {
         try {
-          const hit = await ExecutiveQueryService.resolveProductFromText(args.q || question);
+          const wh = await ExecutiveQueryService.resolveWarehouseFromText(question);
+          if (wh) {
+            step.args.warehouseId = wh.warehouseId;
+            plan.reason = `Resolved warehouse ${wh.warehouseId}. ` + (plan.reason || '');
+          }
+        } catch (err) {
+          console.warn('[copilot] warehouse resolve failed:', err);
+        }
+      }
+      if (step.toolName === 'query_product_flow' && !step.args.productId) {
+        try {
+          const hit = await ExecutiveQueryService.resolveProductFromText(step.args.q || question);
           if (hit) {
-            plan.toolCall.args = { ...args, productId: hit.productId };
+            step.args.productId = hit.productId;
             plan.reason = `Resolved product ${hit.code || hit.productId} from question. ` + (plan.reason || '');
           }
         } catch (err) {
@@ -191,6 +211,9 @@ export class CopilotGuardrails {
 HÔM NAY (giờ Việt Nam): ${new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10)}. Câu hỏi nhắc ngày/tháng mà KHÔNG kèm năm thì lấy đúng năm này — tuyệt đối không bịa năm khác.
 
 Dựa trên câu hỏi của lãnh đạo, hãy phân tích xem cần gọi tool nào hay trả lời trực tiếp.
+CÂU HỎI NHIỀU Ý thì tách các lớp ra: mỗi ý 1 tool trong "steps" (action=CALL_MANY).
+VD hỏi "tồn kho cuốn X ở kho Y và doanh thu kho Y hôm nay?" → steps [query_stock_level, query_sales_summary].
+Chỉ dùng steps khi thật sự có nhiều ý độc lập; một ý thì CALL_TOOL như cũ.
 NEU CAU HOI NHAC 1 CUON SACH CU THE (ma nhu H01, hoac ten sach): nhat thiet goi
 query_stock_level voi args {"codeOrTitle": "<doan ma/ten sach trich nguyen van tu cau hoi>"}.
 KHONG tu suy doan editionId.
@@ -206,9 +229,10 @@ dat mua, xuat don, gop don, them vao gio): nhat thiet goi prepare_sale_draft voi
 args {"q": "<nguyen van cau hoi>"}. KHONG bao gio tu tao don hoan tat.
 Trả về JSON chuẩn khớp schema:
 {
-  "action": "CALL_TOOL" | "DIRECT_ANSWER" | "REFUSE_OUT_OF_SCOPE",
+  "action": "CALL_TOOL" | "DIRECT_ANSWER" | "REFUSE_OUT_OF_SCOPE" | "CALL_MANY",
   "toolCall": { "toolName": "...", "args": { ... } }, // nếu action là CALL_TOOL
-  "directAnswer": "...", // nếu action khác CALL_TOOL
+  "steps": [{ "toolName": "...", "args": { ... } }],   // nếu action là CALL_MANY
+  "directAnswer": "...", // nếu action khác CALL_TOOL/CALL_MANY
   "reason": "..."
 }`;
 
@@ -236,6 +260,38 @@ Trả về JSON chuẩn khớp schema:
         } catch {
           // Fallback to OpenAI if configured
         }
+      }
+
+      // Groq 120B cho PLANNER — nhanh, chi tich 1 JSON nho, thay Gemini khi 503.
+      if (process.env.GROQ_API_KEY) {
+        try {
+          const raw = await callGroqChatJsonRaw({
+            systemPrompt: plannerPrompt,
+            userText: question,
+            apiKey: process.env.GROQ_API_KEY,
+            timeoutMs: 8000,
+            onModel: (m: string) => {
+              if (tracker) tracker.planner = 'groq:' + m;
+            },
+          });
+          return parseLlmJson(raw, CopilotPlanSchema, 'CopilotGroqPlanner');
+        } catch {
+          // tiep tuc xuong CF
+        }
+      }
+
+      // Cloudflare Workers AI free — tầng cuối cho PLANNER. Không có nó, khi
+      // Gemini 503 thì mọi cau nhieu y rơi ve heuristic (chi tra 1 tool).
+      if (process.env.CF_API_TOKEN && process.env.CF_ACCOUNT_ID) {
+        const raw = await callCfWorkerAiJsonRaw({
+          systemPrompt: plannerPrompt,
+          userText: question,
+          timeoutMs: 12000,
+          onModel: (m) => {
+            if (tracker) tracker.planner = 'cf:' + m.replace(/^@cf\//, '');
+          },
+        });
+        return parseLlmJson(raw, CopilotPlanSchema, 'CopilotCfPlanner');
       }
 
       if (openaiKey) {

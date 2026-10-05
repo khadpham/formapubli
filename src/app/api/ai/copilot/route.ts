@@ -139,13 +139,26 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 6. Thực thi Tool
-    const toolCall = plan.toolCall!;
-    const toolResult = await CopilotGuardrails.executeToolSafely(
-      toolCall.toolName,
-      toolCall.args || {},
-      { staffId: sessionPayload.actorId, role: sessionPayload.role }
-    );
+    // 6. Thực thi Tool (1 bước, hoặc nhiều bước với CALL_MANY).
+    //    Mỗi bước đi qua executeToolSafely (RBAC + kiểm toán + guard riêng).
+    const steps =
+      plan.action === 'CALL_MANY' && Array.isArray(plan.steps) && plan.steps.length > 0
+        ? plan.steps.slice(0, 4)
+        : [{ toolName: plan.toolCall!.toolName, args: plan.toolCall?.args || {} }];
+    const results: Array<{ toolName: string; toolData: any }> = [];
+    for (const step of steps) {
+      const toolData = await CopilotGuardrails.executeToolSafely(
+        step.toolName,
+        step.args || {},
+        { staffId: sessionPayload.actorId, role: sessionPayload.role }
+      );
+      results.push({ toolName: step.toolName, toolData });
+    }
+    const multi = results.length > 1;
+    const toolCall = { toolName: multi ? results.map((r) => r.toolName).join(' + ') : results[0].toolName };
+    const toolResult = multi
+      ? Object.fromEntries(results.map((r) => [r.toolName, r.toolData]))
+      : results[0].toolData;
 
     // 7. Tổng hợp câu trả lời từ kết quả Tool — chuỗi dự phòng:
     // Gemini (model chọn/env) → Groq 120B → Groq 20B → OpenAI → formatter nội bộ.
@@ -160,37 +173,44 @@ export async function POST(req: NextRequest) {
       .map((m) => m.trim())
       .filter(Boolean);
 
-    if (geminiKey || openaiKey || groqKey) {
+    const cfReady = !!(process.env.CF_API_TOKEN && process.env.CF_ACCOUNT_ID);
+
+    if (geminiKey || openaiKey || groqKey || cfReady) {
       // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam
       // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
 Hôm nay (giờ Việt Nam): ${new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10)}.
-Hệ thống đã tra cứu dữ liệu thực tế từ công cụ [${toolCall.toolName}]:
+Hệ thống đã tra cứu dữ liệu thực tế từ ${multi ? 'NHIỀU công cụ (mỗi công cụ là 1 ý của câu hỏi)' : 'công cụ'} [${toolCall.toolName}]:
 ${JSON.stringify(toolResult, null, 2)}
 
-HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC:
-- Mọi con số PHẢI lấy chính xác từ dữ liệu trên, không tự tính toán thêm.
+CÂU HỎI CỦA SẾP: "${question.slice(0, 500)}"
+
+HÃY TRẢ LỜI NHƯ MỘT NGƯỜI TRỢ LÝ ĐIỀU HÀNH THẬT:
+- Tự nhiên, gọn, đi thẳng vào ý chính sếp hỏi. KHÔNG giáo điều, KHÔNG nhắc máy móc "theo công cụ...".
+- Mọi con số PHẢI lấy chính xác từ dữ liệu trên; không tự tính thêm ngoài dữ liệu.
+- Câu hỏi nhiều ý thì trình bày từng ý rõ ràng; thiếu số liệu cho 1 ý thì nói thẳng là thiếu.
 - Nếu là két tiền, TUYỆT ĐỐI không suy diễn thành gian lận hay buộc tội.
-- Trình bày dạng danh sách/bảng nếu có nhiều mục.
-- NEU DU LIEU CHI CO 1 DAU SACH (itemsCount=1): chi tra loi ve dung cuon do, lay so
-  availableStock va warehouseBreakdown. Neu itemsCount=0: bao khong tim thay, TUYET DOI
-  khong tu che so ton kho.
+- Trình bày danh sách/bảng khi có nhiều mục.
+- Nếu dữ liệu 1 đầu sách (itemsCount=1) chỉ trả đúng cuốn đó; itemsCount=0 báo không tìm thấy, TUYỆT ĐỐI không tự chế tồn kho.
 - CHI TRA VE duy nhat 1 object JSON: {"response": "<markdown tieng Viet tu nhien>"}.`;
 
       try {
         let raw = '';
-        const userText = `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`;
+        const userText = multi
+          ? `Câu hỏi của lãnh đạo (nhiều ý): "${question.slice(0, 500)}"\n\nTổng hợp từ các công cụ tương ứng, trình bày từng ý rõ ràng, ngôn ngữ tự nhiên.`
+          : `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`;
         // Model user ép chọn (picker) đi trước; 'local' thì bỏ qua hết LLM.
         // 'cf/...' = Cloudflare Workers AI (model free).
         const picked = modelOverride && modelOverride !== 'local' ? modelOverride : null;
         if (picked && picked.startsWith('cf/')) {
+          const cfModel = picked.slice(3); // 'cf/glm-4.7-flash' -> 'glm-4.7-flash'
           raw = await callCfWorkerAiJsonRaw({
             systemPrompt: synthPrompt,
             userText,
-            model: picked,
+            model: cfModel,
             timeoutMs: 15000,
           });
-          synthEngine = 'cf:' + picked.replace(/^@cf\//, '');
+          synthEngine = 'cf:' + cfModel;
         } else if (picked && picked.startsWith('groq/') && groqKey) {
           raw = await callGroqChatJsonRaw({
             systemPrompt: synthPrompt,

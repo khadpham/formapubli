@@ -100,7 +100,7 @@ export async function callCfWorkerAiJsonRaw(params: {
   const token = (process.env.CF_API_TOKEN || '').trim();
   const accountId = (process.env.CF_ACCOUNT_ID || '').trim();
   if (!token || !accountId) throw new LlmConfigError('Thiếu CF_API_TOKEN/CF_ACCOUNT_ID cho tầng Cloudflare Workers AI.');
-  const model = (params.model || '').trim() || 'glm-4.7-flash';
+  const model = (params.model || process.env.CF_CHAT_MODEL || '').trim() || 'glm-4.7-flash';
   // Chuẩn hoá: cho phép 'glm-4.7-flash' ngắn gọn hoặc full '@cf/zai-org/glm-4.7-flash'.
   const fullModel = model.startsWith('@cf/') ? model : `@cf/zai-org/${model}`;
   return withLlmCircuit('cf-workers-ai', async () => {
@@ -129,6 +129,7 @@ export async function callGroqChatJsonRaw(params: {
   apiKey?: string;
   model?: string;
   timeoutMs?: number;
+  onModel?: (model: string) => void;
 }): Promise<string> {
   const apiKey = params.apiKey ?? resolveGroqApiKey();
   const model = params.model ?? resolveGroqChatModel();
@@ -151,6 +152,7 @@ export async function callGroqChatJsonRaw(params: {
     )) as { choices?: Array<{ message?: { content?: string } }> };
     const rawJson = data.choices?.[0]?.message?.content;
     if (!rawJson) throw new Error('Empty Groq chat response');
+    params.onModel?.(model);
     return rawJson;
   });
 }
