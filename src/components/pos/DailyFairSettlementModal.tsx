@@ -139,6 +139,103 @@ const BAND_H = 68;
 const BAND_BASE_Y = 48;
 const BAND_PLOT_H = 30;
 
+/**
+ * Dải cột theo NGÀY cho bản in kỳ (SVG thuần rect/text — in không mất hình).
+ * Tái dùng hình học BAND của dải giờ; trục X là ngày DD/MM, đông ngày thì
+ * thưa nhãn và chỉ ghi số ở cột đỉnh.
+ */
+function DayBand({
+  days,
+  value,
+  color,
+  peakColor,
+  caption,
+  ariaLabel,
+  formatVal,
+}: {
+  days: Array<{ date: string; orders: number; sales: number }>;
+  value: 'orders' | 'sales';
+  color: string;
+  peakColor: string;
+  caption: string;
+  ariaLabel: string;
+  formatVal: (n: number) => string;
+}) {
+  const n = Math.max(1, days.length);
+  const slot = BAND_W / n;
+  const max = Math.max(1, ...days.map((d) => Number(d[value] || 0)));
+  const barH = (v: number) => (v > 0 ? Math.max(6, Math.round((v / max) * BAND_PLOT_H)) : 2);
+  const peakIdx = days.reduce((best, d, i) => (Number(d[value] || 0) > Number(days[best]?.[value] || 0) ? i : best), 0);
+  const labelStep = Math.max(1, Math.ceil(n / 12));
+  const showValues = n <= 31;
+  const labelOf = (iso: string) => {
+    const s = String(iso || '');
+    return s.length >= 10 ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : s;
+  };
+  return (
+    <div className="mt-2.5">
+      <p className="font-bold uppercase text-slate-800 text-[12px] mb-1">{caption}</p>
+      <svg viewBox={`0 0 ${BAND_W} ${BAND_H}`} className="w-full h-auto mt-1" fontFamily="monospace" role="img" aria-label={ariaLabel}>
+        <line x1="0" y1={BAND_BASE_Y} x2={BAND_W} y2={BAND_BASE_Y} stroke="#cbd5e1" strokeWidth="1" />
+        {days.map((d, i) => {
+          const v = Number(d[value] || 0);
+          const bh = barH(v);
+          const x = (i * slot + 4).toFixed(2);
+          const wRect = Math.max(4, slot - 8).toFixed(2);
+          return (
+            <rect
+              key={d.date}
+              x={x}
+              y={BAND_BASE_Y - bh}
+              width={wRect}
+              height={bh}
+              rx={v > 0 ? 3 : 1}
+              fill={v > 0 ? color : '#cbd5e1'}
+            />
+          );
+        })}
+        {days.map((d, i) => {
+          const v = Number(d[value] || 0);
+          if (v <= 0) return null;
+          if (!showValues && i !== peakIdx) return null;
+          const bh = barH(v);
+          const isPeak = i === peakIdx;
+          return (
+            <text
+              key={`val-${d.date}`}
+              x={(i * slot + slot / 2).toFixed(2)}
+              y={BAND_BASE_Y - bh - 4}
+              textAnchor="middle"
+              fontSize={isPeak ? '10.5' : '9.5'}
+              fontWeight={isPeak ? '900' : 'bold'}
+              fill={isPeak ? peakColor : '#334155'}
+            >
+              {formatVal(v)}
+            </text>
+          );
+        })}
+        {days.map((d, i) => {
+          const isEnd = i === days.length - 1;
+          if (i % labelStep !== 0 && i !== 0 && !isEnd) return null;
+          return (
+            <text
+              key={`ngay-${d.date}`}
+              x={(i * slot + slot / 2).toFixed(2)}
+              y={BAND_BASE_Y + 14}
+              textAnchor="middle"
+              fontSize="10"
+              fontWeight="500"
+              fill="#475569"
+            >
+              {labelOf(d.date)}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 /** Nhãn tiếng Việt của hình thức thanh toán — cùng cách chia 3 nhóm với service. */
 function paymentMethodLabel(method: string | null | undefined): string {
   const key = (method || 'CASH').toUpperCase();
@@ -499,6 +596,19 @@ export function DailyFairSettlementModal({
   // mới là ngày mà số tiền/số sách thuộc về. Lệch hai thứ này chính là lúc biên bản
   // bàn giao cho kế toán mang số tiện của ngày này dưới dấu ngày khác.
   const shownReportDate = data?.reportDate || selectedDate;
+  // Chế độ kỳ: tiêu đề/biên bản ghi rõ kỳ, không ghi ngày đơn.
+  const isRangeData = (data as any)?.mode === 'range';
+  const printStart = (data as any)?.reportStartDate || '';
+  const printEnd = (data as any)?.reportEndDate || '';
+  const periodPrintLabel = isRangeData ? `Kỳ: ${printStart} → ${printEnd}` : `Ngày kết toán: ${shownReportDate}`;
+  const bbCode = isRangeData && printStart && printEnd
+    ? `BB-${printStart.replace(/-/g, '')}-${printEnd.replace(/-/g, '')}`
+    : `BB-${String(shownReportDate || '').replace(/-/g, '')}`;
+  /** Nhãn ngày gọn cho dải kỳ trên bản in (YYYY-MM-DD → DD/MM). */
+  const ddmm = (iso: string) => {
+    const s = String(iso || '');
+    return s.length >= 10 ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : s;
+  };
   // Không có số đếm thực tế nữa (xem chú thích state ở trên) ⇒ không còn "chênh
   // lệch" để hiển thị. Giữ `totalTheoreticalBooks` vì bản in bàn giao vẫn cần tổng
   // tồn lý thuyết. Cố ý KHÔNG in 0 cho phần kiểm kê: số 0 là hẹn số bịa.
@@ -1474,11 +1584,15 @@ export function DailyFairSettlementModal({
                   Gian hàng / Địa điểm: <strong className="text-slate-800">{data.warehouse?.name}</strong> ({data.warehouse?.code})
                 </p>
                 <p className="text-[12px] text-slate-600">
-                  Ngày kết toán: <strong>{data.reportDate}</strong>
+                  {isRangeData ? (
+                    <>Kỳ kết toán: <strong>{printStart} → {printEnd}</strong></>
+                  ) : (
+                    <>Ngày kết toán: <strong>{data.reportDate}</strong></>
+                  )}
                 </p>
               </div>
               <div className="text-right text-[12px] text-slate-600">
-                <p className="font-bold text-slate-900 text-[12.5px]">BIÊN BẢN SỐ: BB-{data.reportDate.replace(/-/g, '')}</p>
+                <p className="font-bold text-slate-900 text-[12.5px]">BIÊN BẢN SỐ: {bbCode}</p>
                 <p className="text-[11.5px] text-slate-500 italic mt-1">
                   Lập lúc: {new Date().toLocaleTimeString('vi-VN')} ngày {new Date().toLocaleDateString('vi-VN')}
                 </p>
@@ -1488,7 +1602,7 @@ export function DailyFairSettlementModal({
             {/* Tiêu đề Báo Cáo & Biên Bản */}
             <div className="text-center my-3.5">
               <h1 className="font-sans font-bold text-[19px] tracking-wide uppercase text-slate-900">
-                BÁO CÁO DOANH THU & KẾT TOÁN NGÀY
+                {isRangeData ? 'BÁO CÁO DOANH THU & KẾT TOÁN KỲ' : 'BÁO CÁO DOANH THU & KẾT TOÁN NGÀY'}
               </h1>
               <p className="italic text-[12.5px] text-slate-600 mt-1">
                 (Biên bản bàn giao ca, đối soát két tiền và kiểm kê tồn kho)
@@ -1692,8 +1806,11 @@ export function DailyFairSettlementModal({
             {/* IV. TỒN SÁCH CUỐI NGÀY */}
             <div className="print-table-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)
+                {isRangeData ? 'IV. TỒN SÁCH HIỆN TẠI (ẤN PHẨM ĐÃ BÁN TRONG KỲ)' : 'IV. TỒN SÁCH CUỐI NGÀY (ẤN PHẨM ĐÃ BÁN)'}
               </h3>
+              {isRangeData && (data as any)?.stockNote && (
+                <p className="text-[11.5px] italic text-slate-600 mb-2">{(data as any).stockNote}</p>
+              )}
               <table className="w-full border-collapse border border-slate-300 text-[11.5px]">
                 <thead>
                   <tr className="bg-slate-100 font-semibold text-slate-800 text-center">
@@ -1816,7 +1933,15 @@ export function DailyFairSettlementModal({
                   )}
                 </div>
                 <div className="py-0.5">
-                  {peakHourOrders > 0 ? (
+                  {isRangeData ? (
+                    (data?.peakDay as any)?.orders > 0 ? (
+                      <span>
+                        - Ngày đỉnh kỳ: <strong className="font-mono text-slate-900">{ddmm((data?.peakDay as any).date)}</strong> (<strong>{(data?.peakDay as any).orders} đơn</strong> · <strong>{Number((data?.peakDay as any).sales || 0).toLocaleString('vi-VN')} đ</strong>)
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 italic">- Chưa ghi nhận ngày đỉnh kỳ.</span>
+                    )
+                  ) : peakHourOrders > 0 ? (
                     <span>
                       - Khung giờ cao điểm: <strong className="font-mono text-slate-900">{peakHourNumber}h</strong> (<strong>{peakHourOrders} đơn</strong> · <strong>{peakHourSales.toLocaleString('vi-VN')} đ</strong>)
                     </span>
@@ -1826,7 +1951,10 @@ export function DailyFairSettlementModal({
                 </div>
               </div>
 
-              {/* Dải giờ VN vẽ bằng SVG: viewBox 720x68 với BASE_Y=48 và PLOT_H=30 chống lẹm số */}
+              {/* Dải giờ VN vẽ bằng SVG: viewBox 720x68 với BASE_Y=48 và PLOT_H=30 chống lẹm số.
+                  Chỉ ở chế độ ngày — chế độ kỳ dùng dải theo ngày bên dưới. */}
+              {!isRangeData && (
+              <>
               <div className="mt-2.5">
                 <p className="font-bold uppercase text-slate-800 text-[12px] mb-1">
                   - Số đơn theo giờ ({hourWin.start}h–{hourEndShown}h, giờ Việt Nam):
@@ -1996,6 +2124,31 @@ export function DailyFairSettlementModal({
                   })}
                 </svg>
               </div>
+              </>
+              )}
+
+              {isRangeData && (
+              <>
+              <DayBand
+                days={(data?.days || []) as Array<{ date: string; orders: number; sales: number }>}
+                value="orders"
+                color="#4f46e5"
+                peakColor="#1e1b4b"
+                caption={`- Số đơn theo ngày (${printStart} → ${printEnd}):`}
+                ariaLabel={`Số đơn bán theo từng ngày từ ${printStart} đến ${printEnd}`}
+                formatVal={(n) => `${n}`}
+              />
+              <DayBand
+                days={(data?.days || []) as Array<{ date: string; orders: number; sales: number }>}
+                value="sales"
+                color="#059669"
+                peakColor="#064e3b"
+                caption={`- Doanh thu theo ngày (${printStart} → ${printEnd}):`}
+                ariaLabel={`Doanh thu theo từng ngày từ ${printStart} đến ${printEnd}`}
+                formatVal={(n) => bandMoneyShort(n)}
+              />
+              </>
+              )}
 
               {/* Top 10 Bán chạy */}
               <div className="mt-3">
