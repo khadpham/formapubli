@@ -172,6 +172,11 @@ async function run() {
     (guardMod.CopilotGuardrails as any).planQueryInner = origInner2;
   }
 
+  // --- 5. Workers AI: errors=[] KHÔNG được coi là lỗi ---
+  const llmSrc = readSrc('src/services/ai/llm-client.ts');
+  ok(/Array\.isArray\(errs\) && errs\.length > 0/.test(llmSrc),
+    'mảng errors rỗng phải được coi là KHÔNG lỗi ([] là truthy trong JS)');
+
   console.log(`=== COPILOT MULTISTEP: PASS — ${checks} assertions ===`);
   console.log(`cau hoi: ${question}`);
   console.log(`tool: ${body.data.toolUsed || 'n/a'} | engine: ${body.data.engine}`);

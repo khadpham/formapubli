@@ -139,7 +139,13 @@ export async function callCfWorkerAiJsonRaw(params: {
       params.timeoutMs ?? 25000,
       'CfWorkersAI'
     )) as { result?: { choices?: Array<{ message?: { content?: string } }> }; errors?: unknown };
-    if ((data as any)?.errors) throw new Error('Cloudflare Workers AI lỗi: ' + JSON.stringify((data as any).errors).slice(0, 200));
+    // Mảng rỗng `[]` là truthy trong JS — kiểm tra chiều dài, không kiểm tra
+    // sự tồn tại (đã dính: throw oan dù API trả 200, errors=[]).
+    const errs = (data as any)?.errors;
+    if (Array.isArray(errs) && errs.length > 0) {
+      throw new Error('Cloudflare Workers AI lỗi: ' + JSON.stringify(errs).slice(0, 200));
+    }
+    if (errs && !Array.isArray(errs)) throw new Error('Cloudflare Workers AI lỗi: ' + JSON.stringify(errs).slice(0, 200));
     const rawJson = data.result?.choices?.[0]?.message?.content;
     if (!rawJson) throw new Error('Empty Cloudflare Workers AI response');
     params.onModel?.(fullModel);

@@ -67,7 +67,7 @@ async function main() {
   ok('5. Không dính JSON thô', !ans.includes('{"') && !ans.includes('},'), ans.slice(0, 60));
   console.log(`   engine: ${a.body?.data?.engine} | tool: ${a.body?.data?.toolUsed}`);
 
-  const b = await ask('Tồn kho cuốn HH001 và doanh số hôm nay?', 'cf/glm-4.7-flash');
+  const b = await ask('Tồn kho cuốn HH001 và doanh số hôm nay?', 'cf/gpt-oss-120b');
   ok('6. Ép Cloudflare Workers AI → 200', b.status === 200, `status=${b.status}`);
   ok('7. Engine báo Cloudflare', /^cf:/.test(String(b.body?.data?.engine || '')), String(b.body?.data?.engine));
   ok('8. Câu nhiều ý vẫn có đáp', String(b.body?.data?.answer || '').length > 20);
