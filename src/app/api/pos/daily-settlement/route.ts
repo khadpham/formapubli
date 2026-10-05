@@ -65,6 +65,39 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Chế độ kỳ: ?start=YYYY-MM-DD&end=YYYY-MM-DD (gom ở server, 1 request) hoặc
+    // ?campaign=1 (suy kỳ chiến dịch từ đơn đầu→cuối). Không có cả hai ⇒ rơi
+    // về báo cáo ngày cũ bên dưới, giữ nguyên shape.
+    const start = searchParams.get('start') || undefined;
+    const end = searchParams.get('end') || undefined;
+    const campaign = searchParams.get('campaign') === '1';
+    if (start || end || campaign) {
+      if (!start || !end) {
+        if (!campaign) {
+          return NextResponse.json(
+            { success: false, code: 'BAD_RANGE', error: 'Báo cáo kỳ cần cả ngày bắt đầu và ngày kết thúc (YYYY-MM-DD).' },
+            { status: 400 }
+          );
+        }
+        const inferred = await DailySettlementService.inferCampaignRange(warehouseId);
+        if (!inferred) {
+          return NextResponse.json({ success: true, mode: 'range', empty: true as const, warehouseId });
+        }
+        const rangeData = await DailySettlementService.getSettlementRange({
+          warehouseId,
+          startDate: inferred.startDate,
+          endDate: inferred.endDate,
+        });
+        return NextResponse.json({ success: true, mode: 'range' as const, data: rangeData });
+      }
+      const rangeData = await DailySettlementService.getSettlementRange({
+        warehouseId,
+        startDate: start,
+        endDate: end,
+      });
+      return NextResponse.json({ success: true, mode: 'range' as const, data: rangeData });
+    }
+
     const data = await DailySettlementService.getDailyFairSettlement({
       warehouseId,
       date,

@@ -25,7 +25,19 @@ assert.equal(r.totals.discount, 50, 'chiết khấu 50');
 
 console.log('\n=== SETTLEMENT RANGE (runtime): PASS ===\n');
 
-// --- Phần DB (chỉ chạy trên DB cách ly; chạy lẻ thì bỏ qua) ---
+// --- Task 2 (plan kỳ): API chế độ kỳ (regex nguồn, không cần DB) ---
+import fs from 'node:fs';
+import path from 'node:path';
+const readSrc = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), 'utf8');
+let checks = 0;
+const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
+
+const settleRoute = readSrc('src/app/api/pos/daily-settlement/route.ts');
+ok(/mode: 'range'/.test(settleRoute), 'API trả mode range');
+ok(/inferCampaignRange/.test(settleRoute), 'API suy kỳ chiến dịch');
+ok(/campaign/.test(settleRoute), 'API có tham số campaign');
+ok(/\?date=/.test(settleRoute) || /searchParams\.get\('date'\)/.test(settleRoute), 'chế độ ngày cũ còn nguyên');
+console.log(`=== SETTLEMENT RANGE (Task 2 API): PASS — ${checks} assertions ===\n`);
 import { db } from '../src/db';
 import { DailySettlementService } from '../src/services/daily-settlement.service';
 
