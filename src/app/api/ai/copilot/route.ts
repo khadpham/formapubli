@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
     'gemini-3.5-flash-lite',
     'groq/gpt-oss-120b',
     'groq/gpt-oss-20b',
+    'cf/glm-4.7-flash',
     'local',
   ];
   const modelOverride =

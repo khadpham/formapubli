@@ -74,6 +74,15 @@ const WAREHOUSE_TOOLS = new Set([
   'query_sales_lines',
 ]);
 
+/** Tool duy trì ngày-tháng: executeToolSafely suy ngày từ `args.q` (câu hỏi gốc). */
+const DATE_TOOLS = new Set([
+  'query_sales_summary',
+  'query_stock_level',
+  'query_sales_lines',
+  'query_product_flow',
+  'query_cashbox_reconciliation',
+]);
+
 export class CopilotGuardrails {
   /**
    * Phân tích câu hỏi của lãnh đạo thành kế hoạch gọi Tool hoặc từ chối.
@@ -101,6 +110,13 @@ export class CopilotGuardrails {
           ? plan.steps.map((s) => ({ toolName: s.toolName, args: s.args || {} }))
           : [];
     for (const step of targets) {
+      // Luôn gắn câu hỏi gốc vào `q` cho tool ngày-tháng: executeToolSafely dùng
+      // `args.q` để SUY NGÀY từ chính câu lãnh đạo nói ("hôm nay", "hôm qua") và
+      // thắng lời LLM bịa năm. Không có `q` thì mọi câu hỏi về ngày rơi về
+      // windowDays mặc định (đã dính: "hôm nay" → báo số 30 ngày).
+      if (DATE_TOOLS.has(step.toolName) && typeof step.args.q !== 'string') {
+        step.args.q = question;
+      }
       if (!step.args.editionId) {
         try {
           const hit = await ExecutiveQueryService.resolveEditionFromText(question);

@@ -140,6 +140,38 @@ async function run() {
     (guardMod.CopilotGuardrails as any).planQueryInner = origInner;
   }
 
+  // --- 4. "hôm nay" phải ra date hôm nay, KHÔNG rơi về windowDays 30 ---
+  const { CopilotGuardrails: CG } = await import('../src/services/ai/copilot-guardrails');
+  const today = CG.parseVnDay('hôm nay');
+  ok(!!today, 'parseVnDay("hôm nay") phải ra ngày');
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(String(today)), 'parseVnDay trả YYYY-MM-DD');
+  const { ExecutiveQueryService: EQS } = await import('../src/services/executive-query.service');
+  let capturedArgs: any = null;
+  const origSales = (EQS as any).querySalesSummary;
+  (EQS as any).querySalesSummary = async (a: any) => { capturedArgs = a; return { itemsCount: 0 }; };
+  try {
+    await CG.executeToolSafely(
+      'query_sales_summary',
+      { q: 'doanh số hôm nay?' },
+      { staffId: 'ADMIN-01', role: 'ROLE_OWNER' }
+    );
+  } finally {
+    (EQS as any).querySalesSummary = origSales;
+  }
+  ok(capturedArgs?.date === today, `server phải tự suy date hôm nay (${today}), nhận ${capturedArgs?.date}`);
+
+  // Wrapper phải gắn q cho bước đa ý — không có q thì mất ngày.
+  const plan2: any = { action: 'CALL_MANY', steps: [{ toolName: 'query_sales_summary', args: {} }] };
+  const origInner2 = (guardMod.CopilotGuardrails as any).planQueryInner;
+  (guardMod.CopilotGuardrails as any).planQueryInner = async () => plan2;
+  try {
+    const out2 = await (guardMod.CopilotGuardrails as any).planQuery('doanh số hôm nay?');
+    ok(out2.steps?.[0]?.args?.q === 'doanh số hôm nay?',
+      'wrapper phải gắn câu hỏi gốc vào args.q để suy ngày');
+  } finally {
+    (guardMod.CopilotGuardrails as any).planQueryInner = origInner2;
+  }
+
   console.log(`=== COPILOT MULTISTEP: PASS — ${checks} assertions ===`);
   console.log(`cau hoi: ${question}`);
   console.log(`tool: ${body.data.toolUsed || 'n/a'} | engine: ${body.data.engine}`);
