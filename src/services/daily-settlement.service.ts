@@ -42,6 +42,316 @@ function vnDayEquals(col: any, vnDay: string) {
   return sql`substr(datetime(${col}, '+7 hours'), 1, 10) = ${vnDay}`;
 }
 
+/** Ngày VN 'YYYY-MM-DD' của một timestamp DB (cả hai họ cũ/mới). */
+function vnDayOf(value: string | Date | null | undefined): string | null {
+  const d = parseDbTimestamp(value);
+  if (!d) return null;
+  return businessDateOf(d);
+}
+
+/** Mốc +N ngày từ 'YYYY-MM-DD' (UTC thuần, không DST). */
+function shiftDay(key: string, delta: number): string {
+  const t = Date.parse(`${key}T00:00:00Z`);
+  return new Date(t + delta * 86_400_000).toISOString().slice(0, 10);
+}
+
+export interface RangeDayBucket {
+  date: string;
+  orders: number;
+  sales: number;
+}
+
+export interface RangeMoney {
+  gross: number;
+  discount: number;
+  net: number;
+  cash: { sales: number; ordersCount: number };
+  qr: { sales: number; ordersCount: number };
+  card: { sales: number; ordersCount: number };
+}
+
+/**
+ * Cộng tiền theo đúng MỘT định nghĩa cho báo cáo ngày lẫn kỳ (SSOT).
+ * Phân loại method y hệt khối §3 báo cáo ngày — sửa ở đây là cả hai cùng đổi.
+ */
+export function sumMoneyOrders(ords: Array<any>): RangeMoney {
+  const out: RangeMoney = {
+    gross: 0, discount: 0, net: 0,
+    cash: { sales: 0, ordersCount: 0 },
+    qr: { sales: 0, ordersCount: 0 },
+    card: { sales: 0, ordersCount: 0 },
+  };
+  for (const ord of ords) {
+    out.gross += ord.subtotal || 0;
+    out.discount += ord.discountAmount || 0;
+    out.net += ord.finalAmount || 0;
+    const method = (ord.paymentMethod || 'CASH').toUpperCase();
+    if (method === 'CASH') {
+      out.cash.sales += ord.finalAmount || 0;
+      out.cash.ordersCount++;
+    } else if (method === 'BANK_TRANSFER' || method === 'QR_CODE' || method === 'TRANSFER') {
+      out.qr.sales += ord.finalAmount || 0;
+      out.qr.ordersCount++;
+    } else {
+      out.card.sales += ord.finalAmount || 0;
+      out.card.ordersCount++;
+    }
+  }
+  return out;
+}
+
+/**
+ * Gom đơn COMPLETED theo ngày VN trong [startDate, endDate] — lõi thuần túy
+ * của báo cáo kỳ (test được không cần DB).
+ */
+export function aggregateRangeOrders(
+  ords: Array<any>,
+  startDate: string,
+  endDate: string
+): { days: RangeDayBucket[]; totals: { orders: number; gross: number; discount: number; net: number }; cash: RangeMoney['cash']; qr: RangeMoney['qr']; card: RangeMoney['card'] } {
+  const days: RangeDayBucket[] = [];
+  const byDay = new Map<string, RangeDayBucket>();
+  for (let d = startDate; ; d = shiftDay(d, 1)) {
+    const b = { date: d, orders: 0, sales: 0 };
+    days.push(b);
+    byDay.set(d, b);
+    if (d >= endDate) break;
+  }
+  for (const ord of ords) {
+    const day = vnDayOf(ord?.createdAt);
+    const b = day ? byDay.get(day) : undefined;
+    if (!b) continue;
+    b.orders += 1;
+    b.sales += ord.finalAmount || 0;
+  }
+  const money = sumMoneyOrders(ords);
+  return {
+    days,
+    totals: { orders: ords.length, gross: money.gross, discount: money.discount, net: money.net },
+    cash: money.cash,
+    qr: money.qr,
+    card: money.card,
+  };
+}
+
+/**
+ * Cộng tiền chờ chuyển khoản (MỘT định nghĩa cho ngày lẫn kỳ): đúng method
+ * chuyển khoản + chưa hết hạn giữ chỗ. Hết hạn vẫn nằm DB dạng PENDING nên
+ * phải loại, nếu không thổi phồng tiền chờ.
+ */
+export function sumPendingQr(pendingRows: Array<any>): { total: number; ordersCount: number } {
+  let total = 0;
+  let ordersCount = 0;
+  for (const r of pendingRows) {
+    const method = (r.paymentMethod || '').toUpperCase();
+    // DANH SÁCH METHOD PHẢI KHỚP với `sumMoneyOrders` (dòng ~143).
+    // Lần đầu viết sai (`QR_TRANSFER`/`COUNTER_TRANSFER` — không hề tồn tại
+    // trong hệ thống) làm `pendingQr` LUÔN = 0 mà test vẫn xanh vì test
+    // dùng cùng giá trị sai. Giá trị thật: CASH | BANK_TRANSFER | QR_CODE.
+    if (method !== 'BANK_TRANSFER' && method !== 'QR_CODE' && method !== 'TRANSFER') continue;
+    if (OrderService.isPendingExpired(r)) continue;
+    total += r.finalAmount || 0;
+    ordersCount++;
+  }
+  return { total, ordersCount: ordersCount };
+}
+
+/**
+ * Gom dòng hàng thành top bán chạy + quà + tồn đã bán (MỘT định nghĩa cho ngày
+ * lẫn kỳ). Khóa theo `product_id` (NOT NULL) — `edition_id` NULL với hàng hóa,
+ * gom nhầm mọi món hàng hóa thành một dòng.
+ */
+export function aggregateSellerLines(lineItems: Array<any>): {
+  topSellers: Array<any>;
+  giftSummary: { totalGiftCopies: number; items: Array<{ productId: string; code: string; title: string; copies: number }> };
+  soldQtyAll: Map<string, number>;
+} {
+  const sellerAgg = new Map<string, any>();
+  const giftAgg = new Map<string, any>();
+  const soldQtyAll = new Map<string, number>();
+  let totalGiftCopies = 0;
+
+  for (const item of lineItems) {
+    const key = item.productId;
+    const title = item.editionTitle || item.workTitle || item.productName || item.editionCode || item.productCode || 'Ấn phẩm';
+
+    // 1. Luồng đối soát tồn kho (theoreticalStock): tính toàn bộ số lượng xuất/tặng
+    // để tồn kho thực tế trong thùng giảm chính xác.
+    soldQtyAll.set(key, (soldQtyAll.get(key) || 0) + item.quantity);
+
+    // 2. Phân loại quà tặng kèm: dòng có cờ isGiftLine, hoặc đơn giá/thành tiền = 0
+    const isGift = Boolean(item.isGiftLine) || Number(item.totalAmount || 0) <= 0 || Number(item.unitSellingPrice || 0) <= 0;
+    if (isGift) {
+      totalGiftCopies += item.quantity;
+      if (!giftAgg.has(key)) {
+        giftAgg.set(key, {
+          productId: key,
+          code: item.editionCode || item.productCode || '',
+          title,
+          copies: 0,
+        });
+      }
+      giftAgg.get(key).copies += item.quantity;
+      continue; // Quà tặng TUYỆT ĐỐI KHÔNG được tính vào Top bán chạy!
+    }
+
+    // 3. Luồng Top ấn phẩm/hàng hóa bán chạy thực tế:
+    if (!sellerAgg.has(key)) {
+      sellerAgg.set(key, {
+        editionId: key,
+        code: item.editionCode || item.productCode,
+        title,
+        coverPrice: item.coverPrice ?? item.productPrice,
+        productKind: item.productKind,
+        soldCopies: 0,
+        soldRevenue: 0,
+      });
+    }
+    const record = sellerAgg.get(key);
+    record.soldCopies += item.quantity;
+    record.soldRevenue += item.totalAmount;
+  }
+
+  // Lượng bán theo ấn bản TRÊN TOÀN BỘ đơn — KHÔNG slice ở đây: caller tự slice
+  // khi hiển thị. Trước đây `soldMap` dựng lại từ `topSellers` đã `.slice(0,10)`
+  // ⇒ mọi ấn bản ngoài top 10 hiện `soldToday = 0` trong bảng đối soát tồn.
+  return {
+    topSellers: Array.from(sellerAgg.values())
+      .sort((a, b) => b.soldCopies - a.soldCopies || b.soldRevenue - a.soldRevenue)
+      .slice(0, 10),
+    giftSummary: {
+      totalGiftCopies,
+      items: Array.from(giftAgg.values()).sort((a, b) => b.copies - a.copies),
+    },
+    soldQtyAll,
+  };
+}
+
+/**
+ * Đối chiếu đơn vượt trần CK với yêu cầu phê duyệt (MỘT định nghĩa cho ngày
+ * lẫn kỳ). Đường nối chân lý là `discount_approval_id`; fallback `order_code`
+ * cho dữ liệu cũ. `dateCond` là điều kiện ngày của yêu cầu (ngày D hoặc kỳ).
+ */
+export async function enrichOverCapOrders(
+  txOrDb: any,
+  warehouseId: string,
+  ords: Array<any>,
+  dateCond: any
+): Promise<Array<any>> {
+  const overCapOrders = ords.filter((ord: any) => (ord.discountRate || 0) >= 0.2);
+  const linkedApprovalIds: string[] = Array.from(
+    new Set<string>(
+      (ords as any[])
+        .map((o: any) => o?.discountApprovalId)
+        .filter((v: any): v is string => typeof v === 'string' && v.length > 0)
+    )
+  );
+
+  const approvalRows = await txOrDb
+    .select()
+    .from(discountApprovalRequests)
+    .where(
+      and(
+        eq(discountApprovalRequests.warehouseId, warehouseId),
+        linkedApprovalIds.length > 0
+          ? or(
+              dateCond,
+              sql`${discountApprovalRequests.id} IN (${sql.join(
+                linkedApprovalIds.map((id: string) => sql`${id}`),
+                sql`, `
+              )})`
+            )
+          : dateCond
+      )
+    );
+
+  const approvalById = new Map<string, any>();
+  const approvalByOrderCode = new Map<string, any>();
+  for (const appr of approvalRows as any[]) {
+    approvalById.set(appr.id, appr);
+    if (!approvalByOrderCode.has(appr.orderCode)) approvalByOrderCode.set(appr.orderCode, appr);
+  }
+
+  const isUsableApproval = (a: any) =>
+    !!a && (a.status === 'APPROVED' || a.status === 'CONSUMED');
+
+  return overCapOrders.map((ord: any) => {
+    const byId = ord?.discountApprovalId ? approvalById.get(ord.discountApprovalId) : undefined;
+    const matched = isUsableApproval(byId)
+      ? byId
+      : (() => {
+          const fb = approvalByOrderCode.get(ord.orderCode);
+          return isUsableApproval(fb) ? fb : undefined;
+        })();
+    return {
+      id: ord.id,
+      orderCode: ord.orderCode,
+      cashierId: ord.cashierId,
+      subtotal: ord.subtotal,
+      discountRate: ord.discountRate,
+      discountAmount: ord.discountAmount,
+      finalAmount: ord.finalAmount,
+      createdAt: ord.createdAt,
+      approvalMethod: matched?.approvalMethod || 'DIRECT_OVERRIDE',
+      approvedBy: matched?.approvedBy || 'Quản lý quầy',
+    };
+  });
+}
+
+/**
+ * Đối soát tồn hiện tại của kho + số đã bán (MỘT định nghĩa cho ngày lẫn kỳ).
+ * Khóa theo `product_id` (`edition_id` NULL với hàng hóa).
+ */
+export async function readInventoryReconciliation(
+  txOrDb: any,
+  warehouseId: string,
+  soldQtyAll: Map<string, number>
+): Promise<Array<any>> {
+  const balances = await txOrDb
+    .select({
+      editionId: stockBalances.editionId,
+      productId: stockBalances.productId,
+      physicalQuantity: stockBalances.physicalQuantity,
+      code: editions.code,
+      isbn: editions.isbn,
+      title: editions.title,
+      workTitle: works.title,
+      coverPrice: editions.coverPrice,
+      productCode: products.code,
+      productName: products.name,
+      productPrice: products.sellingPrice,
+      productKind: products.productKind,
+    })
+    .from(stockBalances)
+    .leftJoin(editions, eq(stockBalances.editionId, editions.id))
+    .leftJoin(products, eq(stockBalances.productId, products.id))
+    .leftJoin(works, eq(editions.workId, works.id))
+    .where(
+      and(
+        eq(stockBalances.warehouseId, warehouseId),
+        eq(stockBalances.condition, 'NEW')
+      )
+    );
+
+  return balances
+    .filter((b: any) => b.physicalQuantity > 0 || soldQtyAll.has(b.productId))
+    .map((b: any) => {
+      const soldQty = soldQtyAll.get(b.productId) || 0;
+      const currentStock = b.physicalQuantity;
+      return {
+        editionId: b.productId,
+        code: b.code || b.productCode,
+        isbn: b.isbn,
+        title: b.title || b.workTitle || b.productName || b.code || b.productCode,
+        coverPrice: b.coverPrice ?? b.productPrice,
+        productKind: b.productKind,
+        soldToday: soldQty,
+        theoreticalStock: currentStock,
+      };
+    })
+    .sort((a: any, b: any) => b.soldToday - a.soldToday);
+}
+
 export interface DailySettlementFilter {
   date?: string; // YYYY-MM-DD
   warehouseId: string;
@@ -111,148 +421,35 @@ export class DailySettlementService {
       .from(orders)
       .where(and(...pendingConditions));
 
-    let pendingQrTotal = 0;
-    let pendingQrCount = 0;
-    for (const r of pendingRows) {
-      const method = (r.paymentMethod || '').toUpperCase();
-      // DANH SÁCH METHOD PHẢI KHỚP với khối phân loại ở trên (dòng ~143).
-      // Lần đầu viết sai (`QR_TRANSFER`/`COUNTER_TRANSFER` — không hề tồn tại
-      // trong hệ thống) làm `pendingQr` LUÔN = 0 mà test vẫn xanh vì test
-      // dùng cùng giá trị sai. Giá trị thật: CASH | BANK_TRANSFER | QR_CODE.
-      if (method !== 'BANK_TRANSFER' && method !== 'QR_CODE' && method !== 'TRANSFER') continue;
-      if (OrderService.isPendingExpired(r)) continue;
-      pendingQrTotal += r.finalAmount || 0;
-      pendingQrCount++;
-    }
+    const { total: pendingQrTotal, ordersCount: pendingQrCount } = sumPendingQr(pendingRows);
 
-    // 3. Tính toán số liệu tài chính & cơ cấu thanh toán
-    let grossSales = 0;
-    let totalDiscount = 0;
-    let netSales = 0;
+    // 3. Tính toán số liệu tài chính & cơ cấu thanh toán — qua `sumMoneyOrders`
+    // (MỘT định nghĩa cho cả báo cáo ngày lẫn kỳ).
+    const money = sumMoneyOrders(dayOrders as any[]);
+    let grossSales = money.gross;
+    let totalDiscount = money.discount;
+    let netSales = money.net;
 
-    let cashSales = 0;
-    let cashOrdersCount = 0;
+    let cashSales = money.cash.sales;
+    let cashOrdersCount = money.cash.ordersCount;
 
-    let qrTransferSales = 0;
-    let qrTransferOrdersCount = 0;
+    let qrTransferSales = money.qr.sales;
+    let qrTransferOrdersCount = money.qr.ordersCount;
 
-    let cardSales = 0;
-    let cardOrdersCount = 0;
-
-    for (const ord of dayOrders) {
-      grossSales += ord.subtotal || 0;
-      totalDiscount += ord.discountAmount || 0;
-      netSales += ord.finalAmount || 0;
-
-      const method = (ord.paymentMethod || 'CASH').toUpperCase();
-      if (method === 'CASH') {
-        cashSales += ord.finalAmount || 0;
-        cashOrdersCount++;
-      } else if (method === 'BANK_TRANSFER' || method === 'QR_CODE' || method === 'TRANSFER') {
-        qrTransferSales += ord.finalAmount || 0;
-        qrTransferOrdersCount++;
-      } else {
-        cardSales += ord.finalAmount || 0;
-        cardOrdersCount++;
-      }
-    }
+    let cardSales = money.card.sales;
+    let cardOrdersCount = money.card.ordersCount;
 
     const averageDiscountRate = grossSales > 0 ? totalDiscount / grossSales : 0;
     const isDiscountRateWarning = averageDiscountRate > 0.20; // Cảnh báo nếu CK bình quân > 20%
 
-    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%)
-    const overCapOrders = dayOrders.filter((ord: any) => (ord.discountRate || 0) >= 0.2);
-
-    // Bổ sung thông tin phê duyệt từ discount_approval_requests nếu có.
-    //
-    // VÌ SAO KHÔNG NỐI BẰNG `order_code`:
-    // `discount_approval_requests.order_code` là mã MÁY THU NGÂN tự sinh lúc
-    // xin duyệt (`ORD-20261002-BFC3DCBC00CB7738`), còn `orders.order_code` là mã
-    // SERVER cấp (`ORD261002000T`). Hai hệ sinh mã khác nhau ⇒ hai chuỗi này
-    // không bao giờ bằng nhau. Trước đây tra `approvalMap.get(ord.orderCode)`
-    // nên LUÔN ra `undefined` ⇒ mọi đơn vượt trần 20% bị gắn nhãn
-    // `DIRECT_OVERRIDE` / "Quản lý quầy" dù đã qua quy trình xin duyệt thật
-    // (đo production: 3 đơn ≥20%, 0 khớp) — sai sự thật trên giấy tờ đối soát.
-    // Đường nối CHÂN LÝ là `orders.discount_approval_id` = id yêu cầu phê duyệt
-    // (migration 0033, cột nullable ⇒ đọc `(ord as any).discountApprovalId` để
-    // chạy được cả với DB cũ chưa có cột).
-    //
-    // Phạm vi truy vấn: lấy yêu cầu PHÊ DUYỆT trong ngày D **cộng** các yêu cầu
-    // mà đơn trong ngày D thực sự trỏ tới (qua `discount_approval_id`). Không có
-    // vế sau thì một yêu cầu lúc 23:50 hôm trước sinh ra đơn lúc 00:10 hôm sau
-    // sẽ rơi ngoài bộ lọc ngày và đơn hợp lệ lại bị gắn nhãn "quản lý tự áp".
-    const linkedApprovalIds: string[] = Array.from(
-      new Set<string>(
-        (dayOrders as any[])
-          .map((o: any) => o?.discountApprovalId)
-          .filter((v: any): v is string => typeof v === 'string' && v.length > 0)
-      )
+    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%) — qua helper
+    // dùng chung với báo cáo kỳ.
+    const enrichedOverCapOrders = await enrichOverCapOrders(
+      txOrDb,
+      warehouseId,
+      dayOrders as any[],
+      vnDayEquals(discountApprovalRequests.createdAt, targetDate)
     );
-
-    const approvalRows = await txOrDb
-      .select()
-      .from(discountApprovalRequests)
-      .where(
-        and(
-          eq(discountApprovalRequests.warehouseId, warehouseId),
-          linkedApprovalIds.length > 0
-            ? or(
-                vnDayEquals(discountApprovalRequests.createdAt, targetDate),
-                sql`${discountApprovalRequests.id} IN (${sql.join(
-                  linkedApprovalIds.map((id: string) => sql`${id}`),
-                  sql`, `
-                )})`
-              )
-            : vnDayEquals(discountApprovalRequests.createdAt, targetDate)
-        )
-      );
-
-    // Ưu tiên `discount_approval_id`; GIỮ fallback theo `order_code` cho đơn tạo
-    // trước khi có cột (dữ liệu cũ vẫn phải ra con số đúng nếu tình cờ trùng).
-    // Ưu tiên đúng phải THẮNG khi cả hai cùng tồn tại.
-    const approvalById = new Map<string, any>();
-    const approvalByOrderCode = new Map<string, any>();
-    for (const appr of approvalRows as any[]) {
-      approvalById.set(appr.id, appr);
-      if (!approvalByOrderCode.has(appr.orderCode)) approvalByOrderCode.set(appr.orderCode, appr);
-    }
-
-    // Chỉ yêu cầu ĐÃ ĐƯỢC DUYỆT mới là nguồn của chiết khấu trên đơn. Yêu cầu
-    // `PENDING`/`REJECTED`/`EXPIRED` gắn `approvalMethod`/`approved_by` vào đơn
-    // là gán sai (đơn đó không được duyệt với mức đó) — bỏ qua, để dòng rơi về
-    // nhánh không-xác-định bên dưới.
-    const isUsableApproval = (a: any) =>
-      !!a && (a.status === 'APPROVED' || a.status === 'CONSUMED');
-
-    const enrichedOverCapOrders = overCapOrders.map((ord: any) => {
-      // Ưu tiên đúng THẮNG: chỉ chuyển sang fallback `order_code` khi nối chính
-      // (`discount_approval_id`) không cho ra yêu cầu đã duyệt nào.
-      const byId = ord?.discountApprovalId ? approvalById.get(ord.discountApprovalId) : undefined;
-      const matched = isUsableApproval(byId)
-        ? byId
-        : (() => {
-            const fb = approvalByOrderCode.get(ord.orderCode);
-            return isUsableApproval(fb) ? fb : undefined;
-          })();
-      return {
-        id: ord.id,
-        orderCode: ord.orderCode,
-        cashierId: ord.cashierId,
-        subtotal: ord.subtotal,
-        discountRate: ord.discountRate,
-        discountAmount: ord.discountAmount,
-        finalAmount: ord.finalAmount,
-        createdAt: ord.createdAt,
-        // KHÔNG tìm thấy phê duyệt nào đi kèm đơn ⇒ KHÔNG đủ căn cứ để nói đơn đó
-        // do quản lý tự áp tại quầy: `isManagerOverride` chỉ tồn tại ở state React
-        // của POS (`PosCheckoutTerminal.tsx`), không được ghi xuống bảng `orders`,
-        // và `approval_method` của yêu cầu cũng không có giá trị `DIRECT_OVERRIDE`.
-        // Vì vậy GIỮ NGUYÊN nhãn cũ cho tới khi có cột phân biệt; đổi nhãn ở đây
-        // là bịa dữ liệu.
-        approvalMethod: matched?.approvalMethod || 'DIRECT_OVERRIDE',
-        approvedBy: matched?.approvedBy || 'Quản lý quầy',
-      };
-    });
 
     // 5. Đối soát ca két tiền (Cashbox Sessions)
     //
@@ -382,61 +579,10 @@ export class DailySettlementService {
         .leftJoin(works, eq(editions.workId, works.id))
         .where(sql`${orderItems.orderId} IN (${sql.join(orderIds.map((id: string) => sql`${id}`), sql`, `)})`);
 
-      const sellerAgg = new Map<string, any>();
-      const giftAgg = new Map<string, any>();
-      let totalGiftCopies = 0;
-
-      for (const item of lineItems) {
-        // Khóa theo `product_id` (NOT NULL) — `edition_id` NULL với hàng hóa,
-        // gom nhầm mọi món hàng hóa thành một dòng.
-        const key = item.productId;
-        const title = item.editionTitle || item.workTitle || item.productName || item.editionCode || item.productCode || 'Ấn phẩm';
-        
-        // 1. Luồng đối soát tồn kho (theoreticalStock): tính toàn bộ số lượng xuất/tặng
-        // để tồn kho thực tế trong thùng giảm chính xác.
-        soldQtyAll.set(key, (soldQtyAll.get(key) || 0) + item.quantity);
-
-        // 2. Phân loại quà tặng kèm: dòng có cờ isGiftLine, hoặc đơn giá/thành tiền = 0
-        const isGift = Boolean(item.isGiftLine) || Number(item.totalAmount || 0) <= 0 || Number(item.unitSellingPrice || 0) <= 0;
-        if (isGift) {
-          totalGiftCopies += item.quantity;
-          if (!giftAgg.has(key)) {
-            giftAgg.set(key, {
-              productId: key,
-              code: item.editionCode || item.productCode || '',
-              title,
-              copies: 0,
-            });
-          }
-          giftAgg.get(key).copies += item.quantity;
-          continue; // Quà tặng TUYỆT ĐỐI KHÔNG được tính vào Top bán chạy!
-        }
-
-        // 3. Luồng Top ấn phẩm/hàng hóa bán chạy thực tế:
-        if (!sellerAgg.has(key)) {
-          sellerAgg.set(key, {
-            editionId: key,
-            code: item.editionCode || item.productCode,
-            title,
-            coverPrice: item.coverPrice ?? item.productPrice,
-            productKind: item.productKind,
-            soldCopies: 0,
-            soldRevenue: 0,
-          });
-        }
-        const record = sellerAgg.get(key);
-        record.soldCopies += item.quantity;
-        record.soldRevenue += item.totalAmount;
-      }
-
-      topSellers = Array.from(sellerAgg.values())
-        .sort((a, b) => b.soldCopies - a.soldCopies || b.soldRevenue - a.soldRevenue)
-        .slice(0, 10);
-
-      giftSummary = {
-        totalGiftCopies,
-        items: Array.from(giftAgg.values()).sort((a, b) => b.copies - a.copies),
-      };
+      const agg = aggregateSellerLines(lineItems as any[]);
+      topSellers = agg.topSellers;
+      giftSummary = agg.giftSummary;
+      agg.soldQtyAll.forEach((v, k) => soldQtyAll.set(k, v));
     }
 
     // 6b. Đơn giá trị cao nhất trong ngày — thẻ "Đơn Giá Trị Cao Nhất" trên màn
@@ -516,57 +662,11 @@ export class DailySettlementService {
       { hour: 0, orders: 0, sales: 0 }
     );
 
-    // 7. Đối soát tồn sách hội chợ (Stock Reconciliation)
-    const balances = await txOrDb
-      .select({
-        editionId: stockBalances.editionId,
-        productId: stockBalances.productId,
-        physicalQuantity: stockBalances.physicalQuantity,
-        code: editions.code,
-        isbn: editions.isbn,
-        title: editions.title,
-        workTitle: works.title,
-        coverPrice: editions.coverPrice,
-        // Hàng hóa: đọc từ `products` (xem giải thích ở mục 6).
-        productCode: products.code,
-        productName: products.name,
-        productPrice: products.sellingPrice,
-        productKind: products.productKind,
-      })
-      .from(stockBalances)
-      .leftJoin(editions, eq(stockBalances.editionId, editions.id))
-      .leftJoin(products, eq(stockBalances.productId, products.id))
-      .leftJoin(works, eq(editions.workId, works.id))
-      .where(
-        and(
-          eq(stockBalances.warehouseId, warehouseId),
-          eq(stockBalances.condition, 'NEW')
-        )
-      );
-
+    // 7. Đối soát tồn sách hội chợ (Stock Reconciliation) — qua helper dùng
+    // chung với báo cáo kỳ (tồn HIỆN TẠI + số đã bán trong kỳ).
     const soldMap = soldQtyAll;
 
-    const inventoryReconciliation = balances
-      // Khóa theo `product_id` — `edition_id` NULL với hàng hóa.
-      .filter((b: any) => b.physicalQuantity > 0 || soldMap.has(b.productId))
-      .map((b: any) => {
-        const soldQty = soldMap.get(b.productId) || 0;
-        const currentStock = b.physicalQuantity;
-        return {
-          // Giữ tên trường `editionId` cho contract cũ, nhưng giá trị là
-          // `product_id` (sách: hai cái bằng nhau; hàng hóa: chỉ product có).
-          // Điều này còn sửa luôn React key trùng nhau của 4 dòng SP-00x.
-          editionId: b.productId,
-          code: b.code || b.productCode,
-          isbn: b.isbn,
-          title: b.title || b.workTitle || b.productName || b.code || b.productCode,
-          coverPrice: b.coverPrice ?? b.productPrice,
-          productKind: b.productKind,
-          soldToday: soldQty,
-          theoreticalStock: currentStock,
-        };
-      })
-      .sort((a: any, b: any) => b.soldToday - a.soldToday);
+    const inventoryReconciliation = await readInventoryReconciliation(txOrDb, warehouseId, soldMap);
 
     return {
       reportDate: targetDate,
