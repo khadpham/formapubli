@@ -23,6 +23,10 @@ export interface StockLevelItem {
 export interface QuerySalesParams {
   windowDays?: number;
   fiscalScope?: 'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+  /** 1 ngày VN 'YYYY-MM-DD' (vd "ngày 4/10 ở kho..."): thay windowDays. */
+  date?: string;
+  /** Loc 1 kho (vd "kho hồ gươm"). Khong truyen = toan he thong. */
+  warehouseId?: string;
 }
 
 export interface QueryForecastParams {
@@ -809,8 +813,10 @@ export class ExecutiveQueryService {
   static async querySalesSummary(params: QuerySalesParams = {}): Promise<{
     windowDays: number;
     fiscalScope: 'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+    scopeLabel: string;
     totalOrders: number;
     totalRevenue: number;
+    totalQty: number;
     totalDiscount: number;
     officialTax: { ordersCount: number; revenue: number };
     internalManagement: { ordersCount: number; revenue: number };
@@ -818,10 +824,19 @@ export class ExecutiveQueryService {
   }> {
     const windowDays = clampInt(params.windowDays, 30, 1, 365);
     const fiscalScope = params.fiscalScope ?? 'ALL';
+    // 1 ngày cụ thể ("ngày 4/10", "hôm qua"): start=end=ngày đó, thay windowDays.
+    const singleDay = typeof params.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(params.date)
+      ? params.date
+      : undefined;
+    const warehouseId = typeof params.warehouseId === 'string' && params.warehouseId.trim()
+      ? params.warehouseId.trim()
+      : undefined;
 
-    const cutoff = new Date(Date.now() - windowDays * 24 * 3600 * 1000).toISOString();
+    const cutoff = singleDay || new Date(Date.now() - windowDays * 24 * 3600 * 1000).toISOString();
     const summary = await OrderService.getSalesSummary({
       startDate: cutoff,
+      ...(singleDay ? { endDate: singleDay } : {}),
+      ...(warehouseId ? { warehouseId } : {}),
     });
 
     // Chi tiet kenh ban. Phai dung DUNG bo loc cua OrderService.getSalesSummary
@@ -834,9 +849,10 @@ export class ExecutiveQueryService {
       // Dùng CHUNG helper ngày với getSalesSummary (chuẩn hoá qua datetime())
       // thay vì so chuỗi thô — nếu không, breakdown lệch tổng summary khi cột
       // có timestamp họ 'YYYY-MM-DD HH:MM:SS'.
-      ...createdAtBetween(orders.createdAt, cutoff, undefined),
+      ...createdAtBetween(orders.createdAt, cutoff, singleDay || undefined),
       sql`${orders.channel} != 'SPONSORSHIP'`,
     ];
+    if (warehouseId) breakdownConds.push(eq(orders.warehouseId, warehouseId));
     if (fiscalScope !== 'ALL') breakdownConds.push(eq(orders.fiscalScope, fiscalScope));
     const orderRows = await db
       .select({
@@ -865,11 +881,34 @@ export class ExecutiveQueryService {
       reportedOrders = summary.internalManagement.ordersCount;
     }
 
+    // Tổng cuốn bán (kênh hỏi "bán được bao nhiêu cuốn"): 1 query GROUP trên
+    // đúng tập đơn của summary (COMPLETED + không tài trợ + cùng kỳ/kho).
+    const qtyConds = [
+      eq(orders.status, 'COMPLETED'),
+      sql`${orders.channel} != 'SPONSORSHIP'`,
+      ...createdAtBetween(orders.createdAt, cutoff, singleDay || undefined),
+    ];
+    if (warehouseId) qtyConds.push(eq(orders.warehouseId, warehouseId));
+    const qtyRows: any[] = await db
+      .select({ q: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(and(...qtyConds));
+    const totalQty = Number(qtyRows[0]?.q || 0);
+
+    let warehouseName: string | null = null;
+    if (warehouseId) {
+      const wh: any[] = await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, warehouseId)).limit(1);
+      warehouseName = wh[0]?.name || warehouseId;
+    }
+
     return {
       windowDays,
       fiscalScope,
+      scopeLabel: `${singleDay ? `ngày ${singleDay}` : `${windowDays} ngày qua`} · ${warehouseName || 'toàn hệ thống'}`,
       totalOrders: reportedOrders,
       totalRevenue: reportedRevenue,
+      totalQty,
       totalDiscount: summary.totalDiscount,
       officialTax: summary.officialTax,
       internalManagement: summary.internalManagement,

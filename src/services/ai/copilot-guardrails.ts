@@ -18,7 +18,7 @@ NGUYÊN TẮC BẤT BIẾN (5 LỚP BẢO VỆ):
 
 DANH SÁCH CÔNG CỤ ĐƯỢC PHÉP DÙNG:
 1. query_stock_level(editionId?, warehouseId?): Tra cứu tồn kho khả dụng NEW.
-2. query_sales_summary(windowDays?, fiscalScope?): Tra cứu doanh thu Sổ Thuế (OFFICIAL_TAX) và Sổ Quản Trị (INTERNAL_MANAGEMENT).
+2. query_sales_summary(windowDays?, fiscalScope?, date?, warehouseId?): Tra cứu doanh thu 2 sổ. Câu hỏi 1 NGÀY cụ thể ("ngày 4/10", "hôm qua") thì truyền date YYYY-MM-DD; nhắc kho cụ thể thì truyền warehouseId.
 3. query_reprint_forecast(level?, limit?): Tra cứu vận tốc bán V_sale, DoI, và số lượng in đề xuất 105 ngày.
 4. query_cashbox_reconciliation(sessionId?, date?): Tra cứu đối soát tiền két ca quầy, số tiền thực đếm và chênh lệch.
 5. query_catalog(q?): Tra cứu DANH MỤC — sách của 1 tác giả, tựa bắt đầu bằng chữ X, top tác giả/sách bán chạy, liệt kê. Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
@@ -92,7 +92,8 @@ export class CopilotGuardrails {
       plan.action === 'CALL_TOOL' &&
       (plan.toolCall?.toolName === 'query_stock_level' ||
         plan.toolCall?.toolName === 'query_catalog' ||
-        plan.toolCall?.toolName === 'query_product_flow')
+        plan.toolCall?.toolName === 'query_product_flow' ||
+        plan.toolCall?.toolName === 'query_sales_summary')
     ) {
       try {
         const wh = await ExecutiveQueryService.resolveWarehouseFromText(question);
@@ -297,6 +298,30 @@ Trả về JSON chuẩn khớp schema:
   /**
    * Fallback heuristic nhận diện ý định nếu LLM lỗi hoặc offline.
    */
+  /**
+   * Bóc ngày VN cụ thể từ câu hỏi ("ngày 4/10", "hôm qua", "hôm nay").
+   * "ngày 4/10" lấy năm VN hiện tại. null = không nhắc ngày cụ thể.
+   */
+  static parseVnDay(text: string, nowMs: number = Date.now()): string | null {
+    const n = removeAccents((text || '').toLowerCase());
+    const todayVn = new Date(nowMs + 7 * 3_600_000).toISOString().slice(0, 10);
+    if (/\bhom nay\b/.test(n)) return todayVn;
+    if (/\bhom qua\b/.test(n)) {
+      return new Date(Date.parse(todayVn + 'T00:00:00Z') - 86_400_000).toISOString().slice(0, 10);
+    }
+    const m = n.match(/\bngay\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (m) {
+      const dd = m[1].padStart(2, '0');
+      const mm = m[2].padStart(2, '0');
+      let yyyy = m[3] || todayVn.slice(0, 4);
+      if (yyyy.length === 2) yyyy = '20' + yyyy;
+      const candidate = yyyy + '-' + mm + '-' + dd;
+      const d = new Date(candidate + 'T00:00:00Z');
+      if (!Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === candidate) return candidate;
+    }
+    return null;
+  }
+
   private static heuristicPlan(q: string): CopilotPlan {
     // Chuẩn hóa không dấu để câu hỏi gõ không dấu vẫn định tuyến đúng tool.
     const n = removeAccents(q.toLowerCase());
@@ -323,7 +348,14 @@ Trả về JSON chuẩn khớp schema:
     if (n.includes('doanh thu') || n.includes('doanh so') || n.includes('so thue') || n.includes('so noi bo') || n.includes('ban duoc')) {
       return {
         action: 'CALL_TOOL',
-        toolCall: { toolName: 'query_sales_summary', args: { windowDays: 30, fiscalScope: 'ALL' } },
+        toolCall: {
+          toolName: 'query_sales_summary',
+          args: {
+            windowDays: 30,
+            fiscalScope: 'ALL',
+            ...(this.parseVnDay(q) ? { date: this.parseVnDay(q) as string } : {}),
+          },
+        },
         reason: 'Heuristic keyword match: sales',
       };
     }
@@ -453,6 +485,8 @@ Trả về JSON chuẩn khớp schema:
         result = await ExecutiveQueryService.querySalesSummary({
           windowDays: this.numArg(args.windowDays, 30, 1, 365),
           fiscalScope,
+          date: typeof args.date === 'string' ? args.date : undefined,
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
         });
         break;
       }

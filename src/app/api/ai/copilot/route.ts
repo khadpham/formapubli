@@ -290,7 +290,9 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
 - Tổng số cuốn khả dụng: **${data.totalAvailable}** cuốn (${data.itemsCount} ấn bản).`;
   }
   if (toolName === 'query_sales_summary') {
-    return `📊 **Báo cáo Doanh số (${data.windowDays} ngày qua)**:
+    const scope = (data as any).scopeLabel ? ` (${(data as any).scopeLabel})` : '';
+    return `📊 **Báo cáo Doanh số${scope}**:
+- Số cuốn bán: **${Number((data as any).totalQty || 0).toLocaleString('vi-VN')} cuốn**
 - Tổng doanh thu: **${data.totalRevenue?.toLocaleString('vi-VN')} đ** (${data.totalOrders} đơn).
 - Sổ Thuế (VAT): **${data.officialTax?.revenue?.toLocaleString('vi-VN')} đ** (${data.officialTax?.ordersCount} đơn).
 - Sổ Quản trị Thực tế: **${data.internalManagement?.revenue?.toLocaleString('vi-VN')} đ** (${data.internalManagement?.ordersCount} đơn).`;

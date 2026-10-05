@@ -84,7 +84,39 @@ async function run() {
     await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cptop-${stamp}-%`}`);
   }
 
-  console.log('✅ Copilot top-N routing + model picker passed');
+// --- 2b. Runtime: "số sách bán được ngày X ở kho Y" → sales theo ngày+kho ---
+  {
+    const yest = new Date(Date.now() + 7 * 3_600_000 - 86_400_000).toISOString().slice(0, 10);
+    const stamp2 = Date.now();
+    await db.insert(orders).values([
+      {
+        id: `ord-cpday-${stamp2}-1`, orderCode: `CPD${stamp2}1`, idempotencyKey: `idem-cpday-${stamp2}-1`,
+        warehouseId: 'wh-au-co', customerName: 'Khách ngày', subtotal: 100000, discountRate: 0,
+        discountAmount: 0, finalAmount: 100000, paymentMethod: 'CASH', status: 'COMPLETED' as const,
+        cashierId: 'staff-admin', createdAt: `${yest}T02:00:00.000Z`,
+      },
+    ] as any);
+    await db.insert(orderItems).values([
+      { id: `oi-cpday-${stamp2}-1`, orderId: `ord-cpday-${stamp2}-1`, editionId: eds[0].id, productId: eds[0].id, quantity: 4, unitCoverPrice: 25000, unitSellingPrice: 25000, totalAmount: 100000, isGiftLine: false },
+    ] as any);
+    try {
+      const reqDay = new Request('http://localhost/api/ai/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+        body: JSON.stringify({ question: 'hôm qua bán được bao nhiêu cuốn?' }),
+      });
+      const resDay = await postCopilot(reqDay as any);
+      const payDay = await resDay.json();
+      assert.equal(resDay.status, 200, 'hỏi theo ngày phải 200');
+      assert.equal(payDay.data.toolUsed, 'query_sales_summary', 'phải vào tool doanh số');
+      assert.match(payDay.data.answer, /4 cuốn/, 'đáp phải nêu đúng số cuốn bán hôm qua');
+      assert.doesNotMatch(payDay.data.answer, /^\s*[\{\[]/, 'đáp không mở đầu JSON');
+    } finally {
+      const { sql } = await import('drizzle-orm');
+      await db.run(sql`DELETE FROM order_items WHERE id LIKE ${`oi-cpday-${stamp2}-%`}`);
+      await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cpday-${stamp2}-%`}`);
+    }
+  }
 }
 
 run().catch((err) => {
