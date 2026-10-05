@@ -123,9 +123,10 @@ async function main() {
     'gốc portal ngoài phải là backdrop `fixed inset-0`'
   );
   // Khung modal trắng vẫn phải còn (không được xoá modal cho khỏi in trắng).
+  // Rộng max-w-6xl trên desktop để bảng biểu không bị ép hẹp (mobile vẫn w-full).
   ok(
-    /max-w-4xl/.test(portalRoot.getText(sourceFile)),
-    'khung modal trắng max-w-4xl phải còn nguyên trong portal'
+    /max-w-6xl/.test(portalRoot.getText(sourceFile)),
+    'khung modal trắng max-w-6xl phải còn nguyên trong portal'
   );
 
   // Khối in phải có portal RIÊNG trỏ thẳng về document.body. Gốc của portal đó

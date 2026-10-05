@@ -360,7 +360,7 @@ export function LiveFairMonitorModal({
       >
         <div
           ref={panelRef}
-          className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-200 my-auto flex flex-col max-h-[92vh]"
+          className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl shadow-2xl border border-slate-200 my-auto flex flex-col max-h-[92vh]"
         >
           <div className="no-print shrink-0 bg-slate-900 text-white px-4 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
