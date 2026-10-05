@@ -617,6 +617,8 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
               <option value="auto">⚡ Tự động</option>
               <option value="gemini-3.8-flash">✨ 3.8 Flash</option>
               <option value="gemini-3.5-flash-lite">3.5 Lite</option>
+              <option value="groq/gpt-oss-120b">🧠 GPT-OSS 120B</option>
+              <option value="groq/gpt-oss-20b">GPT-OSS 20B</option>
               <option value="local">📏 Luật nội bộ</option>
             </select>
             {!isMini && onMinimize && (

@@ -3,7 +3,7 @@ import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, g
 import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
-import { callGeminiWithFallback, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
+import { callGeminiWithFallback, callGroqChatJsonRaw, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
 
 export async function POST(req: NextRequest) {
   const ip = extractClientIp(req);
@@ -83,7 +83,14 @@ export async function POST(req: NextRequest) {
   // Model do user chọn ở drawer (Tự động / 3.8 / 3.5-lite / nội bộ). Ngoài
   // allowlist thì bỏ qua (về mặc định env) — không tin input thô.
   const rawModel = (body as { model?: unknown })?.model;
-  const MODEL_ALLOWLIST = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'local'];
+  const MODEL_ALLOWLIST = [
+    'gemini-3.8-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'groq/gpt-oss-120b',
+    'groq/gpt-oss-20b',
+    'local',
+  ];
   const modelOverride =
     typeof rawModel === 'string' && (MODEL_ALLOWLIST as string[]).includes(rawModel.trim())
       ? rawModel.trim()
@@ -140,13 +147,20 @@ export async function POST(req: NextRequest) {
       { staffId: sessionPayload.actorId, role: sessionPayload.role }
     );
 
-    // 7. Tổng hợp câu trả lời từ kết quả Tool
+    // 7. Tổng hợp câu trả lời từ kết quả Tool — chuỗi dự phòng:
+    // Gemini (model chọn/env) → Groq 120B → Groq 20B → OpenAI → formatter nội bộ.
+    // Engine báo đúng model đã viết câu trả lời.
     let synthesizedAnswer = '';
     let synthEngine: string | null = null;
     const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
+    const groqKey = process.env.GROQ_API_KEY;
+    const groqModels = (process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b,openai/gpt-oss-20b')
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean);
 
-    if (geminiKey || openaiKey) {
+    if (geminiKey || openaiKey || groqKey) {
       // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam
       // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
@@ -165,25 +179,61 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
 
       try {
         let raw = '';
-        if (geminiKey) {
-          raw = await callGeminiWithFallback({
+        const userText = `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`;
+        // Model user ép chọn (picker) đi trước; 'local' thì bỏ qua hết LLM.
+        const picked = modelOverride && modelOverride !== 'local' ? modelOverride : null;
+        if (picked && picked.startsWith('groq/') && groqKey) {
+          raw = await callGroqChatJsonRaw({
             systemPrompt: synthPrompt,
-            userText: `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`,
-            apiKey: geminiKey,
-            timeoutMs: 5000,
-            model: modelOverride && modelOverride !== 'local' ? modelOverride : undefined,
-            onModel: (m) => {
-              synthEngine = 'gemini:' + m;
-            },
+            userText,
+            apiKey: groqKey,
+            model: picked,
+            timeoutMs: 8000,
           });
-        } else if (openaiKey) {
-          raw = await callOpenAIJsonRaw({
-            systemPrompt: synthPrompt,
-            userText: `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`,
-            apiKey: openaiKey,
-            timeoutMs: 5000,
-          });
-          synthEngine = 'openai:' + resolveOpenAIModel();
+          synthEngine = 'groq:' + picked;
+        } else {
+          if (geminiKey && (!picked || picked.startsWith('gemini'))) {
+            try {
+              raw = await callGeminiWithFallback({
+                systemPrompt: synthPrompt,
+                userText,
+                apiKey: geminiKey,
+                timeoutMs: 5000,
+                model: picked && picked.startsWith('gemini') ? picked : undefined,
+                onModel: (m) => {
+                  synthEngine = 'gemini:' + m;
+                },
+              });
+            } catch (gemErr) {
+              console.warn('⚠️ Gemini nghẽn, thử Groq:', (gemErr as any)?.message || gemErr);
+            }
+          }
+          if (!raw && groqKey && (!picked || !picked.startsWith('groq'))) {
+            for (const gm of groqModels) {
+              try {
+                raw = await callGroqChatJsonRaw({
+                  systemPrompt: synthPrompt,
+                  userText,
+                  apiKey: groqKey,
+                  model: gm,
+                  timeoutMs: 8000,
+                });
+                synthEngine = 'groq:' + gm;
+                break;
+              } catch (groqErr) {
+                console.warn(`⚠️ Groq ${gm} lỗi, thử tiếp:`, (groqErr as any)?.message || groqErr);
+              }
+            }
+          }
+          if (!raw && openaiKey) {
+            raw = await callOpenAIJsonRaw({
+              systemPrompt: synthPrompt,
+              userText,
+              apiKey: openaiKey,
+              timeoutMs: 5000,
+            });
+            synthEngine = 'openai:' + resolveOpenAIModel();
+          }
         }
         synthesizedAnswer = extractNaturalAnswer(raw);
         // Sanitize cuối: model vẫn có thể trả JSON mảng/object lạ mà bộ bóc

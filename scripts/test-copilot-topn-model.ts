@@ -201,6 +201,14 @@ async function run() {
       await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cpwin-${stamp3}-%`}`);
     }
   }
+
+  // --- 4. Groq tier: model picker + chuỗi dự phòng ---
+  {
+    ok(/callGroqChatJsonRaw|groq/i.test(route), 'synth phải thử Groq khi Gemini nghẽn');
+    const drawerSrc2 = readSrc('src/components/copilot/CopilotDrawer.tsx');
+    ok(/gpt-oss-120b/.test(drawerSrc2), 'picker phải có GPT-OSS 120B');
+    ok(/GROQ/i.test(readSrc('src/services/ai/llm-client.ts')), 'llm-client phải biết Groq');
+  }
 }
 
 run().catch((err) => {
