@@ -172,7 +172,14 @@ async function run() {
     (guardMod.CopilotGuardrails as any).planQueryInner = origInner2;
   }
 
-  // --- 5. Workers AI: errors=[] KHÔNG được coi là lỗi ---
+  // --- 5. Formatter KHÔNG BAO GIỜ in JSON thô, kể cả đa bước ---
+  const routeSrc = readSrc('src/app/api/ai/copilot/route.ts');
+  ok(!/return JSON\.stringify\(data, null, 2\)/.test(routeSrc),
+    'formatter cuối không được in JSON thô cho lãnh đạo');
+  ok(/toolName\.includes\(' \+ '\)/.test(routeSrc), 'formatter phải xử lý câu nhiều ý (toolName "a + b")');
+  ok(/LABEL_BY_TOOL/.test(routeSrc), 'đa bước phải gắn nhãn tiếng Việt cho từng ý');
+
+  // --- 6. Workers AI: errors=[] KHÔNG được coi là lỗi ---
   const llmSrc = readSrc('src/services/ai/llm-client.ts');
   ok(/Array\.isArray\(errs\) && errs\.length > 0/.test(llmSrc),
     'mảng errors rỗng phải được coi là KHÔNG lỗi ([] là truthy trong JS)');

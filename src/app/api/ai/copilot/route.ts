@@ -383,6 +383,19 @@ function extractNaturalAnswer(raw: string): string {
   return text;
 }
 
+/** Nhãn tiếng Việt cho phần trả lời khi câu hỏi có nhiều ý. */
+// Không kèm emoji ở đây — formatter bên dưới đã tự thêm icon cho từng phần.
+const LABEL_BY_TOOL: Record<string, string> = {
+  query_stock_level: 'Tồn kho',
+  query_sales_summary: 'Doanh số',
+  query_sales_lines: 'Món bán',
+  query_product_flow: 'Nhịp Bán',
+  query_cashbox_reconciliation: 'Két tiền',
+  query_catalog: 'Danh mục',
+  query_reprint_forecast: 'Cạn kho',
+  prepare_sale_draft: 'Đơn nháp',
+};
+
 function formatFallbackAnswer(toolName: string, data: Record<string, any>): string {
   if (toolName === 'query_stock_level') {
     if (data.warning && (!data.items || data.items.length === 0)) {
@@ -478,5 +491,21 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     const who = data.customerName ? ` cho **${data.customerName}**` : '';
     return `🧾 **Đơn nháp${who}** (${data.items.length} dòng) — mới là NHÁP, chưa tạo đơn, chưa trừ kho:\n${lines.join('\n')}${warn}\n\nBấm **Áp vào POS** để đổ vào giỏ, kiểm tra lại rồi tự bấm Thanh toán.`;
   }
-  return JSON.stringify(data, null, 2);
+  // Đa bước: toolName là "a + b + c". Ghép formatter từng phần, KHÔNG nhét thẳng
+  // toolData dạng thô vào markdown (đã dính: sếp thấy khối JSON trong chat).
+  if (toolName.includes(' + ')) {
+    const parts = toolName
+      .split(' + ')
+      .map((name) => {
+        const chunk = (data as Record<string, any>)[name];
+        if (chunk === undefined || chunk === null) return null;
+        const one = formatFallbackAnswer(name.trim(), chunk as Record<string, any>);
+        return one && one.trim() ? `**${LABEL_BY_TOOL[name.trim()] || name.trim()}**\n${one}` : null;
+      })
+      .filter(Boolean) as string[];
+    if (parts.length > 0) return parts.join('\n\n');
+  }
+  // Không có formatter nào khớp: nói thẳng bằng tiếng Việt, TUYỆT ĐỐI không in
+  // JSON thô cho lãnh đạo.
+  return `📋 Đã tra cứu xong (**${toolName}**), nhưng tôi chưa có cách trình bày tự nhiên cho dữ liệu này. Bạn có thể xem chi tiết ở bảng bên dưới.`;
 }
