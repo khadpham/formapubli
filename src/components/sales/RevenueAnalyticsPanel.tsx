@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BarChart3, Download, RefreshCw, Wallet, Store, Truck, Globe, Gift } from 'lucide-react';
+import { TableExpandOverlay } from './TableExpandOverlay';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
 import { channelLabel, fiscalScopeLabel } from '@/lib/sales-view';
@@ -297,6 +298,7 @@ export function RevenueAnalyticsPanel({
           </div>
 
           {/* Bảng theo nhóm nguồn — dòng tài trợ RIÊNG, dòng TỔNG ở cuối */}
+          <TableExpandOverlay title="Nguồn doanh thu">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
@@ -375,6 +377,7 @@ export function RevenueAnalyticsPanel({
               </tfoot>
             </table>
           </div>
+          </TableExpandOverlay>
         </>
       )}
 

@@ -87,4 +87,7 @@ ok(/downloadWatermarkedCsv/.test(gift), 'bảng quà xuất CSV watermark');
 ok(/Xuất Excel\/CSV/.test(gift), 'nút xuất đúng nhãn');
 ok(/<TableExpandOverlay/.test(gift), 'bảng quà mở rộng được');
 ok(/SortableTh[^>]*sortKey="totalQty"/.test(gift), 'cột Tổng cuốn sort được');
-console.log(`=== SALES TABLE UX (Task 6): PASS ===\n`);
+// --- Task 7: nguồn doanh thu overlay ---
+const revenue = readSrc('src/components/sales/RevenueAnalyticsPanel.tsx');
+ok(/<TableExpandOverlay/.test(revenue), 'bảng nguồn doanh thu mở rộng được');
+console.log(`=== SALES TABLE UX (Task 7): PASS ===\n`);
