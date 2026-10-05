@@ -74,4 +74,11 @@ ok(/<TableExpandOverlay/.test(ledger), 'bảng đơn mở rộng được');
   sortRows(big, 'v', 'asc', (r: any) => r.v);
   assert.ok(Date.now() - t0 < 1000, 'sort 5000 dòng dưới 1s');
 }
-console.log(`=== SALES TABLE UX (Task 4): PASS — ${checks} regex assertions ===\n`);
+// --- Task 5: sách bán chạy Top 100 + sort + overlay ---
+const topEditions = readSrc('src/components/sales/TopEditionsPanel.tsx');
+ok(/value=\{100\}/.test(topEditions), 'có option Top 100 (= trần API)');
+ok(/SortableTh[^>]*sortKey="qty"/.test(topEditions), 'cột SL bán sort được');
+ok(/SortableTh[^>]*sortKey="orders"/.test(topEditions), 'cột Số đơn sort được');
+ok(/SortableTh[^>]*sortKey="revenue"/.test(topEditions), 'cột Doanh thu sort được');
+ok(/<TableExpandOverlay/.test(topEditions), 'bảng bán chạy mở rộng được');
+console.log(`=== SALES TABLE UX (Task 5): PASS ===\n`);

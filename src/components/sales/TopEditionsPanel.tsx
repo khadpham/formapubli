@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Trophy, Download, RefreshCw } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
+import { useSortable, SortableTh } from '@/lib/table-ux';
+import { TableExpandOverlay } from './TableExpandOverlay';
 
 interface TopEditionsPanelProps {
   currentRole: UserRole;
@@ -119,6 +121,20 @@ export function TopEditionsPanel({
     return () => abortRef.current?.abort();
   }, [fetchTop]);
 
+  // Sắp xếp client trên dòng đã tải (server trả đúng topN theo SL bán).
+  // Nhãn ghi rõ để không ai tưởng đang xếp toàn bộ danh mục.
+  const {
+    sorted: sortedItems,
+    sortKey,
+    sortDir,
+    toggleSort,
+  } = useSortable(items, 'qty', 'desc', (it: TopEditionRow, key: string) => {
+    if (key === 'qty') return Number(it.qty || 0);
+    if (key === 'orders') return Number(it.orders || 0);
+    if (key === 'revenue') return Number(it.revenue || 0);
+    return 0;
+  });
+
   if (!canView) return null;
 
   // Nhãn kỳ LẤY TỪ BỘ LỌC CỦA TAB, không suy ra từ preset nội bộ: rỗng = không
@@ -199,6 +215,7 @@ export function TopEditionsPanel({
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             Số liệu theo đúng bộ lọc của bảng trên: kho, ngày.
+            {sortKey !== 'qty' ? ` Đang xếp theo cột đã chọn trong ${sortedItems.length} dòng đã tải.` : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -214,6 +231,7 @@ export function TopEditionsPanel({
             <option value={10}>Top 10</option>
             <option value={20}>Top 20</option>
             <option value={50}>Top 50</option>
+            <option value={100}>Top 100 (tối đa)</option>
           </select>
           <button
             onClick={() => fetchTop()}
@@ -235,15 +253,16 @@ export function TopEditionsPanel({
         </div>
       </div>
 
+      <TableExpandOverlay title="Sách bán chạy nhất">
       <div className="overflow-x-auto max-h-[420px] overflow-y-auto border border-slate-100 rounded-xl">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 sticky top-0 z-10">
             <tr>
               <th className="p-3 w-12">#</th>
               <th className="p-3">Đầu sách</th>
-              <th className="p-3 text-right">SL bán</th>
-              <th className="p-3 text-right">Số đơn</th>
-              <th className="p-3 text-right">Doanh thu</th>
+              <SortableTh label="SL bán" sortKey="qty" activeKey={sortKey} activeDir={sortDir} onToggle={(k) => toggleSort(k, 'desc')} align="right" />
+              <SortableTh label="Số đơn" sortKey="orders" activeKey={sortKey} activeDir={sortDir} onToggle={(k) => toggleSort(k, 'desc')} align="right" />
+              <SortableTh label="Doanh thu" sortKey="revenue" activeKey={sortKey} activeDir={sortDir} onToggle={(k) => toggleSort(k, 'desc')} align="right" />
               <th className="p-3 w-40">Tỷ trọng SL</th>
             </tr>
           </thead>
@@ -268,7 +287,7 @@ export function TopEditionsPanel({
                 </td>
               </tr>
             ) : (
-              items.map((it, i) => (
+              sortedItems.map((it, i) => (
                 <tr key={it.editionId || `${it.code}-${i}`} className="hover:bg-slate-50/80">
                   <td className="p-3 font-black text-slate-400 font-mono">{i + 1}</td>
                   <td className="p-3">
@@ -292,6 +311,7 @@ export function TopEditionsPanel({
           </tbody>
         </table>
       </div>
+      </TableExpandOverlay>
     </div>
   );
 }
