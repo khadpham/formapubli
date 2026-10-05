@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
       .map((m) => m.trim())
       .filter(Boolean);
 
-    const cfReady = !!(process.env.CF_API_TOKEN && process.env.CF_ACCOUNT_ID);
+    const cfReady = !!(process.env.WORKERS_AI_TOKEN && process.env.CF_ACCOUNT_ID);
 
     if (geminiKey || openaiKey || groqKey || cfReady) {
       // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam

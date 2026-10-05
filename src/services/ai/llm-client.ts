@@ -88,7 +88,9 @@ export function resolveGroqApiKey(): string {
 
 /** Chat JSON qua Cloudflare Workers AI (REST, Chat Completions shape).
  * Dùng cho model free (vd GLM-4.7-flash) khi Gemini/Groq nghẽn.
- * Credentials KHÔNG bao giờ vào repo: CF_API_TOKEN + CF_ACCOUNT_ID là secret.
+ * Credentials KHÔNG bao giờ vào repo: WORKERS_AI_TOKEN + CF_ACCOUNT_ID là secret.
+ * KHÔNG đặt tên biến là CF_API_TOKEN — wrangler tự đọc nó làm credential deploy
+ * và sẽ hỏng deploy (đã dính 1 lần 06/10/2026).
  */
 export async function callCfWorkerAiJsonRaw(params: {
   systemPrompt: string;
@@ -97,9 +99,9 @@ export async function callCfWorkerAiJsonRaw(params: {
   timeoutMs?: number;
   onModel?: (model: string) => void;
 }): Promise<string> {
-  const token = (process.env.CF_API_TOKEN || '').trim();
+  const token = (process.env.WORKERS_AI_TOKEN || '').trim();
   const accountId = (process.env.CF_ACCOUNT_ID || '').trim();
-  if (!token || !accountId) throw new LlmConfigError('Thiếu CF_API_TOKEN/CF_ACCOUNT_ID cho tầng Cloudflare Workers AI.');
+  if (!token || !accountId) throw new LlmConfigError('Thiếu WORKERS_AI_TOKEN/CF_ACCOUNT_ID cho tầng Cloudflare Workers AI.');
   const model = (params.model || process.env.CF_CHAT_MODEL || '').trim() || 'glm-4.7-flash';
   // Chuẩn hoá: cho phép 'glm-4.7-flash' ngắn gọn hoặc full '@cf/zai-org/glm-4.7-flash'.
   const fullModel = model.startsWith('@cf/') ? model : `@cf/zai-org/${model}`;

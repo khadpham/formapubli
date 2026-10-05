@@ -29,7 +29,10 @@ async function run() {
   ok(/executeToolSafely\([\s\S]{0,120}for \(const step of steps\)|for \(const step of steps\)/.test(route),
     'route phải chạy từng bước qua executeToolSafely');
   ok(/Object\.fromEntries\(results\.map/.test(route), 'kết quả nhiều bước phải gom theo tên tool');
-  ok(/CF_API_TOKEN/.test(route), 'synth phải biết Cloudflare Workers AI');
+  // KHÔNG dùng tên CF_API_TOKEN: wrangler tự đọc làm credential deploy (hỏng deploy).
+  ok(/WORKERS_AI_TOKEN/.test(route), 'synth phải biết Cloudflare Workers AI');
+  ok(!/process\.env\.CF_API_TOKEN/.test(readSrc('src/services/ai/llm-client.ts')),
+    'llm-client không được đụng CF_API_TOKEN (wrangler sẽ hỏng deploy)');
 
   // --- 2. Runtime: tồn kho cuốn X + doanh số hôm nay → 2 tool ---
   const eds: any[] = await db
@@ -73,7 +76,7 @@ async function run() {
   delete process.env.GEMINI_API_KEY;
   delete process.env.GOOGLE_AI_API_KEY;
   delete process.env.GROQ_API_KEY;
-  delete process.env.CF_API_TOKEN;
+  delete process.env.WORKERS_AI_TOKEN;
   delete process.env.CF_ACCOUNT_ID;
 
   const session = await signSession({

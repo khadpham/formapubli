@@ -282,7 +282,7 @@ Trả về JSON chuẩn khớp schema:
 
       // Cloudflare Workers AI free — tầng cuối cho PLANNER. Không có nó, khi
       // Gemini 503 thì mọi cau nhieu y rơi ve heuristic (chi tra 1 tool).
-      if (process.env.CF_API_TOKEN && process.env.CF_ACCOUNT_ID) {
+      if (process.env.WORKERS_AI_TOKEN && process.env.CF_ACCOUNT_ID) {
         const raw = await callCfWorkerAiJsonRaw({
           systemPrompt: plannerPrompt,
           userText: question,
