@@ -81,4 +81,10 @@ ok(/SortableTh[^>]*sortKey="qty"/.test(topEditions), 'cột SL bán sort đượ
 ok(/SortableTh[^>]*sortKey="orders"/.test(topEditions), 'cột Số đơn sort được');
 ok(/SortableTh[^>]*sortKey="revenue"/.test(topEditions), 'cột Doanh thu sort được');
 ok(/<TableExpandOverlay/.test(topEditions), 'bảng bán chạy mở rộng được');
-console.log(`=== SALES TABLE UX (Task 5): PASS ===\n`);
+// --- Task 6: bảng quà xuất CSV + sort + overlay ---
+const gift = readSrc('src/components/sales/GiftReportPanel.tsx');
+ok(/downloadWatermarkedCsv/.test(gift), 'bảng quà xuất CSV watermark');
+ok(/Xuất Excel\/CSV/.test(gift), 'nút xuất đúng nhãn');
+ok(/<TableExpandOverlay/.test(gift), 'bảng quà mở rộng được');
+ok(/SortableTh[^>]*sortKey="totalQty"/.test(gift), 'cột Tổng cuốn sort được');
+console.log(`=== SALES TABLE UX (Task 6): PASS ===\n`);
