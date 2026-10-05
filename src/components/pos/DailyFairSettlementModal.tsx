@@ -159,7 +159,7 @@ function paymentMethodLabel(method: string | null | undefined): string {
  * cáo sai. Số này là ảnh chụp lúc mở báo cáo; lát nữa đơn thành COMPLETED
  * sẽ nằm trong Thực thu của lần mở sau — đó là chuyện đúng.
  */
-function MoneyHeader({ data }: { data: any }) {
+function MoneyHeader({ data, periodLabel }: { data: any; periodLabel?: string }) {
   const f = data?.financials || {};
   const pb = data?.paymentBreakdown || {};
   const rec = data?.cashboxReconciliation || {};
@@ -180,7 +180,7 @@ function MoneyHeader({ data }: { data: any }) {
           Nay màn hẹp thì chip xuống hàng dưới thay vì tràn ra ngoài. */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold text-slate-500">Thực thu ngày {data?.reportDate || ''}</p>
+          <p className="text-[11px] font-bold text-slate-500">Thực thu {periodLabel || `ngày ${data?.reportDate || ''}`}</p>
           <p className="text-2xl sm:text-3xl font-black font-mono text-emerald-700 leading-tight break-words">
             {(f.netSales || 0).toLocaleString('vi-VN')} đ
           </p>
@@ -265,6 +265,8 @@ export function DailyFairSettlementModal({
   // hiện tại) bị bỏ. Trước đây không có: đổi ngày 29 → 28, nếu response 29 về
   // sau nó setData ghi đè ⇒ biên bản mang số liệu ngày 29 nhưng đóng dấu ngày 28.
   const requestSeqRef = useRef(0);
+  /** Chặn effect fetch lại sau khi applyCampaign đã nạp sẵn dữ liệu. */
+  const skipRefetchRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
   const [warehouseList, setWarehouseList] = useState<any[]>([]);
@@ -277,6 +279,11 @@ export function DailyFairSettlementModal({
   const [selectedDate, setSelectedDate] = useState(
     () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
   );
+  // Chế độ kỳ: 'day' = báo cáo 1 ngày (cũ), 'range' = gom kỳ (mới). Kỳ có thể
+  // nhập tay hoặc bấm preset; "Cả chiến dịch" suy từ đơn đầu→cuối của kho.
+  const [rangeMode, setRangeMode] = useState<'day' | 'range'>('day');
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
   const [activeTab, setActiveTab] = useState<'FINANCIALS' | 'STOCKTAKE' | 'DISCOUNT'>('FINANCIALS');
   // Nhớ tab đang xem: đóng modal rồi mở lại không nên mất chỗ đang đọc.
   // `sessionStorage` (không phải `localStorage`) vì đây là trạng thái của phiên
@@ -367,8 +374,13 @@ export function DailyFairSettlementModal({
     setIsLoading(true);
     setLoadError(null);
     try {
+      const base = `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}`;
+      const url =
+        rangeMode === 'range' && rangeStart && rangeEnd
+          ? `${base}&start=${encodeURIComponent(rangeStart)}&end=${encodeURIComponent(rangeEnd)}`
+          : `${base}&date=${encodeURIComponent(selectedDate)}`;
       const res = await fetch(
-        `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}&date=${encodeURIComponent(selectedDate)}`,
+        url,
         { headers: { 'x-formapubli-role': currentRole } }
       );
       const json = await res.json().catch(() => null);
@@ -395,10 +407,58 @@ export function DailyFairSettlementModal({
   };
 
   useEffect(() => {
+    if (skipRefetchRef.current) {
+      skipRefetchRef.current = false;
+      return;
+    }
     if (isOpen && currentWarehouseId) {
       fetchSettlement();
     }
-  }, [isOpen, currentWarehouseId, selectedDate]);
+  }, [isOpen, currentWarehouseId, selectedDate, rangeMode, rangeStart, rangeEnd]);
+
+  /** Preset kỳ tính từ hôm nay (ngày VN). */
+  const applyPreset = (days: number) => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+    const t = Date.parse(`${today}T00:00:00Z`);
+    const start = new Date(t - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    setRangeMode('range');
+    setRangeStart(start);
+    setRangeEnd(today);
+  };
+
+  /** Cả chiến dịch: server suy kỳ từ đơn đầu→cuối của kho đang chọn. */
+  const applyCampaign = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(
+        `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}&campaign=1`,
+        { headers: { 'x-formapubli-role': currentRole } }
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setData(null);
+        setLoadError(json?.error || 'Không suy được kỳ chiến dịch của kho này.');
+        return;
+      }
+      if (json.empty) {
+        setData(null);
+        setLoadError('Kho này chưa có đơn nào để lập báo cáo chiến dịch.');
+        return;
+      }
+      // Dữ liệu đã có sẵn — chặn effect fetch lại trùng lặp.
+      skipRefetchRef.current = true;
+      setRangeMode('range');
+      setRangeStart(json.data.reportStartDate);
+      setRangeEnd(json.data.reportEndDate);
+      setData(json.data);
+    } catch {
+      setData(null);
+      setLoadError('Mất kết nối khi tải báo cáo chiến dịch.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Đã có số liệu rồi thì lý do chặn in ở lần trước không còn đúng nữa → xoá.
   useEffect(() => {
@@ -660,13 +720,72 @@ export function DailyFairSettlementModal({
                 </select>
               </div>
             )}
-            <input
-              type="date"
-              aria-label="Chọn ngày cần kết toán"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-            />
+            {/* Chế độ Ngày/Kỳ: kỳ gom ở server, 1 request (không fetch N ngày). */}
+            <div className="flex items-center gap-1 bg-slate-800 px-1 py-1 rounded-xl border border-slate-700 shrink-0" role="group" aria-label="Chế độ báo cáo">
+              {(['day', 'range'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setRangeMode(m)}
+                  aria-pressed={rangeMode === m}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    rangeMode === m ? 'bg-amber-500 text-slate-900' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {m === 'day' ? 'Ngày' : 'Kỳ'}
+                </button>
+              ))}
+            </div>
+            {rangeMode === 'day' ? (
+              <input
+                type="date"
+                aria-label="Chọn ngày cần kết toán"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              />
+            ) : (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <input
+                  type="date"
+                  aria-label="Kỳ từ ngày"
+                  value={rangeStart}
+                  onChange={(e) => setRangeStart(e.target.value)}
+                  className="bg-slate-800 text-white text-xs px-2 py-1.5 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+                <span className="text-slate-400 text-xs">→</span>
+                <input
+                  type="date"
+                  aria-label="Kỳ đến ngày"
+                  value={rangeEnd}
+                  onChange={(e) => setRangeEnd(e.target.value)}
+                  className="bg-slate-800 text-white text-xs px-2 py-1.5 rounded-xl border border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+                {([
+                  [7, '1 tuần'],
+                  [14, '2 tuần'],
+                  [30, '1 tháng'],
+                  [90, '3 tháng'],
+                ] as Array<[number, string]>).map(([n, label]) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => applyPreset(n)}
+                    className="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 text-amber-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={applyCampaign}
+                  title="Suy kỳ từ đơn đầu đến đơn cuối của kho đang chọn"
+                  className="px-2 py-1 rounded-lg text-[11px] font-bold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+                >
+                  Cả chiến dịch
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -745,8 +864,49 @@ export function DailyFairSettlementModal({
               {/* TAB 1: DOANH SỐ & ĐỐI SOÁT KÉT TIỀN */}
               {activeTab === 'FINANCIALS' && (
                 <div className="space-y-5 animate-in fade-in duration-150">
-                  <MoneyHeader data={data} />
+                  <MoneyHeader
+                    data={data}
+                    periodLabel={
+                      data?.mode === 'range' && data?.reportStartDate && data?.reportEndDate
+                        ? `kỳ ${data.reportStartDate} → ${data.reportEndDate}`
+                        : undefined
+                    }
+                  />
 
+                  {data?.mode === 'range' ? (
+                    /* Doanh thu theo ngày trong kỳ — cùng shape với dải giờ bản in */
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                      <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
+                        Doanh thu theo ngày ({(data?.days || []).length} ngày)
+                      </h4>
+                      <div className="mt-2 overflow-x-auto max-h-[320px] overflow-y-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 sticky top-0">
+                            <tr>
+                              <th className="p-2.5">Ngày</th>
+                              <th className="p-2.5 text-right">Số đơn</th>
+                              <th className="p-2.5 text-right">Doanh thu</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(data?.days || []).map((d: any) => (
+                              <tr key={d.date} className="hover:bg-slate-50/80">
+                                <td className="p-2.5 font-mono font-bold text-slate-800">{d.date}</td>
+                                <td className="p-2.5 text-right font-mono">{Number(d.orders || 0).toLocaleString('vi-VN')}</td>
+                                <td className="p-2.5 text-right font-mono font-bold text-emerald-700">
+                                  {Number(d.sales || 0).toLocaleString('vi-VN')} đ
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {data?.stockNote && (
+                        <p className="text-[11px] text-slate-500 mt-2 italic">{data.stockNote}</p>
+                      )}
+                    </div>
+                  ) : (
+                  <>
                   {/* Số đơn theo giờ — dùng CHUNG `hourlyInWindow`/`hourWin` với dải
                       giờ trên bản in, nên màn hình và giấy luôn nói cùng một câu.
                       Không query thêm: `ordersByHour` đã gom sẵn 24 bucket. */}
@@ -764,6 +924,8 @@ export function DailyFairSettlementModal({
                     endHour={hourEndShown}
                     metric="sales"
                   />
+                  </>
+                  )}
 
                   {/* Bán chạy nhất: đủ để người cầm biên bản biết món chủ lực
                       trong ngày mà không phải cuộn qua cả bảng 10 dòng. Bảng đầy

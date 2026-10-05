@@ -25,9 +25,9 @@ assert.equal(r.totals.discount, 50, 'chiết khấu 50');
 
 console.log('\n=== SETTLEMENT RANGE (runtime): PASS ===\n');
 
-// --- Task 2 (plan kỳ): API chế độ kỳ (regex nguồn, không cần DB) ---
 import fs from 'node:fs';
 import path from 'node:path';
+// --- Task 3 (plan kỳ): modal Ngày/Kỳ + preset (dùng readSrc/ok ở trên) ---
 const readSrc = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), 'utf8');
 let checks = 0;
 const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
@@ -38,6 +38,14 @@ ok(/inferCampaignRange/.test(settleRoute), 'API suy kỳ chiến dịch');
 ok(/campaign/.test(settleRoute), 'API có tham số campaign');
 ok(/\?date=/.test(settleRoute) || /searchParams\.get\('date'\)/.test(settleRoute), 'chế độ ngày cũ còn nguyên');
 console.log(`=== SETTLEMENT RANGE (Task 2 API): PASS — ${checks} assertions ===\n`);
+
+// --- Task 3 (plan kỳ): modal Ngày/Kỳ + preset ---
+const settleModal = readSrc('src/components/pos/DailyFairSettlementModal.tsx');
+ok(/Cả chiến dịch/.test(settleModal), 'có nút Cả chiến dịch');
+ok(/1 tuần/.test(settleModal) && /3 tháng/.test(settleModal), 'đủ preset tới 3 tháng');
+ok(/mode === 'range'|rangeMode/.test(settleModal), 'toggle Ngày/Kỳ');
+ok(/reportStartDate/.test(settleModal), 'modal đọc kỳ từ payload');
+console.log(`=== SETTLEMENT RANGE (Task 3 modal): PASS ===\n`);
 import { db } from '../src/db';
 import { DailySettlementService } from '../src/services/daily-settlement.service';
 
