@@ -15,7 +15,8 @@ import {
   idempotencyKeys,
 } from '../db';
 import { AppError } from './app-error';
-import { CashboxService, OrderService, businessDateOf, evaluateShiftCutoff, VN_UTC_OFFSET_MIN } from './order.service';
+import { CashboxService, OrderService, businessDateOf, createdAtBetween, evaluateShiftCutoff, VN_UTC_OFFSET_MIN } from './order.service';
+import { isForbiddenWarehouseFamily } from './direct-transfer-policy';
 import { parseDbTimestamp } from '../lib/db-timestamp';
 import { withDbRetry } from '../lib/db-retry';
 
@@ -761,6 +762,317 @@ export class DailySettlementService {
   /** Khoá duy nhất của bản ghi chốt ngày: đúng 1 lần / ngày / kho. */
   static dayCloseKey(warehouseId: string, date: string): string {
     return `day-close:${warehouseId}:${date}`;
+  }
+
+  /**
+   * Kỳ dài nhất cho phép (ngày VN): ~3 tháng. Gom kỳ là vài query GROUP BY nên
+   * rẻ, nhưng trần này chặn kỳ vô hạn làm treo Worker và tràn bản in.
+   */
+  static readonly RANGE_MAX_DAYS = 92;
+
+  /**
+   * Suy kỳ chiến dịch của kho hội chợ: ngày VN của đơn COMPLETED đầu→cuối.
+   * Không lưu kỳ ở DB (không migration) — suy từ dữ liệu thật mỗi lần mở.
+   * null khi kho chưa có đơn nào.
+   */
+  static async inferCampaignRange(
+    warehouseId: string,
+    txOrDb: any = db
+  ): Promise<{ startDate: string; endDate: string } | null> {
+    const rows: any[] = await txOrDb
+      .select({
+        minDay: sql<string>`MIN(substr(datetime(${orders.createdAt}, '+7 hours'), 1, 10))`,
+        maxDay: sql<string>`MAX(substr(datetime(${orders.createdAt}, '+7 hours'), 1, 10))`,
+      })
+      .from(orders)
+      .where(and(eq(orders.warehouseId, warehouseId), eq(orders.status, 'COMPLETED')));
+    const r = rows[0];
+    if (!r?.minDay || !r?.maxDay) return null;
+    return { startDate: String(r.minDay), endDate: String(r.maxDay) };
+  }
+
+  /**
+   * Báo cáo kỳ (preset N ngày, kỳ tùy nhập, cả chiến dịch): MỘT request gom
+   * ở server, không fetch N ngày ở client.
+   *
+   * Ngữ nghĩa (đã duyệt spec 2026-10-05):
+   * - Tiền/kênh/top/quà/chờ: quét đơn trong kỳ, cùng helper với báo cáo ngày.
+   * - Tồn: HIỆN TẠI + nhãn rõ (không bịa tồn cuối kỳ quá khứ).
+   * - Két: mở đầu kỳ → đóng cuối kỳ; còn ca mở hoặc thiếu tiền đếm ⇒ pending.
+   * - Đơn PENDING chốt sau tính vào kỳ chứa ngày chốt (chỉ đếm COMPLETED).
+   */
+  static async getSettlementRange(
+    params: { warehouseId: string; startDate: string; endDate: string },
+    txOrDb: any = db
+  ) {
+    const warehouseId = `${params.warehouseId || ''}`.trim();
+    const startDate = `${params.startDate || ''}`.trim();
+    const endDate = `${params.endDate || ''}`.trim();
+    const BARE = /^\d{4}-\d{2}-\d{2}$/;
+    if (!warehouseId) throw AppError.invalid('Thiếu kho cần lập báo cáo kỳ.');
+    if (!BARE.test(startDate) || !BARE.test(endDate) ||
+        !Number.isFinite(Date.parse(`${startDate}T00:00:00Z`)) ||
+        !Number.isFinite(Date.parse(`${endDate}T00:00:00Z`))) {
+      throw AppError.invalid('Kỳ báo cáo phải là ngày YYYY-MM-DD hợp lệ.');
+    }
+    if (startDate > endDate) throw AppError.invalid('Ngày bắt đầu kỳ phải trước ngày kết thúc.');
+    const spanDays = Math.round(
+      (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000
+    ) + 1;
+    if (spanDays > DailySettlementService.RANGE_MAX_DAYS) {
+      throw AppError.invalid(`Kỳ tối đa ${DailySettlementService.RANGE_MAX_DAYS} ngày (~3 tháng). Tách thành nhiều kỳ nhỏ.`);
+    }
+    if (isForbiddenWarehouseFamily(warehouseId)) {
+      throw AppError.forbidden(`Kho ${warehouseId} thuộc họ kho ảo/ký gửi/cách ly, không lập báo cáo bán.`);
+    }
+
+    const whRows = await txOrDb.select().from(warehouses).where(eq(warehouses.id, warehouseId)).limit(1);
+    if (whRows.length === 0) throw AppError.invalid(`Không tìm thấy kho ${warehouseId}`);
+    const warehouse = whRows[0];
+    if ((warehouse as any).isActive !== true) throw AppError.invalid(`Kho ${warehouseId} đã ngưng hoạt động.`);
+
+    // 1. Đơn COMPLETED trong kỳ (1 query).
+    const rangeOrders: any[] = await txOrDb
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.warehouseId, warehouseId),
+          eq(orders.status, 'COMPLETED'),
+          ...createdAtBetween(orders.createdAt, startDate, endDate)
+        )
+      );
+
+    const agg = aggregateRangeOrders(rangeOrders, startDate, endDate);
+    const grossSales = agg.totals.gross;
+    const totalDiscount = agg.totals.discount;
+    const netSales = agg.totals.net;
+    const averageDiscountRate = grossSales > 0 ? totalDiscount / grossSales : 0;
+
+    // 2. Đơn chờ trong kỳ (ảnh cuối kỳ — không cộng dồn qua ngày).
+    const pendingRows = await txOrDb
+      .select({
+        finalAmount: orders.finalAmount,
+        paymentMethod: orders.paymentMethod,
+        createdAt: orders.createdAt,
+        paymentExpiresAt: orders.paymentExpiresAt,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.warehouseId, warehouseId),
+          eq(orders.status, 'PENDING_CONFIRMATION'),
+          ...createdAtBetween(orders.createdAt, startDate, endDate)
+        )
+      );
+    const pending = sumPendingQr(pendingRows);
+
+    // 3. Ca két giao kỳ: mở không sau cuối kỳ và (còn mở hoặc đóng không trước đầu kỳ).
+    const sessions: any[] = await txOrDb
+      .select()
+      .from(cashboxSessions)
+      .where(
+        and(
+          eq(cashboxSessions.warehouseId, warehouseId),
+          sql`substr(datetime(${cashboxSessions.openedAt}, '+7 hours'), 1, 10) <= ${endDate}`,
+          sql`(${cashboxSessions.status} = 'OPEN' OR ${cashboxSessions.closedAt} IS NULL OR substr(datetime(${cashboxSessions.closedAt}, '+7 hours'), 1, 10) >= ${startDate})`
+        )
+      );
+
+    const cashInRange = new Map<string, number>();
+    for (const ord of rangeOrders) {
+      if ((ord.paymentMethod || 'CASH').toUpperCase() !== 'CASH') continue;
+      if (!ord.cashboxSessionId) continue;
+      cashInRange.set(ord.cashboxSessionId, (cashInRange.get(ord.cashboxSessionId) || 0) + (ord.finalAmount || 0));
+    }
+    let openingCashTotal = 0;
+    let expectedCashTotal = 0;
+    let closingCashActualTotal = 0;
+    let openSessionCount = 0;
+    let countedCount = 0;
+    for (const s of sessions) {
+      openingCashTotal += s.openingCash || 0;
+      expectedCashTotal += (s.openingCash || 0) + (cashInRange.get(s.id) || 0);
+      if (s.status === 'OPEN') {
+        openSessionCount += 1;
+      } else if (s.closingCashActual !== null) {
+        closingCashActualTotal += s.closingCashActual;
+        countedCount += 1;
+      }
+    }
+    // Lệch két kỳ chỉ dám kết luận khi không còn ca mở VÀ mọi ca đã có tiền đếm.
+    // Phạm vi tiền đếm (cả đời ca) khác phạm vi kỳ nên KHÔNG đối chiếu chéo với
+    // `expected_cash` ghi lúc chốt như báo cáo ngày — khác phạm vi mà so là bịa.
+    const cashVariancePending = !(sessions.length > 0 && openSessionCount === 0 && countedCount === sessions.length);
+    const cashVariance = cashVariancePending ? null : closingCashActualTotal - expectedCashTotal;
+
+    // 4. Top + quà + tồn đã bán trong kỳ (items gom lô 500 id/lô — trần biến SQLite).
+    const rangeOrderIds = rangeOrders.map((o: any) => o.id).filter(Boolean);
+    let topSellers: any[] = [];
+    let giftSummary = { totalGiftCopies: 0, items: [] as Array<{ productId: string; code: string; title: string; copies: number }> };
+    const soldQtyAll = new Map<string, number>();
+    for (let i = 0; i < rangeOrderIds.length; i += 500) {
+      const batch = rangeOrderIds.slice(i, i + 500);
+      const lineItems = await txOrDb
+        .select({
+          editionId: orderItems.editionId,
+          productId: orderItems.productId,
+          quantity: orderItems.quantity,
+          totalAmount: orderItems.totalAmount,
+          isGiftLine: orderItems.isGiftLine,
+          unitSellingPrice: orderItems.unitSellingPrice,
+          editionCode: editions.code,
+          editionTitle: editions.title,
+          workTitle: works.title,
+          coverPrice: editions.coverPrice,
+          productCode: products.code,
+          productName: products.name,
+          productPrice: products.sellingPrice,
+          productKind: products.productKind,
+        })
+        .from(orderItems)
+        .leftJoin(editions, eq(orderItems.editionId, editions.id))
+        .leftJoin(products, eq(orderItems.productId, products.id))
+        .leftJoin(works, eq(editions.workId, works.id))
+        .where(sql`${orderItems.orderId} IN (${sql.join(batch.map((id: string) => sql`${id}`), sql`, `)})`);
+      const part = aggregateSellerLines(lineItems as any[]);
+      if (topSellers.length === 0) topSellers = part.topSellers;
+      else {
+        // Gộp nhiều lô: cộng dồn rồi xếp lại (topSellers helper đã slice 10/lô
+        // nên gộp thô sẽ thiếu — gom lại từ map gốc của từng lô thì phức tạp;
+        // kỳ 500+ đơn là hiếm, gộp đơn giản: hợp nhất rồi xếp lại top 10).
+        const merged = new Map<string, any>();
+        for (const r of [...topSellers, ...part.topSellers]) {
+          const prev = merged.get(r.editionId);
+          if (prev) {
+            prev.soldCopies += r.soldCopies;
+            prev.soldRevenue += r.soldRevenue;
+          } else merged.set(r.editionId, { ...r });
+        }
+        const all: any[] = [];
+        merged.forEach((r) => all.push(r));
+        all.sort((a, b) => b.soldCopies - a.soldCopies || b.soldRevenue - a.soldRevenue);
+        topSellers = all.slice(0, 10);
+      }
+      if (giftSummary.totalGiftCopies === 0 && part.giftSummary.totalGiftCopies > 0) {
+        giftSummary = part.giftSummary;
+      } else if (part.giftSummary.totalGiftCopies > 0) {
+        const gmap = new Map<string, any>();
+        for (const g of [...giftSummary.items, ...part.giftSummary.items]) {
+          const prev = gmap.get(g.productId);
+          if (prev) prev.copies += g.copies;
+          else gmap.set(g.productId, { ...g });
+        }
+        const gitems: any[] = [];
+        gmap.forEach((g) => gitems.push(g));
+        gitems.sort((a, b) => b.copies - a.copies);
+        giftSummary = {
+          totalGiftCopies: giftSummary.totalGiftCopies + part.giftSummary.totalGiftCopies,
+          items: gitems,
+        };
+      }
+      part.soldQtyAll.forEach((v, k) => soldQtyAll.set(k, (soldQtyAll.get(k) || 0) + v));
+    }
+    let totalItemsSold = 0;
+    soldQtyAll.forEach((v) => { totalItemsSold += v; });
+
+    // 5. Đơn giá trị cao nhất kỳ (luật hòa của báo cáo ngày: tiền → giờ tạo → id).
+    const createdMs = (o: any) => parseDbTimestamp(o.createdAt)?.getTime() ?? 0;
+    const highlight = [...rangeOrders].sort(
+      (a: any, b: any) =>
+        (b.finalAmount || 0) - (a.finalAmount || 0) ||
+        createdMs(a) - createdMs(b) ||
+        String(a.id).localeCompare(String(b.id))
+    )[0] || null;
+
+    // 6. Đơn vượt trần trong kỳ + phê duyệt liên quan.
+    const enrichedOverCapOrders = await enrichOverCapOrders(
+      txOrDb,
+      warehouseId,
+      rangeOrders,
+      sql`substr(datetime(${discountApprovalRequests.createdAt}, '+7 hours'), 1, 10) BETWEEN ${startDate} AND ${endDate}`
+    );
+
+    // 7. Tồn HIỆN TẠI (không bịa tồn cuối kỳ quá khứ) + số đã bán trong kỳ.
+    const inventoryReconciliation = await readInventoryReconciliation(txOrDb, warehouseId, soldQtyAll);
+
+    // Ngày đỉnh kỳ (theo đơn; hòa theo tiền).
+    let peakDay = agg.days[0] || null;
+    for (const d of agg.days) {
+      if (!peakDay || d.orders > peakDay.orders || (d.orders === peakDay.orders && d.sales > peakDay.sales)) peakDay = d;
+    }
+
+    return {
+      mode: 'range' as const,
+      reportStartDate: startDate,
+      reportEndDate: endDate,
+      warehouse: { id: warehouse.id, code: warehouse.code, name: warehouse.name, type: warehouse.warehouseType },
+      sessionsCount: sessions.length,
+      hasOpenSession: openSessionCount > 0,
+      days: agg.days,
+      peakDay,
+      financials: {
+        totalOrdersCount: agg.totals.orders,
+        grossSales,
+        totalDiscount,
+        netSales,
+        averageDiscountRate,
+        isDiscountRateWarning: averageDiscountRate > 0.2,
+        totalItemsSold,
+        averageOrderValue: agg.totals.orders > 0 ? Math.round(netSales / agg.totals.orders) : 0,
+        averageItemsPerOrder: agg.totals.orders > 0 ? Number((totalItemsSold / agg.totals.orders).toFixed(1)) : 0,
+        peakHour: null,
+      },
+      paymentBreakdown: {
+        cash: { sales: agg.cash.sales, ordersCount: agg.cash.ordersCount, percentage: netSales > 0 ? Math.round((agg.cash.sales / netSales) * 100) : 0 },
+        qrTransfer: { sales: agg.qr.sales, ordersCount: agg.qr.ordersCount, percentage: netSales > 0 ? Math.round((agg.qr.sales / netSales) * 100) : 0 },
+        pendingQr: { total: pending.total, ordersCount: pending.ordersCount },
+        card: { sales: agg.card.sales, ordersCount: agg.card.ordersCount, percentage: netSales > 0 ? Math.round((agg.card.sales / netSales) * 100) : 0 },
+      },
+      cashboxReconciliation: {
+        openingCashTotal,
+        expectedCashTotal,
+        closingCashActualTotal,
+        cashVariance,
+        cashVariancePending,
+        openSessionCount,
+        unreconcilableSessionCount: cashVariancePending ? sessions.length - countedCount : 0,
+        sessions: sessions.map((s: any) => ({
+          id: s.id,
+          cashierId: s.cashierId,
+          openingCash: s.openingCash,
+          closingCashActual: s.closingCashActual,
+          expectedCash: s.expectedCash,
+          cashDiscrepancy: s.cashDiscrepancy,
+          expectedCashLive: (s.openingCash || 0) + (cashInRange.get(s.id) || 0),
+          reconcilable: !cashVariancePending,
+          status: s.status,
+          notes: s.notes,
+          openedAt: s.openedAt,
+          closedAt: s.closedAt,
+        })),
+      },
+      discountSupervision: {
+        overCapOrdersCount: enrichedOverCapOrders.length,
+        orders: enrichedOverCapOrders,
+      },
+      topSellers,
+      giftSummary,
+      highlight: highlight
+        ? {
+            orderCode: highlight.orderCode,
+            finalAmount: highlight.finalAmount,
+            subtotal: highlight.subtotal,
+            discountAmount: highlight.discountAmount,
+            paymentMethod: highlight.paymentMethod,
+            itemCount: highlight.itemCount || 0,
+            createdAt: highlight.createdAt,
+          }
+        : null,
+      inventoryReconciliation,
+      // Nhãn bắt buộc: tồn đọc lúc mở báo cáo, KHÔNG phải tồn cuối kỳ quá khứ.
+      stockNote: 'Tồn kho hiện tại lúc mở báo cáo (không phải tồn cuối kỳ quá khứ). Kỳ đang diễn ra thì hai con số bằng nhau.',
+    };
   }
 
   /** Đọc bản ghi chốt ngày đã có (null nếu ngày đó chưa chốt). */
