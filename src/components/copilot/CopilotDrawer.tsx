@@ -114,6 +114,14 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
 
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Model đang chọn: auto (server quyết) | gemini-* | local (ép luật nội bộ). */
+  const [copilotModel, setCopilotModel] = useState<string>(() => {
+    try {
+      return localStorage.getItem('formapubli.copilot.model') || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
   const [messages, setMessages] = useState<CopilotMessage[]>([
     {
       id: 'welcome',
@@ -296,7 +304,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
       const res = await fetch('/api/ai/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({ question: text, model: copilotModel === 'auto' ? undefined : copilotModel }),
       });
 
       const json = await res.json();
@@ -592,6 +600,25 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
           </div>
 
           <div className="flex items-center gap-1">
+            <select
+              value={copilotModel}
+              onChange={(e) => {
+                setCopilotModel(e.target.value);
+                try {
+                  localStorage.setItem('formapubli.copilot.model', e.target.value);
+                } catch {
+                  /* bỏ qua */
+                }
+              }}
+              title="Chọn LLM trả lời (Tự động = server quyết, có dự phòng khi nghẽn)"
+              aria-label="Chọn mô hình AI"
+              className="bg-slate-800 text-slate-200 text-[11px] font-bold rounded-lg px-1.5 py-1.5 outline-none cursor-pointer max-w-[118px] truncate"
+            >
+              <option value="auto">⚡ Tự động</option>
+              <option value="gemini-3.8-flash">✨ 3.8 Flash</option>
+              <option value="gemini-3.5-flash-lite">3.5 Lite</option>
+              <option value="local">📏 Luật nội bộ</option>
+            </select>
             {!isMini && onMinimize && (
               <button
                 onClick={onMinimize}

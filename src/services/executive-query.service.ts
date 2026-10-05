@@ -46,6 +46,8 @@ export interface QueryCatalogParams {
   topEditionsBySales?: boolean;
   windowDays?: number;
     limit?: number;
+  /** Loc top theo 1 kho (vd "ban chay kho ho guom"). Khong truyen = toan he thong. */
+  warehouseId?: string;
   }
 
   /** Clamp so kieu limit/window: NaN/Infinity tu caller → default an toan. */
@@ -638,6 +640,11 @@ export class ExecutiveQueryService {
     // cutoff deu lon hon cutoff (vi 'T' > ' ') ⇒ don 30 ngay 8 gio tuoi van
     // loot vao bao cao "30 ngay"; cua so lech toi da 24 gio.
     const cutoff = new Date(Date.now() - windowDays * 24 * 3600 * 1000).toISOString();
+    // Loc kho cho top theo kho (vd "ban chay kho ho guom"). Khong truyen = toan he thong.
+    const whConds =
+      params.warehouseId && typeof params.warehouseId === 'string' && params.warehouseId.trim()
+        ? [eq(orders.warehouseId, params.warehouseId.trim())]
+        : [];
     // Loai tang/tai tro/0d nhu salesByEdition de bestseller khong bi thoi phong.
     const salesRows = await db
       .select({
@@ -655,7 +662,8 @@ export class ExecutiveQueryService {
           sql`${orders.channel} != 'SPONSORSHIP'`,
           sql`${orders.finalAmount} > 0`,
           eq(orderItems.isGiftLine, false),
-          sql`${orderItems.totalAmount} > 0`
+          sql`${orderItems.totalAmount} > 0`,
+          ...whConds
         )
       )
       .groupBy(orderItems.editionId);

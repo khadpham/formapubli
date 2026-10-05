@@ -1,0 +1,93 @@
+/**
+ * Copilot: top-N bán chạy (định tuyến đúng) + chọn model + fallback khi nghẽn.
+ * Heuristic path (không cần key LLM) qua POST thật trên DB cách ly.
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { db, editions, orders, orderItems } from '../src/db';
+import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
+import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
+import { assertIsolatedTestDb } from './test-guard';
+
+assertIsolatedTestDb('test-copilot-topn-model');
+
+const readSrc = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), 'utf8');
+let checks = 0;
+const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
+
+async function run() {
+  // --- 1. Source: định tuyến top-N + picker + fallback ---
+  const guard = readSrc('src/services/ai/copilot-guardrails.ts');
+  ok(/topEditionsBySales/.test(guard), 'heuristic top phải gọi catalog top-editions');
+  ok(/top\\s\*\(\\d/.test(guard) || /parseTopN|topN/.test(guard), 'phải bóc số top-N từ câu hỏi');
+  const route = readSrc('src/app/api/ai/copilot/route.ts');
+  ok(/callGeminiWithFallback/.test(route), 'synth phải qua fallback khi nghẽn');
+  ok(/GEMINI_FALLBACK/.test(readSrc('src/services/ai/llm-client.ts')), 'có model dự phòng khi 503');
+  const drawer = readSrc('src/components/copilot/CopilotDrawer.tsx');
+  ok(/copilotModel|chon.*model|Chọn.*AI/i.test(drawer), 'drawer phải có chọn model');
+  console.log(`=== COPILOT TOPN/MODEL (source): PASS — ${checks} assertions ===\n`);
+
+  // --- 2. Runtime: "top 7 sách bán chạy" → catalog top, đáp liệt kê, không JSON ---
+  const eds: any[] = await db
+    .select({ id: editions.id, code: editions.code, title: editions.title })
+    .from(editions)
+    .limit(3);
+  assert.ok(eds.length >= 2, 'DB test phải có ít nhất 2 ấn bản');
+  const stamp = Date.now();
+  const mkOrder = (n: number, edId: string) => ({
+    id: `ord-cptop-${stamp}-${n}`,
+    orderCode: `CPT${stamp}${n}`,
+    idempotencyKey: `idem-cptop-${stamp}-${n}`,
+    warehouseId: 'wh-au-co',
+    customerName: 'Khách top',
+    subtotal: 50000,
+    discountRate: 0,
+    discountAmount: 0,
+    finalAmount: 50000,
+    paymentMethod: 'CASH',
+    status: 'COMPLETED' as const,
+    cashierId: 'staff-admin',
+    createdAt: '2026-09-20T02:00:00.000Z',
+  });
+  await db.insert(orders).values([mkOrder(1, eds[0].id), mkOrder(2, eds[1].id)] as any);
+  await db.insert(orderItems).values([
+    { id: `oi-cptop-${stamp}-1`, orderId: `ord-cptop-${stamp}-1`, editionId: eds[0].id, productId: eds[0].id, quantity: 5, unitCoverPrice: 10000, unitSellingPrice: 10000, totalAmount: 50000, isGiftLine: false },
+    { id: `oi-cptop-${stamp}-2`, orderId: `ord-cptop-${stamp}-2`, editionId: eds[1].id, productId: eds[1].id, quantity: 1, unitCoverPrice: 50000, unitSellingPrice: 50000, totalAmount: 50000, isGiftLine: false },
+  ] as any);
+
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GOOGLE_AI_API_KEY;
+  const token = await signSession({
+    role: 'ROLE_OWNER',
+    actorId: 'ADMIN-01',
+    fullName: 'Copilot TopN',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  });
+  try {
+    const req = new Request('http://localhost/api/ai/copilot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      body: JSON.stringify({ question: 'top 7 sách bán chạy là những cuốn nào?' }),
+    });
+    const response = await postCopilot(req as any);
+    const payload = await response.json();
+    assert.equal(response.status, 200, 'hỏi top phải 200');
+    assert.equal(payload.data.toolUsed, 'query_catalog', 'phải vào tool danh mục (không phải tồn kho)');
+    assert.match(payload.data.answer, new RegExp(eds[0].code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'đáp phải có mã bán chạy nhất');
+    assert.doesNotMatch(payload.data.answer, /^\s*[\{\[]/, 'đáp không mở đầu JSON');
+  } finally {
+    const { sql } = await import('drizzle-orm');
+    await db.run(sql`DELETE FROM order_items WHERE id LIKE ${`oi-cptop-${stamp}-%`}`);
+    await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cptop-${stamp}-%`}`);
+  }
+
+  console.log('✅ Copilot top-N routing + model picker passed');
+}
+
+run().catch((err) => {
+  console.error('❌ Copilot topn-model test failed:', err);
+  process.exit(1);
+});

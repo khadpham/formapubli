@@ -3,7 +3,7 @@ import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, g
 import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
-import { callGeminiJsonRaw, callOpenAIJsonRaw, resolveGeminiModel, resolveOpenAIModel } from '@/services/ai/llm-client';
+import { callGeminiWithFallback, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
 
 export async function POST(req: NextRequest) {
   const ip = extractClientIp(req);
@@ -80,6 +80,14 @@ export async function POST(req: NextRequest) {
 
   const rawQuestion = (body as { question?: unknown })?.question;
   const question = typeof rawQuestion === 'string' ? rawQuestion.trim() : '';
+  // Model do user chọn ở drawer (Tự động / 3.8 / 3.5-lite / nội bộ). Ngoài
+  // allowlist thì bỏ qua (về mặc định env) — không tin input thô.
+  const rawModel = (body as { model?: unknown })?.model;
+  const MODEL_ALLOWLIST = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'local'];
+  const modelOverride =
+    typeof rawModel === 'string' && (MODEL_ALLOWLIST as string[]).includes(rawModel.trim())
+      ? rawModel.trim()
+      : undefined;
   if (!question) {
     return NextResponse.json(
       { success: false, code: 'INVALID_INPUT', message: 'Vui lòng cung cấp nội dung câu hỏi (`question`).' },
@@ -108,7 +116,7 @@ export async function POST(req: NextRequest) {
   // 5. Phân tích kế hoạch gọi Tool
   try {
     const track: { planner?: string } = {};
-    const plan = await CopilotGuardrails.planQuery(question, track);
+    const plan = await CopilotGuardrails.planQuery(question, track, modelOverride);
 
     if (plan.action === 'REFUSE_OUT_OF_SCOPE' || plan.action === 'DIRECT_ANSWER') {
       const finalMsg = CopilotGuardrails.postProcessAnswer(plan.directAnswer || 'Không có phản hồi.');
@@ -157,17 +165,16 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
       try {
         let raw = '';
         if (geminiKey) {
-          raw = await callGeminiJsonRaw({
+          raw = await callGeminiWithFallback({
             systemPrompt: synthPrompt,
             userText: `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`,
             apiKey: geminiKey,
             timeoutMs: 5000,
+            model: modelOverride && modelOverride !== 'local' ? modelOverride : undefined,
+            onModel: (m) => {
+              synthEngine = 'gemini:' + m;
+            },
           });
-          try {
-            synthEngine = 'gemini:' + resolveGeminiModel();
-          } catch {
-            synthEngine = 'gemini';
-          }
         } else if (openaiKey) {
           raw = await callOpenAIJsonRaw({
             systemPrompt: synthPrompt,

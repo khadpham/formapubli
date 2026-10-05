@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ExecutiveQueryService } from '../executive-query.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { removeAccents } from '@/lib/vietnamese';
-import { callGeminiJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, resolveOpenAIModel, nullableString } from './llm-client';
+import { callGeminiWithFallback, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, resolveOpenAIModel, nullableString } from './llm-client';
 
 export const COPILOT_SYSTEM_PROMPT = `
 Bạn là Executive AI Copilot — Trợ lý điều hành cấp cao của Nhà xuất bản Formapubli OS.
@@ -54,8 +54,8 @@ export class CopilotGuardrails {
    * Wrapper: tu dong phan giai ma/ten sach cho query_stock_level de LLM
    * khong bao gio phai doan mo tu ca danh muc (nguyen nhan so lieu sai).
    */
-  static async planQuery(question: string, tracker?: { planner?: string }): Promise<CopilotPlan> {
-    const plan = await this.planQueryInner(question, tracker);
+  static async planQuery(question: string, tracker?: { planner?: string }, modelOverride?: string): Promise<CopilotPlan> {
+    const plan = await this.planQueryInner(question, tracker, modelOverride);
     // Cau hon hop (vua small-talk vua so lieu): tra loi small-talk + hen cau so lieu rieng.
     if (plan.action === 'DIRECT_ANSWER' && plan.reason === 'Small-talk allowed') {
       const n = removeAccents(question.toLowerCase());
@@ -85,16 +85,23 @@ export class CopilotGuardrails {
         }
       }
       // Phan giai ten kho ("kho Au Co" → wh-au-co) de cau tra loi gon 1 kho.
-      if (!plan.toolCall.args.warehouseId) {
-        try {
-          const wh = await ExecutiveQueryService.resolveWarehouseFromText(question);
-          if (wh) {
-            plan.toolCall.args = { ...plan.toolCall.args, warehouseId: wh.warehouseId };
-            plan.reason = `Resolved warehouse ${wh.warehouseId}. ` + (plan.reason || '');
-          }
-        } catch (err) {
-          console.warn('[copilot] warehouse resolve failed:', err);
+      // Ap cho stock + catalog top + product flow (vd "ban chay kho ho guom").
+    }
+    if (
+      !plan.toolCall?.args?.warehouseId &&
+      plan.action === 'CALL_TOOL' &&
+      (plan.toolCall?.toolName === 'query_stock_level' ||
+        plan.toolCall?.toolName === 'query_catalog' ||
+        plan.toolCall?.toolName === 'query_product_flow')
+    ) {
+      try {
+        const wh = await ExecutiveQueryService.resolveWarehouseFromText(question);
+        if (wh) {
+          plan.toolCall.args = { ...plan.toolCall.args, warehouseId: wh.warehouseId };
+          plan.reason = `Resolved warehouse ${wh.warehouseId}. ` + (plan.reason || '');
         }
+      } catch (err) {
+        console.warn('[copilot] warehouse resolve failed:', err);
       }
     }
     if (plan.action === 'CALL_TOOL' && plan.toolCall?.toolName === 'query_product_flow') {
@@ -114,7 +121,7 @@ export class CopilotGuardrails {
     return plan;
   }
 
-  static async planQueryInner(question: string, tracker?: { planner?: string }): Promise<CopilotPlan> {
+  static async planQueryInner(question: string, tracker?: { planner?: string }, modelOverride?: string): Promise<CopilotPlan> {
     const qLower = question.toLowerCase();
     // Chuẩn hóa không dấu để bắt paraphrase gõ không dấu (vd 'huy don', 'xoa so').
     const qNorm = removeAccents(qLower);
@@ -165,9 +172,10 @@ export class CopilotGuardrails {
       return { action: 'DIRECT_ANSWER', directAnswer: smallTalk, reason: 'Small-talk allowed' };
     }
 
-    // 2. Dự phòng nhận diện Heuristic trước nếu LLM chưa cấu hình API key
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
-    const openaiKey = process.env.OPENAI_API_KEY;
+    // 2. Dự phòng nhận diện Heuristic trước nếu LLM chưa cấu hình API key.
+    // Ép luật nội bộ khi user chọn model 'local'.
+    const geminiKey = modelOverride === 'local' ? undefined : process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+    const openaiKey = modelOverride === 'local' ? undefined : process.env.OPENAI_API_KEY;
 
     if (!geminiKey && !openaiKey) {
       if (tracker) tracker.planner = 'nội bộ';
@@ -183,6 +191,8 @@ KHONG tu suy doan editionId.
 NEU CAU HOI VE DANH MUC (sach cua tac gia X, tua bat dau bang chu Y, tac gia duoc
 yeu thich / ban chay, liet ke sach): nhat thiet goi query_catalog voi
 args {"q": "<nguyen van cau hoi>"}.
+NEU CAU HOI TOP-N ("top 7 sach ban chay", "10 cuon ban nhieu nhat"): goi query_catalog voi
+args {"q": "<nguyen van>", "topEditionsBySales": true, "limit": <so trong cau hoi, mac dinh 10>}.
 NEU CAU HOI NHAC 1 MON CU THE KEM GIO/THOI DIEM (gio vang, gio nao ban, ban luc may gio): nhat thiet goi query_product_flow voi
 args {"q": "<nguyen van cau hoi>"} de tra gio vang + ngay dinh.
 NEU CAU HOI MUON LEN DON / DAT SACH (len don, tao don nhap, lay N cuon, ban cho khach,
@@ -199,13 +209,17 @@ Trả về JSON chuẩn khớp schema:
     try {
       if (geminiKey) {
         try {
-          const raw = await callGeminiJsonRaw({
+          const raw = await callGeminiWithFallback({
             systemPrompt: plannerPrompt,
             userText: question,
             apiKey: geminiKey,
             timeoutMs: 4000,
+            model: modelOverride && modelOverride !== 'local' ? modelOverride : undefined,
+            onModel: (m) => {
+              if (tracker) tracker.planner = 'gemini:' + m;
+            },
           });
-          if (tracker) {
+          if (tracker && !tracker.planner) {
             try {
               tracker.planner = 'gemini:' + resolveGeminiModel();
             } catch {
@@ -313,6 +327,29 @@ Trả về JSON chuẩn khớp schema:
         reason: 'Heuristic keyword match: sales',
       };
     }
+    // Top-N ban chay (co/khong kem kho): "top 7 sach ban chay", "ban chay nhat
+    // kho ho guom". Dat TRUOC nhanh ton kho vi cau nao co kho + top la hoi XEP
+    // HANG, khong phai hoi ton ("top 7 kho ho guom" truoc day roi nham sang ton).
+    // GIO (gio vang/ban luc may gio) thuoc Nhap Ban 1 mon — nhanh ben duoi, khong vao day.
+    const topMatch = n.match(/\btop\s*(\d{1,3})\b/);
+    const wantsTop =
+      !!topMatch ||
+      n.includes('ban chay nhat') || n.includes('chay nhat') ||
+      n.includes('nhieu nhat') || n.includes('ban tot nhat') || n.includes('ban manh nhat');
+    // Gio (gio vang/ban luc may gio) thuoc Nhap Ban — nhanh flow xu ly, khong vao top.
+    const hourIntent =
+      n.includes('gio vang') || n.includes('gio nao') || n.includes('may gio') ||
+      n.includes('ban luc') || n.includes('ban vao luc') || n.includes('khung gio') ||
+      n.includes('ban chay vao') || n.includes('ban manh vao');
+    if (wantsTop && !hourIntent) {
+      const limit = topMatch ? Math.min(50, Math.max(1, parseInt(topMatch[1], 10))) : 10;
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_catalog', args: { q, topEditionsBySales: true, limit } },
+        reason: 'Heuristic keyword match: top sellers',
+      };
+    }
+
     if (n.includes('ton kho') || n.includes('con bao nhieu') || n.includes('ve hang') || n.includes('kho au co') || /(^| )kho( |$)/.test(n)) {
       return {
         action: 'CALL_TOOL',
@@ -447,6 +484,7 @@ Trả về JSON chuẩn khớp schema:
           topEditionsBySales: args.topEditionsBySales,
           windowDays: this.numArg(args.windowDays, 30, 1, 365),
           limit: this.numArg(args.limit, 20, 1, 50),
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
         });
         break;
 

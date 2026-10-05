@@ -158,8 +158,12 @@ export async function callGeminiJsonRaw(params: {
   userText: string;
   apiKey: string;
   timeoutMs?: number;
+  /** Ghi đè model (mặc định đọc GEMINI_MODEL). */
+  model?: string;
+  /** Gọi khi model chính được dùng thành công (để UI báo đúng engine). */
+  onModel?: (model: string) => void;
 }): Promise<string> {
-  const model = resolveGeminiModel();
+  const model = (params.model || '').trim() || resolveGeminiModel();
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`;
   return withLlmCircuit('gemini', async () => {
     const data = (await postJsonWithTimeout(
@@ -174,8 +178,37 @@ export async function callGeminiJsonRaw(params: {
     )) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawJson) throw new Error('Empty Gemini response');
+    params.onModel?.(model);
     return rawJson;
   });
+}
+
+/**
+ * Gọi Gemini kèm dự phòng khi model chính nghẽn (503/429): thử 1 lần model
+ * GEMINI_FALLBACK_MODEL (mặc định gemini-3.5-flash-lite, bản legacy ổn định).
+ * Không retry lỗi khác (400/sai key retry cũng vô ích). onModel báo đúng model
+ * đã trả lời để UI hiện engine trung thực.
+ */
+export async function callGeminiWithFallback(params: {
+  systemPrompt: string;
+  userText: string;
+  apiKey: string;
+  timeoutMs?: number;
+  model?: string;
+  fallbackModel?: string;
+  onModel?: (model: string) => void;
+}): Promise<string> {
+  const primary = (params.model || '').trim() || resolveGeminiModel();
+  const fallback =
+    (params.fallbackModel || process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash-lite').trim();
+  try {
+    return await callGeminiJsonRaw({ ...params, model: primary });
+  } catch (err: any) {
+    const msg = `${err?.message || ''}`;
+    const overload = /503|429|UNAVAILABLE|overloaded|high demand/i.test(msg);
+    if (!overload || !fallback || fallback === primary) throw err;
+    return await callGeminiJsonRaw({ ...params, model: fallback });
+  }
 }
 
 export async function callOpenAIJsonRaw(params: {
