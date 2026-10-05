@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Bước 5 — OLAP read-only (0 migration).
- * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions|stock-summary
+ * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions|stock-summary|product-timeline
  *   &startDate=&endDate=
  *
  * Tham số RIÊNG theo từng view (không phải view nào cũng nhận hết):
@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
  *   stock-summary      : warehouseId
  *   consignment        : startDate, endDate  (kho ký gửi suy ra từ mẫu id wh-consign-*, không nhận warehouseId/fiscalScope)
  *   trending           : top               (tuần hiện tại, không nhận startDate/endDate/warehouseId/fiscalScope)
+ *   product-timeline   : productId (bắt buộc), startDate, endDate, warehouseId (Nhịp Bán 1 món trong kỳ)
  * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).
  */
 export async function GET(req: NextRequest) {
@@ -59,6 +60,13 @@ export async function GET(req: NextRequest) {
     }
     if (view === 'cashflow') {
       return NextResponse.json({ success: true, data: await AnalyticsService.cashflow(range, scope) });
+    }
+    if (view === 'product-timeline') {
+      const productId = searchParams.get('productId') || '';
+      if (!productId.trim()) {
+        return NextResponse.json({ success: false, error: 'Thiếu tham số productId.' }, { status: 400 });
+      }
+      return NextResponse.json({ success: true, data: await AnalyticsService.productTimeline(productId, range, warehouseId) });
     }
     if (view === 'top-editions') {
       const top = Math.min(100, Math.max(1, parseInt(searchParams.get('top') || '20', 10) || 20));

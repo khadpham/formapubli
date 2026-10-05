@@ -1,6 +1,14 @@
 import { db, orders, orderItems, editions, products, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
 import { eq, and, gte, lte, sql, like, inArray } from 'drizzle-orm';
 import { businessDateOf, createdAtBetween, VN_UTC_OFFSET_MIN } from './order.service';
+import { parseDbTimestamp } from '../lib/db-timestamp';
+
+/** Ngày VN 'YYYY-MM-DD' của timestamp DB (cả hai họ cũ/mới), không phụ thuộc múi giờ máy. */
+function vnDayKey(value: unknown): string | null {
+  const d = parseDbTimestamp(value as any);
+  if (!d) return null;
+  return new Date(d.getTime() + VN_UTC_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
+}
 
 // Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
 // (orders/order_items/ledger). Không copy ngày→tuần→tháng, không bảng mới.
@@ -275,6 +283,83 @@ export class AnalyticsService {
    * bảng (dành cho muốn xem tổng cả quà). Mặc định này đã khóa bằng test
    * `scripts/test-top-gifts-locked.ts` — đổi nó là làm đỏ suite đó.
    */
+  /**
+   * Nhịp Bán 1 sản phẩm trong kỳ: buckets theo ngày VN + sự kiện bán + tổng.
+   * Chỉ đơn COMPLETED (PENDING chưa phải bán). Không cắt top — món nào có bán
+   * trong kỳ đều gom được (danh sách toàn kỳ lấy từ top-editions top=100).
+   */
+  static async productTimeline(
+    productId: string,
+    range: DateRange = {},
+    warehouseId?: string
+  ) {
+    const pid = `${productId || ''}`.trim();
+    if (!pid) return null;
+    const conds = [
+      eq(orders.status, 'COMPLETED'),
+      eq(orderItems.productId, pid),
+      ...createdAtBetween(orders.createdAt, range.startDate, range.endDate),
+    ];
+    if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    const lines: any[] = await db
+      .select({
+        qty: orderItems.quantity,
+        revenue: orderItems.totalAmount,
+        createdAt: orders.createdAt,
+        orderId: orders.id,
+        orderCode: orders.orderCode,
+        warehouseId: orders.warehouseId,
+        channel: orders.channel,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(and(...conds))
+      .orderBy(sql`${orders.createdAt} DESC`)
+      .limit(200);
+    const meta: any[] = await db
+      .select({ id: products.id, code: products.code, name: products.name })
+      .from(products)
+      .where(eq(products.id, pid))
+      .limit(1);
+    const start = range.startDate || '0000-00-00';
+    const end = range.endDate || '9999-99-99';
+    const byDay = new Map<string, { date: string; qty: number; revenue: number; orders: Set<string> }>();
+    for (const l of lines) {
+      const day = vnDayKey(l.createdAt);
+      if (!day || day < start || day > end) continue;
+      let b = byDay.get(day);
+      if (!b) {
+        b = { date: day, qty: 0, revenue: 0, orders: new Set<string>() };
+        byDay.set(day, b);
+      }
+      b.qty += Number(l.qty || 0);
+      b.revenue += Number(l.revenue || 0);
+      if (l.orderId) b.orders.add(String(l.orderId));
+    }
+    const buckets: Array<{ date: string; qty: number; revenue: number; orders: number }> = [];
+    byDay.forEach((b) => buckets.push({ date: b.date, qty: b.qty, revenue: b.revenue, orders: b.orders.size }));
+    buckets.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const totals = {
+      qty: buckets.reduce((s, b) => s + b.qty, 0),
+      revenue: buckets.reduce((s, b) => s + b.revenue, 0),
+      orders: buckets.reduce((s, b) => s + b.orders, 0),
+      activeDays: buckets.length,
+    };
+    return {
+      product: { id: pid, code: meta[0]?.code || null, name: meta[0]?.name || null },
+      buckets,
+      events: lines.map((l) => ({
+        createdAt: l.createdAt,
+        qty: Number(l.qty || 0),
+        orderId: String(l.orderId || ''),
+        orderCode: String(l.orderCode || ''),
+        warehouseId: String(l.warehouseId || ''),
+        channel: l.channel || null,
+      })),
+      totals,
+    };
+  }
+
   static async topEditions(range: DateRange = {}, topN = 20, warehouseId?: string, excludeGifts = true, fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT') {
     const conds = [
       eq(orders.status, 'COMPLETED'),

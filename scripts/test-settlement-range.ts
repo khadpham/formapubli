@@ -116,7 +116,7 @@ async function dbPart() {
   } finally {
     // Dọn đơn giả để không làm lệch tổng các suite khác.
     const { sql } = await import('drizzle-orm');
-    await db.run(sql`DELETE FROM orders WHERE id LIKE 'ord-range-${stamp}-%'`);
+    await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-range-${stamp}-%`}`);
   }
 }
 
