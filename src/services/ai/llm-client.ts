@@ -39,8 +39,9 @@ export type LlmEngine = 'LLM_GEMINI' | 'LLM_OPENAI';
  * QUYẾT ĐỊNH SPRINT 0 + ĐO THẬT 17/09/2026 (Chủ dự án duyệt):
  * - gemini-1.5-flash-002: retired 24/09/2025. gemini-2.0-flash: retired 01/06/2026.
  * - gemini-2.5-flash: retirement 20/10/2026 (đã ghi nhận 404 sớm) — KHÔNG dùng.
- * - CHỐT: GEMINI_MODEL=gemini-3.5-flash-lite (đo thật: ~950ms, JSON chuẩn,
- *   đúng editionId + số lượng; bản full 3.5-flash chậm ~8.4s và 503 thất thường).
+ * - CHỐT 05/10/2026: GEMINI_MODEL=gemini-3.8-flash (Stable, đã xác minh tồn tại
+ *   trên docs Google 01/10/2026). Google bỏ temperature/top_p/top_k từ 3.6+
+ *   nên generationConfig KHÔNG gửi temperature (gửi là 400).
  * - Tầng Groq đo thật cùng prompt: gpt-oss-20b đúng (~1150ms), qwen3.8-27b
  *   nhanh (~420ms) nhưng bịa mã H01-001/H01-002 và chẻ số lượng — LOẠI khỏi chuỗi.
  * - Nếu chuyển sang 3.6+: Google đã bỏ temperature/top_p/top_k — phải cập nhật
@@ -50,8 +51,8 @@ export function resolveGeminiModel(): string {
   const model = (process.env.GEMINI_MODEL || '').trim();
   if (!model) {
     throw new LlmConfigError(
-      'Thiếu cấu hình GEMINI_MODEL. Đặt GEMINI_MODEL=gemini-3.5-flash-lite ' +
-        '(đã chốt + đo thật 17/09/2026) — không dùng model mặc định cũ.'
+      'Thiếu cấu hình GEMINI_MODEL. Đặt GEMINI_MODEL=gemini-3.8-flash ' +
+        '(đã chốt + xác minh 05/10/2026) — không dùng model mặc định cũ.'
     );
   }
   return model;
@@ -165,7 +166,7 @@ export async function callGeminiJsonRaw(params: {
       endpoint,
       {
         contents: [{ role: 'user', parts: [{ text: params.systemPrompt + '\n\nNỘI DUNG:\n' + params.userText }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+        generationConfig: { responseMimeType: 'application/json' },
       },
       {},
       params.timeoutMs ?? LLM_DEFAULT_TIMEOUT_MS,

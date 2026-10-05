@@ -1,4 +1,4 @@
-import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances } from '@/db';
+import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances, products } from '@/db';
 import { ForecastService, RunoutLevel } from './forecast.service';
 import { OrderService, createdAtBetween } from './order.service';
 import { InventoryService } from './inventory.service';
@@ -126,9 +126,122 @@ export class ExecutiveQueryService {
   }
 
   /**
-   * Phan giai mot dau sach cu the tu cau hoi tu nhien (ma "H01" hoac ten "Benh tuong").
-   * Khong dau, khong phan biet hoa thuong; uu tien khop ma chinh xac, sau do ten dai nhat.
+   * Phan giai 1 SAN PHAM (sach hoac hang hoa) tu cau hoi tu nhien (ma "H01"/
+   * "SP-001" hoac ten). Khac resolveEditionFromText (chi editions): hang hoa
+   * khong co dong editions nen tra productId de query theo product.
    */
+  static async resolveProductFromText(text: string): Promise<{ productId: string; code: string | null; title: string | null } | null> {
+    const norm = removeAccents((text || '').toLowerCase());
+    if (!norm.trim()) return null;
+    const catalog = await db
+      .select({ id: products.id, code: products.code, name: products.name })
+      .from(products);
+    const tokens = norm.split(/[^a-z0-9]+/).filter(Boolean);
+    // 1. Khop ma san pham / ma an ban chinh xac theo token.
+    const edCodes: any[] = await db.select({ id: editions.id, code: editions.code }).from(editions);
+    const codeToProduct = new Map<string, string>();
+    const regCode = (code: string | null | undefined, pid: string) => {
+      const c = removeAccents((code || '').toLowerCase()).trim();
+      if (c && !codeToProduct.has(c)) codeToProduct.set(c, pid);
+    };
+    catalog.forEach((p) => regCode(p.code, p.id));
+    edCodes.forEach((e) => regCode(e.code, e.id));
+    let codeHit: { productId: string } | null = null;
+    tokens.forEach((t) => {
+      if (!codeHit && codeToProduct.has(t)) codeHit = { productId: codeToProduct.get(t) as string };
+    });
+    if (codeHit) {
+      const pid = (codeHit as { productId: string }).productId;
+      const found = catalog.find((p) => p.id === pid);
+      const ed = edCodes.find((e) => e.id === pid);
+      return { productId: pid, code: found?.code || ed?.code || null, title: found?.name || null };
+    }
+    // 2. Khop ten: cau hoi chua toan bo ten (khong dau); chon ten dai nhat.
+    let best: { productId: string; code: string | null; title: string | null } | null = null;
+    let bestLen = 0;
+    for (const p of catalog) {
+      const nameNorm = removeAccents((p.name || '').toLowerCase()).trim();
+      if (nameNorm.length >= 4 && norm.includes(nameNorm) && nameNorm.length > bestLen) {
+        best = { productId: p.id, code: p.code, title: p.name };
+        bestLen = nameNorm.length;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * query_product_flow: Nhịp Bán 1 món trong N ngày (giờ vàng, ngày đỉnh).
+   * Tái dùng AnalyticsService.productTimeline (SSOT với drawer Nhịp Bán).
+   */
+  static async queryProductFlow(params: { productId?: string; codeOrTitle?: string; windowDays?: number; warehouseId?: string } = {}): Promise<{
+    product: { id: string; code: string | null; title: string | null } | null;
+    totals: { qty: number; revenue: number; orders: number; activeDays: number };
+    peakDay: { date: string; qty: number; revenue: number } | null;
+    peakHour: number | null;
+    warning?: string;
+  }> {
+    let pid = `${params.productId || ''}`.trim();
+    let meta: { code: string | null; title: string | null } = { code: null, title: null };
+    if (!pid && params.codeOrTitle) {
+      const resolved = await this.resolveProductFromText(params.codeOrTitle);
+      if (!resolved) {
+        return {
+          product: null,
+          totals: { qty: 0, revenue: 0, orders: 0, activeDays: 0 },
+          peakDay: null,
+          peakHour: null,
+          warning: `Không tìm thấy sản phẩm khớp với "${params.codeOrTitle}" trong danh mục.`,
+        };
+      }
+      pid = resolved.productId;
+      meta = { code: resolved.code, title: resolved.title };
+    }
+    if (!pid) {
+      return {
+        product: null,
+        totals: { qty: 0, revenue: 0, orders: 0, activeDays: 0 },
+        peakDay: null,
+        peakHour: null,
+        warning: 'Cần chỉ rõ 1 món (mã hoặc tên) để xem nhịp bán.',
+      };
+    }
+    const days = Math.min(92, Math.max(1, Math.floor(Number(params.windowDays) || 30)));
+    const nowVn = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+    const startVn = new Date(Date.parse(`${nowVn}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    const { AnalyticsService } = await import('./analytics.service');
+    const tl: any = await AnalyticsService.productTimeline(pid, { startDate: startVn, endDate: nowVn }, params.warehouseId);
+    if (!tl) {
+      return {
+        product: { id: pid, ...meta },
+        totals: { qty: 0, revenue: 0, orders: 0, activeDays: 0 },
+        peakDay: null,
+        peakHour: null,
+        warning: 'Không có dữ liệu bán món này trong kỳ.',
+      };
+    }
+    // Giờ vàng: gom cuốn theo giờ VN từ sự kiện (mới nhất 200 sự kiện).
+    const byHour = new Array<number>(24).fill(0);
+    for (const e of (tl.events || []) as any[]) {
+      const d = e?.createdAt ? new Date(e.createdAt) : null;
+      if (!d || Number.isNaN(d.getTime())) continue;
+      byHour[(d.getUTCHours() + 7) % 24] += Number(e.qty || 0);
+    }
+    let peakHour: number | null = null;
+    byHour.forEach((q, h) => {
+      if (q > 0 && (peakHour == null || q > byHour[peakHour])) peakHour = h;
+    });
+    let peakDay: { date: string; qty: number; revenue: number } | null = null;
+    for (const b of (tl.buckets || []) as any[]) {
+      if (!peakDay || b.qty > peakDay.qty) peakDay = { date: b.date, qty: b.qty, revenue: b.revenue };
+    }
+    if (peakDay && peakDay.qty <= 0) peakDay = null;
+    return {
+      product: { id: pid, code: tl.product?.code ?? meta.code, title: tl.product?.name ?? meta.title },
+      totals: { qty: tl.totals.qty, revenue: tl.totals.revenue, orders: tl.totals.orders, activeDays: tl.totals.activeDays },
+      peakDay,
+      peakHour,
+    };
+  }
   static async resolveEditionFromText(text: string): Promise<{ editionId: string; code: string; title: string | null } | null> {
     const norm = removeAccents((text || '').toLowerCase());
     if (!norm.trim()) return null;

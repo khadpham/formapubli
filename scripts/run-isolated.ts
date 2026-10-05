@@ -74,6 +74,7 @@ const ALL_SUITES = [
   'scripts/test-hourly-revenue-chart.ts',
   'scripts/test-settlement-range.ts',
   'scripts/test-sales-table-ux.ts',
+  'scripts/test-copilot-product-flow.ts',
   'scripts/test-product-flow.ts',
   'scripts/test-order-note-field.ts',
   'scripts/test-transfer-goods-repro.ts',

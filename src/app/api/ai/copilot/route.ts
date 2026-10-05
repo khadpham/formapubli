@@ -169,6 +169,10 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
           });
         }
         synthesizedAnswer = extractNaturalAnswer(raw);
+        // Sanitize cuối: model vẫn có thể trả JSON mảng/object lạ mà bộ bóc
+        // không nhận ra — còn { hoặc [ thì rơi về formatter, không bao giờ
+        // hiện JSON thô cho lãnh đạo.
+        if (/^\s*[\{\[]/.test(synthesizedAnswer)) synthesizedAnswer = '';
       } catch (synthErr) {
         console.warn('⚠️ Lỗi tổng hợp LLM, dùng formatter nội bộ:', synthErr);
       }
@@ -297,6 +301,22 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
       : data.mode === 'top-editions' ? `📚 **Sách bán chạy (${data.query})**`
       : `📚 **Danh mục (${data.query})**`;
     return `${head} — tổng ${data.total} đầu sách:\n${lines.join('\n')}`;
+  }
+  if (toolName === 'query_product_flow') {
+    if ((data as any).warning) {
+      return `⏱️ **Nhịp Bán**: ${(data as any).warning}`;
+    }
+    const p = (data as any).product || {};
+    const t = (data as any).totals || {};
+    const peakDay = (data as any).peakDay;
+    const peakHour = (data as any).peakHour;
+    const title = p.code || p.title || 'món này';
+    if (!t.orders) {
+      return `⏱️ **Nhịp Bán ${title}**: chưa phát sinh đơn nào trong kỳ xem.`;
+    }
+    return `⏱️ **Nhịp Bán ${title}${p.title && p.code ? ' - ' + p.title : ''}**:
+- Tổng: **${Number(t.qty || 0).toLocaleString('vi-VN')} cuốn** · **${Number(t.revenue || 0).toLocaleString('vi-VN')} đ** (${t.orders} đơn, ${t.activeDays} ngày có bán).
+- Giờ vàng: **${peakHour != null ? `${peakHour}h` : 'chưa rõ'}**${peakDay ? ` · Ngày đỉnh: **${peakDay.date}** (${Number(peakDay.qty || 0)} cuốn)` : ''}.`;
   }
   if (toolName === 'query_cashbox_reconciliation') {
     const active = data.activeSession;
