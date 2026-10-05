@@ -25,7 +25,22 @@ assert.equal(ins.quietDays, 2, '2 ngày im ắng');
 
 console.log('\n=== PRODUCT FLOW (runtime): PASS ===\n');
 
-// --- Service trên DB cách ly ---
+// --- Điểm vào drawer ---
+import fs from 'node:fs';
+import path from 'node:path';
+const readSrc = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), 'utf8');
+let checks = 0;
+const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
+
+const drawer = readSrc('src/components/sales/ProductFlowDrawer.tsx');
+ok(/Nhịp Bán/.test(drawer), 'drawer đúng tên Nhịp Bán');
+ok(/Chủ đọc nhanh/.test(drawer), 'có khối insight cho Chủ');
+ok(/OrderDetailModal/.test(drawer), 'bấm mã đơn mở chi tiết');
+const topPanel = readSrc('src/components/sales/TopEditionsPanel.tsx');
+ok(/onPickProduct/.test(topPanel), 'dòng bán chạy bấm mở Nhịp Bán');
+const settleModal = readSrc('src/components/pos/DailyFairSettlementModal.tsx');
+ok(/setFlowOpen\(true\)/.test(settleModal), 'Báo Cáo Kỳ có nút Nhịp Bán');
+console.log(`=== PRODUCT FLOW (drawer): PASS — ${checks} assertions ===\n`);
 import { db } from '../src/db';
 import { AnalyticsService } from '../src/services/analytics.service';
 

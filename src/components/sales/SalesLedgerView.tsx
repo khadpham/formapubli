@@ -32,6 +32,7 @@ import {
 import { RevenueAnalyticsPanel } from './RevenueAnalyticsPanel';
 import { TopEditionsPanel } from './TopEditionsPanel';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
+import { ProductFlowDrawer } from './ProductFlowDrawer';
 import { useSortable, SortableTh } from '@/lib/table-ux';
 import { TableExpandOverlay } from './TableExpandOverlay';
 
@@ -86,6 +87,9 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   // Chi tiết đơn hàng
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  // Nhịp Bán: drawer xem timeline 1 món (mở từ dòng bán chạy hoặc nút riêng).
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowProductId, setFlowProductId] = useState<string | null>(null);
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
   // Spec §5: thu ngân KHÔNG được thấy nút chọn Sổ Thuế — server ép INTERNAL cho
@@ -764,6 +768,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         warehouseLabel={selectedWarehouse === 'ALL' ? 'Tất cả kho' : warehouseNameOf(selectedWarehouse)}
         fiscalScope={scopeParam === 'ALL' ? undefined : scopeParam}
         actorId={actorId}
+        onPickProduct={(pid) => {
+          setFlowProductId(pid);
+          setFlowOpen(true);
+        }}
       />
 
       {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang.
@@ -785,6 +793,21 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         onClose={() => setSelectedOrderId(null)}
         currentRole={currentRole}
         onOrderVoided={() => fetchOrders()}
+      />
+
+      {/* Nhịp Bán 1 sản phẩm trong kỳ */}
+      <ProductFlowDrawer
+        open={flowOpen}
+        onClose={() => {
+          setFlowOpen(false);
+          setFlowProductId(null);
+        }}
+        warehouseId={selectedWarehouse}
+        startDate={startDate}
+        endDate={endDate}
+        initialProductId={flowProductId}
+        currentRole={currentRole}
+        onConsumedInitial={() => setFlowProductId(null)}
       />
     </div>
   );

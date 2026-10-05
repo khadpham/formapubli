@@ -384,6 +384,7 @@ export class AnalyticsService {
     const rows = await db
       .select({
         editionId: orderItems.editionId,
+        productId: orderItems.productId,
         // Tên/mã rơi về `products` cho dòng hàng hóa — sửa "mọi món gộp thành
         // một nhóm tên '?'" do group theo `edition_id` NULL.
         code: sql<string | null>`COALESCE(${editions.code}, ${products.code})`,
@@ -402,6 +403,7 @@ export class AnalyticsService {
     const totalRevenue = rows.reduce((s, r) => s + Number(r.revenue || 0), 0);
     const out = rows.map((r) => ({
       editionId: r.editionId,
+      productId: (r as any).productId || r.editionId,
       code: r.code || '?',
       // '—' chứ không '?': '?' đọc như mã hỏng, '—' đọc như "chưa có tên".
       title: r.title || '—',

@@ -23,9 +23,12 @@ import {
   ArrowUp,
   ArrowDown,
   Flame,
+  TrendingUp,
 } from 'lucide-react';
 import { parseDbTimestamp } from '@/lib/db-timestamp';
+import type { UserRole } from '@/lib/roles';
 import { HourlyOrdersChart } from './HourlyOrdersChart';
+import { ProductFlowDrawer } from '@/components/sales/ProductFlowDrawer';
 import { CashboxAuditCountModal } from './CashboxAuditCountModal';
 import {
   getStockAlertBadge,
@@ -442,6 +445,8 @@ export function DailyFairSettlementModal({
   const [printNotice, setPrintNotice] = useState<string | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditModalSessionId, setAuditModalSessionId] = useState<string | null>(null);
+  // Nhịp Bán 1 món trong kỳ đang xem (day mode = kỳ 1 ngày).
+  const [flowOpen, setFlowOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -1082,10 +1087,21 @@ export function DailyFairSettlementModal({
                       trong ngày mà không phải cuộn qua cả bảng 10 dòng. Bảng đầy
                       đủ đã chuyển sang màn Trạng Thái Hội Chợ. */}
                   {(data?.topSellers || []).length > 0 && (
-                    <p className="text-xs font-bold text-slate-600">
-                      Bán chạy nhất: [{data.topSellers[0].code}] {data.topSellers[0].title} ·{' '}
-                      {data.topSellers[0].soldCopies} cuốn
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-600">
+                        Bán chạy nhất: [{data.topSellers[0].code}] {data.topSellers[0].title} ·{' '}
+                        {data.topSellers[0].soldCopies} cuốn
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setFlowOpen(true)}
+                        title="Mở Nhịp Bán: xem từng thời điểm bán ra của 1 món trong kỳ"
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition"
+                      >
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        Nhịp Bán
+                      </button>
+                    </div>
                   )}
 
                   {/* Đối soát két tiền ca */}
@@ -2293,6 +2309,15 @@ export function DailyFairSettlementModal({
           onSuccess={fetchSettlement}
           sessions={data?.cashboxReconciliation?.sessions || []}
           initialSessionId={auditModalSessionId}
+        />
+        {/* Nhịp Bán 1 món trong kỳ đang xem (day mode = kỳ 1 ngày) */}
+        <ProductFlowDrawer
+          open={flowOpen}
+          onClose={() => setFlowOpen(false)}
+          warehouseId={currentWarehouseId}
+          startDate={rangeMode === 'range' && rangeStart ? rangeStart : selectedDate}
+          endDate={rangeMode === 'range' && rangeEnd ? rangeEnd : selectedDate}
+          currentRole={currentRole as UserRole}
         />
       </div>
     </div>,

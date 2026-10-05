@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trophy, Download, RefreshCw } from 'lucide-react';
+import { Trophy, Download, RefreshCw, TrendingUp } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { appendExportWatermark } from '@/lib/export-hash';
 import { useSortable, SortableTh } from '@/lib/table-ux';
@@ -20,11 +20,14 @@ interface TopEditionsPanelProps {
   fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
   /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
   actorId: string;
+  /** Bấm dòng sản phẩm → mở Nhịp Bán (timeline 1 món); null = mở danh sách. */
+  onPickProduct?: (productId: string | null) => void;
 }
 
 /** Một dòng của `AnalyticsService.topEditions` (Task 3 đã khóa shape). */
 interface TopEditionRow {
   editionId: string | null;
+  productId?: string | null;
   code: string | null;
   title: string | null;
   qty: number;
@@ -53,6 +56,7 @@ export function TopEditionsPanel({
   warehouseLabel,
   fiscalScope,
   actorId,
+  onPickProduct,
 }: TopEditionsPanelProps) {
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const [topN, setTopN] = useState(20);
@@ -250,6 +254,16 @@ export function TopEditionsPanel({
             <Download className="w-3.5 h-3.5" />
             Xuất Excel/CSV
           </button>
+          {onPickProduct && (
+            <button
+              onClick={() => onPickProduct(null)}
+              title="Mở Nhịp Bán: xem từng thời điểm bán ra của 1 món trong kỳ"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition"
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Nhịp Bán
+            </button>
+          )}
         </div>
       </div>
 
@@ -287,12 +301,28 @@ export function TopEditionsPanel({
                 </td>
               </tr>
             ) : (
-              sortedItems.map((it, i) => (
+              sortedItems.map((it, i) => {
+                const pid = it.productId || it.editionId;
+                return (
                 <tr key={it.editionId || `${it.code}-${i}`} className="hover:bg-slate-50/80">
                   <td className="p-3 font-black text-slate-400 font-mono">{i + 1}</td>
                   <td className="p-3">
-                    <span className="font-mono font-bold text-indigo-700">{it.code || '—'}</span>
-                    <span className="text-slate-600"> — {it.title || '—'}</span>
+                    {onPickProduct && pid ? (
+                      <button
+                        type="button"
+                        onClick={() => pid && onPickProduct(pid)}
+                        title="Mở Nhịp Bán của món này"
+                        className="text-left hover:underline cursor-pointer"
+                      >
+                        <span className="font-mono font-bold text-indigo-700">{it.code || '—'}</span>
+                        <span className="text-slate-600"> — {it.title || '—'}</span>
+                      </button>
+                    ) : (
+                      <>
+                        <span className="font-mono font-bold text-indigo-700">{it.code || '—'}</span>
+                        <span className="text-slate-600"> — {it.title || '—'}</span>
+                      </>
+                    )}
                   </td>
                   <td className="p-3 text-right font-mono font-bold">{Number(it.qty || 0).toLocaleString('vi-VN')}</td>
                   <td className="p-3 text-right font-mono">{Number(it.orders || 0).toLocaleString('vi-VN')}</td>
@@ -306,7 +336,8 @@ export function TopEditionsPanel({
                     </div>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
