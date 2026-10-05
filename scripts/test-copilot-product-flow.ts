@@ -20,6 +20,12 @@ async function run() {
   assert.match(guard, /query_product_flow/, 'guardrails phải có tool query_product_flow');
   const route = readSrc('src/app/api/ai/copilot/route.ts');
   assert.match(route, /query_product_flow/, 'route phải format fallback cho tool mới');
+  assert.match(route, /engine/, 'route phải báo engine viết câu trả lời');
+  assert.match(
+    readSrc('src/components/copilot/CopilotDrawer.tsx'),
+    /msg\.engine/,
+    'drawer phải hiện nhãn model'
+  );
   // Sanitize cuối: còn { hoặc [ thì rơi về formatter, không bao giờ hiện JSON thô.
   assert.match(route, /fallback/i, 'route phải có đường rơi về formatter');
   const client = readSrc('src/services/ai/llm-client.ts');
@@ -80,6 +86,7 @@ async function run() {
     assert.equal(payload.data.toolUsed, 'query_product_flow', 'phải định tuyến tool nhịp bán');
     assert.match(payload.data.answer, /[Gg]iờ/, 'đáp phải nêu giờ');
     assert.doesNotMatch(payload.data.answer, /^\s*[\{\[]/, 'đáp không được mở đầu bằng JSON');
+    assert.equal(payload.data.engine, 'nội bộ', 'heuristic không LLM phải báo đúng engine');
   } finally {
     const { sql } = await import('drizzle-orm');
     await db.run(sql`DELETE FROM order_items WHERE id LIKE ${`oi-cpflow-${stamp}-%`}`);

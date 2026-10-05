@@ -3,7 +3,7 @@ import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, g
 import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
-import { callGeminiJsonRaw, callOpenAIJsonRaw, resolveGeminiModel } from '@/services/ai/llm-client';
+import { callGeminiJsonRaw, callOpenAIJsonRaw, resolveGeminiModel, resolveOpenAIModel } from '@/services/ai/llm-client';
 
 export async function POST(req: NextRequest) {
   const ip = extractClientIp(req);
@@ -107,7 +107,8 @@ export async function POST(req: NextRequest) {
 
   // 5. Phân tích kế hoạch gọi Tool
   try {
-    const plan = await CopilotGuardrails.planQuery(question);
+    const track: { planner?: string } = {};
+    const plan = await CopilotGuardrails.planQuery(question, track);
 
     if (plan.action === 'REFUSE_OUT_OF_SCOPE' || plan.action === 'DIRECT_ANSWER') {
       const finalMsg = CopilotGuardrails.postProcessAnswer(plan.directAnswer || 'Không có phản hồi.');
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
           action: plan.action,
           toolUsed: null,
           toolData: null,
+          engine: track.planner || 'nội bộ',
         },
       });
     }
@@ -132,6 +134,7 @@ export async function POST(req: NextRequest) {
 
     // 7. Tổng hợp câu trả lời từ kết quả Tool
     let synthesizedAnswer = '';
+    let synthEngine: string | null = null;
     const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
 
@@ -160,6 +163,11 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
             apiKey: geminiKey,
             timeoutMs: 5000,
           });
+          try {
+            synthEngine = 'gemini:' + resolveGeminiModel();
+          } catch {
+            synthEngine = 'gemini';
+          }
         } else if (openaiKey) {
           raw = await callOpenAIJsonRaw({
             systemPrompt: synthPrompt,
@@ -167,6 +175,7 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
             apiKey: openaiKey,
             timeoutMs: 5000,
           });
+          synthEngine = 'openai:' + resolveOpenAIModel();
         }
         synthesizedAnswer = extractNaturalAnswer(raw);
         // Sanitize cuối: model vẫn có thể trả JSON mảng/object lạ mà bộ bóc
@@ -222,6 +231,8 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
         action: 'CALL_TOOL',
         toolUsed: toolCall.toolName,
         toolData: toolResult,
+        // Model nào viết câu trả lời này: synth trước, planner sau, luật cuối.
+        engine: synthEngine || track.planner || 'nội bộ',
       },
     });
   } catch (err: unknown) {

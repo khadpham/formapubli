@@ -33,6 +33,8 @@ export interface CopilotMessage {
   content: string;
   toolUsed?: string | null;
   toolData?: any;
+  /** Model nào viết câu trả lời (server báo): 'gemini:X', 'openai:Y' hoặc 'nội bộ'. */
+  engine?: string | null;
   timestamp: string;
   isError?: boolean;
 }
@@ -341,6 +343,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
             content: json.data.answer || 'Không có nội dung phản hồi.',
             toolUsed: json.data.toolUsed,
             toolData: json.data.toolData,
+            engine: json.data.engine || null,
             timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
@@ -664,6 +667,18 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                   <span>•</span>
                   <span>{msg.timestamp}</span>
                   {getToolBadge(msg.toolUsed)}
+                  {!isUser && msg.engine && (
+                    <span
+                      title={`Câu trả lời do ${msg.engine} viết (nội bộ = luật cứng, không LLM)`}
+                      className={`px-1.5 py-px rounded-full font-mono font-bold border ${
+                        msg.engine === 'nội bộ'
+                          ? 'bg-slate-100 text-slate-500 border-slate-200'
+                          : 'bg-violet-50 text-violet-700 border-violet-200'
+                      }`}
+                    >
+                      {msg.engine === 'nội bộ' ? 'luật nội bộ' : msg.engine}
+                    </span>
+                  )}
                 </div>
 
                 <div

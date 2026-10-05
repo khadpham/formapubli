@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ExecutiveQueryService } from '../executive-query.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { removeAccents } from '@/lib/vietnamese';
-import { callGeminiJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, nullableString } from './llm-client';
+import { callGeminiJsonRaw, callOpenAIJsonRaw, parseLlmJson, resolveGeminiModel, resolveOpenAIModel, nullableString } from './llm-client';
 
 export const COPILOT_SYSTEM_PROMPT = `
 Bạn là Executive AI Copilot — Trợ lý điều hành cấp cao của Nhà xuất bản Formapubli OS.
@@ -54,8 +54,8 @@ export class CopilotGuardrails {
    * Wrapper: tu dong phan giai ma/ten sach cho query_stock_level de LLM
    * khong bao gio phai doan mo tu ca danh muc (nguyen nhan so lieu sai).
    */
-  static async planQuery(question: string): Promise<CopilotPlan> {
-    const plan = await this.planQueryInner(question);
+  static async planQuery(question: string, tracker?: { planner?: string }): Promise<CopilotPlan> {
+    const plan = await this.planQueryInner(question, tracker);
     // Cau hon hop (vua small-talk vua so lieu): tra loi small-talk + hen cau so lieu rieng.
     if (plan.action === 'DIRECT_ANSWER' && plan.reason === 'Small-talk allowed') {
       const n = removeAccents(question.toLowerCase());
@@ -97,10 +97,24 @@ export class CopilotGuardrails {
         }
       }
     }
+    if (plan.action === 'CALL_TOOL' && plan.toolCall?.toolName === 'query_product_flow') {
+      const args = plan.toolCall.args || {};
+      if (!args.productId) {
+        try {
+          const hit = await ExecutiveQueryService.resolveProductFromText(args.q || question);
+          if (hit) {
+            plan.toolCall.args = { ...args, productId: hit.productId };
+            plan.reason = `Resolved product ${hit.code || hit.productId} from question. ` + (plan.reason || '');
+          }
+        } catch (err) {
+          console.warn('[copilot] product resolve failed:', err);
+        }
+      }
+    }
     return plan;
   }
 
-  static async planQueryInner(question: string): Promise<CopilotPlan> {
+  static async planQueryInner(question: string, tracker?: { planner?: string }): Promise<CopilotPlan> {
     const qLower = question.toLowerCase();
     // Chuẩn hóa không dấu để bắt paraphrase gõ không dấu (vd 'huy don', 'xoa so').
     const qNorm = removeAccents(qLower);
@@ -135,6 +149,7 @@ export class CopilotGuardrails {
       (hitOrder && !isDraftIter) ||
       (hasVerb && hasNoun && !(isDraftIter && !hitNonOrder))
     ) {
+      if (tracker) tracker.planner = 'nội bộ';
       return {
         action: 'REFUSE_OUT_OF_SCOPE',
         directAnswer:
@@ -146,6 +161,7 @@ export class CopilotGuardrails {
     // 1b. Small-talk ngoài luồng nhưng được phép: chào hỏi, ngày/giờ, giới thiệu, hướng dẫn.
     const smallTalk = this.smallTalkAnswer(qNorm);
     if (smallTalk) {
+      if (tracker) tracker.planner = 'nội bộ';
       return { action: 'DIRECT_ANSWER', directAnswer: smallTalk, reason: 'Small-talk allowed' };
     }
 
@@ -154,6 +170,7 @@ export class CopilotGuardrails {
     const openaiKey = process.env.OPENAI_API_KEY;
 
     if (!geminiKey && !openaiKey) {
+      if (tracker) tracker.planner = 'nội bộ';
       return this.heuristicPlan(qLower);
     }
 
@@ -188,6 +205,13 @@ Trả về JSON chuẩn khớp schema:
             apiKey: geminiKey,
             timeoutMs: 4000,
           });
+          if (tracker) {
+            try {
+              tracker.planner = 'gemini:' + resolveGeminiModel();
+            } catch {
+              tracker.planner = 'gemini';
+            }
+          }
           return parseLlmJson(raw, CopilotPlanSchema, 'CopilotGeminiPlanner');
         } catch {
           // Fallback to OpenAI if configured
@@ -201,12 +225,14 @@ Trả về JSON chuẩn khớp schema:
           apiKey: openaiKey,
           timeoutMs: 4000,
         });
+        if (tracker) tracker.planner = 'openai:' + resolveOpenAIModel();
         return parseLlmJson(raw, CopilotPlanSchema, 'CopilotOpenAIPlanner');
       }
     } catch (err) {
       console.warn('⚠️ Lỗi planner LLM, kích hoạt fallback heuristic:', err);
     }
 
+    if (tracker) tracker.planner = 'nội bộ';
     return this.heuristicPlan(qLower);
   }
 
@@ -240,7 +266,7 @@ Trả về JSON chuẩn khớp schema:
       }
     }
     if (has('ban la ai', 'ten gi', 'gioi thieu', 'copilot la gi', 'tro ly gi')) {
-      return 'Tôi là **Executive Copilot** (chế độ chỉ đọc) của Formapubli — trợ lý tra cứu số liệu điều hành theo thời gian thực: tồn kho khả dụng, doanh số Sổ Thuế và Sổ Nội bộ, cảnh báo cạn kho với đề xuất in 105 ngày, và đối soát két ca quầy. Tôi không có quyền sửa kho, đơn hay quỹ.';
+      return 'Tôi là **Executive Copilot** (chế độ chỉ đọc) của Formapubli — trợ lý tra cứu số liệu điều hành theo thời gian thực: tồn kho khả dụng, doanh số Sổ Thuế và Sổ Nội bộ, cảnh báo cạn kho với đề xuất in 105 ngày, đối soát két ca quầy, và nhịp bán từng món (giờ vàng, ngày đỉnh). Tôi không có quyền sửa kho, đơn hay quỹ.';
     }
     if (has('lam duoc gi', 'giup duoc gi', 'huong dan', 'chuc nang', 'ho tro gi')) {
       return 'Tôi có thể hỗ trợ Ban Giám đốc:\n- Tra cứu **tồn kho khả dụng** toàn hệ thống\n- Báo cáo **doanh số 2 sổ** (Thuế VAT và Quản trị nội bộ)\n- Cảnh báo **sách cạn kho** và đề xuất in theo chính sách 105 ngày\n- **Đối soát két tiền** ca quầy\n\nQuý lãnh đạo chỉ cần hỏi bằng ngôn ngữ tự nhiên, ví dụ: "Tồn kho toàn hệ thống?", "Doanh số 30 ngày?", "Hôm nay là ngày bao nhiêu?"';
@@ -348,6 +374,7 @@ Trả về JSON chuẩn khớp schema:
         '- **Doanh số 2 sổ** (Sổ Thuế VAT và Sổ Quản trị nội bộ)\n' +
         '- **Cảnh báo cạn kho** và đề xuất in theo chính sách 105 ngày\n' +
         '- **Đối soát két tiền** ca làm việc\n' +
+        '- **Nhịp bán 1 món**: giờ vàng, ngày đỉnh ("giờ vàng cuốn HH001?")\n' +
         '- **Danh mục**: sách của 1 tác giả, tựa bắt đầu bằng chữ nào, tác giả được yêu thích\n' +
         '- **Lên đơn nháp**: nói "lấy 2 cuốn HH001..." rồi bấm Áp vào POS, tự thanh toán\n\n' +
         'Quý lãnh đạo cũng có thể hỏi tôi ngày giờ hiện tại hoặc cách sử dụng.',
