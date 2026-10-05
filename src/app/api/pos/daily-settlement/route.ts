@@ -68,10 +68,14 @@ export async function GET(req: NextRequest) {
     // Chế độ kỳ: ?start=YYYY-MM-DD&end=YYYY-MM-DD (gom ở server, 1 request) hoặc
     // ?campaign=1 (suy kỳ chiến dịch từ đơn đầu→cuối). Không có cả hai ⇒ rơi
     // về báo cáo ngày cũ bên dưới, giữ nguyên shape.
+    // PHÂN QUYỀN (chốt 05/10): Kỳ = báo cáo sau chiến dịch, CHỈ CHỦ. Quản lý
+    // giữ sự kiện đang diễn ra (xem ngày + Trạng Thái Hội Chợ); nút Kỳ ẩn hẳn
+    // ở UI nên họ không biết chức năng tồn tại — server chặn nốt ở đây.
     const start = searchParams.get('start') || undefined;
     const end = searchParams.get('end') || undefined;
     const campaign = searchParams.get('campaign') === '1';
     if (start || end || campaign) {
+      await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);
       if (!start || !end) {
         if (!campaign) {
           return NextResponse.json(

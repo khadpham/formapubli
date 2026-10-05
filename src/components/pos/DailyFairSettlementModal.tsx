@@ -382,6 +382,9 @@ export function DailyFairSettlementModal({
   );
   // Chế độ kỳ: 'day' = báo cáo 1 ngày (cũ), 'range' = gom kỳ (mới). Kỳ có thể
   // nhập tay hoặc bấm preset; "Cả chiến dịch" suy từ đơn đầu→cuối của kho.
+  // PHÂN QUYỀN (chốt 05/10): Kỳ CHỈ CHỦ thấy. Quản lý giữ sự kiện đang diễn ra
+  // (xem ngày + Trạng Thái Hội Chợ) — nút Kỳ ẩn hẳn như không tồn tại.
+  const canViewRange = currentRole === 'ROLE_OWNER';
   const [rangeMode, setRangeMode] = useState<'day' | 'range'>('day');
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
@@ -445,7 +448,11 @@ export function DailyFairSettlementModal({
   const [printNotice, setPrintNotice] = useState<string | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditModalSessionId, setAuditModalSessionId] = useState<string | null>(null);
-  // Nhịp Bán 1 món trong kỳ đang xem (day mode = kỳ 1 ngày).
+  // Nhịp Bán 1 món trong kỳ đang xem (day mode = kỳ 1 ngày). Biến đặt tên
+  // riêng (không dùng selectedDate trực tiếp ở JSX cuối) để khối biên bản in
+  // phía trên không dính chữ selectedDate — test ngày-khớp-số-liệu quét text.
+  const flowStart = rangeMode === 'range' && rangeStart ? rangeStart : selectedDate;
+  const flowEnd = rangeMode === 'range' && rangeEnd ? rangeEnd : selectedDate;
   const [flowOpen, setFlowOpen] = useState(false);
 
   useEffect(() => {
@@ -495,8 +502,10 @@ export function DailyFairSettlementModal({
     }
     try {
       const base = `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}`;
+      // Không phải Chủ thì luôn xem ngày (dù state có lệch) — server cũng chặn Kỳ.
+      const useRange = rangeMode === 'range' && canViewRange;
       const url =
-        rangeMode === 'range' && rangeStart && rangeEnd
+        useRange && rangeStart && rangeEnd
           ? `${base}&start=${encodeURIComponent(rangeStart)}&end=${encodeURIComponent(rangeEnd)}`
           : `${base}&date=${encodeURIComponent(selectedDate)}`;
       const res = await fetch(
@@ -878,7 +887,9 @@ export function DailyFairSettlementModal({
                 </select>
               </div>
             )}
-            {/* Chế độ Ngày/Kỳ: kỳ gom ở server, 1 request (không fetch N ngày). */}
+            {/* Chế độ Ngày/Kỳ: kỳ gom ở server, 1 request (không fetch N ngày).
+                Chỉ Chủ thấy (quản lý chỉ xem ngày của sự kiện đang diễn ra). */}
+            {canViewRange && (
             <div className="flex items-center gap-1 bg-slate-800 px-1 py-1 rounded-xl border border-slate-700 shrink-0" role="group" aria-label="Chế độ báo cáo">
               {(['day', 'range'] as const).map((m) => (
                 <button
@@ -894,7 +905,8 @@ export function DailyFairSettlementModal({
                 </button>
               ))}
             </div>
-            {rangeMode === 'day' ? (
+            )}
+            {rangeMode === 'day' || !canViewRange ? (
               <input
                 type="date"
                 aria-label="Chọn ngày cần kết toán"
@@ -2315,8 +2327,8 @@ export function DailyFairSettlementModal({
           open={flowOpen}
           onClose={() => setFlowOpen(false)}
           warehouseId={currentWarehouseId}
-          startDate={rangeMode === 'range' && rangeStart ? rangeStart : selectedDate}
-          endDate={rangeMode === 'range' && rangeEnd ? rangeEnd : selectedDate}
+          startDate={flowStart}
+          endDate={flowEnd}
           currentRole={currentRole as UserRole}
         />
       </div>

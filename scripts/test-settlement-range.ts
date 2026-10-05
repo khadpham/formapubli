@@ -34,6 +34,7 @@ const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
 
 const settleRoute = readSrc('src/app/api/pos/daily-settlement/route.ts');
 ok(/mode: 'range'/.test(settleRoute), 'API trả mode range');
+ok(/ROLE_OWNER/.test(settleRoute), 'Kỳ chỉ Chủ (quản lý ẩn nút, server chặn)');
 ok(/inferCampaignRange/.test(settleRoute), 'API suy kỳ chiến dịch');
 ok(/campaign/.test(settleRoute), 'API có tham số campaign');
 ok(/\?date=/.test(settleRoute) || /searchParams\.get\('date'\)/.test(settleRoute), 'chế độ ngày cũ còn nguyên');
@@ -41,6 +42,7 @@ console.log(`=== SETTLEMENT RANGE (Task 2 API): PASS — ${checks} assertions ==
 
 // --- Task 3 (plan kỳ): modal Ngày/Kỳ + preset ---
 const settleModal = readSrc('src/components/pos/DailyFairSettlementModal.tsx');
+ok(/canViewRange/.test(settleModal), 'modal ẩn Kỳ với người không phải Chủ');
 ok(/Cả chiến dịch/.test(settleModal), 'có nút Cả chiến dịch');
 ok(/1 tuần/.test(settleModal) && /1 tháng/.test(settleModal), 'đủ preset gọn 1 tuần/1 tháng');
 ok(/mode === 'range'|rangeMode/.test(settleModal), 'toggle Ngày/Kỳ');
