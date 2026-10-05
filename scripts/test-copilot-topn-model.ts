@@ -210,8 +210,8 @@ async function run() {
     ok(/GROQ/i.test(readSrc('src/services/ai/llm-client.ts')), 'llm-client phải biết Groq');
     ok(/cf\/gpt-oss-120b/.test(route), 'synth phải thử Workers AI (GPT-OSS 120B free)');
     ok(/cf\/gpt-oss-120b/.test(drawerSrc2), 'picker phải có Workers AI');
-    ok(/CF_DEFAULT_MODEL = 'gpt-oss-120b'/.test(readSrc('src/services/ai/llm-client.ts')),
-      'model free mặc định phải là GPT-OSS 120B (đo thật nhanh + JSON chuẩn)');
+    ok(/CF_DEFAULT_MODEL = 'nemotron-3-120b-a12b'/.test(readSrc('src/services/ai/llm-client.ts')),
+      'model free mặc định phải là Nemotron 120B (đo thật 3/3 HTTP + 3/3 JSON chuẩn)');
   }
 }
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, getSessionFromRequest, type SessionPayload } from '@/lib/auth-session';
 import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
+import { CopilotGuardrails, renderHistoryForPrompt, sanitizeHistory } from '@/services/ai/copilot-guardrails';
 import { callGeminiWithFallback, callCfWorkerAiJsonRaw, callGroqChatJsonRaw, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
 
 export async function POST(req: NextRequest) {
@@ -83,12 +83,16 @@ export async function POST(req: NextRequest) {
   // Model do user chọn ở drawer (Tự động / 3.8 / 3.5-lite / nội bộ). Ngoài
   // allowlist thì bỏ qua (về mặc định env) — không tin input thô.
   const rawModel = (body as { model?: unknown })?.model;
+  // Lịch sử hội thoại để nhớ ngữ cảnh ("giờ vàng của nó là mấy giờ?"). Chỉ giữ
+  // N lượt gần nhất, cắt độ dài, bỏ mọi role ngoài user/assistant.
+  const history = sanitizeHistory((body as { history?: unknown })?.history);
   const MODEL_ALLOWLIST = [
     'gemini-3.8-flash',
     'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
     'groq/gpt-oss-120b',
     'groq/gpt-oss-20b',
+    'cf/nemotron-3-120b-a12b',
     'cf/gpt-oss-120b',
     'cf/glm-4.7-flash',
     'local',
@@ -125,10 +129,15 @@ export async function POST(req: NextRequest) {
   // 5. Phân tích kế hoạch gọi Tool
   try {
     const track: { planner?: string } = {};
-    const plan = await CopilotGuardrails.planQuery(question, track, modelOverride);
+    const plan = await CopilotGuardrails.planQuery(question, track, modelOverride, history);
 
     if (plan.action === 'REFUSE_OUT_OF_SCOPE' || plan.action === 'DIRECT_ANSWER') {
-      const finalMsg = CopilotGuardrails.postProcessAnswer(plan.directAnswer || 'Không có phản hồi.');
+      // Câu hỏi ngoài dữ liệu (chuyện đời, câu đùa) vẫn phải có người trả lời tự
+      // nhiên — trả "Không có phản hồi." là lỗi lớn nhất về phong cách.
+      const emptyAnswer =
+        `Câu này tôi chưa có dữ liệu để trả lời chính xác, và tôi cũng không muốn bịa số cho sếp. ` +
+        `Tôi giỏi tồn kho, doanh số, két tiền, danh mục và nhịp bán — sếp hỏi một trong số đó là có số liệu ngay.`;
+      const finalMsg = CopilotGuardrails.postProcessAnswer((plan.directAnswer || '').trim() || emptyAnswer);
       return NextResponse.json({
         success: true,
         data: {
@@ -182,6 +191,7 @@ export async function POST(req: NextRequest) {
       // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
 Hôm nay (giờ Việt Nam): ${new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10)}.
+${renderHistoryForPrompt(history)}
 Hệ thống đã tra cứu dữ liệu thực tế từ ${multi ? 'NHIỀU công cụ (mỗi công cụ là 1 ý của câu hỏi)' : 'công cụ'} [${toolCall.toolName}]:
 ${JSON.stringify(toolResult, null, 2)}
 
@@ -191,6 +201,7 @@ HÃY TRẢ LỜI NHƯ MỘT NGƯỜI TRỢ LÝ ĐIỀU HÀNH THẬT:
 - Tự nhiên, gọn, đi thẳng vào ý chính sếp hỏi. KHÔNG giáo điều, KHÔNG nhắc máy móc "theo công cụ...".
 - Mọi con số PHẢI lấy chính xác từ dữ liệu trên; không tự tính thêm ngoài dữ liệu.
 - Câu hỏi nhiều ý thì trình bày từng ý rõ ràng; thiếu số liệu cho 1 ý thì nói thẳng là thiếu.
+- Sếp có thể hỏi tiếp bằng đại từ ("nó", "cuốn đó", "kho đó") — hiểu là nói tiếp lượt trước, đừng hỏi lại.
 - Nếu là két tiền, TUYỆT ĐỐI không suy diễn thành gian lận hay buộc tội.
 - Trình bày danh sách/bảng khi có nhiều mục.
 - Nếu dữ liệu 1 đầu sách (itemsCount=1) chỉ trả đúng cuốn đó; itemsCount=0 báo không tìm thấy, TUYỆT ĐỐI không tự chế tồn kho.

@@ -92,17 +92,19 @@ export function resolveGroqApiKey(): string {
  * KHÔNG đặt tên biến là CF_API_TOKEN — wrangler tự đọc nó làm credential deploy
  * và sẽ hỏng deploy (đã dính 1 lần 06/10/2026).
  */
-/** Model free đo THẬT trên Cloudflare Workers AI (06/10/2026, 2 lần mỗi model):
- *  - gpt-oss-120b:  2.2–2.8s, JSON chuẩn, tiếng Việt tốt  ← CHỌN
- *  - glm-4.7-flash: 13–20s (quá chậm cho chat), JSON bọc ```json
- *  - llama-3.3-70b: 1.5–6s nhưng trả văn bản tự do, KHÔNG JSON ⇒ loại
- *  - glm-5.3-flash: HTTP 403 ⇒ không dùng được
- * Chủ nghi ngờ "GLM-4.7 là model free tốt nhất" — đo thật thì sai.
+/** Model free đo THẬT trên Cloudflare Workers AI (06/10/2026, 3 lần mỗi model):
+ *  - nemotron-3-120b:  HTTP 3/3, JSON chuẩn 3/3, 3–11.6s  ← MẶC ĐỊNH
+ *  - gpt-oss-120b:     HTTP 3/3 nhưng JSON chỉ 1/3 ⇒ không ổn định
+ *  - glm-4.7-flash:    HTTP 1/3, 25–45s ⇒ quá chậm, chỉ chọn tay
+ *  - glm-5.2 / glm-5.3: HTTP 403 ⇒ không dùng được
+ *  - llama-3.3-70b:    trả văn bản tự do, KHÔNG JSON ⇒ loại
+ * Chủ nghi ngờ "GLM-4.7 là model free tốt nhất" — đo thật thì sai (loại mặc định).
  */
-export const CF_DEFAULT_MODEL = 'gpt-oss-120b';
+export const CF_DEFAULT_MODEL = 'nemotron-3-120b-a12b';
 
 /** Tên ngắn trong picker → model id đầy đủ của Workers AI. */
 const CF_MODEL_IDS: Record<string, string> = {
+  'nemotron-3-120b-a12b': '@cf/nvidia/nemotron-3-120b-a12b',
   'gpt-oss-120b': '@cf/openai/gpt-oss-120b',
   'glm-4.7-flash': '@cf/zai-org/glm-4.7-flash',
   'llama-3.3-70b-instruct-fp8-fast': '@cf/meta/llama-3.3-70b-instruct-fp8-fast',

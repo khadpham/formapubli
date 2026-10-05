@@ -108,6 +108,24 @@ function formatInline(text: string): React.ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
+/** Danh sách LLM cho lãnh đạo chọn tay. `hint` là ghi chú ngắn về độ ổn định
+ *  đo thật 06/10/2026 — giúp chọn mà không phải đoán. */
+const MODEL_OPTIONS: Array<{ value: string; label: string; hint: string }> = [
+  { value: 'auto', label: '⚡ Tự động', hint: 'Chuỗi dự phòng' },
+  { value: 'gemini-3.8-flash', label: '✨ Gemini 3.8', hint: 'Hay nhất, hay 503' },
+  { value: 'gemini-3.5-flash-lite', label: '✨ Gemini 3.5 Lite', hint: 'Ổn định nhất' },
+  { value: 'cf/nemotron-3-120b-a12b', label: '🆓 Nemotron 120B', hint: 'Free, JSON 3/3' },
+  { value: 'cf/gpt-oss-120b', label: '🆓 GPT-OSS 120B', hint: 'Free, JSON 1/3' },
+  { value: 'cf/glm-4.7-flash', label: '🆓 GLM-4.7 Flash', hint: 'Free, chậm 25–45s' },
+  { value: 'groq/gpt-oss-120b', label: '🧠 Groq 120B', hint: 'Rất nhanh' },
+  { value: 'groq/gpt-oss-20b', label: '🧠 Groq 20B', hint: 'Nhanh, nhẹ' },
+  { value: 'local', label: '📏 Luật nội bộ', hint: 'Không gọi LLM' },
+];
+
+const MODEL_LABEL: Record<string, string> = Object.fromEntries(
+  MODEL_OPTIONS.map((m) => [m.value, m.label])
+);
+
 export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onMinimize, onExpand, onApplyDraft }: CopilotDrawerProps) {
   const isAuthorized = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const isMini = mode === 'mini';
@@ -126,15 +144,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
     {
       id: 'welcome',
       sender: 'assistant',
-      content: `Xin chào Quý Lãnh đạo! Tôi là **Executive Copilot** (read-only v1) của Formapubli.
-Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
-- **Tồn kho khả dụng** (3 địa điểm, chống âm kho)
-- **Doanh số 2 sổ** (Sổ Thuế VAT & Sổ Quản trị nội bộ)
-- **Cảnh báo cạn kho & Đề xuất in** (Chính sách đệm an toàn 105 ngày)
-- **Đối soát két ca quầy** (Đầu ca, tiền mặt, số lệch ghi nhận)
-- **Danh mục**: sách của 1 tác giả, tựa bắt đầu bằng chữ nào, tác giả được yêu thích
-- **Nhịp bán 1 món**: giờ vàng, ngày đỉnh ("giờ vàng cuốn HH001?", "giờ vàng cuốn bán chạy nhất?")
-- **Lên đơn nháp**: nói "lấy 2 cuốn HH001..." rồi bấm **Áp vào POS**, qua quầy kiểm tra và tự thanh toán`,
+      content: `Chào sếp. Em tra cứu giúp tồn kho, doanh số, két tiền, danh mục và nhịp bán — sếp cứ hỏi, em đi lấy số thật.`,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -301,10 +311,19 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
     setLoading(true);
 
     try {
+      // Gửi kèm lịch sử để server nối được câu này với câu trước (đại từ
+      // "nó/cuốn đó" không có dữ liệu nếu không mang theo hội thoại).
+      const priorTurns = messages
+        .filter((m) => !m.isError)
+        .map((m) => ({ role: (m.sender === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.content }));
       const res = await fetch('/api/ai/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text, model: copilotModel === 'auto' ? undefined : copilotModel }),
+        body: JSON.stringify({
+          question: text,
+          model: copilotModel === 'auto' ? undefined : copilotModel,
+          history: priorTurns.slice(-8),
+        }),
       });
 
       const json = await res.json();
@@ -380,7 +399,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
       {
         id: 'welcome_' + Date.now(),
         sender: 'assistant',
-        content: `Đã làm mới phiên hội thoại. Quý Lãnh đạo có thể chọn câu hỏi gợi ý bên dưới hoặc nhập câu hỏi mới.`,
+        content: `Đã xoá hội thoại cũ. Sếp hỏi đi, em bắt đầu từ đây.`,
         timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -600,28 +619,6 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
           </div>
 
           <div className="flex items-center gap-1">
-            <select
-              value={copilotModel}
-              onChange={(e) => {
-                setCopilotModel(e.target.value);
-                try {
-                  localStorage.setItem('formapubli.copilot.model', e.target.value);
-                } catch {
-                  /* bỏ qua */
-                }
-              }}
-              title="Chọn LLM trả lời (Tự động = server quyết, có dự phòng khi nghẽn)"
-              aria-label="Chọn mô hình AI"
-              className="bg-slate-800 text-slate-200 text-[11px] font-bold rounded-lg px-1.5 py-1.5 outline-none cursor-pointer max-w-[118px] truncate"
-            >
-              <option value="auto">⚡ Tự động</option>
-              <option value="gemini-3.8-flash">✨ 3.8 Flash</option>
-              <option value="gemini-3.5-flash-lite">3.5 Lite</option>
-              <option value="groq/gpt-oss-120b">🧠 GPT-OSS 120B</option>
-              <option value="groq/gpt-oss-20b">GPT-OSS 20B</option>
-              <option value="cf/gpt-oss-120b">🆓 GPT-OSS 120B (Cloudflare)</option>
-              <option value="local">📏 Luật nội bộ</option>
-            </select>
             {!isMini && onMinimize && (
               <button
                 onClick={onMinimize}
@@ -867,7 +864,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
                 placeholder={
                   !isAuthorized
                     ? 'Bạn không có quyền truy vấn Copilot...'
-                    : 'Hỏi về tồn kho, 2 sổ doanh thu, dự báo in 105 ngày, két quầy... hoặc bấm mic để nói'
+                    : 'Hỏi em đi sếp...'
                 }
                 className="flex-1 min-h-10 max-h-36 resize-none overflow-y-auto bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all disabled:opacity-50"
               />
@@ -885,14 +882,54 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 px-1">
             <span>
               {voiceLive.isListening
-                ? 'Đang nghe trực tiếp... nói đến đâu chữ hiện đến đấy, bấm nút vuông để dừng.'
+                ? 'Đang nghe trực tiếp...'
                 : isRecording
-                ? 'Đang ghi âm... bấm nút vuông để dừng và chuyển thành văn bản.'
+                ? 'Đang ghi âm...'
                 : voiceError || voiceLive.error
                 ? voiceError || voiceLive.error
-                : 'Executive Copilot • Dữ liệu nội bộ bảo mật Formapubli'}
+                : ''}
             </span>
-            <span>Esc để đóng • Alt+C để bật/tắt</span>
+            <span>Esc để đóng</span>
+          </div>
+
+          {/* Bảng chọn LLM đặt ở chân hộp thoại: to, dễ bấm, không che nội dung.
+              Chia 2 cột, mỗi nút là 1 model — thấy hết trong 1 nhìn. */}
+          <div className="mt-3 rounded-xl border border-slate-700 bg-slate-800/60 p-2.5">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-300">
+                Chọn bộ não
+              </span>
+              <span className="text-[10px] text-slate-500">Đang dùng: {MODEL_LABEL[copilotModel] || copilotModel}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {MODEL_OPTIONS.map((m) => {
+                const active = copilotModel === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => {
+                      setCopilotModel(m.value);
+                      try {
+                        localStorage.setItem('formapubli.copilot.model', m.value);
+                      } catch {
+                        /* bỏ qua */
+                      }
+                    }}
+                    aria-pressed={active}
+                    title={m.hint}
+                    className={`text-left px-2.5 py-2 rounded-lg border transition-all cursor-pointer ${
+                      active
+                        ? 'border-indigo-400 bg-indigo-500/25 text-white shadow-md shadow-indigo-900/40'
+                        : 'border-slate-600 bg-slate-900/60 text-slate-300 hover:border-slate-500 hover:bg-slate-900'
+                    }`}
+                  >
+                    <div className="text-[12px] font-bold leading-tight">{m.label}</div>
+                    <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{m.hint}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </aside>
