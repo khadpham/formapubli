@@ -38,7 +38,19 @@ assert.deepEqual(
 
 console.log('\n=== SALES TABLE UX (runtime): PASS ===\n');
 
-// --- Task 2: helper CSV dùng chung (pure builder, test được ở node) ---
+// --- Task 3: TableExpandOverlay ---
+import fs from 'node:fs';
+import path from 'node:path';
+const readSrc = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), 'utf8');
+let checks = 0;
+const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
+
+const overlay = readSrc('src/components/sales/TableExpandOverlay.tsx');
+ok(/TableExpandOverlay/.test(overlay), 'overlay tồn tại');
+ok(/useModalFocusTrap/.test(overlay), 'overlay bẫy focus + Esc');
+ok(/PortalToBody|createPortal/.test(overlay), 'overlay portal ra body');
+ok(/Mở rộng/.test(overlay), 'nút Mở rộng đúng nhãn');
+console.log(`\n=== SALES TABLE UX (regex overlay): ${checks} assertions PASS ===\n`);
 import { buildWatermarkedCsv } from '../src/lib/sales-view';
 import assert2 from 'node:assert/strict';
 const built = buildWatermarkedCsv({
