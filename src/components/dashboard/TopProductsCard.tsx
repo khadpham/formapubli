@@ -35,7 +35,7 @@ export function TopProductsCard({
     let cancelled = false;
     const params = new URLSearchParams({
       view: 'top-editions',
-      top: '5',
+      top: '10',
       excludeGifts: '1',
     });
     if (warehouseId) params.set('warehouseId', warehouseId);
@@ -78,7 +78,7 @@ export function TopProductsCard({
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <Package className="w-4 h-4 text-indigo-500" />
-            Top 5 bản bán chạy
+            Top 10 bản bán chạy
           </h3>
           <p className="text-[11px] text-slate-400 mt-0.5">
             Thanh ngang theo số cuốn đã bán, không tính dòng quà tặng
