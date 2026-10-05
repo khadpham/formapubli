@@ -212,3 +212,58 @@ export function buildSalesCsv(
     fiscalScope: opts.fiscalScope,
   });
 }
+
+export interface WatermarkedCsvInput {
+  filename: string;
+  headers: string[];
+  /** Dòng đã escape/quoting xong (dùng `exportCsvCell` nếu cần). */
+  rows: string[][];
+  rawObjects: Array<Record<string, unknown>>;
+  meta: { actorId: string; actorRole: string; reportName: string; fiscalScope?: string };
+}
+
+/** Ô CSV dùng chung (escape + chặn formula injection), cho bảng mới. */
+export function exportCsvCell(value: unknown): string {
+  return csvCell(value);
+}
+
+/**
+ * Dựng file CSV watermark thuần túy (không chạm DOM → test được ở node).
+ * BOM + Blob + tải về nằm ở `downloadWatermarkedCsv`.
+ */
+export function buildWatermarkedCsv(input: WatermarkedCsvInput): { filename: string; content: string } {
+  const baseCsv = [input.headers.join(','), ...input.rows.map((r) => r.join(','))].join('\r\n');
+  const content = appendExportWatermark(baseCsv, input.rawObjects, {
+    actorId: input.meta.actorId,
+    actorRole: input.meta.actorRole,
+    reportName: input.meta.reportName,
+    fiscalScope: input.meta.fiscalScope,
+  });
+  return { filename: input.filename, content };
+}
+
+/**
+ * Tải file CSV watermark về máy (chặn khi thiếu dữ liệu/actor — đúng mẫu
+ * 3 bảng cũ: ký bằng mã bịa thì tệ hơn không có dấu vết).
+ */
+export function downloadWatermarkedCsv(input: WatermarkedCsvInput): boolean {
+  if (input.rows.length === 0) {
+    alert('Không có dữ liệu để xuất CSV.');
+    return false;
+  }
+  if (!input.meta.actorId) {
+    alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+    return false;
+  }
+  const { filename, content } = buildWatermarkedCsv(input);
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return true;
+}

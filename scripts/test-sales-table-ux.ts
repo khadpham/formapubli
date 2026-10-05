@@ -37,3 +37,18 @@ assert.deepEqual(
 );
 
 console.log('\n=== SALES TABLE UX (runtime): PASS ===\n');
+
+// --- Task 2: helper CSV dùng chung (pure builder, test được ở node) ---
+import { buildWatermarkedCsv } from '../src/lib/sales-view';
+import assert2 from 'node:assert/strict';
+const built = buildWatermarkedCsv({
+  filename: 'Qua_Tang_test.csv',
+  headers: ['Sản phẩm', 'Tổng cuốn'],
+  rows: [['"Bookmark"', '5']],
+  rawObjects: [{ product: 'Bookmark', qty: 5 }],
+  meta: { actorId: 'staff-1', actorRole: 'ROLE_OWNER', reportName: 'QUÀ TẶNG', fiscalScope: 'ALL' },
+});
+assert2.equal(built.filename, 'Qua_Tang_test.csv', 'giữ tên file');
+assert2.ok(built.content.includes('Sản phẩm,Tổng cuốn'), 'có header');
+assert2.ok(built.content.includes('SHA-256'), 'có watermark hash');
+assert2.ok(built.content.includes('staff-1'), 'watermark ký actor thật');
