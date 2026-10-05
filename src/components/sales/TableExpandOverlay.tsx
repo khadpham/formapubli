@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { Maximize2, Minimize2, Download } from 'lucide-react';
 import { PortalToBody } from '@/components/PortalToBody';
 import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 
@@ -11,15 +11,25 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
  * Một DOM duy nhất: bật/tắt là portal di chuyển nút đi (không render 2 bản).
  * Vị trí cuộn reset về đầu khi chuyển chế độ — chấp nhận được vì trạng thái
  * sort/lọc nằm ở panel cha, không mất.
+ *
+ * Vùng cuộn con PHẢI có class `table-scroll`: khi overlay mở, CSS toàn cục
+ * (globals.css `.table-expand-open .table-scroll`) gỡ trần max-h của nó để
+ * khung nới theo đúng số dòng — không thì 20/50/100 dòng vẫn kẹt trong khung
+ * 420-480px cũ + 2 thanh cuộn lồng nhau.
  */
 export function TableExpandOverlay({
   title,
   children,
   buttonClassName = '',
+  onExport,
+  exportLabel = 'Xuất CSV',
 }: {
   title: string;
   children: React.ReactNode;
   buttonClassName?: string;
+  /** Nút xuất trong overlay (panel nào chưa có xuất thì không truyền). */
+  onExport?: () => void;
+  exportLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const panelRef = useModalFocusTrap<HTMLDivElement>(expanded, () => setExpanded(false));
@@ -72,10 +82,23 @@ export function TableExpandOverlay({
             role="dialog"
             aria-modal="true"
             aria-label={`${title} (mở rộng)`}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full mx-auto p-4 sm:p-5 space-y-3 max-h-[92vh] flex flex-col overflow-hidden"
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full mx-auto p-4 sm:p-5 space-y-3 max-h-[92vh] flex flex-col overflow-hidden table-expand-open"
           >
             <div className="flex items-center justify-between gap-3 shrink-0">
               <h3 className="font-extrabold text-slate-900 text-sm truncate">{title} (mở rộng)</h3>
+              <div className="flex items-center gap-2 shrink-0">
+              {onExport && (
+                <button
+                  type="button"
+                  onClick={onExport}
+                  title={`Xuất ${title} ra CSV`}
+                  aria-label={`Xuất ${title} ra CSV`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{exportLabel}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
@@ -86,6 +109,7 @@ export function TableExpandOverlay({
                 <Minimize2 className="w-3.5 h-3.5" />
                 <span>Thu lại</span>
               </button>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
           </div>

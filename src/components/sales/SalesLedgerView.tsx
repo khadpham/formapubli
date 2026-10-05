@@ -630,8 +630,8 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </div>
         </div>
 
-        <TableExpandOverlay title="Sổ đơn">
-        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+        <TableExpandOverlay title="Sổ đơn" onExport={exportToCSV} exportLabel="Xuất Excel/CSV">
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto table-scroll">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10">
               <tr>

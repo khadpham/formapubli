@@ -253,8 +253,8 @@ export function TopEditionsPanel({
         </div>
       </div>
 
-      <TableExpandOverlay title="Sách bán chạy nhất">
-      <div className="overflow-x-auto max-h-[420px] overflow-y-auto border border-slate-100 rounded-xl">
+      <TableExpandOverlay title="Sách bán chạy nhất" onExport={exportCsv} exportLabel="Xuất Excel/CSV">
+      <div className="overflow-x-auto max-h-[420px] overflow-y-auto border border-slate-100 rounded-xl table-scroll">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 sticky top-0 z-10">
             <tr>

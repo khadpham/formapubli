@@ -60,6 +60,18 @@ ok(/TableExpandOverlay/.test(overlay), 'overlay tồn tại');
 ok(/useModalFocusTrap/.test(overlay), 'overlay bẫy focus + Esc');
 ok(/PortalToBody|createPortal/.test(overlay), 'overlay portal ra body');
 ok(/Mở rộng/.test(overlay), 'nút Mở rộng đúng nhãn');
+ok(/onExport/.test(overlay), 'overlay có nút xuất CSV');
+ok(/table-expand-open \.table-scroll/.test(readSrc('src/app/globals.css')), 'CSS gỡ trần max-h khi mở rộng');
+for (const [f, name] of [
+  ['src/components/sales/SalesLedgerView.tsx', 'sổ đơn'],
+  ['src/components/sales/TopEditionsPanel.tsx', 'sách bán chạy'],
+  ['src/components/sales/GiftReportPanel.tsx', 'quà tặng'],
+  ['src/components/sales/RevenueAnalyticsPanel.tsx', 'nguồn doanh thu'],
+] as Array<[string, string]>) {
+  const src = readSrc(f);
+  ok(/table-scroll/.test(src), `${name} đánh dấu vùng cuộn`);
+  ok(/onExport=\{/.test(src), `${name} xuất CSV trong overlay`);
+}
 console.log(`=== SALES TABLE UX (Task 3 overlay): PASS ===\n`);
 
 // --- Task 4: sổ đơn sort + overlay ---

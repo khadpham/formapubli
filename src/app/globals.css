@@ -190,4 +190,13 @@ body {
   }
 }
 
+/* ==========================================================================
+   TABLE-EXPAND — overlay mở rộng bảng (tab Doanh Số).
+   Vùng cuộn con mang class `table-scroll` bị gỡ trần max-h khi overlay mở để
+   khung nới theo đúng số dòng (20/50/100/toàn bộ). Không chạm thead sticky.
+   ========================================================================== */
+.table-expand-open .table-scroll {
+  max-height: none !important;
+}
+
 

@@ -298,8 +298,8 @@ export function RevenueAnalyticsPanel({
           </div>
 
           {/* Bảng theo nhóm nguồn — dòng tài trợ RIÊNG, dòng TỔNG ở cuối */}
-          <TableExpandOverlay title="Nguồn doanh thu">
-          <div className="overflow-x-auto">
+          <TableExpandOverlay title="Nguồn doanh thu" onExport={exportSourceCsv} exportLabel="Xuất Excel/CSV">
+          <div className="overflow-x-auto table-scroll">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
                 <tr>

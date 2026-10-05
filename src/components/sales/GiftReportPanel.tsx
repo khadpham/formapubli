@@ -36,7 +36,7 @@ function GiftTable({ rows, emptyText, title }: { rows: GiftRow[]; emptyText: str
   });
   if (rows.length === 0) return <p className="text-slate-400">{emptyText}</p>;
   return (
-    <div className="overflow-x-auto max-h-[320px] overflow-y-auto border border-slate-100 rounded-xl">
+    <div className="overflow-x-auto max-h-[320px] overflow-y-auto border border-slate-100 rounded-xl table-scroll">
       <table className="w-full text-left text-xs">
         <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 sticky top-0 z-10">
           <tr>
@@ -222,7 +222,7 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
         (loading && inStock.length === 0 && shortfall.length === 0 ? (
           <p className="text-xs text-slate-500">Đang tải báo cáo quà...</p>
         ) : (
-          <TableExpandOverlay title="Quà tặng">
+          <TableExpandOverlay title="Quà tặng" onExport={exportCsv} exportLabel="Xuất Excel/CSV">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
               <p className="font-bold text-emerald-700 mb-1">Quà đã phát (còn tồn)</p>
