@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Search, TrendingUp, ArrowLeft, Receipt } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { buildFlowInsights } from '@/lib/product-flow';
+import { buildFlowInsights, vnHourOf, vnDayOf, moneyShort } from '@/lib/product-flow';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
 import { UserRole } from '@/lib/roles';
 
@@ -190,7 +190,7 @@ export function ProductFlowDrawer({
                 <TrendingUp className="w-4 h-4 text-indigo-600" />
                 Nhịp Bán
               </h3>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-500 leading-snug">
                 {view === 'list' ? 'Chọn 1 món để xem từng thời điểm bán ra' : timeline?.product?.name || timeline?.product?.code || '…'}
               </p>
             </div>
@@ -241,7 +241,7 @@ export function ProductFlowDrawer({
                     className="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-sm transition flex items-center justify-between gap-2"
                   >
                     <span className="min-w-0">
-                      <span className="block text-xs font-bold text-slate-900 truncate">
+                      <span className="block text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
                         {it.title || '—'} <span className="font-mono font-normal text-slate-400">[{it.code || '—'}]</span>
                       </span>
                       <span className="block text-[11px] text-slate-500 font-mono">
@@ -264,7 +264,7 @@ export function ProductFlowDrawer({
             </div>
           ) : (
             <>
-              {/* 4 số */}
+              {/* 4 số — không cắt chữ: số to thì chữ tự nhỏ lại, luôn hiện đủ */}
               <div className="grid grid-cols-4 gap-2 text-center">
                 {[
                   [insights.totalQty.toLocaleString('vi-VN'), 'cuốn'],
@@ -272,39 +272,49 @@ export function ProductFlowDrawer({
                   [String(insights.totalOrders), 'đơn'],
                   [String(insights.activeDays), 'ngày bán'],
                 ].map(([v, l]) => (
-                  <div key={l} className="bg-slate-50 border border-slate-200 rounded-xl px-1 py-2">
-                    <p className="text-sm font-black font-mono text-slate-900 truncate">{v}</p>
+                  <div key={l} className="bg-slate-50 border border-slate-200 rounded-xl px-1 py-2 min-w-0">
+                    <p className="font-black font-mono text-slate-900 leading-tight break-words tabular-nums text-[13px]">{v}</p>
                     <p className="text-[10px] text-slate-500">{l}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Cột theo ngày + gạt cuốn/tiền */}
+              {/* Cột theo ngày + gạt cuốn/tiền. Hai chế độ KHÁC MÀU nhau để bấm
+                  là thấy đổi ngay (trước đây cùng màu + không ghi số nên nhìn
+                  như gạt liệt). Mỗi cột ghi số của chính nó. */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Theo ngày</p>
-                  <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Đơn vị biểu đồ">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Theo ngày ({metric === 'qty' ? 'cuốn' : 'đồng'})
+                  </p>
+                  <div className="inline-flex rounded-lg bg-slate-100 p-0.5 shrink-0" role="group" aria-label="Đơn vị biểu đồ">
                     {(['qty', 'revenue'] as const).map((m) => (
                       <button
                         key={m}
                         type="button"
                         onClick={() => setMetric(m)}
                         aria-pressed={metric === m}
-                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${metric === m ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap ${metric === m ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}
                       >
                         {m === 'qty' ? 'Cuốn' : 'Tiền'}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="flex items-end gap-1 h-28">
+                <div className="flex items-end gap-1">
                   {buckets.map((b) => {
                     const v = metric === 'qty' ? b.qty : b.revenue;
+                    const label = metric === 'qty' ? `${v}` : moneyShort(v);
                     return (
-                      <div key={b.date} className="flex-1 flex flex-col items-center justify-end h-full min-w-0" title={`${b.date}: ${b.qty} cuốn · ${money(b.revenue)} đ`}>
+                      <div key={b.date} className="flex-1 flex flex-col items-center justify-end min-w-0" title={`${b.date}: ${b.qty} cuốn · ${money(b.revenue)} đ`}>
+                        {(v > 0 || buckets.length <= 14) && (
+                          <span className="text-[9px] font-mono font-bold text-slate-600 leading-none mb-0.5 break-words text-center">
+                            {v > 0 ? label : '0'}
+                          </span>
+                        )}
                         <div
-                          className="w-full max-w-[26px] rounded-t bg-indigo-500"
-                          style={{ height: `${v > 0 ? Math.max(6, Math.round((v / maxV) * 100)) : 2}%` }}
+                          className={`w-full max-w-[26px] rounded-t ${metric === 'qty' ? 'bg-indigo-500' : 'bg-emerald-500'}`}
+                          style={{ height: `${v > 0 ? Math.max(10, Math.round((v / maxV) * 88)) : 2}px` }}
                         />
                         <span className="text-[9px] font-mono text-slate-400 mt-0.5">{b.date.slice(8)}</span>
                       </div>
@@ -322,27 +332,54 @@ export function ProductFlowDrawer({
                 <p>Tốc độ <b>{insights.pacePerDay}</b> cuốn/ngày bán{insights.quietDays > 0 ? ` · ${insights.quietDays} ngày im ắng` : ''}.</p>
               </div>
 
-              {/* Dòng sự kiện */}
+              {/* Dòng sự kiện: gom theo ngày (gạch phân cách), highlight giờ vàng */}
               <div>
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Từng lần bán ({(timeline?.events || []).length})</p>
                 <div className="space-y-1.5">
-                  {(timeline?.events || []).map((e: any) => (
-                    <div key={`${e.orderId}-${e.createdAt}`} className="flex items-center justify-between gap-2 p-2 rounded-xl border border-slate-100 text-xs">
-                      <span className="font-mono text-slate-500 shrink-0">
-                        {e.createdAt ? new Date(e.createdAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
-                      </span>
-                      <span className="font-mono font-bold text-slate-800 shrink-0">×{Number(e.qty || 0)}</span>
-                      <button
-                        type="button"
-                        onClick={() => e.orderId && setSelectedOrderId(String(e.orderId))}
-                        className="font-mono font-bold text-indigo-700 hover:underline truncate flex items-center gap-1"
-                        title="Mở chi tiết đơn"
-                      >
-                        <Receipt className="w-3 h-3 shrink-0" />
-                        {e.orderCode || '—'}
-                      </button>
-                    </div>
-                  ))}
+                  {(() => {
+                    const groups = new Map<string, any[]>();
+                    for (const e of (timeline?.events || []) as any[]) {
+                      const day = vnDayOf(e.createdAt) || '—';
+                      if (!groups.has(day)) groups.set(day, []);
+                      groups.get(day)!.push(e);
+                    }
+                    const out: React.ReactNode[] = [];
+                    groups.forEach((items, day) => {
+                      out.push(
+                        <p key={`day-${day}`} className="flex items-center gap-2 pt-1 first:pt-0">
+                          <span className="text-[10px] font-bold text-slate-400 font-mono whitespace-nowrap">{day}</span>
+                          <span className="flex-1 border-t border-dashed border-slate-200" aria-hidden="true" />
+                          <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">{items.length} lần</span>
+                        </p>
+                      );
+                      for (const e of items) {
+                        const h = vnHourOf(e.createdAt);
+                        const isPeak = h != null && insights.peakHour != null && h === insights.peakHour;
+                        out.push(
+                          <div
+                            key={`${e.orderId}-${e.createdAt}`}
+                            className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs ${isPeak ? 'border-amber-300 bg-amber-50/70' : 'border-slate-100'}`}
+                          >
+                            <span className="font-mono text-slate-500 shrink-0">
+                              {e.createdAt ? new Date(e.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                              {isPeak && <span className="ml-1 px-1 py-px rounded bg-amber-500 text-white text-[9px] font-bold">giờ vàng</span>}
+                            </span>
+                            <span className="font-mono font-bold text-slate-800 shrink-0">×{Number(e.qty || 0)}</span>
+                            <button
+                              type="button"
+                              onClick={() => e.orderId && setSelectedOrderId(String(e.orderId))}
+                              className="font-mono font-bold text-indigo-700 hover:underline flex items-center gap-1 min-w-0 text-right"
+                              title="Mở chi tiết đơn"
+                            >
+                              <Receipt className="w-3 h-3 shrink-0" />
+                              <span className="break-all">{e.orderCode || '—'}</span>
+                            </button>
+                          </div>
+                        );
+                      }
+                    });
+                    return out;
+                  })()}
                 </div>
               </div>
             </>

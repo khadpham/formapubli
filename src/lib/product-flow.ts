@@ -93,3 +93,29 @@ export function buildFlowInsights(
     pacePerDay: activeDays > 0 ? Math.round((totalQty / activeDays) * 10) / 10 : 0,
   };
 }
+
+/** Giờ VN (0-23) của 1 mốc ISO, không phụ thuộc múi giờ máy. */
+export function vnHourOf(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return (d.getUTCHours() + 7) % 24;
+}
+
+/** Ngày VN 'YYYY-MM-DD' của 1 mốc ISO, không phụ thuộc múi giờ máy. */
+export function vnDayOf(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** Nhãn tiền gọn cho cột biểu đồ (Tr/N), đầy đủ để ở tooltip/dải số. */
+export function moneyShort(n: number): string {
+  if (n >= 1_000_000) {
+    const v = Math.round((n / 1_000_000) * 10) / 10;
+    return `${v.toLocaleString('vi-VN')}Tr`;
+  }
+  if (n >= 1000) return `${Math.round(n / 1000)}N`;
+  return `${n}`;
+}

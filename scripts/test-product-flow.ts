@@ -3,7 +3,7 @@
  * RED trước, GREEN sau (TDD).
  */
 import assert from 'node:assert/strict';
-import { buildFlowInsights } from '../src/lib/product-flow';
+import { buildFlowInsights, vnHourOf, vnDayOf, moneyShort } from '../src/lib/product-flow';
 
 const buckets = [
   { date: '2026-10-01', qty: 0, revenue: 0, orders: 0 },
@@ -25,6 +25,15 @@ assert.equal(ins.quietDays, 2, '2 ngày im ắng');
 
 console.log('\n=== PRODUCT FLOW (runtime): PASS ===\n');
 
+// Helpers giờ/ngày VN + nhãn tiền gọn (không phụ thuộc múi giờ máy)
+assert.equal(vnHourOf('2026-10-03T03:00:00.000Z'), 10, '03:00Z = 10h VN');
+assert.equal(vnHourOf('2026-10-03T17:30:00.000Z'), 0, '17:30Z qua ngày VN');
+assert.equal(vnDayOf('2026-10-03T17:30:00.000Z'), '2026-10-04', 'ngày VN lăn sau 17Z');
+assert.equal(vnHourOf(null), null, 'null an toàn');
+assert.equal(moneyShort(1500000), '1,5Tr', 'triệu gọn');
+assert.equal(moneyShort(85000), '85N', 'nghìn gọn');
+assert.equal(moneyShort(500), '500', 'nhỏ giữ nguyên');
+
 // --- Điểm vào drawer ---
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,6 +45,10 @@ const drawer = readSrc('src/components/sales/ProductFlowDrawer.tsx');
 ok(/Nhịp Bán/.test(drawer), 'drawer đúng tên Nhịp Bán');
 ok(/Chủ đọc nhanh/.test(drawer), 'có khối insight cho Chủ');
 ok(/OrderDetailModal/.test(drawer), 'bấm mã đơn mở chi tiết');
+ok(/moneyShort/.test(drawer), 'cột tiền ghi số gọn');
+ok(/giờ vàng/.test(drawer), 'highlight giờ vàng ở dòng sự kiện');
+ok(/border-dashed/.test(drawer), 'gạch phân cách ngày hôm trước/sau');
+ok(/truncate/.test(drawer) === false, 'không truncate (…) trong drawer');
 const topPanel = readSrc('src/components/sales/TopEditionsPanel.tsx');
 ok(/onPickProduct/.test(topPanel), 'dòng bán chạy bấm mở Nhịp Bán');
 const settleModal = readSrc('src/components/pos/DailyFairSettlementModal.tsx');
