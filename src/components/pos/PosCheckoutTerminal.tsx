@@ -2525,6 +2525,9 @@ export function PosCheckoutTerminal({
           orderId: session.orderId,
           paymentProofId: session.paymentProof.id,
           paymentProofCapturedAt: session.paymentProof.capturedAt,
+          // Ô Ghi chú trong modal mở SAU khi đơn đã tạo — gửi kèm lúc chốt để
+          // chữ không rớt (server chỉ ghi đè khi chuỗi non-blank).
+          note: note.trim() ? note.trim() : undefined,
         }),
       });
       const resData = await res.json();

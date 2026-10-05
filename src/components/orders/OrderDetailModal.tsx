@@ -243,11 +243,16 @@ export function OrderDetailModal({
                 </div>
               </div>
 
-              {orderDetail.order.note && (
-                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-900">
-                  <strong>Ghi chú:</strong> {orderDetail.order.note}
-                </div>
-              )}
+              {/* Ghi chú đơn — LUÔN hiện (trống thì gạch ngang) để phân biệt
+                  "đơn không có ghi chú" với "mất trường ghi chú". */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-900">
+                <strong>Ghi chú:</strong>{' '}
+                {orderDetail.order.note && `${orderDetail.order.note}`.trim() ? (
+                  orderDetail.order.note
+                ) : (
+                  <span className="text-amber-400 italic">—</span>
+                )}
+              </div>
 
               {/* Items Table */}
               <div>

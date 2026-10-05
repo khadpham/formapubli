@@ -1602,7 +1602,14 @@ return {
     actorRole: string,
     actorId?: string,
     actorContext?: ActorContext,
-    paymentProof?: TransferPaymentProof
+    paymentProof?: TransferPaymentProof,
+    /**
+     * Ghi chú chốt lúc xác nhận (04/10/2026): ô Ghi chú trong modal thanh
+     * toán mở SAU khi đơn PENDING đã tạo — thu ngân gõ ở đó mà CONFIRM không
+     * nhận note thì chữ rớt mất. Chỉ ghi đè khi chuỗi non-blank; blank giữ
+     * nguyên note lúc tạo đơn.
+     */
+    opts?: { note?: string }
   ) {
     if (actorContext) {
       actorRole = actorContext.role;
@@ -1765,10 +1772,14 @@ return {
       tx
     );
 
-        // 8. Chuyển trạng thái có điều kiện: PENDING_CONFIRMATION → COMPLETED
+        // 8. Chuyển trạng thái có điều kiện: PENDING_CONFIRMATION → COMPLETED.
+        // Kèm ghi chú chốt (nếu có): ô Ghi chú ở modal thanh toán mở sau khi
+        // đơn đã tạo, không cập nhật ở đây thì chữ thu ngân gõ bị rớt.
+        const confirmNote = `${opts?.note || ''}`.trim() || null;
         const updateRes: any = await tx.run(sql`
           UPDATE orders
-          SET status = 'COMPLETED'
+          SET status = 'COMPLETED',
+              note = COALESCE(NULLIF(TRIM(${confirmNote}), ''), note)
           WHERE id = ${orderId} AND status = 'PENDING_CONFIRMATION'
         `);
 

@@ -207,6 +207,13 @@ export async function POST(req: NextRequest) {
       if (reasonError) {
         return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: reasonError }, { status: 400 });
       }
+      // Ghi chú chốt lúc xác nhận: ô Ghi chú trong modal thanh toán mở sau khi
+      // đơn PENDING đã tạo — cho phép gửi kèm để chữ không rớt. Giới hạn độ
+      // dài như lý do hủy để orders.note không phình vô hạn.
+      if (body.note !== undefined && body.note !== null && body.note !== '' &&
+          (typeof body.note !== 'string' || body.note.trim().length > CANCEL_REASON_MAX_LEN)) {
+        return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: 'Ghi chú đơn không hợp lệ.' }, { status: 400 });
+      }
       const result = body.action === 'CONFIRM'
         ? await OrderService.confirmOrder(
             body.orderId,
@@ -215,7 +222,8 @@ export async function POST(req: NextRequest) {
             actorContext,
             body.paymentProofId && body.paymentProofCapturedAt
               ? { id: body.paymentProofId, capturedAt: body.paymentProofCapturedAt }
-              : undefined
+              : undefined,
+            typeof body.note === 'string' && body.note.trim() ? { note: body.note.trim() } : undefined
           )
         : await OrderService.cancelOrder(
             body.orderId,
