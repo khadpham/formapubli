@@ -208,6 +208,8 @@ async function run() {
     const drawerSrc2 = readSrc('src/components/copilot/CopilotDrawer.tsx');
     ok(/gpt-oss-120b/.test(drawerSrc2), 'picker phải có GPT-OSS 120B');
     ok(/GROQ/i.test(readSrc('src/services/ai/llm-client.ts')), 'llm-client phải biết Groq');
+    ok(/glm-4\.7-flash/.test(route), 'synth phải thử GLM-4.7-flash (Workers AI)');
+    ok(/glm-4\.7-flash/.test(drawerSrc2), 'picker phải có GLM-4.7-flash');
   }
 }
 

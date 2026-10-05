@@ -86,7 +86,43 @@ export function resolveGroqApiKey(): string {
   return key;
 }
 
-/** Chat JSON qua Groq (OpenAI-compatible endpoint, json_object mode). */
+/** Chat JSON qua Cloudflare Workers AI (REST, Chat Completions shape).
+ * Dùng cho model free (vd GLM-4.7-flash) khi Gemini/Groq nghẽn.
+ * Credentials KHÔNG bao giờ vào repo: CF_API_TOKEN + CF_ACCOUNT_ID là secret.
+ */
+export async function callCfWorkerAiJsonRaw(params: {
+  systemPrompt: string;
+  userText: string;
+  model?: string;
+  timeoutMs?: number;
+  onModel?: (model: string) => void;
+}): Promise<string> {
+  const token = (process.env.CF_API_TOKEN || '').trim();
+  const accountId = (process.env.CF_ACCOUNT_ID || '').trim();
+  if (!token || !accountId) throw new LlmConfigError('Thiếu CF_API_TOKEN/CF_ACCOUNT_ID cho tầng Cloudflare Workers AI.');
+  const model = (params.model || '').trim() || 'glm-4.7-flash';
+  // Chuẩn hoá: cho phép 'glm-4.7-flash' ngắn gọn hoặc full '@cf/zai-org/glm-4.7-flash'.
+  const fullModel = model.startsWith('@cf/') ? model : `@cf/zai-org/${model}`;
+  return withLlmCircuit('cf-workers-ai', async () => {
+    const data = (await postJsonWithTimeout(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${fullModel}`,
+      {
+        messages: [
+          { role: 'system', content: params.systemPrompt },
+          { role: 'user', content: params.userText },
+        ],
+      },
+      { Authorization: 'Bearer ' + token },
+      params.timeoutMs ?? 15000,
+      'CfWorkersAI'
+    )) as { result?: { choices?: Array<{ message?: { content?: string } }> }; errors?: unknown };
+    if ((data as any)?.errors) throw new Error('Cloudflare Workers AI lỗi: ' + JSON.stringify((data as any).errors).slice(0, 200));
+    const rawJson = data.result?.choices?.[0]?.message?.content;
+    if (!rawJson) throw new Error('Empty Cloudflare Workers AI response');
+    params.onModel?.(fullModel);
+    return rawJson;
+  });
+}
 export async function callGroqChatJsonRaw(params: {
   systemPrompt: string;
   userText: string;
@@ -294,7 +330,7 @@ export class LlmBudgetExceededError extends Error {
   }
 }
 
-export type LlmEngineKey = 'gemini' | 'openai' | 'groq';
+export type LlmEngineKey = 'gemini' | 'openai' | 'groq' | 'cf-workers-ai';
 
 export interface LlmBreakerConfig {
   maxFailures: number;
@@ -323,6 +359,7 @@ const breakerStates: Record<LlmEngineKey, BreakerState> = {
   gemini: { consecutiveFailures: 0, openedAt: 0 },
   openai: { consecutiveFailures: 0, openedAt: 0 },
   groq: { consecutiveFailures: 0, openedAt: 0 },
+  'cf-workers-ai': { consecutiveFailures: 0, openedAt: 0 },
 };
 
 interface BudgetState {
@@ -354,6 +391,7 @@ export function getLlmHealth(): Record<
     gemini: snap('gemini'),
     openai: snap('openai'),
     groq: snap('groq'),
+    'cf-workers-ai': snap('cf-workers-ai'),
     budget: { monthKey: budgetState.monthKey || currentMonthKey(), calls: budgetState.calls, limit: cfg.monthlyBudget },
   };
 }

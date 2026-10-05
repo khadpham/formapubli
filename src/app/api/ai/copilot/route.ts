@@ -3,7 +3,7 @@ import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, g
 import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { CopilotGuardrails } from '@/services/ai/copilot-guardrails';
-import { callGeminiWithFallback, callGroqChatJsonRaw, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
+import { callGeminiWithFallback, callCfWorkerAiJsonRaw, callGroqChatJsonRaw, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
 
 export async function POST(req: NextRequest) {
   const ip = extractClientIp(req);
@@ -181,8 +181,17 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
         let raw = '';
         const userText = `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`;
         // Model user ép chọn (picker) đi trước; 'local' thì bỏ qua hết LLM.
+        // 'cf/...' = Cloudflare Workers AI (model free).
         const picked = modelOverride && modelOverride !== 'local' ? modelOverride : null;
-        if (picked && picked.startsWith('groq/') && groqKey) {
+        if (picked && picked.startsWith('cf/')) {
+          raw = await callCfWorkerAiJsonRaw({
+            systemPrompt: synthPrompt,
+            userText,
+            model: picked,
+            timeoutMs: 15000,
+          });
+          synthEngine = 'cf:' + picked.replace(/^@cf\//, '');
+        } else if (picked && picked.startsWith('groq/') && groqKey) {
           raw = await callGroqChatJsonRaw({
             systemPrompt: synthPrompt,
             userText,
@@ -226,13 +235,33 @@ HÃY TRẢ LỜI NGẮN GỌN, CHÍNH XÁC, DẠNG MARKDOWN CHO BAN GIÁM ĐỐC
             }
           }
           if (!raw && openaiKey) {
-            raw = await callOpenAIJsonRaw({
-              systemPrompt: synthPrompt,
-              userText,
-              apiKey: openaiKey,
-              timeoutMs: 5000,
-            });
-            synthEngine = 'openai:' + resolveOpenAIModel();
+            try {
+              raw = await callOpenAIJsonRaw({
+                systemPrompt: synthPrompt,
+                userText,
+                apiKey: openaiKey,
+                timeoutMs: 5000,
+              });
+              synthEngine = 'openai:' + resolveOpenAIModel();
+            } catch (openaiErr) {
+              console.warn('⚠️ OpenAI lỗi:', (openaiErr as any)?.message || openaiErr);
+            }
+          }
+          // Tầng cuối cùng trước formatter: Cloudflare Workers AI free
+          // (GLM-4.7-flash đã đo thật: JSON chuẩn, tiếng Việt tốt).
+          if (!raw) {
+            try {
+              raw = await callCfWorkerAiJsonRaw({
+                systemPrompt: synthPrompt,
+                userText,
+                timeoutMs: 15000,
+                onModel: (m) => {
+                  synthEngine = 'cf:' + m.replace(/^@cf\//, '');
+                },
+              });
+            } catch (cfErr) {
+              console.warn('⚠️ Workers AI lỗi, dùng formatter nội bộ:', (cfErr as any)?.message || cfErr);
+            }
           }
         }
         synthesizedAnswer = extractNaturalAnswer(raw);
