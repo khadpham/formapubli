@@ -148,6 +148,13 @@ export class CopilotGuardrails {
     return null;
   }
 
+  /** Câu có yêu cầu GHI/XOÁ/SỬA dữ liệu không — loại này luôn từ chối, không nới. */
+  private static isWriteAttempt(question: string): boolean {
+    const n = removeAccents(question.toLowerCase());
+    // Cho phép từ trung gian: "xoá sạch đơn hàng", "xoá toàn bộ sổ sách" cũng phải bị chặn.
+    return /(huy|xoa|sua)[\w\s]{0,10}(don|so|kho)\b|tru kho|cong kho|dieu chinh kho|nhap kho|xuat kho|chi tien|hoan tien|chuyen tien|rut tien|mo ket|dong ket|(sua|giam|tang|doi) gia|dat ket quy/.test(n);
+  }
+
   /**
    * Phân tích câu hỏi của lãnh đạo thành kế hoạch gọi Tool hoặc từ chối.
    * Wrapper: tu dong phan giai ma/ten sach cho query_stock_level de LLM
@@ -159,7 +166,36 @@ export class CopilotGuardrails {
     modelOverride?: string,
     history: ChatTurn[] = []
   ): Promise<CopilotPlan> {
-    const plan = await this.planQueryInner(question, tracker, modelOverride, history);
+    let plan = await this.planQueryInner(question, tracker, modelOverride, history);
+
+    // LLM planner yếu hay trả DIRECT_ANSWER cho câu RÕ ràng cần dữ liệu
+    // ("Giờ vàng của nó là mấy giờ?" → "sếp nói cuốn nào?"). Câu có từ khoá công cụ
+    // thì cho luật nội bộ quyết định — LLM không được đòi sếp nói lại.
+    const nNorm = removeAccents(question.toLowerCase());
+    const needsData =
+      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho/.test(
+        nNorm
+      );
+    if (needsData && plan.action === 'DIRECT_ANSWER') {
+      const byRule = this.heuristicPlan(question.toLowerCase());
+      if (byRule.action === 'CALL_TOOL' || byRule.action === 'CALL_MANY') {
+        plan = byRule;
+        plan.reason = 'Rule overrode planner DIRECT_ANSWER (câu cần dữ liệu). ' + (plan.reason || '');
+      }
+    }
+
+    // Câu ngoài nghiệp vụ (chuyện đời, đùa) KHÔNG được từ chối cứng: đổi sang
+    // trả lời trực tiếp để LLM nói tự nhiên. Các đợt cố ý ép ghi/xoá vẫn bị chặn
+    // ở trên bằng bộ lọc từ khoá, nên không mất an toàn.
+    if (plan.action === 'REFUSE_OUT_OF_SCOPE' && !this.isWriteAttempt(question)) {
+      plan = {
+        action: 'DIRECT_ANSWER',
+        directAnswer:
+          plan.directAnswer ||
+          'Sếp ơi, chuyện đó nằm ngoài số liệu tôi tra được — nhưng nếu sếp cần góc nhìn từ kho sách thì tôi có đủ tồn, doanh số, nhịp bán và két tiền để nói chuyện.',
+        reason: 'Chuyển từ chối cứng sang trả lời tự nhiên',
+      };
+    }
     // Cau hon hop (vua small-talk vua so lieu): tra loi small-talk + hen cau so lieu rieng.
     if (plan.action === 'DIRECT_ANSWER' && plan.reason === 'Small-talk allowed') {
       const n = removeAccents(question.toLowerCase());
