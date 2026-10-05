@@ -147,7 +147,7 @@ export function TopEditionsPanel({
   const csvRange = startDate && endDate ? `${startDate}_${endDate}` : startDate || endDate || 'all';
 
   const exportCsv = () => {
-    if (items.length === 0) {
+    if (sortedItems.length === 0) {
       alert('Chưa có dữ liệu sách bán chạy để xuất.');
       return;
     }
@@ -155,6 +155,7 @@ export function TopEditionsPanel({
       alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
       return;
     }
+    // Xuất theo đúng thứ tự đang xếp trên màn hình (Hạng = vị trí đang thấy).
     // Chặn Excel formula injection ở Mã/Tiêu đề.
     const cell = (v: string | number) => {
       const s = `${v ?? ''}`;
@@ -162,7 +163,7 @@ export function TopEditionsPanel({
     };
     // Watermark hash trên DỮ LIỆU THÔ (chưa escape) — số phải khớp số thứ tự
     // trên bảng nên map kèm index.
-    const rawObjects = items.map((it, i) => ({
+    const rawObjects = sortedItems.map((it, i) => ({
       rank: i + 1,
       code: it.code ?? '',
       title: it.title ?? '',
@@ -173,7 +174,7 @@ export function TopEditionsPanel({
       period: rangeLabel,
       warehouse: warehouseLabel,
     }));
-    const rows = items.map((it, i) => [
+    const rows = sortedItems.map((it, i) => [
       i + 1,
       cell(it.code || '—'),
       cell(it.title || '—'),

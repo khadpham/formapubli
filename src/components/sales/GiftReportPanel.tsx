@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Gift, RefreshCw, Download } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
-import { useSortable, SortableTh } from '@/lib/table-ux';
+import { sortRows, SortableTh, type SortDir } from '@/lib/table-ux';
 import { TableExpandOverlay } from './TableExpandOverlay';
 import { downloadWatermarkedCsv, exportCsvCell } from '@/lib/sales-view';
 
@@ -28,12 +28,7 @@ interface GiftRow {
 
 const ROLE_CAN_VIEW = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
-function GiftTable({ rows, emptyText, title }: { rows: GiftRow[]; emptyText: string; title: string }) {
-  const { sorted, sortKey, sortDir, toggleSort } = useSortable(rows, 'totalQty', 'desc', (r: GiftRow, key: string) => {
-    if (key === 'totalQty') return Number(r.totalQty || 0);
-    if (key === 'lineCount') return Number(r.lineCount || 0);
-    return String(r.productName || '');
-  });
+function GiftTable({ rows, emptyText, title, sortKey, sortDir, onToggle }: { rows: GiftRow[]; emptyText: string; title: string; sortKey: string; sortDir: SortDir; onToggle: (key: string) => void }) {
   if (rows.length === 0) return <p className="text-slate-400">{emptyText}</p>;
   return (
     <div className="overflow-x-auto max-h-[320px] overflow-y-auto border border-slate-100 rounded-xl table-scroll">
@@ -41,12 +36,12 @@ function GiftTable({ rows, emptyText, title }: { rows: GiftRow[]; emptyText: str
         <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 sticky top-0 z-10">
           <tr>
             <th className="p-2.5">Sản phẩm</th>
-            <SortableTh label="Dòng quà" sortKey="lineCount" activeKey={sortKey} activeDir={sortDir} onToggle={(k) => toggleSort(k, 'desc')} align="right" className="p-2.5" />
-            <SortableTh label="Tổng cuốn" sortKey="totalQty" activeKey={sortKey} activeDir={sortDir} onToggle={(k) => toggleSort(k, 'desc')} align="right" className="p-2.5" />
+            <SortableTh label="Dòng quà" sortKey="lineCount" activeKey={sortKey} activeDir={sortDir} onToggle={onToggle} align="right" className="p-2.5" />
+            <SortableTh label="Tổng cuốn" sortKey="totalQty" activeKey={sortKey} activeDir={sortDir} onToggle={onToggle} align="right" className="p-2.5" />
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {sorted.map((r) => (
+          {rows.map((r) => (
             <tr key={r.productId} className="hover:bg-slate-50/80">
               <td className="p-2.5 font-medium text-slate-800">{r.productName || '—'}</td>
               <td className="p-2.5 text-right font-mono">{Number(r.lineCount || 0).toLocaleString('vi-VN')}</td>
@@ -132,9 +127,10 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
   const csvRange = from && to ? `${from}_${to}` : from || to || 'all';
 
   const exportCsv = () => {
+    // Xuất theo đúng thứ tự đang xếp (file khớp màn hình).
     const groups: Array<{ label: string; rows: GiftRow[] }> = [
-      { label: 'Quà đã phát (còn tồn)', rows: inStock },
-      { label: 'Quà hết tồn chưa phát', rows: shortfall },
+      { label: 'Quà đã phát (còn tồn)', rows: sortRows(inStock, giftSortKey, giftSortDir, giftVal) },
+      { label: 'Quà hết tồn chưa phát', rows: sortRows(shortfall, giftSortKey, giftSortDir, giftVal) },
     ];
     const rawObjects: Array<Record<string, unknown>> = [];
     const csvRows: string[][] = [];
@@ -168,8 +164,32 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
    * Một nhóm quà dạng bảng thật (sort + overlay dùng chung). Mỗi nhóm sort
    * riêng vì hai nhóm là hai bản chất khác nhau (đã phát vs hết tồn).
    */
+  // Sort nằm ở PANEL (không unmount khi bật/tắt overlay) — GiftTable chỉ nhận
+  // dòng đã xếp. Hai bảng chung 1 khóa sort.
+  const [giftSortKey, setGiftSortKey] = React.useState('totalQty');
+  const [giftSortDir, setGiftSortDir] = React.useState<SortDir>('desc');
+  const toggleGiftSort = (key: string) => {
+    if (key !== giftSortKey) {
+      setGiftSortKey(key);
+      setGiftSortDir('desc');
+    } else {
+      setGiftSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    }
+  };
+  const giftVal = (r: GiftRow, key: string) => {
+    if (key === 'totalQty') return Number(r.totalQty || 0);
+    if (key === 'lineCount') return Number(r.lineCount || 0);
+    return String(r.productName || '');
+  };
   const renderTable = (rows: GiftRow[], emptyText: string, title: string) => (
-    <GiftTable rows={rows} emptyText={emptyText} title={title} />
+    <GiftTable
+      rows={sortRows(rows, giftSortKey, giftSortDir, giftVal)}
+      emptyText={emptyText}
+      title={title}
+      sortKey={giftSortKey}
+      sortDir={giftSortDir}
+      onToggle={toggleGiftSort}
+    />
   );
 
   return (

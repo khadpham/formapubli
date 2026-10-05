@@ -53,7 +53,23 @@ const printModal = settleModal;
 ok(/Tồn kho hiện tại|TỒN SÁCH HIỆN TẠI/.test(printModal), 'in kỳ ghi rõ tồn hiện tại, không bịa tồn cuối kỳ');
 ok(/Doanh thu theo ngày/.test(printModal), 'in/màn kỳ có dải theo ngày');
 ok(/BB-.*reportStartDate|reportStartDate.*BB-|kỳ \$\{/.test(printModal), 'bản in ghi rõ kỳ');
-// --- Feedback 05/10 (gọn + cuối kỳ xem đã bán) ---
+// --- Reviewer findings round 2 (05/10) ---
+ok(/assertVnDay/.test(readSrc('src/services/daily-settlement.service.ts')), 'ngày kỳ kiểm tra có thật (không cuộn 30/2)');
+ok(/cùng phạm vi/.test(readSrc('src/services/daily-settlement.service.ts')), 'két kỳ đối chiếu cùng phạm vi như ngày');
+ok(/openShiftAlerts/.test(readSrc('src/app/api/pos/daily-settlement/route.ts')), 'kỳ cũng gắn cảnh báo ca quá giờ');
+ok(/FAIR_EVENT/.test(settleModal), 'nút Cả chiến dịch chỉ kho hội chợ');
+ok(/90 ngày gần nhất/.test(settleModal), 'chiến dịch quá dài có lối ra');
+ok(/Đối Soát Két Tiền Cuối Kỳ/.test(settleModal), 'nhãn két kỳ đúng phạm vi');
+ok(/slice\(0, isRangeData \? 20/.test(settleModal), 'bảng ca in kỳ cắt 20 dòng');
+ok(/Bảng Kiểm Kê Tồn Sách Đóng Thùng/.test(settleModal) && /Cuối Kỳ/.test(settleModal), 'nhãn kiểm kê kỳ');
+const giftPanel = readSrc('src/components/sales/GiftReportPanel.tsx');
+ok(/giftSortKey/.test(giftPanel) && /sortRows\(rows, giftSortKey/.test(giftPanel), 'sort quà ở panel (không reset khi overlay)');
+ok(/sortRows\(inStock, giftSortKey/.test(giftPanel), 'CSV quà theo sort');
+const ledger2 = readSrc('src/components/sales/SalesLedgerView.tsx');
+ok(/sortedOrders\.map/.test(ledger2), 'CSV đơn theo sort');
+const topPanel2 = readSrc('src/components/sales/TopEditionsPanel.tsx');
+ok(/sortedItems\.map/.test(topPanel2), 'CSV top theo sort');
+console.log(`=== SETTLEMENT RANGE (reviewer round 2): PASS ===\n`);
 ok(/1 tuần/.test(printModal), 'còn preset 1 tuần');
 ok(/2 tuần/.test(printModal) === false, 'bỏ preset 2 tuần');
 ok(/3 tháng/.test(printModal) === false, 'bỏ preset 3 tháng');
@@ -113,6 +129,10 @@ async function dbPart() {
     await assert.rejects(
       DailySettlementService.getSettlementRange({ warehouseId: 'wh-khong-ton-tai', startDate: '2026-09-19', endDate: '2026-09-23' }),
       'kho lạ bị từ chối'
+    );
+    await assert.rejects(
+      DailySettlementService.getSettlementRange({ warehouseId: wh.id, startDate: '2026-02-30', endDate: '2026-03-01' }),
+      'ngày không có thật (30/2) bị từ chối'
     );
     console.log('=== SETTLEMENT RANGE (DB cách ly): PASS ===\n');
   } finally {

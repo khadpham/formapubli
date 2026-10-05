@@ -50,6 +50,15 @@ function vnDayOf(value: string | Date | null | undefined): string | null {
   return businessDateOf(d);
 }
 
+/** Ngày VN 'YYYY-MM-DD' có thật (Date.parse cuộn 30/2 thành 2/3 nên so ngược chuỗi). */
+const BARE_DAY = /^\d{4}-\d{2}-\d{2}$/;
+function assertVnDay(s: string, label: string): void {
+  const d = new Date(`${s}T00:00:00Z`);
+  if (!BARE_DAY.test(s) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) {
+    throw AppError.invalid(`Ngày ${label} "${s}" không hợp lệ. Cần YYYY-MM-DD có thật.`);
+  }
+}
+
 /** Mốc +N ngày từ 'YYYY-MM-DD' (UTC thuần, không DST). */
 function shiftDay(key: string, delta: number): string {
   const t = Date.parse(`${key}T00:00:00Z`);
@@ -808,13 +817,9 @@ export class DailySettlementService {
     const warehouseId = `${params.warehouseId || ''}`.trim();
     const startDate = `${params.startDate || ''}`.trim();
     const endDate = `${params.endDate || ''}`.trim();
-    const BARE = /^\d{4}-\d{2}-\d{2}$/;
     if (!warehouseId) throw AppError.invalid('Thiếu kho cần lập báo cáo kỳ.');
-    if (!BARE.test(startDate) || !BARE.test(endDate) ||
-        !Number.isFinite(Date.parse(`${startDate}T00:00:00Z`)) ||
-        !Number.isFinite(Date.parse(`${endDate}T00:00:00Z`))) {
-      throw AppError.invalid('Kỳ báo cáo phải là ngày YYYY-MM-DD hợp lệ.');
-    }
+    assertVnDay(startDate, 'bắt đầu kỳ');
+    assertVnDay(endDate, 'kết thúc kỳ');
     if (startDate > endDate) throw AppError.invalid('Ngày bắt đầu kỳ phải trước ngày kết thúc.');
     const spanDays = Math.round(
       (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000
@@ -890,20 +895,34 @@ export class DailySettlementService {
     let closingCashActualTotal = 0;
     let openSessionCount = 0;
     let countedCount = 0;
+    // Cùng luật báo cáo ngày: tiền đếm và tiền kỳ vọng phải CÙNG PHẠM VI mới dám
+    // kết luận lệch (so với `expected_cash` ghi lúc chốt ca). Ca vắt qua biên kỳ
+    // có phạm vi khác kỳ ⇒ chưa đủ căn cứ, kỳ 1 ngày và kỳ dài nói một câu.
+    let unreconcilableCount = 0;
+    let canReconcile = sessions.length > 0;
     for (const s of sessions) {
+      const rangeExpected = (s.openingCash || 0) + (cashInRange.get(s.id) || 0);
       openingCashTotal += s.openingCash || 0;
-      expectedCashTotal += (s.openingCash || 0) + (cashInRange.get(s.id) || 0);
+      expectedCashTotal += rangeExpected;
       if (s.status === 'OPEN') {
         openSessionCount += 1;
       } else if (s.closingCashActual !== null) {
         closingCashActualTotal += s.closingCashActual;
         countedCount += 1;
       }
+      const counted = s.status !== 'OPEN' && s.closingCashActual !== null;
+      const sameScope =
+        counted &&
+        Number.isFinite(Number(s.expectedCash)) &&
+        Math.abs(Number(s.expectedCash) - rangeExpected) <= 0.01;
+      if (!sameScope) {
+        unreconcilableCount += 1;
+        canReconcile = false;
+      }
     }
-    // Lệch két kỳ chỉ dám kết luận khi không còn ca mở VÀ mọi ca đã có tiền đếm.
-    // Phạm vi tiền đếm (cả đời ca) khác phạm vi kỳ nên KHÔNG đối chiếu chéo với
-    // `expected_cash` ghi lúc chốt như báo cáo ngày — khác phạm vi mà so là bịa.
-    const cashVariancePending = !(sessions.length > 0 && openSessionCount === 0 && countedCount === sessions.length);
+    // Lệch két kỳ chỉ dám kết luận khi không còn ca mở, mọi ca đã đếm, VÀ mọi
+    // ca cùng phạm vi với kỳ (luật y hệt báo cáo ngày).
+    const cashVariancePending = !(canReconcile && openSessionCount === 0 && countedCount === sessions.length);
     const cashVariance = cashVariancePending ? null : closingCashActualTotal - expectedCashTotal;
 
     // 4. Top + quà + tồn đã bán trong kỳ (items gom lô 500 id/lô — trần biến SQLite).
@@ -1052,7 +1071,7 @@ export class DailySettlementService {
         cashVariance,
         cashVariancePending,
         openSessionCount,
-        unreconcilableSessionCount: cashVariancePending ? sessions.length - countedCount : 0,
+        unreconcilableSessionCount: unreconcilableCount,
         sessions: sessions.map((s: any) => ({
           id: s.id,
           cashierId: s.cashierId,

@@ -12,18 +12,16 @@ export type SortVal = string | number | null | undefined;
  */
 export function sortRows<T>(
   rows: T[],
-  _key: string,
+  key: string,
   dir: SortDir,
-  get: (r: T, key: string) => SortVal,
-  key = ''
+  get: (r: T, key: string) => SortVal
 ): T[] {
-  const k = key || _key;
   const sign = dir === 'asc' ? 1 : -1;
   return rows
     .map((r, i) => ({ r, i }))
     .sort((a, b) => {
-      const va = get(a.r, k);
-      const vb = get(b.r, k);
+      const va = get(a.r, key);
+      const vb = get(b.r, key);
       const na = va == null || va === '' ? null : va;
       const nb = vb == null || vb === '' ? null : vb;
       if (na == null && nb == null) return a.i - b.i;

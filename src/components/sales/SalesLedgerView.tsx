@@ -268,9 +268,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       : '0.0';
 
   // Xuất CSV dùng helper dùng chung: header có dấu, kênh/giờ tiếng Việt, watermark
-  // ký đúng người đang đăng nhập.
+  // ký đúng người đang đăng nhập. Xuất theo đúng thứ tự đang xếp trên màn hình
+  // (file khớp màn hình — xếp Thực thu giảm dần rồi xuất thì file cũng vậy).
   const exportToCSV = () => {
-    if (filteredOrders.length === 0) {
+    if (sortedOrders.length === 0) {
       alert('Không có dữ liệu đơn để xuất CSV.');
       return;
     }
@@ -279,7 +280,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
       return;
     }
 
-    const rows = filteredOrders.map((ord) => ({
+    const rows = sortedOrders.map((ord) => ({
       orderCode: ord.orderCode,
       warehouseName: warehouseNameOf(ord.warehouseId),
       channel: ord.channel,

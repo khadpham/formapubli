@@ -595,6 +595,20 @@ export function DailyFairSettlementModal({
         setLoadError('Kho này chưa có đơn nào để lập báo cáo chiến dịch.');
         return;
       }
+      // Chiến dịch dài hơn trần kỳ: mời xem 90 ngày gần nhất thay vì lỗi cụt.
+      if (json.tooLong) {
+        const endT = Date.parse(`${json.endDate}T00:00:00Z`);
+        const start90 = new Date(endT - 89 * 86_400_000).toISOString().slice(0, 10);
+        setRangeMode('range');
+        setRangeStart(start90);
+        setRangeEnd(json.endDate);
+        setData(null);
+        // Effect tự fetch theo kỳ mới và xoá lỗi này khi tải xong.
+        setLoadError(
+          `Chiến dịch dài ${json.spanDays} ngày (tối đa 92 ngày/kỳ). Đang tải 90 ngày gần nhất — muốn xem đoạn khác thì thu hẹp kỳ.`
+        );
+        return;
+      }
       // Dữ liệu đã có sẵn — đồng bộ khóa fetch để effect không tải lại trùng lặp.
       lastFetchKeyRef.current = `r|${currentWarehouseId}|${json.data.reportStartDate}|${json.data.reportEndDate}`;
       setRangeMode('range');
@@ -652,10 +666,6 @@ export function DailyFairSettlementModal({
   const isRangeData = (data as any)?.mode === 'range';
   const printStart = (data as any)?.reportStartDate || '';
   const printEnd = (data as any)?.reportEndDate || '';
-  const periodPrintLabel = isRangeData ? `Kỳ: ${printStart} → ${printEnd}` : `Ngày kết toán: ${shownReportDate}`;
-  const bbCode = isRangeData && printStart && printEnd
-    ? `BB-${printStart.replace(/-/g, '')}-${printEnd.replace(/-/g, '')}`
-    : `BB-${String(shownReportDate || '').replace(/-/g, '')}`;
   /** Nhãn ngày gọn cho dải kỳ trên bản in (YYYY-MM-DD → DD/MM). */
   const ddmm = (iso: string) => {
     const s = String(iso || '');
@@ -944,6 +954,9 @@ export function DailyFairSettlementModal({
                     {label}
                   </button>
                 ))}
+                {/* Cả chiến dịch chỉ kho hội chợ (FAIR_EVENT) mới có: kho vật lý
+                    dùng preset/ngày tay. Ẩn hẳn thay vì báo lỗi sau khi bấm. */}
+                {(warehouseList.find((w: any) => w.id === currentWarehouseId)?.warehouseType ?? 'FAIR_EVENT') === 'FAIR_EVENT' && (
                 <button
                   type="button"
                   onClick={applyCampaign}
@@ -952,6 +965,7 @@ export function DailyFairSettlementModal({
                 >
                   Cả chiến dịch
                 </button>
+                )}
               </div>
             )}
           </div>
@@ -1120,7 +1134,7 @@ export function DailyFairSettlementModal({
                   <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
                     <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <Lock className="w-4 h-4 text-emerald-600" />
-                      Đối Soát Két Tiền Cuối Ngày
+                      {isRangeData ? 'Đối Soát Két Tiền Cuối Kỳ (cộng mọi ca trong kỳ)' : 'Đối Soát Két Tiền Cuối Ngày'}
                     </h4>
 
                     <div className="space-y-2 text-xs">
@@ -1131,7 +1145,7 @@ export function DailyFairSettlementModal({
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Doanh số tiền mặt bán trong ngày:</span>
+                        <span className="text-slate-500">Doanh số tiền mặt bán {isRangeData ? 'trong kỳ' : 'trong ngày'}:</span>
                         <span className="font-mono font-bold text-emerald-700">
                           +{(data.paymentBreakdown?.cash?.sales || 0).toLocaleString('vi-VN')} đ
                         </span>
@@ -1330,10 +1344,13 @@ export function DailyFairSettlementModal({
                 <div className="space-y-4 animate-in fade-in duration-150">
                   <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 flex items-center justify-between text-xs">
                     <div>
-                      <p className="font-bold text-indigo-900">Bảng Kiểm Kê Tồn Sách Đóng Thùng Cuối Ngày</p>
+                      <p className="font-bold text-indigo-900">Bảng Kiểm Kê Tồn Sách Đóng Thùng {isRangeData ? 'Cuối Kỳ' : 'Cuối Ngày'}</p>
                       <p className="text-indigo-700 text-[11px] mt-0.5">
                         Nhập số đếm thực tế của từng đầu sách trên kệ. Hệ thống tự động so khớp với tồn máy để phát hiện thất thoát.
                       </p>
+                      {isRangeData && (data as any)?.stockNote && (
+                        <p className="text-indigo-700 text-[11px] mt-0.5 italic">{(data as any).stockNote}</p>
+                      )}
                     </div>
                     <div className="text-right">
                       <span className="text-[11px] text-slate-500 block">Kiểm kê thực tế:</span>
@@ -1771,7 +1788,7 @@ export function DailyFairSettlementModal({
                 </div>
 
                 <div className="flex justify-between items-baseline py-0.5 border-b border-slate-100">
-                  <span>- Tiền đầu ca bàn giao:</span>
+                  <span>- Tiền đầu ca bàn giao{isRangeData ? ' (cộng mọi ca trong kỳ)' : ''}:</span>
                   <strong className="font-mono text-slate-900 font-semibold">
                     {(data.cashboxReconciliation?.openingCashTotal || 0).toLocaleString('vi-VN')} đ
                   </strong>
@@ -1803,12 +1820,13 @@ export function DailyFairSettlementModal({
                 </div>
               </div>
 
-              {/* Tiền mặt theo từng ca */}
+              {/* Tiền mặt theo từng ca — kỳ dài cắt 20 ca đầu + ghi rõ còn lại để
+                  không tràn A4 (số tổng đã có ở trên, không mất thông tin). */}
               <div className="mt-3">
                 <p className="font-bold uppercase text-slate-800 text-[12px] mb-1.5">- Tiền mặt bán theo từng ca:</p>
                 {(data.cashboxReconciliation?.sessions || []).length === 0 ? (
                   <p className="italic text-slate-500 text-[12px] py-1 text-center border border-dashed border-slate-200 rounded">
-                    Không có ca két nào trong ngày.
+                    Không có ca két nào {isRangeData ? 'trong kỳ' : 'trong ngày'}.
                   </p>
                 ) : (
                   <table className="w-full border-collapse border border-slate-300 text-[12px]">
@@ -1822,7 +1840,7 @@ export function DailyFairSettlementModal({
                       </tr>
                     </thead>
                     <tbody>
-                      {(data.cashboxReconciliation?.sessions || []).map((s: any) => (
+                      {(data.cashboxReconciliation?.sessions || []).slice(0, isRangeData ? 20 : undefined).map((s: any) => (
                         <tr key={s.id} className="hover:bg-slate-50">
                           <td className="border border-slate-300 py-1.5 px-2 font-mono text-slate-900">{s.cashierId}</td>
                           <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-700">{vnHm(s.openedAt) || '—'}</td>
@@ -1837,6 +1855,13 @@ export function DailyFairSettlementModal({
                           </td>
                         </tr>
                       ))}
+                      {isRangeData && (data.cashboxReconciliation?.sessions || []).length > 20 && (
+                        <tr>
+                          <td colSpan={5} className="border border-slate-300 py-1.5 px-2 text-center italic text-slate-500">
+                            +{(data.cashboxReconciliation?.sessions || []).length - 20} ca khác (số tổng đã gồm đủ ở trên)
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 )}

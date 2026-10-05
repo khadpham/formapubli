@@ -76,6 +76,13 @@ export async function GET(req: NextRequest) {
     const campaign = searchParams.get('campaign') === '1';
     if (start || end || campaign) {
       await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);
+      // Cảnh báo ca quá giờ cho cả chế độ kỳ (modal đọc data.openShiftAlerts).
+      const rangeAlerts =
+        searchParams.get('includeOpenShiftCheck') !== '0'
+          ? await CashboxService.getStaleOpenShiftCheck({ warehouseId })
+          : null;
+      const withAlerts = (rangeData: any) =>
+        rangeAlerts ? { ...rangeData, openShiftAlerts: rangeAlerts } : rangeData;
       if (!start || !end) {
         if (!campaign) {
           return NextResponse.json(
@@ -87,19 +94,36 @@ export async function GET(req: NextRequest) {
         if (!inferred) {
           return NextResponse.json({ success: true, mode: 'range', empty: true as const, warehouseId });
         }
+        // Chiến dịch dài hơn trần kỳ: không ném lỗi cụt (người dùng hết đường),
+        // trả kỳ suy ra + cờ để UI mời xem 90 ngày gần nhất.
+        const spanDays =
+          Math.round(
+            (Date.parse(`${inferred.endDate}T00:00:00Z`) - Date.parse(`${inferred.startDate}T00:00:00Z`)) / 86_400_000
+          ) + 1;
+        if (spanDays > DailySettlementService.RANGE_MAX_DAYS) {
+          return NextResponse.json({
+            success: true,
+            mode: 'range',
+            tooLong: true as const,
+            warehouseId,
+            startDate: inferred.startDate,
+            endDate: inferred.endDate,
+            spanDays,
+          });
+        }
         const rangeData = await DailySettlementService.getSettlementRange({
           warehouseId,
           startDate: inferred.startDate,
           endDate: inferred.endDate,
         });
-        return NextResponse.json({ success: true, mode: 'range' as const, data: rangeData });
+        return NextResponse.json({ success: true, mode: 'range' as const, data: withAlerts(rangeData) });
       }
       const rangeData = await DailySettlementService.getSettlementRange({
         warehouseId,
         startDate: start,
         endDate: end,
       });
-      return NextResponse.json({ success: true, mode: 'range' as const, data: rangeData });
+      return NextResponse.json({ success: true, mode: 'range' as const, data: withAlerts(rangeData) });
     }
 
     const data = await DailySettlementService.getDailyFairSettlement({
