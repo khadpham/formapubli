@@ -150,6 +150,7 @@ export async function POST(req: NextRequest) {
       // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam
       // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
+Hôm nay (giờ Việt Nam): ${new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10)}.
 Hệ thống đã tra cứu dữ liệu thực tế từ công cụ [${toolCall.toolName}]:
 ${JSON.stringify(toolResult, null, 2)}
 

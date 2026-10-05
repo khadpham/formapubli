@@ -84,7 +84,36 @@ async function run() {
     await db.run(sql`DELETE FROM orders WHERE id LIKE ${`ord-cptop-${stamp}-%`}`);
   }
 
-// --- 2b. Runtime: "số sách bán được ngày X ở kho Y" → sales theo ngày+kho ---
+// --- 2c. LLM bịa năm thì server thắng ---
+  {
+    const { CopilotGuardrails } = await import('../src/services/ai/copilot-guardrails');
+    // "ngày 4/10" không kèm năm, giả vờ hôm nay 06/10/2026.
+    const fakeNow = Date.parse('2026-10-06T02:00:00.000Z');
+    assert.equal(
+      CopilotGuardrails.parseVnDay('số sách bán được ngày 4/10?', fakeNow),
+      '2026-10-04',
+      'thiếu năm thì lấy năm hiện tại'
+    );
+    assert.equal(
+      CopilotGuardrails.parseVnDay('ngày 4/10/2023?', fakeNow),
+      '2023-10-04',
+      'năm ghi rõ thì giữ nguyên'
+    );
+    assert.equal(CopilotGuardrails.parseVnDay('doanh thu tháng này?', fakeNow), null, 'không nhắc ngày thì null');
+    // LLM bịa date 2023 nhưng câu hỏi không nhắc năm → server suy lại năm nay.
+    const { ExecutiveQueryService } = await import('../src/services/executive-query.service');
+    void ExecutiveQueryService;
+    const { CopilotGuardrails: G } = await import('../src/services/ai/copilot-guardrails');
+    const forced: any = await (G as any).executeToolSafely(
+      'query_sales_summary',
+      { date: '2023-10-04', q: 'số sách bán được ngày 4/10?', windowDays: 30, fiscalScope: 'ALL' },
+      { staffId: 'ADMIN-01', role: 'ROLE_OWNER' }
+    );
+    const thisYear = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 4);
+    assert.match(forced.scopeLabel, new RegExp(`ngày ${thisYear}-10-04`), 'server thắng năm bịa của LLM');
+  }
+
+  // --- 2b. Runtime: "số sách bán được ngày X ở kho Y" → sales theo ngày+kho ---
   {
     const yest = new Date(Date.now() + 7 * 3_600_000 - 86_400_000).toISOString().slice(0, 10);
     const stamp2 = Date.now();

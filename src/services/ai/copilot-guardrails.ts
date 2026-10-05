@@ -185,6 +185,8 @@ export class CopilotGuardrails {
 
     const plannerPrompt = `${COPILOT_SYSTEM_PROMPT}
 
+HÔM NAY (giờ Việt Nam): ${new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10)}. Câu hỏi nhắc ngày/tháng mà KHÔNG kèm năm thì lấy đúng năm này — tuyệt đối không bịa năm khác.
+
 Dựa trên câu hỏi của lãnh đạo, hãy phân tích xem cần gọi tool nào hay trả lời trực tiếp.
 NEU CAU HOI NHAC 1 CUON SACH CU THE (ma nhu H01, hoac ten sach): nhat thiet goi
 query_stock_level voi args {"codeOrTitle": "<doan ma/ten sach trich nguyen van tu cau hoi>"}.
@@ -482,10 +484,15 @@ Trả về JSON chuẩn khớp schema:
       case 'query_sales_summary': {
         const rawScope = typeof args.fiscalScope === 'string' ? args.fiscalScope : 'ALL';
         const fiscalScope = rawScope === 'OFFICIAL_TAX' || rawScope === 'INTERNAL_MANAGEMENT' || rawScope === 'ALL' ? rawScope : 'ALL';
+        // LLM planner tự điền `date` hay bịa năm (đã dính 2023 trong khi đang
+        // 2026 — vì prompt không nói hôm nay là ngày nào). Server suy ngày từ
+        // câu hỏi gốc và THẮNG khi suy được; chỉ dùng date của LLM khi câu hỏi
+        // không nhắc ngày nào (vd LLM tự suy "30 ngày qua" — không phải date).
+        const serverDate = typeof args.q === 'string' ? CopilotGuardrails.parseVnDay(args.q) : null;
         result = await ExecutiveQueryService.querySalesSummary({
           windowDays: this.numArg(args.windowDays, 30, 1, 365),
           fiscalScope,
-          date: typeof args.date === 'string' ? args.date : undefined,
+          date: serverDate || (typeof args.date === 'string' ? args.date : undefined),
           warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
         });
         break;
