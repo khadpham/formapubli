@@ -302,7 +302,7 @@ Trả về JSON chuẩn khớp schema:
         const raw = await callCfWorkerAiJsonRaw({
           systemPrompt: plannerPrompt,
           userText: question,
-          timeoutMs: 12000,
+          timeoutMs: 25000,
           onModel: (m) => {
             if (tracker) tracker.planner = 'cf:' + m.replace(/^@cf\//, '');
           },

@@ -92,6 +92,28 @@ export function resolveGroqApiKey(): string {
  * KHÔNG đặt tên biến là CF_API_TOKEN — wrangler tự đọc nó làm credential deploy
  * và sẽ hỏng deploy (đã dính 1 lần 06/10/2026).
  */
+/** Model free đo THẬT trên Cloudflare Workers AI (06/10/2026, 2 lần mỗi model):
+ *  - gpt-oss-120b:  2.2–2.8s, JSON chuẩn, tiếng Việt tốt  ← CHỌN
+ *  - glm-4.7-flash: 13–20s (quá chậm cho chat), JSON bọc ```json
+ *  - llama-3.3-70b: 1.5–6s nhưng trả văn bản tự do, KHÔNG JSON ⇒ loại
+ *  - glm-5.3-flash: HTTP 403 ⇒ không dùng được
+ * Chủ nghi ngờ "GLM-4.7 là model free tốt nhất" — đo thật thì sai.
+ */
+export const CF_DEFAULT_MODEL = 'gpt-oss-120b';
+
+/** Tên ngắn trong picker → model id đầy đủ của Workers AI. */
+const CF_MODEL_IDS: Record<string, string> = {
+  'gpt-oss-120b': '@cf/openai/gpt-oss-120b',
+  'glm-4.7-flash': '@cf/zai-org/glm-4.7-flash',
+  'llama-3.3-70b-instruct-fp8-fast': '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+};
+
+export function resolveCfModelId(model: string): string {
+  const m = (model || '').trim();
+  if (m.startsWith('@cf/')) return m;
+  return CF_MODEL_IDS[m] || `@cf/zai-org/${m}`;
+}
+
 export async function callCfWorkerAiJsonRaw(params: {
   systemPrompt: string;
   userText: string;
@@ -102,9 +124,8 @@ export async function callCfWorkerAiJsonRaw(params: {
   const token = (process.env.WORKERS_AI_TOKEN || '').trim();
   const accountId = (process.env.CF_ACCOUNT_ID || '').trim();
   if (!token || !accountId) throw new LlmConfigError('Thiếu WORKERS_AI_TOKEN/CF_ACCOUNT_ID cho tầng Cloudflare Workers AI.');
-  const model = (params.model || process.env.CF_CHAT_MODEL || '').trim() || 'glm-4.7-flash';
-  // Chuẩn hoá: cho phép 'glm-4.7-flash' ngắn gọn hoặc full '@cf/zai-org/glm-4.7-flash'.
-  const fullModel = model.startsWith('@cf/') ? model : `@cf/zai-org/${model}`;
+  const model = (params.model || process.env.CF_CHAT_MODEL || '').trim() || CF_DEFAULT_MODEL;
+  const fullModel = resolveCfModelId(model);
   return withLlmCircuit('cf-workers-ai', async () => {
     const data = (await postJsonWithTimeout(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${fullModel}`,
@@ -115,7 +136,7 @@ export async function callCfWorkerAiJsonRaw(params: {
         ],
       },
       { Authorization: 'Bearer ' + token },
-      params.timeoutMs ?? 15000,
+      params.timeoutMs ?? 25000,
       'CfWorkersAI'
     )) as { result?: { choices?: Array<{ message?: { content?: string } }> }; errors?: unknown };
     if ((data as any)?.errors) throw new Error('Cloudflare Workers AI lỗi: ' + JSON.stringify((data as any).errors).slice(0, 200));

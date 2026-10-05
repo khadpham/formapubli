@@ -619,7 +619,7 @@ Tôi có thể tra cứu nhanh dữ liệu thời gian thực:
               <option value="gemini-3.5-flash-lite">3.5 Lite</option>
               <option value="groq/gpt-oss-120b">🧠 GPT-OSS 120B</option>
               <option value="groq/gpt-oss-20b">GPT-OSS 20B</option>
-              <option value="cf/glm-4.7-flash">🆓 GLM-4.7 (Cloudflare)</option>
+              <option value="cf/gpt-oss-120b">🆓 GPT-OSS 120B (Cloudflare)</option>
               <option value="local">📏 Luật nội bộ</option>
             </select>
             {!isMini && onMinimize && (

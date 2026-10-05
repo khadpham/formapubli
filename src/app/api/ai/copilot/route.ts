@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
     'gemini-3.5-flash-lite',
     'groq/gpt-oss-120b',
     'groq/gpt-oss-20b',
+    'cf/gpt-oss-120b',
     'cf/glm-4.7-flash',
     'local',
   ];
@@ -204,14 +205,20 @@ HÃY TRẢ LỜI NHƯ MỘT NGƯỜI TRỢ LÝ ĐIỀU HÀNH THẬT:
         // 'cf/...' = Cloudflare Workers AI (model free).
         const picked = modelOverride && modelOverride !== 'local' ? modelOverride : null;
         if (picked && picked.startsWith('cf/')) {
-          const cfModel = picked.slice(3); // 'cf/glm-4.7-flash' -> 'glm-4.7-flash'
-          raw = await callCfWorkerAiJsonRaw({
-            systemPrompt: synthPrompt,
-            userText,
-            model: cfModel,
-            timeoutMs: 15000,
-          });
-          synthEngine = 'cf:' + cfModel;
+          const cfModel = picked.slice(3); // 'cf/gpt-oss-120b' -> 'gpt-oss-120b'
+          try {
+            raw = await callCfWorkerAiJsonRaw({
+              systemPrompt: synthPrompt,
+              userText,
+              model: cfModel,
+              timeoutMs: 25000,
+            });
+            synthEngine = 'cf:' + cfModel;
+          } catch (cfPickedErr) {
+            // KHÔNG throw cứng: model sếp chọn chết thì vẫn trả lời được bằng
+            // tầng dưới, thay vì rơi thẳng vào formatter in JSON thô.
+            console.warn('⚠️ Workers AI (model sếp chọn) lỗi:', (cfPickedErr as any)?.message || cfPickedErr);
+          }
         } else if (picked && picked.startsWith('groq/') && groqKey) {
           raw = await callGroqChatJsonRaw({
             systemPrompt: synthPrompt,
@@ -275,7 +282,7 @@ HÃY TRẢ LỜI NHƯ MỘT NGƯỜI TRỢ LÝ ĐIỀU HÀNH THẬT:
               raw = await callCfWorkerAiJsonRaw({
                 systemPrompt: synthPrompt,
                 userText,
-                timeoutMs: 15000,
+                timeoutMs: 25000,
                 onModel: (m) => {
                   synthEngine = 'cf:' + m.replace(/^@cf\//, '');
                 },
