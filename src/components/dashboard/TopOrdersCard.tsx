@@ -4,7 +4,7 @@ import React from 'react';
 import { Receipt } from 'lucide-react';
 
 /**
- * Nâng cấp thẻ "Top 5 đơn giá trị cao" cũ (ExecutiveDashboard dòng 767-791):
+ * Nâng cấp thẻ "Top 10 đơn giá trị cao" cũ (ExecutiveDashboard dòng 767-791):
  * thêm số cuốn mỗi đơn để người đọc biết đơn đắt vì nhiều cuốn hay vì một món
  * đắt — trước đó chỉ có mã đơn + tiền, không đủ để hành động.
  */
@@ -21,7 +21,7 @@ export function TopOrdersCard({
     () =>
       [...(orders || [])]
         .sort((a, b) => Number(b.finalAmount || 0) - Number(a.finalAmount || 0))
-        .slice(0, 5),
+        .slice(0, 10),
     [orders]
   );
 
@@ -35,7 +35,7 @@ export function TopOrdersCard({
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <Receipt className="w-4 h-4 text-amber-500" />
-            Top 5 đơn giá trị cao
+            Top 10 đơn giá trị cao
           </h3>
           <p className="text-[11px] text-slate-400 mt-0.5">
             Thanh ngang theo thực thu {onSelectOrder ? '(bấm mã đơn để xem chi tiết)' : 'kèm số cuốn trong đơn'}
