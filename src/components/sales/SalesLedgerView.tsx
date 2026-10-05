@@ -32,6 +32,8 @@ import {
 import { RevenueAnalyticsPanel } from './RevenueAnalyticsPanel';
 import { TopEditionsPanel } from './TopEditionsPanel';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
+import { useSortable, SortableTh } from '@/lib/table-ux';
+import { TableExpandOverlay } from './TableExpandOverlay';
 
 // Slicer kenh ban -> nhom nguon (pivot nhanh kieu Excel).
 // Đây là PHÂN NHÓM slicer, KHÔNG phải nhãn hiển thị — nhãn hiển thị lấy từ
@@ -236,8 +238,21 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     return matchesAnyVietnameseField(searchQuery, [ord.orderCode, ord.customerName, ord.vatInvoiceCode]);
   });
 
-  // Gioi han so dong hien thi de bang gon trong 1 man hinh (cuon doc xem tiep)
-  const visibleOrders = pageSize === -1 ? filteredOrders : filteredOrders.slice(0, pageSize);
+  // Gioi han so dong hien thi de bang gon trong 1 man hinh (cuon doc xem tiep).
+  // Sắp xếp client-side trên dòng đã lọc (server đã trả toàn bộ): tiền theo số
+  // thô, thời gian mới→cũ mặc định.
+  const {
+    sorted: sortedOrders,
+    sortKey: orderSortKey,
+    sortDir: orderSortDir,
+    toggleSort: toggleOrderSort,
+  } = useSortable(filteredOrders, 'createdAt', 'desc', (ord: any, key: string) => {
+    if (key === 'finalAmount') return Number(ord.finalAmount || 0);
+    if (key === 'discountAmount') return Number(ord.discountAmount || 0);
+    if (key === 'createdAt') return String(ord.createdAt || '');
+    return String((ord as any)[key] ?? '');
+  });
+  const visibleOrders = pageSize === -1 ? sortedOrders : sortedOrders.slice(0, pageSize);
 
   // Đơn quà 0đ (tặng 100%) vẫn đếm vào totalOrders của server — ghi rõ để người
   // đọc không tưởng "N đơn = N đơn có tiền".
@@ -615,6 +630,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
           </div>
         </div>
 
+        <TableExpandOverlay title="Sổ đơn">
         <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10">
@@ -625,10 +641,10 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
                 <th className="p-3.5">Kênh</th>
                 <th className="p-3.5">Thanh Toán</th>
                 <th className="p-3.5">Tổng Bìa</th>
-                <th className="p-3.5">{discountDisplayMode === 'PERCENT' ? 'Chiết Khấu (%)' : 'Chiết Khấu (VNĐ)'}</th>
-                <th className="p-3.5">Thực Thu</th>
+                <SortableTh label={discountDisplayMode === 'PERCENT' ? 'Chiết Khấu (%)' : 'Chiết Khấu (VNĐ)'} sortKey="discountAmount" activeKey={orderSortKey} activeDir={orderSortDir} onToggle={(k) => toggleOrderSort(k, 'desc')} align="left" />
+                <SortableTh label="Thực Thu" sortKey="finalAmount" activeKey={orderSortKey} activeDir={orderSortDir} onToggle={(k) => toggleOrderSort(k, 'desc')} align="left" />
                 <th className="p-3.5">Phân Loại Sổ</th>
-                <th className="p-3.5">Thời Gian</th>
+                <SortableTh label="Thời Gian" sortKey="createdAt" activeKey={orderSortKey} activeDir={orderSortDir} onToggle={(k) => toggleOrderSort(k, 'desc')} align="left" />
                 <th className="p-3.5 text-center">Thao tác</th>
               </tr>
             </thead>
@@ -726,6 +742,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             </tbody>
           </table>
         </div>
+        </TableExpandOverlay>
         {pageSize !== -1 && filteredOrders.length > visibleOrders.length && (
           <button
             onClick={() => setPageSize(-1)}
