@@ -977,7 +977,23 @@ export class DailySettlementService {
     soldQtyAll.forEach((v) => { totalItemsSold += v; });
 
     // 5. Đơn giá trị cao nhất kỳ (luật hòa của báo cáo ngày: tiền → giờ tạo → id).
+    // Số cuốn gom 1 query cho cả kỳ (không N+1).
     const createdMs = (o: any) => parseDbTimestamp(o.createdAt)?.getTime() ?? 0;
+    let highlightCountByOrder = new Map<string, number>();
+    if (rangeOrderIds.length > 0) {
+      for (let i = 0; i < rangeOrderIds.length; i += 500) {
+        const batch = rangeOrderIds.slice(i, i + 500);
+        const rows: any[] = await txOrDb
+          .select({
+            orderId: orderItems.orderId,
+            qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+          })
+          .from(orderItems)
+          .where(sql`${orderItems.orderId} IN (${sql.join(batch.map((id: string) => sql`${id}`), sql`, `)})`)
+          .groupBy(orderItems.orderId);
+        for (const r of rows) highlightCountByOrder.set(r.orderId, Number(r.qty || 0));
+      }
+    }
     const highlight = [...rangeOrders].sort(
       (a: any, b: any) =>
         (b.finalAmount || 0) - (a.finalAmount || 0) ||
@@ -1065,7 +1081,7 @@ export class DailySettlementService {
             subtotal: highlight.subtotal,
             discountAmount: highlight.discountAmount,
             paymentMethod: highlight.paymentMethod,
-            itemCount: highlight.itemCount || 0,
+            itemCount: highlightCountByOrder.get(highlight.id) || 0,
             createdAt: highlight.createdAt,
           }
         : null,

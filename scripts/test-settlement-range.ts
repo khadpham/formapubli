@@ -42,14 +42,21 @@ console.log(`=== SETTLEMENT RANGE (Task 2 API): PASS — ${checks} assertions ==
 // --- Task 3 (plan kỳ): modal Ngày/Kỳ + preset ---
 const settleModal = readSrc('src/components/pos/DailyFairSettlementModal.tsx');
 ok(/Cả chiến dịch/.test(settleModal), 'có nút Cả chiến dịch');
-ok(/1 tuần/.test(settleModal) && /3 tháng/.test(settleModal), 'đủ preset tới 3 tháng');
+ok(/1 tuần/.test(settleModal) && /1 tháng/.test(settleModal), 'đủ preset gọn 1 tuần/1 tháng');
 ok(/mode === 'range'|rangeMode/.test(settleModal), 'toggle Ngày/Kỳ');
 ok(/reportStartDate/.test(settleModal), 'modal đọc kỳ từ payload');
+console.log(`=== SETTLEMENT RANGE (Task 3 modal): PASS ===\n`);
 // --- Task 4 (plan kỳ): bản in kỳ ---
 const printModal = settleModal;
 ok(/Tồn kho hiện tại|TỒN SÁCH HIỆN TẠI/.test(printModal), 'in kỳ ghi rõ tồn hiện tại, không bịa tồn cuối kỳ');
 ok(/Doanh thu theo ngày/.test(printModal), 'in/màn kỳ có dải theo ngày');
 ok(/BB-.*reportStartDate|reportStartDate.*BB-|kỳ \$\{/.test(printModal), 'bản in ghi rõ kỳ');
+// --- Feedback 05/10 (gọn + cuối kỳ xem đã bán) ---
+ok(/1 tuần/.test(printModal), 'còn preset 1 tuần');
+ok(/2 tuần/.test(printModal) === false, 'bỏ preset 2 tuần');
+ok(/3 tháng/.test(printModal) === false, 'bỏ preset 3 tháng');
+ok(/stocktakeSortKey/.test(printModal), 'kiểm kê sort theo cột đã bán/tồn');
+ok(/TỒN SÁCH HIỆN TẠI \(ẤN PHẨM ĐÃ BÁN TRONG KỲ\)/.test(printModal), 'in kỳ gộp 1 bảng đã bán + tồn');
 console.log(`=== SETTLEMENT RANGE (Task 4 print): PASS ===\n`);
 import { db } from '../src/db';
 import { DailySettlementService } from '../src/services/daily-settlement.service';

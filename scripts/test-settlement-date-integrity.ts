@@ -69,6 +69,9 @@ function harness() {
   const scope: any = {
     currentWarehouseId: 'wh-1',
     selectedDate: '2026-09-29',
+    rangeMode: 'day',
+    rangeStart: '',
+    rangeEnd: '',
     currentRole: 'ROLE_OWNER',
     requestSeqRef: { current: 0 },
     encodeURIComponent,
@@ -210,8 +213,8 @@ async function main() {
     '"Ngày kết toán" phải in data.reportDate, không in selectedDate'
   );
   ok(
-    /BB-\{data\.reportDate\.replace\(/.test(src),
-    'số biên bản phải kèm data.reportDate để mã biên bản khớp số liệu'
+    /data\.reportDate\.replace\(\/-\/g, ''\)/.test(src),
+    'số biên bản chế độ ngày phải kèm data.reportDate để mã biên bản khớp số liệu'
   );
 
   // --- 4. Tiêu đề trên màn hình cũng phải theo số liệu -------------------------

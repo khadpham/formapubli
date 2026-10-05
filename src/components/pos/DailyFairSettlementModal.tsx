@@ -362,8 +362,9 @@ export function DailyFairSettlementModal({
   // hiện tại) bị bỏ. Trước đây không có: đổi ngày 29 → 28, nếu response 29 về
   // sau nó setData ghi đè ⇒ biên bản mang số liệu ngày 29 nhưng đóng dấu ngày 28.
   const requestSeqRef = useRef(0);
-  /** Chặn effect fetch lại sau khi applyCampaign đã nạp sẵn dữ liệu. */
-  const skipRefetchRef = useRef(false);
+  /** Khóa lần fetch cuối (chế độ+kho+ngày/kỳ): effect bỏ qua khi khóa trùng —
+      chống fetch trùng sau "Cả chiến dịch" đã nạp sẵn (thay cờ boolean dễ kẹt). */
+  const lastFetchKeyRef = useRef('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(warehouseId);
   const [warehouseList, setWarehouseList] = useState<any[]>([]);
@@ -406,6 +407,11 @@ export function DailyFairSettlementModal({
   // luôn — bản in cũng xếp theo đúng thứ tự này. Chỉ còn 2 trạng thái vì
   // thứ tự thô không mang ý nghĩa gì khi đối chiếu.
   const [stocktakeSortMode, setStocktakeSortMode] = useState<'ASC' | 'DESC'>('ASC');
+  // Cột sắp xếp kiểm kê: 'stock' (tồn lý thuyết) hoặc 'sold' (đã bán). Cuối kỳ
+  // người ta cần xem đã bán được gì hơn là sắp hết — vào chế độ Kỳ tự chuyển
+  // sang xếp theo đã bán (người dùng vẫn bấm lại được).
+  const [stocktakeSortKey, setStocktakeSortKey] = useState<'stock' | 'sold'>('stock');
+  const [stocktakeSoldDir, setStocktakeSoldDir] = useState<'DESC' | 'ASC'>('DESC');
   // Lọc chỉ hiển thị các đầu sách sắp hết (tồn lý thuyết <= 5 cuốn)
   const [stocktakeOnlyLow, setStocktakeOnlyLow] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
@@ -416,8 +422,12 @@ export function DailyFairSettlementModal({
   const sortedStocktakeList = useMemo(() => {
     const list = Array.isArray(data?.inventoryReconciliation) ? data.inventoryReconciliation : [];
     const base = stocktakeOnlyLow ? filterLowStock(list) : list;
+    if (stocktakeSortKey === 'sold') {
+      const sign = stocktakeSoldDir === 'DESC' ? -1 : 1;
+      return [...base].sort((a: any, b: any) => (Number(a.soldToday || 0) - Number(b.soldToday || 0)) * sign);
+    }
     return sortByStock(base, stocktakeSortMode);
-  }, [data?.inventoryReconciliation, stocktakeSortMode, stocktakeOnlyLow]);
+  }, [data?.inventoryReconciliation, stocktakeSortMode, stocktakeOnlyLow, stocktakeSortKey, stocktakeSoldDir]);
 
   // Số lượng đầu sách có tồn lý thuyết <= 5 cuốn
   const stocktakeLowCount = useMemo(() => {
@@ -470,6 +480,14 @@ export function DailyFairSettlementModal({
     const seq = ++requestSeqRef.current;
     setIsLoading(true);
     setLoadError(null);
+    // Chế độ Kỳ mà chưa đủ ngày thì KHÔNG được rơi về báo cáo ngày âm thầm
+    // (người dùng tưởng đang xem kỳ mà số là của 1 ngày — dễ in nhầm).
+    if (rangeMode === 'range' && (!rangeStart || !rangeEnd)) {
+      setData(null);
+      setLoadError('Chọn đủ từ ngày đến ngày (hoặc bấm preset) để xem báo cáo kỳ.');
+      setIsLoading(false);
+      return;
+    }
     try {
       const base = `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}`;
       const url =
@@ -504,13 +522,16 @@ export function DailyFairSettlementModal({
   };
 
   useEffect(() => {
-    if (skipRefetchRef.current) {
-      skipRefetchRef.current = false;
-      return;
-    }
-    if (isOpen && currentWarehouseId) {
-      fetchSettlement();
-    }
+    if (!isOpen || !currentWarehouseId) return;
+    // Khóa trùng: "Cả chiến dịch" đã nạp sẵn + set state khớp thì effect bỏ qua,
+    // không fetch lại. Không dùng cờ boolean (kẹt khi state không đổi).
+    const key =
+      rangeMode === 'range'
+        ? `r|${currentWarehouseId}|${rangeStart}|${rangeEnd}`
+        : `d|${currentWarehouseId}|${selectedDate}`;
+    if (key === lastFetchKeyRef.current) return;
+    lastFetchKeyRef.current = key;
+    fetchSettlement();
   }, [isOpen, currentWarehouseId, selectedDate, rangeMode, rangeStart, rangeEnd]);
 
   /** Preset kỳ tính từ hôm nay (ngày VN). */
@@ -521,6 +542,23 @@ export function DailyFairSettlementModal({
     setRangeMode('range');
     setRangeStart(start);
     setRangeEnd(today);
+  };
+
+  /** Bấm sang Kỳ mà chưa có ngày thì tự lấy 1 tuần gần nhất — không để khung
+      trống hiện số ngày cũ gây hiểu nhầm. */
+  const switchMode = (m: 'day' | 'range') => {
+    setRangeMode(m);
+    if (m === 'range') {
+      // Cuối kỳ xem đã bán trước, tồn sau.
+      setStocktakeSortKey('sold');
+      setStocktakeSoldDir('DESC');
+      if (!rangeStart || !rangeEnd) {
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+        const t = Date.parse(`${today}T00:00:00Z`);
+        setRangeStart(new Date(t - 6 * 86_400_000).toISOString().slice(0, 10));
+        setRangeEnd(today);
+      }
+    }
   };
 
   /** Cả chiến dịch: server suy kỳ từ đơn đầu→cuối của kho đang chọn. */
@@ -543,8 +581,8 @@ export function DailyFairSettlementModal({
         setLoadError('Kho này chưa có đơn nào để lập báo cáo chiến dịch.');
         return;
       }
-      // Dữ liệu đã có sẵn — chặn effect fetch lại trùng lặp.
-      skipRefetchRef.current = true;
+      // Dữ liệu đã có sẵn — đồng bộ khóa fetch để effect không tải lại trùng lặp.
+      lastFetchKeyRef.current = `r|${currentWarehouseId}|${json.data.reportStartDate}|${json.data.reportEndDate}`;
       setRangeMode('range');
       setRangeStart(json.data.reportStartDate);
       setRangeEnd(json.data.reportEndDate);
@@ -655,12 +693,17 @@ export function DailyFairSettlementModal({
         : `${n}`;
 
   // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
-  // Xếp theo cột "Tồn còn" bé → lớn, dùng CHUNG hàm với màn hình kiểm kê, để
-  // người đối chiếu thấy đúng thứ tự đang đọc.
-  const soldOnlyRows: any[] = sortByStock(
-    (data?.inventoryReconciliation || []).filter((it: any) => Number(it.soldToday || 0) > 0),
-    'ASC'
-  );
+  // Ngày: xếp theo "Tồn còn" bé → lớn. Kỳ (cuối chiến dịch): xếp theo "Đã bán"
+  // lớn → bé — cuối kỳ người ta cần xem bán được gì hơn là sắp hết. Dùng CHUNG
+  // hàm với màn hình kiểm kê để giấy khớp đúng thứ tự đang đọc.
+  const soldOnlyRows: any[] = isRangeData
+    ? [...(data?.inventoryReconciliation || []).filter((it: any) => Number(it.soldToday || 0) > 0)].sort(
+        (a: any, b: any) => Number(b.soldToday || 0) - Number(a.soldToday || 0)
+      )
+    : sortByStock(
+        (data?.inventoryReconciliation || []).filter((it: any) => Number(it.soldToday || 0) > 0),
+        'ASC'
+      );
   // Bảng những cuốn CẦN ĐẾM lúc đóng thùng: tồn ≤ ngưỡng, xếp tồn bé → lớn.
   // Cố ý KHÔNG phụ thuộc bộ lọc trên màn hình: giấy in phải luôn giống nhau bất
   // kể người dùng đang bật/tắt gì, nếu không bản in và màn hẻ lệch nhau.
@@ -807,7 +850,7 @@ export function DailyFairSettlementModal({
               <p className="text-[11px] sm:text-xs text-slate-400 truncate">
                 Kho: <strong className="text-white">{activeWarehouseName}</strong>
                 <span className="hidden sm:inline"> | </span>
-                <span className="ml-1 sm:ml-0">Ngày: <span className="font-mono text-amber-300">{shownReportDate}</span></span>
+                <span className="ml-1 sm:ml-0">{isRangeData && rangeStart && rangeEnd ? <>Kỳ: <span className="font-mono text-amber-300">{rangeStart} → {rangeEnd}</span></> : <>Ngày: <span className="font-mono text-amber-300">{shownReportDate}</span></>}</span>
               </p>
             </div>
           </div>
@@ -836,7 +879,7 @@ export function DailyFairSettlementModal({
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setRangeMode(m)}
+                  onClick={() => switchMode(m)}
                   aria-pressed={rangeMode === m}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
                     rangeMode === m ? 'bg-amber-500 text-slate-900' : 'text-slate-300 hover:text-white'
@@ -873,9 +916,7 @@ export function DailyFairSettlementModal({
                 />
                 {([
                   [7, '1 tuần'],
-                  [14, '2 tuần'],
                   [30, '1 tháng'],
-                  [90, '3 tháng'],
                 ] as Array<[number, string]>).map(([n, label]) => (
                   <button
                     key={n}
@@ -1314,7 +1355,7 @@ export function DailyFairSettlementModal({
                         {/* Nút sắp xếp */}
                         <button
                           type="button"
-                          onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
+                          onClick={() => { setStocktakeSortKey('stock'); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); }}
                           className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shadow-sm ${
                             stocktakeSortMode === 'ASC'
                               ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200'
@@ -1343,14 +1384,37 @@ export function DailyFairSettlementModal({
                           <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
                             <th className="p-3 w-10 text-center">#</th>
                             <th className="p-3">Ấn phẩm sách</th>
-                            <th className="p-3 text-right">Đã bán</th>
                             <th
                               scope="col"
                               role="button"
                               tabIndex={0}
-                              onClick={() => setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); } }}
-                              aria-sort={stocktakeSortMode === 'ASC' ? 'ascending' : 'descending'}
+                              onClick={() => {
+                                if (stocktakeSortKey !== 'sold') {
+                                  setStocktakeSortKey('sold');
+                                  setStocktakeSoldDir('DESC');
+                                } else {
+                                  setStocktakeSoldDir((p) => (p === 'DESC' ? 'ASC' : 'DESC'));
+                                }
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortKey('sold'); setStocktakeSoldDir((p) => (p === 'DESC' ? 'ASC' : 'DESC')); } }}
+                              aria-sort={stocktakeSortKey === 'sold' ? (stocktakeSoldDir === 'DESC' ? 'descending' : 'ascending') : 'none'}
+                              title="Bấm để xếp theo số đã bán (cuối kỳ xem cái này trước tồn)"
+                              className="p-3 text-right cursor-pointer select-none hover:bg-slate-200 transition-colors"
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                Đã bán
+                                <span aria-hidden="true" className={`font-mono text-[10px] ${stocktakeSortKey === 'sold' ? 'text-indigo-600 font-black' : 'text-slate-300'}`}>
+                                  {stocktakeSortKey === 'sold' ? (stocktakeSoldDir === 'DESC' ? '▼' : '▲') : '△'}
+                                </span>
+                              </span>
+                            </th>
+                            <th
+                              scope="col"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => { setStocktakeSortKey('stock'); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStocktakeSortKey('stock'); setStocktakeSortMode((prev) => (prev === 'ASC' ? 'DESC' : 'ASC')); } }}
+                              aria-sort={stocktakeSortKey === 'stock' ? (stocktakeSortMode === 'ASC' ? 'ascending' : 'descending') : 'none'}
                               title={`Bấm để đổi chiều sắp xếp tồn lý thuyết. Đang xếp: ${sortLabel(stocktakeSortMode)}`}
                               className="p-3 text-center min-w-[130px] cursor-pointer select-none hover:bg-slate-200 transition-colors"
                             >
@@ -1592,7 +1656,7 @@ export function DailyFairSettlementModal({
                 </p>
               </div>
               <div className="text-right text-[12px] text-slate-600">
-                <p className="font-bold text-slate-900 text-[12.5px]">BIÊN BẢN SỐ: {bbCode}</p>
+                <p className="font-bold text-slate-900 text-[12.5px]">BIÊN BẢN SỐ: {isRangeData && printStart && printEnd ? `BB-${printStart.replace(/-/g, '')}-${printEnd.replace(/-/g, '')}` : `BB-${data.reportDate.replace(/-/g, '')}`}</p>
                 <p className="text-[11.5px] text-slate-500 italic mt-1">
                   Lập lúc: {new Date().toLocaleTimeString('vi-VN')} ngày {new Date().toLocaleDateString('vi-VN')}
                 </p>
@@ -1825,7 +1889,7 @@ export function DailyFairSettlementModal({
                   {soldOnlyRows.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="border border-slate-300 py-2 px-2 text-center text-slate-500 italic">
-                        Trong ngày không bán ấn phẩm nào.
+                        {isRangeData ? 'Trong kỳ không bán ấn phẩm nào.' : 'Trong ngày không bán ấn phẩm nào.'}
                       </td>
                     </tr>
                   ) : (
@@ -1867,10 +1931,10 @@ export function DailyFairSettlementModal({
               )}
             </div>
 
-            {/* VI. SẮP HẾT — nhóm phải đếm lúc đóng thùng.
-                Trước đây bản in KHÔNG có bảng này: chỉ in ấn phẩm đã bán trong
-                ngày, nên cuốn sắp hết mà hôm nay không bán được cuốn nào không
-                có mặt trên giấy — đúng nhóm nhân viên cần đếm nhất. */}
+            {/* V. SẮP HẾT — nhóm phải đếm lúc đóng thùng. Chỉ ở chế độ ngày:
+                cuối kỳ gộp vào MỘT bảng IV xếp theo đã bán (tồn còn nằm ngay
+                cạnh), không in riêng bảng sắp hết nữa. */}
+            {!isRangeData && (
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
                 V. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) — CẦN ĐẾM CUỐI NGÀY
@@ -1912,6 +1976,7 @@ export function DailyFairSettlementModal({
                 Xếp theo tồn {sortLabel('ASC').toLowerCase()}. Số đếm thực tế do nhân viên điền tay — hệ thống chưa lưu số đếm.
               </p>
             </div>
+            )}
 
             {/* VI. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
                 (mục V là bảng Sắp hết ở trên — đánh số theo thứ tự thật trên giấy) */}
@@ -1929,7 +1994,7 @@ export function DailyFairSettlementModal({
                       {vnHm(data.highlight.createdAt) ? ` (${vnHm(data.highlight.createdAt)})` : ''}
                     </span>
                   ) : (
-                    <span className="text-slate-500 italic">- Không có đơn phát sinh trong ngày.</span>
+                    <span className="text-slate-500 italic">- Không có đơn phát sinh {isRangeData ? 'trong kỳ' : 'trong ngày'}.</span>
                   )}
                 </div>
                 <div className="py-0.5">
