@@ -1,9 +1,9 @@
-import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances, products } from '@/db';
+import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances, products, transferShipments, transferShipmentItems, returnOrders } from '@/db';
 import { ForecastService, RunoutLevel } from './forecast.service';
 import { OrderService, createdAtBetween } from './order.service';
 import { InventoryService } from './inventory.service';
 import { removeAccents } from '@/lib/vietnamese';
-import { eq, desc, sql, and, inArray, ne } from 'drizzle-orm';
+import { eq, desc, sql, and, inArray, ne, or } from 'drizzle-orm';
 
 export interface QueryStockParams {
   editionId?: string;
@@ -1081,6 +1081,365 @@ export class ExecutiveQueryService {
       recentSessions,
       reconciliationNotice:
         'Số liệu đối soát thuần túy từ sổ két. Hệ thống không đưa ra suy diễn hay kết luận pháp lý về chênh lệch két.',
+    };
+  }
+
+  /**
+   * 7. query_shift_split: Sáng (<12h VN) vs Chiều (≥12h VN) trong N ngày.
+   * Trả lời "tuần trước sáng hay chiều mạnh hơn". Mạnh = nhiều cuốn hơn
+   * (hoà thì so tiền). Logic giờ VN giống hệt Nhịp Bán (giờ vàng).
+   */
+  static async queryShiftSplit(params: { date?: string; windowDays?: number; warehouseId?: string } = {}): Promise<{
+    scopeLabel: string;
+    from: string;
+    to: string;
+    morning: { orders: number; qty: number; revenue: number };
+    afternoon: { orders: number; qty: number; revenue: number };
+    stronger: 'sang' | 'chieu' | 'hoa';
+  }> {
+    const days = clampInt(params.windowDays, 7, 1, 92);
+    const todayVn = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+    const endDay = /^\d{4}-\d{2}-\d{2}$/.test(params.date || '') ? params.date! : todayVn;
+    const from = new Date(Date.parse(`${endDay}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    const warehouseId = typeof params.warehouseId === 'string' && params.warehouseId.trim()
+      ? params.warehouseId.trim()
+      : undefined;
+    const conds = [
+      eq(orders.status, 'COMPLETED'),
+      sql`${orders.channel} != 'SPONSORSHIP'`,
+      ...createdAtBetween(orders.createdAt, from, endDay),
+    ];
+    if (warehouseId) conds.push(eq(orders.warehouseId, warehouseId));
+    // 1 query: dòng bán + giờ đơn (giờ VN = UTC+7, giống queryProductFlow).
+    const lines: any[] = await db
+      .select({
+        qty: orderItems.quantity,
+        revenue: orderItems.totalAmount,
+        createdAt: orders.createdAt,
+        orderId: orders.id,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(and(...conds));
+    const split = {
+      morning: { orders: new Set<string>(), qty: 0, revenue: 0 },
+      afternoon: { orders: new Set<string>(), qty: 0, revenue: 0 },
+    };
+    for (const l of lines) {
+      const d = l?.createdAt ? new Date(l.createdAt) : null;
+      if (!d || Number.isNaN(d.getTime())) continue;
+      const h = (d.getUTCHours() + 7) % 24;
+      const half = h < 12 ? split.morning : split.afternoon;
+      half.qty += Number(l.qty || 0);
+      half.revenue += Number(l.revenue || 0);
+      if (l.orderId) half.orders.add(String(l.orderId));
+    }
+    const morning = { orders: split.morning.orders.size, qty: split.morning.qty, revenue: split.morning.revenue };
+    const afternoon = { orders: split.afternoon.orders.size, qty: split.afternoon.qty, revenue: split.afternoon.revenue };
+    const stronger =
+      morning.qty !== afternoon.qty
+        ? morning.qty > afternoon.qty ? 'sang' : 'chieu'
+        : morning.revenue !== afternoon.revenue
+          ? morning.revenue > afternoon.revenue ? 'sang' : 'chieu'
+          : 'hoa';
+    let warehouseName: string | null = null;
+    if (warehouseId) {
+      const wh: any[] = await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, warehouseId)).limit(1);
+      warehouseName = wh[0]?.name || warehouseId;
+    }
+    return {
+      scopeLabel: `${from} → ${endDay} · ${warehouseName || 'toàn hệ thống'}`,
+      from,
+      to: endDay,
+      morning,
+      afternoon,
+      stronger,
+    };
+  }
+
+  /**
+   * 8. query_period_compare: So kỳ này vs kỳ trước (cùng độ dài N ngày).
+   * Trả lời "tăng bao nhiêu % so với tháng trước". % = (nay-trước)/trước*100,
+   * kỳ trước = 0 thì % = null (không chia cho 0, báo thẳng).
+   */
+  static async queryPeriodCompare(params: { windowDays?: number; warehouseId?: string } = {}): Promise<{
+    windowDays: number;
+    current: { from: string; to: string; orders: number; qty: number; revenue: number };
+    previous: { from: string; to: string; orders: number; qty: number; revenue: number };
+    change: { ordersPct: number | null; qtyPct: number | null; revenuePct: number | null };
+  }> {
+    const n = clampInt(params.windowDays, 30, 1, 92);
+    const warehouseId = typeof params.warehouseId === 'string' && params.warehouseId.trim()
+      ? params.warehouseId.trim()
+      : undefined;
+    const todayVn = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+    const shift = (day: string, back: number) =>
+      new Date(Date.parse(`${day}T00:00:00Z`) - back * 86_400_000).toISOString().slice(0, 10);
+    const ranges = [
+      { from: shift(todayVn, n - 1), to: todayVn },
+      { from: shift(todayVn, 2 * n - 1), to: shift(todayVn, n) },
+    ];
+    const one = async (r: { from: string; to: string }) => {
+      const summary = await OrderService.getSalesSummary({
+        startDate: r.from,
+        endDate: r.to,
+        ...(warehouseId ? { warehouseId } : {}),
+      });
+      const qtyConds = [
+        eq(orders.status, 'COMPLETED'),
+        sql`${orders.channel} != 'SPONSORSHIP'`,
+        ...createdAtBetween(orders.createdAt, r.from, r.to),
+      ];
+      if (warehouseId) qtyConds.push(eq(orders.warehouseId, warehouseId));
+      const qtyRows: any[] = await db
+        .select({ q: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)` })
+        .from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .where(and(...qtyConds));
+      return {
+        from: r.from,
+        to: r.to,
+        orders: summary.totalOrders,
+        qty: Number(qtyRows[0]?.q || 0),
+        revenue: summary.totalRevenue,
+      };
+    };
+    const current = await one(ranges[0]);
+    const previous = await one(ranges[1]);
+    const pct = (cur: number, prev: number) =>
+      prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
+    return {
+      windowDays: n,
+      current,
+      previous,
+      change: {
+        ordersPct: pct(current.orders, previous.orders),
+        qtyPct: pct(current.qty, previous.qty),
+        revenuePct: pct(current.revenue, previous.revenue),
+      },
+    };
+  }
+
+  /**
+   * 9. query_transfer_history: Phiếu luân chuyển kho (ai gửi, ai nhận, đi đâu
+   * về đâu, hao hụt). warehouseId khớp cả kho đi lẫn kho đến.
+   */
+  static async queryTransferHistory(params: { windowDays?: number; warehouseId?: string; limit?: number } = {}): Promise<{
+    windowDays: number;
+    total: number;
+    items: Array<{
+      id: string;
+      fromWarehouse: string;
+      toWarehouse: string;
+      status: string;
+      dispatchedQty: number;
+      receivedQty: number;
+      lostQty: number;
+      dispatchedAt: string | null;
+      receiverId: string | null;
+    }>;
+  }> {
+    const days = clampInt(params.windowDays, 30, 1, 92);
+    const limit = clampInt(params.limit, 20, 1, 50);
+    const warehouseId = typeof params.warehouseId === 'string' && params.warehouseId.trim()
+      ? params.warehouseId.trim()
+      : undefined;
+    const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+    const conds = [sql`datetime(${transferShipments.dispatchedAt}) >= datetime(${cutoff})`];
+    if (warehouseId) {
+      conds.push(
+        or(eq(transferShipments.fromWarehouseId, warehouseId), eq(transferShipments.toWarehouseId, warehouseId))!
+      );
+    }
+    const ships: any[] = await db
+      .select()
+      .from(transferShipments)
+      .where(and(...conds))
+      .orderBy(desc(transferShipments.dispatchedAt))
+      .limit(limit);
+    const whRows: any[] = await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses);
+    const whName = new Map(whRows.map((w) => [w.id, w.name || w.id]));
+    const agg = new Map<string, { disp: number; recv: number; lost: number }>();
+    if (ships.length > 0) {
+      const rows: any[] = await db
+        .select({
+          shipmentId: transferShipmentItems.shipmentId,
+          disp: sql<number>`COALESCE(SUM(${transferShipmentItems.dispatchedQty}), 0)`,
+          recv: sql<number>`COALESCE(SUM(${transferShipmentItems.receivedQty}), 0)`,
+          lost: sql<number>`COALESCE(SUM(${transferShipmentItems.lostQty}), 0)`,
+        })
+        .from(transferShipmentItems)
+        .where(inArray(transferShipmentItems.shipmentId, ships.map((s) => s.id)))
+        .groupBy(transferShipmentItems.shipmentId);
+      for (const r of rows) {
+        agg.set(String(r.shipmentId), {
+          disp: Number(r.disp || 0),
+          recv: Number(r.recv || 0),
+          lost: Number(r.lost || 0),
+        });
+      }
+    }
+    return {
+      windowDays: days,
+      total: ships.length,
+      items: ships.map((s) => ({
+        id: s.id,
+        fromWarehouse: whName.get(s.fromWarehouseId) || s.fromWarehouseId,
+        toWarehouse: whName.get(s.toWarehouseId) || s.toWarehouseId,
+        status: s.status,
+        dispatchedQty: agg.get(s.id)?.disp || 0,
+        receivedQty: agg.get(s.id)?.recv || 0,
+        lostQty: agg.get(s.id)?.lost || 0,
+        dispatchedAt: s.dispatchedAt,
+        receiverId: s.receiverId,
+      })),
+    };
+  }
+
+  /**
+   * 10. query_gift_return: Quà đã xuất (dòng isGiftLine) + phiếu trả hàng
+   * (hoàn tiền) trong N ngày. Tách khỏi doanh số để không thổi phồng số bán.
+   */
+  static async queryGiftReturn(params: { windowDays?: number; warehouseId?: string } = {}): Promise<{
+    windowDays: number;
+    from: string;
+    to: string;
+    gifts: { qty: number; orders: number; top: Array<{ code: string; title: string; qty: number }> };
+    returns: { count: number; refundAmount: number; byStatus: Record<string, number> };
+  }> {
+    const days = clampInt(params.windowDays, 30, 1, 92);
+    const warehouseId = typeof params.warehouseId === 'string' && params.warehouseId.trim()
+      ? params.warehouseId.trim()
+      : undefined;
+    const todayVn = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+    const from = new Date(Date.parse(`${todayVn}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    const gConds = [
+      eq(orders.status, 'COMPLETED'),
+      sql`${orders.channel} != 'SPONSORSHIP'`,
+      ...createdAtBetween(orders.createdAt, from, todayVn),
+      eq(orderItems.isGiftLine, true),
+    ];
+    if (warehouseId) gConds.push(eq(orders.warehouseId, warehouseId));
+    const gRows: any[] = await db
+      .select({
+        pid: orderItems.productId,
+        code: sql<string | null>`COALESCE(${editions.code}, ${products.code})`,
+        title: sql<string | null>`COALESCE(${editions.title}, ${products.name})`,
+        qty: sql<number>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+        orders: sql<number>`COUNT(DISTINCT ${orderItems.orderId})`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .leftJoin(editions, eq(orderItems.editionId, editions.id))
+      .leftJoin(products, eq(orderItems.productId, products.id))
+      .where(and(...gConds))
+      .groupBy(orderItems.productId);
+    const gifts = gRows
+      .map((r) => ({ code: r.code || '?', title: r.title || '—', qty: Number(r.qty || 0), orders: Number(r.orders || 0) }))
+      .filter((r) => r.qty > 0)
+      .sort((a, b) => b.qty - a.qty);
+    const rConds = [...createdAtBetween(returnOrders.createdAt, from, todayVn)];
+    if (warehouseId) rConds.push(eq(returnOrders.targetWarehouseId, warehouseId));
+    const rRows: any[] = await db
+      .select({ status: returnOrders.status, refund: returnOrders.refundAmount })
+      .from(returnOrders)
+      .where(and(...rConds));
+    const byStatus: Record<string, number> = {};
+    let refundAmount = 0;
+    for (const r of rRows) {
+      byStatus[r.status || '?'] = (byStatus[r.status || '?'] || 0) + 1;
+      refundAmount += Number(r.refund || 0);
+    }
+    return {
+      windowDays: days,
+      from,
+      to: todayVn,
+      gifts: {
+        qty: gifts.reduce((s, g) => s + g.qty, 0),
+        orders: gifts.reduce((s, g) => s + g.orders, 0),
+        top: gifts.slice(0, 20),
+      },
+      returns: { count: rRows.length, refundAmount, byStatus },
+    };
+  }
+
+  /**
+   * 11. query_order_lookup: Tra 1 đơn theo mã (ORD-.../CPM...). Hỏi mã nào
+   * trả đúng mã đó + dòng hàng; không thấy thì báo rõ, không đoán.
+   */
+  static async queryOrderLookup(params: { orderCode?: string; q?: string } = {}): Promise<{
+    found: boolean;
+    orderCode: string | null;
+    order?: {
+      status: string;
+      warehouse: string;
+      channel: string | null;
+      paymentMethod: string | null;
+      cashierId: string | null;
+      customerName: string | null;
+      subtotal: number;
+      discountAmount: number;
+      finalAmount: number;
+      createdAt: string | null;
+    };
+    items?: Array<{ code: string; title: string; qty: number; price: number; total: number; isGift: boolean }>;
+    warning?: string;
+  }> {
+    let code = `${params.orderCode || ''}`.trim();
+    if (!code && params.q) {
+      // Mã đơn: ORD-... / CPM+digits (seed POS: CPM<timestamp>) / XX-...có năm+số
+      // (HH001 của sách KHÔNG khớp vì thiếu gạch nối + ít hơn 4 số).
+      const m = String(params.q).match(/(ord-[a-z0-9-]+|cpm-?\d+|[a-z]{2,4}-\d{4,}[\da-z-]*)/i);
+      if (m) code = m[1].trim();
+    }
+    if (!code) {
+      return { found: false, orderCode: null, warning: 'Chưa rõ mã đơn cần tra — cho xin mã đơn (vd ORD-...).' };
+    }
+    let row: any = (await db.select().from(orders).where(eq(orders.orderCode, code)).limit(1))[0];
+    if (!row && code.toUpperCase() !== code) {
+      row = (await db.select().from(orders).where(eq(orders.orderCode, code.toUpperCase())).limit(1))[0];
+      if (row) code = code.toUpperCase();
+    }
+    if (!row) {
+      return { found: false, orderCode: code, warning: `Không tìm thấy đơn mã "${code}".` };
+    }
+    const wh: any[] = await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, row.warehouseId)).limit(1);
+    const lines: any[] = await db
+      .select({
+        qty: orderItems.quantity,
+        price: orderItems.unitSellingPrice,
+        total: orderItems.totalAmount,
+        isGift: orderItems.isGiftLine,
+        code: sql<string | null>`COALESCE(${editions.code}, ${products.code})`,
+        title: sql<string | null>`COALESCE(${editions.title}, ${products.name})`,
+      })
+      .from(orderItems)
+      .leftJoin(editions, eq(orderItems.editionId, editions.id))
+      .leftJoin(products, eq(orderItems.productId, products.id))
+      .where(eq(orderItems.orderId, row.id));
+    return {
+      found: true,
+      orderCode: row.orderCode,
+      order: {
+        status: row.status,
+        warehouse: wh[0]?.name || row.warehouseId,
+        channel: row.channel,
+        paymentMethod: row.paymentMethod,
+        cashierId: row.cashierId,
+        customerName: row.customerName,
+        subtotal: Number(row.subtotal || 0),
+        discountAmount: Number(row.discountAmount || 0),
+        finalAmount: Number(row.finalAmount || 0),
+        createdAt: row.createdAt,
+      },
+      items: lines.map((l) => ({
+        code: l.code || '?',
+        title: l.title || '—',
+        qty: Number(l.qty || 0),
+        price: Number(l.price || 0),
+        total: Number(l.total || 0),
+        isGift: !!l.isGift,
+      })),
     };
   }
 }
