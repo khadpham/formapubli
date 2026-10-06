@@ -204,6 +204,8 @@ const ALL_SUITES = [
   // Shopee UI ẩn: config runtime + cờ server (không đụng DB chung ngoài bảng settings).
   'scripts/test-shopee-shop-config.ts',
   'scripts/test-shopee-ui-hidden.ts',
+  // Shopee tab riêng + role Nhân viên Shopee + phạm vi kho nhiều-kho.
+  'scripts/test-shopee-tab-scope.ts',
 ];
 
 function suiteShortName(p: string): string {

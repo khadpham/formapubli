@@ -18,6 +18,7 @@
 | 9 | Công tắc COD (mặc định tắt) | `630cf91` | `test-shopee-cod-flag` 6/6 |
 | — | Suite chạy lại trên DB bẩn (id duy nhất + assert chênh lệch) | `21f9a7b` | 9/9 × 3 vòng |
 | UI | Nhãn Shopee + nhóm Online; panel Cài Đặt ẩn theo cờ server; config runtime (kho/COD); hàng đợi + đơn lỗi; 4 API (status/auth-url/queue/ship/config) | `7cac3a6` | `test-shopee-shop-config` 6/6, `test-shopee-ui-hidden` 10/10 |
+| Tab+Role | Tab Shopee riêng + `ROLE_SHOPEE_OPS` (hiện picker, PIN dev 6789); phạm vi kho nhiều-kho do quản lý cấp, ép ở server; route AWB; panel gọn còn cấu hình Chủ | `f307907` | `test-shopee-tab-scope` 15/15, 12 suite Shopee xanh, `tsc` + `build` sạch |
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
