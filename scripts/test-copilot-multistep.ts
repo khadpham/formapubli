@@ -274,13 +274,14 @@ async function run() {
       (CG3 as any).planQueryInner = origInner4;
     }
 
-    // Câu chuyện đời: KHÔNG từ chối cứng, phải trả lời tự nhiên.
+    // Câu dặn dò thế hệ sau: KHÔNG từ chối, mà lấy số thật để viết lời dặn
+    // (nâng cấp từ "trả lời tự nhiên chung chung" lên "lời dặn gắn số liệu").
     const origInner5 = (CG3 as any).planQueryInner;
     (CG3 as any).planQueryInner = async () => ({ action: 'REFUSE_OUT_OF_SCOPE', directAnswer: null });
     try {
-      const p2 = await (CG3 as any).planQuery('Nếu mai là ngày cuối cùng của tôi ở vị trí này?');
-      ok(p2.action === 'DIRECT_ANSWER', 'câu ngoài nghiệp vụ phải trả lời tự nhiên, không từ chối');
-      ok(!!p2.directAnswer, 'phải có nội dung trả lời');
+      const p2 = await (CG3 as any).planQuery('Nếu mai là ngày cuối cùng của tôi ở vị trí này, tôi nên dặn gì?');
+      ok(p2.action === 'CALL_MANY', 'câu dặn dò phải lấy số thật, không từ chối cũng không nói suông');
+      ok(String(p2.reason || '').includes('REFLECTIVE_ADVICE'), 'phải đánh dấu chế độ lời dặn');
     } finally {
       (CG3 as any).planQueryInner = origInner5;
     }
@@ -305,6 +306,61 @@ async function run() {
     } finally {
       (CG3 as any).planQueryInner = origInner7;
     }
+  }
+
+  // --- 10. Hiểu ám chỉ: kho/sách nói tắt + câu chiêm nghiệm ---
+  {
+    const { ExecutiveQueryService: EQS3 } = await import('../src/services/executive-query.service');
+    // Kho: nói tắt vẫn trúng, nói chung chung thì KHÔNG đoán bừa.
+    const auCo = await (EQS3 as any).resolveWarehouseFromText('kho âu cơ còn gì?');
+    ok(auCo?.warehouseId === 'wh-au-co', '"kho âu cơ" phải ra Kho 1 - Âu Cơ');
+    const qm = await (EQS3 as any).resolveWarehouseFromText('Tồn ở Quỳnh Mai?');
+    ok(qm?.warehouseId === 'wh-quynh-mai', '"Quỳnh Mai" phải ra Kho 2');
+    const dp = await (EQS3 as any).resolveWarehouseFromText('kho dự phòng');
+    ok(dp?.warehouseId === 'wh-du-phong', '"kho dự phòng" phải ra Kho 3');
+    ok(!await (EQS3 as any).resolveWarehouseFromText('hàng hội chợ bán sao?'),
+      '"hội chợ" chung chung KHÔNG được đoán bừa 1 kho (alias cũ đã cướp về Dự phòng)');
+    ok(!await (EQS3 as any).resolveWarehouseFromText('dặn thế hệ sau về kho sách này?'),
+      '"kho sách" chung chung KHÔNG được đoán bừa 1 kho');
+
+    // Sách: lấy tên thật từ DB, gọi tắt 2 từ đầu vẫn trúng.
+    const allEds: any[] = await db.select({ id: editions.id, code: editions.code, title: editions.title }).from(editions);
+    const long = allEds.find((e) => String(e.title || '').trim().split(/\s+/).length >= 3);
+    ok(!!long, 'DB test phải có sách tên dài để thử gọi tắt');
+    if (long) {
+      const short = String(long.title).trim().split(/\s+/).slice(0, 2).join(' ');
+      const hit = await (EQS3 as any).resolveEditionFromText(`cuốn ${short} bán sao?`);
+      ok(hit?.editionId === long.id, `gọi tắt "${short}" phải trúng ${long.code}`);
+    }
+    const one = allEds.find((e) => {
+      const w = String(e.title || '').trim().split(/\s+/);
+      return w.length === 1 && String(e.title).trim().length >= 4;
+    });
+    if (one) {
+      const t = String(one.title).trim();
+      const hitCtx = await (EQS3 as any).resolveEditionFromText(`cuốn ${t} còn bao nhiêu?`);
+      ok(hitCtx?.editionId === one.id, `tên ngắn "${t}" kèm ngữ cảnh sách phải trúng`);
+      ok(!await (EQS3 as any).resolveEditionFromText(`${t} hàng xóm phàn nàn`),
+        `tên ngắn "${t}" KHÔNG ngữ cảnh sách thì không được đoán bừa`);
+    }
+
+    // Câu chiêm nghiệm: KHÔNG vào tool tồn kho 1 kho, mà lấy số tổng quan + cạn kho.
+    const CG4 = (await import('../src/services/ai/copilot-guardrails')).CopilotGuardrails;
+    const pRef = await (CG4 as any).planQuery(
+      'Nếu mai là ngày cuối cùng của tôi ở vị trí này, tôi nên dặn thế hệ sau điều gì về kho sách này?'
+    );
+    ok(pRef.action === 'CALL_MANY', 'câu dặn dò phải lấy nhiều nguồn số liệu');
+    const names = (pRef.steps || []).map((s: any) => s.toolName);
+    ok(names.includes('query_stock_level') && names.includes('query_reprint_forecast'),
+      'phải lấy tồn tổng quan + cạn kho để viết lời dặn');
+    ok(String(pRef.reason || '').includes('REFLECTIVE_ADVICE'), 'phải đánh dấu chế độ lời dặn');
+    ok(!(pRef.steps || []).some((s: any) => s.args?.warehouseId),
+      'câu dặn dò KHÔNG được gán bừa 1 kho (nguồn "Kho 3 Dự phòng 0 cuốn")');
+
+    // Hồi quy: câu tồn kho thật vẫn đi tool tồn kho bình thường.
+    const pStock = await (CG4 as any).planQuery('Tồn kho cuốn HH001?');
+    ok(pStock.action === 'CALL_TOOL' && String((pStock as any).toolCall?.toolName) === 'query_stock_level',
+      'câu tồn kho thật vẫn đi đúng tool');
   }
 
   console.log(`=== COPILOT MULTISTEP: PASS — ${checks} assertions ===`);

@@ -189,6 +189,9 @@ export async function POST(req: NextRequest) {
     if (geminiKey || openaiKey || groqKey || cfReady) {
       // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam
       // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
+      // Chế độ lời dặn (REFLECTIVE_ADVICE): sếp xin lời dặn dò/bàn giao — viết
+      // như người đi trước tận tâm, mỗi lời dặn gắn số thật từ dữ liệu.
+      const adviceMode = (plan.reason || '').includes('REFLECTIVE_ADVICE');
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
 Hôm nay (giờ Việt Nam): ${new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10)}.
 ${renderHistoryForPrompt(history)}
@@ -197,21 +200,32 @@ ${JSON.stringify(toolResult, null, 2)}
 
 CÂU HỎI CỦA SẾP: "${question.slice(0, 500)}"
 
-HÃY TRẢ LỜI NHƯ MỘT NGƯỜI TRỢ LÝ ĐIỀU HÀNH THẬT:
+${
+  adviceMode
+    ? `SẾP ĐANG XIN LỜI DẶN DÒ / BÀN GIAO CHO THẾ HỆ SAU — KHÔNG phải báo cáo khô.
+HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
+- Mở đầu 1 câu đồng cảm, ngắn.
+- Dặn 3–5 điều CỤ THỂ, mỗi điều GẮN CON SỐ THẬT từ dữ liệu trên (tồn tổng bao nhiêu cuốn, bao nhiêu ấn bản, mấy đầu sách cạn kho cần tái bản...).
+- Giọng ấm, chân thành, không giáo điều, KHÔNG nhắc máy móc "theo công cụ...".
+- Tuyệt đối không bịa số ngoài dữ liệu; thiếu số nào thì bỏ qua điều đó.`
+    : `HÃY TRẢ LỜI NHƯ MỘT NGƯỜI TRỢ LÝ ĐIỀU HÀNH THẬT:
 - Tự nhiên, gọn, đi thẳng vào ý chính sếp hỏi. KHÔNG giáo điều, KHÔNG nhắc máy móc "theo công cụ...".
 - Mọi con số PHẢI lấy chính xác từ dữ liệu trên; không tự tính thêm ngoài dữ liệu.
 - Câu hỏi nhiều ý thì trình bày từng ý rõ ràng; thiếu số liệu cho 1 ý thì nói thẳng là thiếu.
 - Sếp có thể hỏi tiếp bằng đại từ ("nó", "cuốn đó", "kho đó") — hiểu là nói tiếp lượt trước, đừng hỏi lại.
 - Nếu là két tiền, TUYỆT ĐỐI không suy diễn thành gian lận hay buộc tội.
 - Trình bày danh sách/bảng khi có nhiều mục.
-- Nếu dữ liệu 1 đầu sách (itemsCount=1) chỉ trả đúng cuốn đó; itemsCount=0 báo không tìm thấy, TUYỆT ĐỐI không tự chế tồn kho.
+- Nếu dữ liệu 1 đầu sách (itemsCount=1) chỉ trả đúng cuốn đó; itemsCount=0 báo không tìm thấy, TUYỆT ĐỐI không tự chế tồn kho.`
+}
 - CHI TRA VE duy nhat 1 object JSON: {"response": "<markdown tieng Viet tu nhien>"}.`;
 
       try {
         let raw = '';
-        const userText = multi
-          ? `Câu hỏi của lãnh đạo (nhiều ý): "${question.slice(0, 500)}"\n\nTổng hợp từ các công cụ tương ứng, trình bày từng ý rõ ràng, ngôn ngữ tự nhiên.`
-          : `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`;
+        const userText = adviceMode
+          ? `Sếp xin lời dặn dò cho thế hệ sau: "${question.slice(0, 500)}"\n\nDựa vào số liệu thật vừa tra, viết lời dặn chân thành, mỗi điều gắn số cụ thể.`
+          : multi
+            ? `Câu hỏi của lãnh đạo (nhiều ý): "${question.slice(0, 500)}"\n\nTổng hợp từ các công cụ tương ứng, trình bày từng ý rõ ràng, ngôn ngữ tự nhiên.`
+            : `Câu hỏi của lãnh đạo: "${question.slice(0, 500)}"\n\nHãy tổng hợp kết quả.`;
         // Model user ép chọn (picker) đi trước; 'local' thì bỏ qua hết LLM.
         // 'cf/...' = Cloudflare Workers AI (model free).
         const picked = modelOverride && modelOverride !== 'local' ? modelOverride : null;

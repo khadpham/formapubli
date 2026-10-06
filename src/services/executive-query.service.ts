@@ -96,46 +96,70 @@ export class ExecutiveQueryService {
    * co loai tru tu nghiep vu chung chung (xuat/nhap/ban/tong/luu).
    */
   static async resolveWarehouseFromText(text: string): Promise<{ warehouseId: string; name: string } | null> {
+    // Khớp theo DỮ LIỆU (không alias cứng): "kho hồ gươm" phải ra "Hội chợ Hồ
+    // Gươm", còn "hội chợ" chung chung hay "kho sách" thì KHÔNG được đoán bừa
+    // 1 kho nào (đã dính: alias 'hội chợ' cướp hết về Kho Dự phòng).
     const norm = removeAccents((text || '').toLowerCase());
     if (!norm.trim()) return null;
-    const ALIASES: Record<string, string[]> = {
-      'wh-au-co': ['au co', 'au-co'],
-      'wh-quynh-mai': ['quynh mai', 'quynh-mai'],
-      'wh-du-phong': ['hoi cho', 'du phong', 'hoi-cho'],
-    };
-    const STOP = new Set(['kho', 'xuat', 'nhap', 'chuyen', 'ban', 'tong', 'luu', 'dong', 'phong', 'van', 'chinh', 'phu', 'su', 'kien']);
+    const STOP = new Set([
+      'kho', 'hoi', 'cho', 'gian', 'hang', 'xuat', 'nhap', 'chuyen', 'ban',
+      'tong', 'luu', 'dong', 'si', 'le', 'van', 'chinh', 'phu', 'va', 'o',
+      'tai', 'cac', 'khu', 'vuc', 'chi', 'nhanh', 'quay', 'su', 'kien',
+    ]);
     const allWh = await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses);
-    const byId = new Map(allWh.map((w) => [w.id, w]));
-    // 1. Alias cum tu.
-    for (const [id, phrases] of Object.entries(ALIASES)) {
-      const w = byId.get(id);
-      if (!w || w.id === 'wh-in-transit') continue;
-      if (phrases.some((p) => norm.includes(p))) {
-        return { warehouseId: w.id, name: w.name || w.id };
-      }
-    }
-    // 2. Tu khoa dac trung trong ten kho.
+    const qWords = new Set(norm.split(/[^a-z0-9]+/).filter(Boolean));
     let best: { warehouseId: string; name: string } | null = null;
-    let bestLen = 0;
+    let bestScore = 0;
     for (const w of allWh) {
       if (w.id === 'wh-in-transit') continue;
-      const wNorm = removeAccents((w.name || '').toLowerCase());
-      const keywords = wNorm.split(/[^a-z0-9]+/).filter((t) => t.length >= 4 && !STOP.has(t));
-      for (const kw of keywords) {
-        if (norm.includes(kw) && kw.length > bestLen) {
-          best = { warehouseId: w.id, name: w.name || w.id };
-          bestLen = kw.length;
-        }
+      // Chi lay ten chinh (truoc ngoac): "Kho 1 - Âu Cơ (Văn phòng...)" → "Kho 1 - Âu Cơ".
+      const core = removeAccents((w.name || '').toLowerCase()).split('(')[0];
+      const coreWords = core.split(/[^a-z0-9]+/).filter((t) => t.length >= 2 && !STOP.has(t));
+      if (coreWords.length === 0) continue;
+      const hit = coreWords.filter((t) => qWords.has(t));
+      // Ngưỡng: ≥2 từ lõi, hoặc 1 từ mạnh (số kho / từ dài đặc trưng như "quynh").
+      const strong = hit.filter((t) => /^\d+$/.test(t) || t.length >= 5);
+      if (!(hit.length >= 2 || strong.length >= 1)) continue;
+      const score = hit.length * 10 + hit.join('').length;
+      if (score > bestScore) {
+        best = { warehouseId: w.id, name: w.name || w.id };
+        bestScore = score;
       }
     }
     return best;
   }
 
   /**
-   * Phan giai 1 SAN PHAM (sach hoac hang hoa) tu cau hoi tu nhien (ma "H01"/
-   * "SP-001" hoac ten). Khac resolveEditionFromText (chi editions): hang hoa
-   * khong co dong editions nen tra productId de query theo product.
+   * Điểm khớp tên sách/sản phẩm với câu hỏi (không dấu, chữ thường cả 2 vế).
+   * Hiểu cách gọi TẮT tự nhiên: "nữ công tước", "ba lối", "con chó" (cụm ≥2 từ
+   * của tên), hay tên ngắn 1–2 từ kèm ngữ cảnh sách ("cuốn Khách").
+   * Trả về số từ khớp (0 = không khớp). Cụm càng dài càng chắc.
    */
+  private static titleMatchScore(normQ: string, titleNorm: string): number {
+    const t = (titleNorm || '').trim();
+    if (!t || t.length < 4) return 0;
+    const tWords = t.split(/[^a-z0-9]+/).filter(Boolean);
+    if (tWords.length === 0) return 0;
+    const q = ` ${normQ} `;
+    // Tên 1 từ ("Khách", "Ondine"): bắt buộc ngữ cảnh sách — nếu không từ
+    // "khách hàng" sẽ bắt nhầm cuốn "Khách".
+    if (tWords.length === 1) {
+      const bookCtx = /cuon|sach|tua|quyen|tap|tac pham|dau sach|ban chay|ton kho|nhip ban|gio vang|ma [a-z]{0,4}\d/.test(normQ);
+      return bookCtx && q.includes(` ${t} `) ? 1 : 0;
+    }
+    // Tên đầy đủ nằm trong câu hỏi (ranh giới từ, chắc nhất).
+    if (q.includes(` ${t} `)) return tWords.length + 10;
+    // Cụm dài nhất của tên (≥2 từ) xuất hiện trong câu hỏi: "nữ công tước",
+    // "ba lối", "con chó" — đủ đặc trưng nên không cần ngữ cảnh thêm.
+    let run = 0;
+    for (let i = 0; i < tWords.length; i++) {
+      for (let j = i + 2; j <= tWords.length; j++) {
+        if (q.includes(' ' + tWords.slice(i, j).join(' ') + ' ')) run = Math.max(run, j - i);
+      }
+    }
+    return run;
+  }
+
   static async resolveProductFromText(text: string): Promise<{ productId: string; code: string | null; title: string | null } | null> {
     const norm = removeAccents((text || '').toLowerCase());
     if (!norm.trim()) return null;
@@ -162,14 +186,14 @@ export class ExecutiveQueryService {
       const ed = edCodes.find((e) => e.id === pid);
       return { productId: pid, code: found?.code || ed?.code || null, title: found?.name || null };
     }
-    // 2. Khop ten: cau hoi chua toan bo ten (khong dau); chon ten dai nhat.
+    // 2. Khop ten (ca ten day du lan goi tat nhu "nu cong tuoc", "ba loi").
     let best: { productId: string; code: string | null; title: string | null } | null = null;
-    let bestLen = 0;
+    let bestScore = 0;
     for (const p of catalog) {
-      const nameNorm = removeAccents((p.name || '').toLowerCase()).trim();
-      if (nameNorm.length >= 4 && norm.includes(nameNorm) && nameNorm.length > bestLen) {
+      const s = ExecutiveQueryService.titleMatchScore(norm, removeAccents((p.name || '').toLowerCase()));
+      if (s > bestScore) {
         best = { productId: p.id, code: p.code, title: p.name };
-        bestLen = nameNorm.length;
+        bestScore = s;
       }
     }
     return best;
@@ -292,14 +316,14 @@ export class ExecutiveQueryService {
         return { editionId: ed.id, code: ed.code, title: ed.title };
       }
     }
-    // 2. Khop ten sach: cau hoi chua toan bo ten (khong dau); chon ten dai nhat.
+    // 2. Khop ten sach (ca ten day du lan goi tat nhu "nu cong tuoc", "ba loi").
     let best: { editionId: string; code: string; title: string | null } | null = null;
-    let bestLen = 0;
+    let bestScore = 0;
     for (const ed of catalog) {
-      const titleNorm = removeAccents((ed.title || '').toLowerCase()).trim();
-      if (titleNorm.length >= 4 && norm.includes(titleNorm) && titleNorm.length > bestLen) {
+      const s = ExecutiveQueryService.titleMatchScore(norm, removeAccents((ed.title || '').toLowerCase()));
+      if (s > bestScore) {
         best = { editionId: ed.id, code: ed.code, title: ed.title };
-        bestLen = titleNorm.length;
+        bestScore = s;
       }
     }
     return best;

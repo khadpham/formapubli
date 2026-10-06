@@ -166,6 +166,26 @@ export class CopilotGuardrails {
     modelOverride?: string,
     history: ChatTurn[] = []
   ): Promise<CopilotPlan> {
+    // Câu CHIÊM NGHIỆM / DẶN DÒ / BÀN GIAO ("dặn thế hệ sau điều gì về kho
+    // sách?") KHÔNG phải câu số liệu: cấm lái sang tool tồn kho theo từ "kho"
+    // chung chung (đã dính: trả lời "Kho 3 - Dự phòng 0 cuốn"). Lấy số liệu
+    // tổng quan + cạn kho để LLM viết lời dặn DỰA TRÊN SỐ THẬT.
+    const nRef = removeAccents(question.toLowerCase());
+    const isReflective =
+      /ngay cuoi cung|the he sau|dan do|di chuc|tam su|loi khuyen|truyen lai|ban giao|neu mai|tam nhin|triet ly/.test(
+        nRef
+      );
+    if (isReflective && !this.isWriteAttempt(question)) {
+      return {
+        action: 'CALL_MANY',
+        steps: [
+          { toolName: 'query_stock_level', args: {} },
+          { toolName: 'query_reprint_forecast', args: {} },
+        ],
+        reason: 'REFLECTIVE_ADVICE: cau dan do/ban giao — lay so tong quan + can kho de viet loi dan.',
+      };
+    }
+
     let plan = await this.planQueryInner(question, tracker, modelOverride, history);
 
     // LLM planner yếu hay trả DIRECT_ANSWER cho câu RÕ ràng cần dữ liệu
@@ -219,9 +239,10 @@ export class CopilotGuardrails {
           : [];
     // Nhớ ngữ cảnh: câu sau thường bỏ trống chủ ngữ ("giờ vàng của nó là mấy
     // giờ?", "còn kho nào?"). Dựng chuỗi câu để thử resolve: câu hiện tại trước,
-    // không thì lùi dần về các câu lãnh đạo đã hỏi trước đó.
-    const priorQuestions = history.filter((t) => t.role === 'user').map((t) => t.content).reverse();
-    const lookupChain = [question, ...priorQuestions].slice(0, 4);
+    // không thì lùi dần về các lượt trước (cả câu hỏi lẫn câu trả lời — câu trả
+    // lời thường chứa mã/tên đã chốt như HH001).
+    const priorTexts = history.map((t) => t.content).reverse();
+    const lookupChain = [question, ...priorTexts].slice(0, 5);
 
     for (const step of targets) {
       // Luôn gắn câu hỏi gốc vào `q` cho tool ngày-tháng: executeToolSafely dùng
