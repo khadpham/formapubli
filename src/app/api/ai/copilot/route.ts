@@ -419,6 +419,11 @@ const LABEL_BY_TOOL: Record<string, string> = {
   query_catalog: 'Danh mục',
   query_reprint_forecast: 'Cạn kho',
   prepare_sale_draft: 'Đơn nháp',
+  query_shift_split: 'Sáng/Chiều',
+  query_period_compare: 'So kỳ',
+  query_transfer_history: 'Luân chuyển',
+  query_gift_return: 'Quà/Trả hàng',
+  query_order_lookup: 'Tra đơn',
 };
 
 function formatFallbackAnswer(toolName: string, data: Record<string, any>): string {
@@ -515,6 +520,57 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     const warn = (data.warnings || []).length > 0 ? `\n⚠️ ${(data.warnings || []).join(' ')}` : '';
     const who = data.customerName ? ` cho **${data.customerName}**` : '';
     return `🧾 **Đơn nháp${who}** (${data.items.length} dòng) — mới là NHÁP, chưa tạo đơn, chưa trừ kho:\n${lines.join('\n')}${warn}\n\nBấm **Áp vào POS** để đổ vào giỏ, kiểm tra lại rồi tự bấm Thanh toán.`;
+  }
+  if (toolName === 'query_shift_split') {
+    const d = data as any;
+    const m = d.morning || { orders: 0, qty: 0, revenue: 0 };
+    const a = d.afternoon || { orders: 0, qty: 0, revenue: 0 };
+    const win = d.stronger === 'sang' ? '☀️ Buổi SÁNG mạnh hơn' : d.stronger === 'chieu' ? '🌤️ Buổi CHIỀU mạnh hơn' : '⚖️ Sáng và chiều ngang nhau';
+    return `⏰ **Sáng vs Chiều** (${d.scopeLabel || ''}): **${win}**
+- Sáng (<12h): **${Number(m.qty || 0).toLocaleString('vi-VN')} cuốn** · ${Number(m.revenue || 0).toLocaleString('vi-VN')} đ (${m.orders} đơn).
+- Chiều (≥12h): **${Number(a.qty || 0).toLocaleString('vi-VN')} cuốn** · ${Number(a.revenue || 0).toLocaleString('vi-VN')} đ (${a.orders} đơn).`;
+  }
+  if (toolName === 'query_period_compare') {
+    const d = data as any;
+    const cur = d.current || {};
+    const prev = d.previous || {};
+    const ch = d.change || {};
+    const fmt = (v: number | null, unit: string) =>
+      v == null ? 'chưa đủ số liệu kỳ trước' : `${v > 0 ? '+' : ''}${v}% ${unit}`;
+    return `📈 **So 2 kỳ** (${d.windowDays} ngày/kỳ):
+- Kỳ này (${cur.from} → ${cur.to}): **${Number(cur.qty || 0).toLocaleString('vi-VN')} cuốn** · ${Number(cur.revenue || 0).toLocaleString('vi-VN')} đ (${cur.orders} đơn).
+- Kỳ trước (${prev.from} → ${prev.to}): ${Number(prev.qty || 0).toLocaleString('vi-VN')} cuốn · ${Number(prev.revenue || 0).toLocaleString('vi-VN')} đ (${prev.orders} đơn).
+- Thay đổi: cuốn **${fmt(ch.qtyPct, '')}** · doanh thu **${fmt(ch.revenuePct, '')}** · đơn **${fmt(ch.ordersPct, '')}**.`;
+  }
+  if (toolName === 'query_transfer_history') {
+    const d = data as any;
+    const items = (d.items || []).slice(0, 20);
+    if (items.length === 0) {
+      return `🚚 **Luân chuyển kho** (${d.windowDays} ngày): không có phiếu nào.`;
+    }
+    const lines = items.map((it: any, i: number) =>
+      `${i + 1}. **${it.id}** — ${it.fromWarehouse} → ${it.toWarehouse} (${it.status}): gửi ${it.dispatchedQty}, nhận ${it.receivedQty}${it.lostQty > 0 ? `, **thất lạc ${it.lostQty}**` : ''}`);
+    return `🚚 **Luân chuyển kho** (${d.windowDays} ngày, ${d.total} phiếu):\n${lines.join('\n')}`;
+  }
+  if (toolName === 'query_gift_return') {
+    const d = data as any;
+    const g = d.gifts || { qty: 0, orders: 0, top: [] };
+    const r = d.returns || { count: 0, refundAmount: 0, byStatus: {} };
+    const top = (g.top || []).slice(0, 10).map((t: any, i: number) => `${i + 1}. **${t.code} - ${t.title}** × ${t.qty}`).join('\n');
+    const statuses = Object.entries(r.byStatus || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—';
+    return `🎁 **Quà & Trả hàng** (${d.windowDays} ngày):
+- Quà đã xuất: **${Number(g.qty || 0).toLocaleString('vi-VN')} cuốn** (${g.orders} đơn).${top ? `\n${top}` : ''}
+- Phiếu trả: **${r.count}** phiếu, hoàn **${Number(r.refundAmount || 0).toLocaleString('vi-VN')} đ** (${statuses}).`;
+  }
+  if (toolName === 'query_order_lookup') {
+    const d = data as any;
+    if (!d.found) {
+      return `🧾 **Tra đơn**: ${d.warning || `Không tìm thấy đơn "${d.orderCode || ''}".`}`;
+    }
+    const o = d.order || {};
+    const lines = (d.items || []).map((it: any, i: number) =>
+      `${i + 1}. **${it.code} - ${it.title}** × ${it.qty}${it.isGift ? ' (quà)' : ''} — ${Number(it.total || 0).toLocaleString('vi-VN')} đ`);
+    return `🧾 **Đơn ${d.orderCode}** (${o.status}, ${o.warehouse}):\n${lines.join('\n')}\n- Tổng: ${Number(o.subtotal || 0).toLocaleString('vi-VN')} đ, giảm ${Number(o.discountAmount || 0).toLocaleString('vi-VN')} đ, thu **${Number(o.finalAmount || 0).toLocaleString('vi-VN')} đ** (${o.paymentMethod || '—'}).`;
   }
   // Đa bước: toolName là "a + b + c". Ghép formatter từng phần, KHÔNG nhét thẳng
   // toolData dạng thô vào markdown (đã dính: sếp thấy khối JSON trong chat).
