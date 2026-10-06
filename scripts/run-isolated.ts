@@ -220,6 +220,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-tab-scope.ts',
   // Tab Chủ GĐ1: chi phí (expense_entries) + quyền + nav 'chu' chỉ Chủ.
   'scripts/test-owner-tab.ts',
+  // TK ngân hàng tạm ngưng vẫn hiện trong quản lý (chỉ đổi trạng thái).
+  'scripts/test-bank-list-inactive.ts',
 ];
 
 /**

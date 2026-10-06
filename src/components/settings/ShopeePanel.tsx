@@ -18,13 +18,18 @@ interface StatusData {
 
 /**
  * Mục Shopee trong Cài Đặt — ẨN khi cờ server SHOPEE_UI_ENABLED tắt.
- * Chỉ giữ cấu hình cho Chủ (kết nối, kho xuất, cờ COD). Vận hành hàng ngày
- * (đơn cần gói, giao/in, đơn lỗi) chuyển sang tab Shopee riêng.
+ * - Chủ: kết nối, kho xuất, cờ COD.
+ * - Chủ/Quản lý: gán phạm vi kho cho nhân viên Shopee (multi-select,
+ *   hiệu lực ngay — server đọc DB mỗi request).
+ * Vận hành hàng ngày (đơn cần gói, giao/in, đơn lỗi) ở tab Shopee riêng.
  */
 export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
   const isOwner = sessionRole === 'ROLE_OWNER';
+  const canAssignScope = isOwner || sessionRole === 'ROLE_MANAGER';
   const [status, setStatus] = useState<StatusData | null>(null);
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
+  const [opsWarehouseIds, setOpsWarehouseIds] = useState<string[]>([]);
+  const [scopeSaving, setScopeSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -37,9 +42,13 @@ export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
       const st = await fetch('/api/shopee/status').then((r) => r.json());
       if (st?.success) setStatus(st.data);
       if (!st?.data?.uiEnabled) return;
-      if (isOwner) {
+      if (canAssignScope) {
         const wh = await fetch('/api/warehouses?all=true').then((r) => r.json());
         if (wh?.success && Array.isArray(wh.data)) setWarehouses(wh.data);
+        const cfg = await fetch('/api/shopee/config').then((r) => r.json());
+        if (cfg?.success && Array.isArray(cfg.data?.opsWarehouseIds)) {
+          setOpsWarehouseIds(cfg.data.opsWarehouseIds.map(String));
+        }
       }
     } catch {
       /* panel ẩn im lặng khi chưa bật cờ */
@@ -76,6 +85,25 @@ export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
       } else showToast(r?.error || 'Lưu thất bại.');
     } catch {
       showToast('Lưu thất bại.');
+    }
+  };
+
+  const saveScope = async (ids: string[]) => {
+    setScopeSaving(true);
+    try {
+      const r = await fetch('/api/shopee/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opsWarehouseIds: ids }),
+      }).then((x) => x.json());
+      if (r?.success) {
+        setOpsWarehouseIds(r.data?.opsWarehouseIds || ids);
+        showToast('Đã cấp kho cho nhân viên Shopee.');
+      } else showToast(r?.error || 'Lưu thất bại.');
+    } catch {
+      showToast('Lưu thất bại.');
+    } finally {
+      setScopeSaving(false);
     }
   };
 
@@ -139,6 +167,36 @@ export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
             />
             Cho phép đơn COD (mặc định tắt)
           </label>
+        </section>
+      )}
+
+      {canAssignScope && (
+        <section aria-label="Phạm vi kho nhân viên Shopee" className="p-4 bg-white border border-slate-200 rounded-2xl space-y-2">
+          <h3 className="text-sm font-extrabold text-slate-800">
+            Kho nhân viên Shopee được thấy
+          </h3>
+          <p className="text-[11px] text-slate-500">
+            Chọn nhiều kho (giữ Ctrl/Cmd khi bấm). Nhân viên Shopee chỉ thấy đơn
+            trong các kho được cấp — hiệu lực ngay.
+          </p>
+          <select
+            multiple
+            value={opsWarehouseIds}
+            disabled={scopeSaving}
+            onChange={(e) => {
+              const ids = Array.from(e.target.selectedOptions).map((o) => o.value);
+              setOpsWarehouseIds(ids);
+              saveScope(ids);
+            }}
+            aria-label="Chọn phạm vi kho cho nhân viên Shopee"
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[88px]"
+          >
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
         </section>
       )}
     </div>

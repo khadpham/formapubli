@@ -13,13 +13,22 @@ export const dynamic = 'force-dynamic';
 /** VietQR offline per-kho: trả default + list TK active để POS chọn/override. */
 export async function GET(req: NextRequest) {
   try {
-    await requireSessionRole(req, [
+    const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_CASHIER',
       'ROLE_WAREHOUSE',
     ] as UserRole[]);
     const { searchParams } = new URL(req.url);
+    // Quản lý Cài Đặt cần thấy cả TK tạm ngưng (đổi trạng thái, không biến mất
+    // khỏi list — Chủ tưởng đã xóa). POS giữ nguyên: chỉ TK active.
+    if (searchParams.get('includeInactive') === '1') {
+      if (session.role !== 'ROLE_OWNER' && session.role !== 'ROLE_MANAGER') {
+        return NextResponse.json({ success: false, error: 'Chỉ chủ/quản lý được xem TK ngưng.' }, { status: 403 });
+      }
+      const all = await db.select().from(bankAccounts);
+      return NextResponse.json({ success: true, data: { default: null, list: all } });
+    }
     const warehouseId = searchParams.get('warehouseId') || '';
     const { default: def, list } = await WarehouseService.getDefaultBankAccount(warehouseId);
     return NextResponse.json({ success: true, data: { default: def || null, list } });

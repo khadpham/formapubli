@@ -106,7 +106,8 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
     try {
       const [whRes, bankRes] = await Promise.all([
         fetch('/api/warehouses?all=true').then((r) => r.json()),
-        fetch('/api/bank-accounts').then((r) => r.json()),
+        // Quản lý Cài Đặt: thấy cả TK tạm ngưng (chỉ đổi trạng thái, không mất khỏi list).
+        fetch('/api/bank-accounts?includeInactive=1').then((r) => r.json()),
       ]);
 
       if (whRes?.success && Array.isArray(whRes.data)) {
