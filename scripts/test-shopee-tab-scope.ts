@@ -34,6 +34,22 @@ async function main() {
     USER_ROLES['ROLE_WAREHOUSE'].allowedNavItems.includes('shopee'),
     false
   );
+  eq2('chu thay tab shopee', USER_ROLES['ROLE_OWNER'].allowedNavItems.includes('shopee'), true);
+  eq2(
+    'quan ly thay tab shopee',
+    USER_ROLES['ROLE_MANAGER'].allowedNavItems.includes('shopee'),
+    true
+  );
+  eq2(
+    'thu ngan khong thay tab shopee',
+    USER_ROLES['ROLE_CASHIER'].allowedNavItems.includes('shopee'),
+    false
+  );
+  eq2(
+    'ke toan thue khong thay tab shopee',
+    USER_ROLES['ROLE_TAX'].allowedNavItems.includes('shopee'),
+    false
+  );
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {
