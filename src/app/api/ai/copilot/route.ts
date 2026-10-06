@@ -356,12 +356,31 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
         const nums = (deGrouped.match(/\d+/g) || []).map(Number);
         if (nums.length > 0 && !nums.includes(trueTotal)) wrongSingleTotal = true;
       }
-      if (orphans.length > 0 || claimsZeroStock || wrongSingleTotal) {
-        console.warn(`Copilot ungrounded [${toolCall.toolName}]: orphans=${orphans.join(',')} zeroClaim=${claimsZeroStock} wrongTotal=${wrongSingleTotal} — dung fallback.`);
+      const zeroContradiction = CopilotGuardrails.findZeroClaimContradiction(finalAnswer, toolResult);
+      if (orphans.length > 0 || claimsZeroStock || wrongSingleTotal || zeroContradiction) {
+        console.warn(`Copilot ungrounded [${toolCall.toolName}]: orphans=${orphans.join(',')} zeroClaim=${claimsZeroStock} wrongTotal=${wrongSingleTotal} zeroContradiction=${zeroContradiction} — dung fallback.`);
         finalAnswer = formatFallbackAnswer(toolCall.toolName, toolResult);
       }
     } catch (err) {
       console.warn('[copilot] grounded check failed:', err);
+    }
+
+    // Ép model (picker "Chọn bộ não") mà model đó chết → server im lặng rơi
+    // xuống tầng khác, sếp tưởng vẫn là 120B (đã dính: chọn oss-120b mà đáp
+    // do 20b/nội bộ viết). Nói thẳng trong đáp để sếp biết.
+    const pickedBase =
+      typeof modelOverride === 'string' && modelOverride !== 'auto' && modelOverride !== 'local'
+        ? modelOverride.replace(/^(cf|groq|gemini)\//, '')
+        : null;
+    const engineNow = synthEngine || track.planner || 'nội bộ';
+    if (pickedBase && !engineNow.includes(pickedBase)) {
+      const pickedLabel =
+        typeof modelOverride === 'string' && modelOverride.startsWith('cf/')
+          ? `${pickedBase} (Cloudflare)`
+          : (modelOverride as string);
+      finalAnswer =
+        `⚠️ **${pickedLabel} không gọi được lúc này**, tôi đã trả lời bằng **${engineNow}** — số liệu vẫn lấy từ sổ thật, chỉ cách diễn đạt khác.\n\n` +
+        finalAnswer;
     }
 
     return NextResponse.json({
@@ -372,7 +391,7 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
         toolUsed: toolCall.toolName,
         toolData: toolResult,
         // Model nào viết câu trả lời này: synth trước, planner sau, luật cuối.
-        engine: synthEngine || track.planner || 'nội bộ',
+        engine: engineNow,
       },
     });
   } catch (err: unknown) {
