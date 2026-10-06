@@ -1,9 +1,17 @@
 # KẾ HOẠCH TRIỂN KHAI TÍCH HỢP SHOPEE — MASTER PLAN
 
-> **Trạng thái thực thi (cập nhật 04/10/2026, nhánh `feat/shopee-skeleton`):**
-> Task 1–9 ĐÃ CODE XONG + test mock xanh (9 suite, 3 vòng liên tiếp, `tsc` sạch).
-> Chưa merge `main`, chưa deploy. Còn đúng 1 cửa ải: sandbox (mục Open items).
+> **Trạng thái thực thi (cập nhật 06/10/2026, trên `main`):**
+> Task 1–9 + Tab+Role ĐÃ MERGE `main` (`0aa605c`), chưa deploy.
+> Test: 12 suite Shopee xanh, `test-shopee-tab-scope` 17/17, full runner 174/177
+> (3 đỏ tồn đọng từ trước merge — xem mục "Việc tồn đọng", không phải do Shopee).
+> `tsc` + `npm run build` sạch. Cửa ải còn lại: sandbox (mục Open items).
 > Chi tiết từng task: xem bảng bên dưới.
+>
+> **Agent mới đọc trước (theo thứ tự):**
+> 1. `docs/shopee/11-quyet-dinh-tab-shopee-va-role.md` — 5 quyết định đã chốt với Chủ (tab riêng, role mới, 2 cấu hình kho, ai xem tab, tab Chủ làm sau).
+> 2. `docs/superpowers/specs/2026-10-06-tab-shopee-design.md` — spec tab + role.
+> 3. `docs/superpowers/plans/2026-10-06-tab-shopee.md` — plan 5 task đã thực thi xong.
+> 4. File này — master plan Task 1–9 + trạng thái.
 
 | Task | Nội dung | Commit | Suite kiểm chứng |
 |---|---|---|---|
@@ -18,7 +26,8 @@
 | 9 | Công tắc COD (mặc định tắt) | `630cf91` | `test-shopee-cod-flag` 6/6 |
 | — | Suite chạy lại trên DB bẩn (id duy nhất + assert chênh lệch) | `21f9a7b` | 9/9 × 3 vòng |
 | UI | Nhãn Shopee + nhóm Online; panel Cài Đặt ẩn theo cờ server; config runtime (kho/COD); hàng đợi + đơn lỗi; 4 API (status/auth-url/queue/ship/config) | `7cac3a6` | `test-shopee-shop-config` 6/6, `test-shopee-ui-hidden` 10/10 |
-| Tab+Role | Tab Shopee riêng + `ROLE_SHOPEE_OPS` (hiện picker, PIN dev 6789); phạm vi kho nhiều-kho do quản lý cấp, ép ở server; route AWB; panel gọn còn cấu hình Chủ | `f307907` | `test-shopee-tab-scope` 15/15, 12 suite Shopee xanh, `tsc` + `build` sạch |
+| Tab+Role | Tab Shopee riêng + `ROLE_SHOPEE_OPS` (hiện picker, PIN dev 6789); phạm vi kho nhiều-kho do quản lý cấp, ép ở server; route AWB; panel gọn còn cấu hình Chủ | `f307907` | `test-shopee-tab-scope` 17/17, 12 suite Shopee xanh, `tsc` + `build` sạch |
+| Merge | Merge nhánh vào `main` (`0aa605c`): gộp guard DELIVERED + hàm ngày VN 2 bên; sửa nhãn nút "Báo Cáo Ngày" (`3512f54`, settlement-ui 29/29) | `ec22426` | full runner 174/177 (3 đỏ tồn đọng trước merge) |
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

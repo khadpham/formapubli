@@ -1,8 +1,13 @@
 # KHO TRI THỨC LẬP TRÌNH TÍCH HỢP SHOPEE OPEN PLATFORM (V2)
 **Dành cho hệ thống quản lý xuất bản và kho vận FORMApubli**
 
-**Trạng thái tài liệu:** 🟡 **BẢN THẢO THIẾT KẾ (DRAFT / CHỜ KIỂM CHỨNG BẰNG SANDBOX SPIKE) — CHƯA ĐÓNG**
+**Trạng thái tài liệu:** 🟢 **ĐÃ TRIỂN KHAI TRÊN `main` (06/10/2026) — CHỜ SANDBOX NGHIỆM THU**
 *(Docs chỉ chính thức đóng khi có một đơn hàng test trên Sandbox chạy thông luồng từ đầu đến cuối và số liệu đối soát khớp 100%).*
+
+> **Agent mới đọc trước (06/10):**
+> 1. [`11-quyet-dinh-tab-shopee-va-role.md`](./11-quyet-dinh-tab-shopee-va-role.md) — 5 quyết định đã chốt với Chủ.
+> 2. [`10-ke-hoach-trien-khai-shopee.md`](./10-ke-hoach-trien-khai-shopee.md) — master plan + trạng thái mới nhất (đầu file) + 3 suite đỏ tồn đọng.
+> 3. `docs/superpowers/specs/2026-10-06-tab-shopee-design.md` + `docs/superpowers/plans/2026-10-06-tab-shopee.md` — spec + plan tab Shopee đã thực thi xong.
 
 ---
 
