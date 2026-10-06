@@ -230,8 +230,13 @@ export class InventoryService {
     const executeWork = async (tx: any) => {
       // 1. Phân loại BOOK/GOODS từ nguồn thật. Thiếu cả products lẫn editions
       // ⇒ báo INVALID rõ ràng thay vì để FK editions(id) ném cryptic.
-      const kinds = await InventoryService.resolveItemKinds([editionId], tx);
-      const kind = kinds.get(`${editionId || ''}`.trim());
+      // Caller đã tự tra danh mục và truyền isBook explicit (createOrder B5 lấy
+      // từ map products đã validate INVALID ở trên) thì TIN caller, bỏ 2 câu
+      // tra/DÒNG — đường này sát trần 50 subrequest của Worker (auditC N7).
+      // Caller không truyền (chuyển kho lẻ) vẫn tra DB như cũ.
+      let kind = params.isBook === undefined
+        ? (await InventoryService.resolveItemKinds([editionId], tx)).get(`${editionId || ''}`.trim())
+        : (params.isBook ? 'BOOK' : 'GOODS') as 'BOOK' | 'GOODS';
       if (!kind) {
         throw AppError.invalid(`Sản phẩm [${editionId}] không tồn tại trong danh mục.`);
       }
