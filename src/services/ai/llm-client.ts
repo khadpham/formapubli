@@ -113,7 +113,10 @@ const CF_MODEL_IDS: Record<string, string> = {
 export function resolveCfModelId(model: string): string {
   const m = (model || '').trim();
   if (m.startsWith('@cf/')) return m;
-  return CF_MODEL_IDS[m] || `@cf/zai-org/${m}`;
+  if (CF_MODEL_IDS[m]) return CF_MODEL_IDS[m];
+  // Tên đã có owner (vd 'meta/llama-...') thì chỉ thêm prefix @cf/.
+  if (m.includes('/')) return `@cf/${m}`;
+  return `@cf/zai-org/${m}`;
 }
 
 export async function callCfWorkerAiJsonRaw(params: {

@@ -233,17 +233,28 @@ async function run() {
   ok(seen.length >= 2 && seen.some((q) => /HH001/.test(q)),
     'lượt sau phải thử lùi về câu trước để tìm mã sách');
 
-  // --- 8. UI: bảng chọn LLM ở chân hộp, dễ bấm, không text linh tinh ---
+  // --- 8. UI: dropdown chọn LLM ở chân hộp, gọn 1 dòng ---
   const drawer = readSrc('src/components/copilot/CopilotDrawer.tsx');
-  ok(!/<select[\s\S]{0,400}copilotModel/.test(drawer), 'bỏ select model cũ ở header');
-  ok(/MODEL_OPTIONS\.map/.test(drawer), 'bảng chọn model phải là lưới nút');
-  ok(/grid-cols-2/.test(drawer), 'bảng chọn model 2 cột cho dễ bấm');
+  ok(/<select[\s\S]{0,300}copilotModel/.test(drawer), 'chọn model phải là dropdown <select>');
+  ok(!/grid-cols-2/.test(drawer), 'không còn lưới nút chiếm diện tích chat');
+  ok(/MODEL_OPTIONS\.map/.test(drawer), 'dropdown render từ danh sách model');
+  ok(/id="copilot-model"/.test(drawer), 'dropdown có label gắn đúng');
   ok(/Chọn bộ não/.test(drawer), 'nhãn tiếng Việt có dấu');
   ok(/cf\/nemotron-3-120b-a12b/.test(drawer), 'phải có Nemotron free');
   ok(/cf\/glm-4\.7-flash/.test(drawer), 'phải có GLM-4.7 (chủ yêu cầu)');
+  ok(/gemini-3\.5-flash/.test(drawer), 'phải có đủ họ Gemini');
+  ok(/groq\/gpt-oss-120b/.test(drawer) && /groq\/gpt-oss-20b/.test(drawer), 'phải có đủ 2 Groq');
   ok(/history: priorTurns/.test(drawer), 'client phải gửi lịch sử lên server');
   ok(!/dự báo in 105 ngày, két quầy/.test(drawer), 'xoá hướng dẫn dài trong placeholder');
   ok(!/có thể tra cứu nhanh dữ liệu thời gian thực/.test(drawer), 'xoá liệt kê dài trong tin nhắn chào');
+  // Mọi value trong dropdown server phải chấp nhận, trừ auto/local.
+  {
+    const routeSrc2 = readSrc('src/app/api/ai/copilot/route.ts');
+    const vals = Array.from(drawer.matchAll(/value: '([^']+)'/g)).map((m) => m[1]).filter((v) => v !== 'auto' && v !== 'local');
+    for (const v of vals) {
+      ok(routeSrc2.includes(`'${v}'`), `server phải chấp nhận model '${v}'`);
+    }
+  }
 
   // --- 9. Luật nội bộ phải thắng khi LLM đòi hỏi dữ liệu mà trả lời trực tiếp ---
   {
@@ -282,6 +293,17 @@ async function run() {
       ok(p3.action === 'REFUSE_OUT_OF_SCOPE', 'lệnh xoá/sửa dữ liệu phải bị từ chối');
     } finally {
       (CG3 as any).planQueryInner = origInner6;
+    }
+
+    // Planner yếu TỪ CHỐI câu cần dữ liệu → luật vẫn phải tra, không thoái thác.
+    const origInner7 = (CG3 as any).planQueryInner;
+    (CG3 as any).planQueryInner = async () => ({ action: 'REFUSE_OUT_OF_SCOPE', directAnswer: null });
+    try {
+      const p4 = await (CG3 as any).planQuery('Giờ vàng của nó là mấy giờ?');
+      ok(p4.action === 'CALL_TOOL', 'planner từ chối câu giờ-vàng → luật phải tra thay vì thoái thác');
+      ok(String((p4 as any).toolCall?.toolName) === 'query_product_flow', 'phải chọn tool nhịp bán');
+    } finally {
+      (CG3 as any).planQueryInner = origInner7;
     }
   }
 

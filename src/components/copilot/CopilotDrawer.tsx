@@ -110,13 +110,22 @@ function formatInline(text: string): React.ReactNode {
 
 /** Danh sách LLM cho lãnh đạo chọn tay. `hint` là ghi chú ngắn về độ ổn định
  *  đo thật 06/10/2026 — giúp chọn mà không phải đoán. */
+/** Danh sách LLM cho lãnh đạo chọn tay — CHỈ model đã đo thật gọi được:
+ *  - Gemini 3.8 / 3.5 / 3.5-lite: server gọi qua fallback (3.8 hay 503, lite ổn định nhất)
+ *  - Nemotron 120B (CF): HTTP 3/3 + JSON 3/3 — mặc định free
+ *  - GPT-OSS 120B (CF): HTTP 3/3, JSON 1/3 — giữ để so sánh
+ *  - GLM-4.7 Flash (CF): chủ yêu cầu giữ, chậm 25–45s, HTTP 1/3
+ *  - Groq 120B/20B: rất nhanh, JSON chuẩn
+ *  LOẠI có lý do: llama-3.3-70b (trả văn bản tự do, không JSON), glm-5.2/5.3
+ *  (HTTP 403), qwen Groq (bịa mã sách), OpenAI (chưa có key trên Worker). */
 const MODEL_OPTIONS: Array<{ value: string; label: string; hint: string }> = [
-  { value: 'auto', label: '⚡ Tự động', hint: 'Chuỗi dự phòng' },
+  { value: 'auto', label: '⚡ Tự động', hint: 'Server tự chọn chuỗi dự phòng' },
   { value: 'gemini-3.8-flash', label: '✨ Gemini 3.8', hint: 'Hay nhất, hay 503' },
+  { value: 'gemini-3.5-flash', label: '✨ Gemini 3.5', hint: 'Bản giữa' },
   { value: 'gemini-3.5-flash-lite', label: '✨ Gemini 3.5 Lite', hint: 'Ổn định nhất' },
-  { value: 'cf/nemotron-3-120b-a12b', label: '🆓 Nemotron 120B', hint: 'Free, JSON 3/3' },
-  { value: 'cf/gpt-oss-120b', label: '🆓 GPT-OSS 120B', hint: 'Free, JSON 1/3' },
-  { value: 'cf/glm-4.7-flash', label: '🆓 GLM-4.7 Flash', hint: 'Free, chậm 25–45s' },
+  { value: 'cf/nemotron-3-120b-a12b', label: '🆓 Nemotron 120B (CF)', hint: 'Free, JSON 3/3' },
+  { value: 'cf/gpt-oss-120b', label: '🆓 GPT-OSS 120B (CF)', hint: 'Free, JSON 1/3' },
+  { value: 'cf/glm-4.7-flash', label: '🆓 GLM-4.7 Flash (CF)', hint: 'Free, chậm 25–45s' },
   { value: 'groq/gpt-oss-120b', label: '🧠 Groq 120B', hint: 'Rất nhanh' },
   { value: 'groq/gpt-oss-20b', label: '🧠 Groq 20B', hint: 'Nhanh, nhẹ' },
   { value: 'local', label: '📏 Luật nội bộ', hint: 'Không gọi LLM' },
@@ -132,10 +141,11 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
 
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  /** Model đang chọn: auto (server quyết) | gemini-* | local (ép luật nội bộ). */
+  /** Model đang chọn: auto (server quyết) | gemini-* | cf/* | groq/* | local. */
   const [copilotModel, setCopilotModel] = useState<string>(() => {
     try {
-      return localStorage.getItem('formapubli.copilot.model') || 'auto';
+      const saved = localStorage.getItem('formapubli.copilot.model') || 'auto';
+      return MODEL_OPTIONS.some((m) => m.value === saved) ? saved : 'auto';
     } catch {
       return 'auto';
     }
@@ -892,44 +902,38 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
             <span>Esc để đóng</span>
           </div>
 
-          {/* Bảng chọn LLM đặt ở chân hộp thoại: to, dễ bấm, không che nội dung.
-              Chia 2 cột, mỗi nút là 1 model — thấy hết trong 1 nhìn. */}
+          {/* Dropdown chọn LLM ở chân hộp thoại: gọn 1 dòng, bấm là thấy hết
+              danh sách, không che nội dung chat như lưới nút cũ. */}
           <div className="mt-3 rounded-xl border border-slate-700 bg-slate-800/60 p-2.5">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-300">
-                Chọn bộ não
-              </span>
-              <span className="text-[10px] text-slate-500">Đang dùng: {MODEL_LABEL[copilotModel] || copilotModel}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {MODEL_OPTIONS.map((m) => {
-                const active = copilotModel === m.value;
-                return (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => {
-                      setCopilotModel(m.value);
-                      try {
-                        localStorage.setItem('formapubli.copilot.model', m.value);
-                      } catch {
-                        /* bỏ qua */
-                      }
-                    }}
-                    aria-pressed={active}
-                    title={m.hint}
-                    className={`text-left px-2.5 py-2 rounded-lg border transition-all cursor-pointer ${
-                      active
-                        ? 'border-indigo-400 bg-indigo-500/25 text-white shadow-md shadow-indigo-900/40'
-                        : 'border-slate-600 bg-slate-900/60 text-slate-300 hover:border-slate-500 hover:bg-slate-900'
-                    }`}
-                  >
-                    <div className="text-[12px] font-bold leading-tight">{m.label}</div>
-                    <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{m.hint}</div>
-                  </button>
-                );
-              })}
-            </div>
+            <label
+              htmlFor="copilot-model"
+              className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wide text-slate-300"
+            >
+              Chọn bộ não
+            </label>
+            <select
+              id="copilot-model"
+              value={copilotModel}
+              onChange={(e) => {
+                setCopilotModel(e.target.value);
+                try {
+                  localStorage.setItem('formapubli.copilot.model', e.target.value);
+                } catch {
+                  /* bỏ qua */
+                }
+              }}
+              aria-label="Chọn mô hình AI"
+              className="w-full bg-slate-900 text-slate-100 text-[13px] font-bold rounded-lg px-3 py-2.5 outline-none cursor-pointer border border-slate-600 focus:border-indigo-400"
+            >
+              {MODEL_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label} — {m.hint}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[10px] text-slate-500">
+              Đang dùng: {MODEL_LABEL[copilotModel] || copilotModel}
+            </p>
           </div>
         </div>
       </aside>

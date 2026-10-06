@@ -176,11 +176,14 @@ export class CopilotGuardrails {
       /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho/.test(
         nNorm
       );
-    if (needsData && plan.action === 'DIRECT_ANSWER') {
+    // Luật thắng cả khi planner TRẢ LỜI TRỰC TIẾP lẫn khi TỪ CHỐI câu cần dữ
+    // liệu (đã dính: planner yếu từ chối "Giờ vàng của nó là mấy giờ?" rồi
+    // lớp làm mềm bên dưới biến thành câu thoái thác — sếp phải hỏi lại).
+    if (needsData && (plan.action === 'DIRECT_ANSWER' || plan.action === 'REFUSE_OUT_OF_SCOPE')) {
       const byRule = this.heuristicPlan(question.toLowerCase());
       if (byRule.action === 'CALL_TOOL' || byRule.action === 'CALL_MANY') {
         plan = byRule;
-        plan.reason = 'Rule overrode planner DIRECT_ANSWER (câu cần dữ liệu). ' + (plan.reason || '');
+        plan.reason = 'Rule overrode planner (câu cần dữ liệu). ' + (plan.reason || '');
       }
     }
 
