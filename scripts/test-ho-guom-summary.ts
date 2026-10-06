@@ -21,6 +21,12 @@ console.log(`=== HO-GUOM-SUMMARY (Task 1 shape): PASS — ${checks2} assertions 
 const settleModal2 = readSrc2('src/components/pos/DailyFairSettlementModal.tsx');
 const csvLib = readSrc2('src/lib/csv-export.ts');
 ok2(/Xuất CSV/.test(settleModal2), 'modal Ky co nut Xuat CSV');
+// Chắn Rules of Hooks: mọi useState của CSV phải đứng TRƯỚC early-return
+// `if (!isOpen) return null` — nếu không modal crash React #310 khi mở (review Critical).
+const firstEarlyReturn = settleModal2.indexOf('if (!isOpen) return null;');
+const csvHookIdx = settleModal2.indexOf('const [csvNotice, setCsvNotice]');
+const csvHook2Idx = settleModal2.indexOf('const [isExportingCsv, setIsExportingCsv]');
+ok2(csvHookIdx > -1 && csvHook2Idx > -1 && csvHookIdx < firstEarlyReturn && csvHook2Idx < firstEarlyReturn, 'useState CSV dat truoc early-return (Rules of Hooks)');
 ok2(/canExportCsv/.test(settleModal2), 'nut CSV chi Quan ly tro len (canExportCsv)');
 ok2(/ho-guom-summary/.test(settleModal2), 'CSV doc tu API tong hop');
 ok2(/FEFF|BOM/.test(csvLib), 'CSV co BOM mo bang Excel');

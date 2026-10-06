@@ -448,6 +448,10 @@ export function DailyFairSettlementModal({
   const [printNotice, setPrintNotice] = useState<string | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditModalSessionId, setAuditModalSessionId] = useState<string | null>(null);
+  // Trạng thái Xuất CSV. ĐẶT TRƯỚC mọi early-return (Rules of Hooks): đặt sau
+  // `if (!isOpen) return null` sẽ đổi số hook giữa 2 lần render → React #310 crash.
+  const [csvNotice, setCsvNotice] = useState<string | null>(null);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
   // Nhịp Bán 1 món trong kỳ đang xem (day mode = kỳ 1 ngày). Biến đặt tên
   // riêng (không dùng selectedDate trực tiếp ở JSX cuối) để khối biên bản in
   // phía trên không dính chữ selectedDate — test ngày-khớp-số-liệu quét text.
@@ -666,8 +670,6 @@ export function DailyFairSettlementModal({
   const isRangeData = (data as any)?.mode === 'range';
   const printStart = (data as any)?.reportStartDate || '';
   const printEnd = (data as any)?.reportEndDate || '';
-  const [csvNotice, setCsvNotice] = useState<string | null>(null);
-  const [isExportingCsv, setIsExportingCsv] = useState(false);
   // Nút Xuất CSV cả kỳ (yêu cầu chủ 06/10): chỉ Chủ + Quản lý, chỉ ở chế độ Kỳ.
   const canExportCsv = canViewRange;
 
@@ -686,7 +688,10 @@ export function DailyFairSettlementModal({
     setCsvNotice(null);
     try {
       const { toCsv, downloadCsv } = await import('@/lib/csv-export');
-      const base = `/api/reports/ho-guom-summary?warehouseId=${encodeURIComponent(currentWarehouseId)}&start=${encodeURIComponent(printStart)}&end=${encodeURIComponent(printEnd)}`;
+      // Lấy kho/từ-kỳ từ CHÍNH payload `data` đang hiển thị (không dùng state
+      // currentWarehouseId có thể vừa đổi khi người dùng chọn kho khác).
+      const whId = (data as any)?.warehouse?.id || currentWarehouseId;
+      const base = `/api/reports/ho-guom-summary?warehouseId=${encodeURIComponent(whId)}&start=${encodeURIComponent(printStart)}&end=${encodeURIComponent(printEnd)}`;
       const res = await fetch(base, { headers: { 'x-formapubli-role': currentRole } });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success || !json?.data) {
@@ -702,13 +707,15 @@ export function DailyFairSettlementModal({
         [`Tồn: ${s.stockNote || 'Tồn hiện tại lúc mở báo cáo'}`],
         [],
       ];
-      const fname = `ho-guom-${currentWarehouseId}-${s.range.start}_${s.range.end}`;
+      const fname = `ho-guom-${whId}-${s.range.start}_${s.range.end}`;
       const lines: any[] = s.lines || [];
+      const pause = () => new Promise((r) => setTimeout(r, 300)); // tránh trình duyệt bỏ file 2/3 khi tải liên tục
       downloadCsv(`${fname}-dau-sach.csv`, toCsv([
         ...head('TỔNG HỢP ĐẦU SÁCH'),
         ['STT', 'Mã', 'Tên sách', 'Giá bìa', 'SL bán (có thu tiền)', 'Doanh thu', 'SL tặng (kèm)', 'Tổng xuất (bán+tặng)', 'Tồn hiện tại', 'Hạng theo SL', 'Hạng theo doanh thu', 'Nhóm'],
         ...lines.map((l: any, i: number) => [i + 1, l.code, l.title, l.coverPrice, l.soldQty, l.soldRevenue, l.giftQty, l.totalOut, l.stockNow, l.rankQty, l.rankRevenue, l.group]),
       ]));
+      await pause();
       const days: any[] = s.days || [];
       const t = s.totals || {};
       downloadCsv(`${fname}-ngay.csv`, toCsv([
@@ -717,6 +724,7 @@ export function DailyFairSettlementModal({
         ...days.map((d: any) => [d.date, d.orders, d.sales]),
         ['TỔNG', t.orders, t.net],
       ]));
+      await pause();
       const gifts: any[] = s.giftsInScope?.items || [];
       downloadCsv(`${fname}-qua.csv`, toCsv([
         ...head('QUÀ TẶNG TRONG KỲ (theo kho)'),

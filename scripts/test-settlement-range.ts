@@ -34,7 +34,7 @@ const ok = (cond: boolean, msg: string) => { checks++; assert.ok(cond, msg); };
 
 const settleRoute = readSrc('src/app/api/pos/daily-settlement/route.ts');
 ok(/mode: 'range'/.test(settleRoute), 'API trả mode range');
-ok(settleRoute.includes("['ROLE_OWNER', 'ROLE_MANAGER']") || settleRoute.includes('[\'ROLE_OWNER\', \'ROLE_MANAGER\']'), 'Ky mo cho Chu + Quan ly (server chan vai tro khac)');
+ok(settleRoute.includes("['ROLE_OWNER', 'ROLE_MANAGER']"), 'Ky mo cho Chu + Quan ly (server chan vai tro khac)');
 ok(/inferCampaignRange/.test(settleRoute), 'API suy kỳ chiến dịch');
 ok(/campaign/.test(settleRoute), 'API có tham số campaign');
 ok(/\?date=/.test(settleRoute) || /searchParams\.get\('date'\)/.test(settleRoute), 'chế độ ngày cũ còn nguyên');

@@ -4,7 +4,10 @@
  */
 export function toCsv(rows: (string | number | null | undefined)[][]): string {
   const esc = (v: unknown) => {
-    const s = v == null ? '' : String(v);
+    let s = v == null ? '' : String(v);
+    // Chống CSV/formula injection: ô bắt đầu bằng = + - @ bị Excel chạy thành
+    // công thức → escape bằng dấu ' phía trước (mọi nơi Excel đều vô hiệu).
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
     return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   // BOM giúp Excel nhận UTF-8; \r\n là xuống dòng chuẩn CSV trên Windows.
