@@ -77,6 +77,7 @@ const ALL_SUITES = [
   'scripts/test-copilot-product-flow.ts',
   'scripts/test-copilot-topn-model.ts',
   'scripts/test-copilot-multistep.ts',
+  'scripts/test-copilot-tools5.ts',
   'scripts/test-product-flow.ts',
   'scripts/test-order-note-field.ts',
   'scripts/test-transfer-goods-repro.ts',
