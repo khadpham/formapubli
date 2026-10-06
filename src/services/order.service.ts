@@ -3,6 +3,7 @@ import { computeGifts, type PromotionCampaign } from '../lib/promotion-engine';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
+import { isCountedRevenue } from './shopee/revenue-guard';
 import { eq, and, or, isNotNull, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { isLeaseEnforcedRole, isLeaseEnforcementEnabled } from '../lib/auth-session';
@@ -2119,7 +2120,10 @@ return {
     const list = await this.getOrders({ ...filters, status: filters.status || 'COMPLETED' });
     // Bước 4: đơn SPONSORSHIP (final 0đ, rút từ quỹ) không phải doanh số bán —
     // loại khỏi tổng hợp trừ khi caller lọc channel tường minh.
-    const sales = filters.channel ? list : list.filter((o) => o.channel !== 'SPONSORSHIP');
+    // Đơn SHOPEE chưa giao (shipping != DELIVERED) cũng chưa phải doanh thu.
+    const sales = (filters.channel ? list : list.filter((o) => o.channel !== 'SPONSORSHIP')).filter(
+      (o) => isCountedRevenue(o)
+    );
 
     let totalOrders = sales.length;
     let totalSubtotal = 0;

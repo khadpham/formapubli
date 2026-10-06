@@ -15,6 +15,7 @@ import {
   idempotencyKeys,
 } from '../db';
 import { AppError } from './app-error';
+import { shopeeDeliveredOnly } from './shopee/revenue-guard';
 import { CashboxService, OrderService, businessDateOf, createdAtBetween, evaluateShiftCutoff, VN_UTC_OFFSET_MIN } from './order.service';
 import { isForbiddenWarehouseFamily } from './direct-transfer-policy';
 import { parseDbTimestamp } from '../lib/db-timestamp';
@@ -392,6 +393,7 @@ export class DailySettlementService {
     const orderConditions = [
       eq(orders.warehouseId, warehouseId),
       eq(orders.status, 'COMPLETED'),
+      shopeeDeliveredOnly(),
       vnDayEquals(orders.createdAt, targetDate),
     ];
 

@@ -266,6 +266,34 @@
       "when": 1790600013000,
       "tag": "0037_staff_allowed_warehouses",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": 7,
+      "when": 1790600014000,
+      "tag": "0038_shopee_shop_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": 7,
+      "when": 1790600015000,
+      "tag": "0039_shopee_item_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": 7,
+      "when": 1790600016000,
+      "tag": "0040_shopee_order_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": 7,
+      "when": 1790600017000,
+      "tag": "0041_shopee_settings_quarantine",
+      "breakpoints": true
     }
   ],
   "version": "7"

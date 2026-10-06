@@ -1,5 +1,25 @@
 # KẾ HOẠCH TRIỂN KHAI TÍCH HỢP SHOPEE — MASTER PLAN
 
+> **Trạng thái thực thi (cập nhật 04/10/2026, nhánh `feat/shopee-skeleton`):**
+> Task 1–9 ĐÃ CODE XONG + test mock xanh (9 suite, 3 vòng liên tiếp, `tsc` sạch).
+> Chưa merge `main`, chưa deploy. Còn đúng 1 cửa ải: sandbox (mục Open items).
+> Chi tiết từng task: xem bảng bên dưới.
+
+| Task | Nội dung | Commit | Suite kiểm chứng |
+|---|---|---|---|
+| 1 | Bảng token + ký HMAC | `3210e5e` | `test-shopee-auth-foundation` 6/6 (vector .NET độc lập) |
+| 2 | OAuth callback + refresh 1 lần | `d8894b5` | `test-shopee-oauth-refresh` 8/8 (mock mạng) |
+| 3 | Kéo đơn + trừ kho Âu Cơ + cách ly SKU lạ | `3adcbf8` | `test-shopee-order-pull` 16/16 |
+| 4 | Vá báo cáo: chỉ tính khi DELIVERED (+hồi quy 8 suite cũ xanh) | `588d608` | `test-shopee-revenue-guard` 5/5 |
+| 5 | Giao hàng + vận đơn A6 + lưu carrier | `d6ad2f6` | `test-shopee-shipment` 9/9 |
+| 6 | Đẩy tồn trừ buffer + bảng map item | `f0885e1` | `test-shopee-stock-push` 6/6 |
+| 7 | Webhook + hủy đơn hoàn kho | `7894bc6` | `test-shopee-webhook` 12/12 |
+| 8 | Đối soát escrow + lãi ròng | `186084d` | `test-shopee-escrow` 10/10 |
+| 9 | Công tắc COD (mặc định tắt) | `630cf91` | `test-shopee-cod-flag` 6/6 |
+| — | Suite chạy lại trên DB bẩn (id duy nhất + assert chênh lệch) | `21f9a7b` | 9/9 × 3 vòng |
+| UI | Nhãn Shopee + nhóm Online; panel Cài Đặt ẩn theo cờ server; config runtime (kho/COD); hàng đợi + đơn lỗi; 4 API (status/auth-url/queue/ship/config) | `7cac3a6` | `test-shopee-shop-config` 6/6, `test-shopee-ui-hidden` 10/10 |
+| Tab+Role | Tab Shopee riêng + `ROLE_SHOPEE_OPS` (hiện picker, PIN dev 6789); phạm vi kho nhiều-kho do quản lý cấp, ép ở server; route AWB; panel gọn còn cấu hình Chủ | `f307907` | `test-shopee-tab-scope` 15/15, 12 suite Shopee xanh, `tsc` + `build` sạch |
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Kéo đơn Shopee về FORMApubli, trừ kho Âu Cơ, in vận đơn, đối soát phí sàn vào tab Chủ — toàn bộ tự vận hành, không thuê OMS ngoài.
@@ -214,9 +234,9 @@ flowchart LR
 3. **Type consistency:** `generateShopeeSign`, `TursoTokenStorage`, `pullShopeeOrders`, `shipShopeeOrder`, `pushStockToShopee`, `syncEscrow` — tên thống nhất toàn plan.
 4. **Review Focus:** 5 dòng đều có test sở hữu (Task 4, 3, 7, 2, 6).
 
-## Open items (ngoài code, chờ bên ngoài)
+## Open items (ngoài code, chờ bên ngoài — CẬP NHẬT 04/10: vẫn treo cả 4)
 
-- Tài khoản dev + sandbox + `partner_id/key` (chờ nhân viên Shopee).
-- `item_id`/`model_id` của 55 listing (lấy trên Seller Center, cấm bịa).
-- `category_id`/`attribute_id` thật nếu sau này dùng `add_item` (hiện chưa cần — đăng tay xong rồi).
-- Webhook code 3 "365 ngày" đối chiếu console khi cấu hình push.
+1. **Tài khoản dev + sandbox + `partner_id/key`** (chờ nhân viên Shopee). Có là chạy Task "nghiệm thu tầng 3": 1 đơn sandbox đi hết luồng kéo→trừ kho→ship→delivered→escrow.
+2. **`item_id`/`model_id` của 55 listing** (lấy trên Seller Center, cấm bịa) → nhập vào bảng `shopee_item_map`, code đã sẵn sàng đọc.
+3. **`category_id`/`attribute_id` thật** nếu sau này dùng `add_item` (hiện chưa cần — đăng tay xong rồi).
+4. **Webhook code 3 "365 ngày"** đối chiếu console khi cấu hình push + bấm Verify URL trỏ về `/api/shopee/push`.

@@ -16,6 +16,7 @@ import {
   X,
   FlaskConical,
   Sparkles,
+  ShoppingBag,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -146,6 +147,13 @@ export function AppSidebar({
       icon: Receipt,
       shortcut: 'Alt+4',
       color: 'text-sky-600',
+    },
+    {
+      id: 'shopee',
+      label: 'Shopee',
+      icon: ShoppingBag,
+      shortcut: 'Alt+9',
+      color: 'text-orange-600',
     },
     {
       id: 'partners',

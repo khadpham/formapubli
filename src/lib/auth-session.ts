@@ -475,6 +475,13 @@ export const DEFAULT_STAFF_ACCOUNTS: StaffSeedData[] = [
     passcode: '7890',
     salt: 'salt_thue_01',
   },
+  {
+    staffId: 'SHP-01',
+    fullName: 'Nhân viên Shopee',
+    role: 'ROLE_SHOPEE_OPS',
+    passcode: '6789',
+    salt: 'salt_shp_01',
+  },
 ];
 
 /**
@@ -487,6 +494,7 @@ const DEFAULT_DEV_PASSCODES: Record<UserRole, string> = {
   ROLE_CASHIER: '1234',        // Thu ngân quầy
   ROLE_WAREHOUSE: '5678',      // Thủ kho
   ROLE_TAX: '7890',            // Kế toán thuế
+  ROLE_SHOPEE_OPS: '6789',     // Nhân viên Shopee (PIN dev, đổi trước go-live)
 };
 
 

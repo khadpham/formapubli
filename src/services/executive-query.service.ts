@@ -2,6 +2,7 @@ import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, s
 import { ForecastService, RunoutLevel } from './forecast.service';
 import { OrderService, createdAtBetween } from './order.service';
 import { InventoryService } from './inventory.service';
+import { shopeeDeliveredOnly } from './shopee/revenue-guard';
 import { removeAccents } from '@/lib/vietnamese';
 import { eq, desc, sql, and, inArray, ne, or } from 'drizzle-orm';
 
@@ -685,6 +686,7 @@ export class ExecutiveQueryService {
       .where(
         and(
           eq(orders.status, 'COMPLETED'),
+          shopeeDeliveredOnly(),
           sql`datetime(${orders.createdAt}) >= datetime(${cutoff})`,
           sql`${orders.discountRate} < 1`,
           sql`${orders.channel} != 'SPONSORSHIP'`,
@@ -870,6 +872,7 @@ export class ExecutiveQueryService {
     // totalOrders (va lech tien neu don do co doanh thu).
     const breakdownConds = [
       eq(orders.status, 'COMPLETED'),
+      shopeeDeliveredOnly(),
       // Dùng CHUNG helper ngày với getSalesSummary (chuẩn hoá qua datetime())
       // thay vì so chuỗi thô — nếu không, breakdown lệch tổng summary khi cột
       // có timestamp họ 'YYYY-MM-DD HH:MM:SS'.

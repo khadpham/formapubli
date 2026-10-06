@@ -3,7 +3,8 @@ export type UserRole =
   | 'ROLE_MANAGER' 
   | 'ROLE_CASHIER' 
   | 'ROLE_WAREHOUSE' 
-  | 'ROLE_TAX';
+  | 'ROLE_TAX'
+  | 'ROLE_SHOPEE_OPS';
 
 export interface RoleConfig {
   id: UserRole;
@@ -27,7 +28,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-purple-700 border-purple-300',
     badgeBg: 'bg-purple-50',
     description: 'Toàn quyền điều hành, xem Báo cáo Quản trị Thực tế Toàn cảnh và Sổ Kép',
-    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'partners', 'customers', 'settings', 'studio'],
+    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'shopee', 'partners', 'customers', 'settings', 'studio'],
   },
   ROLE_MANAGER: {
     id: 'ROLE_MANAGER',
@@ -35,7 +36,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-blue-700 border-blue-300',
     badgeBg: 'bg-blue-50',
     description: 'Điều phối bán hàng, duyệt chuyển kho, áp chiết khấu cho phép',
-    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'partners', 'customers', 'settings', 'studio'],
+    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'shopee', 'partners', 'customers', 'settings', 'studio'],
   },
   ROLE_CASHIER: {
     id: 'ROLE_CASHIER',
@@ -60,6 +61,14 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeBg: 'bg-rose-50',
     description: 'Chỉ xem số liệu Hóa đơn điện tử VAT chính thức (OFFICIAL_TAX), cách ly dữ liệu nội bộ',
     allowedNavItems: ['sales', 'inventory', 'settings'],
+  },
+  ROLE_SHOPEE_OPS: {
+    id: 'ROLE_SHOPEE_OPS',
+    label: 'Nhân viên Shopee',
+    badgeColor: 'text-orange-700 border-orange-300',
+    badgeBg: 'bg-orange-50',
+    description: 'Vận hành đơn Shopee trong kho được cấp, không thấy doanh thu tổng',
+    allowedNavItems: ['shopee', 'settings'],
   },
 };
 

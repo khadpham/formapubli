@@ -13,7 +13,8 @@ export type ErrorCode =
   | 'IDEMPOTENCY_CONFLICT'
   | 'OVER_RETURN_LIMIT'
   | 'RATE_LIMITED'
-  | 'INTERNAL_ERROR';
+  | 'INTERNAL_ERROR'
+  | 'SHOPEE_AUTH_EXPIRED';
 
 export class AppError extends Error {
   code: ErrorCode;

@@ -193,6 +193,30 @@ const ALL_SUITES = [
   // `test-analytics-doanhso` theo yêu cầu brief để không mở cửa sổ dữ liệu lệch.
   'scripts/test-top-gifts-locked.ts',
   'scripts/test-analytics-doanhso.ts',
+  // Shopee skeleton (Task 1): chỉ đụng bảng mới shopee_shop_tokens + hàm thuần
+  // ký HMAC — không chạm dữ liệu chung nên đứng cuối an toàn.
+  'scripts/test-shopee-auth-foundation.ts',
+  // Shopee Task 2: mock mạng 100%, chỉ đụng bảng shopee_shop_tokens.
+  'scripts/test-shopee-oauth-refresh.ts',
+  // Shopee Task 3: chỉ đụng kho wh-au-co + đơn mới kênh SHOPEE trong DB test.
+  'scripts/test-shopee-order-pull.ts',
+  // Shopee Task 4: seed 3 đơn guard, chỉ đọc — an toàn cuối chuỗi.
+  'scripts/test-shopee-revenue-guard.ts',
+  // Shopee Task 5: mock logistics, seed 1 đơn SHIP trong DB test.
+  'scripts/test-shopee-shipment.ts',
+  // Shopee Task 6: mock update_stock, seed 1 dòng map trong DB test.
+  'scripts/test-shopee-stock-push.ts',
+  // Shopee Task 7: push đơn/hủy/tracking qua fake, seed token + 1 đơn.
+  'scripts/test-shopee-webhook.ts',
+  // Shopee Task 8: mock escrow, seed 1 đơn DELIVERED + giá vốn trong DB test.
+  'scripts/test-shopee-escrow.ts',
+  // Shopee Task 9: công tắc COD (mặc định tắt).
+  'scripts/test-shopee-cod-flag.ts',
+  // Shopee UI ẩn: config runtime + cờ server (không đụng DB chung ngoài bảng settings).
+  'scripts/test-shopee-shop-config.ts',
+  'scripts/test-shopee-ui-hidden.ts',
+  // Shopee tab riêng + role Nhân viên Shopee + phạm vi kho nhiều-kho.
+  'scripts/test-shopee-tab-scope.ts',
 ];
 
 /**

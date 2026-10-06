@@ -862,3 +862,54 @@ export const dailyOrderCounters = sqliteTable('daily_order_counters', {
   lastSeq: integer('last_seq').notNull().default(0),
 });
 
+
+export const shopeeShopTokens = sqliteTable('shopee_shop_tokens', {
+  shopId: integer('shop_id').primaryKey(),
+  shopName: text('shop_name'),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  expiredAt: integer('expired_at').notNull(),
+  refreshExpiredAt: integer('refresh_expired_at').notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const shopeeItemMap = sqliteTable('shopee_item_map', {
+  shopId: integer('shop_id').notNull(),
+  editionId: text('edition_id').notNull(),
+  itemId: integer('item_id').notNull(),
+  modelId: integer('model_id').notNull().default(0),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.shopId, table.editionId] }),
+}));
+
+export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
+  orderSn: text('order_sn').primaryKey(),
+  buyerTotal: real('buyer_total').notNull().default(0),
+  escrowAmount: real('escrow_amount').notNull().default(0),
+  commissionFee: real('commission_fee').notNull().default(0),
+  transactionFee: real('transaction_fee').notNull().default(0),
+  serviceFee: real('service_fee').notNull().default(0),
+  sellerDiscount: real('seller_discount').notNull().default(0),
+  shopeeDiscount: real('shopee_discount').notNull().default(0),
+  cogs: real('cogs'),
+  netProfit: real('net_profit'),
+  syncedAt: text('synced_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const shopeeSettings = sqliteTable('shopee_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const shopeeQuarantine = sqliteTable('shopee_quarantine', {
+  id: text('id').primaryKey(),
+  orderSn: text('order_sn').notNull(),
+  sku: text('sku').notNull().default(''),
+  reason: text('reason').notNull(),
+  resolved: integer('resolved').notNull().default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  unresolvedIdx: index('idx_quarantine_unresolved').on(table.resolved, table.createdAt),
+}));

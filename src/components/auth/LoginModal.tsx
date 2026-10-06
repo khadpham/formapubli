@@ -17,7 +17,7 @@ interface AccountTile {
   role: UserRole;
 }
 
-const ROLE_ORDER: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
+const ROLE_ORDER: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX', 'ROLE_SHOPEE_OPS'];
 
 // Vai trò ẩn khỏi màn hình chạm-chọn (vẫn đăng nhập được bằng nhập tay nếu cần).
 // Thủ kho + Kế toán thuế không dùng ở quầy hội chợ.
