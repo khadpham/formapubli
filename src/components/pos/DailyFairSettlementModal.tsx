@@ -666,6 +666,72 @@ export function DailyFairSettlementModal({
   const isRangeData = (data as any)?.mode === 'range';
   const printStart = (data as any)?.reportStartDate || '';
   const printEnd = (data as any)?.reportEndDate || '';
+  const [csvNotice, setCsvNotice] = useState<string | null>(null);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  // Nút Xuất CSV cả kỳ (yêu cầu chủ 06/10): chỉ Chủ + Quản lý, chỉ ở chế độ Kỳ.
+  const canExportCsv = canViewRange;
+
+  /** Xuất 3 file CSV đúng phạm vi Kỳ đang xem (kho + từ→đến / Cả chiến dịch). */
+  const handleExportCsv = async () => {
+    if (isLoading || isExportingCsv) return;
+    if (!canExportCsv) {
+      setCsvNotice('Bạn không có quyền xuất CSV báo cáo kỳ.');
+      return;
+    }
+    if (!isRangeData || !printStart || !printEnd) {
+      setCsvNotice('Chuyển sang chế độ Kỳ và chọn đủ từ ngày đến ngày rồi hãy xuất CSV.');
+      return;
+    }
+    setIsExportingCsv(true);
+    setCsvNotice(null);
+    try {
+      const { toCsv, downloadCsv } = await import('@/lib/csv-export');
+      const base = `/api/reports/ho-guom-summary?warehouseId=${encodeURIComponent(currentWarehouseId)}&start=${encodeURIComponent(printStart)}&end=${encodeURIComponent(printEnd)}`;
+      const res = await fetch(base, { headers: { 'x-formapubli-role': currentRole } });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success || !json?.data) {
+        setCsvNotice(json?.error || `Không xuất được CSV (${res.status}). Bấm tải lại rồi thử lại.`);
+        return;
+      }
+      const s = json.data;
+      const whName = s.warehouse?.name || activeWarehouseName;
+      const vnNow = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }).format(new Date());
+      const head = (title: string) => [
+        ['FORMApubli', title],
+        [`Kho: ${whName}`, `Kỳ: ${s.range.start} → ${s.range.end}`, `Xuất lúc: ${vnNow} (giờ VN)`],
+        [`Tồn: ${s.stockNote || 'Tồn hiện tại lúc mở báo cáo'}`],
+        [],
+      ];
+      const fname = `ho-guom-${currentWarehouseId}-${s.range.start}_${s.range.end}`;
+      const lines: any[] = s.lines || [];
+      downloadCsv(`${fname}-dau-sach.csv`, toCsv([
+        ...head('TỔNG HỢP ĐẦU SÁCH'),
+        ['STT', 'Mã', 'Tên sách', 'Giá bìa', 'SL bán (có thu tiền)', 'Doanh thu', 'SL tặng (kèm)', 'Tổng xuất (bán+tặng)', 'Tồn hiện tại', 'Hạng theo SL', 'Hạng theo doanh thu', 'Nhóm'],
+        ...lines.map((l: any, i: number) => [i + 1, l.code, l.title, l.coverPrice, l.soldQty, l.soldRevenue, l.giftQty, l.totalOut, l.stockNow, l.rankQty, l.rankRevenue, l.group]),
+      ]));
+      const days: any[] = s.days || [];
+      const t = s.totals || {};
+      downloadCsv(`${fname}-ngay.csv`, toCsv([
+        ...head('DOANH THU THEO NGÀY'),
+        ['Ngày', 'Số đơn', 'Doanh thu (thuần)'],
+        ...days.map((d: any) => [d.date, d.orders, d.sales]),
+        ['TỔNG', t.orders, t.net],
+      ]));
+      const gifts: any[] = s.giftsInScope?.items || [];
+      downloadCsv(`${fname}-qua.csv`, toCsv([
+        ...head('QUÀ TẶNG TRONG KỲ (theo kho)'),
+        ['Mã quà', 'Tên quà', 'Số lượng đã phát'],
+        ...gifts.map((g: any) => [g.code, g.title, g.copies]),
+        ['TỔNG', '', s.giftsInScope?.total || 0],
+      ]));
+      setCsvNotice(`Đã xuất 3 file CSV (${lines.length} đầu sách, kỳ ${s.range.start}→${s.range.end}).`);
+    } catch {
+      setCsvNotice('Mất kết nối khi xuất CSV. Thử lại.');
+    } finally {
+      setIsExportingCsv(false);
+    }
+  };
+
   /** Nhãn ngày gọn cho dải kỳ trên bản in (YYYY-MM-DD → DD/MM). */
   const ddmm = (iso: string) => {
     const s = String(iso || '');
@@ -985,6 +1051,26 @@ export function DailyFairSettlementModal({
               title="Tắt thông báo"
               aria-label="Tắt thông báo chặn in"
               className="shrink-0 px-2 py-0.5 rounded-lg border border-amber-400 bg-white text-amber-800 text-[11px] font-bold hover:bg-amber-100 cursor-pointer"
+            >
+              Tắt
+            </button>
+          </div>
+        )}
+
+        {/* Báo kết quả xuất CSV (dấu hiệu bấm rõ: đã xuất gì, kỳ nào). */}
+        {csvNotice && (
+          <div
+            role="status"
+            className="no-print shrink-0 flex items-start gap-2 px-3 sm:px-6 py-2 bg-sky-50 border-b border-sky-300"
+          >
+            <ArrowDown className="w-4 h-4 shrink-0 mt-0.5 text-sky-600" />
+            <p className="text-xs font-bold text-sky-900 flex-1">{csvNotice}</p>
+            <button
+              type="button"
+              onClick={() => setCsvNotice(null)}
+              title="Tắt thông báo"
+              aria-label="Tắt thông báo xuất CSV"
+              className="shrink-0 px-2 py-0.5 rounded-lg border border-sky-400 bg-white text-sky-800 text-[11px] font-bold hover:bg-sky-100 cursor-pointer"
             >
               Tắt
             </button>
@@ -1653,6 +1739,18 @@ export function DailyFairSettlementModal({
           </button>
 
           <div className="flex items-center gap-2">
+            {canExportCsv && isRangeData && (
+              <button
+                onClick={handleExportCsv}
+                disabled={isLoading || isExportingCsv || !data}
+                aria-label="Xuất CSV báo cáo cả kỳ"
+                title={isRangeData && printStart && printEnd ? `Xuất 3 file CSV kỳ ${printStart}→${printEnd}` : 'Xuất 3 file CSV kỳ đang xem'}
+                className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+              >
+                <ArrowDown className="w-4 h-4" />
+                <span>{isExportingCsv ? 'Đang xuất…' : 'Xuất CSV'}</span>
+              </button>
+            )}
             <button
               onClick={handlePrint}
               disabled={isLoading || !data}
