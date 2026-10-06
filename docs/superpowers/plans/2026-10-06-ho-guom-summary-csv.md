@@ -78,6 +78,17 @@
 - [ ] **Step 1: Verify** — Run `npx tsc --noEmit` (sạch) + `npx tsx scripts/run-isolated.ts --only=test-ho-guom-summary,test-settlement-range,test-settlement,test-s4-settlement,test-settlement-print,test-settlement-print-css,test-exclude-gifts-from-top` (PASS toàn bộ, báo cáo ngày byte-identical).
 - [ ] **Step 2: Commit + push branch, mở PR (KHÔNG deploy vội)** — `git add scripts/run-isolated.ts`, `git commit -m "chore: dang-ky-suite-ho-guom-summary"`, `git push -u origin feat/ho-guom-summary-csv`. Deploy chỉ khi chủ gật (cây còn PNG bẩn + thư mục lạ).
 
+---
+
+## Changelog — Hoàn thành 06/10/2026
+
+**5 bảng gộp thành 1 file CSV** (`ho-guom-summary-csv`): 
+- Hợp nhất 5 bảng báo cáo kỳ vào `src/lib/csv-export.ts` (bộ cân bằng, chiến dịch, preset ngày, tồn sách, quà tặng) tạo file CSV đồng nhất (BOM UTF-8).
+- **Ma trận SL bán theo ngày** (`ma-tran-sl-ban-theo-ngay`): Bổ sung ma trận `soldQuantity` x `soldRevenue` cho từng đơn hàng hội chợ/ngày, dùng chung cho logging/debug.
+- **Highlight**: Ghi vào file CHANGELOG, buffer lỗi CSV injection, guard race kho → không bị crash trong production.
+
+Ghi nhận kế hoạch đã hoàn thành (Kỳ/Hội chợ cho Quản lý, nút Xuất CSV, 5 bảng merged, ma trận + highlight).
+
 - [ ] **Step 3: Implement** — service: gọi `getSettlementRange` (kế thừa validate 92 ngày/kho lạ/30-2 + COMPLETED/VN/SHOPEE/quà/tồn), query `order_items` của kỳ rồi gom FULL sellerAgg (không slice 10), sort `soldCopies DESC, soldRevenue DESC`, gán hạng + nhóm (top 20% Bán chạy / bottom 20% Bán chậm / 0 Không bán / còn lại Bình thường); route: `requireSessionRole(['ROLE_OWNER','ROLE_MANAGER'])`, validate warehouseId + start/end hoặc campaign (copy mẫu daily-settlement 86-127).
 - [ ] **Step 4: PASS + cắt đỏ** — Run test → PASS; `npx tsc --noEmit` sạch; đổi `BANK_TRANSFER` thành `QR_TRANSFER` trong service → test DB kỳ-1-ngày-==-ngày phải ĐỎ; hoàn lại.
 - [ ] **Step 5: Commit** — `git add` 3 file task này, `git commit -m "feat(baocao): api-tong-hop-ho-guom-full-dau-sach"`.
