@@ -1,4 +1,5 @@
-import { db, shopeeSettings } from '@/db';
+import { db, shopeeSettings, orders } from '@/db';
+import { eq } from 'drizzle-orm';
 import { AppError } from '../app-error';
 import type { UserRole } from '@/lib/roles';
 
@@ -84,6 +85,21 @@ export async function setShopeeOpsWarehouses(
     .values({ key: 'ops_warehouse_ids', value })
     .onConflictDoUpdate({ target: shopeeSettings.key, set: { value } });
   return getShopeeOpsWarehouses();
+}
+
+/**
+ * Đơn có nằm trong phạm vi của role không. Chủ/quản lý/kho chung: luôn đúng;
+ * nhân viên Shopee: kho của đơn phải thuộc danh sách được cấp.
+ */
+export async function isShopeeOrderInScope(orderSn: string, actorRole: UserRole): Promise<boolean> {
+  if (actorRole !== 'ROLE_SHOPEE_OPS') return true;
+  const found = await db
+    .select({ warehouseId: orders.warehouseId })
+    .from(orders)
+    .where(eq(orders.idempotencyKey, `shopee-${orderSn}`))
+    .limit(1);
+  if (found.length === 0) return false;
+  return (await getShopeeOpsWarehouses()).includes(found[0].warehouseId);
 }
 
 

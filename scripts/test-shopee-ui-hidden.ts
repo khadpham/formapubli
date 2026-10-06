@@ -45,11 +45,12 @@ function main() {
   eq2('tab Shopee gắn cờ showShopee', settings.includes('showShopee && canSeeShopee'), true);
   eq2('cờ đọc từ API status', settings.includes('/api/shopee/status'), true);
 
-  // 3. Panel tự ẩn + phân quyền.
+  // 3. Panel tự ẩn + phân quyền (vận hành đã chuyển sang tab Shopee).
   const panel = src('src/components/settings/ShopeePanel.tsx');
   eq2('panel null khi cờ tắt', panel.includes('if (!status?.uiEnabled) return null'), true);
   eq2('cấu hình chỉ chủ thấy', panel.includes('isOwner &&'), true);
-  eq2('nút giao hàng có nhãn thao tác rõ', panel.includes('Giao đơn Shopee'), true);
+  const tab = src('src/components/shopee/ShopeeTab.tsx');
+  eq2('nút giao hàng có nhãn thao tác rõ', tab.includes('Giao đơn Shopee'), true);
 
   // 4. API status không rò secret.
   const statusRoute = src('src/app/api/shopee/status/route.ts');

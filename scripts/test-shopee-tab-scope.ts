@@ -5,6 +5,8 @@
  * hoặc: npx tsx scripts/run-isolated.ts --only=test-shopee-tab-scope
  */
 import { assertIsolatedTestDb } from './test-guard';
+import fs from 'node:fs';
+import path from 'node:path';
 import { USER_ROLES, getDefaultTabForRole } from '../src/lib/roles';
 import { AppError } from '../src/services/app-error';
 import {
@@ -80,6 +82,19 @@ async function main() {
     JSON.stringify(['wh-a', 'wh-b'])
   );
   await setShopeeConfig({ warehouseId: '', codEnabled: false }, 'ROLE_OWNER');
+
+  // View tab: nút Giao ẩn khi cờ tắt, đủ khối lỗi + link chờ tab Chủ.
+  const tab = fs.readFileSync(path.resolve(process.cwd(), 'src/components/shopee/ShopeeTab.tsx'), 'utf8');
+  eq2('tab đọc cờ server', tab.includes('/api/shopee/status'), true);
+  eq2('nút giao có nhãn thao tác rõ', tab.includes('Giao đơn Shopee'), true);
+  eq2('có khối đơn lỗi', tab.includes('Đơn Lỗi'), true);
+  eq2('thẻ doanh thu link chờ tab Chủ', tab.includes('tab Chủ'), true);
+  const awbPath = path.resolve(process.cwd(), 'src/app/api/shopee/awb/route.ts');
+  eq2(
+    'route in vận đơn dùng service có sẵn',
+    fs.existsSync(awbPath) && fs.readFileSync(awbPath, 'utf8').includes('getAwbPdf'),
+    true
+  );
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {

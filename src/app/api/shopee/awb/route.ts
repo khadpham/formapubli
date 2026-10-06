@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
-import { shipShopeeOrder } from '@/services/shopee/shipment';
+import { getAwbPdf } from '@/services/shopee/shipment';
 import { getShopeeConfig, isShopeeOrderInScope } from '@/services/shopee/shop-config';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/shopee/ship { orderSn } — thủ kho bấm giao + lấy tracking.
- * Role và trạng thái chặn trong service; route chỉ bóc session.
+ * GET /api/shopee/awb?orderSn=... — PDF vận đơn A6.
+ * Cùng allowlist + chặn phạm vi kho như /api/shopee/ship.
  */
-export async function POST(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, [
       'ROLE_OWNER',
@@ -19,8 +19,7 @@ export async function POST(req: NextRequest) {
       'ROLE_WAREHOUSE',
       'ROLE_SHOPEE_OPS',
     ] as UserRole[]);
-    const body = (await req.json().catch(() => ({}))) as { orderSn?: string };
-    const orderSn = `${body.orderSn || ''}`.trim();
+    const orderSn = `${new URL(req.url).searchParams.get('orderSn') || ''}`.trim();
     if (!orderSn) {
       return NextResponse.json({ success: false, error: 'Thiếu mã đơn Shopee.' }, { status: 400 });
     }
@@ -33,7 +32,7 @@ export async function POST(req: NextRequest) {
       `${process.env.SHOPEE_BASE_URL || 'https://partner.shopeemobile.com'}`.replace(/\/$/, '');
     const shopId = Number(process.env.SHOPEE_SHOP_ID || '0') || 0;
     const shopCfg = await getShopeeConfig();
-    const out = await shipShopeeOrder(
+    const pdf = await getAwbPdf(
       {
         shopId,
         partnerId,
@@ -42,11 +41,14 @@ export async function POST(req: NextRequest) {
         warehouseId: shopCfg.warehouseId,
         codEnabled: shopCfg.codEnabled,
       },
-      orderSn,
-      session.role,
-      session.actorId
+      orderSn
     );
-    return NextResponse.json({ success: true, data: out });
+    return new NextResponse(new Uint8Array(pdf), {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="shopee-${orderSn}.pdf"`,
+      },
+    });
   } catch (error) {
     return handleApiError(error);
   }
