@@ -30,6 +30,11 @@ DANH SÁCH CÔNG CỤ ĐƯỢC PHÉP DÙNG:
 5. query_catalog(q?): Tra cứu DANH MỤC — sách của 1 tác giả, tựa bắt đầu bằng chữ X, top tác giả/sách bán chạy, liệt kê. Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
  6. query_product_flow(q?): NHIP BAN 1 MON — gio vang, ngay dinh, tong cuon/tien/don trong N ngay. Dung khi cau hoi nhac 1 mon CU THE kem gio/thoi diem (vd "gio vang cuon X?"). Luon truyen nguyen van cau hoi vao "q" de server tu phan giai mon.
 8. query_sales_lines(from?, to?, warehouseId?): MON BAN trong khung gio/ngay tuy y.
+9. query_shift_split(q?): SANG (<12h) vs CHIEU (>=12h) — "sang hay chieu manh hon".
+10. query_period_compare(windowDays?): SO 2 KY (ky nay vs ky truoc cung do dai) — "tang bao nhieu % so voi thang truoc".
+11. query_transfer_history(q?): LUAN CHUYEN KHO — phieu nao, kho nao sang kho nao, hao hut.
+12. query_gift_return(q?): QUA + TRA HANG — qua da xuat, phieu tra/hoan tien.
+13. query_order_lookup(q?): TRA 1 DON theo ma (ORD-.../CPM...).
 7. prepare_sale_draft(q?): LÊN ĐƠN NHÁP từ ngôn ngữ tự nhiên (mã/tên sách + số lượng + khách). CHỈ tạo nháp đổ vào giỏ POS — TUYỆT ĐỐI không tạo đơn hoàn tất, không trừ kho, không áp chiết khấu. Người dùng tự bấm Thanh toán ở POS.
 `;
 
@@ -43,6 +48,11 @@ export const ToolCallSchema = z.object({
     'query_product_flow',
     'query_sales_lines',
     'prepare_sale_draft',
+    'query_shift_split',
+    'query_period_compare',
+    'query_transfer_history',
+    'query_gift_return',
+    'query_order_lookup',
   ]),
   args: z.record(z.any()).default({}),
 });
@@ -115,6 +125,10 @@ const WAREHOUSE_TOOLS = new Set([
   'query_product_flow',
   'query_sales_summary',
   'query_sales_lines',
+  'query_shift_split',
+  'query_period_compare',
+  'query_transfer_history',
+  'query_gift_return',
 ]);
 
 /** Tool duy trì ngày-tháng: executeToolSafely suy ngày từ `args.q` (câu hỏi gốc). */
@@ -124,6 +138,10 @@ const DATE_TOOLS = new Set([
   'query_sales_lines',
   'query_product_flow',
   'query_cashbox_reconciliation',
+  'query_shift_split',
+  'query_period_compare',
+  'query_transfer_history',
+  'query_gift_return',
 ]);
 
 export class CopilotGuardrails {
@@ -193,7 +211,7 @@ export class CopilotGuardrails {
     // thì cho luật nội bộ quyết định — LLM không được đòi sếp nói lại.
     const nNorm = removeAccents(question.toLowerCase());
     const needsData =
-      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho/.test(
+      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho|sang hay chieu|buoi sang|buoi chieu|thang truoc|tuan truoc|ky truoc|tang bao nhieu|so voi|luan chuyen|phieu chuyen|hao hut|tra hang|hoan tien|qua da xuat|ma don|tra don/.test(
         nNorm
       );
     // Luật thắng cả khi planner TRẢ LỜI TRỰC TIẾP lẫn khi TỪ CHỐI câu cần dữ
@@ -342,10 +360,25 @@ export class CopilotGuardrails {
     const isDraftIter = qNorm.includes('nhap');
     const hitOrder = ORDER_CONTIG.some((p) => qNorm.includes(p));
     const hitNonOrder = NON_ORDER_CONTIG.some((p) => qNorm.includes(p));
+    // Câu HỎI tra cứu ("có bao nhiêu đơn hoàn tiền?", "kho nào bị trừ sai?")
+    // chứa từ hỏi thì KHÔNG phải lệnh ghi — cho qua để tool tra số liệu
+    // (đã dính: hỏi "hoàn tiền" bị từ chối cứng). Lệnh thật ("hoàn tiền cho
+    // khách", "huỷ đơn X") không có từ hỏi nên vẫn bị chặn.
+    const isQuestion = /(bao nhieu|liet ke|danh sach|thong ke|so sanh|don nao|cuon nao|kho nao|bao cao|tra cuu|kiem tra|xem|may|co bao nhieu)/.test(qNorm);
+    if (SQL_RE.test(qLower)) {
+      if (tracker) tracker.planner = 'nội bộ';
+      return {
+        action: 'REFUSE_OUT_OF_SCOPE',
+        directAnswer:
+          'Tôi là Executive Copilot v1 (chỉ đọc). Tôi không có thẩm quyền thực hiện các thao tác sửa đổi dữ liệu, xuất tiền hay hủy đơn.',
+        reason: 'Mutation or destructive request detected.',
+      };
+    }
     if (
-      SQL_RE.test(qLower) || hitNonOrder ||
-      (hitOrder && !isDraftIter) ||
-      (hasVerb && hasNoun && !(isDraftIter && !hitNonOrder))
+      !isQuestion &&
+      (hitNonOrder ||
+        (hitOrder && !isDraftIter) ||
+        (hasVerb && hasNoun && !(isDraftIter && !hitNonOrder)))
     ) {
       if (tracker) tracker.planner = 'nội bộ';
       return {
@@ -396,6 +429,16 @@ NEU CAU HOI TOP-N ("top 7 sach ban chay", "10 cuon ban nhieu nhat"): goi query_c
 args {"q": "<nguyen van>", "topEditionsBySales": true, "limit": <so trong cau hoi, mac dinh 10>}.
 NEU CAU HOI NHAC 1 MON CU THE KEM GIO/THOI DIEM (gio vang, gio nao ban, ban luc may gio): nhat thiet goi query_product_flow voi
 args {"q": "<nguyen van cau hoi>"} de tra gio vang + ngay dinh.
+NEU CAU HOI SANG VS CHIEU ("sang hay chieu manh hon", "buoi sang ban duoc hon buoi chieu"): goi query_shift_split voi
+args {"q": "<nguyen van cau hoi>"}.
+NEU CAU HOI SO 2 KY ("tang bao nhieu % so voi thang truoc", "thang nay so voi thang truoc", "tuan nay hon tuan truoc"): goi query_period_compare voi
+args {"windowDays": <so ngay trong cau hoi: thang=30, tuan=7, mac dinh 30>}.
+NEU CAU HOI LUAN CHUYEN KHO ("chuyen kho", "phieu chuyen", "kho nao sang kho nao", "hao hut", "mat hang tren duong"): goi query_transfer_history voi
+args {"q": "<nguyen van cau hoi>"}.
+NEU CAU HOI QUA/TRA HANG ("qua da xuat", "tang bao nhieu qua", "tra hang", "hoan tien", "khach tra"): goi query_gift_return voi
+args {"q": "<nguyen van cau hoi>"}.
+NEU CAU HOI 1 DON CU THE THEO MA (co cum dang ORD-.../CPM.../ma don, hoac "don <ma>"): goi query_order_lookup voi
+args {"q": "<nguyen van cau hoi>"}.
 NEU CAU HOI MUON LEN DON / DAT SACH (len don, tao don nhap, lay N cuon, ban cho khach,
 dat mua, xuat don, gop don, them vao gio): nhat thiet goi prepare_sale_draft voi
 args {"q": "<nguyen van cau hoi>"}. KHONG bao gio tu tao don hoan tat.
@@ -535,6 +578,26 @@ Trả về JSON chuẩn khớp schema:
    * Bóc ngày VN cụ thể từ câu hỏi ("ngày 4/10", "hôm qua", "hôm nay").
    * "ngày 4/10" lấy năm VN hiện tại. null = không nhắc ngày cụ thể.
    */
+  static parseVnWindow(text: string, fallback = 30): number {
+    const n = removeAccents((text || '').toLowerCase());
+    const m = n.match(/(\d{1,3})\s*(ngay|tuan|thang|quy|nam)/);
+    if (m) {
+      const k = Number(m[1]);
+      const unit = m[2];
+      if (Number.isFinite(k) && k > 0) {
+        if (unit === 'tuan') return Math.min(92, k * 7);
+        if (unit === 'thang') return Math.min(92, k * 30);
+        if (unit === 'quy') return Math.min(92, k * 90);
+        if (unit === 'nam') return 92;
+        return Math.min(92, k);
+      }
+    }
+    if (/\btuan nay\b|\btuan truoc\b|\btuan qua\b/.test(n)) return 7;
+    if (/\bthang nay\b|\bthang truoc\b|\bthang qua\b/.test(n)) return 30;
+    if (/\bhom nay\b|\bhom qua\b/.test(n)) return 1;
+    return fallback;
+  }
+
   static parseVnDay(text: string, nowMs: number = Date.now()): string | null {
     const n = removeAccents((text || '').toLowerCase());
     const todayVn = new Date(nowMs + 7 * 3_600_000).toISOString().slice(0, 10);
@@ -623,7 +686,38 @@ Trả về JSON chuẩn khớp schema:
       const listIntent = n.includes('nhung') || n.includes('cuon nao') || n.includes('liet ke') || n.includes('ban gi') || n.includes('ban duoc gi') || n.includes('nhung gi');
       return hasHour && listIntent && !n.includes('gio vang');
     })();
-    if (n.includes('doanh thu') || n.includes('doanh so') || n.includes('so thue') || n.includes('so noi bo') || (n.includes('ban duoc') && !hourListIntent)) {
+    // Ý định đặc biệt: SO KỲ / SÁNG-CHIỀU / LUÂN CHUYỂN / QUÀ-TRẢ / TRA ĐƠN.
+    // Phải khai TRƯỚC các nhánh chung để không bị cướp (đã dính: "chuyển kho"
+    // rơi vào tồn kho vì chứa " kho ", "doanh thu so với tháng trước" rơi vào
+    // doanh số chung).
+    const compareIntent =
+      n.includes('thang truoc') || n.includes('tuan truoc') || n.includes('ky truoc') ||
+      n.includes('so voi') || n.includes('so sanh') || n.includes('tang bao nhieu') ||
+      n.includes('giam bao nhieu') || (n.includes('%') && (n.includes('tang') || n.includes('giam'))) ||
+      (n.includes('thang nay') && n.includes('thang')) || (n.includes('tuan nay') && n.includes('tuan'));
+    const shiftIntent =
+      n.includes('sang hay chieu') || n.includes('chieu manh hon') || n.includes('sang manh hon') ||
+      n.includes('buoi sang') || n.includes('buoi chieu') || n.includes('ca sang') || n.includes('ca chieu') ||
+      (n.includes('sang') && n.includes('chieu') && (n.includes('manh') || n.includes('hon') || n.includes('so sanh')));
+    const transferIntent =
+      n.includes('luan chuyen') || n.includes('phieu chuyen') || n.includes('chuyen kho') ||
+      n.includes('hao hut') || n.includes('that lac') || n.includes('mat hang tren duong') ||
+      n.includes('dang di duong') || n.includes('nhan du') || n.includes('nhan thieu');
+    const giftIntent =
+      n.includes('qua da xuat') || n.includes('tang bao nhieu qua') || n.includes('bao nhieu qua') ||
+      n.includes('tra hang') || n.includes('khach tra') || n.includes('doi tra') ||
+      n.includes('hoan tien') || n.includes('phieu tra') || n.includes('don tra');
+    const orderCodeHit = /(ord-[a-z0-9-]+|cpm-?\d+|[a-z]{2,4}-\d{4,}[\da-z-]*)/i.test(n);
+    // So 2 ky DI TRUOC doanh-so chung: "doanh thu thang nay so voi thang
+    // truoc" la SO SANH, khong phai bao cao 1 ky.
+    if (compareIntent) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_period_compare', args: { q, windowDays: CopilotGuardrails.parseVnWindow(q, 30) } },
+        reason: 'Heuristic keyword match: period compare',
+      };
+    }
+    if (n.includes('doanh thu') || n.includes('doanh so') || n.includes('so thue') || n.includes('so noi bo') || (n.includes('ban duoc') && !hourListIntent && !shiftIntent)) {
       return {
         action: 'CALL_TOOL',
         toolCall: {
@@ -678,8 +772,9 @@ Trả về JSON chuẩn khớp schema:
       }
     }
 
-    // Ton kho: nhuong cau khung-gio liet ke mon + cau gio-vang (da xu ly tren).
-    if ((n.includes('ton kho') || n.includes('con bao nhieu') || n.includes('ve hang') || n.includes('kho au co') || /(^| )kho( |$)/.test(n)) && !hourListIntent && !n.includes('gio vang') && !n.includes('gio nao') && !n.includes('may gio')) {
+    // Ton kho: nhuong cau khung-gio liet ke mon + cau gio-vang (da xu ly tren),
+    // cau so-ky/sang-chieu (co the nhac "ban duoc") va cau luan-chuyen (chua " kho ").
+    if ((n.includes('ton kho') || n.includes('con bao nhieu') || n.includes('ve hang') || n.includes('kho au co') || /(^| )kho( |$)/.test(n)) && !hourListIntent && !n.includes('gio vang') && !n.includes('gio nao') && !n.includes('may gio') && !compareIntent && !shiftIntent && !transferIntent) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_stock_level', args: {} },
@@ -713,6 +808,47 @@ Trả về JSON chuẩn khớp schema:
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_catalog', args: { q } },
         reason: 'Heuristic keyword match: catalog',
+      };
+    }
+
+    // Don cu the theo MA (ORD-.../CPM...) — tra 1 don, khong phai tao don.
+    // Dat sau ton-kho de "ma sach HH001" van thang truoc.
+    if (
+      orderCodeHit &&
+      (n.includes('ma don') || n.includes('tra don') || n.includes('tra cuu don') ||
+        n.includes('kiem tra don') || n.includes('don hang ') || n.includes('xuat don'))
+    ) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_order_lookup', args: { q } },
+        reason: 'Heuristic keyword match: order lookup by code',
+      };
+    }
+
+    // Sang vs Chieu ("sang hay chieu manh hon", "buoi sang ban duoc hon").
+    if (shiftIntent) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_shift_split', args: { q } },
+        reason: 'Heuristic keyword match: shift split morning/afternoon',
+      };
+    }
+
+    // Luan chuyen kho ("phieu chuyen", "kho nao sang kho nao", "hao hut").
+    if (transferIntent) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_transfer_history', args: { q } },
+        reason: 'Heuristic keyword match: transfer history',
+      };
+    }
+
+    // Qua + Tra hang ("qua da xuat", "khach tra", "hoan tien", "doi tra").
+    if (giftIntent) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_gift_return', args: { q } },
+        reason: 'Heuristic keyword match: gifts and returns',
       };
     }
 
@@ -848,6 +984,47 @@ Trả về JSON chuẩn khớp schema:
         result = await ExecutiveQueryService.prepareSaleDraft({
           q: args.q || '',
           limit: this.numArg(args.limit, 10, 1, 20),
+        });
+        break;
+
+      case 'query_shift_split': {
+        const serverDay = typeof args.q === 'string' ? CopilotGuardrails.parseVnDay(args.q) : null;
+        result = await ExecutiveQueryService.queryShiftSplit({
+          date: serverDay || (typeof args.date === 'string' ? args.date : undefined),
+          windowDays: this.numArg(args.windowDays, 7, 1, 92),
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
+        });
+        break;
+      }
+
+      case 'query_period_compare': {
+        const qDays = typeof args.q === 'string' ? CopilotGuardrails.parseVnWindow(args.q, 0) : 0;
+        result = await ExecutiveQueryService.queryPeriodCompare({
+          windowDays: qDays > 0 ? qDays : this.numArg(args.windowDays, 30, 1, 92),
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
+        });
+        break;
+      }
+
+      case 'query_transfer_history':
+        result = await ExecutiveQueryService.queryTransferHistory({
+          windowDays: this.numArg(args.windowDays, 30, 1, 92),
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
+          limit: this.numArg(args.limit, 20, 1, 50),
+        });
+        break;
+
+      case 'query_gift_return':
+        result = await ExecutiveQueryService.queryGiftReturn({
+          windowDays: this.numArg(args.windowDays, 30, 1, 92),
+          warehouseId: typeof args.warehouseId === 'string' ? args.warehouseId : undefined,
+        });
+        break;
+
+      case 'query_order_lookup':
+        result = await ExecutiveQueryService.queryOrderLookup({
+          orderCode: typeof args.orderCode === 'string' ? args.orderCode : undefined,
+          q: typeof args.q === 'string' ? args.q : undefined,
         });
         break;
 
