@@ -13,3 +13,6 @@ binding = "ASSETS"
 # (workerd không hỗ trợ dynamic require đường dẫn file). Thiếu biến này mọi
 # function 500 với lỗi "Dynamic require ... middleware-manifest.json".
 NEXT_PRIVATE_MINIMAL_MODE = "1"
+# Cờ lộ UI Shopee (tab + panel Cài Đặt). Tắt/bật không cần sửa code — đổi giá
+# trị này rồi deploy lại. SHOPEE_UI_ENABLED=0 là ẩn hoàn toàn.
+SHOPEE_UI_ENABLED = "1"
