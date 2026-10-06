@@ -474,7 +474,7 @@ export function ExecutiveDashboard({
               aria-label="Xem Báo Cáo của kho đang chọn"
             >
               <CalendarCheck className="w-3.5 h-3.5" />
-              Báo Cáo
+              Báo Cáo Ngày
             </button>
           </div>
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (

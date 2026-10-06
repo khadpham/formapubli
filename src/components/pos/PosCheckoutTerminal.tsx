@@ -3026,7 +3026,7 @@ export function PosCheckoutTerminal({
               title="Xem báo cáo chốt ngày và đối soát két. Ngày do máy chốt tự động lúc 23:59, nút này không chốt ngày."
             >
               <CalendarCheck className="w-4 h-4" />
-              <span>Báo Cáo</span>
+              <span>Báo Cáo Ngày</span>
             </button>
           )}
     </div>
