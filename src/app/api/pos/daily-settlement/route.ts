@@ -68,14 +68,13 @@ export async function GET(req: NextRequest) {
     // Chế độ kỳ: ?start=YYYY-MM-DD&end=YYYY-MM-DD (gom ở server, 1 request) hoặc
     // ?campaign=1 (suy kỳ chiến dịch từ đơn đầu→cuối). Không có cả hai ⇒ rơi
     // về báo cáo ngày cũ bên dưới, giữ nguyên shape.
-    // PHÂN QUYỀN (chốt 05/10): Kỳ = báo cáo sau chiến dịch, CHỈ CHỦ. Quản lý
-    // giữ sự kiện đang diễn ra (xem ngày + Trạng Thái Hội Chợ); nút Kỳ ẩn hẳn
-    // ở UI nên họ không biết chức năng tồn tại — server chặn nốt ở đây.
+    // PHÂN QUYỀN (mở 06/10 theo yêu cầu chủ: Kỳ = Chủ + Quản lý. Thu ngân/Kho/Thuế
+    // ẩn hẳn nút Kỳ ở UI, server chặn nốt ở đây).
     const start = searchParams.get('start') || undefined;
     const end = searchParams.get('end') || undefined;
     const campaign = searchParams.get('campaign') === '1';
     if (start || end || campaign) {
-      await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);
+      await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);
       // Cảnh báo ca quá giờ cho cả chế độ kỳ (modal đọc data.openShiftAlerts).
       const rangeAlerts =
         searchParams.get('includeOpenShiftCheck') !== '0'
