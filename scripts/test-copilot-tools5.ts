@@ -44,8 +44,11 @@ async function run() {
   ok(edRows.length >= 2, 'DB test phải có ≥2 ấn bản');
   const ed0 = edRows[0];
   const ed1 = edRows[1];
-  const ts = Date.now().toString(36);
   const todayVn = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+  // Baseline TRƯỚC insert (DB dùng chung giữa suite → assert hiệu số, không tuyệt đối).
+  const split0 = await ExecutiveQueryService.queryShiftSplit({ date: todayVn, windowDays: 1, warehouseId: 'wh-au-co' });
+  const gr0 = await ExecutiveQueryService.queryGiftReturn({ windowDays: 30 });
+  const ts = Date.now().toString(36);
   const dayStamp = todayVn.replace(/-/g, '');
 
   // Đơn SÁNG hôm nay (8h VN = 01:00 UTC): 3 cuốn thường + 2 cuốn quà.
@@ -99,12 +102,13 @@ async function run() {
     id: `ri-1-${ts}`, returnId: retId, editionId: ed0.id, quantity: 1, unitRefund: 50000,
   });
 
-  // --- 3. Service: sáng/chiều ---
+  // --- 3. Service: sáng/chiều (assert HIỆU SỐ trước/sau insert — DB test
+  // dùng chung giữa các suite nên số tuyệt đối không thuộc về riêng test).
+  // Baseline đã đo ở split0/cmp0/gr0 TRƯỚC khi insert (xem trên).
   const split = await ExecutiveQueryService.queryShiftSplit({ date: todayVn, windowDays: 1, warehouseId: 'wh-au-co' });
-  ok(split.morning.qty === 5, `sáng phải 5 cuốn (3 thường + 2 quà), thật: ${split.morning.qty}`);
-  ok(split.afternoon.qty === 2, `chiều phải 2 cuốn, thật: ${split.afternoon.qty}`);
-  ok(split.stronger === 'sang', `sáng mạnh hơn, thật: ${split.stronger}`);
-  ok(split.morning.orders === 1 && split.afternoon.orders === 1, 'mỗi ca 1 đơn');
+  ok(split.morning.qty - split0.morning.qty === 5, `đơn test thêm 5 cuốn sáng (3 thường + 2 quà), thật: ${split.morning.qty - split0.morning.qty}`);
+  ok(split.afternoon.qty - split0.afternoon.qty === 2, `đơn test thêm 2 cuốn chiều, thật: ${split.afternoon.qty - split0.afternoon.qty}`);
+  ok(split.morning.orders > split0.morning.orders && split.afternoon.orders > split0.afternoon.orders, 'mỗi ca tăng thêm đơn test');
   ok(split.scopeLabel.includes('Âu Cơ'), `scopeLabel có tên kho thật: ${split.scopeLabel}`);
 
   // --- 4. Service: so 2 kỳ ---
@@ -129,11 +133,11 @@ async function run() {
 
   // --- 6. Service: quà + trả hàng ---
   const gr = await ExecutiveQueryService.queryGiftReturn({ windowDays: 30 });
-  ok(gr.gifts.qty >= 2, `quà đã xuất ≥2 cuốn, thật: ${gr.gifts.qty}`);
+  ok(gr.gifts.qty - gr0.gifts.qty === 2, `đơn test thêm 2 cuốn quà, thật: ${gr.gifts.qty - gr0.gifts.qty}`);
   ok(gr.gifts.orders >= 1, `quà nằm trong ≥1 đơn, thật: ${gr.gifts.orders}`);
-  ok(gr.gifts.top.some((t) => t.qty === 2 && t.code === ed1.code), `top quà khớp mã thật ${ed1.code}`);
-  ok(gr.returns.count === 1, `1 phiếu trả, thật: ${gr.returns.count}`);
-  ok(gr.returns.refundAmount === 50000, `hoàn 50.000 đ, thật: ${gr.returns.refundAmount}`);
+  ok(gr.gifts.top.some((t) => t.qty >= 2 && t.code === ed1.code), `top quà khớp mã thật ${ed1.code}`);
+  ok(gr.returns.count - gr0.returns.count === 1, `thêm đúng 1 phiếu trả test, thật: ${gr.returns.count - gr0.returns.count}`);
+  ok(gr.returns.refundAmount - gr0.returns.refundAmount === 50000, `thêm 50.000 đ hoàn, thật: ${gr.returns.refundAmount - gr0.returns.refundAmount}`);
   ok((gr.returns.byStatus['COMPLETED'] || 0) === 1, 'phiếu trả COMPLETED được đếm');
 
   // --- 7. Service: tra đơn theo mã ---
@@ -172,7 +176,7 @@ async function run() {
   const r1 = await ask('Sáng hay chiều mạnh hơn?');
   ok(r1.success === true, 'API sáng/chiều success');
   ok(r1.data?.toolUsed === 'query_shift_split', `sáng/chiều → query_shift_split, thật: ${r1.data?.toolUsed}`);
-  ok(r1.data?.toolData?.morning?.qty === 5, `toolData sáng 5 cuốn, thật: ${r1.data?.toolData?.morning?.qty}`);
+  ok(Number(r1.data?.toolData?.morning?.qty || 0) >= 5, `toolData sáng chứa ≥5 cuốn test, thật: ${r1.data?.toolData?.morning?.qty}`);
   ok(typeof r1.data?.answer === 'string' && r1.data.answer.length > 15, 'có câu trả lời tự nhiên');
   ok(!r1.data.answer.includes('{"'), 'đáp không dính JSON thô');
 
