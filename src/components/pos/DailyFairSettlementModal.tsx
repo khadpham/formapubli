@@ -701,38 +701,73 @@ export function DailyFairSettlementModal({
       const s = json.data;
       const whName = s.warehouse?.name || activeWarehouseName;
       const vnNow = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }).format(new Date());
-      const head = (title: string) => [
-        ['FORMApubli', title],
-        [`Kho: ${whName}`, `Kỳ: ${s.range.start} → ${s.range.end}`, `Xuất lúc: ${vnNow} (giờ VN)`],
-        [`Tồn: ${s.stockNote || 'Tồn hiện tại lúc mở báo cáo'}`],
+      // ===== MỘT file duy nhất, nhiều bảng xếp chồng (cách nhau dòng trống). =====
+      const rows: Array<Array<string | number | null>> = [
+        ['FORMApubli', `BẢNG TỔNG HỢP BÁN HÀNG — ${whName}`],
+        [`Kỳ: ${s.range.start} → ${s.range.end}`, `Xuất lúc: ${vnNow} (giờ VN)`],
+        [s.stockNote || 'Tồn hiện tại lúc mở báo cáo'],
         [],
       ];
-      const fname = `ho-guom-${whId}-${s.range.start}_${s.range.end}`;
-      const lines: any[] = s.lines || [];
-      const pause = () => new Promise((r) => setTimeout(r, 300)); // tránh trình duyệt bỏ file 2/3 khi tải liên tục
-      downloadCsv(`${fname}-dau-sach.csv`, toCsv([
-        ...head('TỔNG HỢP ĐẦU SÁCH'),
-        ['STT', 'Mã', 'Tên sách', 'Giá bìa', 'SL bán (có thu tiền)', 'Doanh thu', 'SL tặng (kèm)', 'Tổng xuất (bán+tặng)', 'Tồn hiện tại', 'Hạng theo SL', 'Hạng theo doanh thu', 'Nhóm'],
-        ...lines.map((l: any, i: number) => [i + 1, l.code, l.title, l.coverPrice, l.soldQty, l.soldRevenue, l.giftQty, l.totalOut, l.stockNow, l.rankQty, l.rankRevenue, l.group]),
-      ]));
-      await pause();
-      const days: any[] = s.days || [];
+      const blank = () => rows.push([]);
       const t = s.totals || {};
-      downloadCsv(`${fname}-ngay.csv`, toCsv([
-        ...head('DOANH THU THEO NGÀY'),
-        ['Ngày', 'Số đơn', 'Doanh thu (thuần)'],
-        ...days.map((d: any) => [d.date, d.orders, d.sales]),
-        ['TỔNG', t.orders, t.net],
-      ]));
-      await pause();
+      const p = s.payment || {};
+      const hi = s.highlight;
+      // BẢNG 1 — Tóm tắt kỳ (tiền + kênh thanh toán + đỉnh kỳ + đơn lớn nhất).
+      rows.push(
+        ['BẢNG 1 — TÓM TẮT KỲ'],
+        ['Số đơn', t.orders],
+        ['Doanh thu gộp', t.gross],
+        ['Chiết khấu', t.discount],
+        ['Doanh thu thuần', t.net],
+        ['TB/đơn', t.avgOrder],
+        ['Số cuốn bán (có thu tiền)', t.itemsSold],
+        ['Tiền mặt', `${p.cash?.sales ?? 0} (${p.cash?.ordersCount ?? 0} đơn)`],
+        ['Chuyển khoản/QR', `${p.qrTransfer?.sales ?? 0} (${p.qrTransfer?.ordersCount ?? 0} đơn)`],
+        ['Thẻ', `${p.card?.sales ?? 0} (${p.card?.ordersCount ?? 0} đơn)`],
+        ['Ngày đỉnh kỳ', s.peakDay ? `${s.peakDay.date} (${s.peakDay.orders} đơn, ${s.peakDay.sales} đ)` : '—'],
+        ['Đơn lớn nhất kỳ', hi ? `${hi.orderCode} — ${hi.finalAmount} đ (${hi.itemCount} SP, ${hi.paymentMethod})` : '—'],
+      );
+      blank();
+      // BẢNG 2 — Toàn bộ đầu sách (đã bán + chưa bán trong kỳ, có hạng + nhóm).
+      const lines: any[] = s.lines || [];
+      rows.push(
+        ['BẢNG 2 — TỔNG HỢP ĐẦU SÁCH'],
+        ['STT', 'Mã', 'Tên sách', 'Giá bìa', 'SL bán (có thu tiền)', 'Doanh thu', 'SL tặng (kèm)', 'Tổng xuất (bán+tặng)', 'Tồn hiện tại', 'Hạng theo SL', 'Hạng theo doanh thu', 'Nhóm'],
+      );
+      lines.forEach((l: any, i: number) =>
+        rows.push([i + 1, l.code, l.title, l.coverPrice, l.soldQty, l.soldRevenue, l.giftQty, l.totalOut, l.stockNow, l.rankQty, l.rankRevenue, l.group])
+      );
+      blank();
+      // BẢNG 3 — Doanh thu theo ngày, thêm cột "SL bán" lấy từ ma trận phía dưới.
+      const days: any[] = s.days || [];
+      const m = s.dailyMatrix || { dates: [], rows: [] };
+      const qtyByDate = new Map<string, number>();
+      for (const r of m.rows || []) {
+        (m.dates || []).forEach((d: string, i: number) =>
+          qtyByDate.set(d, (qtyByDate.get(d) || 0) + (r.qty?.[i] || 0))
+        );
+      }
+      rows.push(['BẢNG 3 — DOANH THU THEO NGÀY'], ['Ngày', 'Số đơn', 'SL bán', 'Doanh thu (thuần)']);
+      for (const d of days) rows.push([d.date, d.orders, qtyByDate.get(d.date) || 0, d.sales]);
+      rows.push(['TỔNG', t.orders, t.itemsSold, t.net]);
+      blank();
+      // BẢNG 4 — Số lượng bán sản phẩm theo từng ngày (ma trận: dòng = đầu sách,
+      // cột = ngày VN trong kỳ; chỉ bán CÓ THU TIỀN — quà không tính).
+      rows.push(['BẢNG 4 — SỐ LƯỢNG BÁN THEO SẢN PHẨM THEO NGÀY'], ['Mã', 'Tên sách', ...(m.dates || []), 'TỔNG']);
+      for (const r of m.rows || []) rows.push([r.code, r.title, ...(r.qty || []), r.total]);
+      const colTotals = (m.dates || []).map((_: string, i: number) =>
+        (m.rows || []).reduce((sum: number, r: any) => sum + (r.qty?.[i] || 0), 0)
+      );
+      rows.push(['', '', ...colTotals, t.itemsSold]);
+      blank();
+      // BẢNG 5 — Quà tặng trong kỳ (theo kho).
       const gifts: any[] = s.giftsInScope?.items || [];
-      downloadCsv(`${fname}-qua.csv`, toCsv([
-        ...head('QUÀ TẶNG TRONG KỲ (theo kho)'),
-        ['Mã quà', 'Tên quà', 'Số lượng đã phát'],
-        ...gifts.map((g: any) => [g.code, g.title, g.copies]),
-        ['TỔNG', '', s.giftsInScope?.total || 0],
-      ]));
-      setCsvNotice(`Đã xuất 3 file CSV (${lines.length} đầu sách, kỳ ${s.range.start}→${s.range.end}).`);
+      rows.push(['BẢNG 5 — QUÀ TẶNG TRONG KỲ (theo kho)'], ['Mã quà', 'Tên quà', 'Số lượng đã phát']);
+      for (const g of gifts) rows.push([g.code, g.title, g.copies]);
+      rows.push(['TỔNG', '', s.giftsInScope?.total || 0]);
+      // MỘT file duy nhất cho cả 5 bảng — không còn tải dồn 3 file liên tiếp.
+      downloadCsv(`ho-guom-${whId}-${s.range.start}_${s.range.end}.csv`, toCsv(rows));
+      setCsvNotice(`Đã xuất 1 file CSV (5 bảng, ${lines.length} đầu sách, kỳ ${s.range.start}→${s.range.end}).`);
     } catch {
       setCsvNotice('Mất kết nối khi xuất CSV. Thử lại.');
     } finally {

@@ -29,7 +29,13 @@ export const HoGuomSummaryService = {
     txOrDb: any = db
   ) {
     const range: any = await DailySettlementService.getSettlementRange(params, txOrDb);
-    const { createdAtBetween } = await import('./order.service');
+    const { createdAtBetween, businessDateOf } = await import('./order.service');
+    const { parseDbTimestamp } = await import('../lib/db-timestamp');
+    // Trục ngày cho bảng "số lượng bán theo sản phẩm × ngày" — lấy đúng mốc
+    // ngày mà getSettlementRange đã gom (bao gồm ngày 0 đơn), không tự suy.
+    const dayList: string[] = (range.days || []).map((d: any) => d.date);
+    const dayIdx = new Map<string, number>(dayList.map((d, i) => [d, i]));
+    const qtyByPid = new Map<string, number[]>();
     const idRows: any[] = await txOrDb
       .select({ id: orders.id })
       .from(orders)
@@ -52,6 +58,7 @@ export const HoGuomSummaryService = {
           totalAmount: orderItems.totalAmount,
           isGiftLine: orderItems.isGiftLine,
           unitSellingPrice: orderItems.unitSellingPrice,
+          orderCreatedAt: orders.createdAt, // để gom bảng số lượng bán theo ngày
           editionCode: editions.code,
           editionTitle: editions.title,
           workTitle: works.title,
@@ -61,6 +68,7 @@ export const HoGuomSummaryService = {
           productPrice: products.sellingPrice,
         })
         .from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
         .leftJoin(editions, eq(orderItems.editionId, editions.id))
         .leftJoin(products, eq(orderItems.productId, products.id))
         .leftJoin(works, eq(editions.workId, works.id))
@@ -92,6 +100,15 @@ export const HoGuomSummaryService = {
       const r = full.get(key);
       r.soldQty += item.quantity;
       r.soldRevenue += item.totalAmount;
+      // Ma trận số lượng bán theo NGÀY: cộng dồn vào ô (sản phẩm × ngày VN).
+      const od = parseDbTimestamp(item.orderCreatedAt);
+      const day = od ? businessDateOf(od) : null;
+      const di = day ? dayIdx.get(day) : undefined;
+      if (di !== undefined) {
+        let arr = qtyByPid.get(key);
+        if (!arr) { arr = new Array(dayList.length).fill(0); qtyByPid.set(key, arr); }
+        arr[di] += item.quantity;
+      }
     }
     const all = Array.from(full.values()).sort(
       (a, b) => b.soldQty - a.soldQty || b.soldRevenue - a.soldRevenue
@@ -134,7 +151,20 @@ export const HoGuomSummaryService = {
       payment: range.paymentBreakdown,
       days: range.days,
       peakDay: range.peakDay,
+      // Đơn lớn nhất kỳ (luật hòa: tiền → giờ → id — giữ nguyên của getSettlementRange).
+      highlight: range.highlight ?? null,
       lines,
+      // Số lượng bán sản phẩm theo ngày: 1 dòng = 1 đầu sách, 1 cột = 1 ngày VN
+      // trong kỳ (chỉ dòng bán CÓ THU TIỀN — quà tặng không tính).
+      dailyMatrix: {
+        dates: dayList,
+        rows: all.map((r) => ({
+          code: r.code,
+          title: r.title,
+          qty: qtyByPid.get(r.productId) || new Array(dayList.length).fill(0),
+          total: r.soldQty,
+        })),
+      },
       giftsInScope: { total: range.giftSummary.totalGiftCopies, items: range.giftSummary.items },
       giftsAllWarehouses: gifts,
       stockNote: range.stockNote,

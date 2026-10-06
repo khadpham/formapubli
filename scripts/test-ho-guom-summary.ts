@@ -21,6 +21,11 @@ console.log(`=== HO-GUOM-SUMMARY (Task 1 shape): PASS — ${checks2} assertions 
 const settleModal2 = readSrc2('src/components/pos/DailyFairSettlementModal.tsx');
 const csvLib = readSrc2('src/lib/csv-export.ts');
 ok2(/Xuất CSV/.test(settleModal2), 'modal Ky co nut Xuat CSV');
+// Đúng 1 file CSV duy nhất (không còn tải dồn 3 file): 1 lời gọi downloadCsv(
+ok2(settleModal2.split('downloadCsv(').length === 2, 'chi tai dung 1 file CSV');
+ok2(/BẢNG 4 — SỐ LƯỢNG BÁN THEO SẢN PHẨM/.test(settleModal2), 'file co Bang 4 ma tran SL ban theo ngay');
+const svcSrc = readSrc2('src/services/ho-guom-summary.service.ts');
+ok2(/dailyMatrix/.test(svcSrc), 'service tra dailyMatrix');
 // Chắn Rules of Hooks: mọi useState của CSV phải đứng TRƯỚC early-return
 // `if (!isOpen) return null` — nếu không modal crash React #310 khi mở (review Critical).
 const firstEarlyReturn = settleModal2.indexOf('if (!isOpen) return null;');
@@ -87,6 +92,12 @@ async function dbPart() {
     const lineA = sum.lines.find((l: any) => l.code === `HOGA${stamp}`);
     assert.ok(lineA && lineA.soldQty === 2 && lineA.soldRevenue === 200, 'sach A: 2 cuon/200đ (qua 5 cuon khong cong)');
     assert.equal(sum.giftsInScope.total, 5, 'qua trong kho: 5');
+    // Ma trận số lượng bán theo ngày: đúng trục ngày, quà không lọt vào ô.
+    const mtx = sum.dailyMatrix;
+    assert.ok(mtx && mtx.dates.length === 1 && mtx.dates[0] === '2026-09-20', 'ma tran co truc ngay VN');
+    const rowA = mtx.rows.find((r: any) => r.code === `HOGA${stamp}`);
+    assert.ok(rowA && rowA.qty[0] === 2 && rowA.total === 2, `SL ban Sach A ngay 20 = 2 (qua 5 khong tinh), thuc te qty=${rowA?.qty?.[0]}`);
+    assert.ok(sum.highlight, 'co don lon nhat ky');
     assert.ok(String(sum.stockNote).includes('hiện tại'), 'nhan ton hien tai bat buoc');
     const s2: any = await HoGuomSummaryService.summary({ warehouseId: wid, startDate: '2026-09-20', endDate: '2026-09-21' });
     assert.equal(s2.range.dayCount, 2, 'ky 2 ngay du 2 moc');
