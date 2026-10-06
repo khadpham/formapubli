@@ -13,6 +13,7 @@
 > 3. `docs/superpowers/plans/2026-10-06-tab-shopee.md` — plan 5 task đã thực thi xong.
 > 4. File này — master plan Task 1–9 + trạng thái.
 > 5. `docs/shopee/12-nghiem-thu-sandbox.md` — checklist nghiệm thu sandbox khi có key (script `scripts/verify-shopee-sandbox.ts` sẵn sàng).
+> 6. `docs/superpowers/specs/2026-10-06-tab-chu-giai-doan-1-design.md` + plan cùng tên — tab Chủ GĐ1 (thẻ doanh thu Shopee trong tab Shopee giờ đã có UI thật ở tab `chu`).
 
 | Task | Nội dung | Commit | Suite kiểm chứng |
 |---|---|---|---|
@@ -29,6 +30,8 @@
 | UI | Nhãn Shopee + nhóm Online; panel Cài Đặt ẩn theo cờ server; config runtime (kho/COD); hàng đợi + đơn lỗi; 4 API (status/auth-url/queue/ship/config) | `7cac3a6` | `test-shopee-shop-config` 6/6, `test-shopee-ui-hidden` 10/10 |
 | Tab+Role | Tab Shopee riêng + `ROLE_SHOPEE_OPS` (hiện picker, PIN dev 6789); phạm vi kho nhiều-kho do quản lý cấp, ép ở server; route AWB; panel gọn còn cấu hình Chủ | `f307907` | `test-shopee-tab-scope` 17/17, 12 suite Shopee xanh, `tsc` + `build` sạch |
 | Merge | Merge nhánh vào `main` (`0aa605c`): gộp guard DELIVERED + hàm ngày VN 2 bên; sửa nhãn nút "Báo Cáo Ngày" (`3512f54`, settlement-ui 29/29) | `ec22426` | full runner 174/177 (3 đỏ tồn đọng trước merge) |
+| Sandbox | Script nghiệm thu 4 giai đoạn + checklist A-Z | `5297c99` | fail-fast đã kiểm, chờ `partner_id/key` |
+| Tab Chủ GĐ1 | Tab `chu` (Alt+9, chỉ Chủ, mặc định đăng nhập): doanh thu Shopee escrow − phí − COGS + chi phí (`expense_entries`, Lương/Thuê/Khác) + Lãi ròng sau chi phí | kế tiếp | `test-owner-tab` 17/17 + smoke nav cập nhật theo hành vi mới |
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -12,6 +12,7 @@ import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { ShopeeTab } from '@/components/shopee/ShopeeTab';
+import { OwnerTab } from '@/components/owner/OwnerTab';
 import { Menu, Shield, Sparkles } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { NotificationBell, type NotifyItem } from '@/components/notifications/NotificationBell';
@@ -235,7 +236,8 @@ export function MasterAppShell({
           '6': 'customers',
           '7': 'studio',
           '8': 'settings',
-          '9': 'shopee',
+          '9': 'chu',
+          '0': 'shopee',
         };
 
         const targetTab = keyMap[digit];
@@ -305,6 +307,7 @@ export function MasterAppShell({
                   {effectiveTab === 'customers' && 'Độc Giả CRM'}
                   {effectiveTab === 'studio' && 'Phân Tích & Dự Báo'}
                   {effectiveTab === 'shopee' && 'Shopee'}
+                  {effectiveTab === 'chu' && 'Chủ'}
                   {effectiveTab === 'settings' && 'Cài Đặt'}
                 </span>
               </div>
@@ -431,6 +434,8 @@ export function MasterAppShell({
           {currentRole && effectiveTab === 'shopee' && (
             <ShopeeTab sessionRole={currentRole} />
           )}
+
+          {currentRole && effectiveTab === 'chu' && <OwnerTab />}
         </main>
       </div>
 

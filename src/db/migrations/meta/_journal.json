@@ -294,6 +294,13 @@
       "when": 1790600017000,
       "tag": "0041_shopee_settings_quarantine",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": 7,
+      "when": 1790686400000,
+      "tag": "0042_expense_entries",
+      "breakpoints": true
     }
   ],
   "version": "7"

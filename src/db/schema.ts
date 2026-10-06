@@ -903,6 +903,17 @@ export const shopeeSettings = sqliteTable('shopee_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+// 0042: chi phí công ty cho tab Chủ — GĐ1 ghi tay, GĐ2 lương theo tháng.
+export const expenseEntries = sqliteTable('expense_entries', {
+  id: text('id').primaryKey(),
+  category: text('category').notNull(), // SALARY | RENT | OTHER (hằng số ở expense.service)
+  amount: real('amount').notNull(),
+  note: text('note'),
+  entryDate: text('entry_date').notNull(),
+  createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const shopeeQuarantine = sqliteTable('shopee_quarantine', {
   id: text('id').primaryKey(),
   orderSn: text('order_sn').notNull(),

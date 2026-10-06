@@ -11,7 +11,9 @@ import {
 const cashierNav = USER_ROLES.ROLE_CASHIER.allowedNavItems;
 assert.deepEqual(cashierNav, ['pos', 'settings']);
 
-assert.equal(getDefaultTabForRole('ROLE_OWNER'), 'dashboard');
+// 06/10: tab mặc định của Chủ là 'chu' (tab Chủ GĐ1 — doanh thu + chi phí),
+// hành vi đổi có chủ đích theo docs/superpowers/specs/2026-10-06-tab-chu-giai-doan-1-design.md.
+assert.equal(getDefaultTabForRole('ROLE_OWNER'), 'chu');
 assert.equal(getDefaultTabForRole('ROLE_MANAGER'), 'dashboard');
 assert.equal(getDefaultTabForRole('ROLE_CASHIER'), 'pos');
 assert.equal(getDefaultTabForRole('ROLE_WAREHOUSE'), 'inventory');

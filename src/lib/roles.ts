@@ -28,7 +28,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-purple-700 border-purple-300',
     badgeBg: 'bg-purple-50',
     description: 'Toàn quyền điều hành, xem Báo cáo Quản trị Thực tế Toàn cảnh và Sổ Kép',
-    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'shopee', 'partners', 'customers', 'settings', 'studio'],
+    allowedNavItems: ['chu', 'dashboard', 'pos', 'inventory', 'sales', 'shopee', 'partners', 'customers', 'settings', 'studio'],
   },
   ROLE_MANAGER: {
     id: 'ROLE_MANAGER',

@@ -218,6 +218,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-ui-hidden.ts',
   // Shopee tab riêng + role Nhân viên Shopee + phạm vi kho nhiều-kho.
   'scripts/test-shopee-tab-scope.ts',
+  // Tab Chủ GĐ1: chi phí (expense_entries) + quyền + nav 'chu' chỉ Chủ.
+  'scripts/test-owner-tab.ts',
 ];
 
 /**

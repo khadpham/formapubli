@@ -17,6 +17,7 @@ import {
   FlaskConical,
   Sparkles,
   ShoppingBag,
+  Crown,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -121,6 +122,13 @@ export function AppSidebar({
 
   const navItems = [
     {
+      id: 'chu',
+      label: 'Chủ',
+      icon: Crown,
+      shortcut: 'Alt+9',
+      color: 'text-purple-600',
+    },
+    {
       id: 'dashboard',
       label: 'Tổng Quan Toàn Cảnh',
       icon: LayoutDashboard,
@@ -152,7 +160,7 @@ export function AppSidebar({
       id: 'shopee',
       label: 'Shopee',
       icon: ShoppingBag,
-      shortcut: 'Alt+9',
+      shortcut: 'Alt+0',
       color: 'text-orange-600',
     },
     {
