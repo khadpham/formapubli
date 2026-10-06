@@ -270,9 +270,19 @@ export class CopilotGuardrails {
       if (DATE_TOOLS.has(step.toolName) && typeof step.args.q !== 'string') {
         step.args.q = question;
       }
+      // Chuỗi resolve BỊ CHẶN history khi câu hiện tại không có đại từ: câu mới
+      // không nhắc kho/sách nào mà dính kho/sách của câu trước là đoán bừa
+      // (đã dính: "doanh thu sáng hôm nay" dính kho ĐH Hà Nội của lượt trước).
+      // Có đại từ ("kho đó", "nó", "còn lại") thì được nhớ tiếp.
+      const qPron = removeAccents(question.toLowerCase());
+      const hasRefPronoun =
+        /\bkho do\b|\bo do\b|\btai do\b|\bcua no\b|\bno\b|\bcon lai\b|\bkho kia\b|\bcuon do\b|\bmon do\b/.test(
+          qPron
+        );
+      const scopedChain = hasRefPronoun ? lookupChain : [question];
       if (!step.args.editionId) {
         try {
-          const hit = await this.resolveWithHistory(lookupChain, (q) =>
+          const hit = await this.resolveWithHistory(scopedChain, (q) =>
             ExecutiveQueryService.resolveEditionFromText(q)
           );
           if (hit) {
@@ -292,7 +302,7 @@ export class CopilotGuardrails {
       // Ap cho stock + catalog top + product flow (vd "ban chay kho ho guom").
       if (!step.args.warehouseId && WAREHOUSE_TOOLS.has(step.toolName)) {
         try {
-          const wh = await this.resolveWithHistory(lookupChain, (q) =>
+          const wh = await this.resolveWithHistory(scopedChain, (q) =>
             ExecutiveQueryService.resolveWarehouseFromText(q)
           );
           if (wh) {
@@ -307,7 +317,7 @@ export class CopilotGuardrails {
         try {
           const flowChain = [
             ...(typeof step.args.q === 'string' && step.args.q.trim() ? [step.args.q] : []),
-            ...lookupChain,
+            ...(hasRefPronoun ? lookupChain : []),
           ];
           const hit = await this.resolveWithHistory(flowChain, (q) =>
             ExecutiveQueryService.resolveProductFromText(q)
@@ -602,6 +612,9 @@ Trả về JSON chuẩn khớp schema:
     const n = removeAccents((text || '').toLowerCase());
     const todayVn = new Date(nowMs + 7 * 3_600_000).toISOString().slice(0, 10);
     if (/\bhom nay\b/.test(n)) return todayVn;
+    // "hiện tại / bây giờ" = hôm nay (đã dính: sếp hỏi "hiện tại" mà server
+    // không suy ngày, LLM planner bịa năm/date lung tung).
+    if (/\bhien tai\b|\bbay gio\b|\bhien gio\b|\bluc nay\b/.test(n)) return todayVn;
     if (/\bhom qua\b/.test(n)) {
       return new Date(Date.parse(todayVn + 'T00:00:00Z') - 86_400_000).toISOString().slice(0, 10);
     }
@@ -1078,6 +1091,37 @@ Trả về JSON chuẩn khớp schema:
     return CopilotGuardrails.extractSignificantNumbers(answer).filter(
       (n) => !dataNums.has(n) && !POLICY_CONSTANTS.has(n)
     );
+  }
+
+  /**
+   * Bắt LLM bịa "0 đơn / 0 đồng / chưa phát sinh" trong khi tool CÓ số thật.
+   * extractSignificantNumbers chỉ xét số ≥4 chữ số nên số 0 lọt lưới grounded
+   * check (đã dính: Gemini viết "0 đồng từ 0 đơn" dù tool có 221 đơn).
+   * Đáp trung thực kiểu "hôm nay 0 đơn, 30 ngày qua 221 đơn" có nhắc số đúng
+   * nên không bị báo oan.
+   */
+  static findZeroClaimContradiction(answer: string, toolData: unknown): boolean {
+    const positives: number[] = [];
+    const pick = (o: any) => {
+      if (!o || typeof o !== 'object') return;
+      if (typeof o.totalOrders === 'number' && o.totalOrders > 0) positives.push(o.totalOrders);
+      if (typeof o.totalRevenue === 'number' && o.totalRevenue > 0) positives.push(o.totalRevenue);
+      if (typeof o.totalQty === 'number' && o.totalQty > 0) positives.push(o.totalQty);
+      for (const v of Object.values(o)) {
+        if (v && typeof v === 'object') pick(v);
+      }
+    };
+    pick(toolData);
+    if (positives.length === 0) return false;
+    const n = removeAccents((answer || '').toLowerCase());
+    const claimsZero =
+      /(^|[^0-9])0\s*(don|dong|d\b|cuon)|chua phat sinh|khong phat sinh|chua co don|khong co don|chua co doanh thu|khong co doanh thu/.test(
+        n
+      );
+    if (!claimsZero) return false;
+    // Có nhắc số thật trong đáp → trung thực (vd "hôm nay 0, 30 ngày qua 221 đơn").
+    if (positives.some((p) => n.includes(String(p)))) return false;
+    return true;
   }
 
   /**
