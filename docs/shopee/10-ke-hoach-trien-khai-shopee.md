@@ -12,6 +12,7 @@
 > 2. `docs/superpowers/specs/2026-10-06-tab-shopee-design.md` — spec tab + role.
 > 3. `docs/superpowers/plans/2026-10-06-tab-shopee.md` — plan 5 task đã thực thi xong.
 > 4. File này — master plan Task 1–9 + trạng thái.
+> 5. `docs/shopee/12-nghiem-thu-sandbox.md` — checklist nghiệm thu sandbox khi có key (script `scripts/verify-shopee-sandbox.ts` sẵn sàng).
 
 | Task | Nội dung | Commit | Suite kiểm chứng |
 |---|---|---|---|
