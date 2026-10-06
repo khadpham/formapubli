@@ -574,6 +574,13 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
       query_reprint_forecast: { label: 'Dự báo in 105 ngày', icon: Scale, color: 'bg-purple-50 text-purple-700 border-purple-200' },
       query_cashbox_reconciliation: { label: 'Đối soát két ca', icon: DollarSign, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
       query_catalog: { label: 'Danh mục sách', icon: BookOpen, color: 'bg-rose-50 text-rose-700 border-rose-200' },
+      query_product_flow: { label: 'Nhịp bán', icon: Clock, color: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+      query_sales_lines: { label: 'Món bán', icon: Receipt, color: 'bg-sky-50 text-sky-700 border-sky-200' },
+      query_shift_split: { label: 'Sáng/Chiều', icon: Clock, color: 'bg-orange-50 text-orange-700 border-orange-200' },
+      query_period_compare: { label: 'So kỳ', icon: Scale, color: 'bg-teal-50 text-teal-700 border-teal-200' },
+      query_transfer_history: { label: 'Luân chuyển', icon: Boxes, color: 'bg-lime-50 text-lime-700 border-lime-200' },
+      query_gift_return: { label: 'Quà/Trả hàng', icon: ShoppingCart, color: 'bg-pink-50 text-pink-700 border-pink-200' },
+      query_order_lookup: { label: 'Tra đơn', icon: Receipt, color: 'bg-violet-50 text-violet-700 border-violet-200' },
       prepare_sale_draft: { label: 'Đơn nháp POS', icon: ShoppingCart, color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
     };
     const info = map[toolName] || { label: toolName, icon: Sparkles, color: 'bg-slate-50 text-slate-700 border-slate-200' };
