@@ -250,11 +250,11 @@ flowchart LR
 3. **`category_id`/`attribute_id` thật** nếu sau này dùng `add_item` (hiện chưa cần — đăng tay xong rồi).
 4. **Webhook code 3 "365 ngày"** đối chiếu console khi cấu hình push + bấm Verify URL trỏ về `/api/shopee/push`.
 
-## Việc tồn đọng sau merge 0aa605c (06/10 — đỏ từ TRƯỚC merge, đã chứng minh bằng chạy lại trên `e680e49`, không phải do nhánh Shopee)
+## Việc tồn đọng sau merge 0aa605c (06/10 — đỏ từ TRƯỚC merge, đã chứng minh bằng chạy lại trên `e680e49`)
 
-| Suite | Triệu chứng | Chủ sở hữu gợi ý |
+| Suite | Trạng thái 06/10 chiều | Chủ sở hữu |
 |---|---|---|
-| `test-settlement-ui` | ĐÃ SỬA trong merge (`3512f54`: nhãn nút "Báo Cáo Ngày") — 29 assertions xanh | — |
-| `test-auditC-nplus1` | Đơn 10 dòng tốn 70 câu > ngân sách 55 (vượt giới hạn 50 subrequest Workers free) — CẤM nâng ngân sách test, phải cắt truy vấn luồng tạo đơn | copilot/order |
-| `eval-executive-ai` | LLM không từ chối prompt-injection diễn đạt lại — gia cố prompt + tách eval dễ vỡ khỏi suite chặn | copilot |
-| `run-real-pos-terminal-test` | Harness Chrome chết sau Test 5, không chỉ ra test đỏ — debug hạ tầng máy | pos-infra |
+| `test-settlement-ui` | ✅ ĐÃ SỬA (`3512f54`: nhãn nút "Báo Cáo Ngày") — 29/29 | — |
+| `test-auditC-nplus1` | ✅ ĐÃ SỬA (root cause: `recordMovement` tra BOOK/GOODS 2 câu/dòng dù caller đã validate; fix: tin `isBook` explicit → 70→50 câu, slope 4.0) | — |
+| `run-real-pos-terminal-test` | ✅ TỰ XANH sau fix nhãn (Test 6 cần nút "Báo Cáo Ngày" cho MANAGER) — exit 0 | — |
+| `eval-executive-ai` | ❌ CÒN ĐỎ 23/26 — 3 case drift sau khi main viết lại router/tool copilot: INJECT-02 (SQL thô → DIRECT_ANSWER, cần xem answer có lộ số không), PARA-04 (hoàn tiền → `query_gift_return`, có thể đúng hành vi mới), PARA-06 (doanh thu → `query_period_compare`, tool anh em). CẤM nới eval cho qua — cần chủ copilot gia cố prompt + cập nhật kỳ vọng trong cùng 1 đợt | copilot |
