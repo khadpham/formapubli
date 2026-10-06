@@ -8,7 +8,7 @@ import { TursoTokenStorage } from './token-store';
 import { refreshShopeeTokenOnce } from './auth';
 
 /** Role được bấm giao hàng Shopee: thủ kho + cấp trên. Thu ngân/kế toán: cấm. */
-const SHIP_ROLES: UserRole[] = ['ROLE_WAREHOUSE', 'ROLE_MANAGER', 'ROLE_OWNER'];
+const SHIP_ROLES: UserRole[] = ['ROLE_WAREHOUSE', 'ROLE_MANAGER', 'ROLE_OWNER', 'ROLE_SHOPEE_OPS'];
 
 async function signedGet(cfg: ShopeeSyncConfig, apiPath: string, query: Record<string, string>) {
   const fetchFn = cfg.fetchFn ?? globalThis.fetch;

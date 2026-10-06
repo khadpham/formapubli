@@ -6,6 +6,14 @@
  */
 import { assertIsolatedTestDb } from './test-guard';
 import { USER_ROLES, getDefaultTabForRole } from '../src/lib/roles';
+import { AppError } from '../src/services/app-error';
+import {
+  getShopeeConfig,
+  setShopeeConfig,
+  getShopeeOpsWarehouses,
+  setShopeeOpsWarehouses,
+} from '../src/services/shopee/shop-config';
+import { db, shopeeSettings } from '../src/db';
 
 assertIsolatedTestDb('test-shopee-tab-scope');
 
@@ -50,6 +58,28 @@ async function main() {
     USER_ROLES['ROLE_TAX'].allowedNavItems.includes('shopee'),
     false
   );
+
+  // Phạm vi kho đội Shopee: mặc định = kho xuất, quản lý cấp nhiều kho.
+  await db.delete(shopeeSettings);
+  await setShopeeConfig({ warehouseId: 'wh-au-co', codEnabled: false }, 'ROLE_OWNER');
+  eq2(
+    'mặc định phạm vi = kho xuất',
+    JSON.stringify(await getShopeeOpsWarehouses()),
+    JSON.stringify(['wh-au-co'])
+  );
+  let code = '';
+  try {
+    await setShopeeOpsWarehouses(['wh-a'], 'ROLE_CASHIER');
+  } catch (e) {
+    code = e instanceof AppError ? e.code : 'NOT_APP_ERROR';
+  }
+  eq2('thu ngan bị chặn cấp kho', code, 'FORBIDDEN');
+  eq2(
+    'quản lý cấp được nhiều kho',
+    JSON.stringify(await setShopeeOpsWarehouses(['wh-a', 'wh-b'], 'ROLE_MANAGER')),
+    JSON.stringify(['wh-a', 'wh-b'])
+  );
+  await setShopeeConfig({ warehouseId: '', codEnabled: false }, 'ROLE_OWNER');
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {

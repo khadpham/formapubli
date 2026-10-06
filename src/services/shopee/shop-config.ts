@@ -47,3 +47,43 @@ export async function setShopeeConfig(
   }
   return getShopeeConfig();
 }
+
+/**
+ * Kho đội Shopee được thấy (nhiều kho, quản lý trở lên cấp).
+ * Mặc định = [kho xuất] khi chưa cấu hình.
+ * Đọc DB mỗi lần gọi — quản lý đổi có hiệu lực ngay, không restart.
+ */
+export async function getShopeeOpsWarehouses(): Promise<string[]> {
+  const rows = await db.select().from(shopeeSettings);
+  const raw = rows.find((r) => r.key === 'ops_warehouse_ids')?.value || '';
+  try {
+    const list: unknown = JSON.parse(raw || '[]');
+    if (Array.isArray(list) && list.length > 0) return list.map(String);
+  } catch {
+    /* JSON hỏng → rơi xuống mặc định */
+  }
+  const cfg = await getShopeeConfig();
+  // ponytail: phạm vi đội Shopee dùng chung 1 danh sách; muốn cấp theo từng
+  // người thì nâng key thành map staffId->ids (cột staff_accounts.
+  // allowed_warehouse_ids sẵn cho POS là đường nâng cấp).
+  return cfg.warehouseId ? [cfg.warehouseId] : [];
+}
+
+/** Ghi phạm vi kho — CHỈ chủ/quản lý. */
+export async function setShopeeOpsWarehouses(
+  ids: string[],
+  actorRole: UserRole
+): Promise<string[]> {
+  if (actorRole !== 'ROLE_OWNER' && actorRole !== 'ROLE_MANAGER') {
+    throw AppError.forbidden('Chỉ chủ/quản lý được cấp kho cho nhân viên Shopee.');
+  }
+  const clean = Array.from(new Set(ids.map((s) => `${s}`.trim()).filter(Boolean)));
+  const value = JSON.stringify(clean);
+  await db
+    .insert(shopeeSettings)
+    .values({ key: 'ops_warehouse_ids', value })
+    .onConflictDoUpdate({ target: shopeeSettings.key, set: { value } });
+  return getShopeeOpsWarehouses();
+}
+
+
