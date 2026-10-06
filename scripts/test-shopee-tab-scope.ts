@@ -8,6 +8,7 @@ import { assertIsolatedTestDb } from './test-guard';
 import fs from 'node:fs';
 import path from 'node:path';
 import { USER_ROLES, getDefaultTabForRole } from '../src/lib/roles';
+import { DEFAULT_STAFF_ACCOUNTS } from '../src/lib/auth-session';
 import { AppError } from '../src/services/app-error';
 import {
   getShopeeConfig,
@@ -95,6 +96,16 @@ async function main() {
     fs.existsSync(awbPath) && fs.readFileSync(awbPath, 'utf8').includes('getAwbPdf'),
     true
   );
+
+  // Đăng nhập được: seed tài khoản + fallback role-PIN đều phải biết role mới.
+  const seed = DEFAULT_STAFF_ACCOUNTS.find((a) => a.staffId === 'SHP-01');
+  eq2('seed có tài khoản SHP-01', seed?.role, 'ROLE_SHOPEE_OPS');
+  const loginSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/app/api/auth/login/route.ts'),
+    'utf8'
+  );
+  const validLine = loginSrc.split('\n').find((l) => l.includes('VALID_ROLES')) || '';
+  eq2('fallback login biết role Shopee', validLine.includes('ROLE_SHOPEE_OPS'), true);
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {

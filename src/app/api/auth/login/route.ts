@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Fallback khi đăng nhập bằng role-level passcode trong test/dev non-strict
-      const VALID_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
+      const VALID_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX', 'ROLE_SHOPEE_OPS'];
       if (roleInput && VALID_ROLES.includes(roleInput) && verifyRolePasscode(roleInput, passcode)) {
         role = roleInput;
         actorId = staffIdInput || roleInput;
