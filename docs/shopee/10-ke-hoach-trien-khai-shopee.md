@@ -240,3 +240,12 @@ flowchart LR
 2. **`item_id`/`model_id` của 55 listing** (lấy trên Seller Center, cấm bịa) → nhập vào bảng `shopee_item_map`, code đã sẵn sàng đọc.
 3. **`category_id`/`attribute_id` thật** nếu sau này dùng `add_item` (hiện chưa cần — đăng tay xong rồi).
 4. **Webhook code 3 "365 ngày"** đối chiếu console khi cấu hình push + bấm Verify URL trỏ về `/api/shopee/push`.
+
+## Việc tồn đọng sau merge 0aa605c (06/10 — đỏ từ TRƯỚC merge, đã chứng minh bằng chạy lại trên `e680e49`, không phải do nhánh Shopee)
+
+| Suite | Triệu chứng | Chủ sở hữu gợi ý |
+|---|---|---|
+| `test-settlement-ui` | ĐÃ SỬA trong merge (`3512f54`: nhãn nút "Báo Cáo Ngày") — 29 assertions xanh | — |
+| `test-auditC-nplus1` | Đơn 10 dòng tốn 70 câu > ngân sách 55 (vượt giới hạn 50 subrequest Workers free) — CẤM nâng ngân sách test, phải cắt truy vấn luồng tạo đơn | copilot/order |
+| `eval-executive-ai` | LLM không từ chối prompt-injection diễn đạt lại — gia cố prompt + tách eval dễ vỡ khỏi suite chặn | copilot |
+| `run-real-pos-terminal-test` | Harness Chrome chết sau Test 5, không chỉ ra test đỏ — debug hạ tầng máy | pos-infra |
