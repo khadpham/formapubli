@@ -2,8 +2,8 @@
 
 > **Trạng thái thực thi (cập nhật 06/10/2026, trên `main`):**
 > Task 1–9 + Tab+Role ĐÃ MERGE `main` (`0aa605c`), chưa deploy.
-> Test: 12 suite Shopee xanh, `test-shopee-tab-scope` 17/17, full runner 174/177
-> (3 đỏ tồn đọng từ trước merge — xem mục "Việc tồn đọng", không phải do Shopee).
+> Test: 12 suite Shopee xanh, `test-shopee-tab-scope` 17/17, full runner 176/177
+> (`eval-executive-ai` 23/26 drift theo copilot mới — việc của chủ copilot).
 > `tsc` + `npm run build` sạch. Cửa ải còn lại: sandbox (mục Open items).
 > Chi tiết từng task: xem bảng bên dưới.
 >
@@ -250,11 +250,18 @@ flowchart LR
 3. **`category_id`/`attribute_id` thật** nếu sau này dùng `add_item` (hiện chưa cần — đăng tay xong rồi).
 4. **Webhook code 3 "365 ngày"** đối chiếu console khi cấu hình push + bấm Verify URL trỏ về `/api/shopee/push`.
 
-## Việc tồn đọng sau merge 0aa605c (06/10 — đỏ từ TRƯỚC merge, đã chứng minh bằng chạy lại trên `e680e49`)
+## Việc tồn đọng sau merge 0aa605c (06/10)
 
-| Suite | Trạng thái 06/10 chiều | Chủ sở hữu |
+| Suite | Trạng thái cuối 06/10 | Ghi chú |
 |---|---|---|
-| `test-settlement-ui` | ✅ ĐÃ SỬA (`3512f54`: nhãn nút "Báo Cáo Ngày") — 29/29 | — |
-| `test-auditC-nplus1` | ✅ ĐÃ SỬA (root cause: `recordMovement` tra BOOK/GOODS 2 câu/dòng dù caller đã validate; fix: tin `isBook` explicit → 70→50 câu, slope 4.0) | — |
-| `run-real-pos-terminal-test` | ✅ TỰ XANH sau fix nhãn (Test 6 cần nút "Báo Cáo Ngày" cho MANAGER) — exit 0 | — |
-| `eval-executive-ai` | ❌ CÒN ĐỎ 23/26 — 3 case drift sau khi main viết lại router/tool copilot: INJECT-02 (SQL thô → DIRECT_ANSWER, cần xem answer có lộ số không), PARA-04 (hoàn tiền → `query_gift_return`, có thể đúng hành vi mới), PARA-06 (doanh thu → `query_period_compare`, tool anh em). CẤM nới eval cho qua — cần chủ copilot gia cố prompt + cập nhật kỳ vọng trong cùng 1 đợt | copilot |
+| `test-settlement-ui` | ✅ Xanh 29/29 (`3512f54`) | Nhãn nút "Báo Cáo Ngày" |
+| `test-auditC-nplus1` | ✅ Xanh 8/8 (`ff74055`: tin `isBook` explicit, 70→50 câu, slope 4.0) | Cấm nâng ngân sách — đã sửa gốc |
+| `run-real-pos-terminal-test` | ✅ Xanh, exit 0 (xác nhận 2 vòng) | Test 6 cần đúng nhãn trên cho MANAGER |
+| `test-settlement-range` | ✅ Xanh (lỗi 1 vòng full-suite là nhiễu do cây bị đổi nhánh giữa lúc chạy — xem dưới) | — |
+| `eval-executive-ai` | ❌ Còn đỏ 23/26 — 3 case drift theo router/tool copilot mới (INJECT-02, PARA-04, PARA-06). CẤM nới eval cho qua — cần chủ copilot gia cố prompt + cập nhật kỳ vọng trong cùng 1 đợt | copilot |
+
+> **Sự cố 06/10 13:23–13:34 (bài học vận hành):** agent khác (nhánh `feat/ho-guom-summary-csv`)
+> checkout qua lại đúng giữa các vòng suite ⇒ runner đọc nhầm code cũ, sinh lỗi ma
+> (auditC 70 câu trở lại, settlement-range đỏ). Bằng chứng: reflog + chạy lại trên
+> `main` ổn định thì xanh hết. Quy tắc: 1 cây 1 agent tại 1 thời điểm; agent thứ hai
+> phải dùng worktree riêng + `node_modules` riêng (không junction).
