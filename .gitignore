@@ -14,7 +14,10 @@ tsconfig.tsbuildinfo
 .codex/
 .gemini/
 agent/
+.kilo/
+.kilo/skills/
 .kilo/worktrees/
+.kilo/plans/
 
 
 # Kilo
