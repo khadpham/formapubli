@@ -55,6 +55,7 @@ const ALL_SUITES = [
   'scripts/test-delivery-print.ts',
   'scripts/test-consignment-quick-report.ts',
   'scripts/test-analytics-wholesale.ts',
+  'scripts/test-partner-debt.ts',
   'scripts/test-s4-settlement.ts',
   'scripts/test-pending-qr-total.ts',
   'scripts/test-stocktake-order.ts',

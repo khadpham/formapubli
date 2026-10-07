@@ -152,6 +152,11 @@ export const partners = sqliteTable('partners', {
   taxCode: text('tax_code'),
   receiverName: text('receiver_name'),
   shipNote: text('ship_note'),
+  // 0045: điều khoản công nợ bán đại lý. creditLimit = 0 là không cho nợ
+  // gối đầu (thu đủ khi giao); paymentDueDays mặc định 30 ngày.
+  creditLimit: real('credit_limit').default(0),
+  paymentDueDays: integer('payment_due_days').default(30),
+  paymentNote: text('payment_note'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -462,6 +467,30 @@ export const consignmentPayments = sqliteTable('consignment_payments', {
   partnerIdx: index('idx_consign_pay_partner').on(table.partnerId),
   statementIdx: index('idx_consign_pay_stmt').on(table.statementId),
   statusIdx: index('idx_consign_pay_status').on(table.status),
+}));
+
+// 22b. Partner Receipts (Phiếu thu công nợ bán đứt đại lý, bất biến + VOID).
+// Gối đầu: trừ vào nợ chung theo FIFO (phiếu cũ trước), không gắn cứng từng
+// phiếu — deliveryOrderId nullable chỉ để ghi chú. Ký gửi dùng
+// consignment_payments riêng, không dùng bảng này.
+export const partnerReceipts = sqliteTable('partner_receipts', {
+  id: text('id').primaryKey(), // e.g. RC-20261007-AB12
+  partnerId: text('partner_id').notNull().references(() => partners.id),
+  deliveryOrderId: text('delivery_order_id').references(() => deliveryOrders.id),
+  amount: real('amount').notNull(), // Số tiền thu (> 0)
+  paymentMethod: text('payment_method').notNull(), // CASH, BANK_TRANSFER
+  reference: text('reference').notNull(), // Mã bill/sao kê đối chiếu (bắt buộc)
+  paidAt: text('paid_at').notNull(), // Ngày tiền về (YYYY-MM-DD)
+  receivedBy: text('received_by').notNull(), // Người thu tiền
+  status: text('status').notNull().default('ACTIVE'), // ACTIVE, VOIDED
+  voidReason: text('void_reason'), // Lý do hủy (bắt buộc khi VOID)
+  idempotencyKey: text('idempotency_key').notNull().unique(), // Chống thu trùng
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  partnerIdx: index('idx_partner_rcpt_partner').on(table.partnerId),
+  orderIdx: index('idx_partner_rcpt_order').on(table.deliveryOrderId),
+  statusIdx: index('idx_partner_rcpt_status').on(table.status),
 }));
 
 // 23. Rights Contracts (Hợp đồng bản quyền + hạn ngạch in + tạm ứng nhuận bút)
