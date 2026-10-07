@@ -965,3 +965,82 @@ export const shopeeQuarantine = sqliteTable('shopee_quarantine', {
 }, (table) => ({
   unresolvedIdx: index('idx_quarantine_unresolved').on(table.resolved, table.createdAt),
 }));
+
+// 0046: Quản lý mẫu hợp đồng, hợp đồng đã soạn, bộ đếm số HĐ, thông tin
+// công ty Bên A, preset nhanh (D11). DDL nguồn sự thật ở
+// src/db/migrations/0046_contract_management.sql — tên cột ở đây phải khớp.
+export const contractTemplates = sqliteTable('contract_templates', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  title: text('title').notNull(),
+  category: text('category').notNull().default('TAC_QUYEN'),
+  description: text('description'),
+  templateFilename: text('template_filename').notNull(),
+  templateData: text('template_data').notNull(),
+  schemaFields: text('schema_fields').notNull(),
+  version: integer('version').notNull().default(1),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  categoryIdx: index('idx_contract_templates_category').on(table.category),
+}));
+
+export const contractDocuments = sqliteTable('contract_documents', {
+  id: text('id').primaryKey(),
+  contractNumber: text('contract_number').notNull().unique(),
+  templateId: text('template_id').notNull().references(() => contractTemplates.id),
+  templateVersion: integer('template_version').notNull().default(1),
+  title: text('title').notNull(),
+  partnerId: text('partner_id').references(() => partners.id),
+  workId: text('work_id').references(() => works.id),
+  status: text('status').notNull().default('DRAFT'),
+  payloadData: text('payload_data').notNull(),
+  renderedDocx: text('rendered_docx'),
+  finalDocx: text('final_docx'),
+  finalFilename: text('final_filename'),
+  createdBy: text('created_by').notNull(),
+  signedDate: text('signed_date'),
+  effectiveDate: text('effective_date'),
+  expiryDate: text('expiry_date'),
+  totalAmount: integer('total_amount').notNull().default(0),
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  partnerIdx: index('idx_contract_documents_partner').on(table.partnerId),
+  workIdx: index('idx_contract_documents_work').on(table.workId),
+  statusIdx: index('idx_contract_documents_status').on(table.status),
+}));
+
+export const contractCounters = sqliteTable('contract_counters', {
+  category: text('category').notNull(),
+  year: integer('year').notNull(),
+  lastSeq: integer('last_seq').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.category, table.year] }),
+}));
+
+export const contractCompanyProfile = sqliteTable('contract_company_profile', {
+  id: text('id').primaryKey(),
+  tenCongTy: text('ten_cong_ty').notNull().default('FORMApubli'),
+  daiDien: text('dai_dien'),
+  chucVu: text('chuc_vu').default('Giám đốc'),
+  diaChi: text('dia_chi'),
+  mst: text('mst'),
+  sdt: text('sdt'),
+  email: text('email'),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const contractPresets = sqliteTable('contract_presets', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  valuesJson: text('values_json').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  sortIdx: index('idx_contract_presets_sort').on(table.sortOrder),
+}));

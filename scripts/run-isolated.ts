@@ -231,6 +231,8 @@ const ALL_SUITES = [
   'scripts/test-bank-list-inactive.ts',
   // Module Hợp đồng: helper đọc số thành chữ + ngày tháng ND30.
   'scripts/test-contract-helpers.ts',
+  // Module Hợp đồng: migration 0046 (5 bảng) + CRUD constraints.
+  'scripts/test-contract-schema.ts',
 ];
 
 /**
