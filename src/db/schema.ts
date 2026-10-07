@@ -145,6 +145,13 @@ export const partners = sqliteTable('partners', {
   type: text('type').notNull(), // CONSIGNMENT, WHOLESALE, PRINTER, LIBRARY, INTERNAL
   contactInfo: text('contact_info'),
   discountRate: real('discount_rate').default(0.0),
+  // 0044: thông tin giao nhận bán đại lý (từ CSV đối tác, cột E/P/Q).
+  address: text('address'),
+  phone: text('phone'),
+  email: text('email'),
+  taxCode: text('tax_code'),
+  receiverName: text('receiver_name'),
+  shipNote: text('ship_note'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 

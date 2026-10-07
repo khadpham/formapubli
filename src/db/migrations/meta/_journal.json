@@ -308,6 +308,13 @@
       "when": 1790772800000,
       "tag": "0043_expense_expand",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": 7,
+      "when": 1791374149888,
+      "tag": "0044_partners_agency_info",
+      "breakpoints": true
     }
   ],
   "version": "7"
