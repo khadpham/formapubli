@@ -77,9 +77,12 @@ const ALL_FIELD_KEYS = [
   'han_muc_cong_no', 'thoi_han_thanh_toan', 'dieu_khoan_thanh_toan', 'dieu_khoan_bo_sung',
 ];
 
-export async function seedContractTemplates(targetUrl?: string) {
+export async function seedContractTemplates(
+  targetUrl?: string,
+  opts: { authToken?: string; skipRefs?: boolean } = {},
+) {
   const url = targetUrl || process.env.DATABASE_URL || 'file:formapubli.db';
-  const client: Client = createClient({ url });
+  const client: Client = createClient({ url, authToken: opts.authToken });
   const templates = [
     { code: 'HD_XUAT_BAN_SEED', title: 'Mẫu HĐ Xuất Bản (seed)', category: 'TAC_QUYEN', data: T_XB },
     { code: 'HD_DAI_LY_SEED', title: 'Mẫu HĐ Đại Lý Phát Hành (seed)', category: 'DAI_LY', data: T_DL },
@@ -97,7 +100,9 @@ export async function seedContractTemplates(targetUrl?: string) {
     }
   }
   // Seed đối tác/tác phẩm/ấn bản tối thiểu cho E2E (không đụng dữ liệu thật).
-  try {
+  // --no-refs: chỉ seed mẫu (dùng cho prod — không chèn fixture vào dữ liệu thật).
+  if (!opts.skipRefs) {
+    try {
     await client.execute({
       sql: `INSERT OR IGNORE INTO partners (id, code, name, type, discount_rate, tax_code, address, phone, email, credit_limit, payment_due_days, receiver_name) VALUES
             ('part-e2e-seed', 'DL_E2E_SEED', 'Nhà Sách E2E Seed', 'WHOLESALE', 0.35, '0100000099', 'Số 9 Phố Seed, Hà Nội', '0900000099', 'seed@test.vn', 5000000, 30, 'Bên B Seed')`,
@@ -116,14 +121,19 @@ export async function seedContractTemplates(targetUrl?: string) {
   } catch (e: any) {
     console.log(`seed refs skipped: ${(e?.message || '').slice(0, 60)}`);
   }
+  }
   client.close();
-  console.log('seed-contract-templates: 3 mẫu + refs seeded.');
+  console.log(opts.skipRefs
+    ? 'seed-contract-templates: 3 mẫu seeded (bỏ qua refs).'
+    : 'seed-contract-templates: 3 mẫu + refs seeded.');
 }
 
 const invokedAsScript = process.argv[1] && path.basename(process.argv[1]).startsWith('seed-contract-templates');
 if (invokedAsScript) {
   const targetArg = process.argv.find((a) => a.startsWith('--target='))?.slice('--target='.length);
-  seedContractTemplates(targetArg).then(
+  const skipRefs = process.argv.includes('--no-refs');
+  const authToken = process.env.TURSO_AUTH_TOKEN || undefined;
+  seedContractTemplates(targetArg, { authToken, skipRefs }).then(
     () => process.exit(0),
     (e) => { console.error('SEED FAIL:', e.message); process.exit(1); }
   );
