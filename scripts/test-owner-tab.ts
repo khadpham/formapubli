@@ -100,6 +100,16 @@ async function main() {
   eq2('tab có khối Lãi ròng', tab.includes('Lãi ròng'), true);
   eq2('tab có nút Thêm chi phí', tab.includes('Thêm chi phí'), true);
 
+  // GĐ2 UI: bộ chọn tháng + nhóm loại + badge kỳ + nút Sửa.
+  eq2('tab có bộ chọn tháng', tab.includes('type="month"'), true);
+  eq2('tab có badge Định kỳ', tab.includes('Định kỳ'), true);
+  eq2('tab có badge Phát sinh', tab.includes('Phát sinh'), true);
+  eq2('tab có nút Sửa từng dòng', tab.includes('Sửa'), true);
+  eq2('tab gọi API theo kỳ', tab.includes('?month='), true);
+  for (const label of ['Lương', 'Thưởng', 'Thuê địa điểm', 'Điện nước–Mạng', 'Thiết bị', 'Vận hành', 'Khác']) {
+    eq2(`nhãn ${label} có mặt`, tab.includes(label), true);
+  }
+
   // GĐ2: staffId bắt buộc + recurrence validate + sửa có audit + kỳ tháng.
   code = '';
   try {
