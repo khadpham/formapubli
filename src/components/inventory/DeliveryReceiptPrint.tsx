@@ -25,6 +25,9 @@ export interface DeliveryOrderData {
   partnerId: string;
   partnerName?: string;
   partnerCode?: string;
+  partnerAddress?: string | null;
+  partnerPhone?: string | null;
+  partnerReceiverName?: string | null;
   fromWarehouseId: string;
   warehouseName?: string;
   subtotal: number;
@@ -95,6 +98,9 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
   const qrRef = useRef<HTMLDivElement>(null);
 
   const isReversal = order.code.startsWith('PXK_R') || !!order.reversalOf;
+  // Phiếu ký gửi: cùng khung nhưng ẩn mọi cột tiền thu (chỉ số lượng +
+  // giá bìa tham khảo), suy từ fiscalScope — không thêm prop mới.
+  const isConsignment = order.fiscalScope === 'CONSIGNMENT_DISPATCH';
   const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const discountAmount = Math.max(0, order.subtotal - order.finalAmount);
   const createdDate = order.dispatchedAt ? new Date(order.dispatchedAt) : new Date(order.createdAt || Date.now());
@@ -251,7 +257,11 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
             {/* Tiêu đề Phiếu */}
             <div className="text-center my-6">
               <h1 className="font-sans font-black text-2xl tracking-wide uppercase text-slate-900">
-                {isReversal ? 'PHIẾU XUẤT KHO (ĐẢO BÚT TOÁN)' : 'PHIẾU XUẤT KHO CUNG ỨNG ĐỐI TÁC'}
+                {isReversal
+                  ? 'PHIẾU XUẤT KHO (ĐẢO BÚT TOÁN)'
+                  : isConsignment
+                    ? 'PHIẾU XUẤT KHO KÝ GỬI ĐẠI LÝ'
+                    : 'PHIẾU XUẤT KHO CUNG ỨNG ĐỐI TÁC'}
               </h1>
               <p className="font-sans italic text-xs text-slate-600 mt-1">
                 Ngày {createdDate.getDate()} tháng {createdDate.getMonth() + 1} năm {createdDate.getFullYear()}
@@ -271,9 +281,20 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
               <div className="flex">
                 <span className="w-48 text-slate-600">- Họ và tên người nhận hàng:</span>
                 <strong className="text-slate-900 uppercase">
-                  {order.partnerName || 'Đối tác nhận hàng'} ({order.partnerCode || order.partnerId})
+                  {order.partnerReceiverName || order.partnerName || 'Đối tác nhận hàng'} (
+                  {order.partnerCode || order.partnerId})
                 </strong>
               </div>
+              {(order.partnerAddress || order.partnerPhone) && (
+                <div className="flex">
+                  <span className="w-48 text-slate-600">- Địa chỉ giao hàng:</span>
+                  <span className="text-slate-800">
+                    {[order.partnerAddress, order.partnerPhone && `SĐT: ${order.partnerPhone}`]
+                      .filter(Boolean)
+                      .join(' — ')}
+                  </span>
+                </div>
+              )}
               <div className="flex">
                 <span className="w-48 text-slate-600">- Lý do xuất kho:</span>
                 <span className="text-slate-800">
@@ -299,9 +320,13 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                   <th className="border border-slate-900 p-2 w-14">ĐVT</th>
                   <th className="border border-slate-900 p-2 w-16">Số lượng</th>
                   <th className="border border-slate-900 p-2 w-24 text-right">Đơn giá bìa</th>
-                  <th className="border border-slate-900 p-2 w-16">CK (%)</th>
-                  <th className="border border-slate-900 p-2 w-24 text-right">Giá bán</th>
-                  <th className="border border-slate-900 p-2 w-28 text-right">Thành tiền (đ)</th>
+                  {!isConsignment && (
+                    <>
+                      <th className="border border-slate-900 p-2 w-16">CK (%)</th>
+                      <th className="border border-slate-900 p-2 w-24 text-right">Giá bán</th>
+                      <th className="border border-slate-900 p-2 w-28 text-right">Thành tiền (đ)</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -326,23 +351,36 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                     <td className="border border-slate-900 p-2 text-right font-mono">
                       {item.unitCoverPrice.toLocaleString('vi-VN')}
                     </td>
-                    <td className="border border-slate-900 p-2 text-center font-mono">
-                      {Math.round(order.discountRate * 100)}%
-                    </td>
-                    <td className="border border-slate-900 p-2 text-right font-mono">
-                      {item.unitSellingPrice.toLocaleString('vi-VN')}
-                    </td>
-                    <td className="border border-slate-900 p-2 text-right font-mono font-bold">
-                      {item.totalAmount.toLocaleString('vi-VN')}
-                    </td>
+                    {!isConsignment && (
+                      <>
+                        <td className="border border-slate-900 p-2 text-center font-mono">
+                          {Math.round(order.discountRate * 100)}%
+                        </td>
+                        <td className="border border-slate-900 p-2 text-right font-mono">
+                          {item.unitSellingPrice.toLocaleString('vi-VN')}
+                        </td>
+                        <td className="border border-slate-900 p-2 text-right font-mono font-bold">
+                          {item.totalAmount.toLocaleString('vi-VN')}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
 
                 {/* Dòng tổng cộng */}
-                <tr className="font-bold bg-slate-50 font-sans">
-                  <td colSpan={4} className="border border-slate-900 p-2 text-center uppercase">
-                    Cộng tiền hàng (Tổng số lượng: {totalQuantity.toLocaleString('vi-VN')} cuốn)
-                  </td>
+                {isConsignment ? (
+                  <tr className="font-bold bg-slate-50 font-sans">
+                    <td colSpan={6} className="border border-slate-900 p-2 text-center uppercase">
+                      Cộng số lượng ký gửi: {totalQuantity.toLocaleString('vi-VN')} cuốn
+                      (giá bìa tham khảo — hàng chưa bán, chưa thu tiền)
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    <tr className="font-bold bg-slate-50 font-sans">
+                      <td colSpan={4} className="border border-slate-900 p-2 text-center uppercase">
+                        Cộng tiền hàng (Tổng số lượng: {totalQuantity.toLocaleString('vi-VN')} cuốn)
+                      </td>
                   <td className="border border-slate-900 p-2 text-center font-mono font-bold">
                     {totalQuantity.toLocaleString('vi-VN')}
                   </td>
@@ -373,13 +411,21 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                     {order.finalAmount.toLocaleString('vi-VN')}
                   </td>
                 </tr>
+                  </>
+                )}
               </tbody>
             </table>
 
             {/* Số tiền bằng chữ */}
-            <div className="font-sans text-xs italic mb-8">
-              - Số tiền viết bằng chữ: <strong className="text-slate-900 font-bold not-italic">{numberToVietnameseWords(order.finalAmount)}</strong>.
-            </div>
+            {!isConsignment && (
+              <div className="font-sans text-xs italic mb-8">
+                - Số tiền viết bằng chữ:{' '}
+                <strong className="text-slate-900 font-bold not-italic">
+                  {numberToVietnameseWords(order.finalAmount)}
+                </strong>
+                .
+              </div>
+            )}
 
             {/* 4 Chữ ký */}
             <div className="font-sans grid grid-cols-4 gap-2 text-center text-xs mt-6 pt-4">

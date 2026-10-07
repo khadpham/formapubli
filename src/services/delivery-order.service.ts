@@ -530,6 +530,9 @@ export class DeliveryOrderService {
         warehouseName: warehouses.name,
         partnerName: partners.name,
         partnerCode: partners.code,
+        partnerAddress: partners.address,
+        partnerPhone: partners.phone,
+        partnerReceiverName: partners.receiverName,
       })
       .from(deliveryOrders)
       .leftJoin(warehouses, eq(deliveryOrders.fromWarehouseId, warehouses.id))
@@ -543,7 +546,7 @@ export class DeliveryOrderService {
       throw AppError.invalid('Không tìm thấy phiếu xuất kho');
     }
 
-    const { order, warehouseName, partnerName, partnerCode } = rows[0];
+    const { order, warehouseName, partnerName, partnerCode, partnerAddress, partnerPhone, partnerReceiverName } = rows[0];
     const rawItems = await txOrDb
       .select({
         id: deliveryOrderItems.id,
@@ -574,6 +577,9 @@ export class DeliveryOrderService {
       warehouseName,
       partnerName,
       partnerCode,
+      partnerAddress,
+      partnerPhone,
+      partnerReceiverName,
       items,
     };
   }
