@@ -1,3 +1,5 @@
+import PizZip from 'pizzip';
+import Docxtemplater from 'docxtemplater';
 import {
   db,
   contractTemplates,
@@ -224,10 +226,10 @@ export class ContractService {
     let bytes: Uint8Array;
     try {
       bytes = base64ToBytes(base64);
-      const { default: PizZip } = await import('pizzip');
-      const zip = new PizZip(Buffer.from(bytes).toString('binary'));
+      // PizZip nhận Uint8Array trực tiếp — KHÔNG qua binary string (mất byte
+      // với file thật có vùng text rộng/nhị phân, gây fail validate).
+      const zip = new PizZip(bytes);
       if (!zip.file('word/document.xml')) throw new Error('not-docx');
-      const { default: Docxtemplater } = await import('docxtemplater');
       new Docxtemplater(zip);
     } catch {
       throw AppError.invalid('File tải lên không phải Word .docx hợp lệ.');

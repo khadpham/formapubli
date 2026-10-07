@@ -239,6 +239,8 @@ const ALL_SUITES = [
   'scripts/test-contract-service.ts',
   // Module Hợp đồng: API handler thật + session ký thật.
   'scripts/test-contract-api.ts',
+  // Module Hợp đồng: seed + E2E full flow.
+  'scripts/test-contracts-e2e.ts',
 ];
 
 /**

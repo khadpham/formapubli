@@ -11,9 +11,8 @@ const ENGINE_OPTIONS = {
 };
 
 function toBinary(templateBase64: string): string {
-  return typeof Buffer !== 'undefined'
-    ? Buffer.from(templateBase64, 'base64').toString('binary')
-    : atob(templateBase64);
+  // Dùng Buffer path khi có — atob ở Node cũ gây lệch byte với file thật.
+  return Buffer.from(templateBase64, 'base64').toString('binary');
 }
 
 export interface TemplateValidationResult {
