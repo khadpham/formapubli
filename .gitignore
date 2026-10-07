@@ -8,6 +8,18 @@ build/
 .vercel/
 tsconfig.tsbuildinfo
 
+# AI Agent Tooling Config (auto-generated, not project source)
+.agents/skills/
+.claude/
+.codex/
+.gemini/
+agent/
+.kilo/worktrees/
+
+
+# Kilo
+certificates
+
 # Environment Variables & Secrets
 .env
 .dev.vars
