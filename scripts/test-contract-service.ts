@@ -80,25 +80,28 @@ async function run() {
   console.log('✓ Auto-fill đọc đúng partner/work/edition + Bên A');
 
   // 2. Cấp số tuần tự 01 → 02 trong transaction.
+  // Năm kỳ vọng tính độc lập bằng Intl (KHÔNG import vn-time của code — luật
+  // AGENTS.md: test không dùng chung hằng/giá trị với code).
+  const expectedYear = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()).slice(0, 4);
   const d1 = await ContractService.createDocument({
     templateId: 'ctpl-cs-1', title: 'HĐ 1', category: 'TAC_QUYEN',
     payloadData: { ben_b_ten: 'Đại lý CS' }, partnerId: 'part-cs',
     signedDate: '2026-10-08', totalAmount: 10000000, createdBy: 'staff-admin',
   });
-  assert.equal(d1.contractNumber, '01/2026/HĐXB-FORMA');
+  assert.equal(d1.contractNumber, `01/${expectedYear}/HĐXB-FORMA`);
   const d2 = await ContractService.createDocument({
     templateId: 'ctpl-cs-1', title: 'HĐ 2', category: 'TAC_QUYEN',
     payloadData: { ben_b_ten: 'Đại lý CS' }, partnerId: 'part-cs',
     signedDate: '2026-10-08', totalAmount: 20000000, createdBy: 'staff-admin',
   });
-  assert.equal(d2.contractNumber, '02/2026/HĐXB-FORMA');
+  assert.equal(d2.contractNumber, `02/${expectedYear}/HĐXB-FORMA`);
   console.log('✓ Cấp số nguyên tử tuần tự 01 → 02');
 
   // 3. Snapshot rendered_docx: giải nén thấy text đã thay + đúng số HĐ.
   const [row1] = await db.select().from(schema.contractDocuments).where(eq(schema.contractDocuments.id, d1.id));
   assert.ok(row1.renderedDocx, 'phải lưu snapshot rendered_docx');
   const xml1 = docTextFromBytes(Uint8Array.from(Buffer.from(row1.renderedDocx!, 'base64')));
-  assert.ok(xml1.includes('01/2026/HĐXB-FORMA'), 'snapshot phải chứa đúng số HĐ');
+  assert.ok(xml1.includes(`01/${expectedYear}/HĐXB-FORMA`), 'snapshot phải chứa đúng số HĐ');
   assert.ok(!xml1.includes('{so_hop_dong}'), 'snapshot không còn placeholder số HĐ');
   console.log('✓ Snapshot rendered_docx chống hồi tố');
 

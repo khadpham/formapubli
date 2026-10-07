@@ -65,9 +65,13 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const uploadFinal = async (doc: any, file: File) => {
     try {
       const buf = await file.arrayBuffer();
-      let bin = '';
       const bytes = new Uint8Array(buf);
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      // Ghép theo chunk 32KB: nối từng byte một với file 15MB sẽ treo UI.
+      let bin = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
+      }
       const res = await fetch(`/api/contracts/documents/${encodeURIComponent(doc.id)}/final-docx`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -184,6 +188,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
                       <button type="button" onClick={() => { setEditingDoc(d); setComposerOpen(true); }} className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg text-[11px] font-bold" aria-label={`Sửa ${d.contractNumber}`}>Sửa</button>
                     )}
                     <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`Tải Word ${d.contractNumber}`}>Tải Word</button>
+                    {(d.status === 'DRAFT' || d.status === 'FINALIZED') && (
                     <label className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold cursor-pointer" aria-label={`Tải bản cuối ${d.contractNumber}`}>
                       Tải bản cuối lên
                       <input
@@ -197,6 +202,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
                         }}
                       />
                     </label>
+                    )}
                     {(d.status === 'DRAFT' || d.status === 'CANCELLED') && (
                       <button type="button" onClick={() => deleteDoc(d)} className="px-2 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-bold" aria-label={`Xóa ${d.contractNumber}`}>Xóa</button>
                     )}

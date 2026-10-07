@@ -17,6 +17,7 @@ import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
 import { ContractEngineService } from './contract-engine.service';
 import { readVietnameseNumber } from '../lib/vietnamese-number-reader';
+import { vnDayOf } from '../lib/vn-time';
 
 const PREFIX_MAP: Record<string, string> = {
   TAC_QUYEN: 'HĐXB',
@@ -40,6 +41,15 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 /**
+ * Năm theo ngày nghiệp vụ VN — server (Cloudflare) chạy UTC: rạng sáng 1/1 giờ
+ * VN vẫn là 31/12 UTC, dùng getFullYear() thường sẽ ghi nhầm năm cũ vào số HĐ.
+ */
+function currentVnYear(): number {
+  const y = Number(vnDayOf(new Date())?.slice(0, 4));
+  return Number.isInteger(y) && y > 0 ? y : new Date().getFullYear();
+}
+
+/**
  * Nghiệp vụ hợp đồng: cấp số nguyên tử (D2), auto-fill override được (D8),
  * snapshot chống hồi tố (D3), bản cuối upload nhiều lần (D9), preset (D11).
  */
@@ -56,12 +66,9 @@ export class ContractService {
         set: { lastSeq: sql`${contractCounters.lastSeq} + 1` },
       })
       .returning({ lastSeq: contractCounters.lastSeq });
-    return Number(rows?.[0]?.lastSeq ?? 0);
-  }
-
-  static async generateContractNumber(category: string, year = new Date().getFullYear()): Promise<string> {
-    const seq = await this.nextSeq(db, category, year);
-    return formatContractNumber(seq, year, category);
+    const seq = Number(rows?.[0]?.lastSeq ?? 0);
+    if (!Number.isInteger(seq) || seq < 1) throw AppError.invalid('Không cấp được số hợp đồng, thử lại.');
+    return seq;
   }
 
   /** Dữ liệu tự điền — chỉ là DEFAULT, form vẫn sửa tay (D8). */
@@ -127,7 +134,9 @@ export class ContractService {
   }) {
     const [tpl] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, input.templateId)).limit(1);
     if (!tpl) throw AppError.invalid('Không tìm thấy mẫu hợp đồng.');
-    const year = new Date().getFullYear();
+    const year = currentVnYear();
+    const totalAmount = Math.round(input.totalAmount ?? 0);
+    if (!Number.isFinite(totalAmount)) throw AppError.invalid('Tổng tiền hợp đồng không hợp lệ.');
     return await withDbRetry(async () =>
       db.transaction(async (tx) => {
         const seq = await this.nextSeq(tx, input.category, year);
@@ -146,7 +155,7 @@ export class ContractService {
           signedDate: input.signedDate ?? null,
           effectiveDate: input.effectiveDate ?? null,
           expiryDate: input.expiryDate ?? null,
-          totalAmount: Math.round(input.totalAmount ?? 0),
+          totalAmount,
           notes: input.notes ?? null,
         }).returning();
         const binary = ContractEngineService.generateDocx(tpl.templateData, {
@@ -182,6 +191,8 @@ export class ContractService {
           throw AppError.invalid(`Trạng thái không hợp lệ: ${patch.status}.`);
         }
         const nextPayload = patch.payloadData ?? JSON.parse(doc.payloadData || '{}');
+        const nextTotal = patch.totalAmount !== undefined ? Math.round(Number(patch.totalAmount)) : doc.totalAmount;
+        if (!Number.isFinite(nextTotal)) throw AppError.invalid('Tổng tiền hợp đồng không hợp lệ.');
         const [tpl] = await tx.select().from(contractTemplates).where(eq(contractTemplates.id, doc.templateId)).limit(1);
         const binary = tpl
           ? ContractEngineService.generateDocx(tpl.templateData, { ...nextPayload, so_hop_dong: doc.contractNumber })
@@ -194,7 +205,7 @@ export class ContractService {
           signedDate: patch.signedDate !== undefined ? patch.signedDate : doc.signedDate,
           effectiveDate: patch.effectiveDate !== undefined ? patch.effectiveDate : doc.effectiveDate,
           expiryDate: patch.expiryDate !== undefined ? patch.expiryDate : doc.expiryDate,
-          totalAmount: patch.totalAmount !== undefined ? Math.round(patch.totalAmount) : doc.totalAmount,
+          totalAmount: nextTotal,
           notes: patch.notes !== undefined ? patch.notes : doc.notes,
           status: patch.status ?? doc.status,
           ...(binary ? { renderedDocx: bytesToBase64(binary) } : {}),
@@ -223,6 +234,10 @@ export class ContractService {
   static async uploadFinalDocx(id: string, base64: string, filename: string) {
     const [doc] = await db.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
     if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);
+    // Không cho hạ cấp hợp đồng đã ký/hủy về FINALIZED bằng một file upload.
+    if (doc.status !== 'DRAFT' && doc.status !== 'FINALIZED') {
+      throw AppError.conflict(`Không thể tải bản cuối cho hợp đồng ở trạng thái ${doc.status} (chỉ DRAFT/FINALIZED).`);
+    }
     let bytes: Uint8Array;
     try {
       bytes = base64ToBytes(base64);
@@ -259,6 +274,19 @@ export class ContractService {
     const [doc] = await db.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
     if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);
     return doc;
+  }
+
+  /** Xóa hợp đồng — chỉ DRAFT/CANCELLED, chặn xóa nhầm HĐ đã ký/chốt. */
+  static async deleteDocument(id: string) {
+    const [doc] = await db.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
+    if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);
+    if (doc.status !== 'DRAFT' && doc.status !== 'CANCELLED') {
+      throw AppError.conflict(`Hợp đồng ở trạng thái ${doc.status} không được xóa (chỉ DRAFT/CANCELLED).`);
+    }
+    await withDbRetry(async () =>
+      db.delete(contractDocuments).where(eq(contractDocuments.id, id))
+    );
+    return { id, contractNumber: doc.contractNumber, deleted: true };
   }
 
   static async getCompanyProfile() {

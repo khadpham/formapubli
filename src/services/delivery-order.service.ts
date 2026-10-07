@@ -268,24 +268,6 @@ export class DeliveryOrderService {
 
     const nowIso = new Date().toISOString();
 
-    await txOrDb
-      .update(deliveryOrders)
-      .set({
-        partnerId,
-        fromWarehouseId,
-        subtotal,
-        discountRate,
-        finalAmount,
-        fiscalScope,
-        note: note || null,
-        updatedAt: nowIso,
-      })
-      .where(eq(deliveryOrders.id, deliveryOrderId));
-
-    await txOrDb
-      .delete(deliveryOrderItems)
-      .where(eq(deliveryOrderItems.deliveryOrderId, deliveryOrderId));
-
     const itemRows = cleanItems.map((item) => ({
       id: crypto.randomUUID(),
       deliveryOrderId,
@@ -297,7 +279,31 @@ export class DeliveryOrderService {
       createdAt: nowIso,
     }));
 
-    await txOrDb.insert(deliveryOrderItems).values(itemRows);
+    // 3 lệnh ghi phải nguyên tử trong 1 transaction: nếu lỗi giữa chừng
+    // (đã DELETE items mà chưa INSERT lại) phiếu sẽ mất vĩnh viễn dòng hàng.
+    await withDbRetry(async () =>
+      db.transaction(async (tx) => {
+        await tx
+          .update(deliveryOrders)
+          .set({
+            partnerId,
+            fromWarehouseId,
+            subtotal,
+            discountRate,
+            finalAmount,
+            fiscalScope,
+            note: note || null,
+            updatedAt: nowIso,
+          })
+          .where(eq(deliveryOrders.id, deliveryOrderId));
+
+        await tx
+          .delete(deliveryOrderItems)
+          .where(eq(deliveryOrderItems.deliveryOrderId, deliveryOrderId));
+
+        await tx.insert(deliveryOrderItems).values(itemRows);
+      })
+    );
 
     return {
       ...existing,
@@ -340,13 +346,18 @@ export class DeliveryOrderService {
       );
     }
 
-    await txOrDb
-      .delete(deliveryOrderItems)
-      .where(eq(deliveryOrderItems.deliveryOrderId, deliveryOrderId));
+    // 2 lệnh xóa phải nguyên tử: tránh mồ côi dòng hàng nếu lỗi giữa chừng.
+    await withDbRetry(async () =>
+      db.transaction(async (tx) => {
+        await tx
+          .delete(deliveryOrderItems)
+          .where(eq(deliveryOrderItems.deliveryOrderId, deliveryOrderId));
 
-    await txOrDb
-      .delete(deliveryOrders)
-      .where(eq(deliveryOrders.id, deliveryOrderId));
+        await tx
+          .delete(deliveryOrders)
+          .where(eq(deliveryOrders.id, deliveryOrderId));
+      })
+    );
 
     return { success: true, id: deliveryOrderId };
   }
