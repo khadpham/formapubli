@@ -405,12 +405,17 @@ export function BatchTransferModal({
   };
 
   const handleQuantityChange = (editionId: string, qty: number) => {
-    const validQty = Math.max(1, Math.floor(qty) || 1);
+    // Cho phép 0 để xóa hết gõ lại dễ dàng; dòng 0 bị loại lúc kiểm tra/xác
+    // nhận (server chỉ nhận số nguyên > 0) nên không bao giờ lọt sổ.
+    const validQty = Math.max(0, Number.isInteger(qty) ? qty : Math.floor(qty) || 0);
     setLines((prev) =>
       prev.map((l) => (l.editionId === editionId ? { ...l, quantity: validQty, staleWarning: undefined } : l))
     );
     invalidateCart();
   };
+
+  // Dòng có số lượng > 0 mới được gửi đi kiểm tra/xác nhận.
+  const activeLines = useMemo(() => lines.filter((l) => l.quantity > 0), [lines]);
 
   const handleApplyBulkQuantity = () => {
     if (selectedIds.size === 0) {
@@ -423,8 +428,8 @@ export function BatchTransferModal({
       return;
     }
     const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
-      setErrorMessage('Số lượng hàng loạt phải là số nguyên dương lớn hơn 0 (không nhận số âm, 0, thập phân).');
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+      setErrorMessage('Số lượng hàng loạt phải là số nguyên không âm (0 được phép — dòng 0 sẽ bị bỏ qua lúc chuyển).');
       return;
     }
 
@@ -486,10 +491,14 @@ export function BatchTransferModal({
     );
   };
 
-  // 1. Kiểm tra tồn trước (Dry-Run TOCTOU Validation)
+  // 1. Kiểm tra tồn trước (Dry-Run TOCTOU Validation) — chỉ gửi dòng > 0.
   const handleValidateBatch = async () => {
-    if (lines.length === 0) {
-      setErrorMessage('Vui lòng chọn ít nhất một đầu sách cần chuyển.');
+    if (activeLines.length === 0) {
+      setErrorMessage(
+        lines.length === 0
+          ? 'Vui lòng chọn ít nhất một đầu sách cần chuyển.'
+          : 'Mọi dòng đang để số lượng 0 — tăng số lượng hoặc xóa dòng trước khi kiểm tra.'
+      );
       return;
     }
     if (fromWarehouseId === toWarehouseId) {
@@ -519,7 +528,7 @@ export function BatchTransferModal({
         body: JSON.stringify({
           fromWarehouseId,
           toWarehouseId,
-          items: lines.map((l) => ({ editionId: l.editionId, quantity: l.quantity })),
+          items: activeLines.map((l) => ({ editionId: l.editionId, quantity: l.quantity })),
         }),
       });
 
@@ -611,10 +620,15 @@ export function BatchTransferModal({
     }
   };
 
-  // 2. Commit Chuyển Kho Hàng Loạt
+  // 2. Commit Chuyển Kho Hàng Loạt — dòng 0 bị loại (đã cho phép nhập 0
+  // để xóa hết gõ lại, nhưng server chỉ nhận > 0).
   const handleSubmitBatch = async () => {
-    if (lines.length === 0) {
-      setErrorMessage('Vui lòng chọn ít nhất một đầu sách.');
+    if (activeLines.length === 0) {
+      setErrorMessage(
+        lines.length === 0
+          ? 'Vui lòng chọn ít nhất một đầu sách.'
+          : 'Mọi dòng đang để số lượng 0 — tăng số lượng hoặc xóa dòng trước khi xác nhận.'
+      );
       return;
     }
     if (fromWarehouseId === toWarehouseId) {
@@ -633,7 +647,7 @@ export function BatchTransferModal({
       from: fromWarehouseId,
       to: toWarehouseId,
       note: note.trim(),
-      items: lines.map((l) => ({ id: l.editionId, q: l.quantity })).sort((a, b) => a.id.localeCompare(b.id)),
+      items: activeLines.map((l) => ({ id: l.editionId, q: l.quantity })).sort((a, b) => a.id.localeCompare(b.id)),
     });
 
     let idempotencyKey: string;
@@ -656,7 +670,7 @@ export function BatchTransferModal({
           fromWarehouseId,
           toWarehouseId,
           note,
-          items: lines.map((l) => ({ editionId: l.editionId, quantity: l.quantity })),
+          items: activeLines.map((l) => ({ editionId: l.editionId, quantity: l.quantity })),
         }),
       });
 
@@ -664,10 +678,19 @@ export function BatchTransferModal({
       const committed = data?.data ?? data;
 
       if (res.ok && data?.success !== false) {
+        const skipped = lines.length - activeLines.length;
+        setLines(activeLines);
+        setSelectedIds((prev) => {
+          const keep = new Set(activeLines.map((l) => l.editionId));
+          return new Set([...prev].filter((id) => keep.has(id)));
+        });
         setSuccessInfo({
           pckCode: committed?.pckCode || 'PCK-SUCCESS',
-          totalItems: lines.reduce((acc, l) => acc + l.quantity, 0),
+          totalItems: activeLines.reduce((acc, l) => acc + l.quantity, 0),
         });
+        if (skipped > 0) {
+          setAddNotice({ kind: 'success', text: `Đã chuyển xong, bỏ qua ${skipped} dòng để số lượng 0.` });
+        }
       } else if (res.status === 409 && committed?.staleItems) {
         // TOCTOU lúc commit
         setValidationSuccess(false);
@@ -988,7 +1011,7 @@ export function BatchTransferModal({
                     <div className="flex items-center gap-1.5">
                       <input
                         type="number"
-                        min="1"
+                        min="0"
                         step="1"
                         value={bulkQtyInput}
                         onChange={(e) => setBulkQtyInput(e.target.value)}
@@ -1001,7 +1024,7 @@ export function BatchTransferModal({
                         placeholder="SL mới..."
                         disabled={isSubmitting || selectedIds.size === 0}
                         className="w-20 px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100"
-                        title="Chỉ nhận số nguyên dương (> 0)"
+                        title="Số nguyên không âm (0 được phép — dòng 0 bị bỏ qua lúc chuyển)"
                       />
                       <button
                         type="button"
@@ -1129,12 +1152,13 @@ export function BatchTransferModal({
                             <td className="px-3 py-2 text-center">
                               <input
                                 type="number"
-                                min="1"
+                                min="0"
                                 disabled={isSubmitting}
                                 value={line.quantity}
-                                onChange={(e) =>
-                                  handleQuantityChange(line.editionId, parseInt(e.target.value) || 1)
-                                }
+                                onChange={(e) => {
+                                  const v = parseInt(e.target.value);
+                                  handleQuantityChange(line.editionId, Number.isNaN(v) ? 0 : v);
+                                }}
                                 className={`w-20 px-2 py-1 text-center font-mono font-bold border rounded-lg focus:outline-none ${
                                   line.staleWarning
                                     ? 'border-rose-400 bg-rose-50 text-rose-700 focus:ring-1 focus:ring-rose-500'
