@@ -42,7 +42,7 @@ function slugName(name: string): string {
     .slice(0, 40) || 'dai-ly';
 }
 
-function parseCompanyInfo(info: string): { taxCode: string | null; phone: string | null; email: string | null; address: string | null } {
+export function parseCompanyInfo(info: string): { taxCode: string | null; phone: string | null; email: string | null; address: string | null } {
   const out = { taxCode: null as string | null, phone: null as string | null, email: null as string | null, address: null as string | null };
   const text = `${info || ''}`;
   // Chuẩn hóa nhãn ngoặc trước khi tách: "(Tax code)"/"(Address)" là một
@@ -84,6 +84,7 @@ function parseCompanyInfo(info: string): { taxCode: string | null; phone: string
   const addrLbl = rest.match(/(?<!\()(?:Địa chỉ(?:\s*Address)?)\s*:?\s*([\s\S]+?)(?=(?:Sđt|SĐT|Điện thoại|ĐT|Tel|Email|FB|Mã số thuế|Taxcode|Tên đơn vị|$))/);
   let addr = addrLbl ? addrLbl[1] : rest;
   addr = addr
+    .replace(/^"+|"+$/g, '') // dấu ngoặc sót từ ô CSV
     .replace(/Tên đơn vị\s*:?/gi, ' ')
     .replace(/Mã số thuế\s*Taxcode\s*:?/gi, ' ')
     .replace(/Taxcode\s*:?/gi, ' ')

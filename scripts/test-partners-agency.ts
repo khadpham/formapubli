@@ -7,7 +7,7 @@ import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { partners } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
-import { importPartners, parseCsv } from './import-partners';
+import { importPartners, parseCsv, parseCompanyInfo } from './import-partners';
 
 const DB_FILE = path.resolve(process.cwd(), 'formapubli_test_partners_agency.db');
 for (const s of ['', '-wal', '-shm', '-journal']) {
@@ -104,6 +104,12 @@ async function run() {
   assert.equal(lead.phone, '0900000006');
   assert.ok((lead.address || '').includes('Số 6 Đường Kẻ'), `địa chỉ đầu số sai: ${lead.address}`);
   console.log('✓ Ô số đứng đầu tách SĐT + địa chỉ');
+  // Dấu ngoặc sót từ ô CSV không lọt vào địa chỉ.
+  const quoted = parseCompanyInfo('"Tên đơn vị (Company\'s name): CÔNG TY MẪU Mã số thuế (Tax code): 0100000004 Địa chỉ (Address): Số 1 Phố Mẫu, Hà Nội, Việt Nam"');
+  assert.equal(quoted.taxCode, '0100000004');
+  assert.ok(!(quoted.address || '').includes('"'), `địa chỉ lẫn ngoặc: ${quoted.address}`);
+  assert.ok((quoted.address || '').includes('Số 1 Phố Mẫu'), `địa chỉ sai: ${quoted.address}`);
+  console.log('✓ Dấu ngoặc sót không lọt vào địa chỉ');
   const r2 = await importPartners(sample, db);
   assert.equal(r2.created, 0);
   assert.equal(r2.updated, 6);
