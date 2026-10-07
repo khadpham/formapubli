@@ -7,6 +7,7 @@ import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { partners } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
+import { importPartners, parseCsv } from './import-partners';
 
 const DB_FILE = path.resolve(process.cwd(), 'formapubli_test_partners_agency.db');
 for (const s of ['', '-wal', '-shm', '-journal']) {
@@ -60,6 +61,33 @@ async function run() {
   assert.equal(old.address, null);
   assert.equal(old.taxCode, null);
   console.log('✓ Đối tác cũ thiếu cột mới → null, không crash');
+
+  // P1b: import fixture (dữ liệu GIẢ) — kỳ vọng đọc từ fixture, không từ code.
+  const sample = fs.readFileSync(path.resolve(process.cwd(), 'scripts/fixtures/partners-sample.csv'), 'utf8');
+  const parsed = parseCsv(sample);
+  assert.ok(parsed.length >= 4, 'fixture phải có header + dòng tổng + 2 đại lý');
+  const r1 = await importPartners(sample, db);
+  assert.equal(r1.created, 3);
+  assert.equal(r1.skipped, 1); // dòng tổng C/D trống
+  console.log('✓ Import fixture: tạo 3, bỏ dòng tổng 1');
+  const [kg] = await db.select().from(partners).where(eq(partners.code, 'DL-HIEU-SACH-GIA-LAP'));
+  assert.equal(kg.type, 'CONSIGNMENT');
+  assert.equal(kg.discountRate, 0.3);
+  assert.equal(kg.taxCode, '0100000001');
+  assert.equal(kg.phone, '0900000001');
+  assert.equal(kg.email, 'gialap.official@gmail.com');
+  const [bd] = await db.select().from(partners).where(eq(partners.code, 'DL-NHA-SACH-MINH-HOA'));
+  assert.equal(bd.type, 'WHOLESALE');
+  assert.equal(bd.discountRate, 0.4);
+  console.log('✓ Tách E (MST/SĐT/mail) + G (% ck) đúng');
+  const [vd] = await db.select().from(partners).where(eq(partners.code, 'DL-TIEM-SACH-VI-DU'));
+  assert.equal(vd.type, 'WHOLESALE'); // "Mua đứt" = bán đứt phía ta
+  assert.equal(vd.discountRate, 0.35);
+  console.log('✓ "Mua đứt" map WHOLESALE đúng');
+  const r2 = await importPartners(sample, db);
+  assert.equal(r2.created, 0);
+  assert.equal(r2.updated, 3);
+  console.log('✓ Chạy lại idempotent: 0 tạo mới, 3 cập nhật');
 
   console.log('🎉 TOÀN BỘ TEST PARTNERS AGENCY PASS!');
 }
