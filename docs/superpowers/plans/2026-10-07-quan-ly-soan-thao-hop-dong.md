@@ -172,7 +172,7 @@ async function run() {
   assert.equal(readVietnameseNumber(1000000000), 'Một tỷ đồng chẵn');
   assert.equal(readVietnameseNumber(1000005), 'Một triệu không trăm linh năm đồng chẵn');
   assert.equal(readVietnameseNumber(1000001), 'Một triệu không trăm linh một đồng chẵn');
-  assert.equal(readVietnameseNumber(1010000), 'Một triệu mười nghìn đồng chẵn');
+  assert.equal(readVietnameseNumber(1010000), 'Một triệu không trăm mười nghìn đồng chẵn');
   assert.equal(readVietnameseNumber(21000), 'Hai mươi mốt nghìn đồng chẵn');
   assert.equal(readVietnameseNumber(125000), 'Một trăm hai mươi lăm nghìn đồng chẵn');
   assert.equal(readVietnameseNumber(115000), 'Một trăm mười lăm nghìn đồng chẵn');
