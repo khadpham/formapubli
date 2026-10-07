@@ -72,9 +72,13 @@ for (const label of LABELS) {
 const TOOLBAR_BTN_CLASS = 'className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2';
 const toolbarBtns = (matrix.match(new RegExp(TOOLBAR_BTN_CLASS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
 expect(toolbarBtns === 4, `Thanh công cụ phải còn đúng 4 nút hành động (đang ${toolbarBtns}) — không được thêm nút trùng menu`);
-for (const item of ['Cung ứng đối tác', 'Hàng loạt', '1 phiếu chuyển kho', 'Soạn kệ (gom theo kệ)', 'Bán lẻ / Quà tặng']) {
+for (const item of ['Hàng loạt', '1 phiếu chuyển kho', 'Soạn kệ (gom theo kệ)']) {
   expect(matrix.includes(item), `Mục menu "${item}" phải còn để không mất chức năng`);
 }
+// "Bán lẻ / Quà tặng" CỐ Ý gỡ khỏi menu Xuất kho từ 2026-10-07 (chủ chốt):
+// bán lẻ/quà tặng đi đường duy nhất là tab POS, xuất trực tiếp từ kho vòng
+// qua két + duyệt + hóa đơn nên số liệu vênh. Nút "Xuất kho" giờ mở thẳng
+// phiếu cung ứng đối tác (bán đại lý).
 // Short labels used by the compact trigger chip: the long "Sổ Cái Bất Biến (n)"
 // must never be rendered as a wide inline pill on a phone.
 for (const short of ['Ma trận', 'Sổ cái', 'Đi đường', 'Sổ PX']) {

@@ -138,7 +138,7 @@ export function StockOverviewMatrix({
     }
   }, []);
   // Gộp nút kho: 'OUT' = các loại xuất, 'MOVE' = chuyển kho/soạn kệ.
-  const [actionMenu, setActionMenu] = useState<'OUT' | 'MOVE' | null>(null);
+  const [actionMenu, setActionMenu] = useState<'MOVE' | null>(null);
   const [createdWarehouseToast, setCreatedWarehouseToast] = useState<{
     id: string;
     name: string;
@@ -369,10 +369,11 @@ export function StockOverviewMatrix({
         return;
       }
 
-      // Tổ hợp Alt + Shift + X (Mac: Option+Shift+X / Cmd+Shift+X) -> Mở Phiếu Xuất Kho
+      // Tổ hợp Alt + Shift + X (Mac: Option+Shift+X / Cmd+Shift+X) -> Mở thẳng
+      // phiếu xuất kho đại lý (bán lẻ/quà tặng đã chuyển sang tab POS).
       if (matchActionShortcut(e, 'KeyX', { shift: true })) {
         e.preventDefault();
-        if (!modalOpen) openAction('DISPATCH');
+        if (!modalOpen) setWholesaleModalOpen(true);
         return;
       }
     };
@@ -784,37 +785,16 @@ export function StockOverviewMatrix({
             </button>
           )}
 
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setActionMenu((m) => (m === 'OUT' ? null : 'OUT'))}
-              title="Chọn loại xuất kho"
-              className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-            >
-              <MinusCircle className="w-3.5 h-3.5" /> Xuất kho
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {actionMenu === 'OUT' && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-60 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1">
-                <button
-                  type="button"
-                  onClick={() => { setActionMenu(null); openAction('DISPATCH'); }}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
-                >
-                  <span className="font-bold whitespace-nowrap">Bán lẻ / Quà tặng</span>
-                  <span className="block text-[10px] text-slate-400">Trừ kho khi bán tại quầy (Xuất bán)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActionMenu(null); setWholesaleModalOpen(true); }}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
-                >
-                  <span className="font-bold whitespace-nowrap">Cung ứng đối tác</span>
-                  <span className="block text-[10px] text-slate-400">Lập phiếu xuất kho cho đối tác</span>
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Xuất kho = cung ứng đối tác (bán đại lý). Bán lẻ/quà tặng
+              đi đường POS, không xuất trực tiếp từ kho (chốt 2026-10-07). */}
+          <button
+            type="button"
+            onClick={() => setWholesaleModalOpen(true)}
+            title="Lập phiếu xuất kho cho đối tác"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <MinusCircle className="w-3.5 h-3.5" /> Xuất kho
+          </button>
 
           <div className="relative">
             <button
