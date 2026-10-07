@@ -233,6 +233,8 @@ const ALL_SUITES = [
   'scripts/test-contract-helpers.ts',
   // Module Hợp đồng: migration 0046 (5 bảng) + CRUD constraints.
   'scripts/test-contract-schema.ts',
+  // Module Hợp đồng: engine merge + validate placeholder (inspect-module).
+  'scripts/test-contract-engine.ts',
 ];
 
 /**
