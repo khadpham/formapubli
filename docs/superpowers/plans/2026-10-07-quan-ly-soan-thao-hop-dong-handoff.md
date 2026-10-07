@@ -26,7 +26,7 @@
 
 ## 2. Task 2 đang dở — tiếp tục từ đây (bước kế tiếp chính xác)
 
-**Đã xong trong Task 2 (đã viết, chưa commit):**
+**Đã xong trong Task 2 (đã commit `e1c4a68` — wip):**
 1. `src/db/migrations/0046_contract_management.sql` — 5 bảng (templates, documents, counters, company_profile, presets) + 4 index + 2 dòng seed (company_profile 'main' = Phạm Đam Ca/Giám đốc; preset 'preset-giam-doc' = "Giám đốc — Phạm Đam Ca"). **Đã chạy được**: migrate-fresh báo `✓ 0046: 12 statements, ✓ Đủ 5 bảng kỳ vọng`.
 2. `src/db/migrations/meta/_journal.json` — đã thêm entry `idx 46, tag "0046_contract_management", version 7, breakpoints true` ngay sau entry idx 45. **ĐẦU BẮT BUỘC** — migrate-fresh đọc journal, file .sql một mình là vô nghĩa.
 3. `scripts/test-contract-schema.ts` — test đã viết (5 nhóm assert), **đang RED ở tầng cuối**.
