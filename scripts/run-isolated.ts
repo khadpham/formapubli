@@ -237,6 +237,8 @@ const ALL_SUITES = [
   'scripts/test-contract-engine.ts',
   // Module Hợp đồng: service cấp số + autofill + snapshot + preset.
   'scripts/test-contract-service.ts',
+  // Module Hợp đồng: API handler thật + session ký thật.
+  'scripts/test-contract-api.ts',
 ];
 
 /**
