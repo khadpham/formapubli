@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await requireSessionRole(req, [
@@ -22,7 +22,8 @@ export async function GET(
       'ROLE_CASHIER',
     ] as UserRole[]);
 
-    const data = await DiscountApprovalService.getRequest(params.id);
+    const routeParams = await params;
+    const data = await DiscountApprovalService.getRequest(routeParams.id);
     // A1.7: cashier chỉ xem được yêu cầu của chính mình (chống soi giỏ/
     // mức giảm của thu ngân khác qua id); manager/owner xem tất cả.
     if (session.role === 'ROLE_CASHIER' && `${data.cashierId}` !== `${session.actorId}`) {
@@ -40,7 +41,7 @@ export async function GET(
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await requireSessionRole(req, [
@@ -49,6 +50,7 @@ export async function POST(
       'ROLE_CASHIER',
     ] as UserRole[]);
 
+    const routeParams = await params;
     const body = await req.json();
     const { action, method, shortCode, qrToken, rejectedReason } = body;
 
@@ -69,7 +71,7 @@ export async function POST(
 
     if (action === 'CANCEL') {
       const data = await DiscountApprovalService.cancelRequest({
-        requestId: params.id,
+        requestId: routeParams.id,
         actorContext: {
           staffId: session.actorId,
           role: session.role,
@@ -81,7 +83,7 @@ export async function POST(
 
     if (action === 'APPROVE') {
       const data = await DiscountApprovalService.approveRequest({
-        requestId: params.id,
+        requestId: routeParams.id,
         method: method || 'ONE_TOUCH',
         shortCode,
         qrToken,
@@ -92,7 +94,7 @@ export async function POST(
 
     if (action === 'REJECT') {
       const data = await DiscountApprovalService.rejectRequest({
-        requestId: params.id,
+        requestId: routeParams.id,
         rejectedReason: rejectedReason || 'Quản lý từ chối chiết khấu',
         actorContext,
       });

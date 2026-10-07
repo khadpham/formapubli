@@ -629,7 +629,7 @@ async function run() {
       },
       body: JSON.stringify({ action: 'APPROVE', method: 'SHORTCODE_BOUND', shortCode: req10.shortCode }),
     }) as any,
-    { params: { id: req10.id } }
+    { params: Promise.resolve({ id: req10.id }) }
   );
   assert.equal(cashierApprovalResponse.status, 403, 'Cashier không được tự phê duyệt yêu cầu');
   const otherCashierRequest = await DiscountApprovalService.createRequest({
@@ -645,7 +645,7 @@ async function run() {
     new Request(`http://localhost/api/pos/discount-approvals/${otherCashierRequest.id}`, {
       headers: { Cookie: `${SESSION_COOKIE_NAME}=${cashierToken}` },
     }) as any,
-    { params: { id: otherCashierRequest.id } }
+    { params: Promise.resolve({ id: otherCashierRequest.id }) }
   );
   assert.equal(otherCashierResponse.status, 403, 'Cashier không được xem yêu cầu của cashier khác');
   console.log('✓ API chặn cashier tự gửi APPROVE và xem request của cashier khác');

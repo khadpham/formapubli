@@ -33,10 +33,11 @@ async function loadExisting(
 }
 
 /** PATCH /api/warehouses/[id] — sửa tên/địa chỉ/bán trên POS/ngưng hoạt động. */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, PRIVILEGED);
-    const id = decodeURIComponent(params.id || '').trim();
+    const routeParams = await params;
+    const id = decodeURIComponent(routeParams.id || '').trim();
     if (!id) throw AppError.invalid('Thiếu mã kho.');
     const existing = await loadExisting(id);
     if (existing.res) return existing.res;
@@ -79,10 +80,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
  * DELETE /api/warehouses/[id] — chỉ xóa được kho RỖNG và chưa phát sinh nghiệp vụ.
  * Kho còn tồn / có đơn / có sổ kho → 409 kèm lý do, hướng dẫn dùng "Ngưng hoạt động".
  */
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, PRIVILEGED);
-    const id = decodeURIComponent(params.id || '').trim();
+    const routeParams = await params;
+    const id = decodeURIComponent(routeParams.id || '').trim();
     if (!id) throw AppError.invalid('Thiếu mã kho.');
     const existing = await loadExisting(id);
     if (existing.res) return existing.res;

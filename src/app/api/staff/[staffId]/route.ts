@@ -16,12 +16,13 @@ const VALID_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', '
 // Không xóa cứng: khóa = isActive=false (giữ audit + két ca nguyên vẹn).
 // MANAGER chỉ được chạm CASHIER/WAREHOUSE/TAX, không leo thang đặc quyền.
 // Không ai được tự hạ role / tự khóa chính mình (chống tự khóa quầy).
-export async function PATCH(req: NextRequest, { params }: { params: { staffId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ staffId: string }> }) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
+    const routeParams = await params;
     let targetId: string;
     try {
-      targetId = decodeURIComponent(params.staffId || '').trim();
+      targetId = decodeURIComponent(routeParams.staffId || '').trim();
     } catch {
       throw AppError.invalid('Mã nhân viên không hợp lệ.');
     }

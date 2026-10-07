@@ -12,10 +12,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);
+    const routeParams = await params;
     const body = (await req.json().catch(() => ({}))) as {
       amount?: number;
       category?: string;
@@ -25,7 +26,7 @@ export async function PATCH(
       recurrence?: string;
     };
     const entry = await updateExpense(
-      params.id,
+      routeParams.id,
       {
         amount: body.amount !== undefined ? Number(body.amount) : undefined,
         category: body.category,

@@ -47,7 +47,7 @@ const patch = (staffId: string, body: any, headers: Record<string, string> = {})
       headers: { 'Content-Type': 'application/json', ...headers },
       body: J(body),
     }) as any,
-    { params: { staffId } }
+    { params: Promise.resolve({ staffId }) }
   ).then(async (r: any) => ({ status: r.status, body: await r.json() }));
 
 function sessionCookie(setCookie: string | null): string {

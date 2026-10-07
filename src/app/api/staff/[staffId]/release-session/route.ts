@@ -23,12 +23,13 @@ const PRIVILEGED_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
  * - Không còn lease nhưng version đã đổi / đã có phiên mới → 409 (refresh,
  *   không tăng version lần nữa, không hủy phiên mới). Retry an toàn.
  */
-export async function POST(req: NextRequest, { params }: { params: { staffId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ staffId: string }> }) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
+    const routeParams = await params;
     let targetId: string;
     try {
-      targetId = decodeURIComponent(params.staffId || '').trim();
+      targetId = decodeURIComponent(routeParams.staffId || '').trim();
     } catch {
       throw AppError.invalid('Mã nhân viên không hợp lệ.');
     }

@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await requireSessionRole(req, [
@@ -24,7 +24,8 @@ export async function GET(
       'ROLE_CASHIER',
     ] as UserRole[]);
 
-    const data = await DeliveryOrderService.getDeliveryOrder(params.id);
+    const routeParams = await params;
+    const data = await DeliveryOrderService.getDeliveryOrder(routeParams.id);
     // Ràng buộc kho khi ĐỌC: thủ kho gán kho A không xem chi tiết phiếu kho B
     // (trước đây chỉ luồng list lọc, chi tiết theo id thì lọt).
     assertReadWarehouse(session, data as any);
@@ -42,7 +43,7 @@ export async function GET(
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await requireSessionRole(req, [
@@ -51,6 +52,7 @@ export async function POST(
       'ROLE_WAREHOUSE',
     ] as UserRole[]);
 
+    const routeParams = await params;
     const body = await req.json();
     const { action, idempotencyKey, reason } = body;
 
@@ -63,12 +65,12 @@ export async function POST(
     // Ràng buộc kho khi GHI: chỉ xuất/hủy được phiếu thuộc kho mình phụ trách.
     // Luồng list POST đã kiểm (`assertAssignedWarehouse`); route động này trước
     // đây bỏ sót nên thủ kho kho A xuất/hủy được phiếu DRAFT của kho B nếu biết id.
-    const existing = await DeliveryOrderService.getDeliveryOrder(params.id);
+    const existing = await DeliveryOrderService.getDeliveryOrder(routeParams.id);
     assertAssignedWarehouse(session, existing.fromWarehouseId);
 
     if (action === 'DISPATCH') {
       const data = await DeliveryOrderService.dispatchAndLock({
-        deliveryOrderId: params.id,
+        deliveryOrderId: routeParams.id,
         idempotencyKey,
         actorContext,
       });
@@ -77,7 +79,7 @@ export async function POST(
 
     if (action === 'REVERSE') {
       const data = await DeliveryOrderService.reverse({
-        deliveryOrderId: params.id,
+        deliveryOrderId: routeParams.id,
         reason: reason || 'Yêu cầu hủy từ người dùng',
         idempotencyKey,
         actorContext,
