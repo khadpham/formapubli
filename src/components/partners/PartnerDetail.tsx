@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Pencil } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 
 export interface PartnerDetailInfo {
@@ -24,8 +24,11 @@ export interface PartnerDetailInfo {
 interface PartnerDetailProps {
   partner: PartnerDetailInfo;
   onClose: () => void;
+  onUpdated?: (p: PartnerDetailInfo) => void;
   currentRole?: UserRole;
 }
+
+const canEdit = (role?: UserRole) => role === 'ROLE_OWNER' || role === 'ROLE_MANAGER';
 
 const vnd = (n: number) => Math.round(Number(n) || 0).toLocaleString('vi-VN') + ' đ';
 
@@ -34,11 +37,61 @@ const vnd = (n: number) => Math.round(Number(n) || 0).toLocaleString('vi-VN') + 
  * bán đứt (view tính, không phải kho mới). Dữ liệu từ 3 API có sẵn:
  * partnerStock, consignments (kỳ), partner-debt.
  */
-export function PartnerDetail({ partner, onClose, currentRole = 'ROLE_OWNER' }: PartnerDetailProps) {
+export function PartnerDetail({ partner, onClose, onUpdated, currentRole = 'ROLE_OWNER' }: PartnerDetailProps) {
   const [stock, setStock] = useState<any[]>([]);
   const [statements, setStatements] = useState<any[]>([]);
   const [debt, setDebt] = useState<any | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [draft, setDraft] = useState({
+    name: partner.name,
+    type: partner.type,
+    discountPct: String(Math.round((partner.discountRate || 0) * 100)),
+    receiverName: partner.receiverName || '',
+    phone: partner.phone || '',
+    address: partner.address || '',
+    taxCode: partner.taxCode || '',
+    email: partner.email || '',
+    creditLimit: String(partner.creditLimit ?? 0),
+    paymentDueDays: String(partner.paymentDueDays ?? 30),
+    shipNote: partner.shipNote || '',
+  });
+
+  const set = (k: keyof typeof draft) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setDraft((d) => ({ ...d, [k]: e.target.value }));
+
+  const saveProfile = async () => {
+    try {
+      setIsSaving(true);
+      setErrorMessage(null);
+      const res = await fetch(`/api/partners/${encodeURIComponent(partner.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-formapubli-role': currentRole },
+        body: JSON.stringify({
+          name: draft.name.trim(),
+          type: draft.type,
+          discountRate: Number(draft.discountPct) / 100,
+          receiverName: draft.receiverName.trim() || null,
+          phone: draft.phone.trim() || null,
+          address: draft.address.trim() || null,
+          taxCode: draft.taxCode.trim() || null,
+          email: draft.email.trim() || null,
+          creditLimit: Number(draft.creditLimit),
+          paymentDueDays: Number(draft.paymentDueDays),
+          shipNote: draft.shipNote.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không lưu được hồ sơ');
+      setIsEditing(false);
+      if (onUpdated) onUpdated(json.data);
+    } catch (e: any) {
+      setErrorMessage(e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -82,9 +135,22 @@ export function PartnerDetail({ partner, onClose, currentRole = 'ROLE_OWNER' }: 
               {partner.type} • CK cố định {Math.round((partner.discountRate || 0) * 100)}%
             </p>
           </div>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Đóng hồ sơ đại lý">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {canEdit(currentRole) && !isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                title="Sửa toàn bộ hồ sơ đại lý"
+                aria-label="Sửa toàn bộ hồ sơ đại lý"
+                className="p-1.5 text-slate-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Đóng hồ sơ đại lý">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         <div className="p-5 space-y-5 overflow-y-auto text-xs">
           {errorMessage && (
@@ -92,6 +158,54 @@ export function PartnerDetail({ partner, onClose, currentRole = 'ROLE_OWNER' }: 
           )}
           <section>
             <h4 className="font-bold text-slate-800 mb-1.5">Thông tin giao nhận</h4>
+            {isEditing ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="text-xs text-slate-600">Tên đại lý
+                  <input value={draft.name} onChange={set('name')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Loại
+                  <select value={draft.type} onChange={set('type')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold outline-none bg-white">
+                    <option value="WHOLESALE">Bán đứt (WHOLESALE)</option>
+                    <option value="CONSIGNMENT">Ký gửi (CONSIGNMENT)</option>
+                  </select>
+                </label>
+                <label className="text-xs text-slate-600">CK cố định (%)
+                  <input type="number" min={0} max={100} value={draft.discountPct} onChange={set('discountPct')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Người nhận
+                  <input value={draft.receiverName} onChange={set('receiverName')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Điện thoại
+                  <input value={draft.phone} onChange={set('phone')} inputMode="numeric" className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-mono outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Email
+                  <input value={draft.email} onChange={set('email')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs outline-none" />
+                </label>
+                <label className="text-xs text-slate-600 sm:col-span-2">Địa chỉ gửi sách
+                  <input value={draft.address} onChange={set('address')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">MST
+                  <input value={draft.taxCode} onChange={set('taxCode')} inputMode="numeric" className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-mono outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Hạn mức nợ (đ)
+                  <input type="number" min={0} value={draft.creditLimit} onChange={set('creditLimit')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-mono outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Hạn trả (ngày)
+                  <input type="number" min={0} max={365} value={draft.paymentDueDays} onChange={set('paymentDueDays')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-mono outline-none" />
+                </label>
+                <label className="text-xs text-slate-600">Ghi chú giao hàng
+                  <input value={draft.shipNote} onChange={set('shipNote')} className="mt-0.5 w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs outline-none" />
+                </label>
+                <div className="sm:col-span-2 flex gap-2 pt-1">
+                  <button type="button" onClick={saveProfile} disabled={isSaving} className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold disabled:opacity-50">
+                    {isSaving ? 'Đang lưu...' : 'Lưu hồ sơ'}
+                  </button>
+                  <button type="button" onClick={() => setIsEditing(false)} className="px-4 py-1.5 text-slate-500 text-xs font-bold">
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            ) : (
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-slate-700">
               <div><dt className="inline text-slate-500">Người nhận: </dt><dd className="inline font-semibold">{partner.receiverName || partner.name}</dd></div>
               <div><dt className="inline text-slate-500">Điện thoại: </dt><dd className="inline font-semibold">{partner.phone || '—'}</dd></div>
@@ -102,6 +216,7 @@ export function PartnerDetail({ partner, onClose, currentRole = 'ROLE_OWNER' }: 
               <div><dt className="inline text-slate-500">Hạn trả: </dt><dd className="inline font-semibold">{partner.paymentDueDays ?? 30} ngày</dd></div>
               {partner.shipNote && <div className="sm:col-span-2"><dt className="inline text-slate-500">Ghi chú giao: </dt><dd className="inline">{partner.shipNote}</dd></div>}
             </dl>
+            )}
           </section>
           <section>
             <h4 className="font-bold text-slate-800 mb-1.5">

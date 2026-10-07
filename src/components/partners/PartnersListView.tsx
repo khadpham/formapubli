@@ -90,7 +90,7 @@ export function PartnersListView({ partners: initialPartners, currentRole = 'ROL
               </div>
               <h3 className="text-sm font-extrabold text-slate-900">{p.name}</h3>
               <p className="text-xs text-slate-500 mt-1">
-                {p.address || p.contactInfo || 'Chưa cập nhật thông tin liên hệ'}
+                {p.address || (p.contactInfo ? p.contactInfo.slice(0, 90) : 'Chưa cập nhật thông tin liên hệ')}
               </p>
             </div>
 
@@ -152,7 +152,14 @@ export function PartnersListView({ partners: initialPartners, currentRole = 'ROL
       </div>
 
       {selected && (
-        <PartnerDetail partner={selected} currentRole={currentRole} onClose={() => setSelectedId(null)} />
+        <PartnerDetail
+          partner={selected}
+          currentRole={currentRole}
+          onClose={() => setSelectedId(null)}
+          onUpdated={(updated: any) =>
+            setList((prev) => prev.map((it) => (it.id === updated.id ? { ...it, ...updated } : it)))
+          }
+        />
       )}
 
       <QuickSaleReport partners={list} currentRole={currentRole} />

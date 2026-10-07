@@ -99,17 +99,98 @@ export class PartnerDebtService {
    * Chỉ đổi mức mặc định để phiếu sau prefill theo — phiếu cũ không hồi tố.
    */
   static async updateTerms(params: { id: string; discountRate: number }) {
-    const rate = Number(params.discountRate);
-    if (!params.id?.trim()) throw AppError.invalid('Thiếu đại lý.');
-    if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
-      throw AppError.invalid('Chiết khấu cố định phải từ 0 đến 1 (0%–100%).');
+    return await this.updateProfile({ id: params.id, discountRate: params.discountRate });
+  }
+
+  /**
+   * Sửa hồ sơ đại lý (tất cả trường giao nhận + điều khoản). Chỉ validate
+   * trường nào được gửi lên; trường vắng mặt giữ nguyên.
+   */
+  static async updateProfile(params: {
+    id: string;
+    name?: string;
+    type?: string;
+    discountRate?: number;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    taxCode?: string | null;
+    receiverName?: string | null;
+    shipNote?: string | null;
+    creditLimit?: number;
+    paymentDueDays?: number;
+    paymentNote?: string | null;
+  }) {
+    const id = `${params.id || ''}`.trim();
+    if (!id) throw AppError.invalid('Thiếu đại lý.');
+    const patch: Partial<typeof partners.$inferInsert> = {};
+    if (params.name !== undefined) {
+      const name = `${params.name || ''}`.trim().slice(0, 120);
+      if (!name) throw AppError.invalid('Tên đại lý không được để trống.');
+      patch.name = name;
     }
+    if (params.type !== undefined) {
+      if (!['CONSIGNMENT', 'WHOLESALE'].includes(`${params.type}`)) {
+        throw AppError.invalid('Loại đại lý chỉ Ký gửi (CONSIGNMENT) hoặc Bán đứt (WHOLESALE).');
+      }
+      patch.type = `${params.type}`;
+    }
+    if (params.discountRate !== undefined) {
+      const rate = Number(params.discountRate);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+        throw AppError.invalid('Chiết khấu cố định phải từ 0 đến 1 (0%–100%).');
+      }
+      patch.discountRate = rate;
+    }
+    const text50 = (v: unknown, label: string, max = 200) => {
+      const s = v === null ? null : `${v ?? ''}`.trim().slice(0, max) || null;
+      return s;
+    };
+    if (params.address !== undefined) patch.address = text50(params.address, 'address', 300);
+    if (params.receiverName !== undefined) patch.receiverName = text50(params.receiverName, 'receiver', 120);
+    if (params.shipNote !== undefined) patch.shipNote = text50(params.shipNote, 'ship', 300);
+    if (params.paymentNote !== undefined) patch.paymentNote = text50(params.paymentNote, 'paynote', 300);
+    if (params.phone !== undefined) {
+      const digits = `${params.phone || ''}`.replace(/\D/g, '');
+      if (digits !== '' && (digits.length < 8 || digits.length > 12)) {
+        throw AppError.invalid('Số điện thoại phải 8–12 chữ số.');
+      }
+      patch.phone = digits || null;
+    }
+    if (params.email !== undefined) {
+      const email = `${params.email || ''}`.trim();
+      if (email !== '' && !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
+        throw AppError.invalid('Email không đúng định dạng.');
+      }
+      patch.email = email || null;
+    }
+    if (params.taxCode !== undefined) {
+      const tax = `${params.taxCode || ''}`.replace(/\D/g, '');
+      if (tax !== '' && !(tax.length === 10 || tax.length === 13)) {
+        throw AppError.invalid('Mã số thuế phải 10 hoặc 13 chữ số.');
+      }
+      patch.taxCode = tax || null;
+    }
+    if (params.creditLimit !== undefined) {
+      const lim = Number(params.creditLimit);
+      if (!Number.isFinite(lim) || lim < 0) throw AppError.invalid('Hạn mức nợ phải số không âm.');
+      patch.creditLimit = Math.round(lim);
+    }
+    if (params.paymentDueDays !== undefined) {
+      const days = Number(params.paymentDueDays);
+      if (!Number.isInteger(days) || days < 0 || days > 365) {
+        throw AppError.invalid('Hạn trả phải số nguyên 0–365 ngày.');
+      }
+      patch.paymentDueDays = days;
+    }
+    if (Object.keys(patch).length === 0) throw AppError.invalid('Không có gì để cập nhật.');
     return await withDbRetry(async () =>
       db.transaction(async (tx) => {
-        const [row] = await tx.select().from(partners).where(eq(partners.id, params.id)).limit(1);
-        if (!row) throw AppError.invalid(`Không tìm thấy đối tác ${params.id}.`);
-        await tx.update(partners).set({ discountRate: rate }).where(eq(partners.id, params.id));
-        return { id: params.id, discountRate: rate };
+        const [row] = await tx.select().from(partners).where(eq(partners.id, id)).limit(1);
+        if (!row) throw AppError.invalid(`Không tìm thấy đối tác ${id}.`);
+        await tx.update(partners).set(patch).where(eq(partners.id, id));
+        const [after] = await tx.select().from(partners).where(eq(partners.id, id)).limit(1);
+        return after;
       })
     );
   }

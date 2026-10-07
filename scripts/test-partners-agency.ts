@@ -67,9 +67,9 @@ async function run() {
   const parsed = parseCsv(sample);
   assert.ok(parsed.length >= 4, 'fixture phải có header + dòng tổng + 2 đại lý');
   const r1 = await importPartners(sample, db);
-  assert.equal(r1.created, 3);
+  assert.equal(r1.created, 6);
   assert.equal(r1.skipped, 1); // dòng tổng C/D trống
-  console.log('✓ Import fixture: tạo 3, bỏ dòng tổng 1');
+  console.log('✓ Import fixture: tạo 6, bỏ dòng tổng 1');
   const [kg] = await db.select().from(partners).where(eq(partners.code, 'DL-HIEU-SACH-GIA-LAP'));
   assert.equal(kg.type, 'CONSIGNMENT');
   assert.equal(kg.discountRate, 0.3);
@@ -84,10 +84,30 @@ async function run() {
   assert.equal(vd.type, 'WHOLESALE'); // "Mua đứt" = bán đứt phía ta
   assert.equal(vd.discountRate, 0.35);
   console.log('✓ "Mua đứt" map WHOLESALE đúng');
+  // Ô nhãn Anh (Company's name / Tax code / Address / Sđt).
+  const [en] = await db.select().from(partners).where(eq(partners.code, 'DL-HIEU-SACH-SONG-NGU'));
+  assert.equal(en.type, 'CONSIGNMENT');
+  assert.equal(en.discountRate, 0.45);
+  assert.equal(en.taxCode, '0100000004');
+  assert.equal(en.phone, '0900000004');
+  assert.ok((en.address || '').includes('Số 4 Phố Dịch'), `địa chỉ EN sai: ${en.address}`);
+  console.log('✓ Ô nhãn Anh tách đúng MST/SĐT/địa chỉ');
+  // Ô không nhãn: địa chỉ lẫn Sđt trong câu + ghi chú ngoặc.
+  const [nolbl] = await db.select().from(partners).where(eq(partners.code, 'DL-QUAN-SACH-KHONG-NHAN'));
+  assert.equal(nolbl.phone, '0900000005');
+  assert.ok((nolbl.address || '').includes('Chùa Mẫu'), `địa chỉ không nhãn sai: ${nolbl.address}`);
+  assert.ok(!(nolbl.address || '').includes('có thể thay đổi'), 'ghi chú ngoặc phải bị lược');
+  console.log('✓ Ô không nhãn tách SĐT + địa chỉ, lược ghi chú');
+  // Ô số đứng đầu: tách SĐT đầu dòng, còn lại là địa chỉ.
+  const [lead] = await db.select().from(partners).where(eq(partners.code, 'DL-TIEM-SACH-DAU-SO'));
+  assert.equal(lead.type, 'WHOLESALE');
+  assert.equal(lead.phone, '0900000006');
+  assert.ok((lead.address || '').includes('Số 6 Đường Kẻ'), `địa chỉ đầu số sai: ${lead.address}`);
+  console.log('✓ Ô số đứng đầu tách SĐT + địa chỉ');
   const r2 = await importPartners(sample, db);
   assert.equal(r2.created, 0);
-  assert.equal(r2.updated, 3);
-  console.log('✓ Chạy lại idempotent: 0 tạo mới, 3 cập nhật');
+  assert.equal(r2.updated, 6);
+  console.log('✓ Chạy lại idempotent: 0 tạo mới, 6 cập nhật');
 
   console.log('🎉 TOÀN BỘ TEST PARTNERS AGENCY PASS!');
 }
