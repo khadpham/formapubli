@@ -8,6 +8,7 @@ import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
 import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
+import { ContractsTab } from '@/components/contracts/ContractsTab';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
@@ -304,7 +305,7 @@ export function MasterAppShell({
                   {effectiveTab === 'inventory' && 'Kho Hàng & Thẻ Kho'}
                   {effectiveTab === 'sales' && 'Doanh Số & Sổ Kép'}
                   {effectiveTab === 'partners' && 'Đối Tác & Đại Lý'}
-                  {effectiveTab === 'customers' && 'Độc Giả CRM'}
+                  {effectiveTab === 'contracts' && 'Hợp Đồng'}                  {effectiveTab === 'customers' && 'Độc Giả CRM'}
                   {effectiveTab === 'studio' && 'Phân Tích & Dự Báo'}
                   {effectiveTab === 'shopee' && 'Shopee'}
                   {effectiveTab === 'chu' && 'Chủ'}
@@ -419,6 +420,10 @@ export function MasterAppShell({
 
           {currentRole && effectiveTab === 'partners' && (
             <PartnersListView partners={partnerList} currentRole={currentRole} />
+          )}
+
+          {currentRole && effectiveTab === 'contracts' && (
+            <ContractsTab currentRole={currentRole} />
           )}
 
           {currentRole && effectiveTab === 'customers' && <CustomersListView />}

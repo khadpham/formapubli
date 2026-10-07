@@ -2,7 +2,13 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import InspectModule from 'docxtemplater/js/inspect-module';
 
-const ENGINE_OPTIONS = { paragraphLoop: true, linebreaks: true };
+const ENGINE_OPTIONS = {
+  paragraphLoop: true,
+  linebreaks: true,
+  // Draft lưu thiếu biến là bình thường (điền dần) — thiếu thì để trống,
+  // không ném 500. Lỗi CÚ PHÁP vẫn ném ở constructor (validate bắt được).
+  nullGetter: () => '',
+};
 
 function toBinary(templateBase64: string): string {
   return typeof Buffer !== 'undefined'

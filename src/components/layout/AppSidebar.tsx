@@ -18,6 +18,7 @@ import {
   Sparkles,
   ShoppingBag,
   Crown,
+  FileText,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -176,6 +177,12 @@ export function AppSidebar({
       icon: BookOpenCheck,
       shortcut: 'Alt+6',
       color: 'text-rose-600',
+    },
+    {
+      id: 'contracts',
+      label: 'Hợp Đồng',
+      icon: FileText,
+      color: 'text-teal-600',
     },
     {
       id: 'studio',
