@@ -7,6 +7,20 @@ const nextConfig = {
   // Mục '\' kép defensiveness cho Windows: adapter so khớp chuỗi tuyệt đối,
   // trên Windows pkg capture ra '@libsql\...' (backslash) nên mục gạch
   // chéo xuôi không khớp và bản copy workerd bị bỏ qua trong im lặng.
+  // Next 16: giữ nguyên key cũ cho adapter + thêm key ổn định
+  // `serverExternalPackages` (Next 15+ đọc key này, key cũ chỉ còn warning).
+  serverExternalPackages: [
+    '@libsql/client',
+    '@libsql\\client',
+    '@libsql/core',
+    '@libsql\\core',
+    '@libsql/hrana-client',
+    '@libsql\\hrana-client',
+    '@libsql/isomorphic-ws',
+    '@libsql\\isomorphic-ws',
+    '@libsql/isomorphic-fetch',
+    '@libsql\\isomorphic-fetch',
+  ],
   experimental: {
     serverComponentsExternalPackages: [
       '@libsql/client',
