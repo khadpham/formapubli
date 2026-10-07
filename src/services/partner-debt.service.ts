@@ -94,8 +94,27 @@ export class PartnerDebtService {
     );
   }
 
-  static async voidReceipt(params: { id: string; reason: string; actorId: string }) {
-    const { id, reason } = params;
+  /**
+   * Sửa chiết khấu cố định hợp đồng của đại lý (tab Đối tác).
+   * Chỉ đổi mức mặc định để phiếu sau prefill theo — phiếu cũ không hồi tố.
+   */
+  static async updateTerms(params: { id: string; discountRate: number }) {
+    const rate = Number(params.discountRate);
+    if (!params.id?.trim()) throw AppError.invalid('Thiếu đại lý.');
+    if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+      throw AppError.invalid('Chiết khấu cố định phải từ 0 đến 1 (0%–100%).');
+    }
+    return await withDbRetry(async () =>
+      db.transaction(async (tx) => {
+        const [row] = await tx.select().from(partners).where(eq(partners.id, params.id)).limit(1);
+        if (!row) throw AppError.invalid(`Không tìm thấy đối tác ${params.id}.`);
+        await tx.update(partners).set({ discountRate: rate }).where(eq(partners.id, params.id));
+        return { id: params.id, discountRate: rate };
+      })
+    );
+  }
+
+  static async voidReceipt(params: { id: string; reason: string; actorId: string }) {    const { id, reason } = params;
     if (!`${reason || ''}`.trim()) throw AppError.invalid('Hủy phiếu thu bắt buộc ghi lý do.');
     return await withDbRetry(async () =>
       db.transaction(async (tx) => {
