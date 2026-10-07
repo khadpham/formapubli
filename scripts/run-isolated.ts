@@ -229,6 +229,8 @@ const ALL_SUITES = [
   'scripts/test-owner-tab.ts',
   // TK ngân hàng tạm ngưng vẫn hiện trong quản lý (chỉ đổi trạng thái).
   'scripts/test-bank-list-inactive.ts',
+  // Module Hợp đồng: helper đọc số thành chữ + ngày tháng ND30.
+  'scripts/test-contract-helpers.ts',
 ];
 
 /**
