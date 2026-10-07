@@ -15,10 +15,12 @@ import {
   RefreshCw,
   Search,
   Percent,
+  ClipboardPaste,
 } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { stockOfWarehouse } from '@/lib/warehouse-stock';
+import { parsePastedBookList } from '@/lib/batch-paste-parser';
 import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint';
 
 interface BookItem {
@@ -89,6 +91,120 @@ export function WholesaleDispatchModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+
+  // Dán danh sách 2 cột (Tên + Số lượng) từ Excel — cùng parser với
+  // BatchTransferModal, chỉ đổ vào bảng soạn, không gọi API.
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
+
+  // Kiểm tra tồn kho cứng: 1 vòng /api/atp cho cả giỏ. `checkedFingerprint`
+  // là ảnh chụp giỏ+kho+CK lúc kiểm OK — đổi bất cứ gì thì phải kiểm lại
+  // trước khi Ký duyệt (DRAFT thì không cần).
+  const [isCheckingAtp, setIsCheckingAtp] = useState(false);
+  const [atpNotice, setAtpNotice] = useState<string | null>(null);
+  const [checkedFingerprint, setCheckedFingerprint] = useState<string>('');
+
+  const cartFingerprint = useMemo(() => {
+    const parts = selectedItems
+      .map((it) => `${it.editionId}:${it.quantity}`)
+      .sort()
+      .join('|');
+    return `${fromWarehouseId}#${discountPercent}#${parts}`;
+  }, [selectedItems, fromWarehouseId, discountPercent]);
+
+  const applyPastedList = () => {
+    const lookup = books.map((b) => ({
+      id: b.id,
+      title: b.title,
+      code: b.code,
+      isbnLast4: (b.isbn || '').slice(-4) || null,
+    }));
+    const { rows, summary } = parsePastedBookList(pasteText, lookup, { defaultQuantity: 5 });
+    let added = 0;
+    const problems: string[] = [];
+    setSelectedItems((prev) => {
+      const next = [...prev];
+      for (const r of rows) {
+        if (r.status !== 'matched') {
+          problems.push(r.status === 'needs_confirm' ? `Chưa chắc: ${r.line}` : `Không thấy: ${r.line}`);
+          continue;
+        }
+        const book = books.find((b) => b.id === r.editionId);
+        if (!book) continue;
+        const stock = stockOfWarehouse(book, fromWarehouseId);
+        if (stock <= 0) {
+          problems.push(`Hết tồn: ${r.title}`);
+          continue;
+        }
+        const qty = Math.min(r.quantity, stock);
+        if (qty < r.quantity) problems.push(`Chỉ còn ${stock}: ${r.title}`);
+        const existing = next.find((it) => it.editionId === book.id);
+        const cover = book.coverPrice || 0;
+        if (existing) {
+          existing.quantity = Math.min(existing.quantity + qty, stock);
+        } else {
+          next.push({
+            editionId: book.id,
+            code: book.code,
+            title: book.title,
+            isbn: book.isbn,
+            quantity: qty,
+            unitCoverPrice: cover,
+            unitSellingPrice: Math.round(cover * (1 - discountPercent / 100)),
+            stockAvailable: stock,
+          });
+        }
+        added++;
+      }
+      return next;
+    });
+    setPasteNotice(
+      `Đã thêm ${added}/${summary.matched} đầu sách` +
+        (problems.length > 0 ? ` — cần xem: ${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '…' : ''}` : '')
+    );
+    if (added > 0) {
+      setPasteText('');
+      setIsPasteOpen(false);
+    }
+    setCheckedFingerprint('');
+    setAtpNotice(null);
+  };
+
+  const handleCheckAtp = async () => {
+    if (selectedItems.length === 0) {
+      setErrorMessage('Danh sách xuất kho trống! Hãy chọn ít nhất 1 đầu sách.');
+      return;
+    }
+    try {
+      setIsCheckingAtp(true);
+      setErrorMessage(null);
+      const ids = selectedItems.map((it) => it.editionId).join(',');
+      const res = await fetch(
+        `/api/atp?editionIds=${encodeURIComponent(ids)}&warehouseId=${encodeURIComponent(fromWarehouseId)}`
+      );
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không kiểm tra được tồn kho');
+      const atpById = new Map<string, number>(
+        (json.data.items || []).map((it: any) => [it.editionId, Number(it.atp ?? 0)])
+      );
+      const short = selectedItems.filter((it) => it.quantity > (atpById.get(it.editionId) ?? 0));
+      if (short.length > 0) {
+        setCheckedFingerprint('');
+        setAtpNotice(
+          `Thiếu tồn khả dụng: ${short.map((it) => `[${it.code}] cần ${it.quantity}, còn ${atpById.get(it.editionId) ?? 0}`).join('; ')}`
+        );
+        return;
+      }
+      setCheckedFingerprint(cartFingerprint);
+      setAtpNotice(`Đủ tồn khả dụng cho ${selectedItems.length} đầu sách tại kho xuất.`);
+    } catch (err: any) {
+      setCheckedFingerprint('');
+      setErrorMessage(err.message || 'Lỗi kiểm tra tồn kho');
+    } finally {
+      setIsCheckingAtp(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -436,9 +552,45 @@ export function WholesaleDispatchModal({
 
             {/* Ô tìm kiếm & thêm sách vào danh sách */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">
-                Chọn ấn bản xuất kho (Tồn kho tại nguồn &gt; 0):
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Chọn ấn bản xuất kho (Tồn kho tại nguồn &gt; 0):
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasteOpen((v) => !v);
+                    setPasteNotice(null);
+                  }}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-xl text-[11px] font-bold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1"
+                >
+                  <ClipboardPaste className="w-3.5 h-3.5" />
+                  Dán danh sách
+                </button>
+              </div>
+              {isPasteOpen && (
+                <div className="border border-amber-200 bg-amber-50/60 rounded-2xl p-3 space-y-2">
+                  <p className="text-[11px] text-slate-600">
+                    Dán 2 cột từ Excel: <b>Tên sách</b> + <b>Số lượng</b> (thiếu số lượng = 5 cuốn).
+                  </p>
+                  <textarea
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    rows={5}
+                    placeholder={'Bốn tình yêu\t10\nMay\t5'}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  {pasteNotice && <p className="text-[11px] font-semibold text-slate-700">{pasteNotice}</p>}
+                  <button
+                    type="button"
+                    onClick={applyPastedList}
+                    disabled={!pasteText.trim()}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                  >
+                    Thêm vào danh sách
+                  </button>
+                </div>
+              )}
               <div className="relative">
                 <input
                   type="text"
@@ -554,8 +706,7 @@ export function WholesaleDispatchModal({
 
             {/* Tóm tắt tổng tiền */}
             {selectedItems.length > 0 && (
-              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-4 space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-600">
+              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-4 space-y-1.5 text-xs">                <div className="flex justify-between text-slate-600">
                   <span>Tổng số lượng xuất:</span>
                   <span className="font-mono font-bold text-slate-900">{totalQuantity} cuốn</span>
                 </div>
@@ -579,9 +730,20 @@ export function WholesaleDispatchModal({
                 </div>
               </div>
             )}
+            {/* Kết quả kiểm tra tồn kho cứng */}
+            {atpNotice && (
+              <div
+                className={`p-3.5 rounded-2xl border text-xs font-semibold flex items-center gap-2 ${
+                  checkedFingerprint === cartFingerprint
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-700'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{atpNotice}</span>
+              </div>
+            )}
           </div>
-
-          {/* Footer nút hành động */}
           <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
             <button
               type="button"
@@ -592,6 +754,15 @@ export function WholesaleDispatchModal({
               Hủy Bỏ
             </button>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCheckAtp}
+                disabled={isSubmitting || isCheckingAtp || selectedItems.length === 0}
+                className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-4 h-4 ${isCheckingAtp ? 'animate-spin' : ''}`} />
+                {isCheckingAtp ? 'Đang kiểm...' : 'Kiểm tra tồn kho'}
+              </button>
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
