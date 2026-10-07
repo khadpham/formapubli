@@ -1,4 +1,4 @@
-import { db, orders, orderItems, editions, products, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders } from '../db';
+import { db, orders, orderItems, editions, products, stockBalances, warehouses, inventoryLedger, sponsorshipDrawdowns, returnOrders, deliveryOrders } from '../db';
 import { eq, and, gte, lte, sql, like, inArray } from 'drizzle-orm';
 import { businessDateOf, createdAtBetween, VN_UTC_OFFSET_MIN } from './order.service';
 import { parseDbTimestamp } from '../lib/db-timestamp';
@@ -144,16 +144,32 @@ export class AnalyticsService {
   /** Doanh thu + số đơn theo kênh (COMPLETED). SPONSORSHIP hiện 0đ nhưng vẫn liệt kê minh bạch.
    *  `opts` lọc thêm kho + sổ kế toán (xem `AnalyticsScope`); không truyền thì y hệt cũ. */
   static async byChannel(range: DateRange = {}, opts: AnalyticsScope = {}) {
+    // Bán đại lý qua PXK gộp chung 1 truy vấn UNION ALL (giữ cam kết
+    // "số truy vấn cố định" của test-analytics-doanhso 3.11 — không N+1,
+    // không +1 query): phiếu đã khóa COMMERCIAL_WHOLESALE vào kênh
+    // WHOLESALE_PARTNER. DRAFT/ký gửi không vào. PXK sống ngoài hai sổ
+    // OFFICIAL_TAX/INTERNAL_MANAGEMENT nên khi lọc theo sổ thì chỉ đọc orders.
+    const orderPart = sql`SELECT ${orders.channel} AS ch, ${orders.finalAmount} AS rev, ${orders.subtotal} AS subtotal FROM ${orders} WHERE ${sql.join(rangeConds(orders, range, opts), sql` AND `)}`;
+    let combined: ReturnType<typeof sql> = orderPart as any;
+    if (!opts.fiscalScope) {
+      const pxkConds: any[] = [
+        eq(deliveryOrders.status, 'DISPATCHED_LOCKED'),
+        eq(deliveryOrders.fiscalScope, 'COMMERCIAL_WHOLESALE'),
+        ...createdAtBetween(deliveryOrders.dispatchedAt, range.startDate, range.endDate),
+      ];
+      if (opts.warehouseId) pxkConds.push(eq(deliveryOrders.fromWarehouseId, opts.warehouseId));
+      const pxkPart = sql`SELECT 'WHOLESALE_PARTNER' AS ch, ${deliveryOrders.finalAmount} AS rev, ${deliveryOrders.subtotal} AS subtotal FROM ${deliveryOrders} WHERE ${sql.join(pxkConds, sql` AND `)}`;
+      combined = sql`${orderPart} UNION ALL ${pxkPart}`;
+    }
     const rows = await db
       .select({
-        channel: orders.channel,
+        channel: sql<string>`u.ch`,
         orders: sql<number>`COUNT(*)`,
-        revenue: sql<number>`COALESCE(SUM(${orders.finalAmount}), 0)`,
-        subtotal: sql<number>`COALESCE(SUM(${orders.subtotal}), 0)`,
+        revenue: sql<number>`COALESCE(SUM(u.rev), 0)`,
+        subtotal: sql<number>`COALESCE(SUM(u.subtotal), 0)`,
       })
-      .from(orders)
-      .where(and(...rangeConds(orders, range, opts)))
-      .groupBy(orders.channel);
+      .from(sql`(${combined}) AS u`)
+      .groupBy(sql`u.ch`);
     const totalRevenue = rows.reduce((s, r) => s + Number(r.revenue || 0), 0);
     return rows.map((r) => ({
       channel: r.channel,
