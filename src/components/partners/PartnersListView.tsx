@@ -3,6 +3,7 @@
 import React from 'react';
 import { Users, Building2, Percent, Phone, Mail } from 'lucide-react';
 import { ConsignmentPanel } from './ConsignmentPanel';
+import { QuickSaleReport } from './QuickSaleReport';
 import { UserRole } from '@/lib/roles';
 
 interface PartnerItem {
@@ -64,6 +65,8 @@ export function PartnersListView({ partners, currentRole = 'ROLE_OWNER' }: Partn
           </div>
         ))}
       </div>
+
+      <QuickSaleReport partners={partners} currentRole={currentRole} />
 
       <ConsignmentPanel currentRole={currentRole} />
     </div>
