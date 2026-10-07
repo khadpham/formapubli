@@ -12,8 +12,10 @@ import {
   EXPENSE_CATEGORIES,
   listExpenses,
   addExpense,
+  updateExpense,
+  listExpensesMonth,
 } from '../src/services/expense.service';
-import { db, expenseEntries } from '../src/db';
+import { db, expenseEntries, auditLogs } from '../src/db';
 
 assertIsolatedTestDb('test-owner-tab');
 
@@ -57,13 +59,14 @@ async function main() {
 
   await db.delete(expenseEntries);
   const a = await addExpense(
-    { category: 'SALARY', amount: 5000000, note: 'lương tháng 10' },
+    { category: 'SALARY', amount: 5000000, note: 'lương tháng 10', staffId: 'QL-01' },
     'ROLE_OWNER',
     'ADMIN-01'
   );
   const b = await addExpense({ category: 'OTHER', amount: 100000 }, 'ROLE_OWNER', 'ADMIN-01');
   eq2('chủ thêm được chi phí', a.category, 'SALARY');
-  eq2('loại RENT được chấp nhận', EXPENSE_CATEGORIES.includes('RENT'), true);
+  eq2('staffId được lưu', a.staffId, 'QL-01');
+  eq2('loại RENT_LOCATION được chấp nhận', EXPENSE_CATEGORIES.includes('RENT_LOCATION'), true);
   const all = await listExpenses();
   const total = all.reduce((s, e) => s + e.amount, 0);
   eq2('danh sách đủ 2 dòng', all.length, 2);
@@ -96,6 +99,58 @@ async function main() {
   eq2('tab gọi API finance', tab.includes('/api/owner/finance'), true);
   eq2('tab có khối Lãi ròng', tab.includes('Lãi ròng'), true);
   eq2('tab có nút Thêm chi phí', tab.includes('Thêm chi phí'), true);
+
+  // GĐ2: staffId bắt buộc + recurrence validate + sửa có audit + kỳ tháng.
+  code = '';
+  try {
+    await addExpense({ category: 'SALARY', amount: 1000 }, 'ROLE_OWNER', 'ADMIN-01');
+  } catch (e) {
+    code = e instanceof AppError ? e.code : 'NOT_APP_ERROR';
+  }
+  eq2('lương thiếu nhân viên bị chặn', code, 'INVALID_INPUT');
+
+  code = '';
+  try {
+    await addExpense({ category: 'OTHER', amount: 1000, recurrence: 'WEEKLY' }, 'ROLE_OWNER', 'ADMIN-01');
+  } catch (e) {
+    code = e instanceof AppError ? e.code : 'NOT_APP_ERROR';
+  }
+  eq2('kỳ lạ bị chặn', code, 'INVALID_INPUT');
+
+  code = '';
+  try {
+    await updateExpense('exp-khong-ton-tai', { amount: 1 }, 'ROLE_OWNER', 'ADMIN-01');
+  } catch (e) {
+    code = e instanceof AppError ? e.code : 'NOT_APP_ERROR';
+  }
+  eq2('sửa dòng lạ báo NOT_FOUND', code, 'NOT_FOUND');
+
+  code = '';
+  try {
+    await updateExpense(a.id, { amount: 200000 }, 'ROLE_MANAGER', 'QL-01');
+  } catch (e) {
+    code = e instanceof AppError ? e.code : 'NOT_APP_ERROR';
+  }
+  eq2('quản lý bị chặn sửa chi phí', code, 'FORBIDDEN');
+
+  const auditsBefore = (await db.select().from(auditLogs)).filter((l) => l.action === 'EXPENSE_UPDATED').length;
+  await updateExpense(a.id, { amount: 200000, note: 'lương tháng 10 (sửa)' }, 'ROLE_OWNER', 'ADMIN-01');
+  const after = (await listExpenses()).find((e) => e.id === a.id);
+  eq2('sửa thành công amount mới', after?.amount, 200000);
+  const auditsAfter = (await db.select().from(auditLogs)).filter((l) => l.action === 'EXPENSE_UPDATED').length;
+  eq2('mỗi lần sửa có dòng audit', auditsAfter, auditsBefore + 1);
+
+  // Kỳ tháng: seed 2 tháng, listExpensesMonth chỉ thấy tháng được chọn.
+  await addExpense({ category: 'RENT_LOCATION', amount: 3000000, entryDate: '2026-09-05' }, 'ROLE_OWNER', 'ADMIN-01');
+  await addExpense({ category: 'OPERATIONS', amount: 500000, entryDate: '2026-10-02' }, 'ROLE_OWNER', 'ADMIN-01');
+  const oct = await listExpensesMonth('2026-10');
+  eq2('lọc tháng 10 không thấy tháng 9', oct.some((e) => e.entryDate.startsWith('2026-09')), false);
+  eq2('lọc tháng 10 đúng số dòng (a sửa + b + OPERATIONS)', oct.length, 3);
+
+  // 7 loại đầy đủ.
+  for (const c of ['SALARY', 'BONUS', 'RENT_LOCATION', 'UTILITIES', 'EQUIPMENT', 'OPERATIONS', 'OTHER']) {
+    eq2(`loại ${c} hợp lệ`, EXPENSE_CATEGORIES.includes(c as never), true);
+  }
 
   console.log(`\nKết quả: ${pass} pass / ${fail} fail`);
   if (fail > 0) {

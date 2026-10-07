@@ -904,14 +904,19 @@ export const shopeeSettings = sqliteTable('shopee_settings', {
 });
 
 // 0042: chi phí công ty cho tab Chủ — GĐ1 ghi tay, GĐ2 lương theo tháng.
+// 0043: GĐ2 — lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
 export const expenseEntries = sqliteTable('expense_entries', {
   id: text('id').primaryKey(),
-  category: text('category').notNull(), // SALARY | RENT | OTHER (hằng số ở expense.service)
+  category: text('category').notNull(), // 7 loại ở expense.service (SALARY..OTHER)
   amount: real('amount').notNull(),
   note: text('note'),
   entryDate: text('entry_date').notNull(),
   createdBy: text('created_by').notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  staffId: text('staff_id'), // gắn nhân viên cho SALARY/BONUS (0043)
+  recurrence: text('recurrence').notNull().default('ONE_TIME'), // MONTHLY | ONE_TIME (0043)
+  updatedBy: text('updated_by'), // PATCH ghi (0043)
+  updatedAt: text('updated_at'), // PATCH ghi (0043)
 });
 
 export const shopeeQuarantine = sqliteTable('shopee_quarantine', {

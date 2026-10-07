@@ -16,6 +16,7 @@ export function handleApiError(err: unknown): NextResponse {
       RATE_LIMITED: 429,
       INTERNAL_ERROR: 500,
       SHOPEE_AUTH_EXPIRED: 502,
+      NOT_FOUND: 404,
     };
     const status = statusMap[err.code] || 400;
     return NextResponse.json(

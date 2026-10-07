@@ -37,7 +37,8 @@ export interface AuditLogParams {
     | 'COPILOT_TOOL_INVOKED'
     | 'COPILOT_UNAUTHORIZED_ATTEMPT'
     | 'VOICE_ORDER_PARSED' // [5.1] Thu ngân dùng voice/text ra giỏ nháp
-    | 'VIEW_READER_PROFILE'; // [5.4] Xem hồ sơ / gợi ý độc giả
+    | 'VIEW_READER_PROFILE' // [5.4] Xem hồ sơ / gợi ý độc giả
+    | 'EXPENSE_UPDATED'; // GĐ2: sửa chi phí tab Chủ (ai sửa, trước→sau)
   actorRole: UserRole | string;
   actorId: string;
   resource: string;

@@ -14,7 +14,8 @@ export type ErrorCode =
   | 'OVER_RETURN_LIMIT'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR'
-  | 'SHOPEE_AUTH_EXPIRED';
+  | 'SHOPEE_AUTH_EXPIRED'
+  | 'NOT_FOUND';
 
 export class AppError extends Error {
   code: ErrorCode;
@@ -42,6 +43,10 @@ export class AppError extends Error {
 
   static conflict(message: string, details?: unknown): AppError {
     return new AppError('STATE_CONFLICT', message, details);
+  }
+
+  static notFound(message: string, details?: unknown): AppError {
+    return new AppError('NOT_FOUND', message, details);
   }
 
   static forbidden(message: string, details?: unknown): AppError {
