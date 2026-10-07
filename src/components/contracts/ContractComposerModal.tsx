@@ -172,14 +172,18 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
     }
   };
 
-  const repChips = presets.filter((p: any) => Object.keys(JSON.parse(p.valuesJson || '{}')).some((k) => k.startsWith('ben_a_')));
-  const termChips = presets.filter((p: any) => Object.keys(JSON.parse(p.valuesJson || '{}')).some((k) => k.startsWith('dieu_khoan_')));
+  // Parse an toàn trong render: một dòng preset hỏng không được làm sập cả modal.
+  const safePresetValues = (p: any): Record<string, any> => {
+    try { return JSON.parse(p.valuesJson || '{}'); } catch { return {}; }
+  };
+  const repChips = presets.filter((p: any) => Object.keys(safePresetValues(p)).some((k) => k.startsWith('ben_a_')));
+  const termChips = presets.filter((p: any) => Object.keys(safePresetValues(p)).some((k) => k.startsWith('dieu_khoan_')));
 
   const chipBtn = (p: any) => (
     <button
       key={p.id}
       type="button"
-      onClick={() => applyPreset(JSON.parse(p.valuesJson || '{}'))}
+      onClick={() => applyPreset(safePresetValues(p))}
       title={`Áp preset: ${p.label}`}
       className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full text-[11px] font-bold text-amber-800 transition flex items-center gap-1"
     >

@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     if (!title) throw AppError.invalid('Thiếu tiêu đề mẫu.');
     if (!templateFilename.toLowerCase().endsWith('.docx')) throw AppError.invalid('File mẫu phải là .docx.');
     if (!templateData) throw AppError.invalid('Thiếu nội dung file Word (base64).');
+    if (templateData.length > 15 * 1024 * 1024) throw AppError.invalid('File mẫu quá lớn (tối đa ~15MB).');
     const category = `${body.category || 'TAC_QUYEN'}`.trim();
     if (!CATEGORIES.includes(category)) throw AppError.invalid(`Loại mẫu không hợp lệ: ${category}.`);
     const check = ContractEngineService.validateTemplate(templateData);

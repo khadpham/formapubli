@@ -49,18 +49,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const session = await requireSessionRole(req, ROLES);
     const { id } = await params;
     const docId = decodeURIComponent(id || '').trim();
-    const doc: any = await ContractService.getDocumentById(docId);
-    if (doc.status !== 'DRAFT' && doc.status !== 'CANCELLED') {
-      throw AppError.conflict(`Hợp đồng ${doc.status} không được xóa (chỉ DRAFT/CANCELLED).`);
-    }
-    const { db, contractDocuments } = await import('@/db');
-    const { eq } = await import('drizzle-orm');
-    await db.delete(contractDocuments).where(eq(contractDocuments.id, docId));
+    const data = await ContractService.deleteDocument(docId);
     await recordAuditLog({
       action: 'CONTRACT_DOCUMENT' as any, actorRole: session.role, actorId: session.actorId,
-      resource: '/api/contracts/documents', details: `Xóa HĐ nháp ${doc.contractNumber}.`,
+      resource: '/api/contracts/documents', details: `Xóa HĐ nháp ${data.contractNumber}.`,
     });
-    return NextResponse.json({ success: true, data: { id: docId, deleted: true } });
+    return NextResponse.json({ success: true, data: { id: data.id, deleted: true } });
   } catch (error: any) {
     return handleApiError(error);
   }
