@@ -188,7 +188,7 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
   );
 
   return (
-    <div className="fixed inset-0 z-[70] bg-slate-900/70 flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[70] bg-slate-900/70 flex items-center justify-center p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl max-w-6xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
         <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
           <h3 className="font-extrabold text-sm">
