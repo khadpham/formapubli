@@ -86,7 +86,7 @@ async function run() {
   assert.equal(gotCons.fiscalScope, 'CONSIGNMENT_DISPATCH');
   console.log('✓ Phiếu ký gửi giữ đúng scope cho bản in');
 
-  // 4. Mẫu in có đủ: khối địa chỉ giao hàng + bản ký gửi không tiền.
+  // 4. Mẫu in có đủ: khối địa chỉ giao hàng + bản ký gửi không tiền + các quy chuẩn in A4 mới.
   const src = fs.readFileSync(
     path.resolve(process.cwd(), 'src/components/inventory/DeliveryReceiptPrint.tsx'), 'utf8'
   );
@@ -96,10 +96,17 @@ async function run() {
     'Địa chỉ giao hàng',
     'PHIẾU XUẤT KHO KÝ GỬI ĐẠI LÝ',
     'chưa thu tiền',
+    '/api/contracts/company-profile',
+    'table-fixed',
+    'body > *:not(:has(#printable-delivery-receipt)):not(#printable-delivery-receipt)',
   ]) {
     assert.ok(src.includes(needle), `mẫu in thiếu: ${needle}`);
   }
-  console.log('✓ Mẫu in đủ khối đại lý + bản ký gửi');
+  // Không dùng font-serif (lỗi dấu tiếng Việt)
+  assert.ok(!src.includes('font-serif'), 'Không được dùng font-serif (gây lỗi dấu tiếng Việt như "Cuốn")');
+  // Không in sẵn tên đại lý ở ô ký
+  assert.ok(!src.includes("{order.partnerName || 'Đại diện đại lý'}"), 'Không in sẵn tên đại lý ở ô chữ ký');
+  console.log('✓ Mẫu in đủ khối đại lý, bản ký gửi, print CSS, table-fixed, font-sans và bỏ in sẵn tên ký đại lý');
 
   console.log('🎉 TOÀN BỘ TEST DELIVERY PRINT PASS!');
 }
