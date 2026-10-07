@@ -175,6 +175,183 @@ export class DeliveryOrderService {
   }
 
   /**
+   * Cập nhật phiếu xuất kho ở trạng thái DRAFT.
+   */
+  static async updateDraft(params: {
+    deliveryOrderId: string;
+    partnerId: string;
+    fromWarehouseId: string;
+    discountRate?: number;
+    fiscalScope?: 'COMMERCIAL_WHOLESALE' | 'CONSIGNMENT_DISPATCH';
+    note?: string;
+    items: DeliveryItemInput[];
+    actorContext: ActorContext;
+    txOrDb?: any;
+  }) {
+    const {
+      deliveryOrderId,
+      partnerId,
+      fromWarehouseId,
+      discountRate = 0.0,
+      fiscalScope = 'COMMERCIAL_WHOLESALE',
+      note,
+      items,
+      actorContext,
+      txOrDb = db,
+    } = params;
+
+    const existingRows = await txOrDb
+      .select()
+      .from(deliveryOrders)
+      .where(eq(deliveryOrders.id, deliveryOrderId))
+      .limit(1);
+
+    if (existingRows.length === 0) {
+      throw AppError.notFound('Không tìm thấy phiếu xuất kho');
+    }
+
+    const existing = existingRows[0];
+    if (existing.status !== 'DRAFT') {
+      throw AppError.conflict(
+        `Không thể sửa phiếu ở trạng thái ${existing.status} (chỉ cho phép sửa phiếu DRAFT)`
+      );
+    }
+
+    if (!items || items.length === 0) {
+      throw AppError.invalid('Phiếu xuất kho phải có ít nhất một ấn bản');
+    }
+
+    const cleanItems: DeliveryItemInput[] = items.map((it) => {
+      const editionId = `${it?.editionId ?? ''}`.trim();
+      if (!editionId) throw AppError.invalid('Dòng hàng thiếu editionId.');
+      const qty = typeof it.quantity === 'number' ? it.quantity : Number(`${it.quantity ?? ''}`.trim());
+      if (!Number.isInteger(qty) || qty <= 0) {
+        throw AppError.invalid(`Số lượng xuất của ấn bản ${editionId} phải là số nguyên > 0.`);
+      }
+      const cover = Number(it.unitCoverPrice);
+      const selling = Number(it.unitSellingPrice);
+      if (!Number.isFinite(cover) || cover < 0) {
+        throw AppError.invalid(`Đơn giá bìa của ấn bản ${editionId} phải là số không âm.`);
+      }
+      if (!Number.isFinite(selling) || selling < 0) {
+        throw AppError.invalid(`Đơn giá bán của ấn bản ${editionId} phải là số không âm.`);
+      }
+      return { editionId, quantity: qty, unitCoverPrice: cover, unitSellingPrice: selling };
+    });
+
+    const wh = await txOrDb
+      .select()
+      .from(warehouses)
+      .where(eq(warehouses.id, fromWarehouseId))
+      .limit(1);
+    if (wh.length === 0 || !wh[0].isActive) {
+      throw AppError.invalid(`Kho xuất ${fromWarehouseId} không tồn tại hoặc đã ngừng hoạt động`);
+    }
+
+    const partner = await txOrDb
+      .select()
+      .from(partners)
+      .where(eq(partners.id, partnerId))
+      .limit(1);
+    if (partner.length === 0) {
+      throw AppError.invalid(`Đối tác ${partnerId} không tồn tại`);
+    }
+
+    const subtotal = cleanItems.reduce(
+      (sum, item) => sum + item.quantity * item.unitCoverPrice,
+      0
+    );
+    const finalAmount = cleanItems.reduce(
+      (sum, item) => sum + item.quantity * item.unitSellingPrice,
+      0
+    );
+
+    const nowIso = new Date().toISOString();
+
+    await txOrDb
+      .update(deliveryOrders)
+      .set({
+        partnerId,
+        fromWarehouseId,
+        subtotal,
+        discountRate,
+        finalAmount,
+        fiscalScope,
+        note: note || null,
+        updatedAt: nowIso,
+      })
+      .where(eq(deliveryOrders.id, deliveryOrderId));
+
+    await txOrDb
+      .delete(deliveryOrderItems)
+      .where(eq(deliveryOrderItems.deliveryOrderId, deliveryOrderId));
+
+    const itemRows = cleanItems.map((item) => ({
+      id: crypto.randomUUID(),
+      deliveryOrderId,
+      editionId: item.editionId,
+      quantity: item.quantity,
+      unitCoverPrice: item.unitCoverPrice,
+      unitSellingPrice: item.unitSellingPrice,
+      totalAmount: item.quantity * item.unitSellingPrice,
+      createdAt: nowIso,
+    }));
+
+    await txOrDb.insert(deliveryOrderItems).values(itemRows);
+
+    return {
+      ...existing,
+      partnerId,
+      fromWarehouseId,
+      subtotal,
+      discountRate,
+      finalAmount,
+      fiscalScope,
+      note: note || null,
+      updatedAt: nowIso,
+      items: itemRows,
+    };
+  }
+
+  /**
+   * Xóa phiếu xuất kho DRAFT.
+   */
+  static async deleteDraft(params: {
+    deliveryOrderId: string;
+    actorContext: ActorContext;
+    txOrDb?: any;
+  }) {
+    const { deliveryOrderId, txOrDb = db } = params;
+
+    const existingRows = await txOrDb
+      .select()
+      .from(deliveryOrders)
+      .where(eq(deliveryOrders.id, deliveryOrderId))
+      .limit(1);
+
+    if (existingRows.length === 0) {
+      throw AppError.notFound('Không tìm thấy phiếu xuất kho');
+    }
+
+    const existing = existingRows[0];
+    if (existing.status !== 'DRAFT') {
+      throw AppError.conflict(
+        `Không thể xóa phiếu ở trạng thái ${existing.status} (chỉ cho phép xóa phiếu DRAFT)`
+      );
+    }
+
+    await txOrDb
+      .delete(deliveryOrderItems)
+      .where(eq(deliveryOrderItems.deliveryOrderId, deliveryOrderId));
+
+    await txOrDb
+      .delete(deliveryOrders)
+      .where(eq(deliveryOrders.id, deliveryOrderId));
+
+    return { success: true, id: deliveryOrderId };
+  }
+
+  /**
    * Ký duyệt và Khóa sổ Phiếu xuất kho:
    * - Kiểm tra tồn ATP
    * - Cấp mã PXK-YYYY-XXXX liên tục trong cùng transaction

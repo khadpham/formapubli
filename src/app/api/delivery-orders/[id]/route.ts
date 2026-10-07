@@ -92,3 +92,87 @@ export async function POST(
     return handleApiError(error);
   }
 }
+
+/**
+ * PUT /api/delivery-orders/[id]
+ * - Cập nhật nội dung phiếu xuất kho DRAFT.
+ */
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await requireSessionRole(req, [
+      'ROLE_OWNER',
+      'ROLE_MANAGER',
+      'ROLE_WAREHOUSE',
+    ] as UserRole[]);
+
+    const routeParams = await params;
+    const body = await req.json();
+    const { partnerId, fromWarehouseId, discountRate, fiscalScope, note, items } = body;
+
+    const existing = await DeliveryOrderService.getDeliveryOrder(routeParams.id);
+    assertAssignedWarehouse(session, existing.fromWarehouseId);
+    if (fromWarehouseId) {
+      assertAssignedWarehouse(session, fromWarehouseId);
+    }
+
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+    };
+
+    const data = await DeliveryOrderService.updateDraft({
+      deliveryOrderId: routeParams.id,
+      partnerId,
+      fromWarehouseId,
+      discountRate,
+      fiscalScope,
+      note,
+      items,
+      actorContext,
+    });
+
+    return NextResponse.json({ success: true, data });
+  } catch (error: any) {
+    return handleApiError(error);
+  }
+}
+
+/**
+ * DELETE /api/delivery-orders/[id]
+ * - Xóa phiếu xuất kho DRAFT chưa khóa sổ.
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await requireSessionRole(req, [
+      'ROLE_OWNER',
+      'ROLE_MANAGER',
+      'ROLE_WAREHOUSE',
+    ] as UserRole[]);
+
+    const routeParams = await params;
+    const existing = await DeliveryOrderService.getDeliveryOrder(routeParams.id);
+    assertAssignedWarehouse(session, existing.fromWarehouseId);
+
+    const actorContext = {
+      staffId: session.actorId,
+      role: session.role,
+      fullName: session.fullName,
+    };
+
+    await DeliveryOrderService.deleteDraft({
+      deliveryOrderId: routeParams.id,
+      actorContext,
+    });
+
+    return NextResponse.json({ success: true, message: 'Đã xóa phiếu nháp' });
+  } catch (error: any) {
+    return handleApiError(error);
+  }
+}

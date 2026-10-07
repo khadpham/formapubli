@@ -15,6 +15,8 @@ import {
   Building2,
   Clock,
   Lock,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint';
@@ -22,11 +24,13 @@ import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint'
 interface DeliveryOrdersLedgerProps {
   currentRole?: string;
   onOpenCreateModal?: () => void;
+  onOpenEditDraft?: (draft: any) => void;
 }
 
 export function DeliveryOrdersLedger({
   currentRole = 'ROLE_WAREHOUSE',
   onOpenCreateModal,
+  onOpenEditDraft,
 }: DeliveryOrdersLedgerProps) {
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -131,6 +135,27 @@ export function DeliveryOrdersLedger({
       alert('Lỗi: ' + err.message);
     } finally {
       setIsDispatchingId(null);
+    }
+  };
+
+  const [isDeletingDraftId, setIsDeletingDraftId] = useState<string | null>(null);
+
+  // Xóa phiếu xuất kho DRAFT
+  const handleDeleteDraft = async (id: string, code: string) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa bản nháp [${code}]?`)) return;
+    try {
+      setIsDeletingDraftId(id);
+      const res = await fetch(`/api/delivery-orders/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-formapubli-role': currentRole },
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không xóa được bản nháp');
+      await fetchOrders();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi xóa bản nháp');
+    } finally {
+      setIsDeletingDraftId(null);
     }
   };
 
@@ -368,6 +393,17 @@ export function DeliveryOrdersLedger({
                             <Printer className="w-4 h-4" />
                           </button>
 
+                          {/* Sửa / Soạn tiếp nếu là DRAFT */}
+                          {o.status === 'DRAFT' && onOpenEditDraft && (
+                            <button
+                              onClick={() => onOpenEditDraft(o)}
+                              className="p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+                              title="Mở soạn tiếp / Chỉnh sửa bản nháp"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
+
                           {/* Ký xuất kho nếu là DRAFT */}
                           {o.status === 'DRAFT' && (
                             <button
@@ -377,6 +413,18 @@ export function DeliveryOrdersLedger({
                               title="Ký duyệt xuất kho & Khóa sổ"
                             >
                               <CheckCircle2 className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Xóa phiếu nháp nếu là DRAFT */}
+                          {o.status === 'DRAFT' && (
+                            <button
+                              onClick={() => handleDeleteDraft(o.id, o.code)}
+                              disabled={isDeletingDraftId === o.id}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                              title="Xóa bản nháp này"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
 

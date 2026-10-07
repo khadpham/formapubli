@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   FileText,
@@ -16,6 +16,9 @@ import {
   Search,
   Percent,
   ClipboardPaste,
+  Clock,
+  Eye,
+  RotateCcw,
 } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -28,6 +31,8 @@ interface BookItem {
   code: string;
   title: string;
   isbn: string;
+  isbnLast4?: string;
+  author?: string;
   coverPrice: number;
   stockAuCo: number;
   stockQuynhMai: number;
@@ -39,6 +44,8 @@ interface WarehouseItem {
   id: string;
   code: string;
   name: string;
+  isActive?: boolean;
+  warehouseType?: string;
 }
 
 interface PartnerItem {
@@ -47,6 +54,8 @@ interface PartnerItem {
   name: string;
   type?: string;
   discountRate?: number;
+  address?: string | null;
+  phone?: string | null;
 }
 
 interface WholesaleDispatchModalProps {
@@ -57,6 +66,7 @@ interface WholesaleDispatchModalProps {
   partners?: PartnerItem[];
   currentRole?: string;
   onOrderCreated?: (order: any) => void;
+  initialDraft?: any | null;
 }
 
 interface SelectedItem {
@@ -78,13 +88,32 @@ export function WholesaleDispatchModal({
   partners = [],
   currentRole = 'ROLE_WAREHOUSE',
   onOrderCreated,
+  initialDraft = null,
 }: WholesaleDispatchModalProps) {
-  const [partnerId, setPartnerId] = useState<string>('');
+  // Lọc chỉ lấy kho nguồn xuất hàng: LOẠI BỎ kho ký gửi (CONSIGNMENT) và kho trung chuyển (IN_TRANSIT)
+  const availableSourceWarehouses = useMemo(() => {
+    return warehouses.filter((wh) => {
+      const type = wh.warehouseType;
+      const code = wh.code || '';
+      if (type === 'CONSIGNMENT' || type === 'IN_TRANSIT') return false;
+      if (code.startsWith('KHO_KY_GUI')) return false;
+      if (wh.isActive === false) return false;
+      return true;
+    });
+  }, [warehouses]);
+
   const [fromWarehouseId, setFromWarehouseId] = useState<string>('wh-au-co');
+  const [partnerId, setPartnerId] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(35); // 35% mặc định bán buôn
   const [fiscalScope, setFiscalScope] = useState<'COMMERCIAL_WHOLESALE' | 'CONSIGNMENT_DISPATCH'>('COMMERCIAL_WHOLESALE');
   const [note, setNote] = useState<string>('');
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+
+  // Quản lý trạng thái bản nháp (DRAFT)
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [editingDraftCode, setEditingDraftCode] = useState<string | null>(null);
+  const [draftsList, setDraftsList] = useState<any[]>([]);
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
   // Tìm kiếm sách để thêm
   const [searchBookTerm, setSearchBookTerm] = useState('');
@@ -92,18 +121,131 @@ export function WholesaleDispatchModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Dán danh sách 2 cột (Tên + Số lượng) từ Excel — cùng parser với
-  // BatchTransferModal, chỉ đổ vào bảng soạn, không gọi API.
+  // Dán danh sách 2 cột (Tên + Số lượng) từ Excel
   const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
-  // Kiểm tra tồn kho cứng: 1 vòng /api/atp cho cả giỏ. `checkedFingerprint`
-  // là ảnh chụp giỏ+kho+CK lúc kiểm OK — đổi bất cứ gì thì phải kiểm lại
-  // trước khi Ký duyệt (DRAFT thì không cần).
+  // Kiểm tra tồn kho cứng ATP
   const [isCheckingAtp, setIsCheckingAtp] = useState(false);
   const [atpNotice, setAtpNotice] = useState<string | null>(null);
   const [checkedFingerprint, setCheckedFingerprint] = useState<string>('');
+
+  // State in A4 sau khi xuất kho hoặc xem trước bản in
+  const [createdOrderForPrint, setCreatedOrderForPrint] = useState<DeliveryOrderData | null>(null);
+  const [previewOrderForPrint, setPreviewOrderForPrint] = useState<DeliveryOrderData | null>(null);
+
+  // Đảm bảo kho nguồn mặc định luôn hợp lệ
+  useEffect(() => {
+    if (availableSourceWarehouses.length > 0) {
+      if (!fromWarehouseId || !availableSourceWarehouses.some((w) => w.id === fromWarehouseId)) {
+        const def = availableSourceWarehouses.find((w) => w.id === 'wh-au-co') || availableSourceWarehouses[0];
+        setFromWarehouseId(def.id);
+      }
+    }
+  }, [availableSourceWarehouses, fromWarehouseId]);
+
+  // Tải danh sách bản nháp hiện có
+  const fetchDrafts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/delivery-orders?status=DRAFT', {
+        headers: { 'x-formapubli-role': currentRole },
+      });
+      const json = await res.json();
+      if (json.success) {
+        setDraftsList(json.data || []);
+      }
+    } catch (err) {
+      console.error('Không tải được danh sách nháp:', err);
+    }
+  }, [currentRole]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchDrafts();
+    }
+  }, [isOpen, fetchDrafts]);
+
+  // Nạp dữ liệu một bản nháp vào form soạn thảo
+  const loadDraftIntoForm = useCallback(
+    async (draft: any) => {
+      try {
+        setErrorMessage(null);
+        setSaveSuccessMessage(null);
+        let fullDraft = draft;
+        if (!draft.items || draft.items.length === 0) {
+          const res = await fetch(`/api/delivery-orders/${draft.id}`, {
+            headers: { 'x-formapubli-role': currentRole },
+          });
+          const json = await res.json();
+          if (json.success) {
+            fullDraft = json.data;
+          }
+        }
+
+        setEditingDraftId(fullDraft.id);
+        setEditingDraftCode(fullDraft.code);
+        setPartnerId(fullDraft.partnerId || '');
+        if (fullDraft.fromWarehouseId) {
+          setFromWarehouseId(fullDraft.fromWarehouseId);
+        }
+        setDiscountPercent(
+          fullDraft.discountRate !== undefined ? Math.round(fullDraft.discountRate * 100) : 35
+        );
+        setFiscalScope(fullDraft.fiscalScope || 'COMMERCIAL_WHOLESALE');
+        setNote(fullDraft.note || '');
+
+        const mappedItems: SelectedItem[] = (fullDraft.items || []).map((it: any) => {
+          const book = books.find((b) => b.id === it.editionId);
+          const stock = book ? stockOfWarehouse(book, fullDraft.fromWarehouseId) : 0;
+          return {
+            editionId: it.editionId,
+            code: it.editionCode || book?.code || '',
+            title: it.title || book?.title || '',
+            isbn: it.isbn || book?.isbn || '',
+            quantity: it.quantity,
+            unitCoverPrice: it.unitCoverPrice,
+            unitSellingPrice: it.unitSellingPrice,
+            stockAvailable: stock,
+          };
+        });
+        setSelectedItems(mappedItems);
+        setCheckedFingerprint('');
+        setAtpNotice(null);
+      } catch (e: any) {
+        setErrorMessage(e.message || 'Không thể nạp bản nháp');
+      }
+    },
+    [books, currentRole]
+  );
+
+  // Nhận initialDraft từ bên ngoài nếu có
+  useEffect(() => {
+    if (isOpen && initialDraft) {
+      loadDraftIntoForm(initialDraft);
+    }
+  }, [isOpen, initialDraft, loadDraftIntoForm]);
+
+  // Làm mới form để soạn phiếu mới hoàn toàn
+  const handleResetNew = () => {
+    setEditingDraftId(null);
+    setEditingDraftCode(null);
+    setSelectedItems([]);
+    setNote('');
+    setSaveSuccessMessage(null);
+    setErrorMessage(null);
+    setCheckedFingerprint('');
+    setAtpNotice(null);
+    if (partners && partners.length > 0) {
+      setPartnerId(partners[0].id);
+      if (partners[0].discountRate) {
+        setDiscountPercent(Math.round(partners[0].discountRate * 100));
+      }
+    }
+    if (availableSourceWarehouses.length > 0) {
+      setFromWarehouseId(availableSourceWarehouses[0].id);
+    }
+  };
 
   const cartFingerprint = useMemo(() => {
     const parts = selectedItems
@@ -213,24 +355,21 @@ export function WholesaleDispatchModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) onClose();
+      if (e.key === 'Escape' && !isSubmitting && !previewOrderForPrint && !createdOrderForPrint) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSubmitting, onClose]);
+  }, [isOpen, isSubmitting, previewOrderForPrint, createdOrderForPrint, onClose]);
 
-  // State hiển thị modal in A4 sau khi xuất kho thành công
-  const [createdOrderForPrint, setCreatedOrderForPrint] = useState<DeliveryOrderData | null>(null);
-
-  // Mặc định chọn đối tác đầu tiên nếu có
+  // Mặc định chọn đối tác đầu tiên nếu chưa chọn
   useEffect(() => {
-    if (partners && partners.length > 0 && !partnerId) {
+    if (partners && partners.length > 0 && !partnerId && !editingDraftId) {
       setPartnerId(partners[0].id);
       if (partners[0].discountRate && partners[0].discountRate > 0) {
         setDiscountPercent(Math.round(partners[0].discountRate * 100));
       }
     }
-  }, [partners, partnerId]);
+  }, [partners, partnerId, editingDraftId]);
 
   // Khi đổi partner, tự động điền tỷ lệ chiết khấu hợp đồng của họ nếu có
   const handleSelectPartner = (pId: string) => {
@@ -241,7 +380,7 @@ export function WholesaleDispatchModal({
     }
   };
 
-  // Sách khả dụng sau lọc
+  // Sách khả dụng sau lọc tìm kiếm: SỬA LỖI ĐẢO THAM SỐ (Target trước, Query sau)
   const filteredAvailableBooks = useMemo(() => {
     const q = searchBookTerm.trim();
     return books
@@ -249,9 +388,10 @@ export function WholesaleDispatchModal({
         const stock = stockOfWarehouse(b, fromWarehouseId);
         if (stock <= 0) return false;
         if (!q) return true;
-        return matchesVietnameseSearch(q, `${b.title} ${b.code} ${b.isbn}`);
+        const searchable = `${b.title} ${b.code} ${b.isbn} ${b.author || ''} ${b.isbnLast4 || ''}`;
+        return matchesVietnameseSearch(searchable, q);
       })
-      .slice(0, 10);
+      .slice(0, 15);
   }, [books, fromWarehouseId, searchBookTerm]);
 
   // Thêm sách vào danh sách xuất
@@ -333,10 +473,10 @@ export function WholesaleDispatchModal({
     );
   }, [discountPercent]);
 
-  // Xử lý gửi phiếu: createDraft hoặc autoDispatch
+  // Xử lý gửi phiếu: createDraft, updateDraft, hoặc autoDispatch & Lock
   const handleSubmit = async (isAutoDispatch: boolean) => {
     if (!partnerId) {
-      setErrorMessage('Vui lòng chọn đối tác / đại lý nhận hàng.');
+      setErrorMessage('Vui lòng chọn đơn vị / đối tác nhận hàng.');
       return;
     }
     if (selectedItems.length === 0) {
@@ -347,62 +487,211 @@ export function WholesaleDispatchModal({
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
+      setSaveSuccessMessage(null);
 
-      const payload = {
-        partnerId,
-        fromWarehouseId,
-        discountRate,
-        fiscalScope,
-        note: note.trim() || undefined,
-        items: selectedItems.map((it) => ({
-          editionId: it.editionId,
-          quantity: it.quantity,
-          unitCoverPrice: it.unitCoverPrice,
-          unitSellingPrice: it.unitSellingPrice,
-        })),
-        autoDispatch: isAutoDispatch,
-        idempotencyKey: isAutoDispatch ? generateUUIDv7() : undefined,
-      };
-
-      const res = await fetch('/api/delivery-orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-formapubli-role': currentRole,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const json = await res.json();
-      if (!json.success) {
-        throw new Error(json.error || 'Lỗi xử lý phiếu xuất kho');
-      }
-
-      const orderData = json.data;
-
-      // Tra cứu chi tiết đầy đủ để chuẩn bị in A4
-      const detailRes = await fetch(`/api/delivery-orders/${orderData.id}`, {
-        headers: { 'x-formapubli-role': currentRole },
-      });
-      const detailJson = await detailRes.json();
-      const enrichedOrder = detailJson.success ? detailJson.data : orderData;
-
-      if (onOrderCreated) {
-        onOrderCreated(enrichedOrder);
-      }
+      const itemsPayload = selectedItems.map((it) => ({
+        editionId: it.editionId,
+        quantity: it.quantity,
+        unitCoverPrice: it.unitCoverPrice,
+        unitSellingPrice: it.unitSellingPrice,
+      }));
 
       if (isAutoDispatch) {
-        // Mở ngay cửa sổ in A4
-        setCreatedOrderForPrint(enrichedOrder);
+        // LUỒNG KÝ DUYỆT & KHÓA SỔ (Auto-dispatch)
+        let finalOrderId = editingDraftId;
+        const idemKey = generateUUIDv7();
+
+        if (finalOrderId) {
+          // Bước 1: Lưu các thay đổi mới nhất vào bản nháp
+          await fetch(`/api/delivery-orders/${finalOrderId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-formapubli-role': currentRole,
+            },
+            body: JSON.stringify({
+              partnerId,
+              fromWarehouseId,
+              discountRate,
+              fiscalScope,
+              note: note.trim() || undefined,
+              items: itemsPayload,
+            }),
+          });
+
+          // Bước 2: Ký duyệt xuất kho & khóa sổ
+          const dispatchRes = await fetch(`/api/delivery-orders/${finalOrderId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-formapubli-role': currentRole,
+            },
+            body: JSON.stringify({
+              action: 'DISPATCH',
+              idempotencyKey: idemKey,
+            }),
+          });
+
+          const dispatchJson = await dispatchRes.json();
+          if (!dispatchJson.success) {
+            throw new Error(dispatchJson.error || 'Lỗi khi ký duyệt xuất kho');
+          }
+          const dispatchedData = dispatchJson.data;
+
+          const detailRes = await fetch(`/api/delivery-orders/${dispatchedData.id}`, {
+            headers: { 'x-formapubli-role': currentRole },
+          });
+          const detailJson = await detailRes.json();
+          const enrichedOrder = detailJson.success ? detailJson.data : dispatchedData;
+
+          if (onOrderCreated) onOrderCreated(enrichedOrder);
+          setCreatedOrderForPrint(enrichedOrder);
+        } else {
+          // Tạo mới trực tiếp và khóa sổ ngay
+          const res = await fetch('/api/delivery-orders', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-formapubli-role': currentRole,
+            },
+            body: JSON.stringify({
+              partnerId,
+              fromWarehouseId,
+              discountRate,
+              fiscalScope,
+              note: note.trim() || undefined,
+              items: itemsPayload,
+              autoDispatch: true,
+              idempotencyKey: idemKey,
+            }),
+          });
+
+          const json = await res.json();
+          if (!json.success) {
+            throw new Error(json.error || 'Lỗi xử lý phiếu xuất kho');
+          }
+
+          const orderData = json.data;
+          const detailRes = await fetch(`/api/delivery-orders/${orderData.id}`, {
+            headers: { 'x-formapubli-role': currentRole },
+          });
+          const detailJson = await detailRes.json();
+          const enrichedOrder = detailJson.success ? detailJson.data : orderData;
+
+          if (onOrderCreated) onOrderCreated(enrichedOrder);
+          setCreatedOrderForPrint(enrichedOrder);
+        }
       } else {
-        alert(`Đã lưu nháp thành công phiếu: ${enrichedOrder.code}`);
-        onClose();
+        // LUỒNG LƯU NHÁP (DRAFT)
+        if (editingDraftId) {
+          const res = await fetch(`/api/delivery-orders/${editingDraftId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-formapubli-role': currentRole,
+            },
+            body: JSON.stringify({
+              partnerId,
+              fromWarehouseId,
+              discountRate,
+              fiscalScope,
+              note: note.trim() || undefined,
+              items: itemsPayload,
+            }),
+          });
+
+          const json = await res.json();
+          if (!json.success) {
+            throw new Error(json.error || 'Lỗi cập nhật phiếu nháp');
+          }
+
+          setSaveSuccessMessage(`Đã cập nhật bản nháp [${json.data.code}] thành công.`);
+          fetchDrafts();
+          if (onOrderCreated) onOrderCreated(json.data);
+        } else {
+          const res = await fetch('/api/delivery-orders', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-formapubli-role': currentRole,
+            },
+            body: JSON.stringify({
+              partnerId,
+              fromWarehouseId,
+              discountRate,
+              fiscalScope,
+              note: note.trim() || undefined,
+              items: itemsPayload,
+              autoDispatch: false,
+            }),
+          });
+
+          const json = await res.json();
+          if (!json.success) {
+            throw new Error(json.error || 'Lỗi lưu nháp phiếu xuất kho');
+          }
+
+          setEditingDraftId(json.data.id);
+          setEditingDraftCode(json.data.code);
+          setSaveSuccessMessage(`Đã lưu nháp [${json.data.code}] thành công. Bạn có thể xem trước hoặc chỉnh sửa tiếp.`);
+          fetchDrafts();
+          if (onOrderCreated) onOrderCreated(json.data);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Lỗi không xác định khi lập phiếu xuất kho');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Mở cửa sổ Xem Trước Bản In A4 (Không khóa sổ, không trừ tồn kho)
+  const handlePreviewPrint = () => {
+    if (!partnerId) {
+      setErrorMessage('Vui lòng chọn đơn vị / đối tác nhận hàng để xem trước bản in.');
+      return;
+    }
+    if (selectedItems.length === 0) {
+      setErrorMessage('Danh sách xuất kho trống! Hãy chọn ít nhất 1 đầu sách.');
+      return;
+    }
+
+    const currentPartner = partners.find((p) => p.id === partnerId);
+    const currentWh = warehouses.find((w) => w.id === fromWarehouseId);
+
+    const previewOrder: DeliveryOrderData = {
+      id: editingDraftId || 'preview-id',
+      code: editingDraftCode || 'DRAFT-PREVIEW',
+      partnerId,
+      partnerName: currentPartner?.name || 'Đối tác nhận hàng',
+      partnerCode: currentPartner?.code,
+      partnerAddress: currentPartner?.address || null,
+      partnerPhone: currentPartner?.phone || null,
+      partnerReceiverName: null,
+      fromWarehouseId,
+      warehouseName: currentWh?.name || fromWarehouseId,
+      subtotal,
+      discountRate,
+      finalAmount,
+      fiscalScope,
+      status: 'DRAFT',
+      note: note.trim() || null,
+      createdBy: 'Thủ kho',
+      createdAt: new Date().toISOString(),
+      items: selectedItems.map((it, idx) => ({
+        id: `preview-${idx}`,
+        editionId: it.editionId,
+        editionCode: it.code,
+        isbn: it.isbn,
+        title: it.title,
+        quantity: it.quantity,
+        unitCoverPrice: it.unitCoverPrice,
+        unitSellingPrice: it.unitSellingPrice,
+        totalAmount: it.quantity * it.unitSellingPrice,
+      })),
+    };
+
+    setPreviewOrderForPrint(previewOrder);
   };
 
   if (!isOpen || !mounted) return null;
@@ -417,13 +706,20 @@ export function WholesaleDispatchModal({
       >
         <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
           {/* Header Modal */}
-          <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between shrink-0">
+          <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-2">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
                 <FileText className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-base">Lập Phiếu Xuất Kho Đối Tác</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-base">Lập Phiếu Xuất Kho Đối Tác</h3>
+                  {editingDraftCode && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/30 text-amber-300 text-[11px] font-mono font-bold">
+                      Đang sửa: {editingDraftCode}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-400">
                   Xuất hàng đối tác: nhà sách, thư viện, trường học, đại lý — Cấp số liên tục trong Transaction
                 </p>
@@ -432,14 +728,84 @@ export function WholesaleDispatchModal({
             <button
               onClick={onClose}
               disabled={isSubmitting}
-              className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+              className="p-1 text-slate-400 hover:text-white rounded-lg transition self-end sm:self-center"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Body Form */}
-          <div className="p-6 space-y-5 overflow-y-auto flex-1">
+          <div className="p-6 space-y-4 overflow-y-auto flex-1">
+            {/* Thanh quản lý các bản nháp đang lưu */}
+            {(draftsList.length > 0 || editingDraftCode) && (
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  {editingDraftCode ? (
+                    <span className="font-semibold text-amber-900">
+                      Đang mở bản nháp: <b className="font-mono text-amber-800">{editingDraftCode}</b>
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-amber-900">
+                      Hệ thống có <b>{draftsList.length}</b> bản nháp xuất kho chưa khóa sổ.
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {draftsList.length > 0 && (
+                    <select
+                      value={editingDraftId || ''}
+                      onChange={(e) => {
+                        const targetId = e.target.value;
+                        if (targetId) {
+                          const found = draftsList.find((d) => d.id === targetId);
+                          if (found) loadDraftIntoForm(found);
+                        } else {
+                          handleResetNew();
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-amber-500 max-w-[240px] truncate"
+                    >
+                      <option value="">-- Chọn bản nháp để nạp ({draftsList.length}) --</option>
+                      {draftsList.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          [{d.code}] {d.partnerName || 'Đối tác'} - {new Date(d.createdAt).toLocaleDateString('vi-VN')}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {editingDraftId && (
+                    <button
+                      type="button"
+                      onClick={handleResetNew}
+                      className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Lập mới
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Thông báo thành công */}
+            {saveSuccessMessage && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-800 font-semibold animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{saveSuccessMessage}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSaveSuccessMessage(null)}
+                  className="text-emerald-600 hover:text-emerald-800 font-bold ml-2"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Thông báo lỗi */}
             {errorMessage && (
               <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-xs text-rose-700 font-semibold animate-shake">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -447,9 +813,31 @@ export function WholesaleDispatchModal({
               </div>
             )}
 
-            {/* Khung cấu hình thông tin xuất kho */}
+            {/* Khung cấu hình thông tin xuất kho (ĐÃ ĐỔI VỊ TRÍ: Nguồn bên Trái, Nhận bên Phải) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-              {/* Chọn Đại lý / Đối tác */}
+              {/* 1. Chọn Kho Nguồn Xuất Hàng (BÊN TRÁI) */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Kho nguồn xuất hàng (*):
+                </label>
+                <select
+                  value={fromWarehouseId}
+                  onChange={(e) => {
+                    setFromWarehouseId(e.target.value);
+                    setCheckedFingerprint('');
+                    setAtpNotice(null);
+                  }}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  {availableSourceWarehouses.map((wh) => (
+                    <option key={wh.id} value={wh.id}>
+                      [{wh.code}] {wh.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Chọn Đơn vị / Đối tác Nhận Hàng (BÊN PHẢI) */}
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Đơn vị / Đối tác nhận hàng (*):
@@ -463,24 +851,6 @@ export function WholesaleDispatchModal({
                   {partners.map((p) => (
                     <option key={p.id} value={p.id}>
                       [{p.code}] {p.name} {p.discountRate ? `(CK: ${Math.round(p.discountRate * 100)}%)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Chọn Kho Xuất */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Kho nguồn xuất hàng (*):
-                </label>
-                <select
-                  value={fromWarehouseId}
-                  onChange={(e) => setFromWarehouseId(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  {warehouses.map((wh) => (
-                    <option key={wh.id} value={wh.id}>
-                      [{wh.code}] {wh.name}
                     </option>
                   ))}
                 </select>
@@ -568,6 +938,7 @@ export function WholesaleDispatchModal({
                   Dán danh sách
                 </button>
               </div>
+
               {isPasteOpen && (
                 <div className="border border-amber-200 bg-amber-50/60 rounded-2xl p-3 space-y-2">
                   <p className="text-[11px] text-slate-600">
@@ -591,12 +962,13 @@ export function WholesaleDispatchModal({
                   </button>
                 </div>
               )}
+
               <div className="relative">
                 <input
                   type="text"
                   value={searchBookTerm}
                   onChange={(e) => setSearchBookTerm(e.target.value)}
-                  placeholder="Gõ tên sách, mã SKU hoặc 4 số cuối ISBN..."
+                  placeholder="Gõ tên sách, tác giả, mã SKU hoặc 4 số cuối ISBN..."
                   className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-amber-500"
                 />
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -606,7 +978,7 @@ export function WholesaleDispatchModal({
               {searchBookTerm.trim() && (
                 <div className="border border-slate-200 rounded-2xl p-2 bg-white shadow-lg space-y-1 max-h-48 overflow-y-auto">
                   {filteredAvailableBooks.length === 0 ? (
-                    <p className="text-xs text-slate-400 p-2 text-center">Không tìm thấy sách có tồn khả dụng.</p>
+                    <p className="text-xs text-slate-400 p-2 text-center">Không tìm thấy sách có tồn khả dụng tại kho này.</p>
                   ) : (
                     filteredAvailableBooks.map((b) => {
                       const stock = stockOfWarehouse(b, fromWarehouseId);
@@ -619,6 +991,7 @@ export function WholesaleDispatchModal({
                           <div>
                             <span className="font-mono font-bold text-amber-700 mr-2">[{b.code}]</span>
                             <span className="font-semibold text-slate-800">{b.title}</span>
+                            {b.author && <span className="text-slate-400 ml-1.5 font-normal">({b.author})</span>}
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-slate-500 font-mono">
@@ -639,74 +1012,75 @@ export function WholesaleDispatchModal({
             {/* Bảng danh sách sách đã chọn */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
               <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[520px]">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
-                    <th className="p-3 w-10 text-center">#</th>
-                    <th className="p-3">Ấn bản sách</th>
-                    <th className="p-3 text-right">Giá bìa</th>
-                    <th className="p-3 text-center w-28">Số lượng</th>
-                    <th className="p-3 text-right">Đơn giá bán</th>
-                    <th className="p-3 text-right">Thành tiền</th>
-                    <th className="p-3 w-10 text-center"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selectedItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="p-6 text-center text-slate-400 italic">
-                        Chưa có ấn bản nào được chọn để xuất kho. Hãy tìm kiếm ở trên.
-                      </td>
+                <table className="w-full text-xs min-w-[520px]">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
+                      <th className="p-3 w-10 text-center">#</th>
+                      <th className="p-3">Ấn bản sách</th>
+                      <th className="p-3 text-right">Giá bìa</th>
+                      <th className="p-3 text-center w-28">Số lượng</th>
+                      <th className="p-3 text-right">Đơn giá bán</th>
+                      <th className="p-3 text-right">Thành tiền</th>
+                      <th className="p-3 w-10 text-center"></th>
                     </tr>
-                  ) : (
-                    selectedItems.map((item, idx) => (
-                      <tr key={item.editionId} className="hover:bg-slate-50">
-                        <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
-                        <td className="p-3">
-                          <p className="font-bold text-slate-800">
-                            [{item.code}] {item.title}
-                          </p>
-                          <p className="text-[11px] text-slate-400 font-mono">Tồn tại kho: {item.stockAvailable}</p>
-                        </td>
-                        <td className="p-3 text-right font-mono text-slate-600">
-                          {item.unitCoverPrice.toLocaleString('vi-VN')} đ
-                        </td>
-                        <td className="p-3 text-center">
-                          <input
-                            type="number"
-                            min={1}
-                            max={item.stockAvailable}
-                            value={item.quantity}
-                            onChange={(e) => handleUpdateQuantity(item.editionId, parseInt(e.target.value) || 1)}
-                            className="w-16 px-2 py-1 text-center font-bold font-mono border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500"
-                          />
-                        </td>
-                        <td className="p-3 text-right font-mono font-medium text-slate-700">
-                          {item.unitSellingPrice.toLocaleString('vi-VN')} đ
-                        </td>
-                        <td className="p-3 text-right font-mono font-black text-slate-900">
-                          {(item.quantity * item.unitSellingPrice).toLocaleString('vi-VN')} đ
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(item.editionId)}
-                            className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-6 text-center text-slate-400 italic">
+                          Chưa có ấn bản nào được chọn để xuất kho. Hãy tìm kiếm ở trên.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      selectedItems.map((item, idx) => (
+                        <tr key={item.editionId} className="hover:bg-slate-50">
+                          <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                          <td className="p-3">
+                            <p className="font-bold text-slate-800">
+                              [{item.code}] {item.title}
+                            </p>
+                            <p className="text-[11px] text-slate-400 font-mono">Tồn tại kho: {item.stockAvailable}</p>
+                          </td>
+                          <td className="p-3 text-right font-mono text-slate-600">
+                            {item.unitCoverPrice.toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="number"
+                              min={1}
+                              max={item.stockAvailable}
+                              value={item.quantity}
+                              onChange={(e) => handleUpdateQuantity(item.editionId, parseInt(e.target.value) || 1)}
+                              className="w-16 px-2 py-1 text-center font-bold font-mono border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                          </td>
+                          <td className="p-3 text-right font-mono font-medium text-slate-700">
+                            {item.unitSellingPrice.toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="p-3 text-right font-mono font-black text-slate-900">
+                            {(item.quantity * item.unitSellingPrice).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(item.editionId)}
+                              className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             {/* Tóm tắt tổng tiền */}
             {selectedItems.length > 0 && (
-              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-4 space-y-1.5 text-xs">                <div className="flex justify-between text-slate-600">
+              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-4 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-600">
                   <span>Tổng số lượng xuất:</span>
                   <span className="font-mono font-bold text-slate-900">{totalQuantity} cuốn</span>
                 </div>
@@ -730,6 +1104,7 @@ export function WholesaleDispatchModal({
                 </div>
               </div>
             )}
+
             {/* Kết quả kiểm tra tồn kho cứng */}
             {atpNotice && (
               <div
@@ -744,38 +1119,61 @@ export function WholesaleDispatchModal({
               </div>
             )}
           </div>
-          <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+
+          {/* Footer nút hành động */}
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+              className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition"
             >
               Hủy Bỏ
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+              {/* Kiểm tra tồn kho */}
               <button
                 type="button"
                 onClick={handleCheckAtp}
                 disabled={isSubmitting || isCheckingAtp || selectedItems.length === 0}
-                className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                title="Kiểm tra tồn kho khả dụng tại nguồn"
               >
-                <RefreshCw className={`w-4 h-4 ${isCheckingAtp ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingAtp ? 'animate-spin' : ''}`} />
                 {isCheckingAtp ? 'Đang kiểm...' : 'Kiểm tra tồn kho'}
               </button>
+
+              {/* Lưu nháp */}
               <button
                 type="button"
                 onClick={() => handleSubmit(false)}
                 disabled={isSubmitting || selectedItems.length === 0}
-                className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50"
+                className="px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                title="Lưu lại bản nháp để soạn tiếp sau"
               >
-                {isSubmitting ? 'Đang lưu...' : 'Lưu Nháp (DRAFT)'}
+                <Clock className="w-3.5 h-3.5 text-amber-700" />
+                {isSubmitting ? 'Đang lưu...' : editingDraftId ? 'Cập Nhật Nháp' : 'Lưu Nháp (DRAFT)'}
               </button>
+
+              {/* Xem trước bản in A4 */}
+              <button
+                type="button"
+                onClick={handlePreviewPrint}
+                disabled={selectedItems.length === 0 || !partnerId}
+                className="px-3.5 py-2.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                title="Xem trước mẫu in A4 gửi đối tác duyệt trước khi ký"
+              >
+                <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                Xem Trước Bản In
+              </button>
+
+              {/* Ký duyệt & In phiếu A4 */}
               <button
                 type="button"
                 onClick={() => handleSubmit(true)}
                 disabled={isSubmitting || selectedItems.length === 0}
-                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-extrabold shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-extrabold shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+                title="Khóa sổ xuất kho & in phiếu A4 chính thức"
               >
                 <Printer className="w-4 h-4" />
                 {isSubmitting ? 'Đang khóa sổ...' : 'Ký Duyệt & In Phiếu A4'}
@@ -785,14 +1183,18 @@ export function WholesaleDispatchModal({
         </div>
       </div>
 
-      {/* Modal in phiếu xuất kho A4 sau khi xuất */}
-      {createdOrderForPrint && (
+      {/* Modal in phiếu xuất kho A4 (Chính thức hoặc Xem trước) */}
+      {(createdOrderForPrint || previewOrderForPrint) && (
         <DeliveryReceiptPrint
-          order={createdOrderForPrint}
-          isOpen={!!createdOrderForPrint}
+          order={createdOrderForPrint || previewOrderForPrint!}
+          isOpen={!!(createdOrderForPrint || previewOrderForPrint)}
           onClose={() => {
-            setCreatedOrderForPrint(null);
-            onClose();
+            if (createdOrderForPrint) {
+              setCreatedOrderForPrint(null);
+              onClose();
+            } else {
+              setPreviewOrderForPrint(null);
+            }
           }}
         />
       )}

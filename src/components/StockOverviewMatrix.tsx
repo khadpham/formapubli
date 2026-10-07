@@ -120,6 +120,7 @@ export function StockOverviewMatrix({
   const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
+  const [editingWholesaleDraft, setEditingWholesaleDraft] = useState<any | null>(null);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [bankManagerOpen, setBankManagerOpen] = useState(false);
   // Panel "Kho": xem tổng số kho + tổng tồn từng kho, ngưng/mở lại/xóa kho.
@@ -1434,7 +1435,14 @@ export function StockOverviewMatrix({
       {activeTab === 'DELIVERY_ORDERS' && (
         <DeliveryOrdersLedger
           currentRole={currentRole}
-          onOpenCreateModal={() => setWholesaleModalOpen(true)}
+          onOpenCreateModal={() => {
+            setEditingWholesaleDraft(null);
+            setWholesaleModalOpen(true);
+          }}
+          onOpenEditDraft={(draft) => {
+            setEditingWholesaleDraft(draft);
+            setWholesaleModalOpen(true);
+          }}
         />
       )}
 
@@ -1465,12 +1473,16 @@ export function StockOverviewMatrix({
       {/* Wholesale Dispatch Modal (PXK) */}
       <WholesaleDispatchModal
         isOpen={wholesaleModalOpen}
-        onClose={() => setWholesaleModalOpen(false)}
+        onClose={() => {
+          setWholesaleModalOpen(false);
+          setEditingWholesaleDraft(null);
+        }}
         warehouses={localWarehouses}
         books={initialBooks}
         partners={partners}
         currentRole={currentRole}
         onOrderCreated={handleRefresh}
+        initialDraft={editingWholesaleDraft}
       />
 
       {/* Pick List Modal */}
