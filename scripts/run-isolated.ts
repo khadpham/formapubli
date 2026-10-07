@@ -235,6 +235,8 @@ const ALL_SUITES = [
   'scripts/test-contract-schema.ts',
   // Module Hợp đồng: engine merge + validate placeholder (inspect-module).
   'scripts/test-contract-engine.ts',
+  // Module Hợp đồng: service cấp số + autofill + snapshot + preset.
+  'scripts/test-contract-service.ts',
 ];
 
 /**
