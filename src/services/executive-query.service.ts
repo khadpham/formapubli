@@ -686,17 +686,24 @@ export class ExecutiveQueryService {
       .leftJoin(works, eq(editions.workId, works.id));
     const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nearbyQty = (text: string, idx: number, len: number): number => {
+      const cap = (n: number, raw: string): number => {
+        if (n > 999) {
+          warnings.push(`Số lượng ${raw} vượt quá 999 — đã giới hạn ở 999, kiểm tra lại giúp.`);
+          return 999;
+        }
+        return n;
+      };
       const before = text.slice(Math.max(0, idx - 16), idx);
       const mB = before.match(/(\d+)\s*(cuon|quyen|q|c|ban)?\s*$/i);
       if (mB) {
         const n = parseInt(mB[1], 10);
-        if (n > 0 && n <= 999) return n;
+        if (n > 0) return cap(n, mB[1]);
       }
       const after = text.slice(idx + len, idx + len + 8);
       const mA = after.match(/^\s*[x×:]\s*(\d+)/i) || after.match(/^\s*(\d+)\s*(cuon|quyen)/i);
       if (mA) {
         const n = parseInt(mA[1], 10);
-        if (n > 0 && n <= 999) return n;
+        if (n > 0) return cap(n, mA[1]);
       }
       return 1;
     };
@@ -719,6 +726,9 @@ export class ExecutiveQueryService {
     }
 
     // 3. Đối chiếu tồn tại kho gửi + cảnh báo vượt tồn.
+    // ponytail: N+1 query stockBalances (1 query/kho cho mỗi dòng sách). Ceiling:
+    // draft thường chỉ vài dòng nên ổn; nếu catalog lớn hoặc draft nhiều dòng,
+    // batch thành 1 query với `inArray(editionId)` + warehouseId.
     const items = Array.from(merged.values());
     for (const it of items) {
       if (fromWh) {
