@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
 import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 import { CopilotGuardrails } from '../src/services/ai/copilot-guardrails';
 
 assertIsolatedTestDb('test-copilot-grounding-fixes');
@@ -91,7 +92,7 @@ async function run() {
       body: JSON.stringify({ question: 'doanh số hôm nay?', model: 'cf/gpt-oss-120b' }),
     }) as any
   );
-  const body = await res.json();
+  const body = await readCopilotSseResponse(res as unknown as Response);
   ok(body.success === true, 'API success');
   ok(
     typeof body.data?.answer === 'string' && body.data.answer.includes('không gọi được'),
