@@ -51,6 +51,7 @@ export async function runCopilotStream(opts: {
       allowLoop,
       history,
       modelOverride,
+      tracker: track,
       actor: { staffId: sessionPayload.actorId, role: sessionPayload.role },
       onToolStart: async (toolName) => {
         await emit('tool_start', { toolName, label: LABEL_BY_TOOL[toolName] || toolName });
@@ -433,6 +434,8 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      // Chặn proxy (nginx) buffer event — stream phải tới drawer ngay khi tool chạy.
+      'X-Accel-Buffering': 'no',
     },
   });
 }
@@ -651,8 +654,10 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     if (items.length === 0) {
       return `🚚 **Phiếu chuyển kho (nháp)**: chưa có dòng hàng nào.${warn}\nBổ sung thông tin rồi tôi chuẩn bị lại — tôi không tự tạo phiếu khi thiếu dữ liệu.`;
     }
-    const lines = items.map((it: any, i: number) =>
-      `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (tồn kho gửi: ${Number(it.availableStock || 0).toLocaleString('vi-VN')})`);
+    const lines = items.map((it: any, i: number) => {
+      const stock = d.fromWarehouseId ? Number(it.availableStock || 0).toLocaleString('vi-VN') : 'chưa rõ';
+      return `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (tồn kho gửi: ${stock})`;
+    });
     return `🚚 **Phiếu chuyển kho NHÁP** — mới là nháp, chưa tạo phiếu, chưa trừ kho:\nTừ: **${from}** → Đến: **${to}**\n${lines.join('\n')}${warn}\n\nXem lại kỹ rồi bấm **"Xác nhận tạo phiếu"** bên dưới để tạo phiếu thật.`;
   }
   if (toolName === 'query_order_lookup') {    const d = data as any;

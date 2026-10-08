@@ -439,7 +439,9 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
       let finalData: any = null;
       const handleSseEvent = (event: string, data: any) => {
         if (event === 'tool_start') {
-          setLiveStatus(`Đang tra cứu: ${data.label || data.toolName}...`);
+          // "Chuẩn bị" cho tool ghi nháp — "tra cứu" chỉ đúng với tool đọc.
+          const verb = data.toolName === 'prepare_transfer_draft' ? 'Đang chuẩn bị' : 'Đang tra cứu';
+          setLiveStatus(`${verb}: ${data.label || data.toolName}...`);
         } else if (event === 'synthesizing') {
           setLiveStatus('Đang tổng hợp câu trả lời...');
         } else if (event === 'done') {
@@ -904,7 +906,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                       </div>
                       <ul className="text-xs text-slate-700 space-y-0.5 mb-2">
                         {(draftData.items as any[]).slice(0, 10).map((it: any, i: number) => (
-                          <li key={i}>• <strong>{it.code}</strong> × {it.quantity} <span className="text-slate-500">(tồn kho gửi: {Number(it.availableStock || 0).toLocaleString('vi-VN')})</span></li>
+                          <li key={i}>• <strong>{it.code}</strong> × {it.quantity} <span className="text-slate-500">(tồn kho gửi: {draftData.fromWarehouseId ? Number(it.availableStock || 0).toLocaleString('vi-VN') : 'chưa rõ'})</span></li>
                         ))}
                       </ul>
                       {transferResults[msg.id] && (
