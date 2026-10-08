@@ -28,6 +28,10 @@ async function main() {
   eq2('đầu kỳ UTC', s, '2026-09-30 17:00:00');
   eq2('cuối kỳ UTC', e, '2026-10-31 17:00:00');
 
+  // Baseline trước khi seed — test phải đúng dù suite khác đã seed trước
+  // (runner dùng chung một DB cho mọi suite).
+  const revBefore = await getChannelRevenue('2026-10');
+
   await db.insert(warehouses).values({ id: 'wh-p1', code: 'KHO_P1', name: 'Kho P1' });
   await db.insert(partners).values({ id: 'part-p1', code: 'DL_P1', name: 'Đại lý P1', type: 'WHOLESALE' });
 
@@ -75,16 +79,17 @@ async function main() {
   await db.insert(orders).values(ord('o-p1-5', 'ORD-P1-005', 'ONLINE', 'COMPLETED', '2026-10-31 18:00:00', 900000, 'CASH'));
 
   const r = await getChannelRevenue('2026-10');
-  eq2('đại lý: số phiếu', r.agency.orders, 1);
-  eq2('đại lý: phải thu', r.agency.receivable, 10000000);
-  eq2('đại lý: thực thu', r.agency.received, 4000000);
-  eq2('đại lý: còn lại', r.agency.balance, 6000000);
-  eq2('online: số đơn', r.online.orders, 1);
-  eq2('online: doanh thu', r.online.revenue, 500000);
-  eq2('bán lẻ: số đơn', r.retail.orders, 2);
-  eq2('bán lẻ: doanh thu', r.retail.revenue, 500000);
-  eq2('bán lẻ: tiền mặt', r.retail.cash, 300000);
-  eq2('bán lẻ: CK/QR', r.retail.bankQr, 200000);
+  const d = (after: number, bef: number) => after - bef;
+  eq2('đại lý: số phiếu tăng', d(r.agency.orders, revBefore.agency.orders), 1);
+  eq2('đại lý: phải thu tăng', d(r.agency.receivable, revBefore.agency.receivable), 10000000);
+  eq2('đại lý: thực thu tăng', d(r.agency.received, revBefore.agency.received), 4000000);
+  eq2('đại lý: còn lại tăng', d(r.agency.balance, revBefore.agency.balance), 6000000);
+  eq2('online: số đơn tăng', d(r.online.orders, revBefore.online.orders), 1);
+  eq2('online: doanh thu tăng', d(r.online.revenue, revBefore.online.revenue), 500000);
+  eq2('bán lẻ: số đơn tăng', d(r.retail.orders, revBefore.retail.orders), 2);
+  eq2('bán lẻ: doanh thu tăng', d(r.retail.revenue, revBefore.retail.revenue), 500000);
+  eq2('bán lẻ: tiền mặt tăng', d(r.retail.cash, revBefore.retail.cash), 300000);
+  eq2('bán lẻ: CK/QR tăng', d(r.retail.bankQr, revBefore.retail.bankQr), 200000);
 
   console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'}: ${pass} đạt, ${fail} hỏng`);
   process.exit(fail === 0 ? 0 : 1);

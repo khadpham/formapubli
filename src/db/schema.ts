@@ -306,6 +306,8 @@ export const orders = sqliteTable('orders', {
   discountAmount: real('discount_amount').default(0.0), // Tiền chiết khấu
   finalAmount: real('final_amount').notNull(), // Tiền thực thu sau chiết khấu
   paymentMethod: text('payment_method').notNull().default('CASH'), // CASH, BANK_TRANSFER, QR_CODE
+  // 0048: tài khoản nhận tiền (nullable — dữ liệu cũ = "chưa phân loại").
+  destAccountId: text('dest_account_id').references(() => bankAccounts.id),
   fiscalScope: text('fiscal_scope').notNull().default('INTERNAL_MANAGEMENT'), // OFFICIAL_TAX vs INTERNAL_MANAGEMENT
   vatRate: real('vat_rate').default(0.0), // 0.05 hoặc 0.0
   vatInvoiceRequired: integer('vat_invoice_required', { mode: 'boolean' }).default(false),
@@ -482,6 +484,8 @@ export const partnerReceipts = sqliteTable('partner_receipts', {
   reference: text('reference').notNull(), // Mã bill/sao kê đối chiếu (bắt buộc)
   paidAt: text('paid_at').notNull(), // Ngày tiền về (YYYY-MM-DD)
   receivedBy: text('received_by').notNull(), // Người thu tiền
+  // 0048: tài khoản nhận tiền (nullable — dữ liệu cũ = "chưa phân loại").
+  destAccountId: text('dest_account_id').references(() => bankAccounts.id),
   status: text('status').notNull().default('ACTIVE'), // ACTIVE, VOIDED
   voidReason: text('void_reason'), // Lý do hủy (bắt buộc khi VOID)
   idempotencyKey: text('idempotency_key').notNull().unique(), // Chống thu trùng

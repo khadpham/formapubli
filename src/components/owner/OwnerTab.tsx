@@ -13,6 +13,18 @@ interface ExpenseEntry {
   recurrence: string;
 }
 
+interface MarginRow {
+  channel: 'ONLINE' | 'RETAIL' | 'AGENCY' | 'SHOPEE';
+  productId: string | null;
+  name: string;
+  qty: number;
+  revenue: number;
+  cogs: number;
+  unknownCostQty: number;
+  grossProfit: number;
+  margin: number | null;
+}
+
 interface FinanceData {
   month: string;
   shopee: { orders: number; escrowTotal: number; feeTotal: number; netProfitTotal: number };
@@ -22,6 +34,17 @@ interface FinanceData {
     retail: { orders: number; revenue: number; cash: number; bankQr: number };
   };
   totals?: { cashCollected: number };
+  margin?: MarginRow[];
+  cashByAccount?: { accountId: string | null; label: string; amount: number; sources: string[] }[];
+  agencyPayments?: {
+    partnerId: string;
+    partnerName: string;
+    receivable: number;
+    received: number;
+    balance: number;
+    overdue: number;
+    overdueCount: number;
+  }[];
   expenses: {
     total: number;
     byRecurrence: { MONTHLY: number; ONE_TIME: number };
@@ -29,6 +52,13 @@ interface FinanceData {
   };
   profitAfterExpenses: number;
 }
+
+const CHANNEL_LABEL: Record<string, string> = {
+  ONLINE: 'Online',
+  RETAIL: 'Bán lẻ',
+  AGENCY: 'Đại lý',
+  SHOPEE: 'Shopee',
+};
 
 const CATEGORY_LABEL: Record<string, string> = {
   SALARY: 'Lương',
@@ -64,6 +94,7 @@ export function OwnerTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editNote, setEditNote] = useState('');
+  const [marginChannel, setMarginChannel] = useState('');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -219,6 +250,125 @@ export function OwnerTab() {
               <p className="text-lg font-extrabold text-indigo-900">{vnd(s.escrowTotal)}</p>
               <p className="text-[11px] text-indigo-600 mt-0.5">{s.orders} đơn đã giao</p>
             </div>
+          </div>
+        </section>
+      )}
+
+      {/* Pivot biên lợi nhuận — GĐ3-P3 */}
+      {data.margin && data.margin.length > 0 && (
+        <section aria-label="Biên lợi nhuận" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="text-sm font-extrabold text-slate-800">Biên lợi nhuận theo kênh × đầu sách — {month}</h3>
+            <label className="text-xs font-bold text-slate-600">
+              Kênh
+              <select
+                value={marginChannel}
+                onChange={(e) => setMarginChannel(e.target.value)}
+                className="ml-2 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[40px]"
+              >
+                <option value="">Tất cả</option>
+                <option value="ONLINE">Online</option>
+                <option value="RETAIL">Bán lẻ</option>
+                <option value="AGENCY">Đại lý</option>
+                <option value="SHOPEE">Shopee</option>
+              </select>
+            </label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-100">
+                  <th className="py-2 pr-3 font-bold">Kênh</th>
+                  <th className="py-2 pr-3 font-bold">Đầu sách</th>
+                  <th className="py-2 pr-3 font-bold text-right">SL</th>
+                  <th className="py-2 pr-3 font-bold text-right">Doanh thu</th>
+                  <th className="py-2 pr-3 font-bold text-right">Giá vốn</th>
+                  <th className="py-2 pr-3 font-bold text-right">Lãi gộp</th>
+                  <th className="py-2 font-bold text-right">Biên gộp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.margin
+                  .filter((r) => !marginChannel || r.channel === marginChannel)
+                  .map((r, i) => (
+                    <tr key={i} className="border-b border-slate-50">
+                      <td className="py-2 pr-3 font-bold text-slate-600">{CHANNEL_LABEL[r.channel] || r.channel}</td>
+                      <td className="py-2 pr-3 text-slate-800">{r.name}</td>
+                      <td className="py-2 pr-3 text-right text-slate-600">{r.qty}</td>
+                      <td className="py-2 pr-3 text-right font-bold text-slate-800">{vnd(r.revenue)}</td>
+                      <td className="py-2 pr-3 text-right text-slate-600">
+                        {r.unknownCostQty !== 0 ? (
+                          <span className="text-amber-600 font-bold" title="Chưa có giá vốn đầy đủ">chưa có GV</span>
+                        ) : (
+                          vnd(r.cogs)
+                        )}
+                      </td>
+                      <td className={`py-2 pr-3 text-right font-bold ${r.grossProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {r.unknownCostQty !== 0 ? '—' : vnd(r.grossProfit)}
+                      </td>
+                      <td className="py-2 text-right font-bold text-indigo-700">
+                        {r.margin === null ? '—' : `${(r.margin * 100).toFixed(1)}%`}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Đại lý tính theo phiếu xuất (phải thu). Giá vốn FIFO theo lô, phân bổ về từng dòng theo tỷ lệ số lượng.
+          </p>
+        </section>
+      )}
+
+      {/* Dòng tiền theo nơi tiền đang nằm — GĐ3-P3 */}
+      {data.cashByAccount && data.cashByAccount.length > 0 && (
+        <section aria-label="Dòng tiền theo tài khoản" className="space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-700">Tiền đang nằm ở đâu — {month}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {data.cashByAccount.map((b, i) => (
+              <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <p className="text-[11px] text-slate-500 font-bold">{b.label}</p>
+                <p className="text-lg font-extrabold text-slate-900">{vnd(b.amount)}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{b.sources.join(' · ')}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Tiến độ thanh toán đại lý — GĐ3-P3 */}
+      {data.agencyPayments && data.agencyPayments.length > 0 && (
+        <section aria-label="Tiến độ thanh toán đại lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-800">Tiến độ thanh toán đại lý</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-100">
+                  <th className="py-2 pr-3 font-bold">Đại lý</th>
+                  <th className="py-2 pr-3 font-bold text-right">Phải thu</th>
+                  <th className="py-2 pr-3 font-bold text-right">Đã thu</th>
+                  <th className="py-2 pr-3 font-bold text-right">Còn lại</th>
+                  <th className="py-2 font-bold text-right">Quá hạn</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.agencyPayments.map((p) => (
+                  <tr key={p.partnerId} className="border-b border-slate-50">
+                    <td className="py-2 pr-3 font-bold text-slate-700">{p.partnerName}</td>
+                    <td className="py-2 pr-3 text-right text-slate-600">{vnd(p.receivable)}</td>
+                    <td className="py-2 pr-3 text-right text-emerald-700 font-bold">{vnd(p.received)}</td>
+                    <td className="py-2 pr-3 text-right font-bold text-slate-800">{vnd(p.balance)}</td>
+                    <td className="py-2 text-right">
+                      {p.overdue > 0 ? (
+                        <span className="font-bold text-rose-700">{vnd(p.overdue)} ({p.overdueCount} phiếu)</span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}
