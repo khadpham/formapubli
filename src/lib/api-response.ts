@@ -46,7 +46,7 @@ export function handleApiError(err: unknown): NextResponse {
   // Dev/test giữ message gốc để debug. Server luôn log đầy đủ ở console.
   const isProd = process.env.NODE_ENV === 'production';
   const message = isProd ? 'Lỗi hệ thống, vui lòng thử lại.' : (err as any)?.message || 'Lỗi xử lý yêu cầu';
-  if (isProd) console.error('[api] INTERNAL_ERROR:', (err as Error)?.stack || err);
+  if (isProd) console.error('[api] INTERNAL_ERROR:', (err as Error)?.stack || err, '| CAUSE:', (err as any)?.cause?.stack || (err as any)?.cause?.message || (err as any)?.cause || '(none)');
   return NextResponse.json(
     {
       success: false,

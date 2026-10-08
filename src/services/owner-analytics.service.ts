@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
   db,
   inventoryLedger,
@@ -76,14 +76,6 @@ export interface MarginRow {
 export async function getMarginPivot(month: string, actorRole: UserRole): Promise<MarginRow[]> {
   assertOwner(actorRole);
   const [start, end] = vnMonthRangeUtc(month);
-  const nameOf = new Map<string, string>();
-  const productName = async (pid: string) => {
-    if (!nameOf.has(pid)) {
-      const [p] = await db.select({ name: products.name }).from(products).where(eq(products.id, pid)).limit(1);
-      nameOf.set(pid, p?.name || pid);
-    }
-    return nameOf.get(pid) as string;
-  };
 
   interface RawRow { channel: MarginRow['channel']; productId: string | null; qty: number; revenue: number }
   const raw: RawRow[] = [];
@@ -152,15 +144,45 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
     .from(shopeeOrderFinance)
     .where(and(gte(shopeeOrderFinance.syncedAt, start), lt(shopeeOrderFinance.syncedAt, end)));
 
-  // Giá vốn FIFO theo sản phẩm (1 lần/sản phẩm), rồi phân bổ theo SL từng dòng.
+  // Nạp tên sản phẩm + sổ cái kho trong MỘT lượt (tránh N+1: mỗi sản phẩm 1
+  // truy vấn làm vượt trần subrequest của Workers — lỗi "Too many subrequests").
+  const nameOf = new Map<string, string>();
   const fifoCache = new Map<string, { cogs: number; unknownCostQty: number }>();
-  const fifoOf = async (pid: string) => {
-    if (!fifoCache.has(pid)) {
-      const r = await computeCogsForPeriod({ productId: pid, startUtc: start, endUtc: end });
-      fifoCache.set(pid, { cogs: r.cogs, unknownCostQty: r.unknownQty });
+  const productIds = [...new Set(raw.map((r) => r.productId).filter((x): x is string => !!x))];
+  if (productIds.length > 0) {
+    const prodRows = await db
+      .select({ id: products.id, name: products.name })
+      .from(products)
+      .where(inArray(products.id, productIds));
+    for (const p of prodRows) nameOf.set(p.id, p.name || p.id);
+
+    const ledRows = await db
+      .select({
+        productId: inventoryLedger.productId,
+        lotId: inventoryLedger.lotId,
+        unitCost: inventoryLedger.unitCostSnapshot,
+        qty: inventoryLedger.quantityDelta,
+        at: inventoryLedger.effectiveAt,
+      })
+      .from(inventoryLedger)
+      .where(inArray(inventoryLedger.productId, productIds))
+      .orderBy(asc(inventoryLedger.productId), sql`${inventoryLedger.effectiveAt} ASC`);
+    const movesByProduct = new Map<string, LotMovement[]>();
+    for (const r of ledRows) {
+      const arr = movesByProduct.get(r.productId) || [];
+      arr.push({
+        lotId: r.lotId,
+        unitCost: r.unitCost === null ? null : Number(r.unitCost),
+        qty: Number(r.qty),
+        at: `${r.at}`,
+      });
+      movesByProduct.set(r.productId, arr);
     }
-    return fifoCache.get(pid)!;
-  };
+    for (const pid of productIds) {
+      const res = allocateFifoCogs(movesByProduct.get(pid) || [], start, end);
+      fifoCache.set(pid, { cogs: res.cogs, unknownCostQty: res.unknownQty });
+    }
+  }
 
   const rows: MarginRow[] = [];
   // Tổng SL xuất trong kỳ theo sản phẩm (mẫu số phân bổ) = tổng SL các dòng.
@@ -170,7 +192,7 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
   }
 
   for (const r of raw) {
-    const fifo = r.productId ? await fifoOf(r.productId) : null;
+    const fifo = r.productId ? fifoCache.get(r.productId) ?? null : null;
     const denom = r.productId ? qtyByProduct.get(r.productId) || 0 : 0;
     const share = fifo && denom > 0 ? r.qty / denom : 0;
     const cogs = fifo ? Math.round(fifo.cogs * share) : 0;
@@ -179,7 +201,7 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
     rows.push({
       channel: r.channel,
       productId: r.productId,
-      name: r.productId ? await productName(r.productId) : 'Shopee (tổng)',
+      name: r.productId ? nameOf.get(r.productId) || r.productId : 'Shopee (tổng)',
       qty: r.qty,
       revenue: r.revenue,
       cogs,
@@ -234,14 +256,7 @@ export async function getCashByAccount(month: string, actorRole: UserRole): Prom
     buckets.set(key, cur);
   };
   const acctLabel = new Map<string, string>();
-  const labelOf = async (id: string | null) => {
-    if (!id) return null;
-    if (!acctLabel.has(id)) {
-      const [a] = await db.select({ label: bankAccounts.label }).from(bankAccounts).where(eq(bankAccounts.id, id)).limit(1);
-      acctLabel.set(id, a?.label || id);
-    }
-    return acctLabel.get(id) as string;
-  };
+  const whDefault = new Map<string, string | null>();
 
   // Đơn lẻ.
   const ordRows = await db
@@ -260,25 +275,6 @@ export async function getCashByAccount(month: string, actorRole: UserRole): Prom
       )
     )
     .groupBy(orders.paymentMethod, orders.destAccountId, orders.warehouseId);
-  const whDefault = new Map<string, string | null>();
-  for (const r of ordRows) {
-    let accountId: string | null = r.destAccountId;
-    let label: string;
-    if (accountId) {
-      label = (await labelOf(accountId)) || accountId;
-    } else if (r.paymentMethod === 'CASH') {
-      label = 'Tiền mặt tại quầy';
-    } else {
-      if (!whDefault.has(r.warehouseId)) {
-        const [w] = await db.select({ d: warehouses.defaultBankAccountId }).from(warehouses).where(eq(warehouses.id, r.warehouseId)).limit(1);
-        whDefault.set(r.warehouseId, w?.d || null);
-      }
-      accountId = whDefault.get(r.warehouseId) || null;
-      label = accountId ? (await labelOf(accountId)) || 'Tài khoản kho' : 'Chưa phân loại (CK/QR)';
-    }
-    // Gộp theo tài khoản (không theo nguồn) để thấy tổng tiền đang nằm ở đâu.
-    add(`acct:${accountId || label}`, label, accountId, num(r.revenue), r.paymentMethod === 'CASH' ? 'Bán lẻ tiền mặt' : 'Bán lẻ CK/QR');
-  }
 
   // Tiền đại lý thực thu.
   const rcRows = await db
@@ -294,8 +290,52 @@ export async function getCashByAccount(month: string, actorRole: UserRole): Prom
       )
     )
     .groupBy(partnerReceipts.destAccountId);
+
+  // GOM truy vấn (tránh N+1 vượt trần subrequest của Workers):
+  // 1 lượt tài khoản mặc định của kho, 1 lượt nhãn tài khoản.
+  const whIds = [...new Set(ordRows.map((r) => r.warehouseId).filter((x): x is string => !!x))];
+  if (whIds.length > 0) {
+    const wRows = await db
+      .select({ id: warehouses.id, d: warehouses.defaultBankAccountId })
+      .from(warehouses)
+      .where(inArray(warehouses.id, whIds));
+    for (const w of wRows) whDefault.set(w.id, w.d || null);
+  }
+
+  const resolvedOrders = ordRows.map((r) => {
+    let accountId: string | null = r.destAccountId;
+    let labelFallback: string;
+    if (accountId) {
+      labelFallback = accountId;
+    } else if (r.paymentMethod === 'CASH') {
+      labelFallback = 'Tiền mặt tại quầy';
+    } else {
+      accountId = whDefault.get(r.warehouseId) || null;
+      labelFallback = accountId ? 'Tài khoản kho' : 'Chưa phân loại (CK/QR)';
+    }
+    return { accountId, labelFallback, revenue: num(r.revenue), isCash: r.paymentMethod === 'CASH' };
+  });
+
+  const acctIds = new Set<string>();
+  for (const o of resolvedOrders) if (o.accountId) acctIds.add(o.accountId);
+  for (const r of rcRows) if (r.destAccountId) acctIds.add(r.destAccountId);
+  if (acctIds.size > 0) {
+    const aRows = await db
+      .select({ id: bankAccounts.id, label: bankAccounts.label })
+      .from(bankAccounts)
+      .where(inArray(bankAccounts.id, [...acctIds]));
+    for (const a of aRows) acctLabel.set(a.id, a.label || a.id);
+  }
+  const labelOf = (id: string | null) => (id ? acctLabel.get(id) || id : null);
+
+  for (const o of resolvedOrders) {
+    const label = o.accountId ? (labelOf(o.accountId) as string) || o.labelFallback : o.labelFallback;
+    // Gộp theo tài khoản (không theo nguồn) để thấy tổng tiền đang nằm ở đâu.
+    add(`acct:${o.accountId || label}`, label, o.accountId, o.revenue, o.isCash ? 'Bán lẻ tiền mặt' : 'Bán lẻ CK/QR');
+  }
+
   for (const r of rcRows) {
-    const label = r.destAccountId ? (await labelOf(r.destAccountId)) || r.destAccountId : 'Chưa phân loại (đại lý)';
+    const label = r.destAccountId ? (labelOf(r.destAccountId) as string) || r.destAccountId : 'Chưa phân loại (đại lý)';
     add(`acct:${r.destAccountId || label}`, label, r.destAccountId, num(r.amount), 'Đại lý thực thu');
   }
 
