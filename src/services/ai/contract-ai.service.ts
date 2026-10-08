@@ -1,0 +1,191 @@
+import { callGeminiWithFallback } from './llm-client';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { createHash } from 'crypto';
+import { db, contractTemplates } from '@/db';
+import { eq } from 'drizzle-orm';
+import { ContractEngineService } from '../contract-engine.service';
+import { generateUUIDv7 } from '@/lib/uuidv7';
+
+export const CONTRACT_CATEGORIES = [
+  'THUE_DIA_DIEM_SK',
+  'DAT_HANG_HOA_SK',
+  'TAC_QUYEN',
+  'IN_AN',
+  'DAI_LY_PHAN_PHOI',
+  'KHAC',
+] as const;
+
+export class ContractAIError extends Error {
+  code: string;
+  constructor(code: string, message?: string) {
+    super(message || code);
+    this.code = code;
+  }
+}
+
+type LlmCaller = (params: { systemPrompt: string; userText: string; apiKey?: string }) => Promise<string>;
+
+const defaultCaller: LlmCaller = (p) => callGeminiWithFallback({ ...p, apiKey: geminiKey() });
+
+function geminiKey(): string {
+  const k = (process.env.GEMINI_API_KEY || '').trim();
+  if (!k) throw new ContractAIError('THIEU_GEMINI_API_KEY', 'Chưa cấu hình GEMINI_API_KEY');
+  return k;
+}
+
+function parseJson<T>(raw: string): T {
+  // LLM đôi khi bọc JSON trong ``` — lột vỏ trước khi parse
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    throw new ContractAIError('LLM_TRA_JSON_HONG', 'AI trả về dữ liệu không đúng định dạng');
+  }
+}
+
+const LEGAL_STYLE = `Bạn là trợ lý pháp chế cho một công ty xuất bản tại Việt Nam.
+Văn phong: pháp lý tiếng Việt chuẩn. Dùng thuật ngữ luật Việt Nam
+("bên vi phạm nghĩa vụ", "bồi thường thiệt hại", "chấm dứt hợp đồng",
+"bất khả kháng"...). CẤM dùng từ thông dụng thay thuật ngữ pháp lý.
+Chỉ trả về JSON thuần, không giải thích thêm.`;
+
+export interface DraftResult {
+  title: string;
+  bodyText: string;
+  suggestedPlaceholders: string[];
+}
+
+/** GĐ1a: soạn nháp mẫu hợp đồng từ lời mô tả. */
+export async function draftTemplateFromDescription(
+  input: { category: string; description: string },
+  callLlm: LlmCaller = defaultCaller,
+): Promise<DraftResult> {
+  if (!CONTRACT_CATEGORIES.includes(input.category as never)) {
+    throw new ContractAIError('LOAI_HOP_DONG_KHONG_HOP_LE');
+  }
+  const raw = await callLlm({
+    systemPrompt: LEGAL_STYLE,
+    userText:
+      `Soạn nháp mẫu hợp đồng loại ${input.category} dựa trên mô tả sau:\n"${input.description}"\n\n` +
+      `Yêu cầu: đầy đủ các điều khoản cơ bản (đối tượng, giá trị/thù lao, thời hạn, ` +
+      `quyền-nghĩa vụ các bên, thanh toán, vi phạm/bồi thường, chấm dứt, giải quyết tranh chấp). ` +
+      `Các điểm cần điền thông tin cụ thể thì để dạng {ten_placeholder} (snake_case, tiếng Việt không dấu). ` +
+      `Trả JSON: {"title": "...", "bodyText": "...", "suggestedPlaceholders": ["..."]}. ` +
+      `Mọi placeholder trong suggestedPlaceholders PHẢI xuất hiện trong bodyText dạng {ten}.`,
+  });
+  const data = parseJson<DraftResult>(raw);
+  if (!data.title || !data.bodyText || !Array.isArray(data.suggestedPlaceholders)) {
+    throw new ContractAIError('LLM_TRA_JSON_HONG', 'Thiếu trường bắt buộc trong kết quả AI');
+  }
+  return data;
+}
+
+/** GĐ1b: tải text từ link Google Docs (dùng export?format=txt). */
+export async function fetchGdocText(gdocUrl: string): Promise<string> {
+  const m = /\/document\/d\/([a-zA-Z0-9-_]+)/.exec(gdocUrl || '');
+  if (!m) throw new ContractAIError('GDOC_KHONG_DOC_DUOC', 'Link không phải Google Docs hợp lệ');
+  const url = `https://docs.google.com/document/d/${m[1]}/export?format=txt`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new ContractAIError('GDOC_KHONG_DOC_DUOC', 'Không tải được tài liệu (cần để chế độ chia sẻ công khai)');
+    const text = (await res.text()).trim();
+    if (!text) throw new ContractAIError('GDOC_KHONG_DOC_DUOC', 'Tài liệu rỗng');
+    return text;
+  } catch (e) {
+    if (e instanceof ContractAIError) throw e;
+    throw new ContractAIError('GDOC_KHONG_DOC_DUOC', 'Không tải được tài liệu Google Docs');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export interface StructuredTemplate {
+  title: string;
+  bodyText: string;
+  suggestedPlaceholders: { placeholder: string; originalText: string }[];
+}
+
+/** GĐ1b: cấu trúc hóa văn bản mẫu thật — giữ nguyên điều khoản, chỉ đánh dấu điểm điền. */
+export async function structureGdocTemplate(
+  rawText: string,
+  callLlm: LlmCaller = defaultCaller,
+): Promise<StructuredTemplate> {
+  const raw = await callLlm({
+    systemPrompt:
+      LEGAL_STYLE +
+      `\nNhiệm vụ: cấu trúc hóa một mẫu hợp đồng CÓ SẴN. GIỮ NGUYÊN từng câu chữ ` +
+      `của điều khoản gốc — CẤM viết lại, cấm thêm bớt điều khoản. Chỉ tìm các điểm ` +
+      `cần điền thông tin (tên công ty/cá nhân, số tiền, ngày tháng, địa chỉ...) và ` +
+      `thay bằng {placeholder} (snake_case, tiếng Việt không dấu). Chỉ trả JSON.`,
+    userText:
+      `Văn bản mẫu:\n"""\n${rawText.slice(0, 12000)}\n"""\n\n` +
+      `Trả JSON: {"title": "tên loại hợp đồng suy từ văn bản", "bodyText": "toàn văn với {placeholder}", ` +
+      `"suggestedPlaceholders": [{"placeholder": "...", "originalText": "chuỗi gốc bị thay"}]}. ` +
+      `Mỗi originalText PHẢI là chuỗi con chính xác của văn bản gốc.`,
+  });
+  const data = parseJson<StructuredTemplate>(raw);
+  if (!data.bodyText || !Array.isArray(data.suggestedPlaceholders)) {
+    throw new ContractAIError('LLM_TRA_JSON_HONG', 'Thiếu trường bắt buộc trong kết quả AI');
+  }
+  return data;
+}
+
+export interface FinalizeInput {
+  code: string;
+  title: string;
+  category: string;
+  bodyText: string;
+  placeholders: string[];
+  sourceUrl?: string;
+}
+
+/** GĐ1c: sinh .docx từ văn bản đã chốt → validate → lưu contract_templates. */
+export async function finalizeAiTemplate(input: FinalizeInput): Promise<string> {
+  const code = input.code.trim();
+  const title = input.title.trim();
+  const bodyText = input.bodyText.trim();
+  if (!code) throw new ContractAIError('THIEU_CODE', 'Thiếu mã mẫu (code).');
+  if (!title) throw new ContractAIError('THIEU_TIEU_DE', 'Thiếu tiêu đề mẫu.');
+  if (!bodyText) throw new ContractAIError('THIEU_NOI_DUNG', 'Thiếu nội dung mẫu.');
+  if (!CONTRACT_CATEGORIES.includes(input.category as never)) {
+    throw new ContractAIError('LOAI_HOP_DONG_KHONG_HOP_LE');
+  }
+  const [dup] = await db.select({ id: contractTemplates.id }).from(contractTemplates).where(eq(contractTemplates.code, code)).limit(1);
+  if (dup) throw new ContractAIError('TRUNG_CODE', `Mã mẫu ${code} đã tồn tại.`);
+
+  // Sinh .docx: mỗi dòng văn bản = 1 Paragraph, giữ nguyên {placeholder}
+  const paragraphs = bodyText.split('\n').map((line) => new Paragraph({ children: [new TextRun(line || ' ')] }));
+  const doc = new Document({ sections: [{ children: paragraphs }] });
+  const buffer = await Packer.toBuffer(doc);
+  const templateData = buffer.toString('base64');
+
+  // Validate bằng engine hiện tại — .docx sinh ra phải merge được
+  const check = ContractEngineService.validateTemplate(templateData);
+  if (!check.isValid) {
+    throw new ContractAIError('DOCX_KHONG_HOP_LE', `File mẫu lỗi: ${(check.errors || []).join('; ')}`);
+  }
+
+  const schemaFields = JSON.stringify(input.placeholders.map((key) => ({ key, label: key, type: 'text', required: false })));
+  const [row] = await db.insert(contractTemplates).values({
+    id: `ctpl-${generateUUIDv7()}`,
+    code,
+    title,
+    category: input.category,
+    description: 'Mẫu do AI soạn/nhập — CHƯA DUYỆT PHÁP LÝ.',
+    templateFilename: `${code}.docx`,
+    templateData,
+    schemaFields,
+    version: 1,
+    isActive: true,
+    legalReviewed: false,
+    aiGenerated: true,
+    sourceUrl: input.sourceUrl?.trim() || null,
+  }).returning();
+  return row.id;
+}
+
+export function hashContent(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
