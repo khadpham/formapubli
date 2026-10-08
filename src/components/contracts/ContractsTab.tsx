@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2 } from 'lucide-react';
+import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2, FolderKanban } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
@@ -9,6 +9,7 @@ import { CompanyProfileForm } from './CompanyProfileForm';
 import { AITemplateBuilder } from './AITemplateBuilder';
 import { AIContractReview } from './AIContractReview';
 import { AISmartDraft } from './AISmartDraft';
+import { ContractProjects } from './ContractProjects';
 
 interface ContractsTabProps {
   currentRole?: UserRole;
@@ -31,6 +32,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [aiReviewOpen, setAiReviewOpen] = useState(false);
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
+  const [view, setView] = useState<'docs' | 'projects'>('docs');
   const [profileOpen, setProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -158,6 +160,14 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           </button>
           <button
             type="button"
+            onClick={() => setView(view === 'docs' ? 'projects' : 'docs')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${view === 'projects' ? 'bg-slate-800 text-white' : 'bg-white border border-slate-300 hover:bg-slate-50'}`}
+            aria-label="Xem dự án và cột mốc hợp đồng"
+          >
+            <FolderKanban className="w-4 h-4 inline mr-1" />{view === 'docs' ? 'Dự Án' : 'Hợp Đồng'}
+          </button>
+          <button
+            type="button"
             onClick={() => setProfileOpen(true)}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition"
             aria-label="Thông tin công ty Bên A"
@@ -176,6 +186,12 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
         <p className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold">{errorMessage}</p>
       )}
 
+      {view === 'projects' ? (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+          <ContractProjects onSmartDraft={() => { setView('docs'); setAiDraftOpen(true); }} />
+        </div>
+      ) : (
+      <>
       <div className="flex gap-2 items-center">
         <label className="text-xs font-bold text-slate-600">Trạng thái:</label>
         <select
@@ -243,6 +259,8 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
       {composerOpen && (
         <ContractComposerModal
