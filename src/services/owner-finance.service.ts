@@ -1,5 +1,9 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
-import { db, deliveryOrders, partnerReceipts, orders } from '@/db';
+import { db, deliveryOrders, partnerReceipts, orders, inventoryLedger } from '@/db';
+import { AppError } from './app-error';
+import { withDbRetry } from '../lib/db-retry';
+import { recordAuditLog } from '../lib/rbac-guard';
+import type { UserRole } from '../lib/roles';
 
 export interface AgencyChannel {
   orders: number;
@@ -129,4 +133,181 @@ export async function getChannelRevenue(month: string): Promise<ChannelRevenue> 
       bankQr: retailRevenue - cash,
     },
   };
+}
+
+export interface PendingCostLot {
+  lotId: string;
+  productId: string;
+  editionId: string | null;
+  warehouseId: string;
+  receivedQty: number;
+  firstReceivedAt: string | null;
+}
+
+function assertOwner(role: UserRole) {
+  if (role !== 'ROLE_OWNER') throw AppError.forbidden('Chỉ chủ mới được xem và nhập giá vốn.');
+}
+
+/**
+ * Các lô hàng đã nhập kho nhưng chưa có giá vốn (bút toán RECEIPT có lotId
+ * mà unitCostSnapshot NULL). Chủ thấy thẻ nhắc và nhập giá vốn sau.
+ */
+export async function listPendingCostLots(actorRole: UserRole): Promise<PendingCostLot[]> {
+  assertOwner(actorRole);
+  const rows = await db
+    .select({
+      lotId: inventoryLedger.lotId,
+      productId: inventoryLedger.productId,
+      editionId: inventoryLedger.editionId,
+      warehouseId: inventoryLedger.warehouseId,
+      receivedQty: sql<number>`coalesce(sum(${inventoryLedger.quantityDelta}), 0)`,
+      firstReceivedAt: sql<string | null>`min(${inventoryLedger.effectiveAt})`,
+    })
+    .from(inventoryLedger)
+    .where(
+      and(
+        eq(inventoryLedger.eventType, 'RECEIPT'),
+        sql`${inventoryLedger.lotId} IS NOT NULL`,
+        sql`${inventoryLedger.unitCostSnapshot} IS NULL`
+      )
+    )
+    .groupBy(
+      inventoryLedger.lotId,
+      inventoryLedger.productId,
+      inventoryLedger.editionId,
+      inventoryLedger.warehouseId
+    )
+    .orderBy(sql`min(${inventoryLedger.effectiveAt})`);
+  return rows.map((r) => ({
+    lotId: `${r.lotId}`,
+    productId: `${r.productId}`,
+    editionId: r.editionId,
+    warehouseId: `${r.warehouseId}`,
+    receivedQty: Number(r.receivedQty),
+    firstReceivedAt: r.firstReceivedAt,
+  }));
+}
+
+/**
+ * Chủ nhập/sửa giá vốn cho một lô (áp cho các bút toán RECEIPT của lô).
+ * Mặc định chỉ điền chỗ đang NULL; force=true để ghi đè khi sửa sai.
+ * Ghi audit log cũ → mới để đối soát.
+ */
+export async function setLotCost(params: {
+  lotId: string;
+  unitCost: number;
+  force?: boolean;
+  actorRole: UserRole;
+  actorId: string;
+}) {
+  assertOwner(params.actorRole);
+  const lotId = `${params.lotId || ''}`.trim();
+  if (!lotId) throw AppError.invalid('Thiếu lotId.');
+  const cost = Number(params.unitCost);
+  if (!Number.isFinite(cost) || cost < 0) throw AppError.invalid('Giá vốn phải là số không âm.');
+
+  return withDbRetry(async () => {
+    const existing = await db
+      .select({
+        unitCostSnapshot: inventoryLedger.unitCostSnapshot,
+        quantityDelta: inventoryLedger.quantityDelta,
+      })
+      .from(inventoryLedger)
+      .where(
+        and(
+          eq(inventoryLedger.lotId, lotId),
+          eq(inventoryLedger.eventType, 'RECEIPT')
+        )
+      );
+    if (existing.length === 0) throw AppError.invalid(`Lô ${lotId} không tồn tại.`);
+    const nullCount = existing.filter((e) => e.unitCostSnapshot === null).length;
+    const oldCost = existing.find((e) => e.unitCostSnapshot !== null)?.unitCostSnapshot;
+    if (nullCount === 0 && !params.force) {
+      throw AppError.conflict(`Lô ${lotId} đã có giá vốn ${Number(oldCost)}. Truyền force để ghi đè.`);
+    }
+    const conds: any[] = [
+      eq(inventoryLedger.lotId, lotId),
+      eq(inventoryLedger.eventType, 'RECEIPT'),
+    ];
+    if (!params.force) conds.push(sql`${inventoryLedger.unitCostSnapshot} IS NULL`);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(inventoryLedger)
+        .set({ unitCostSnapshot: cost })
+        .where(and(...conds));
+    });
+    const qty = existing.reduce((s, e) => s + Number(e.quantityDelta || 0), 0);
+    await recordAuditLog({
+      action: 'LOT_COST' as any,
+      actorRole: params.actorRole,
+      actorId: params.actorId,
+      resource: '/api/owner/lots',
+      details: `Nhập giá vốn lô ${lotId}: ${oldCost === undefined || oldCost === null ? 'chưa có' : Number(oldCost)} → ${cost} (${qty} cuốn${params.force ? ', ghi đè' : ''}).`,
+    });
+    return { lotId, unitCost: cost, updatedEntries: params.force ? existing.length : nullCount };
+  });
+}
+
+export interface LotMovement {
+  lotId: string | null;
+  unitCost: number | null;
+  /** Dương = nhập, âm = xuất. */
+  qty: number;
+  /** Mốc thời gian ISO để sắp xếp phát lại. */
+  at: string;
+}
+
+export interface FifoCogsResult {
+  dispatchedQty: number;
+  /** Giá vốn xác định được trong kỳ. */
+  cogs: number;
+  /** Số cuốn xuất ra nhưng lô chưa có giá vốn (hiện "chưa có giá vốn", không tính bừa 0). */
+  unknownQty: number;
+}
+
+/**
+ * Tính giá vốn hàng bán trong kỳ theo FIFO — phát lại sổ cái theo thứ tự thời gian.
+ * Lô về trước xuất trước; lô chưa có giá vốn thì đếm vào unknownQty chứ không
+ * gán 0 (gán 0 sẽ làm biên lợi nhuận ảo cao).
+ * Thuần logic — test trực tiếp không cần DB.
+ */
+export function allocateFifoCogs(
+  movements: LotMovement[],
+  startIso: string,
+  endIso: string
+): FifoCogsResult {
+  const sorted = [...movements].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  const queue: Array<{ lotId: string | null; unitCost: number | null; remaining: number }> = [];
+  let dispatchedQty = 0;
+  let cogs = 0;
+  let unknownQty = 0;
+
+  const consume = (qty: number, inPeriod: boolean) => {
+    let need = qty;
+    while (need > 0 && queue.length > 0) {
+      const lot = queue[0];
+      const take = Math.min(need, lot.remaining);
+      if (inPeriod) {
+        if (lot.unitCost === null || !Number.isFinite(lot.unitCost)) unknownQty += take;
+        else cogs += take * lot.unitCost;
+      }
+      lot.remaining -= take;
+      need -= take;
+      if (lot.remaining <= 0) queue.shift();
+    }
+    // Xuất vượt tồn (lẽ ra bị chặn ở recordMovement) → tính vào chưa rõ giá vốn.
+    if (need > 0 && inPeriod) unknownQty += need;
+  };
+
+  for (const m of sorted) {
+    if (!Number.isInteger(m.qty) || m.qty === 0) continue;
+    if (m.qty > 0) {
+      queue.push({ lotId: m.lotId, unitCost: m.unitCost, remaining: m.qty });
+    } else {
+      const inPeriod = m.at >= startIso && m.at < endIso;
+      if (inPeriod) dispatchedQty += -m.qty;
+      consume(-m.qty, inPeriod);
+    }
+  }
+  return { dispatchedQty, cogs: Math.round(cogs), unknownQty };
 }
