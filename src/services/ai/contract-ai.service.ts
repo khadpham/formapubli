@@ -192,6 +192,53 @@ export function hashContent(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
+export interface DraftAdjustment {
+  id: string;
+  clauseRef: string;
+  original: string;
+  proposed: string;
+  reason: string;
+}
+
+export interface SmartDraftResult {
+  filledText: string;
+  adjustments: DraftAdjustment[];
+}
+
+/** GĐ3: điền placeholder từ fieldValues + đề xuất điều chỉnh điều khoản (riêng biệt, chờ duyệt). */
+export async function smartDraft(
+  input: { templateId: string; fieldValues: Record<string, string>; notes: string },
+  callLlm: LlmCaller = defaultCaller,
+): Promise<SmartDraftResult> {
+  const [tpl] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, input.templateId)).limit(1);
+  if (!tpl || !tpl.isActive) throw new ContractAIError('MAU_KHONG_TON_TAI', 'Không tìm thấy mẫu hợp đồng.');
+  const templateText = extractDocxText(tpl.templateData);
+  const valuesText = Object.entries(input.fieldValues)
+    .map(([k, v]) => `{${k}} = ${v}`)
+    .join('\n');
+  const raw = await callLlm({
+    systemPrompt:
+      LEGAL_STYLE +
+      `\nNhiệm vụ: soạn thảo thông minh từ mẫu. Hai quy tắc BẤT DI BẤT DỊCH:\n` +
+      `1. filledText: điền giá trị vào các {placeholder} theo bảng giá trị. GIỮ NGUYÊN từng câu chữ điều khoản gốc — CẤM sửa/xóa/thêm điều khoản trong filledText.\n` +
+      `2. Mọi điều chỉnh điều khoản theo ghi chú tình huống PHẢI đưa vào adjustments (mảng riêng), mỗi mục ghi rõ điều khoản gốc (original), bản đề xuất (proposed), lý do (reason). ` +
+      `Không có gì để điều chỉnh thì adjustments = []. Chỉ trả JSON.`,
+    userText:
+      `Mẫu hợp đồng:\n"""\n${templateText.slice(0, 10000)}\n"""\n\n` +
+      `Bảng giá trị:\n${valuesText || '(trống)'}\n\n` +
+      `Ghi chú tình huống: "${input.notes || '(không có)'}"\n\n` +
+      `Trả JSON: {"filledText": "toàn văn đã điền giá trị", "adjustments": [{"id": "adj-1", "clauseRef": "...", "original": "...", "proposed": "...", "reason": "..."}]}.`,
+  });
+  const data = parseJson<SmartDraftResult>(raw);
+  if (typeof data.filledText !== 'string' || !Array.isArray(data.adjustments)) {
+    throw new ContractAIError('LLM_TRA_JSON_HONG', 'Thiếu trường bắt buộc trong kết quả AI');
+  }
+  const adjustments = data.adjustments.filter(
+    (a) => a && a.id && a.clauseRef && a.original && a.proposed && typeof a.reason === 'string',
+  );
+  return { filledText: data.filledText, adjustments };
+}
+
 /** GĐ2: trích text từ file .docx (base64) — chỉ đọc, không merge. */
 export function extractDocxText(base64: string): string {
   let zip: PizZip;

@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch } from 'lucide-react';
+import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
 import { CompanyProfileForm } from './CompanyProfileForm';
 import { AITemplateBuilder } from './AITemplateBuilder';
 import { AIContractReview } from './AIContractReview';
+import { AISmartDraft } from './AISmartDraft';
 
 interface ContractsTabProps {
   currentRole?: UserRole;
@@ -29,6 +30,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [aiReviewOpen, setAiReviewOpen] = useState(false);
+  const [aiDraftOpen, setAiDraftOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -148,6 +150,14 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           </button>
           <button
             type="button"
+            onClick={() => setAiDraftOpen(true)}
+            className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition"
+            aria-label="Soạn hợp đồng thông minh bằng AI"
+          >
+            <Wand2 className="w-4 h-4 inline mr-1" />Soạn Thông Minh
+          </button>
+          <button
+            type="button"
             onClick={() => setProfileOpen(true)}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition"
             aria-label="Thông tin công ty Bên A"
@@ -255,6 +265,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
         />
       )}
       {aiReviewOpen && <AIContractReview onClose={() => setAiReviewOpen(false)} />}
+      {aiDraftOpen && <AISmartDraft onClose={() => setAiDraftOpen(false)} />}
       {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
     </div>
   );

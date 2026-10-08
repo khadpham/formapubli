@@ -254,6 +254,8 @@ const ALL_SUITES = [
   'scripts/test-contract-ai-gd1.ts',
   // Contract AI GĐ2: checklist + trích text docx + AI tóm tắt + phản biện (mock LLM).
   'scripts/test-contract-ai-gd2.ts',
+  // Contract AI GĐ3: smartDraft điền placeholder + đề xuất điều chỉnh (mock LLM).
+  'scripts/test-contract-ai-gd3.ts',
 ];
 
 /**
