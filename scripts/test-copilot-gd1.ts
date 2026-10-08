@@ -44,7 +44,7 @@ async function run() {
 
   // --- Task 2: làm đẹp UI drawer ---
   const loadingHits = ['Đang phân tích', 'Đang tra cứu', 'Đang tổng hợp'].filter((s) => src.includes(s)).length;
-  ok(loadingHits >= 2, `loading theo giai đoạn (thấy ${loadingHits}/3 mốc)`);
+  ok(loadingHits === 3, `đủ 3 mốc loading theo giai đoạn (thấy ${loadingHits}/3)`);
   ok(src.includes('<details'), 'model picker thu gọn trong <details>');
 
   console.log(`✅ test-copilot-gd1 (task 2): ${checks} checks passed`);
