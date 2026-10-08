@@ -36,6 +36,8 @@ DANH SÁCH CÔNG CỤ ĐƯỢC PHÉP DÙNG:
 12. query_gift_return(q?): QUA + TRA HANG — qua da xuat, phieu tra/hoan tien.
 13. query_order_lookup(q?): TRA 1 DON theo ma (ORD-.../CPM...).
 7. prepare_sale_draft(q?): LÊN ĐƠN NHÁP từ ngôn ngữ tự nhiên (mã/tên sách + số lượng + khách). CHỈ tạo nháp đổ vào giỏ POS — TUYỆT ĐỐI không tạo đơn hoàn tất, không trừ kho, không áp chiết khấu. Người dùng tự bấm Thanh toán ở POS.
+14. query_contracts(q?, status?): TRA CỨU HỢP ĐỒNG — theo số HĐ (HD-BQ-...), tiêu đề, trạng thái (DRAFT/FINALIZED/SIGNED/CANCELLED). Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
+15. query_agency_debt(q?): CÔNG NỢ ĐẠI LÝ — dư nợ, quá hạn, hạn mức theo đối tác. Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
 `;
 
 export const ToolCallSchema = z.object({
@@ -53,6 +55,8 @@ export const ToolCallSchema = z.object({
     'query_transfer_history',
     'query_gift_return',
     'query_order_lookup',
+    'query_contracts',
+    'query_agency_debt',
   ]),
   args: z.record(z.any()).default({}),
 });
@@ -211,7 +215,7 @@ export class CopilotGuardrails {
     // thì cho luật nội bộ quyết định — LLM không được đòi sếp nói lại.
     const nNorm = removeAccents(question.toLowerCase());
     const needsData =
-      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho|sang hay chieu|buoi sang|buoi chieu|thang truoc|tuan truoc|ky truoc|tang bao nhieu|so voi|luan chuyen|phieu chuyen|hao hut|tra hang|hoan tien|qua da xuat|ma don|tra don/.test(
+      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho|sang hay chieu|buoi sang|buoi chieu|thang truoc|tuan truoc|ky truoc|tang bao nhieu|so voi|luan chuyen|phieu chuyen|hao hut|tra hang|hoan tien|qua da xuat|ma don|tra don|hop dong|hd-bq|cong no/.test(
         nNorm
       );
     // Luật thắng cả khi planner TRẢ LỜI TRỰC TIẾP lẫn khi TỪ CHỐI câu cần dữ
@@ -721,6 +725,22 @@ Trả về JSON chuẩn khớp schema:
       n.includes('tra hang') || n.includes('khach tra') || n.includes('doi tra') ||
       n.includes('hoan tien') || n.includes('phieu tra') || n.includes('don tra');
     const orderCodeHit = /(ord-[a-z0-9-]+|cpm-?\d+|[a-z]{2,4}-\d{4,}[\da-z-]*)/i.test(n);
+    // Hợp đồng: từ khóa rất đặc thù ('hop dong', 'hd-bq') — đặt TRƯỚC các nhánh
+    // chung để không bị cướp ("liệt kê hợp đồng" chứa "liet ke" của danh mục).
+    const contractIntent = n.includes('hop dong') || n.includes('hd-bq');
+    if (contractIntent) {
+      // Bóc trạng thái từ câu hỏi (giá trị thật: DRAFT/FINALIZED/SIGNED/CANCELLED).
+      let status: string | undefined;
+      if (n.includes('nhap')) status = 'DRAFT';
+      else if (n.includes('da ky') || n.includes('signed')) status = 'SIGNED';
+      else if (n.includes('da huy') || n.includes('huy bo')) status = 'CANCELLED';
+      else if (n.includes('finalized') || n.includes('chot ban cuoi')) status = 'FINALIZED';
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_contracts', args: { q, ...(status ? { status } : {}) } },
+        reason: 'Heuristic keyword match: contracts',
+      };
+    }
     // So 2 ky DI TRUOC doanh-so chung: "doanh thu thang nay so voi thang
     // truoc" la SO SANH, khong phai bao cao 1 ky.
     if (compareIntent) {
@@ -865,6 +885,19 @@ Trả về JSON chuẩn khớp schema:
       };
     }
 
+    // Cong no dai ly ("cong no", "dai ly", "du no", "qua han"). Dat SAU cac
+    // nhanh chung de "doanh so dai ly" van ve bao cao doanh so, khong bi cuop.
+    if (
+      n.includes('cong no') || n.includes('dai ly') || n.includes('du no') ||
+      n.includes('qua han') || n.includes('no dai ly')
+    ) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'query_agency_debt', args: { q } },
+        reason: 'Heuristic keyword match: agency debt',
+      };
+    }
+
     // Len don nhap: dat SAU cac nhanh tra cuu de cau hoi so lieu uu tien truoc.
     // "tao/huy don": huy da bi chan o guard mutation phia tren, con lai la tao.
     if (
@@ -891,7 +924,9 @@ Trả về JSON chuẩn khớp schema:
         '- **Đối soát két tiền** ca làm việc\n' +
         '- **Nhịp bán 1 món**: giờ vàng, ngày đỉnh ("giờ vàng cuốn HH001?")\n' +
         '- **Danh mục**: sách của 1 tác giả, tựa bắt đầu bằng chữ nào, tác giả được yêu thích\n' +
-        '- **Lên đơn nháp**: nói "lấy 2 cuốn HH001..." rồi bấm Áp vào POS, tự thanh toán\n\n' +
+        '- **Lên đơn nháp**: nói "lấy 2 cuốn HH001..." rồi bấm Áp vào POS, tự thanh toán\n' +
+        '- **Hợp đồng**: tra cứu theo số HĐ (HD-BQ-...), trạng thái\n' +
+        '- **Công nợ đại lý**: dư nợ, quá hạn theo đối tác\n\n' +
         'Quý lãnh đạo cũng có thể hỏi tôi ngày giờ hiện tại hoặc cách sử dụng.',
     };
   }
@@ -1038,6 +1073,25 @@ Trả về JSON chuẩn khớp schema:
         result = await ExecutiveQueryService.queryOrderLookup({
           orderCode: typeof args.orderCode === 'string' ? args.orderCode : undefined,
           q: typeof args.q === 'string' ? args.q : undefined,
+        });
+        break;
+
+      case 'query_contracts': {
+        const rawStatus = typeof args.status === 'string' ? args.status.trim().toUpperCase() : '';
+        // Allowlist trạng thái từ contract.service.ts — ngoài danh sách thì bỏ qua.
+        const status = ['DRAFT', 'FINALIZED', 'SIGNED', 'CANCELLED'].includes(rawStatus) ? rawStatus : undefined;
+        result = await ExecutiveQueryService.queryContracts({
+          q: typeof args.q === 'string' ? args.q : undefined,
+          status,
+          limit: this.numArg(args.limit, 10, 1, 20),
+        });
+        break;
+      }
+
+      case 'query_agency_debt':
+        result = await ExecutiveQueryService.queryAgencyDebt({
+          q: typeof args.q === 'string' ? args.q : undefined,
+          limit: this.numArg(args.limit, 10, 1, 10),
         });
         break;
 
