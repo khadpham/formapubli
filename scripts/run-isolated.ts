@@ -246,6 +246,8 @@ const ALL_SUITES = [
   'scripts/test-owner-finance-p1.ts',
   // Tab Chủ GĐ3-P2: lệnh in mang giá vốn + lô + FIFO + quét rò rỉ.
   'scripts/test-owner-cogs-p2.ts',
+  // Tab Chủ GĐ3-P3: pivot biên lợi nhuận + dòng tiền + tiến độ đại lý.
+  'scripts/test-owner-margin-p3.ts',
 ];
 
 /**

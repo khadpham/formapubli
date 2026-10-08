@@ -6,6 +6,7 @@ import type { UserRole } from '@/lib/roles';
 import { db, shopeeOrderFinance } from '@/db';
 import { listExpensesMonth, addExpense } from '@/services/expense.service';
 import { getChannelRevenue } from '@/services/owner-finance.service';
+import { getMarginPivot, getCashByAccount, getAgencyPaymentProgress } from '@/services/owner-analytics.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,7 @@ function vnMonthNow(): string {
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);
+    const actorRole = 'ROLE_OWNER' as UserRole;
     const { searchParams } = new URL(req.url);
     const month = `${searchParams.get('month') || ''}`.trim() || vnMonthNow();
     if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -49,6 +51,12 @@ export async function GET(req: NextRequest) {
       channels.online.revenue +
       channels.retail.revenue +
       Number(shopee.escrowTotal);
+    // GĐ3-P3: pivot biên lợi nhuận, dòng tiền theo tài khoản, tiến độ thu đại lý.
+    const [margin, cashByAccount, agencyPayments] = await Promise.all([
+      getMarginPivot(month, actorRole),
+      getCashByAccount(month, actorRole),
+      getAgencyPaymentProgress(actorRole),
+    ]);
     return NextResponse.json({
       success: true,
       data: {
@@ -61,6 +69,9 @@ export async function GET(req: NextRequest) {
         },
         channels,
         totals: { cashCollected },
+        margin,
+        cashByAccount,
+        agencyPayments,
         expenses: {
           total: expensesTotal,
           byRecurrence: { MONTHLY: monthly, ONE_TIME: oneTime },
