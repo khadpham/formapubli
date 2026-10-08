@@ -1019,6 +1019,32 @@ export const contractReviews = sqliteTable('contract_reviews', {
   hashIdx: index('idx_contract_reviews_hash').on(table.contentHash),
 }));
 
+// 0052: Dự án/sự kiện + cột mốc hợp đồng (Contract AI GĐ4).
+export const contractProjects = sqliteTable('contract_projects', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  startDate: text('start_date'),
+  endDate: text('end_date'),
+  status: text('status').notNull().default('ACTIVE'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const contractMilestones = sqliteTable('contract_milestones', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => contractProjects.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  dueDate: text('due_date').notNull(),
+  neededCategory: text('needed_category').notNull(),
+  contractId: text('contract_id').references(() => contractDocuments.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('PENDING'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  projectIdx: index('idx_milestones_project').on(table.projectId),
+  dueIdx: index('idx_milestones_due').on(table.dueDate, table.status),
+}));
+
 export const contractDocuments = sqliteTable('contract_documents', {
   id: text('id').primaryKey(),
   contractNumber: text('contract_number').notNull().unique(),
