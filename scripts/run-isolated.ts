@@ -248,6 +248,8 @@ const ALL_SUITES = [
   'scripts/test-owner-cogs-p2.ts',
   // Tab Chủ GĐ3-P3: pivot biên lợi nhuận + dòng tiền + tiến độ đại lý.
   'scripts/test-owner-margin-p3.ts',
+  // Tab Chủ GĐ3-P4: nợ vay + khóa sổ + quét rò rỉ mở rộng.
+  'scripts/test-owner-loans-p4.ts',
 ];
 
 /**

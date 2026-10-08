@@ -7,6 +7,8 @@ import { db, shopeeOrderFinance } from '@/db';
 import { listExpensesMonth, addExpense } from '@/services/expense.service';
 import { getChannelRevenue } from '@/services/owner-finance.service';
 import { getMarginPivot, getCashByAccount, getAgencyPaymentProgress } from '@/services/owner-analytics.service';
+import { LoanService } from '@/services/loan.service';
+import { PeriodLockService } from '@/services/period-lock.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,10 +54,13 @@ export async function GET(req: NextRequest) {
       channels.retail.revenue +
       Number(shopee.escrowTotal);
     // GĐ3-P3: pivot biên lợi nhuận, dòng tiền theo tài khoản, tiến độ thu đại lý.
-    const [margin, cashByAccount, agencyPayments] = await Promise.all([
+    // GĐ3-P4: nợ vay + trạng thái khóa sổ.
+    const [margin, cashByAccount, agencyPayments, loans, lockInfo] = await Promise.all([
       getMarginPivot(month, actorRole),
       getCashByAccount(month, actorRole),
       getAgencyPaymentProgress(actorRole),
+      LoanService.overview(actorRole),
+      PeriodLockService.getInfo(month),
     ]);
     return NextResponse.json({
       success: true,
@@ -72,6 +77,8 @@ export async function GET(req: NextRequest) {
         margin,
         cashByAccount,
         agencyPayments,
+        loans,
+        periodLock: { locked: !!lockInfo, info: lockInfo },
         expenses: {
           total: expensesTotal,
           byRecurrence: { MONTHLY: monthly, ONE_TIME: oneTime },

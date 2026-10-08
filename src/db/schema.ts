@@ -1069,3 +1069,43 @@ export const printOrders = sqliteTable('print_orders', {
   statusIdx: index('idx_print_orders_status').on(table.status),
   editionIdx: index('idx_print_orders_edition').on(table.editionId),
 }));
+
+// 48. Loans — Nợ vay/vốn huy động (GĐ3-P4). CHỈ CHỦ — không API nào khác được đọc.
+export const loans = sqliteTable('loans', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  lender: text('lender').notNull(),
+  principal: real('principal').notNull(),
+  interestRate: real('interest_rate'),
+  borrowedAt: text('borrowed_at').notNull(), // YYYY-MM-DD
+  dueAt: text('due_at'), // YYYY-MM-DD
+  status: text('status').notNull().default('ACTIVE'), // ACTIVE | PAID | CANCELLED
+  note: text('note'),
+  createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  statusIdx: index('idx_loans_status').on(table.status),
+}));
+
+export const loanPayments = sqliteTable('loan_payments', {
+  id: text('id').primaryKey(),
+  loanId: text('loan_id').notNull().references(() => loans.id),
+  amount: real('amount').notNull(),
+  principalAmount: real('principal_amount').notNull().default(0),
+  interestAmount: real('interest_amount').notNull().default(0),
+  paidAt: text('paid_at').notNull(), // YYYY-MM-DD
+  note: text('note'),
+  createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  loanIdx: index('idx_loan_payments_loan').on(table.loanId),
+}));
+
+// 49. Period Locks — Khóa sổ kỳ đã quyết toán (GĐ3-P4). Chỉ chủ khóa/mở.
+export const periodLocks = sqliteTable('period_locks', {
+  month: text('month').primaryKey(), // YYYY-MM
+  lockedBy: text('locked_by').notNull(),
+  lockedAt: text('locked_at').default(sql`CURRENT_TIMESTAMP`),
+  note: text('note'),
+});
