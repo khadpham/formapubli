@@ -1,4 +1,4 @@
-import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances, products, transferShipments, transferShipmentItems, returnOrders } from '@/db';
+import { db, cashboxSessions, warehouses, editions, orders, works, orderItems, stockBalances, products, transferShipments, transferShipmentItems, returnOrders, contractDocuments, contractTemplates, partners } from '@/db';
 import { ForecastService, RunoutLevel } from './forecast.service';
 import { OrderService, createdAtBetween } from './order.service';
 import { InventoryService } from './inventory.service';
@@ -1445,4 +1445,175 @@ export class ExecutiveQueryService {
       })),
     };
   }
+
+  /**
+   * Tra cứu HỢP ĐỒNG (read-only): theo số HĐ / tiêu đề / trạng thái.
+   * Trạng thái hợp lệ đọc từ contract.service.ts: DRAFT | FINALIZED | SIGNED | CANCELLED.
+   *
+   * Server TỰ PHÂN TÍCH câu hỏi tự nhiên (đúng như prompt catalog hứa):
+   * bóc mã HĐ (HD-BQ-...) trước, rồi lược bỏ từ khóa tool và so khớp không dấu.
+   */
+  static async queryContracts(params: { q?: string; status?: string; limit?: number } = {}): Promise<{
+    items: Array<{
+      contractNumber: string;
+      title: string;
+      partnerName: string | null;
+      status: string;
+      totalAmount: number;
+      signedDate: string | null;
+      effectiveDate: string | null;
+      expiryDate: string | null;
+    }>;
+    total: number;
+    warning?: string;
+  }> {
+    const limit = Math.min(20, Math.max(1, Math.floor(Number(params.limit) || 10)));
+    const rawQ = `${params.q || ''}`.trim();
+    const status = `${params.status || ''}`.trim().toUpperCase();
+    const rows = await db
+      .select({
+        contractNumber: contractDocuments.contractNumber,
+        title: contractDocuments.title,
+        partnerName: partners.name,
+        status: contractDocuments.status,
+        totalAmount: contractDocuments.totalAmount,
+        signedDate: contractDocuments.signedDate,
+        effectiveDate: contractDocuments.effectiveDate,
+        expiryDate: contractDocuments.expiryDate,
+      })
+      .from(contractDocuments)
+      .leftJoin(partners, eq(contractDocuments.partnerId, partners.id))
+      .orderBy(desc(contractDocuments.createdAt));
+    // Bóc mã HĐ trước — chính xác nhất ("hợp đồng HD-BQ-2026-901").
+    const codeHit = rawQ.match(/HD-BQ-[\w-]+/i);
+    let filtered = rows;
+    if (codeHit) {
+      const needle = codeHit[0].toLowerCase();
+      filtered = rows.filter((r) => r.contractNumber.toLowerCase().includes(needle));
+    } else {
+      const stripped = stripToolKeywords(rawQ, [
+        'hop dong', 'hieu luc', 'con', 'danh sach', 'liet ke', 'cho toi', 'cho xem',
+        'cua', 'hien tai', 'ban quyen', 'tac quyen',
+      ]);
+      if (stripped) {
+        const needle = removeAccents(stripped.toLowerCase());
+        filtered = rows.filter(
+          (r) =>
+            removeAccents(r.contractNumber).toLowerCase().includes(needle) ||
+            removeAccents(r.title).toLowerCase().includes(needle)
+        );
+      }
+    }
+    if (status) filtered = filtered.filter((r) => r.status === status);
+    const total = filtered.length;
+    const items = filtered.slice(0, limit).map((r) => ({
+      contractNumber: r.contractNumber,
+      title: r.title,
+      partnerName: r.partnerName,
+      status: r.status,
+      totalAmount: Number(r.totalAmount || 0),
+      signedDate: r.signedDate,
+      effectiveDate: r.effectiveDate,
+      expiryDate: r.expiryDate,
+    }));
+    if (items.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        warning: `Không tìm thấy hợp đồng${rawQ ? ` khớp "${rawQ.slice(0, 80)}"` : ''}${status ? ` trạng thái ${status}` : ''}.`,
+      };
+    }
+    return { items, total };
+  }
+
+  /**
+   * CÔNG NỢ ĐẠI LÝ (read-only): dư nợ, quá hạn, hạn mức theo đối tác.
+   * Tái dùng PartnerDebtService.summary (FIFO tiền về trừ phiếu cũ trước).
+   * Giới hạn tối đa 10 đối tác/lượt để tránh N+1 nặng.
+   *
+   * Server TỰ PHÂN TÍCH câu hỏi tự nhiên: lược bỏ từ khóa công nợ, so khớp
+   * tên/mã đối tác không dấu; không khớp tên nào thì fallback liệt kê top nợ.
+   */
+  static async queryAgencyDebt(params: { q?: string; limit?: number } = {}): Promise<{
+    items: Array<{
+      partnerId: string;
+      partnerName: string;
+      balance: number;
+      overdue: number;
+      overdueCount: number;
+      oldestOverdueDays: number;
+      creditLimit: number;
+      paymentDueDays: number;
+    }>;
+    total: number;
+    warning?: string;
+  }> {
+    const limit = Math.min(10, Math.max(1, Math.floor(Number(params.limit) || 10)));
+    const rawQ = `${params.q || ''}`.trim();
+    const allPartners = await db
+      .select({ id: partners.id, name: partners.name, code: partners.code, paymentDueDays: partners.paymentDueDays })
+      .from(partners)
+      .orderBy(partners.name);
+    const stripped = stripToolKeywords(rawQ, [
+      'cong no', 'dai ly', 'du no', 'qua han', 'hien tai', 'hien nay', 'ra sao',
+      'the nao', 'cua', 'cac', 'cho toi', 'cho xem', 'xem', 'danh sach', 'liet ke',
+    ]);
+    let matched = allPartners;
+    let usedFallback = false;
+    if (stripped) {
+      const needle = removeAccents(stripped.toLowerCase());
+      const hits = allPartners.filter(
+        (p) =>
+          removeAccents(p.name).toLowerCase().includes(needle) ||
+          p.code.toLowerCase().includes(needle)
+      );
+      if (hits.length > 0) {
+        matched = hits;
+      } else {
+        // Không khớp tên đối tác nào — liệt kê top nợ thay vì "not found".
+        usedFallback = true;
+      }
+    }
+    // Import động để tránh cycle giữa các service (theo pattern query_sales_lines).
+    const { PartnerDebtService } = await import('./partner-debt.service');
+    const items = [];
+    for (const p of matched.slice(0, limit)) {
+      try {
+        const s = await PartnerDebtService.summary(p.id);
+        items.push({
+          partnerId: p.id,
+          partnerName: p.name,
+          balance: Number(s.balance || 0),
+          overdue: Number(s.overdue || 0),
+          overdueCount: Number(s.overdueCount || 0),
+          oldestOverdueDays: Number(s.oldestOverdueDays || 0),
+          creditLimit: Number(s.creditLimit || 0),
+          paymentDueDays: Number(p.paymentDueDays ?? 30),
+        });
+      } catch {
+        // Bỏ qua đối tác lỗi lẻ, không sập cả tool.
+      }
+    }
+    items.sort((a, b) => b.balance - a.balance);
+    if (items.length === 0) {
+      return { items: [], total: 0, warning: 'Không tìm thấy đối tác nào.' };
+    }
+    return {
+      items,
+      total: items.length,
+      ...(usedFallback
+        ? { warning: `Không tìm thấy đối tác khớp "${rawQ.slice(0, 80)}" — hiển thị các đối tác nợ nhiều nhất.` }
+        : {}),
+    };
+  }
+}
+
+/**
+ * Lược bỏ từ khóa tool/stopwords khỏi câu hỏi tự nhiên, giữ lại phần cần tìm.
+ * Chuẩn hóa không dấu + lowercase để so khớp sau đó.
+ */
+function stripToolKeywords(q: string, stopwords: string[]): string {
+  let s = removeAccents(q.toLowerCase()).replace(/[?.!,;:()"“”]/g, ' ');
+  for (const kw of stopwords) s = s.split(kw).join(' ');
+  return s.replace(/\s+/g, ' ').trim();
 }
