@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
+import { PrintOrderService } from '@/services/print-order.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { requireSessionRole, assertAssignedWarehouse } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
       sessionId: session.sessionId,
     };
     const body = await req.json();
-    const { editionId, warehouseId, eventType, quantityDelta, documentRef, note, condition, idempotencyKey } = body;
+    const { editionId, warehouseId, eventType, quantityDelta, documentRef, note, condition, idempotencyKey, printOrderId } = body;
 
 
     if (!editionId || !warehouseId || !eventType || quantityDelta === undefined || quantityDelta === null || !documentRef) {
@@ -66,6 +67,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // GĐ3-P2: nhập kho theo lệnh in → server tự gắn lô + giá vốn từ lệnh in.
+    // Thủ kho chỉ gửi printOrderId, KHÔNG bao giờ thấy/trả về con số giá vốn.
+    let lotId: string | undefined;
+    let unitCostSnapshot: number | undefined;
+    let printOrderRef: string | undefined;
+    if (printOrderId && eventType === 'RECEIPT') {
+      const lot = await PrintOrderService.getLotInfo(`${printOrderId}`.trim());
+      lotId = `LOT-${lot.code}`;
+      unitCostSnapshot = lot.unitCostAgreed;
+      printOrderRef = lot.id;
+    }
+
     const result = await InventoryService.recordMovement({
       editionId,
       warehouseId,
@@ -77,14 +90,28 @@ export async function POST(req: NextRequest) {
       actorId: actorHeader,
       actorContext,
       idempotencyKey: `${idempotencyKey}`.trim(),
+      lotId,
+      unitCostSnapshot,
     });
+
+    // Cập nhật số lượng đã nhận của lệnh in (bộ đếm phụ — lỗi không chặn phiếu nhập).
+    if (printOrderRef) {
+      try {
+        const { db } = await import('@/db');
+        await db.transaction(async (tx) => {
+          await PrintOrderService.addReceived(printOrderRef as string, delta, tx);
+        });
+      } catch (e: any) {
+        console.warn('[movement] không cập nhật được print-order:', e?.message);
+      }
+    }
 
     await recordAuditLog({
       action: 'ADJUST_STOCK',
       actorRole: userRole,
       actorId: actorHeader,
       resource: '/api/inventory/movement',
-      details: `Bút toán ${eventType} ${delta} cuốn ${editionId} tại ${warehouseId} (${documentRef}).`,
+      details: `Bút toán ${eventType} ${delta} cuốn ${editionId} tại ${warehouseId} (${documentRef}).${lotId ? ` Lô ${lotId}.` : ''}`,
     });
 
     return NextResponse.json({ success: true, data: result });
