@@ -16,7 +16,7 @@ TÁCH LỚP KHI CẦN: câu hỏi nhiều ý thì trả lời từng ý, nêu r�
 
 NGUYÊN TẮC BẤT BIẾN (5 LỚP BẢO VỆ):
 1. CHỈ ĐỌC (READ-ONLY): Bạn KHÔNG có bất kỳ quyền hạn nào để sửa kho, xuất tiền, hủy đơn, hay thay đổi cấu hình. Ngoại lệ duy nhất: prepare_sale_draft CHỈ đổ nháp vào giỏ POS (đơn chỉ hoàn tất khi người dùng tự bấm Thanh toán), và prepare_transfer_draft CHỈ chuẩn bị nháp phiếu chuyển kho (phiếu thật chỉ tạo khi người dùng bấm "Xác nhận tạo phiếu"). Mọi thao tác ghi/duyệt khác đều vượt quá thẩm quyền của bạn.
-2. SỐ LIỆU CHỈ ĐẾN TỪ TOOL: Mọi con số (tồn kho, doanh thu, số lệch két, đề xuất in, dòng đơn nháp) BẮT BUỘC phải lấy từ kết quả thực thi của 6 tool hệ thống. TUYỆT ĐỐI KHÔNG TỰ TÍNH TOÁN HAY BỊA ĐẶT CON SỐ.
+2. SỐ LIỆU CHỈ ĐẾN TỪ TOOL: Mọi con số (tồn kho, doanh thu, số lệch két, đề xuất in, dòng đơn nháp) BẮT BUỘC phải lấy từ kết quả thực thi của 16 tool hệ thống. TUYỆT ĐỐI KHÔNG TỰ TÍNH TOÁN HAY BỊA ĐẶT CON SỐ.
 3. DANH MỤC TỪ TOOL: Mọi liệt kê sách/tác giả (sách của ai, tựa bắt đầu chữ gì, tác giả được yêu thích) BẮT BUỘC lấy từ query_catalog, không tự nhớ tên sách.
 3. CHUẨN MỰC KÉT TIỀN: Tuyệt đối không suy diễn số chênh lệch két (thừa/thiếu) thành hành vi gian lận hay buộc tội nhân viên. Luôn đính kèm lưu ý: "Số liệu đối soát ca làm việc, không phải kết luận sai phạm".
 4. CHUẨN MỰC TÁI BẢN: Số lượng in là "số lượng in đề xuất theo chính sách bù tồn 105 ngày (Lead 30 + Buffer 15 + Safety 60)", KHÔNG gọi là "EOQ kinh tế tối ưu".
@@ -578,7 +578,8 @@ Trả về JSON chuẩn khớp schema:
     question: string,
     previousResults: Array<{ toolName: string; toolData: any }>,
     history: ChatTurn[] = [],
-    modelOverride?: string
+    modelOverride?: string,
+    tracker?: { planner?: string }
   ): Promise<{ action: 'CALL_TOOL' | 'FINISH'; toolCall?: z.output<typeof ToolCallSchema>; reason: string }> {
     const hasAnyKey =
       process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY ||
@@ -604,7 +605,7 @@ QUY TẮC:
 - Chỉ gọi khi thật sự cần thêm dữ liệu; đừng gọi cho vui.
 - Trả về JSON chuẩn khớp schema.`;
     try {
-      const raw = await this.callPlannerLlmRaw(prompt, question, undefined, modelOverride);
+      const raw = await this.callPlannerLlmRaw(prompt, question, tracker, modelOverride);
       const parsed = parseLlmJson(raw, PlanNextStepSchema, 'CopilotNextStep');
       if (parsed.action === 'CALL_TOOL' && !parsed.toolCall) {
         return { action: 'FINISH', reason: 'LLM missing toolCall' };
@@ -643,6 +644,7 @@ QUY TẮC:
     modelOverride?: string;
     actor: { staffId: string; role: string };
     maxTurns?: number;
+    tracker?: { planner?: string };
     onToolStart?: (toolName: string, label: string) => void | Promise<void>;
     onToolDone?: (toolName: string) => void | Promise<void>;
   }): Promise<{ results: Array<{ toolName: string; toolData: any }>; turns: number }> {
@@ -672,7 +674,7 @@ QUY TẮC:
         if (opts.onToolDone) await opts.onToolDone(step.toolName);
       }
       if (!opts.allowLoop) break;
-      const next = await this.planNextStep(opts.question, results, opts.history || [], opts.modelOverride);
+      const next = await this.planNextStep(opts.question, results, opts.history || [], opts.modelOverride, opts.tracker);
       if (next.action === 'FINISH') break;
       plan = next;
     }
