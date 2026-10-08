@@ -24,10 +24,14 @@ export interface RetailChannel extends SimpleChannel {
   bankQr: number;
 }
 
+export interface WholesaleChannel extends SimpleChannel {}
+
 export interface ChannelRevenue {
   agency: AgencyChannel;
   online: SimpleChannel;
   retail: RetailChannel;
+  /** Bán sỉ tại quầy (WHOLESALE_PARTNER) — bán đứt thu tiền ngay, tách khỏi đại lý công nợ. */
+  wholesale: WholesaleChannel;
 }
 
 /**
@@ -116,6 +120,22 @@ export async function getChannelRevenue(month: string): Promise<ChannelRevenue> 
     .filter((r) => r.paymentMethod === 'CASH')
     .reduce((s, r) => s + num(r.revenue), 0);
 
+  // Bán sỉ tại quầy — kênh riêng, không gộp vào bán lẻ hay đại lý công nợ.
+  const [wholesale] = await db
+    .select({
+      orders: sql<number>`count(*)`,
+      revenue: sql<number>`coalesce(sum(${orders.finalAmount}), 0)`,
+    })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.channel, 'WHOLESALE_PARTNER'),
+        eq(orders.status, 'COMPLETED'),
+        gte(orders.createdAt, start),
+        lt(orders.createdAt, end)
+      )
+    );
+
   const receivable = num(agency?.receivable);
   const received = num(receipts?.received);
   return {
@@ -132,6 +152,7 @@ export async function getChannelRevenue(month: string): Promise<ChannelRevenue> 
       cash,
       bankQr: retailRevenue - cash,
     },
+    wholesale: { orders: num(wholesale?.orders), revenue: num(wholesale?.revenue) },
   };
 }
 
@@ -276,7 +297,17 @@ export function allocateFifoCogs(
   startIso: string,
   endIso: string
 ): FifoCogsResult {
-  const sorted = [...movements].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  // Chuẩn hóa 'YYYY-MM-DDTHH:MM:SS.sssZ' và 'YYYY-MM-DD HH:MM:SS' về cùng dạng
+  // trước khi so sánh chuỗi — 'T' (0x54) > ' ' (0x20) nên so trực tiếp sẽ xếp
+  // sai thứ tự và lọt kỳ (bug biên tháng).
+  const norm = (s: string) => `${s || ''}`.replace('T', ' ').slice(0, 19);
+  const start = norm(startIso);
+  const end = norm(endIso);
+  const sorted = [...movements].sort((a, b) => {
+    const x = norm(a.at);
+    const y = norm(b.at);
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
   const queue: Array<{ lotId: string | null; unitCost: number | null; remaining: number }> = [];
   let dispatchedQty = 0;
   let cogs = 0;
@@ -304,7 +335,8 @@ export function allocateFifoCogs(
     if (m.qty > 0) {
       queue.push({ lotId: m.lotId, unitCost: m.unitCost, remaining: m.qty });
     } else {
-      const inPeriod = m.at >= startIso && m.at < endIso;
+      const nat = norm(m.at);
+      const inPeriod = nat >= start && nat < end;
       if (inPeriod) dispatchedQty += -m.qty;
       consume(-m.qty, inPeriod);
     }

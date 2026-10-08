@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
       channels.agency.received +
       channels.online.revenue +
       channels.retail.revenue +
+      channels.wholesale.revenue +
       Number(shopee.escrowTotal);
     // GĐ3-P3: pivot biên lợi nhuận, dòng tiền theo tài khoản, tiến độ thu đại lý.
     // GĐ3-P4: nợ vay + trạng thái khóa sổ.

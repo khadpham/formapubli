@@ -127,7 +127,17 @@ async function main() {
   eq2('lô chưa có giá vốn: cogs = 0', r2.cogs, 0);
   eq2('lô chưa có giá vốn: unknown = 30', r2.unknownQty, 30);
 
-  // 10. Xuất trước kỳ không tính; xuất sau kỳ không tính.
+  // 10b. F1: datetime lẫn format ISO ('T') và space — sắp xếp và lọt kỳ phải đúng.
+  const mvMixed: LotMovement[] = [
+    { lotId: 'M1', unitCost: 10000, qty: 100, at: '2026-09-01 00:00:00' },
+    // 16:59:59 UTC = 23:59:59 giờ VN 30/09 → TRƯỚC kỳ, phải loại dù 'T' > ' '.
+    { lotId: null, unitCost: null, qty: -10, at: '2026-09-30T16:59:59.000Z' },
+    // 17:00:00 UTC = 00:00:00 giờ VN 01/10 → ĐẦU kỳ, phải tính.
+    { lotId: null, unitCost: null, qty: -20, at: '2026-09-30T17:00:00.000Z' },
+  ];
+  const rMixed = allocateFifoCogs(mvMixed, '2026-09-30 17:00:00', '2026-10-31 17:00:00');
+  eq2('F1: chỉ tính xuất trong kỳ dù lẫn format', rMixed.dispatchedQty, 20);
+  eq2('F1: giá vốn đúng', rMixed.cogs, 200000);
   const mv3: LotMovement[] = [
     { lotId: 'D', unitCost: 10000, qty: 100, at: '2026-09-01T00:00:00' },
     { lotId: null, unitCost: null, qty: -40, at: '2026-09-15T00:00:00' },

@@ -77,6 +77,8 @@ async function main() {
   await db.insert(orders).values(ord('o-p1-3', 'ORD-P1-003', 'RETAIL_OFFICE', 'COMPLETED', '2026-10-12 00:00:00', 200000, 'QR_CODE'));
   await db.insert(orders).values(ord('o-p1-4', 'ORD-P1-004', 'ONLINE', 'CANCELLED', '2026-10-13 00:00:00', 800000, 'CASH'));
   await db.insert(orders).values(ord('o-p1-5', 'ORD-P1-005', 'ONLINE', 'COMPLETED', '2026-10-31 18:00:00', 900000, 'CASH'));
+  // Bán sỉ tại quầy — kênh riêng, không gộp vào bán lẻ hay đại lý công nợ.
+  await db.insert(orders).values(ord('o-p1-6', 'ORD-P1-006', 'WHOLESALE_PARTNER', 'COMPLETED', '2026-10-17 00:00:00', 1000000, 'BANK_TRANSFER'));
 
   const r = await getChannelRevenue('2026-10');
   const d = (after: number, bef: number) => after - bef;
@@ -90,6 +92,8 @@ async function main() {
   eq2('bán lẻ: doanh thu tăng', d(r.retail.revenue, revBefore.retail.revenue), 500000);
   eq2('bán lẻ: tiền mặt tăng', d(r.retail.cash, revBefore.retail.cash), 300000);
   eq2('bán lẻ: CK/QR tăng', d(r.retail.bankQr, revBefore.retail.bankQr), 200000);
+  eq2('bán sỉ: số đơn tăng', d(r.wholesale.orders, revBefore.wholesale.orders), 1);
+  eq2('bán sỉ: doanh thu tăng', d(r.wholesale.revenue, revBefore.wholesale.revenue), 1000000);
 
   console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'}: ${pass} đạt, ${fail} hỏng`);
   process.exit(fail === 0 ? 0 : 1);
