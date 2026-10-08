@@ -1,6 +1,8 @@
 import { callGeminiWithFallback } from './llm-client';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
+import PizZip from 'pizzip';
 import { createHash } from 'crypto';
+import { getChecklist } from './contract-checklists';
 import { db, contractTemplates } from '@/db';
 import { eq } from 'drizzle-orm';
 import { ContractEngineService } from '../contract-engine.service';
@@ -188,4 +190,95 @@ export async function finalizeAiTemplate(input: FinalizeInput): Promise<string> 
 
 export function hashContent(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/** GĐ2: trích text từ file .docx (base64) — chỉ đọc, không merge. */
+export function extractDocxText(base64: string): string {
+  let zip: PizZip;
+  try {
+    zip = new PizZip(Buffer.from(base64, 'base64'));
+  } catch {
+    throw new ContractAIError('DOCX_KHONG_DOC_DUOC', 'File không phải định dạng Word hợp lệ.');
+  }
+  const xmlFile = zip.file('word/document.xml');
+  if (!xmlFile) throw new ContractAIError('DOCX_KHONG_DOC_DUOC', 'File không phải định dạng Word hợp lệ.');
+  const xml = xmlFile.asText();
+  const parts: string[] = [];
+  const re = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) parts.push(m[1]);
+  const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+  if (!text) throw new ContractAIError('DOCX_KHONG_DOC_DUOC', 'Không trích được nội dung từ file Word.');
+  return text;
+}
+
+export interface ContractAnalysis {
+  contractType: string;
+  parties: string[];
+  valueText: string | null;
+  keyDates: string[];
+  obligations: string[];
+  summary: string;
+}
+
+/** GĐ2: AI tóm tắt + trích xuất thực thể từ văn bản hợp đồng. */
+export async function analyzeContract(
+  text: string,
+  callLlm: LlmCaller = defaultCaller,
+): Promise<ContractAnalysis> {
+  const clean = text.trim();
+  if (!clean) throw new ContractAIError('VAN_BAN_RONG', 'Văn bản hợp đồng rỗng.');
+  const truncated = clean.length > 12000;
+  const raw = await callLlm({
+    systemPrompt: LEGAL_STYLE,
+    userText:
+      `Đọc văn bản hợp đồng sau và trích xuất thông tin. Chỉ trả JSON.\n"""\n${clean.slice(0, 12000)}\n"""\n\n` +
+      `Trả JSON: {"contractType": "loại hợp đồng", "parties": ["tên các bên"], ` +
+      `"valueText": "giá trị (hoặc null)", "keyDates": ["ngày quan trọng"], ` +
+      `"obligations": ["nghĩa vụ chính mỗi bên, tối đa 6"], "summary": "tóm tắt 3-5 câu"}.`,
+  });
+  const data = parseJson<ContractAnalysis>(raw);
+  if (!data.summary || !Array.isArray(data.parties)) {
+    throw new ContractAIError('LLM_TRA_JSON_HONG', 'Thiếu trường bắt buộc trong kết quả AI');
+  }
+  return { ...data, summary: truncated ? data.summary + ' (Lưu ý: văn bản đã bị cắt bớt khi phân tích.)' : data.summary };
+}
+
+export interface ReviewIssue {
+  checklistId: string;
+  level: 'THIEU' | 'MO_HO' | 'RUI_RO' | 'DAT';
+  finding: string;
+  suggestion: string;
+}
+
+/** GĐ2: AI phản biện văn bản theo checklist của loại hợp đồng. */
+export async function reviewContract(
+  text: string,
+  category: string,
+  callLlm: LlmCaller = defaultCaller,
+): Promise<{ issues: ReviewIssue[] }> {
+  const clean = text.trim();
+  if (!clean) throw new ContractAIError('VAN_BAN_RONG', 'Văn bản hợp đồng rỗng.');
+  const checklist = getChecklist(category);
+  const checklistText = checklist.map((c) => `- [${c.id}] ${c.label}: ${c.hint}`).join('\n');
+  const raw = await callLlm({
+    systemPrompt:
+      LEGAL_STYLE +
+      `\nNhiệm vụ: PHẢN BIỆN hợp đồng theo checklist. Với mỗi mục checklist, đánh giá: ` +
+      `DAT (điều khoản đã có và ổn), THIEU (thiếu hẳn), MO_HO (có nhưng mơ hồ), RUI_RO (có nhưng rủi ro cho công ty). ` +
+      `finding: nhận xét ngắn gọn. suggestion: đề xuất câu chữ cụ thể để bổ sung/sửa (để trống nếu DAT). ` +
+      `Kết quả là THAM KHẢO — không phải tư vấn pháp lý. Chỉ trả JSON.`,
+    userText:
+      `Checklist:\n${checklistText}\n\nVăn bản hợp đồng:\n"""\n${clean.slice(0, 12000)}\n"""\n\n` +
+      `Trả JSON: {"issues": [{"checklistId": "...", "level": "THIEU|MO_HO|RUI_RO|DAT", "finding": "...", "suggestion": "..."}]}. ` +
+      `Mỗi checklistId PHẢI thuộc checklist trên.`,
+  });
+  const data = parseJson<{ issues: ReviewIssue[] }>(raw);
+  if (!Array.isArray(data.issues)) throw new ContractAIError('LLM_TRA_JSON_HONG', 'Thiếu trường issues.');
+  const validIds = new Set(checklist.map((c) => c.id));
+  const validLevels = new Set(['THIEU', 'MO_HO', 'RUI_RO', 'DAT']);
+  const issues = data.issues.filter(
+    (i) => i && validIds.has(i.checklistId) && validLevels.has(i.level) && typeof i.finding === 'string',
+  ).map((i) => ({ checklistId: i.checklistId, level: i.level, finding: i.finding, suggestion: `${i.suggestion || ''}` }));
+  return { issues };
 }
