@@ -89,6 +89,9 @@ const QUICK_PROMPT_CHIPS = [
   },
 ];
 
+/** Tên gọi mặc định khi chưa có tên người dùng — thống nhất một chỗ. */
+const DEFAULT_LEADER_NAME = 'Lãnh đạo';
+
 /** Các giai đoạn loading hiển thị luân phiên khi chờ Copilot trả lời. */
 const LOADING_STAGES = [
   'Đang phân tích câu hỏi…',
@@ -106,7 +109,9 @@ function getContextualChips(): Array<{ label: string; query: string }> {
       { label: '⚠️ Tồn kho cạn', query: 'Những đầu sách nào sắp cạn kho cần tái bản?' },
     );
   }
-  if (now.getDate() >= 25) {
+  // Minor 18: hằng có tên cho ngưỡng ngày hiện chip công nợ (cuối tháng).
+  const DEBT_CHIP_DAY_THRESHOLD = 25;
+  if (now.getDate() >= DEBT_CHIP_DAY_THRESHOLD) {
     chips.unshift({ label: '💰 Công nợ đại lý', query: 'Công nợ các đại lý hiện tại ra sao?' });
   }
   return chips;
@@ -736,7 +741,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                {displayName || 'Lãnh đạo'} · <span className="text-emerald-400 font-semibold">{USER_ROLES[currentRole].label}</span>
+                {displayName || DEFAULT_LEADER_NAME} · <span className="text-emerald-400 font-semibold">{USER_ROLES[currentRole].label}</span>
               </p>
             </div>
           </div>
@@ -814,7 +819,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                 className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-full`}
               >
                 <div className="flex items-center gap-1.5 mb-1 px-1 text-[10px] text-slate-400">
-                  <span className="font-semibold">{isUser ? (displayName || 'Quý Lãnh đạo') : 'Executive Copilot'}</span>
+                  <span className="font-semibold">{isUser ? (displayName || DEFAULT_LEADER_NAME) : 'Executive Copilot'}</span>
                   <span>•</span>
                   <span>{msg.timestamp}</span>
                   {getToolBadge(msg.toolUsed)}
@@ -979,9 +984,9 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
         {/* Quick Prompt Chips */}
         {isAuthorized && (
           <div className="p-2.5 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-            {getContextualChips().map((chip, idx) => (
+            {getContextualChips().map((chip) => (
               <button
-                key={idx}
+                key={chip.query}
                 onClick={() => handleSend(chip.query)}
                 disabled={loading || rateLimitTimer !== null}
                 className="whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200 text-slate-700 transition-all disabled:opacity-50 active:scale-95 cursor-pointer"
