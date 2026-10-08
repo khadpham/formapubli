@@ -115,7 +115,7 @@ async function main() {
     'DeliveryReceiptPrint phải import COMPANY_HOTLINE từ @/lib/companyInfo'
   );
   ok(
-    /Hotline: \{COMPANY_HOTLINE\}/.test(deliverySrc),
+    /Hotline: \{(?:companyProfile\.sdt \|\| )?COMPANY_HOTLINE\}/.test(deliverySrc),
     'phiếu A4 giao hàng phải in số hotline lấy từ hằng dùng chung'
   );
 

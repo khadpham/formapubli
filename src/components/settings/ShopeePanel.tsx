@@ -47,7 +47,7 @@ export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
         if (wh?.success && Array.isArray(wh.data)) setWarehouses(wh.data);
         const cfg = await fetch('/api/shopee/config').then((r) => r.json());
         if (cfg?.success && Array.isArray(cfg.data?.opsWarehouseIds)) {
-          setOpsWarehouseIds(cfg.data.opsWarehouseIds.map(String));
+          setOpsWarehouseIds(cfg.data.opsWarehouseIds.map((id: any) => String(id)));
         }
       }
     } catch {
