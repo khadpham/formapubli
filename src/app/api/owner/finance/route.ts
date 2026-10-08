@@ -5,6 +5,7 @@ import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
 import { db, shopeeOrderFinance } from '@/db';
 import { listExpensesMonth, addExpense } from '@/services/expense.service';
+import { getChannelRevenue } from '@/services/owner-finance.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,13 @@ export async function GET(req: NextRequest) {
     const monthly = entries.filter((e) => e.recurrence === 'MONTHLY').reduce((s, e) => s + e.amount, 0);
     const oneTime = entries.filter((e) => e.recurrence === 'ONE_TIME').reduce((s, e) => s + e.amount, 0);
     const shopee = agg[0] ?? { orders: 0, escrowTotal: 0, feeTotal: 0, netProfitTotal: 0 };
+    // GĐ3-P1: doanh thu đa kênh (đại lý / online / bán lẻ) theo tháng VN.
+    const channels = await getChannelRevenue(month);
+    const cashCollected =
+      channels.agency.received +
+      channels.online.revenue +
+      channels.retail.revenue +
+      Number(shopee.escrowTotal);
     return NextResponse.json({
       success: true,
       data: {
@@ -51,6 +59,8 @@ export async function GET(req: NextRequest) {
           feeTotal: Number(shopee.feeTotal),
           netProfitTotal: Number(shopee.netProfitTotal),
         },
+        channels,
+        totals: { cashCollected },
         expenses: {
           total: expensesTotal,
           byRecurrence: { MONTHLY: monthly, ONE_TIME: oneTime },

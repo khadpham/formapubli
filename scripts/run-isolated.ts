@@ -242,6 +242,8 @@ const ALL_SUITES = [
   'scripts/test-contract-api.ts',
   // Module Hợp đồng: seed + E2E full flow.
   'scripts/test-contracts-e2e.ts',
+  // Tab Chủ GĐ3-P1: tổng hợp doanh thu đa kênh theo tháng VN.
+  'scripts/test-owner-finance-p1.ts',
 ];
 
 /**
