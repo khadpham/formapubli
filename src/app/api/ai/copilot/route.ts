@@ -2,133 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole, checkWindowRateLimit, AuthError, extractClientIp, getSessionFromRequest, type SessionPayload } from '@/lib/auth-session';
 import { checkDbWindowLimit } from '@/lib/login-attempts-db';
 import { recordAuditLog } from '@/lib/rbac-guard';
-import { CopilotGuardrails, renderHistoryForPrompt, sanitizeHistory } from '@/services/ai/copilot-guardrails';
+import { CopilotGuardrails, renderHistoryForPrompt, sanitizeHistory, type ChatTurn } from '@/services/ai/copilot-guardrails';
 import { callGeminiWithFallback, callCfWorkerAiJsonRaw, callGroqChatJsonRaw, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
 
-export async function POST(req: NextRequest) {
-  const ip = extractClientIp(req);
-  let sessionPayload: SessionPayload;
-
-  try {
-    // 1. Kiểm tra xác thực và ma trận phân quyền: Chỉ ROLE_OWNER & ROLE_MANAGER
-    sessionPayload = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
-  } catch (authErr: unknown) {
-    // Nếu có session nhưng không đủ thẩm quyền (vd: ROLE_CASHIER, ROLE_TAX)
-    const rawSession = await getSessionFromRequest(req);
-    await recordAuditLog({
-      action: 'COPILOT_UNAUTHORIZED_ATTEMPT',
-      actorRole: rawSession?.role || 'UNKNOWN_ROLE',
-      actorId: rawSession?.actorId || 'unknown-actor',
-      resource: 'api/ai/copilot',
-      details: `Từ chối truy cập Copilot: ${authErr instanceof Error ? authErr.message : "Unauthorized"}`,
-      ipAddress: ip,
-    });
-
-    if (authErr instanceof AuthError) {
-      return NextResponse.json(
-        { success: false, code: authErr.status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN', message: authErr.message },
-        { status: authErr.status }
-      );
-    }
-    return NextResponse.json(
-      { success: false, code: 'FORBIDDEN', message: 'Bạn không có quyền truy cập Executive Copilot.' },
-      { status: 403 }
-    );
-  }
-
-  // 2. Sliding Window Rate Limiting: 15 req / phút / staffId
-  // Tầng memory (nhanh) + tầng DB bền vững (sống qua restart isolate) — chặn
-  // nếu MỘT trong hai từ chối.
-  const rateKey = `copilot:${sessionPayload.actorId}`;
-  const rateResult = checkWindowRateLimit(rateKey, 15, 60 * 1000);
-  if (!rateResult.allowed) {
-    const waitSec = Math.ceil(rateResult.resetAfterMs / 1000);
-    return NextResponse.json(
-      {
-        success: false,
-        code: 'RATE_LIMITED',
-        message: `Bạn đã vượt quá giới hạn 15 câu hỏi/phút. Vui lòng thử lại sau ${waitSec} giây.`,
-        resetAfterMs: rateResult.resetAfterMs,
-      },
-      { status: 429 }
-    );
-  }
-  const dbRate = await checkDbWindowLimit(rateKey, 15, 60 * 1000);
-  if (!dbRate.allowed) {
-    const waitSec = Math.ceil(dbRate.resetAfterMs / 1000);
-    return NextResponse.json(
-      {
-        success: false,
-        code: 'RATE_LIMITED',
-        message: `Bạn đã vượt quá giới hạn 15 câu hỏi/phút. Vui lòng thử lại sau ${waitSec} giây.`,
-        resetAfterMs: dbRate.resetAfterMs,
-      },
-      { status: 429 }
-    );
-  }
-
-  // 3. Đọc dữ liệu câu hỏi từ request body
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { success: false, code: 'INVALID_INPUT', message: 'Body request phải là JSON hợp lệ.' },
-      { status: 400 }
-    );
-  }
-
-  const rawQuestion = (body as { question?: unknown })?.question;
-  const question = typeof rawQuestion === 'string' ? rawQuestion.trim() : '';
-  // Model do user chọn ở drawer (Tự động / 3.8 / 3.5-lite / nội bộ). Ngoài
-  // allowlist thì bỏ qua (về mặc định env) — không tin input thô.
-  const rawModel = (body as { model?: unknown })?.model;
-  // Lịch sử hội thoại để nhớ ngữ cảnh ("giờ vàng của nó là mấy giờ?"). Chỉ giữ
-  // N lượt gần nhất, cắt độ dài, bỏ mọi role ngoài user/assistant.
-  const history = sanitizeHistory((body as { history?: unknown })?.history);
-  const MODEL_ALLOWLIST = [
-    'gemini-3.8-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'groq/gpt-oss-120b',
-    'groq/gpt-oss-20b',
-    'cf/nemotron-3-120b-a12b',
-    'cf/gpt-oss-120b',
-    'cf/glm-4.7-flash',
-    'local',
-  ];
-  const modelOverride =
-    typeof rawModel === 'string' && (MODEL_ALLOWLIST as string[]).includes(rawModel.trim())
-      ? rawModel.trim()
-      : undefined;
-  if (!question) {
-    return NextResponse.json(
-      { success: false, code: 'INVALID_INPUT', message: 'Vui lòng cung cấp nội dung câu hỏi (`question`).' },
-      { status: 400 }
-    );
-  }
-  // Chan DoS CPU/LLM: cau hoi toi da 1000 ky tu (du cho cau phuc tap, chan dump KB).
-  if (question.length > 1000) {
-    return NextResponse.json(
-      { success: false, code: 'INVALID_INPUT', message: 'Câu hỏi tối đa 1000 ký tự — tách thành nhiều câu ngắn.' },
-      { status: 400 }
-    );
-  }
-
-  // 4. Ghi vết kiểm toán phiên hỏi đáp — KHÔNG log nguyên văn câu hỏi
-  // (có thể chứa tên/SĐT/khách hàng = PII). Chỉ lưu độ dài để debug quota.
-  await recordAuditLog({
-    action: 'COPILOT_QUERY',
-    actorRole: sessionPayload.role,
-    actorId: sessionPayload.actorId,
-    resource: 'api/ai/copilot',
-    details: `q_len=${question.length}`,
-    ipAddress: ip,
-  });
-
+/**
+ * GĐ2: luồng chính của Copilot — tách khỏi POST để stream SSE và để test được.
+ * Emit các sự kiện: planner → tool_start/tool_done → synthesizing → done | error.
+ */
+export async function runCopilotStream(opts: {
+  question: string;
+  history: ChatTurn[];
+  modelOverride?: string;
+  sessionPayload: SessionPayload;
+  emit: (event: string, data: unknown) => void | Promise<void>;
+}): Promise<void> {
+  const { question, history, modelOverride, sessionPayload, emit } = opts;
   // 5. Phân tích kế hoạch gọi Tool
   try {
     const track: { planner?: string } = {};
+    await emit('planner', { stage: 'planning' });
     const plan = await CopilotGuardrails.planQuery(question, track, modelOverride, history);
 
     if (plan.action === 'REFUSE_OUT_OF_SCOPE' || plan.action === 'DIRECT_ANSWER') {
@@ -138,39 +30,42 @@ export async function POST(req: NextRequest) {
         `Câu này tôi chưa có dữ liệu để trả lời chính xác, và tôi cũng không muốn bịa số cho sếp. ` +
         `Tôi giỏi tồn kho, doanh số, két tiền, danh mục và nhịp bán — sếp hỏi một trong số đó là có số liệu ngay.`;
       const finalMsg = CopilotGuardrails.postProcessAnswer((plan.directAnswer || '').trim() || emptyAnswer);
-      return NextResponse.json({
-        success: true,
-        data: {
-          answer: finalMsg,
-          action: plan.action,
-          toolUsed: null,
-          toolData: null,
-          engine: track.planner || 'nội bộ',
-        },
+      await emit('done', {
+        answer: finalMsg,
+        action: plan.action,
+        toolUsed: null,
+        toolData: null,
+        engine: track.planner || 'nội bộ',
       });
+      return;
     }
 
-    // 6. Thực thi Tool (1 bước, hoặc nhiều bước với CALL_MANY).
+    // 6. Thực thi Tool — GĐ2: vòng lặp planner nhiều lượt.
+    //    Lượt 1 chạy plan ban đầu; các lượt sau do planNextStep quyết định
+    //    (chỉ khi planner là LLM — heuristic giữ single-shot).
     //    Mỗi bước đi qua executeToolSafely (RBAC + kiểm toán + guard riêng).
-    const steps =
-      plan.action === 'CALL_MANY' && Array.isArray(plan.steps) && plan.steps.length > 0
-        ? plan.steps.slice(0, 4)
-        : [{ toolName: plan.toolCall!.toolName, args: plan.toolCall?.args || {} }];
-    const results: Array<{ toolName: string; toolData: any }> = [];
-    for (const step of steps) {
-      const toolData = await CopilotGuardrails.executeToolSafely(
-        step.toolName,
-        step.args || {},
-        { staffId: sessionPayload.actorId, role: sessionPayload.role }
-      );
-      results.push({ toolName: step.toolName, toolData });
-    }
+    const allowLoop = track.planner !== 'nội bộ';
+    const { results } = await CopilotGuardrails.runPlanLoop({
+      question,
+      initialPlan: plan,
+      allowLoop,
+      history,
+      modelOverride,
+      actor: { staffId: sessionPayload.actorId, role: sessionPayload.role },
+      onToolStart: async (toolName) => {
+        await emit('tool_start', { toolName, label: LABEL_BY_TOOL[toolName] || toolName });
+      },
+      onToolDone: async (toolName) => {
+        await emit('tool_done', { toolName });
+      },
+    });
     const multi = results.length > 1;
     const toolCall = { toolName: multi ? results.map((r) => r.toolName).join(' + ') : results[0].toolName };
     const toolResult = multi
       ? Object.fromEntries(results.map((r) => [r.toolName, r.toolData]))
       : results[0].toolData;
 
+    await emit('synthesizing', {});
     // 7. Tổng hợp câu trả lời từ kết quả Tool — chuỗi dự phòng:
     // Gemini (model chọn/env) → Groq 120B → Groq 20B → OpenAI → formatter nội bộ.
     // Engine báo đúng model đã viết câu trả lời.
@@ -383,24 +278,163 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
         finalAnswer;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        answer: finalAnswer,
-        action: 'CALL_TOOL',
-        toolUsed: toolCall.toolName,
-        toolData: toolResult,
-        // Model nào viết câu trả lời này: synth trước, planner sau, luật cuối.
-        engine: engineNow,
-      },
+    await emit('done', {
+      answer: finalAnswer,
+      action: 'CALL_TOOL',
+      toolUsed: toolCall.toolName,
+      toolData: toolResult,
+      // Model nào viết câu trả lời này: synth trước, planner sau, luật cuối.
+      engine: engineNow,
     });
+    return;
   } catch (err: unknown) {
     console.error('❌ Lỗi xử lý Copilot:', err);
+    await emit('error', { message: `Lỗi xử lý Copilot: ${err instanceof Error ? err.message : String(err)}` });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const ip = extractClientIp(req);
+  let sessionPayload: SessionPayload;
+
+  try {
+    // 1. Kiểm tra xác thực và ma trận phân quyền: Chỉ ROLE_OWNER & ROLE_MANAGER
+    sessionPayload = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
+  } catch (authErr: unknown) {
+    // Nếu có session nhưng không đủ thẩm quyền (vd: ROLE_CASHIER, ROLE_TAX)
+    const rawSession = await getSessionFromRequest(req);
+    await recordAuditLog({
+      action: 'COPILOT_UNAUTHORIZED_ATTEMPT',
+      actorRole: rawSession?.role || 'UNKNOWN_ROLE',
+      actorId: rawSession?.actorId || 'unknown-actor',
+      resource: 'api/ai/copilot',
+      details: `Từ chối truy cập Copilot: ${authErr instanceof Error ? authErr.message : "Unauthorized"}`,
+      ipAddress: ip,
+    });
+
+    if (authErr instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, code: authErr.status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN', message: authErr.message },
+        { status: authErr.status }
+      );
+    }
     return NextResponse.json(
-      { success: false, code: "INTERNAL_ERROR", message: `Lỗi xử lý Copilot: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 500 }
+      { success: false, code: 'FORBIDDEN', message: 'Bạn không có quyền truy cập Executive Copilot.' },
+      { status: 403 }
     );
   }
+
+  // 2. Sliding Window Rate Limiting: 15 req / phút / staffId
+  // Tầng memory (nhanh) + tầng DB bền vững (sống qua restart isolate) — chặn
+  // nếu MỘT trong hai từ chối.
+  const rateKey = `copilot:${sessionPayload.actorId}`;
+  const rateResult = checkWindowRateLimit(rateKey, 15, 60 * 1000);
+  if (!rateResult.allowed) {
+    const waitSec = Math.ceil(rateResult.resetAfterMs / 1000);
+    return NextResponse.json(
+      {
+        success: false,
+        code: 'RATE_LIMITED',
+        message: `Bạn đã vượt quá giới hạn 15 câu hỏi/phút. Vui lòng thử lại sau ${waitSec} giây.`,
+        resetAfterMs: rateResult.resetAfterMs,
+      },
+      { status: 429 }
+    );
+  }
+  const dbRate = await checkDbWindowLimit(rateKey, 15, 60 * 1000);
+  if (!dbRate.allowed) {
+    const waitSec = Math.ceil(dbRate.resetAfterMs / 1000);
+    return NextResponse.json(
+      {
+        success: false,
+        code: 'RATE_LIMITED',
+        message: `Bạn đã vượt quá giới hạn 15 câu hỏi/phút. Vui lòng thử lại sau ${waitSec} giây.`,
+        resetAfterMs: dbRate.resetAfterMs,
+      },
+      { status: 429 }
+    );
+  }
+
+  // 3. Đọc dữ liệu câu hỏi từ request body
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, code: 'INVALID_INPUT', message: 'Body request phải là JSON hợp lệ.' },
+      { status: 400 }
+    );
+  }
+
+  const rawQuestion = (body as { question?: unknown })?.question;
+  const question = typeof rawQuestion === 'string' ? rawQuestion.trim() : '';
+  // Model do user chọn ở drawer (Tự động / 3.8 / 3.5-lite / nội bộ). Ngoài
+  // allowlist thì bỏ qua (về mặc định env) — không tin input thô.
+  const rawModel = (body as { model?: unknown })?.model;
+  // Lịch sử hội thoại để nhớ ngữ cảnh ("giờ vàng của nó là mấy giờ?"). Chỉ giữ
+  // N lượt gần nhất, cắt độ dài, bỏ mọi role ngoài user/assistant.
+  const history = sanitizeHistory((body as { history?: unknown })?.history);
+  const MODEL_ALLOWLIST = [
+    'gemini-3.8-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'groq/gpt-oss-120b',
+    'groq/gpt-oss-20b',
+    'cf/nemotron-3-120b-a12b',
+    'cf/gpt-oss-120b',
+    'cf/glm-4.7-flash',
+    'local',
+  ];
+  const modelOverride =
+    typeof rawModel === 'string' && (MODEL_ALLOWLIST as string[]).includes(rawModel.trim())
+      ? rawModel.trim()
+      : undefined;
+  if (!question) {
+    return NextResponse.json(
+      { success: false, code: 'INVALID_INPUT', message: 'Vui lòng cung cấp nội dung câu hỏi (`question`).' },
+      { status: 400 }
+    );
+  }
+  // Chan DoS CPU/LLM: cau hoi toi da 1000 ky tu (du cho cau phuc tap, chan dump KB).
+  if (question.length > 1000) {
+    return NextResponse.json(
+      { success: false, code: 'INVALID_INPUT', message: 'Câu hỏi tối đa 1000 ký tự — tách thành nhiều câu ngắn.' },
+      { status: 400 }
+    );
+  }
+
+  // 4. Ghi vết kiểm toán phiên hỏi đáp — KHÔNG log nguyên văn câu hỏi
+  // (có thể chứa tên/SĐT/khách hàng = PII). Chỉ lưu độ dài để debug quota.
+  await recordAuditLog({
+    action: 'COPILOT_QUERY',
+    actorRole: sessionPayload.role,
+    actorId: sessionPayload.actorId,
+    resource: 'api/ai/copilot',
+    details: `q_len=${question.length}`,
+    ipAddress: ip,
+  });
+
+  // 5+. Stream SSE thay vì JSON một cục — drawer hiện tên tool đang chạy trực tiếp.
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enc = new TextEncoder();
+      const emit = async (event: string, data: unknown) => {
+        controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+      try {
+        await runCopilotStream({ question, history, modelOverride, sessionPayload, emit });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 }
 
 function extractNaturalAnswer(raw: string): string {
@@ -445,6 +479,7 @@ const LABEL_BY_TOOL: Record<string, string> = {
   query_order_lookup: 'Tra đơn',
   query_contracts: 'Hợp đồng',
   query_agency_debt: 'Công nợ',
+  prepare_transfer_draft: 'Phiếu chuyển',
 };
 
 function formatFallbackAnswer(toolName: string, data: Record<string, any>): string {
@@ -606,6 +641,19 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
         : `${base}, không quá hạn`;
     });
     return `💰 **Công nợ đại lý** (${d.total} đối tác):\n${lines.join('\n')}`;
+  }
+  if (toolName === 'prepare_transfer_draft') {
+    const d = data as any;
+    const from = d.fromWarehouseName || 'chưa rõ kho gửi';
+    const to = d.toWarehouseName || 'chưa rõ kho nhận';
+    const items = (d.items || []).slice(0, 20);
+    const warn = (d.warnings || []).length > 0 ? `\n⚠️ ${(d.warnings || []).join('\n⚠️ ')}` : '';
+    if (items.length === 0) {
+      return `🚚 **Phiếu chuyển kho (nháp)**: chưa có dòng hàng nào.${warn}\nBổ sung thông tin rồi tôi chuẩn bị lại — tôi không tự tạo phiếu khi thiếu dữ liệu.`;
+    }
+    const lines = items.map((it: any, i: number) =>
+      `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (tồn kho gửi: ${Number(it.availableStock || 0).toLocaleString('vi-VN')})`);
+    return `🚚 **Phiếu chuyển kho NHÁP** — mới là nháp, chưa tạo phiếu, chưa trừ kho:\nTừ: **${from}** → Đến: **${to}**\n${lines.join('\n')}${warn}\n\nXem lại kỹ rồi bấm **"Xác nhận tạo phiếu"** bên dưới để tạo phiếu thật.`;
   }
   if (toolName === 'query_order_lookup') {    const d = data as any;
     if (!d.found) {
