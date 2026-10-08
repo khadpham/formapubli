@@ -364,6 +364,13 @@
       "when": 1791586000000,
       "tag": "0051_contract_review",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": 7,
+      "when": 1791587000000,
+      "tag": "0052_contract_projects",
+      "breakpoints": true
     }
   ],
   "version": "7"
