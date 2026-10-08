@@ -470,6 +470,7 @@ export function MasterAppShell({
       {currentRole && (
         <CopilotDrawer
           currentRole={currentRole}
+          displayName={session?.fullName}
           isOpen={copilotView !== 'closed'}
           mode={copilotView === 'full' ? 'full' : 'mini'}
           onMinimize={() => setCopilotView('mini')}

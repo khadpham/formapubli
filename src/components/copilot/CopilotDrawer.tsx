@@ -23,7 +23,7 @@ import {
   Mic,
   Square,
 } from 'lucide-react';
-import { UserRole } from '@/lib/roles';
+import { UserRole, USER_ROLES } from '@/lib/roles';
 import { useVoiceSearch } from '@/hooks/useVoiceSearch';
 import { matchActionShortcut } from '@/lib/keyboard';
 
@@ -41,6 +41,8 @@ export interface CopilotMessage {
 
 interface CopilotDrawerProps {
   currentRole: UserRole;
+  /** Tên người dùng thật từ session (hiện thay cho mã vai trò). */
+  displayName?: string;
   isOpen: boolean;
   onClose: () => void;
   /** mini: cua so chat nho goc phai duoi, luon hien huu moi trang; full: drawer phai nhu cu. */
@@ -69,6 +71,29 @@ const QUICK_PROMPT_CHIPS = [
     query: 'Đối soát két tiền ca làm việc hiện tại ở quầy bán hàng?',
   },
 ];
+
+/** Các giai đoạn loading hiển thị luân phiên khi chờ Copilot trả lời. */
+const LOADING_STAGES = [
+  'Đang phân tích câu hỏi…',
+  'Đang tra cứu dữ liệu thực…',
+  'Đang tổng hợp câu trả lời…',
+];
+
+/** Chips gợi ý theo ngữ cảnh giờ/ngày — sáng sớm và cuối tháng có chip riêng. */
+function getContextualChips(): Array<{ label: string; query: string }> {
+  const now = new Date();
+  const chips = [...QUICK_PROMPT_CHIPS];
+  if (now.getHours() < 12) {
+    chips.unshift(
+      { label: '📊 Doanh số hôm qua', query: 'Doanh số hôm qua thế nào?' },
+      { label: '⚠️ Tồn kho cạn', query: 'Những đầu sách nào sắp cạn kho cần tái bản?' },
+    );
+  }
+  if (now.getDate() >= 25) {
+    chips.unshift({ label: '💰 Công nợ đại lý', query: 'Công nợ các đại lý hiện tại ra sao?' });
+  }
+  return chips;
+}
 
 
 const HEADER_PREFIX_REGEX = /^#+\s*/;
@@ -135,12 +160,23 @@ const MODEL_LABEL: Record<string, string> = Object.fromEntries(
   MODEL_OPTIONS.map((m) => [m.value, m.label])
 );
 
-export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onMinimize, onExpand, onApplyDraft }: CopilotDrawerProps) {
+export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode = 'full', onMinimize, onExpand, onApplyDraft }: CopilotDrawerProps) {
   const isAuthorized = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const isMini = mode === 'mini';
 
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Giai đoạn loading đang hiển thị (luân phiên mỗi 2.5s khi chờ). */
+  const [loadingStage, setLoadingStage] = useState(0);
+  useEffect(() => {
+    if (!loading) {
+      setLoadingStage(0);
+      return;
+    }
+    setLoadingStage(0);
+    const t = setInterval(() => setLoadingStage((s) => (s + 1) % LOADING_STAGES.length), 2500);
+    return () => clearInterval(t);
+  }, [loading]);
   /** Model đang chọn: auto (server quyết) | gemini-* | cf/* | groq/* | local. */
   const [copilotModel, setCopilotModel] = useState<string>(() => {
     try {
@@ -361,7 +397,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
             {
               id: 'err_' + Date.now(),
               sender: 'assistant',
-              content: `🚫 **Từ chối truy cập**: Bạn cần quyền **ROLE_OWNER** hoặc **ROLE_MANAGER** để sử dụng tính năng này. (${json.message})`,
+              content: `🚫 **Từ chối truy cập**: Bạn cần quyền **Chủ Quản Lý** hoặc **Quản Lý Vận Hành** để sử dụng tính năng này. (${json.message})`,
               timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
               isError: true,
             },
@@ -610,7 +646,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
         className={
           isMini
             ? 'fixed bottom-4 right-4 z-[70] flex flex-col bg-white shadow-2xl border border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 ease-in-out w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-6rem)]'
-            : 'fixed top-0 bottom-0 right-0 z-[70] flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out w-[calc(100%_-_1rem)] md:w-[480px]'
+            : 'fixed top-0 bottom-0 right-0 z-[70] flex flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-in-out w-full sm:w-[480px]'
         }
         role="dialog"
         aria-modal={!isMini}
@@ -630,7 +666,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Thẩm quyền: <span className="text-emerald-400 font-semibold">{currentRole}</span>
+                {displayName || 'Lãnh đạo'} · <span className="text-emerald-400 font-semibold">{USER_ROLES[currentRole].label}</span>
               </p>
             </div>
           </div>
@@ -680,10 +716,10 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
             <h3 className="font-bold text-base">Từ chối truy cập Copilot</h3>
             <p className="text-xs text-rose-700 leading-relaxed max-w-sm">
               Executive Copilot được bảo vệ bởi rào chắn RBAC nghiêm ngặt. Chỉ tài khoản với vai trò{' '}
-              <strong>ROLE_OWNER</strong> hoặc <strong>ROLE_MANAGER</strong> mới có thẩm quyền tra cứu số liệu điều hành.
+              <strong>Chủ Quản Lý</strong> hoặc <strong>Quản Lý Vận Hành</strong> mới có thẩm quyền tra cứu số liệu điều hành.
             </p>
             <span className="text-[11px] font-mono text-slate-500 bg-white px-2.5 py-1 rounded border border-rose-200">
-              Vai trò hiện tại của bạn: {currentRole}
+              Vai trò hiện tại của bạn: {USER_ROLES[currentRole].label}
             </span>
           </div>
         ) : (
@@ -708,7 +744,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
                 className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-full`}
               >
                 <div className="flex items-center gap-1.5 mb-1 px-1 text-[10px] text-slate-400">
-                  <span className="font-semibold">{isUser ? 'Quý Lãnh đạo' : 'Executive Copilot'}</span>
+                  <span className="font-semibold">{isUser ? (displayName || 'Quý Lãnh đạo') : 'Executive Copilot'}</span>
                   <span>•</span>
                   <span>{msg.timestamp}</span>
                   {getToolBadge(msg.toolUsed)}
@@ -789,7 +825,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
           {loading && (
             <div className="flex items-center gap-2 text-slate-500 text-xs pl-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-              <span>Copilot đang phân tích câu hỏi & tra cứu dữ liệu thực...</span>
+              <span>{LOADING_STAGES[loadingStage]}</span>
             </div>
           )}
 
@@ -799,7 +835,7 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
         {/* Quick Prompt Chips */}
         {isAuthorized && (
           <div className="p-2.5 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-            {QUICK_PROMPT_CHIPS.map((chip, idx) => (
+            {getContextualChips().map((chip, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSend(chip.query)}
@@ -909,39 +945,47 @@ export function CopilotDrawer({ currentRole, isOpen, onClose, mode = 'full', onM
             <span>Esc để đóng</span>
           </div>
 
-          {/* Dropdown chọn LLM ở chân hộp thoại: gọn 1 dòng, bấm là thấy hết
-              danh sách, không che nội dung chat như lưới nút cũ. */}
-          <div className="mt-3 rounded-xl border border-slate-700 bg-slate-800/60 p-2.5">
-            <label
-              htmlFor="copilot-model"
-              className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wide text-slate-300"
-            >
-              Chọn bộ não
-            </label>
-            <select
-              id="copilot-model"
-              value={copilotModel}
-              onChange={(e) => {
-                setCopilotModel(e.target.value);
-                try {
-                  localStorage.setItem('formapubli.copilot.model', e.target.value);
-                } catch {
-                  /* bỏ qua */
-                }
-              }}
-              aria-label="Chọn mô hình AI"
-              className="w-full bg-slate-900 text-slate-100 text-[13px] font-bold rounded-lg px-3 py-2.5 outline-none cursor-pointer border border-slate-600 focus:border-indigo-400"
-            >
-              {MODEL_OPTIONS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label} — {m.hint}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1.5 text-[10px] text-slate-500">
-              Đang dùng: {MODEL_LABEL[copilotModel] || copilotModel}
-            </p>
-          </div>
+          {/* Dropdown chọn LLM thu gọn trong <details>: gọn 1 dòng, bấm mới mở
+              danh sách, không che nội dung chat. */}
+          <details className="mt-3 rounded-xl border border-slate-700 bg-slate-800/60 px-2.5 py-2">
+            <summary className="cursor-pointer text-[11px] font-extrabold uppercase tracking-wide text-slate-300 list-none">
+              ⚙️ Cài đặt bộ não{' '}
+              <span className="normal-case font-medium text-slate-500">
+                ({MODEL_LABEL[copilotModel] || copilotModel})
+              </span>
+            </summary>
+            <div className="pt-2">
+              <label
+                htmlFor="copilot-model"
+                className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wide text-slate-300"
+              >
+                Chọn bộ não
+              </label>
+              <select
+                id="copilot-model"
+                value={copilotModel}
+                onChange={(e) => {
+                  setCopilotModel(e.target.value);
+                  try {
+                    localStorage.setItem('formapubli.copilot.model', e.target.value);
+                  } catch {
+                    /* bỏ qua */
+                  }
+                }}
+                aria-label="Chọn mô hình AI"
+                className="w-full bg-slate-900 text-slate-100 text-[13px] font-bold rounded-lg px-3 py-2.5 outline-none cursor-pointer border border-slate-600 focus:border-indigo-400"
+              >
+                {MODEL_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label} — {m.hint}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-[10px] text-slate-500">
+                Đang dùng: {MODEL_LABEL[copilotModel] || copilotModel}
+              </p>
+            </div>
+          </details>
         </div>
       </aside>
     </>,

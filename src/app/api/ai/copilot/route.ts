@@ -443,6 +443,8 @@ const LABEL_BY_TOOL: Record<string, string> = {
   query_transfer_history: 'Luân chuyển',
   query_gift_return: 'Quà/Trả hàng',
   query_order_lookup: 'Tra đơn',
+  query_contracts: 'Hợp đồng',
+  query_agency_debt: 'Công nợ',
 };
 
 function formatFallbackAnswer(toolName: string, data: Record<string, any>): string {
@@ -581,8 +583,31 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
 - Quà đã xuất: **${Number(g.qty || 0).toLocaleString('vi-VN')} cuốn** (${g.orders} đơn).${top ? `\n${top}` : ''}
 - Phiếu trả: **${r.count}** phiếu, hoàn **${Number(r.refundAmount || 0).toLocaleString('vi-VN')} đ** (${statuses}).`;
   }
-  if (toolName === 'query_order_lookup') {
+  if (toolName === 'query_contracts') {
     const d = data as any;
+    const items = (d.items || []).slice(0, 20);
+    if (items.length === 0) {
+      return `📄 **Hợp đồng**: ${d.warning || 'Không tìm thấy hợp đồng nào.'}`;
+    }
+    const lines = items.map((it: any, i: number) =>
+      `${i + 1}. **${it.contractNumber}** — ${it.title}${it.partnerName ? ` (${it.partnerName})` : ''} — ${it.status} — ${Number(it.totalAmount || 0).toLocaleString('vi-VN')} đ`);
+    return `📄 **Hợp đồng** (tìm thấy ${d.total}):\n${lines.join('\n')}`;
+  }
+  if (toolName === 'query_agency_debt') {
+    const d = data as any;
+    const items = (d.items || []).slice(0, 20);
+    if (items.length === 0) {
+      return `💰 **Công nợ đại lý**: ${d.warning || 'Không có dữ liệu.'}`;
+    }
+    const lines = items.map((it: any, i: number) => {
+      const base = `${i + 1}. **${it.partnerName}** — dư nợ ${Number(it.balance || 0).toLocaleString('vi-VN')} đ`;
+      return it.overdue > 0
+        ? `${base}, quá hạn **${Number(it.overdue).toLocaleString('vi-VN')} đ** (${it.overdueCount} phiếu, lâu nhất ${it.oldestOverdueDays} ngày)`
+        : `${base}, không quá hạn`;
+    });
+    return `💰 **Công nợ đại lý** (${d.total} đối tác):\n${lines.join('\n')}`;
+  }
+  if (toolName === 'query_order_lookup') {    const d = data as any;
     if (!d.found) {
       return `🧾 **Tra đơn**: ${d.warning || `Không tìm thấy đơn "${d.orderCode || ''}".`}`;
     }
