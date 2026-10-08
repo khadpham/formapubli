@@ -15,6 +15,7 @@ import {
 import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
 import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 import { ExecutiveQueryService } from '../src/services/executive-query.service';
 import { CopilotGuardrails } from '../src/services/ai/copilot-guardrails';
 
@@ -170,7 +171,7 @@ async function run() {
         body: JSON.stringify({ question, modelOverride: 'local' }),
       }) as any
     );
-    return res.json();
+    return readCopilotSseResponse(res as unknown as Response);
   };
 
   const r1 = await ask('Sáng hay chiều mạnh hơn?');

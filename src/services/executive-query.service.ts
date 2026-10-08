@@ -90,6 +90,24 @@ export interface SaleDraft {
   warnings: string[];
 }
 
+export interface TransferDraftLine {
+  editionId: string;
+  code: string;
+  title: string;
+  quantity: number;
+  /** Tồn khả dụng tại kho gửi (0 nếu chưa rõ kho gửi). */
+  availableStock: number;
+}
+
+export interface TransferDraft {
+  fromWarehouseId?: string;
+  fromWarehouseName?: string;
+  toWarehouseId?: string;
+  toWarehouseName?: string;
+  items: TransferDraftLine[];
+  warnings: string[];
+}
+
 export class ExecutiveQueryService {
   /**
    * Phan giai kho tu cau hoi ("kho Au Co", "Quynh Mai", "hoi cho") → warehouseId.
@@ -626,6 +644,104 @@ export class ExecutiveQueryService {
     }
 
     return { customerName, phone, note: `[COPILOT] ${q.slice(0, 300)}`, items, warnings };
+  }
+
+  /**
+   * GĐ2 — prepare_transfer_draft: ngôn ngữ tự nhiên → PHIẾU CHUYỂN KHO NHÁP.
+   * CHỈ chuẩn bị draft, TUYỆT ĐỐI không ghi DB, không gọi dispatch.
+   * Người dùng xem lại trong dialog xác nhận và bấm "Xác nhận tạo phiếu"
+   * mới gọi API dispatch thật (có idempotency-key chống double-click).
+   */
+  static async prepareTransferDraft(params: { q?: string } = {}): Promise<TransferDraft> {
+    const q = (params.q || '').trim();
+    const warnings: string[] = [];
+    if (!q) return { items: [], warnings: ['Chưa có nội dung yêu cầu chuyển kho.'] };
+
+    const normQ = removeAccents(q.toLowerCase());
+    const normQc = normQ.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // 1. Kho gửi / kho nhận: "từ ... sang/đến/tới ...".
+    let fromWh: { warehouseId: string; name: string } | null = null;
+    let toWh: { warehouseId: string; name: string } | null = null;
+    const m = normQ.match(/tu\s+(.+?)\s+(sang|den|toi|qua)\s+(.+)/);
+    if (m) {
+      fromWh = await this.resolveWarehouseFromText(m[1]);
+      toWh = await this.resolveWarehouseFromText(m[3]);
+    }
+    if (!fromWh) warnings.push('Chưa xác định được kho gửi — cho xin tên kho gửi (vd "kho Âu Cơ").');
+    if (!toWh) warnings.push('Chưa xác định được kho nhận — cho xin tên kho nhận.');
+    if (fromWh && toWh && fromWh.warehouseId === toWh.warehouseId) {
+      warnings.push('Kho gửi và kho nhận đang trùng nhau — kiểm tra lại.');
+    }
+
+    // 2. Sách + số lượng: quét mã sách theo token, số lượng kề bên.
+    const catalog = await db
+      .select({
+        editionId: editions.id,
+        code: editions.code,
+        editionTitle: editions.title,
+        workTitle: works.title,
+      })
+      .from(editions)
+      .leftJoin(works, eq(editions.workId, works.id));
+    const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nearbyQty = (text: string, idx: number, len: number): number => {
+      const before = text.slice(Math.max(0, idx - 16), idx);
+      const mB = before.match(/(\d+)\s*(cuon|quyen|q|c|ban)?\s*$/i);
+      if (mB) {
+        const n = parseInt(mB[1], 10);
+        if (n > 0 && n <= 999) return n;
+      }
+      const after = text.slice(idx + len, idx + len + 8);
+      const mA = after.match(/^\s*[x×:]\s*(\d+)/i) || after.match(/^\s*(\d+)\s*(cuon|quyen)/i);
+      if (mA) {
+        const n = parseInt(mA[1], 10);
+        if (n > 0 && n <= 999) return n;
+      }
+      return 1;
+    };
+    const merged = new Map<string, TransferDraftLine>();
+    for (const ed of catalog) {
+      const codeNorm = removeAccents((ed.code || '').toLowerCase()).trim();
+      if (!codeNorm) continue;
+      const re = new RegExp(`(^|[^a-z0-9])${escRe(codeNorm)}(?![a-z0-9])`, 'gi');
+      let mm: RegExpExecArray | null;
+      let total = 0;
+      while ((mm = re.exec(normQc)) !== null) {
+        const at = mm.index + mm[1].length;
+        total += nearbyQty(normQc, at, codeNorm.length);
+      }
+      if (total <= 0) continue;
+      const title = ed.editionTitle || ed.workTitle || ed.code;
+      const cur = merged.get(ed.editionId);
+      if (cur) cur.quantity = Math.min(999, cur.quantity + total);
+      else merged.set(ed.editionId, { editionId: ed.editionId, code: ed.code, title, quantity: Math.min(999, total), availableStock: 0 });
+    }
+
+    // 3. Đối chiếu tồn tại kho gửi + cảnh báo vượt tồn.
+    const items = Array.from(merged.values());
+    for (const it of items) {
+      if (fromWh) {
+        const bal = await db
+          .select({ qty: stockBalances.physicalQuantity })
+          .from(stockBalances)
+          .where(and(eq(stockBalances.editionId, it.editionId), eq(stockBalances.warehouseId, fromWh.warehouseId)));
+        it.availableStock = Number(bal[0]?.qty || 0);
+        if (it.quantity > it.availableStock) {
+          warnings.push(`[${it.code}] xin chuyển ${it.quantity} nhưng kho gửi chỉ còn ${it.availableStock} — giảm số lượng hoặc chọn kho khác.`);
+        }
+      }
+    }
+    if (items.length === 0) {
+      warnings.push('Chưa nhận diện được sách nào — cho xin mã sách (vd HH001) kèm số lượng.');
+    }
+
+    return {
+      ...(fromWh ? { fromWarehouseId: fromWh.warehouseId, fromWarehouseName: fromWh.name } : {}),
+      ...(toWh ? { toWarehouseId: toWh.warehouseId, toWarehouseName: toWh.name } : {}),
+      items,
+      warnings,
+    };
   }
 
   /**

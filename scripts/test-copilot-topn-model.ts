@@ -9,6 +9,7 @@ import { db, editions, orders, orderItems } from '../src/db';
 import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
 import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 
 assertIsolatedTestDb('test-copilot-topn-model');
 
@@ -73,7 +74,7 @@ async function run() {
       body: JSON.stringify({ question: 'top 7 sách bán chạy là những cuốn nào?' }),
     });
     const response = await postCopilot(req as any);
-    const payload = await response.json();
+    const payload = await readCopilotSseResponse(response as unknown as Response);
     assert.equal(response.status, 200, 'hỏi top phải 200');
     assert.equal(payload.data.toolUsed, 'query_catalog', 'phải vào tool danh mục (không phải tồn kho)');
     assert.match(payload.data.answer, new RegExp(eds[0].code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'đáp phải có mã bán chạy nhất');
@@ -145,7 +146,7 @@ async function run() {
         body: JSON.stringify({ question: 'hôm qua bán được bao nhiêu cuốn?' }),
       });
       const resDay = await postCopilot(reqDay as any);
-      const payDay = await resDay.json();
+      const payDay = await readCopilotSseResponse(resDay as unknown as Response);
       assert.equal(resDay.status, 200, 'hỏi theo ngày phải 200');
       assert.equal(payDay.data.toolUsed, 'query_sales_summary', 'phải vào tool doanh số');
       assert.match(payDay.data.answer, /4 cuốn/, 'đáp phải nêu đúng số cuốn bán hôm qua');
@@ -190,7 +191,7 @@ async function run() {
         body: JSON.stringify({ question: 'khung 15h 2 ngày trước bán được những cuốn nào ở kho hồ gươm?' }),
       });
       const resWin = await postCopilot(reqWin as any);
-      const payWin = await resWin.json();
+      const payWin = await readCopilotSseResponse(resWin as unknown as Response);
       assert.equal(resWin.status, 200, 'hỏi khung giờ phải 200');
       assert.equal(payWin.data.toolUsed, 'query_sales_lines', 'phải vào tool dòng bán (không phải tồn kho)');
       assert.match(payWin.data.answer, new RegExp(targetEd.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'đáp phải có món trong khung');

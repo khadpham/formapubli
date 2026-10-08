@@ -14,6 +14,7 @@ import { OrderService } from '../src/services/order.service';
 import { ForecastService } from '../src/services/forecast.service';
 import { eq, desc } from 'drizzle-orm';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 
 assertIsolatedTestDb('eval-executive-ai');
 
@@ -69,7 +70,7 @@ async function callCopilotApi(question: string, cookie?: string) {
   });
 
   const res = await postCopilot(req as any);
-  const json = await res.json();
+  const json = await readCopilotSseResponse(res as unknown as Response);
   return { status: res.status, body: json };
 }
 

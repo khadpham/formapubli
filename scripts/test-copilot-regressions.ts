@@ -7,6 +7,7 @@ import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
 import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
 import { ExecutiveQueryService } from '../src/services/executive-query.service';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 
 assertIsolatedTestDb('test-copilot-regressions');
 
@@ -93,7 +94,7 @@ async function run() {
     body: JSON.stringify({ question: 'Liệt kê danh mục sách và tình trạng hiện tại' }),
   });
   const response = await postCopilot(req as any);
-  const payload = await response.json();
+  const payload = await readCopilotSseResponse(response as unknown as Response);
   assert.equal(response.status, 200, 'Copilot fallback phải trả lời thành công');
   assert.match(payload.data.answer, /Còn hàng.*37 cuốn/, 'Fallback danh mục phải nêu tình trạng và tồn thực tế');
 

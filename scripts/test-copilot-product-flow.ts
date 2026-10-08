@@ -9,6 +9,7 @@ import { db, editions, orders, orderItems, products } from '../src/db';
 import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
 import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 
 assertIsolatedTestDb('test-copilot-product-flow');
 
@@ -81,7 +82,7 @@ async function run() {
       body: JSON.stringify({ question: `Giờ vàng bán cuốn ${edition.title} là mấy giờ?` }),
     });
     const response = await postCopilot(req as any);
-    const payload = await response.json();
+    const payload = await readCopilotSseResponse(response as unknown as Response);
     assert.equal(response.status, 200, 'hỏi giờ vàng phải 200');
     assert.equal(payload.data.toolUsed, 'query_product_flow', 'phải định tuyến tool nhịp bán');
     assert.match(payload.data.answer, /[Gg]iờ/, 'đáp phải nêu giờ');
@@ -95,7 +96,7 @@ async function run() {
       body: JSON.stringify({ question: 'Giờ vàng của cuốn sách bán chạy nhất là mấy giờ?' }),
     });
     const response2 = await postCopilot(req2 as any);
-    const payload2 = await response2.json();
+    const payload2 = await readCopilotSseResponse(response2 as unknown as Response);
     assert.equal(response2.status, 200, 'hỏi bán chạy nhất phải 200');
     assert.equal(payload2.data.toolUsed, 'query_product_flow', 'câu theo ý cũng vào tool nhịp bán');
     assert.match(payload2.data.answer, /bán chạy nhất/, 'đáp phải nói rõ đang xem món bán chạy nhất');

@@ -9,6 +9,7 @@ import { db, editions, orders, orderItems, warehouses } from '../src/db';
 import { POST as postCopilot } from '../src/app/api/ai/copilot/route';
 import { SESSION_COOKIE_NAME, signSession } from '../src/lib/auth-session';
 import { assertIsolatedTestDb } from './test-guard';
+import { readCopilotSseResponse } from './copilot-sse-test-helper';
 
 assertIsolatedTestDb('test-copilot-multistep');
 
@@ -25,9 +26,14 @@ async function run() {
   ok(!/plan\.toolCall\.args = \{ \.\.\.args, editionId/.test(guard), 'không gán thẳng vào plan.toolCall khi đa bước');
 
   const route = readSrc('src/app/api/ai/copilot/route.ts');
-  ok(/plan\.steps\.slice\(0, 4\)/.test(route), 'route phải chạy tối đa 4 bước');
-  ok(/executeToolSafely\([\s\S]{0,120}for \(const step of steps\)|for \(const step of steps\)/.test(route),
-    'route phải chạy từng bước qua executeToolSafely');
+  // GĐ2: vòng lặp chuyển vào runPlanLoop (guardrails) — route chỉ gọi loop.
+  // Guard chống chạy vô hạn: tối đa maxTurns lượt, mỗi lượt tối đa 4 steps,
+  // cấm gọi trùng tool+args (seen).
+  ok(/runPlanLoop/.test(route), 'route phải dùng runPlanLoop (GĐ2)');
+  ok(/\.slice\(0, 4\)/.test(guard), 'mỗi lượt chạy tối đa 4 steps');
+  ok(/maxTurns/.test(guard), 'vòng lặp phải có giới hạn số lượt (maxTurns)');
+  ok(/seen\.has\(key\)/.test(guard), 'phải có guard chống gọi trùng tool+args');
+  ok(/executeToolSafely/.test(guard), 'loop phải chạy từng bước qua executeToolSafely');
   ok(/Object\.fromEntries\(results\.map/.test(route), 'kết quả nhiều bước phải gom theo tên tool');
   // KHÔNG dùng tên CF_API_TOKEN: wrangler tự đọc làm credential deploy (hỏng deploy).
   ok(/WORKERS_AI_TOKEN/.test(route), 'synth phải biết Cloudflare Workers AI');
@@ -96,7 +102,7 @@ async function run() {
       body: JSON.stringify({ question, modelOverride: 'local' }),
     }) as any
   );
-  const body = await res.json();
+  const body = await readCopilotSseResponse(res as unknown as Response);
   ok(body.success === true, 'API phải trả success: HTTP ' + res.status + ' ' + JSON.stringify(body).slice(0, 400));
   ok(typeof body.data?.answer === 'string' && body.data.answer.length > 10, 'phải có câu trả lời');
   ok(!body.data.answer.includes('{"'), 'đáp không dính JSON thô');

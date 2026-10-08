@@ -14,6 +14,7 @@ import {
   Scale,
   DollarSign,
   ShoppingCart,
+  Truck,
   Maximize2,
   Minimize2,
   Trash2,
@@ -37,6 +38,22 @@ export interface CopilotMessage {
   engine?: string | null;
   timestamp: string;
   isError?: boolean;
+}
+
+/**
+ * Lấy draft chuyển kho từ message — hỗ trợ cả single-tool
+ * (`toolUsed === 'prepare_transfer_draft'`) và multi-tool
+ * (`toolUsed === 'a + prepare_transfer_draft'`, data nằm ở
+ * `toolData['prepare_transfer_draft']` — mirror formatFallbackAnswer).
+ */
+export function getTransferDraftData(toolUsed: string | null | undefined, toolData: any): any | null {
+  if (!toolUsed || !toolData) return null;
+  if (toolUsed === 'prepare_transfer_draft') return toolData;
+  if (toolUsed.includes('prepare_transfer_draft')) {
+    const chunk = (toolData as Record<string, any>)['prepare_transfer_draft'];
+    return chunk ?? null;
+  }
+  return null;
 }
 
 interface CopilotDrawerProps {
@@ -168,6 +185,8 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
   const [loading, setLoading] = useState(false);
   /** Giai đoạn loading đang hiển thị (luân phiên mỗi 2.5s khi chờ). */
   const [loadingStage, setLoadingStage] = useState(0);
+  /** GĐ2: tên tool đang chạy thật từ SSE — ưu tiên hơn loadingStage chung chung. */
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
   useEffect(() => {
     if (!loading) {
       setLoadingStage(0);
@@ -196,6 +215,9 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
   ]);
   const [rateLimitTimer, setRateLimitTimer] = useState<number | null>(null);
   const [appliedDraftIds, setAppliedDraftIds] = useState<Set<string>>(new Set());
+  /** Phiếu chuyển kho đã bấm "Xác nhận tạo phiếu" (chống double-click) + kết quả. */
+  const [confirmedTransferIds, setConfirmedTransferIds] = useState<Set<string>>(new Set());
+  const [transferResults, setTransferResults] = useState<Record<string, string>>({});
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -355,6 +377,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
     setInputQuery('');
     voiceBaseRef.current = '';
     setLoading(true);
+    setLiveStatus(null);
 
     try {
       // Gửi kèm lịch sử để server nối được câu này với câu trước (đại từ
@@ -372,9 +395,9 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
         }),
       });
 
-      const json = await res.json();
-
       if (!res.ok) {
+        // Lỗi HTTP (403/429/...) vẫn trả JSON như cũ.
+        const json = await res.json().catch(() => ({}));
         if (res.status === 429) {
           const waitSec = Math.ceil((json.resetAfterMs || 60000) / 1000);
           setRateLimitTimer(waitSec);
@@ -408,21 +431,65 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
         throw new Error(json.message || `Lỗi máy chủ (${res.status})`);
       }
 
-      if (json.success && json.data) {
+      // GĐ2: đọc SSE stream — hiện tên tool đang chạy trực tiếp.
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('Không đọc được luồng phản hồi.');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalData: any = null;
+      const handleSseEvent = (event: string, data: any) => {
+        if (event === 'tool_start') {
+          setLiveStatus(`Đang tra cứu: ${data.label || data.toolName}...`);
+        } else if (event === 'synthesizing') {
+          setLiveStatus('Đang tổng hợp câu trả lời...');
+        } else if (event === 'done') {
+          finalData = data;
+        } else if (event === 'error') {
+          throw new Error(data.message || 'Lỗi xử lý Copilot.');
+        }
+      };
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf('\n\n')) >= 0) {
+            const chunk = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const m = chunk.match(/^event: ([^\n]+)\ndata: ([\s\S]*)$/);
+            if (m) {
+              const eventName = m[1].trim();
+              let eventData: any = null;
+              try {
+                eventData = JSON.parse(m[2]);
+              } catch {
+                continue; // chunk hỏng — bỏ qua
+              }
+              // event error phải văng ra ngoài để hiện lỗi, không được nuốt
+              handleSseEvent(eventName, eventData);
+            }
+          }
+        }
+      } finally {
+        try { reader.releaseLock(); } catch {}
+      }
+
+      if (finalData) {
         setMessages((prev) => [
           ...prev,
           {
             id: 'resp_' + Date.now(),
             sender: 'assistant',
-            content: json.data.answer || 'Không có nội dung phản hồi.',
-            toolUsed: json.data.toolUsed,
-            toolData: json.data.toolData,
-            engine: json.data.engine || null,
+            content: finalData.answer || 'Không có nội dung phản hồi.',
+            toolUsed: finalData.toolUsed,
+            toolData: finalData.toolData,
+            engine: finalData.engine || null,
             timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
       } else {
-        throw new Error(json.message || 'Định dạng dữ liệu không hợp lệ');
+        throw new Error('Định dạng dữ liệu không hợp lệ');
       }
     } catch (err: any) {
       setMessages((prev) => [
@@ -437,6 +504,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
       ]);
     } finally {
       setLoading(false);
+      setLiveStatus(null);
     }
   };
 
@@ -817,6 +885,80 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                       {appliedDraftIds.has(msg.id) ? 'Đã áp vào POS — qua quầy để thanh toán' : `Áp vào POS (${msg.toolData.items.length} dòng) — qua quầy để thanh toán`}
                     </button>
                   )}
+
+                  {/* Dialog xac nhan phieu chuyen kho — user bam moi goi API dispatch that.
+                      Dung getTransferDraftData de ho tro ca multi-tool ("a + prepare_transfer_draft"). */}
+                  {(() => {
+                    const draftData = getTransferDraftData(msg.toolUsed, msg.toolData);
+                    if (!draftData || !Array.isArray(draftData.items) || draftData.items.length === 0) return null;
+                    return (
+                    <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <div className="text-xs font-bold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                        <Truck className="w-4 h-4" />
+                        Xác nhận phiếu chuyển kho
+                      </div>
+                      <div className="text-xs text-slate-700 mb-1.5">
+                        Từ: <strong>{draftData.fromWarehouseName || '?'}</strong>
+                        {' → '}
+                        Đến: <strong>{draftData.toWarehouseName || '?'}</strong>
+                      </div>
+                      <ul className="text-xs text-slate-700 space-y-0.5 mb-2">
+                        {(draftData.items as any[]).slice(0, 10).map((it: any, i: number) => (
+                          <li key={i}>• <strong>{it.code}</strong> × {it.quantity} <span className="text-slate-500">(tồn kho gửi: {Number(it.availableStock || 0).toLocaleString('vi-VN')})</span></li>
+                        ))}
+                      </ul>
+                      {transferResults[msg.id] && (
+                        <div className="text-xs mb-2 text-slate-700">{transferResults[msg.id]}</div>
+                      )}
+                      <button
+                        disabled={confirmedTransferIds.has(msg.id) || !draftData.fromWarehouseId || !draftData.toWarehouseId}
+                        onClick={async () => {
+                          setConfirmedTransferIds((prev) => new Set(prev).add(msg.id));
+                          try {
+                            const items = (draftData.items as any[])
+                              .filter((it: any) => it && typeof it.editionId === 'string' && it.editionId.trim())
+                              .map((it: any) => ({
+                                editionId: it.editionId.trim(),
+                                quantity: Math.min(999, Math.max(1, Math.floor(Number(it.quantity) || 1))),
+                              }));
+                            const res = await fetch('/api/transfers', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'idempotency-key': `copilot-${msg.id}`,
+                              },
+                              body: JSON.stringify({
+                                action: 'dispatch',
+                                fromWarehouseId: draftData.fromWarehouseId,
+                                toWarehouseId: draftData.toWarehouseId,
+                                notes: '[Copilot] tạo từ AI Copilot',
+                                items,
+                              }),
+                            });
+                            const json = await res.json();
+                            if (json.success) {
+                              setTransferResults((prev) => ({ ...prev, [msg.id]: `✅ Đã tạo phiếu ${json.data?.shipmentId || json.data?.id || ''} — theo dõi trong Luân chuyển kho.` }));
+                            } else {
+                              setTransferResults((prev) => ({ ...prev, [msg.id]: `❌ Không tạo được phiếu: ${json.error || 'lỗi không rõ'}` }));
+                              // Cho phep bam lai khi loi
+                              setConfirmedTransferIds((prev) => { const n = new Set(prev); n.delete(msg.id); return n; });
+                            }
+                          } catch (e: any) {
+                            setTransferResults((prev) => ({ ...prev, [msg.id]: `❌ Lỗi kết nối: ${e?.message || e}` }));
+                            setConfirmedTransferIds((prev) => { const n = new Set(prev); n.delete(msg.id); return n; });
+                          }
+                        }}
+                        className="w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                      >
+                        <Truck className="w-4 h-4" />
+                        {confirmedTransferIds.has(msg.id) && !transferResults[msg.id] ? 'Đang tạo phiếu...' : 'Xác nhận tạo phiếu'}
+                      </button>
+                      {(!draftData.fromWarehouseId || !draftData.toWarehouseId) && (
+                        <div className="text-[11px] text-amber-700 mt-1">Thiếu thông tin kho — bổ sung rồi hỏi lại để tôi chuẩn bị lại nháp.</div>
+                      )}
+                    </div>
+                    );
+                  })()}
                 </div>
               </div>
             );
@@ -825,7 +967,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
           {loading && (
             <div className="flex items-center gap-2 text-slate-500 text-xs pl-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-              <span>{LOADING_STAGES[loadingStage]}</span>
+              <span>{liveStatus || LOADING_STAGES[loadingStage]}</span>
             </div>
           )}
 
