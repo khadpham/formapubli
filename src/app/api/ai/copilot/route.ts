@@ -627,8 +627,12 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     if (items.length === 0) {
       return `📄 **Hợp đồng**: ${d.warning || 'Không tìm thấy hợp đồng nào.'}`;
     }
+    // Minor 11: dịch mã trạng thái sang tiếng Việt (không lộ mã nội bộ).
+    const STATUS_VI: Record<string, string> = {
+      DRAFT: 'Nháp', FINALIZED: 'Đã chốt', SIGNED: 'Đã ký', CANCELLED: 'Đã hủy',
+    };
     const lines = items.map((it: any, i: number) =>
-      `${i + 1}. **${it.contractNumber}** — ${it.title}${it.partnerName ? ` (${it.partnerName})` : ''} — ${it.status} — ${Number(it.totalAmount || 0).toLocaleString('vi-VN')} đ`);
+      `${i + 1}. **${it.contractNumber}** — ${it.title}${it.partnerName ? ` (${it.partnerName})` : ''} — ${STATUS_VI[it.status] || it.status} — ${Number(it.totalAmount || 0).toLocaleString('vi-VN')} đ`);
     return `📄 **Hợp đồng** (tìm thấy ${d.total}):\n${lines.join('\n')}`;
   }
   if (toolName === 'query_agency_debt') {
@@ -638,7 +642,9 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
       return `💰 **Công nợ đại lý**: ${d.warning || 'Không có dữ liệu.'}`;
     }
     const lines = items.map((it: any, i: number) => {
-      const base = `${i + 1}. **${it.partnerName}** — dư nợ ${Number(it.balance || 0).toLocaleString('vi-VN')} đ`;
+      // Minor 12: hiện hạn mức tín dụng (đã fetch về nhưng bỏ phí).
+      const limit = Number(it.creditLimit || 0) > 0 ? ` / hạn mức ${Number(it.creditLimit).toLocaleString('vi-VN')} đ` : '';
+      const base = `${i + 1}. **${it.partnerName}** — dư nợ ${Number(it.balance || 0).toLocaleString('vi-VN')} đ${limit}`;
       return it.overdue > 0
         ? `${base}, quá hạn **${Number(it.overdue).toLocaleString('vi-VN')} đ** (${it.overdueCount} phiếu, lâu nhất ${it.oldestOverdueDays} ngày)`
         : `${base}, không quá hạn`;

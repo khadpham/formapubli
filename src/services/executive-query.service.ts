@@ -1595,7 +1595,15 @@ export class ExecutiveQueryService {
   }> {
     const limit = Math.min(20, Math.max(1, Math.floor(Number(params.limit) || 10)));
     const rawQ = `${params.q || ''}`.trim();
-    const status = `${params.status || ''}`.trim().toUpperCase();
+    // ponytail: fetch toàn bộ contractDocuments rồi lọc in-memory (so khớp không dấu).
+    // Ceiling: bảng hợp đồng nhỏ (NXB, vài trăm dòng) nên ổn; nếu lớn lên hàng nghìn,
+    // đẩy điều kiện ilike xuống DB cho nhánh codeHit (khớp chính xác), giữ in-memory
+    // cho nhánh fuzzy (SQL không so khớp không dấu được).
+    const rawStatus = `${params.status || ''}`.trim().toUpperCase();
+    // Minor 4: validate status ở tầng service — gọi trực tiếp với status lạ
+    // thì báo warning, không lặng lẽ trả rỗng.
+    const status = VALID_CONTRACT_STATUSES.includes(rawStatus) ? rawStatus : '';
+    const statusWarning = rawStatus && !status ? `Trạng thái "${rawStatus}" không hợp lệ — bỏ qua lọc trạng thái.` : '';
     const rows = await db
       .select({
         contractNumber: contractDocuments.contractNumber,
@@ -1611,12 +1619,16 @@ export class ExecutiveQueryService {
       .leftJoin(partners, eq(contractDocuments.partnerId, partners.id))
       .orderBy(desc(contractDocuments.createdAt));
     // Bóc mã HĐ trước — chính xác nhất ("hợp đồng HD-BQ-2026-901").
-    const codeHit = rawQ.match(/HD-BQ-[\w-]+/i);
+    const codeHit = rawQ.match(CONTRACT_CODE_RE);
     let filtered = rows;
     if (codeHit) {
       const needle = codeHit[0].toLowerCase();
-      filtered = rows.filter((r) => r.contractNumber.toLowerCase().includes(needle));
+      filtered = rows.filter((r) => (r.contractNumber || '').toLowerCase().includes(needle));
     } else {
+      // Minor 1: "còn hiệu lực" là filter ngữ nghĩa, không phải từ khóa tìm kiếm.
+      // Phát hiện trước khi strip — strip sẽ xóa "còn"/"hiệu lực" thành rỗng.
+      const normRaw = removeAccents(rawQ.toLowerCase());
+      const wantsEffective = /\bcon hieu luc\b/.test(normRaw);
       const stripped = stripToolKeywords(rawQ, [
         'hop dong', 'hieu luc', 'con', 'danh sach', 'liet ke', 'cho toi', 'cho xem',
         'cua', 'hien tai', 'ban quyen', 'tac quyen',
@@ -1625,9 +1637,13 @@ export class ExecutiveQueryService {
         const needle = removeAccents(stripped.toLowerCase());
         filtered = rows.filter(
           (r) =>
-            removeAccents(r.contractNumber).toLowerCase().includes(needle) ||
-            removeAccents(r.title).toLowerCase().includes(needle)
+            removeAccents(r.contractNumber || '').toLowerCase().includes(needle) ||
+            removeAccents(r.title || '').toLowerCase().includes(needle)
         );
+      }
+      if (wantsEffective) {
+        const today = new Date().toISOString().slice(0, 10);
+        filtered = filtered.filter((r) => r.status === 'SIGNED' && (!r.expiryDate || r.expiryDate >= today));
       }
     }
     if (status) filtered = filtered.filter((r) => r.status === status);
@@ -1643,13 +1659,14 @@ export class ExecutiveQueryService {
       expiryDate: r.expiryDate,
     }));
     if (items.length === 0) {
+      const w = `Không tìm thấy hợp đồng${rawQ ? ` khớp "${rawQ.slice(0, 80)}"` : ''}${status ? ` trạng thái ${status}` : ''}.`;
       return {
         items: [],
         total: 0,
-        warning: `Không tìm thấy hợp đồng${rawQ ? ` khớp "${rawQ.slice(0, 80)}"` : ''}${status ? ` trạng thái ${status}` : ''}.`,
+        warning: statusWarning ? `${statusWarning} ${w}` : w,
       };
     }
-    return { items, total };
+    return { items, total, ...(statusWarning ? { warning: statusWarning } : {}) };
   }
 
   /**
@@ -1702,7 +1719,11 @@ export class ExecutiveQueryService {
     }
     // Import động để tránh cycle giữa các service (theo pattern query_sales_lines).
     const { PartnerDebtService } = await import('./partner-debt.service');
+    // ponytail: N+1 PartnerDebtService.summary (1 query/đối tác, tối đa `limit`).
+    // Ceiling: limit ≤ 10 nên ổn; nếu cần nhiều đối tác hơn, batch summary theo danh sách id.
+    const DEFAULT_PAYMENT_DUE_DAYS = 30;
     const items = [];
+    let skipped = 0;
     for (const p of matched.slice(0, limit)) {
       try {
         const s = await PartnerDebtService.summary(p.id);
@@ -1714,22 +1735,24 @@ export class ExecutiveQueryService {
           overdueCount: Number(s.overdueCount || 0),
           oldestOverdueDays: Number(s.oldestOverdueDays || 0),
           creditLimit: Number(s.creditLimit || 0),
-          paymentDueDays: Number(p.paymentDueDays ?? 30),
+          paymentDueDays: Number(p.paymentDueDays ?? DEFAULT_PAYMENT_DUE_DAYS),
         });
       } catch {
-        // Bỏ qua đối tác lỗi lẻ, không sập cả tool.
+        // Bỏ qua đối tác lỗi lẻ, không sập cả tool — nhưng phải báo số lượng.
+        skipped++;
       }
     }
     items.sort((a, b) => b.balance - a.balance);
     if (items.length === 0) {
       return { items: [], total: 0, warning: 'Không tìm thấy đối tác nào.' };
     }
+    const warnings: string[] = [];
+    if (usedFallback) warnings.push(`Không tìm thấy đối tác khớp "${rawQ.slice(0, 80)}" — hiển thị các đối tác nợ nhiều nhất.`);
+    if (skipped > 0) warnings.push(`Bỏ qua ${skipped} đối tác do lỗi tính toán.`);
     return {
       items,
-      total: items.length,
-      ...(usedFallback
-        ? { warning: `Không tìm thấy đối tác khớp "${rawQ.slice(0, 80)}" — hiển thị các đối tác nợ nhiều nhất.` }
-        : {}),
+      total: matched.length,
+      ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
     };
   }
 }
@@ -1740,6 +1763,15 @@ export class ExecutiveQueryService {
  */
 function stripToolKeywords(q: string, stopwords: string[]): string {
   let s = removeAccents(q.toLowerCase()).replace(/[?.!,;:()"“”]/g, ' ');
-  for (const kw of stopwords) s = s.split(kw).join(' ');
+  for (const kw of stopwords) {
+    // Word-boundary: không cắt nhầm substring trong từ khác ("con" trong "con dấu").
+    s = s.replace(new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), ' ');
+  }
   return s.replace(/\s+/g, ' ').trim();
 }
+
+/** Pattern bóc mã hợp đồng trong câu hỏi — format "HD-BQ-..." (dùng trong test/seed). */
+const CONTRACT_CODE_RE = /HD-BQ-[\w-]+/i;
+
+/** Trạng thái hợp đồng hợp lệ (giá trị thật từ contract.service.ts). */
+const VALID_CONTRACT_STATUSES = ['DRAFT', 'FINALIZED', 'SIGNED', 'CANCELLED'];

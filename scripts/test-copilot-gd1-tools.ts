@@ -80,7 +80,7 @@ async function run() {
   await seedContracts();
 
   // --- Task 3: queryContracts ---
-  const res: any = await (ExecutiveQueryService as any).queryContracts({ q: 'HD-BQ-2026' });
+  const res: any = await ExecutiveQueryService.queryContracts({ q: 'HD-BQ-2026' });
   ok(Array.isArray(res.items), 'queryContracts trả về items là mảng');
   ok(res.items.length === 2, `tìm đúng 2 hợp đồng (thấy ${res.items.length})`);
   for (const it of res.items) {
@@ -91,7 +91,7 @@ async function run() {
   const withPartner = res.items.find((it: any) => it.contractNumber === 'HD-BQ-2026-901');
   ok(withPartner?.partnerName === 'Đại lý Test GĐ1', 'join ra tên đối tác');
 
-  const resDraft: any = await (ExecutiveQueryService as any).queryContracts({ status: 'DRAFT' });
+  const resDraft: any = await ExecutiveQueryService.queryContracts({ status: 'DRAFT' });
   ok(resDraft.items.length === 1 && resDraft.items[0].contractNumber === 'HD-BQ-2026-901', 'lọc theo status DRAFT');
 
   // --- Routing: câu hỏi hợp đồng → query_contracts ---
@@ -106,7 +106,7 @@ async function run() {
 
   // --- Task 4: query_agency_debt ---
   await seedDebt();
-  const debt: any = await (ExecutiveQueryService as any).queryAgencyDebt({});
+  const debt: any = await ExecutiveQueryService.queryAgencyDebt({});
   ok(Array.isArray(debt.items), 'queryAgencyDebt trả về items là mảng');
   const debtor = debt.items.find((it: any) => it.partnerId === 'partner-gd1-debt');
   ok(!!debtor, 'tìm thấy đại lý nợ test');
@@ -114,9 +114,9 @@ async function run() {
   ok(debtor.balance === 7000000, `dư nợ = 10M - 3M = 7M (thấy ${debtor.balance})`);
   ok(debtor.overdue === 7000000, `quá hạn 7M (phiếu 40 ngày trước, hạn 30 ngày)`);
   ok(debtor.overdueCount === 1, 'quá hạn 1 phiếu');
-  ok(debtor.oldestOverdueDays >= 9, `số ngày quá hạn lâu nhất >= 9 (thấy ${debtor.oldestOverdueDays})`);
+  ok(debtor.oldestOverdueDays >= 9 && debtor.oldestOverdueDays <= 12, `số ngày quá hạn lâu nhất ~10 (phiếu 40 ngày trước, hạn 30 ngày; thấy ${debtor.oldestOverdueDays})`);
 
-  const debtCapped: any = await (ExecutiveQueryService as any).queryAgencyDebt({ limit: 999 });
+  const debtCapped: any = await ExecutiveQueryService.queryAgencyDebt({ limit: 999 });
   ok(debtCapped.items.length <= 10, `limit 999 bị chặn còn ≤ 10 (thấy ${debtCapped.items.length})`);
 
   const planDebt: any = await CopilotGuardrails.planQuery('công nợ đại lý', {}, undefined, []);
@@ -130,16 +130,16 @@ async function run() {
   // --- Fix pass (reviewer Important #1): câu hỏi tự nhiên end-to-end ---
   await db.insert(partners).values({ id: 'partner-gd1-anphat', code: 'DL-AP', name: 'An Phát', type: 'WHOLESALE' });
 
-  const nq1: any = await (ExecutiveQueryService as any).queryContracts({ q: 'hợp đồng còn hiệu lực' });
+  const nq1: any = await ExecutiveQueryService.queryContracts({ q: 'hợp đồng còn hiệu lực' });
   ok(nq1.items.length === 2, `câu tự nhiên "hợp đồng còn hiệu lực" tìm thấy hợp đồng (thấy ${nq1.items.length})`);
 
-  const nq2: any = await (ExecutiveQueryService as any).queryAgencyDebt({ q: 'Công nợ các đại lý hiện tại ra sao?' });
+  const nq2: any = await ExecutiveQueryService.queryAgencyDebt({ q: 'Công nợ các đại lý hiện tại ra sao?' });
   ok(nq2.items.length > 0, 'chip công nợ (câu tự nhiên) không còn not-found');
 
-  const nq3: any = await (ExecutiveQueryService as any).queryAgencyDebt({ q: 'công nợ của đại lý An Phát' });
+  const nq3: any = await ExecutiveQueryService.queryAgencyDebt({ q: 'công nợ của đại lý An Phát' });
   ok(nq3.items.some((it: any) => it.partnerName === 'An Phát'), 'tìm đúng đại lý An Phát');
 
-  const nq4: any = await (ExecutiveQueryService as any).queryContracts({ q: 'hop dong HD-BQ-2026-901' });
+  const nq4: any = await ExecutiveQueryService.queryContracts({ q: 'hop dong HD-BQ-2026-901' });
   ok(nq4.items.some((it: any) => it.contractNumber === 'HD-BQ-2026-901'), 'không dấu + mã HĐ tìm đúng');
 
   console.log(`✅ test-copilot-gd1-tools (fix pass): ${checks} checks passed`);

@@ -870,8 +870,11 @@ QUY TẮC:
     const contractIntent = n.includes('hop dong') || n.includes('hd-bq');
     if (contractIntent) {
       // Bóc trạng thái từ câu hỏi (giá trị thật: DRAFT/FINALIZED/SIGNED/CANCELLED).
+      // Minor 14: dùng word-boundary cho 'nhap' — "nhập sách"/"thu nhập" không phải nháp.
+      // Minor 17: thêm "chưa ký" → DRAFT.
       let status: string | undefined;
-      if (n.includes('nhap')) status = 'DRAFT';
+      if (/\bnhap\b/.test(n) && !/nhap (khau|sach|hang)/.test(n)) status = 'DRAFT';
+      else if (/\bchua ky\b/.test(n)) status = 'DRAFT';
       else if (n.includes('da ky') || n.includes('signed')) status = 'SIGNED';
       else if (n.includes('da huy') || n.includes('huy bo')) status = 'CANCELLED';
       else if (n.includes('finalized') || n.includes('chot ban cuoi')) status = 'FINALIZED';
@@ -1043,10 +1046,13 @@ QUY TẮC:
 
     // Cong no dai ly ("cong no", "dai ly", "du no", "qua han"). Dat SAU cac
     // nhanh chung de "doanh so dai ly" van ve bao cao doanh so, khong bi cuop.
-    if (
+    // Minor 15: "dai ly nao ban chay" là doanh số, không phải công nợ.
+    // Minor 16: bỏ 'no dai ly' thừa (đã có 'dai ly' bao phủ).
+    const debtIntent =
       n.includes('cong no') || n.includes('dai ly') || n.includes('du no') ||
-      n.includes('qua han') || n.includes('no dai ly')
-    ) {
+      n.includes('qua han');
+    const salesIntent = /doanh (so|thu)|ban chay|ban duoc/.test(n);
+    if (debtIntent && !salesIntent) {
       return {
         action: 'CALL_TOOL',
         toolCall: { toolName: 'query_agency_debt', args: { q } },
