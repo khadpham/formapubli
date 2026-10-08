@@ -16,6 +16,12 @@ interface ExpenseEntry {
 interface FinanceData {
   month: string;
   shopee: { orders: number; escrowTotal: number; feeTotal: number; netProfitTotal: number };
+  channels?: {
+    agency: { orders: number; receivable: number; received: number; balance: number };
+    online: { orders: number; revenue: number };
+    retail: { orders: number; revenue: number; cash: number; bankQr: number };
+  };
+  totals?: { cashCollected: number };
   expenses: {
     total: number;
     byRecurrence: { MONTHLY: number; ONE_TIME: number };
@@ -181,6 +187,41 @@ export function OwnerTab() {
         </label>
         <span className="text-[11px] text-slate-400">Số theo tháng VN đã chọn.</span>
       </div>
+
+      {/* Doanh thu theo kênh — GĐ3-P1 (chưa có giá vốn/biên) */}
+      {data.channels && (
+        <section aria-label="Doanh thu theo kênh" className="space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-700">
+            Doanh thu theo kênh — {month} · Thực thu {vnd(data.totals?.cashCollected ?? 0)}
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-blue-50 border border-blue-100">
+              <p className="text-[11px] text-blue-700 font-bold">Đại lý — thực thu</p>
+              <p className="text-lg font-extrabold text-blue-900">{vnd(data.channels.agency.received)}</p>
+              <p className="text-[11px] text-blue-600 mt-0.5">
+                Phải thu {vnd(data.channels.agency.receivable)} · Còn lại {vnd(data.channels.agency.balance)} · {data.channels.agency.orders} phiếu
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
+              <p className="text-[11px] text-amber-700 font-bold">Online</p>
+              <p className="text-lg font-extrabold text-amber-900">{vnd(data.channels.online.revenue)}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">{data.channels.online.orders} đơn</p>
+            </div>
+            <div className="p-3 rounded-xl bg-teal-50 border border-teal-100">
+              <p className="text-[11px] text-teal-700 font-bold">Bán lẻ (POS)</p>
+              <p className="text-lg font-extrabold text-teal-900">{vnd(data.channels.retail.revenue)}</p>
+              <p className="text-[11px] text-teal-600 mt-0.5">
+                Tiền mặt {vnd(data.channels.retail.cash)} · CK/QR {vnd(data.channels.retail.bankQr)} · {data.channels.retail.orders} đơn
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100">
+              <p className="text-[11px] text-indigo-700 font-bold">Shopee — tiền về</p>
+              <p className="text-lg font-extrabold text-indigo-900">{vnd(s.escrowTotal)}</p>
+              <p className="text-[11px] text-indigo-600 mt-0.5">{s.orders} đơn đã giao</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Hàng 4 thẻ theo kỳ */}
       <section aria-label="Doanh thu Shopee" className="space-y-3">
