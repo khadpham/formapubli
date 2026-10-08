@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Plus, Upload, Building2 } from 'lucide-react';
+import { FileText, Plus, Upload, Building2, Sparkles } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
 import { CompanyProfileForm } from './CompanyProfileForm';
+import { AITemplateBuilder } from './AITemplateBuilder';
 
 interface ContractsTabProps {
   currentRole?: UserRole;
@@ -25,6 +26,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -128,6 +130,14 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           </button>
           <button
             type="button"
+            onClick={() => setAiBuilderOpen(true)}
+            className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition"
+            aria-label="Tạo mẫu hợp đồng bằng AI"
+          >
+            <Sparkles className="w-4 h-4 inline mr-1" />Tạo Mẫu Bằng AI
+          </button>
+          <button
+            type="button"
             onClick={() => setProfileOpen(true)}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition"
             aria-label="Thông tin công ty Bên A"
@@ -228,6 +238,12 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
         />
       )}
       {templatesOpen && <TemplateManagerModal onClose={() => setTemplatesOpen(false)} />}
+      {aiBuilderOpen && (
+        <AITemplateBuilder
+          onClose={() => setAiBuilderOpen(false)}
+          onSaved={() => { setAiBuilderOpen(false); setToast('Đã lưu mẫu AI — nhớ duyệt pháp lý trước khi dùng.'); }}
+        />
+      )}
       {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
     </div>
   );

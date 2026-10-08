@@ -250,6 +250,8 @@ const ALL_SUITES = [
   'scripts/test-owner-margin-p3.ts',
   // Tab Chủ GĐ3-P4: nợ vay + khóa sổ + quét rò rỉ mở rộng.
   'scripts/test-owner-loans-p4.ts',
+  // Contract AI GĐ1: soạn nháp từ mô tả + nhập từ Google Docs + chốt mẫu (mock LLM).
+  'scripts/test-contract-ai-gd1.ts',
 ];
 
 /**
