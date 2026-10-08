@@ -252,6 +252,8 @@ const ALL_SUITES = [
   'scripts/test-owner-loans-p4.ts',
   // Contract AI GĐ1: soạn nháp từ mô tả + nhập từ Google Docs + chốt mẫu (mock LLM).
   'scripts/test-contract-ai-gd1.ts',
+  // Contract AI GĐ2: checklist + trích text docx + AI tóm tắt + phản biện (mock LLM).
+  'scripts/test-contract-ai-gd2.ts',
 ];
 
 /**

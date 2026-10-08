@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Plus, Upload, Building2, Sparkles } from 'lucide-react';
+import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
 import { CompanyProfileForm } from './CompanyProfileForm';
 import { AITemplateBuilder } from './AITemplateBuilder';
+import { AIContractReview } from './AIContractReview';
 
 interface ContractsTabProps {
   currentRole?: UserRole;
@@ -27,6 +28,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
+  const [aiReviewOpen, setAiReviewOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -138,6 +140,14 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           </button>
           <button
             type="button"
+            onClick={() => setAiReviewOpen(true)}
+            className="px-4 py-2 bg-white border border-violet-300 text-violet-700 hover:bg-violet-50 rounded-xl text-xs font-bold transition"
+            aria-label="AI đọc và phản biện hợp đồng"
+          >
+            <ScanSearch className="w-4 h-4 inline mr-1" />AI Đọc & Phản Biện
+          </button>
+          <button
+            type="button"
             onClick={() => setProfileOpen(true)}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition"
             aria-label="Thông tin công ty Bên A"
@@ -244,6 +254,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           onSaved={() => { setAiBuilderOpen(false); setToast('Đã lưu mẫu AI — nhớ duyệt pháp lý trước khi dùng.'); }}
         />
       )}
+      {aiReviewOpen && <AIContractReview onClose={() => setAiReviewOpen(false)} />}
       {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
     </div>
   );

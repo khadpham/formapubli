@@ -993,6 +993,32 @@ export const contractTemplates = sqliteTable('contract_templates', {
   categoryIdx: index('idx_contract_templates_category').on(table.category),
 }));
 
+// 0051: Checklist phản biện + lịch sử review AI (Contract AI GĐ2).
+export const contractReviewChecklists = sqliteTable('contract_review_checklists', {
+  id: text('id').primaryKey(),
+  category: text('category').notNull(),
+  version: integer('version').notNull().default(1),
+  items: text('items').notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  categoryIdx: index('idx_review_checklists_category').on(table.category),
+}));
+
+export const contractReviews = sqliteTable('contract_reviews', {
+  id: text('id').primaryKey(),
+  sourceName: text('source_name'),
+  category: text('category'),
+  summary: text('summary'),
+  issues: text('issues'),
+  aiModel: text('ai_model'),
+  contentHash: text('content_hash').notNull(),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  hashIdx: index('idx_contract_reviews_hash').on(table.contentHash),
+}));
+
 export const contractDocuments = sqliteTable('contract_documents', {
   id: text('id').primaryKey(),
   contractNumber: text('contract_number').notNull().unique(),

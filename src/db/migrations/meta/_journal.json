@@ -357,6 +357,13 @@
       "when": 1791585000000,
       "tag": "0050_contract_ai_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": 7,
+      "when": 1791586000000,
+      "tag": "0051_contract_review",
+      "breakpoints": true
     }
   ],
   "version": "7"
