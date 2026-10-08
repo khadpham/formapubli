@@ -15,7 +15,7 @@ LUÔN NẮM TRẠNG THÁI (context awareness): trước khi trả lời, biết 
 TÁCH LỚP KHI CẦN: câu hỏi nhiều ý thì trả lời từng ý, nêu rõ ý nào dùng số liệu gì. Nếu thấy thiếu ý cần hỏi rõ thì nói thẳng cái định hỏi lại, chứ không đoán bừa.
 
 NGUYÊN TẮC BẤT BIẾN (5 LỚP BẢO VỆ):
-1. CHỈ ĐỌC (READ-ONLY): Bạn KHÔNG có bất kỳ quyền hạn nào để sửa kho, xuất tiền, hủy đơn, hay thay đổi cấu hình. Ngoại lệ duy nhất: prepare_sale_draft CHỈ đổ nháp vào giỏ POS, đơn chỉ hoàn tất khi người dùng tự bấm Thanh toán. Mọi thao tác ghi/duyệt khác đều vượt quá thẩm quyền của bạn.
+1. CHỈ ĐỌC (READ-ONLY): Bạn KHÔNG có bất kỳ quyền hạn nào để sửa kho, xuất tiền, hủy đơn, hay thay đổi cấu hình. Ngoại lệ duy nhất: prepare_sale_draft CHỈ đổ nháp vào giỏ POS (đơn chỉ hoàn tất khi người dùng tự bấm Thanh toán), và prepare_transfer_draft CHỈ chuẩn bị nháp phiếu chuyển kho (phiếu thật chỉ tạo khi người dùng bấm "Xác nhận tạo phiếu"). Mọi thao tác ghi/duyệt khác đều vượt quá thẩm quyền của bạn.
 2. SỐ LIỆU CHỈ ĐẾN TỪ TOOL: Mọi con số (tồn kho, doanh thu, số lệch két, đề xuất in, dòng đơn nháp) BẮT BUỘC phải lấy từ kết quả thực thi của 6 tool hệ thống. TUYỆT ĐỐI KHÔNG TỰ TÍNH TOÁN HAY BỊA ĐẶT CON SỐ.
 3. DANH MỤC TỪ TOOL: Mọi liệt kê sách/tác giả (sách của ai, tựa bắt đầu chữ gì, tác giả được yêu thích) BẮT BUỘC lấy từ query_catalog, không tự nhớ tên sách.
 3. CHUẨN MỰC KÉT TIỀN: Tuyệt đối không suy diễn số chênh lệch két (thừa/thiếu) thành hành vi gian lận hay buộc tội nhân viên. Luôn đính kèm lưu ý: "Số liệu đối soát ca làm việc, không phải kết luận sai phạm".
@@ -38,6 +38,7 @@ DANH SÁCH CÔNG CỤ ĐƯỢC PHÉP DÙNG:
 7. prepare_sale_draft(q?): LÊN ĐƠN NHÁP từ ngôn ngữ tự nhiên (mã/tên sách + số lượng + khách). CHỈ tạo nháp đổ vào giỏ POS — TUYỆT ĐỐI không tạo đơn hoàn tất, không trừ kho, không áp chiết khấu. Người dùng tự bấm Thanh toán ở POS.
 14. query_contracts(q?, status?): TRA CỨU HỢP ĐỒNG — theo số HĐ (HD-BQ-...), tiêu đề, trạng thái (DRAFT/FINALIZED/SIGNED/CANCELLED). Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
 15. query_agency_debt(q?): CÔNG NỢ ĐẠI LÝ — dư nợ, quá hạn, hạn mức theo đối tác. Luôn truyền nguyên văn câu hỏi vào "q" để server tự phân tích.
+16. prepare_transfer_draft(q?): CHUẨN BỊ PHIẾU CHUYỂN KHO — từ ngôn ngữ tự nhiên (kho gửi, kho nhận, mã sách + số lượng). CHỈ tạo nháp, TUYỆT ĐỐI không tạo phiếu thật, không trừ kho. Người dùng xem lại trong dialog và bấm "Xác nhận tạo phiếu" mới gọi API dispatch.
 `;
 
 export const ToolCallSchema = z.object({
@@ -57,6 +58,7 @@ export const ToolCallSchema = z.object({
     'query_order_lookup',
     'query_contracts',
     'query_agency_debt',
+    'prepare_transfer_draft',
   ]),
   args: z.record(z.any()).default({}),
 });
@@ -78,6 +80,15 @@ export const CopilotPlanSchema = z.object({
 });
 
 export type CopilotPlan = z.output<typeof CopilotPlanSchema>;
+
+/** GĐ2: schema cho lượt planner tiếp theo — chỉ CALL_TOOL hoặc FINISH. */
+export const PlanNextStepSchema = z.object({
+  action: z.enum(['CALL_TOOL', 'FINISH']),
+  toolCall: ToolCallSchema.optional(),
+  reason: nullableString(500),
+});
+
+export type PlanNextStep = z.output<typeof PlanNextStepSchema>;
 
 /** Một lượt hội thoại (dùng để nhớ ngữ cảnh câu trước). */
 export interface ChatTurn {
@@ -215,7 +226,7 @@ export class CopilotGuardrails {
     // thì cho luật nội bộ quyết định — LLM không được đòi sếp nói lại.
     const nNorm = removeAccents(question.toLowerCase());
     const needsData =
-      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho|sang hay chieu|buoi sang|buoi chieu|thang truoc|tuan truoc|ky truoc|tang bao nhieu|so voi|luan chuyen|phieu chuyen|hao hut|tra hang|hoan tien|qua da xuat|ma don|tra don|hop dong|hd-bq|cong no/.test(
+      /gio vang|ban luc may gio|ton kho|con bao nhieu|doanh thu|doanh so|ban chay|het hang|con ton|nhip ban|doi soat|ket ca|tai ban|can kho|sang hay chieu|buoi sang|buoi chieu|thang truoc|tuan truoc|ky truoc|tang bao nhieu|so voi|luan chuyen|phieu chuyen|hao hut|tra hang|hoan tien|qua da xuat|ma don|tra don|hop dong|hd-bq|cong no|lap phieu/.test(
         nNorm
       );
     // Luật thắng cả khi planner TRẢ LỜI TRỰC TIẾP lẫn khi TỪ CHỐI câu cần dữ
@@ -466,79 +477,206 @@ Trả về JSON chuẩn khớp schema:
 }`;
 
     try {
-      if (geminiKey) {
-        try {
-          const raw = await callGeminiWithFallback({
-            systemPrompt: plannerPrompt,
-            userText: question,
-            apiKey: geminiKey,
-            timeoutMs: 4000,
-            model: modelOverride && modelOverride !== 'local' ? modelOverride : undefined,
-            onModel: (m) => {
-              if (tracker) tracker.planner = 'gemini:' + m;
-            },
-          });
-          if (tracker && !tracker.planner) {
-            try {
-              tracker.planner = 'gemini:' + resolveGeminiModel();
-            } catch {
-              tracker.planner = 'gemini';
-            }
-          }
-          return parseLlmJson(raw, CopilotPlanSchema, 'CopilotGeminiPlanner');
-        } catch {
-          // Fallback to OpenAI if configured
-        }
-      }
-
-      // Groq 120B cho PLANNER — nhanh, chi tich 1 JSON nho, thay Gemini khi 503.
-      if (process.env.GROQ_API_KEY) {
-        try {
-          const raw = await callGroqChatJsonRaw({
-            systemPrompt: plannerPrompt,
-            userText: question,
-            apiKey: process.env.GROQ_API_KEY,
-            timeoutMs: 8000,
-            onModel: (m: string) => {
-              if (tracker) tracker.planner = 'groq:' + m;
-            },
-          });
-          return parseLlmJson(raw, CopilotPlanSchema, 'CopilotGroqPlanner');
-        } catch {
-          // tiep tuc xuong CF
-        }
-      }
-
-      // Cloudflare Workers AI free — tầng cuối cho PLANNER. Không có nó, khi
-      // Gemini 503 thì mọi cau nhieu y rơi ve heuristic (chi tra 1 tool).
-      if (process.env.WORKERS_AI_TOKEN && process.env.CF_ACCOUNT_ID) {
-        const raw = await callCfWorkerAiJsonRaw({
-          systemPrompt: plannerPrompt,
-          userText: question,
-          timeoutMs: 25000,
-          onModel: (m) => {
-            if (tracker) tracker.planner = 'cf:' + m.replace(/^@cf\//, '');
-          },
-        });
-        return parseLlmJson(raw, CopilotPlanSchema, 'CopilotCfPlanner');
-      }
-
-      if (openaiKey) {
-        const raw = await callOpenAIJsonRaw({
-          systemPrompt: plannerPrompt,
-          userText: question,
-          apiKey: openaiKey,
-          timeoutMs: 4000,
-        });
-        if (tracker) tracker.planner = 'openai:' + resolveOpenAIModel();
-        return parseLlmJson(raw, CopilotPlanSchema, 'CopilotOpenAIPlanner');
-      }
+      const raw = await this.callPlannerLlmRaw(plannerPrompt, question, tracker, modelOverride);
+      return parseLlmJson(raw, CopilotPlanSchema, 'CopilotPlanner');
     } catch (err) {
       console.warn('⚠️ Lỗi planner LLM, kích hoạt fallback heuristic:', err);
     }
 
     if (tracker) tracker.planner = 'nội bộ';
     return this.heuristicPlan(qLower);
+  }
+
+  /**
+   * GĐ2: gọi cascade planner LLM (Gemini → Groq → CF → OpenAI), trả về raw JSON.
+   * Ném lỗi khi không có key nào hoặc tất cả đều thất bại — caller tự fallback.
+   * Tách từ planQueryInner để planNextStep tái dùng (tránh duplicate cascade).
+   */
+  private static async callPlannerLlmRaw(
+    systemPrompt: string,
+    userText: string,
+    tracker?: { planner?: string },
+    modelOverride?: string
+  ): Promise<string> {
+    const geminiKey = modelOverride === 'local' ? undefined : process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+    const openaiKey = modelOverride === 'local' ? undefined : process.env.OPENAI_API_KEY;
+    if (geminiKey) {
+      try {
+        const raw = await callGeminiWithFallback({
+          systemPrompt,
+          userText,
+          apiKey: geminiKey,
+          timeoutMs: 4000,
+          model: modelOverride && modelOverride !== 'local' ? modelOverride : undefined,
+          onModel: (m) => {
+            if (tracker) tracker.planner = 'gemini:' + m;
+          },
+        });
+        if (tracker && !tracker.planner) {
+          try {
+            tracker.planner = 'gemini:' + resolveGeminiModel();
+          } catch {
+            tracker.planner = 'gemini';
+          }
+        }
+        return raw;
+      } catch {
+        // Fallback to OpenAI if configured
+      }
+    }
+
+    // Groq 120B cho PLANNER — nhanh, chi tich 1 JSON nho, thay Gemini khi 503.
+    if (process.env.GROQ_API_KEY) {
+      try {
+        const raw = await callGroqChatJsonRaw({
+          systemPrompt,
+          userText,
+          apiKey: process.env.GROQ_API_KEY,
+          timeoutMs: 8000,
+          onModel: (m: string) => {
+            if (tracker) tracker.planner = 'groq:' + m;
+          },
+        });
+        return raw;
+      } catch {
+        // tiep tuc xuong CF
+      }
+    }
+
+    // Cloudflare Workers AI free — tầng cuối cho PLANNER.
+    if (process.env.WORKERS_AI_TOKEN && process.env.CF_ACCOUNT_ID) {
+      const raw = await callCfWorkerAiJsonRaw({
+        systemPrompt,
+        userText,
+        timeoutMs: 25000,
+        onModel: (m) => {
+          if (tracker) tracker.planner = 'cf:' + m.replace(/^@cf\//, '');
+        },
+      });
+      return raw;
+    }
+
+    if (openaiKey) {
+      const raw = await callOpenAIJsonRaw({
+        systemPrompt,
+        userText,
+        apiKey: openaiKey,
+        timeoutMs: 4000,
+      });
+      if (tracker) tracker.planner = 'openai:' + resolveOpenAIModel();
+      return raw;
+    }
+
+    throw new Error('No planner LLM configured');
+  }
+
+  /**
+   * GĐ2: lượt planner tiếp theo trong vòng lặp. Nhận kết quả các tool đã chạy,
+   * quyết định gọi thêm 1 tool nữa hay FINISH. Không có LLM → FINISH ngay.
+   */
+  static async planNextStep(
+    question: string,
+    previousResults: Array<{ toolName: string; toolData: any }>,
+    history: ChatTurn[] = [],
+    modelOverride?: string
+  ): Promise<{ action: 'CALL_TOOL' | 'FINISH'; toolCall?: z.output<typeof ToolCallSchema>; reason: string }> {
+    const hasAnyKey =
+      process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY ||
+      process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY ||
+      (process.env.WORKERS_AI_TOKEN && process.env.CF_ACCOUNT_ID);
+    if (!hasAnyKey || modelOverride === 'local') {
+      return { action: 'FINISH', reason: 'No LLM for next-step planning' };
+    }
+    const doneList = previousResults.map((r) => r.toolName).join(', ');
+    const prompt = `${COPILOT_SYSTEM_PROMPT}
+
+BẠN ĐANG Ở LƯỢT TIẾP THEO của vòng lặp planner (GĐ2).
+CÂU HỎI GỐC của lãnh đạo: "${question.slice(0, 500)}"
+${renderHistoryForPrompt(history)}
+DỮ LIỆU ĐÃ CÓ từ các tool vừa chạy (${doneList || 'chưa có'}):
+${this.summarizeResults(previousResults)}
+
+NHIỆM VỤ: Dữ liệu trên đã đủ trả lời câu hỏi chưa?
+- Nếu ĐỦ → trả về {"action": "FINISH", "reason": "<tại sao đủ>"}.
+- Nếu CHƯA → trả về {"action": "CALL_TOOL", "toolCall": {"toolName": "<1 tool CÒN THIẾU>", "args": {...}}, "reason": "<tại sao cần>"}.
+QUY TẮC:
+- Chỉ 1 tool mỗi lượt. KHÔNG gọi lại tool đã chạy (${doneList || 'chưa có tool nào'}).
+- Chỉ gọi khi thật sự cần thêm dữ liệu; đừng gọi cho vui.
+- Trả về JSON chuẩn khớp schema.`;
+    try {
+      const raw = await this.callPlannerLlmRaw(prompt, question, undefined, modelOverride);
+      const parsed = parseLlmJson(raw, PlanNextStepSchema, 'CopilotNextStep');
+      if (parsed.action === 'CALL_TOOL' && !parsed.toolCall) {
+        return { action: 'FINISH', reason: 'LLM missing toolCall' };
+      }
+      return {
+        action: parsed.action,
+        ...(parsed.toolCall ? { toolCall: parsed.toolCall } : {}),
+        reason: parsed.reason || '',
+      };
+    } catch {
+      return { action: 'FINISH', reason: 'Next-step planner failed' };
+    }
+  }
+
+  /** Tóm tắt gọn kết quả tool để đưa vào prompt lượt tiếp theo. */
+  private static summarizeResults(results: Array<{ toolName: string; toolData: any }>): string {
+    if (results.length === 0) return '(chưa có dữ liệu)';
+    return results
+      .map(({ toolName, toolData }) => {
+        const s = JSON.stringify(toolData);
+        return `- ${toolName}: ${s.length > 600 ? s.slice(0, 600) + '…' : s}`;
+      })
+      .join('\n');
+  }
+
+  /**
+   * GĐ2: vòng lặp thực thi plan. Lượt 1 chạy plan ban đầu (CALL_TOOL/CALL_MANY);
+   * các lượt sau do planNextStep quyết định. Guard: tối đa maxTurns lượt,
+   * cấm gọi trùng tool+args đã chạy. Heuristic (allowLoop=false) giữ single-shot.
+   */
+  static async runPlanLoop(opts: {
+    question: string;
+    initialPlan: CopilotPlan;
+    allowLoop: boolean;
+    history?: ChatTurn[];
+    modelOverride?: string;
+    actor: { staffId: string; role: string };
+    maxTurns?: number;
+    onToolStart?: (toolName: string, label: string) => void | Promise<void>;
+    onToolDone?: (toolName: string) => void | Promise<void>;
+  }): Promise<{ results: Array<{ toolName: string; toolData: any }>; turns: number }> {
+    const maxTurns = Math.min(5, Math.max(1, Math.floor(opts.maxTurns ?? 3)));
+    const seen = new Set<string>();
+    const results: Array<{ toolName: string; toolData: any }> = [];
+    let plan: CopilotPlan | { action: 'CALL_TOOL' | 'FINISH'; toolCall?: z.output<typeof ToolCallSchema>; reason: string } = opts.initialPlan;
+    let turns = 0;
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      if (plan.action !== 'CALL_TOOL' && (plan as CopilotPlan).action !== 'CALL_MANY') break;
+      const steps =
+        (plan as CopilotPlan).action === 'CALL_MANY' && Array.isArray((plan as CopilotPlan).steps)
+          ? ((plan as CopilotPlan).steps as Array<{ toolName: string; args: any }>).slice(0, 4)
+          : plan.toolCall
+            ? [{ toolName: plan.toolCall.toolName, args: (plan.toolCall as any).args || {} }]
+            : [];
+      if (steps.length === 0) break;
+      turns++;
+      for (const step of steps) {
+        const key = `${step.toolName}:${JSON.stringify(step.args || {})}`;
+        if (seen.has(key)) continue; // guard: không gọi trùng tool+args
+        seen.add(key);
+        if (opts.onToolStart) await opts.onToolStart(step.toolName, '');
+        const toolData = await this.executeToolSafely(step.toolName, step.args || {}, opts.actor);
+        results.push({ toolName: step.toolName, toolData });
+        if (opts.onToolDone) await opts.onToolDone(step.toolName);
+      }
+      if (!opts.allowLoop) break;
+      const next = await this.planNextStep(opts.question, results, opts.history || [], opts.modelOverride);
+      if (next.action === 'FINISH') break;
+      plan = next;
+    }
+    return { results, turns };
   }
 
   /**
@@ -867,6 +1005,22 @@ Trả về JSON chuẩn khớp schema:
       };
     }
 
+    // Chuẩn bị phiếu chuyển kho MỚI ("lập phiếu chuyển", "chuyển N cuốn ... sang kho").
+    // Đặt TRƯỚC rule tra cứu lịch sử vì "lập phiếu chuyển" chứa "phieu chuyen".
+    // Phân biệt bằng động từ tạo mới — câu tra cứu ("lịch sử chuyển kho") không khớp.
+    const transferDraftIntent =
+      !n.includes('lich su') &&
+      (n.includes('lap phieu chuyen') || n.includes('tao phieu chuyen') ||
+        n.includes('phieu chuyen moi') ||
+        (/\bchuyen\b/.test(n) && /\d+\s*(cuon|quyen)/.test(n) && n.includes('kho') && n.includes('sang')));
+    if (transferDraftIntent) {
+      return {
+        action: 'CALL_TOOL',
+        toolCall: { toolName: 'prepare_transfer_draft', args: { q } },
+        reason: 'Heuristic keyword match: prepare transfer draft',
+      };
+    }
+
     // Luan chuyen kho ("phieu chuyen", "kho nao sang kho nao", "hao hut").
     if (transferIntent) {
       return {
@@ -1092,6 +1246,14 @@ Trả về JSON chuẩn khớp schema:
         result = await ExecutiveQueryService.queryAgencyDebt({
           q: typeof args.q === 'string' ? args.q : undefined,
           limit: this.numArg(args.limit, 10, 1, 10),
+        });
+        break;
+
+      case 'prepare_transfer_draft':
+        // Tool GHI pilot: chỉ CHUẨN BỊ draft, không ghi DB. Phiếu thật chỉ tạo
+        // khi người dùng bấm "Xác nhận tạo phiếu" trong dialog (gọi API dispatch).
+        result = await ExecutiveQueryService.prepareTransferDraft({
+          q: typeof args.q === 'string' ? args.q : undefined,
         });
         break;
 
