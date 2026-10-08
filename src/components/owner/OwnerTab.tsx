@@ -45,6 +45,17 @@ interface FinanceData {
     overdue: number;
     overdueCount: number;
   }[];
+  loans?: {
+    totalOutstanding: number;
+    activeCount: number;
+    dueSoon: { id: string; code: string; lender: string; outstanding: number; dueAt: string | null; daysToDue: number | null }[];
+    loans: {
+      id: string; code: string; lender: string; principal: number;
+      paidPrincipal: number; paidInterest: number; outstanding: number;
+      dueAt: string | null; status: string; daysToDue: number | null;
+    }[];
+  };
+  periodLock?: { locked: boolean; info: { month: string; lockedBy: string; lockedAt: string | null; note: string | null } | null };
   expenses: {
     total: number;
     byRecurrence: { MONTHLY: number; ONE_TIME: number };
@@ -95,6 +106,13 @@ export function OwnerTab() {
   const [editAmount, setEditAmount] = useState('');
   const [editNote, setEditNote] = useState('');
   const [marginChannel, setMarginChannel] = useState('');
+  // Nợ vay — GĐ3-P4.
+  const [loanLender, setLoanLender] = useState('');
+  const [loanPrincipal, setLoanPrincipal] = useState('');
+  const [loanBorrowedAt, setLoanBorrowedAt] = useState('');
+  const [loanDueAt, setLoanDueAt] = useState('');
+  const [loanRate, setLoanRate] = useState('');
+  const [savingLoan, setSavingLoan] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -176,6 +194,61 @@ export function OwnerTab() {
     }
   };
 
+  const submitLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const principal = Number(loanPrincipal);
+    if (!loanLender.trim()) {
+      showToast('Thiếu tên chủ nợ.');
+      return;
+    }
+    if (!Number.isFinite(principal) || principal <= 0) {
+      showToast('Số tiền vay phải lớn hơn 0.');
+      return;
+    }
+    if (!loanBorrowedAt) {
+      showToast('Thiếu ngày vay.');
+      return;
+    }
+    setSavingLoan(true);
+    try {
+      const r = await fetch('/api/owner/loans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lender: loanLender.trim(),
+          principal,
+          borrowedAt: loanBorrowedAt,
+          dueAt: loanDueAt || undefined,
+          interestRate: loanRate ? Number(loanRate) : undefined,
+        }),
+      }).then((x) => x.json());
+      if (r?.success) {
+        showToast(`Đã ghi nhận vay: ${loanLender.trim()} ${vnd(principal)}.`);
+        setLoanLender('');
+        setLoanPrincipal('');
+        setLoanBorrowedAt('');
+        setLoanDueAt('');
+        setLoanRate('');
+        load(month);
+      } else showToast(r?.error || 'Lưu thất bại.');
+    } catch {
+      showToast('Lưu thất bại.');
+    } finally {
+      setSavingLoan(false);
+    }
+  };
+
+  const lockPeriod = async () => {
+    if (!confirm(`Khóa sổ kỳ ${month}? Sau khi khóa sẽ không ghi/sửa chi phí trong kỳ này nữa.`)) return;
+    const r = await fetch('/api/owner/period-locks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, action: 'lock' }),
+    }).then((x) => x.json());
+    if (r?.success) { showToast(`Đã khóa sổ kỳ ${month}.`); load(month); }
+    else showToast(r?.error || 'Khóa sổ thất bại.');
+  };
+
   if (!data) {
     return (
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
@@ -217,6 +290,15 @@ export function OwnerTab() {
           />
         </label>
         <span className="text-[11px] text-slate-400">Số theo tháng VN đã chọn.</span>
+        {!data.periodLock?.locked && (
+          <button
+            onClick={lockPeriod}
+            className="ml-auto px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 min-h-[40px]"
+            title="Khóa sổ kỳ này sau khi đã quyết toán"
+          >
+            🔒 Khóa sổ kỳ {month}
+          </button>
+        )}
       </div>
 
       {/* Doanh thu theo kênh — GĐ3-P1 (chưa có giá vốn/biên) */}
@@ -373,6 +455,28 @@ export function OwnerTab() {
         </section>
       )}
 
+      {/* Khóa sổ kỳ — GĐ3-P4 */}
+      {data.periodLock?.locked && (
+        <div role="status" className="p-3 bg-slate-100 border border-slate-300 rounded-2xl text-xs text-slate-700 font-bold flex items-center justify-between gap-2">
+          <span>🔒 Kỳ {month} đã khóa sổ{data.periodLock.info?.lockedBy ? ` bởi ${data.periodLock.info.lockedBy}` : ''} — không ghi/sửa chi phí trong kỳ này nữa.</span>
+          <button
+            onClick={async () => {
+              if (!confirm(`Mở khóa sổ kỳ ${month}?`)) return;
+              const r = await fetch('/api/owner/period-locks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ month, action: 'unlock' }),
+              }).then((x) => x.json());
+              if (r?.success) { showToast(`Đã mở khóa kỳ ${month}.`); load(month); }
+              else showToast(r?.error || 'Mở khóa thất bại.');
+            }}
+            className="px-3 py-2 rounded-xl bg-slate-700 text-white text-xs font-bold min-h-[40px]"
+          >
+            Mở khóa
+          </button>
+        </div>
+      )}
+
       {/* Hàng 4 thẻ theo kỳ */}
       <section aria-label="Doanh thu Shopee" className="space-y-3">
         <h3 className="text-sm font-extrabold text-slate-700">Doanh thu Shopee — {month}</h3>
@@ -395,6 +499,88 @@ export function OwnerTab() {
           </div>
         </div>
       </section>
+
+      {/* Nợ vay — GĐ3-P4 */}
+      {data.loans && (
+        <section aria-label="Nợ vay" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
+          <h3 className="text-sm font-extrabold text-slate-800">
+            Nợ vay / Vốn huy động — dư nợ {vnd(data.loans.totalOutstanding)} ({data.loans.activeCount} khoản)
+          </h3>
+
+          {data.loans.dueSoon.length > 0 && (
+            <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 font-bold space-y-1">
+              <p>⚠️ Sắp đến hạn:</p>
+              {data.loans.dueSoon.map((l) => (
+                <p key={l.id}>
+                  {l.lender} — {vnd(l.outstanding)} (hạn {l.dueAt}
+                  {l.daysToDue !== null && l.daysToDue < 0 ? `, quá ${-l.daysToDue} ngày` : l.daysToDue === 0 ? ', hôm nay' : `, còn ${l.daysToDue} ngày`})
+                </p>
+              ))}
+            </div>
+          )}
+
+          {data.loans.loans.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b border-slate-100">
+                    <th className="py-2 pr-3 font-bold">Chủ nợ</th>
+                    <th className="py-2 pr-3 font-bold text-right">Vay</th>
+                    <th className="py-2 pr-3 font-bold text-right">Đã trả gốc</th>
+                    <th className="py-2 pr-3 font-bold text-right">Dư nợ</th>
+                    <th className="py-2 pr-3 font-bold">Hạn</th>
+                    <th className="py-2 font-bold">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.loans.loans.map((l) => (
+                    <tr key={l.id} className="border-b border-slate-50">
+                      <td className="py-2 pr-3 font-bold text-slate-700">{l.lender}<span className="block font-normal text-slate-400">{l.code}</span></td>
+                      <td className="py-2 pr-3 text-right text-slate-600">{vnd(l.principal)}</td>
+                      <td className="py-2 pr-3 text-right text-emerald-700 font-bold">{vnd(l.paidPrincipal)}</td>
+                      <td className="py-2 pr-3 text-right font-bold text-slate-800">{vnd(l.outstanding)}</td>
+                      <td className="py-2 pr-3 text-slate-600">{l.dueAt || '—'}</td>
+                      <td className="py-2 text-slate-600">{l.status === 'ACTIVE' ? 'Đang vay' : l.status === 'PAID' ? 'Đã trả hết' : 'Đã hủy'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <form onSubmit={submitLoan} className="flex flex-wrap items-end gap-2" aria-label="Thêm khoản vay">
+            <label className="text-xs font-bold text-slate-600">
+              Chủ nợ
+              <input type="text" value={loanLender} onChange={(e) => setLoanLender(e.target.value)} placeholder="VD: Anh A"
+                className="mt-1 block w-36 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Số tiền vay
+              <input type="number" min="1" step="1" value={loanPrincipal} onChange={(e) => setLoanPrincipal(e.target.value)} placeholder="VD: 500000000"
+                className="mt-1 block w-36 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Ngày vay
+              <input type="date" value={loanBorrowedAt} onChange={(e) => setLoanBorrowedAt(e.target.value)}
+                className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Kỳ hạn
+              <input type="date" value={loanDueAt} onChange={(e) => setLoanDueAt(e.target.value)}
+                className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Lãi suất %/năm
+              <input type="number" min="0" step="0.1" value={loanRate} onChange={(e) => setLoanRate(e.target.value)} placeholder="VD: 8"
+                className="mt-1 block w-28 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <button type="submit" disabled={savingLoan}
+              className="px-4 py-2 rounded-xl bg-slate-700 text-white text-xs font-bold min-h-[44px] disabled:opacity-50">
+              {savingLoan ? 'Đang lưu…' : 'Ghi nhận vay'}
+            </button>
+          </form>
+        </section>
+      )}
 
       {/* Thẻ Lãi ròng sau chi phí */}
       <section aria-label="Lãi ròng sau chi phí" className="p-4 bg-purple-50 border border-purple-200 rounded-2xl">
