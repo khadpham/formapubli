@@ -1044,3 +1044,24 @@ export const contractPresets = sqliteTable('contract_presets', {
 }, (table) => ({
   sortIdx: index('idx_contract_presets_sort').on(table.sortOrder),
 }));
+
+// 47. Print Orders — Lệnh in (GĐ3-P2). Chủ tạo lệnh in kèm đơn giá vốn thỏa thuận
+// với nhà in; thủ kho nhập kho đối chiếu lệnh in → hệ thống tự gắn giá vốn vào lô.
+// GIÁ VỐN CHỈ CHỦ ĐƯỢC THẤY — mọi API khác không được select cột unitCostAgreed.
+export const printOrders = sqliteTable('print_orders', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  editionId: text('edition_id').references(() => editions.id),
+  productId: text('product_id').notNull().references(() => products.id),
+  quantityPlanned: integer('quantity_planned').notNull(),
+  quantityReceived: integer('quantity_received').notNull().default(0),
+  unitCostAgreed: real('unit_cost_agreed').notNull(),
+  status: text('status').notNull().default('DRAFT'), // DRAFT | CONFIRMED | RECEIVING | DONE | CANCELLED
+  note: text('note'),
+  createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  statusIdx: index('idx_print_orders_status').on(table.status),
+  editionIdx: index('idx_print_orders_edition').on(table.editionId),
+}));

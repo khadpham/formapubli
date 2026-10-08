@@ -329,6 +329,13 @@
       "when": 1791489600000,
       "tag": "0046_contract_management",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": 7,
+      "when": 1791576000000,
+      "tag": "0047_print_orders",
+      "breakpoints": true
     }
   ],
   "version": "7"
