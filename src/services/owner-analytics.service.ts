@@ -12,6 +12,7 @@ import {
   warehouses,
   products,
   partners,
+  loans,
 } from '@/db';
 import { AppError } from './app-error';
 import { PartnerDebtService } from './partner-debt.service';
@@ -53,7 +54,7 @@ export async function computeCogsForPeriod(params: {
 }
 
 export interface MarginRow {
-  channel: 'ONLINE' | 'RETAIL' | 'AGENCY' | 'SHOPEE';
+  channel: 'ONLINE' | 'RETAIL' | 'WHOLESALE' | 'AGENCY' | 'SHOPEE';
   productId: string | null;
   name: string;
   qty: number;
@@ -87,7 +88,7 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
   interface RawRow { channel: MarginRow['channel']; productId: string | null; qty: number; revenue: number }
   const raw: RawRow[] = [];
 
-  // Đơn lẻ: ONLINE riêng, bán lẻ = FAIR_EVENT + RETAIL_OFFICE.
+  // Đơn lẻ: ONLINE riêng; bán lẻ = FAIR_EVENT + RETAIL_OFFICE; bán sỉ = WHOLESALE_PARTNER.
   const itemRows = await db
     .select({
       channel: orders.channel,
@@ -100,7 +101,7 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
     .where(
       and(
         eq(orders.status, 'COMPLETED'),
-        sql`${orders.channel} IN ('ONLINE', 'FAIR_EVENT', 'RETAIL_OFFICE')`,
+        sql`${orders.channel} IN ('ONLINE', 'FAIR_EVENT', 'RETAIL_OFFICE', 'WHOLESALE_PARTNER')`,
         gte(orders.createdAt, start),
         lt(orders.createdAt, end)
       )
@@ -127,8 +128,10 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
     .groupBy(deliveryOrderItems.editionId);
 
   for (const r of itemRows) {
+    const ch: MarginRow['channel'] =
+      r.channel === 'ONLINE' ? 'ONLINE' : r.channel === 'WHOLESALE_PARTNER' ? 'WHOLESALE' : 'RETAIL';
     raw.push({
-      channel: r.channel === 'ONLINE' ? 'ONLINE' : 'RETAIL',
+      channel: ch,
       productId: r.productId,
       qty: num(r.qty),
       revenue: num(r.revenue),
@@ -147,14 +150,14 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
       cogsRows: sql<number>`coalesce(sum(CASE WHEN ${shopeeOrderFinance.cogs} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
     })
     .from(shopeeOrderFinance)
-    .where(sql`${shopeeOrderFinance.syncedAt} LIKE ${month + '%'}`);
+    .where(and(gte(shopeeOrderFinance.syncedAt, start), lt(shopeeOrderFinance.syncedAt, end)));
 
   // Giá vốn FIFO theo sản phẩm (1 lần/sản phẩm), rồi phân bổ theo SL từng dòng.
-  const fifoCache = new Map<string, { cogs: number; unknownCostQty: number; dispatchedQty: number }>();
+  const fifoCache = new Map<string, { cogs: number; unknownCostQty: number }>();
   const fifoOf = async (pid: string) => {
     if (!fifoCache.has(pid)) {
       const r = await computeCogsForPeriod({ productId: pid, startUtc: start, endUtc: end });
-      fifoCache.set(pid, { cogs: r.cogs, unknownCostQty: r.unknownQty, dispatchedQty: r.dispatchedQty });
+      fifoCache.set(pid, { cogs: r.cogs, unknownCostQty: r.unknownQty });
     }
     return fifoCache.get(pid)!;
   };
@@ -300,8 +303,26 @@ export async function getCashByAccount(month: string, actorRole: UserRole): Prom
   const [sh] = await db
     .select({ escrow: sql<number>`coalesce(sum(${shopeeOrderFinance.escrowAmount}), 0)` })
     .from(shopeeOrderFinance)
-    .where(sql`${shopeeOrderFinance.syncedAt} LIKE ${month + '%'}`);
+    .where(and(gte(shopeeOrderFinance.syncedAt, start), lt(shopeeOrderFinance.syncedAt, end)));
   add('sh:escrow', 'Shopee (chờ rút)', null, num(sh?.escrow), 'Shopee');
+
+  // Vốn vay giải ngân trong tháng — dòng tiền vào.
+  const loanRows = await db
+    .select({
+      lender: loans.lender,
+      amount: sql<number>`coalesce(sum(${loans.principal}), 0)`,
+    })
+    .from(loans)
+    .where(
+      and(
+        sql`${loans.borrowedAt} LIKE ${month + '%'}`,
+        sql`${loans.status} != 'CANCELLED'`
+      )
+    )
+    .groupBy(loans.lender);
+  for (const r of loanRows) {
+    add(`acct:vay:${r.lender}`, `Vốn vay — ${r.lender}`, null, num(r.amount), 'Vốn vay');
+  }
 
   return [...buckets.values()].sort((a, b) => b.amount - a.amount);
 }

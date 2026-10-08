@@ -12,6 +12,7 @@ import { AppError } from '../src/services/app-error';
 import { LoanService } from '../src/services/loan.service';
 import { PeriodLockService } from '../src/services/period-lock.service';
 import { addExpense } from '../src/services/expense.service';
+import { getCashByAccount } from '../src/services/owner-analytics.service';
 
 assertIsolatedTestDb('test-owner-loans-p4');
 
@@ -95,6 +96,18 @@ async function main() {
   ov = await LoanService.overview(OWNER);
   eq2('cảnh báo 1 khoản sắp đến hạn', ov.dueSoon.length, 1);
   eq2('đúng chủ nợ Chị Tư', ov.dueSoon[0]?.lender, 'Chị Tư');
+
+  // 4b. Tiền vay giải ngân trong tháng vào dòng tiền (delta với baseline).
+  const cashBefore = await getCashByAccount('2026-10', OWNER);
+  await LoanService.create({
+    lender: 'Chú Năm', principal: 200000000, borrowedAt: '2026-10-05',
+    actorRole: OWNER, actorId: 'ADMIN-01',
+  });
+  const cashAfter = await getCashByAccount('2026-10', OWNER);
+  const bucketDelta = (label: string) =>
+    (cashAfter.find((b) => b.label === label)?.amount || 0) -
+    (cashBefore.find((b) => b.label === label)?.amount || 0);
+  eq2('vốn vay vào dòng tiền', bucketDelta('Vốn vay — Chú Năm'), 200000000);
 
   // 5. Khóa sổ: khóa kỳ 2026-09 → ghi chi phí kỳ đó bị chặn.
   await PeriodLockService.lock('2026-09', OWNER, 'ADMIN-01', 'Quyết toán xong');

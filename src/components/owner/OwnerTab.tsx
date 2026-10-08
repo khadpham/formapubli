@@ -14,7 +14,7 @@ interface ExpenseEntry {
 }
 
 interface MarginRow {
-  channel: 'ONLINE' | 'RETAIL' | 'AGENCY' | 'SHOPEE';
+  channel: 'ONLINE' | 'RETAIL' | 'WHOLESALE' | 'AGENCY' | 'SHOPEE';
   productId: string | null;
   name: string;
   qty: number;
@@ -32,6 +32,7 @@ interface FinanceData {
     agency: { orders: number; receivable: number; received: number; balance: number };
     online: { orders: number; revenue: number };
     retail: { orders: number; revenue: number; cash: number; bankQr: number };
+    wholesale?: { orders: number; revenue: number };
   };
   totals?: { cashCollected: number };
   margin?: MarginRow[];
@@ -67,6 +68,7 @@ interface FinanceData {
 const CHANNEL_LABEL: Record<string, string> = {
   ONLINE: 'Online',
   RETAIL: 'Bán lẻ',
+  WHOLESALE: 'Bán sỉ',
   AGENCY: 'Đại lý',
   SHOPEE: 'Shopee',
 };
@@ -113,6 +115,13 @@ export function OwnerTab() {
   const [loanDueAt, setLoanDueAt] = useState('');
   const [loanRate, setLoanRate] = useState('');
   const [savingLoan, setSavingLoan] = useState(false);
+  // Ghi nhận trả nợ.
+  const [payLoanId, setPayLoanId] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payPrincipal, setPayPrincipal] = useState('');
+  const [payInterest, setPayInterest] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [savingPay, setSavingPay] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -238,6 +247,45 @@ export function OwnerTab() {
     }
   };
 
+  const submitPay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = Number(payAmount);
+    if (!payLoanId || !Number.isFinite(amount) || amount <= 0) {
+      showToast('Chọn khoản vay và nhập số tiền trả > 0.');
+      return;
+    }
+    if (!payDate) {
+      showToast('Thiếu ngày trả.');
+      return;
+    }
+    setSavingPay(true);
+    try {
+      const r = await fetch(`/api/owner/loans/${encodeURIComponent(payLoanId)}/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          principalAmount: payPrincipal ? Number(payPrincipal) : undefined,
+          interestAmount: payInterest ? Number(payInterest) : undefined,
+          paidAt: payDate,
+        }),
+      }).then((x) => x.json());
+      if (r?.success) {
+        showToast(`Đã ghi nhận trả ${vnd(amount)}.`);
+        setPayLoanId('');
+        setPayAmount('');
+        setPayPrincipal('');
+        setPayInterest('');
+        setPayDate('');
+        load(month);
+      } else showToast(r?.error || 'Lưu thất bại.');
+    } catch {
+      showToast('Lưu thất bại.');
+    } finally {
+      setSavingPay(false);
+    }
+  };
+
   const lockPeriod = async () => {
     if (!confirm(`Khóa sổ kỳ ${month}? Sau khi khóa sẽ không ghi/sửa chi phí trong kỳ này nữa.`)) return;
     const r = await fetch('/api/owner/period-locks', {
@@ -326,6 +374,11 @@ export function OwnerTab() {
               <p className="text-[11px] text-teal-600 mt-0.5">
                 Tiền mặt {vnd(data.channels.retail.cash)} · CK/QR {vnd(data.channels.retail.bankQr)} · {data.channels.retail.orders} đơn
               </p>
+              {data.channels.wholesale && data.channels.wholesale.orders > 0 && (
+                <p className="text-[11px] text-teal-600 mt-0.5">
+                  Bán sỉ tại quầy {vnd(data.channels.wholesale.revenue)} · {data.channels.wholesale.orders} đơn
+                </p>
+              )}
             </div>
             <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100">
               <p className="text-[11px] text-indigo-700 font-bold">Shopee — tiền về</p>
@@ -351,6 +404,7 @@ export function OwnerTab() {
                 <option value="">Tất cả</option>
                 <option value="ONLINE">Online</option>
                 <option value="RETAIL">Bán lẻ</option>
+                <option value="WHOLESALE">Bán sỉ</option>
                 <option value="AGENCY">Đại lý</option>
                 <option value="SHOPEE">Shopee</option>
               </select>
@@ -547,6 +601,43 @@ export function OwnerTab() {
               </table>
             </div>
           )}
+
+          <form onSubmit={submitPay} className="flex flex-wrap items-end gap-2" aria-label="Ghi nhận trả nợ">
+            <label className="text-xs font-bold text-slate-600">
+              Khoản vay
+              <select value={payLoanId} onChange={(e) => setPayLoanId(e.target.value)}
+                className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]">
+                <option value="">—</option>
+                {(data.loans?.loans || []).filter((l) => l.status === 'ACTIVE').map((l) => (
+                  <option key={l.id} value={l.id}>{l.lender} — dư {vnd(l.outstanding)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Số tiền trả
+              <input type="number" min="1" step="1" value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
+                className="mt-1 block w-32 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Trong đó gốc
+              <input type="number" min="0" step="1" value={payPrincipal} onChange={(e) => setPayPrincipal(e.target.value)} placeholder="Để trống = cả cục"
+                className="mt-1 block w-32 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Trong đó lãi
+              <input type="number" min="0" step="1" value={payInterest} onChange={(e) => setPayInterest(e.target.value)} placeholder="Để trống = 0"
+                className="mt-1 block w-32 px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <label className="text-xs font-bold text-slate-600">
+              Ngày trả
+              <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)}
+                className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]" />
+            </label>
+            <button type="submit" disabled={savingPay}
+              className="px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold min-h-[44px] disabled:opacity-50">
+              {savingPay ? 'Đang lưu…' : 'Ghi nhận trả'}
+            </button>
+          </form>
 
           <form onSubmit={submitLoan} className="flex flex-wrap items-end gap-2" aria-label="Thêm khoản vay">
             <label className="text-xs font-bold text-slate-600">
