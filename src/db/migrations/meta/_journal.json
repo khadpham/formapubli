@@ -350,6 +350,13 @@
       "when": 1791584000000,
       "tag": "0049_loans_period_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": 7,
+      "when": 1791585000000,
+      "tag": "0050_contract_ai_flags",
+      "breakpoints": true
     }
   ],
   "version": "7"

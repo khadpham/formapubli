@@ -984,6 +984,9 @@ export const contractTemplates = sqliteTable('contract_templates', {
   schemaFields: text('schema_fields').notNull(),
   version: integer('version').notNull().default(1),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  legalReviewed: integer('legal_reviewed', { mode: 'boolean' }).notNull().default(false),
+  aiGenerated: integer('ai_generated', { mode: 'boolean' }).notNull().default(false),
+  sourceUrl: text('source_url'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
