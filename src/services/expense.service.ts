@@ -5,6 +5,7 @@ import { AppError } from './app-error';
 import type { UserRole } from '@/lib/roles';
 import { vnDayOf } from '@/lib/vn-time';
 import { recordAuditLog } from '@/lib/rbac-guard';
+import { PeriodLockService } from './period-lock.service';
 
 /** Loại chi phí hợp lệ — nguồn sự thật cho test + UI. GĐ2 mở rộng ở ĐÂY. */
 export const EXPENSE_CATEGORIES = [
@@ -101,6 +102,10 @@ async function validateAndShape(
   const entryDate = `${input.entryDate || ''}`.trim() || vnDayOf(new Date()) || '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
     throw AppError.invalid('Ngày chi phí phải dạng YYYY-MM-DD.');
+  }
+  // GĐ3-P4: kỳ đã khóa sổ thì không ghi/sửa chi phí nữa.
+  if (await PeriodLockService.isLocked(entryDate.slice(0, 7))) {
+    throw AppError.forbidden(`Kỳ ${entryDate.slice(0, 7)} đã khóa sổ. Chỉ chủ mở khóa mới được ghi tiếp.`);
   }
   const row: typeof expenseEntries.$inferInsert = {
     id: `exp-${randomUUID()}`,
