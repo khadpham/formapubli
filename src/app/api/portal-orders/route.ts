@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
-import { db, customers } from '@/db';
+import { db, customers, editions } from '@/db';
 import { eq } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 
@@ -13,8 +13,9 @@ export const dynamic = 'force-dynamic';
  *
  * Luồng:
  * 1. Tìm hoặc tạo customer theo email.
- * 2. Tạo order với channel=ONLINE, status=PENDING_CONFIRMATION (giữ chỗ ATP).
- * 3. Trả về orderId để portal theo dõi.
+ * 2. Tra edition theo SKU code (H82, H83...).
+ * 3. Tạo order với channel=ONLINE, status=PENDING_CONFIRMATION (giữ chỗ ATP).
+ * 4. Trả về orderId để portal theo dõi.
  *
  * Body:
  * {
@@ -23,23 +24,12 @@ export const dynamic = 'force-dynamic';
  *   name: string,
  *   phone: string,
  *   address: string,
- *   items: [{ portalProductId: string, qty: number }],
+ *   items: [{ sku: "H82", qty: 2 }],  // SKU code từ bảng editions
  *   paymentMethod: 'COD' | 'BANK_TRANSFER',
  *   shippingFee: number,
  *   hasGift: boolean
  * }
  */
-
-// Map portal product ID → formapubli edition ID.
-// Cấu hình qua env PORTAL_PRODUCT_MAP (JSON): {"nu-cong-tuoc-de-langeais":"edition-id",...}
-// Để nhân viên tự cập nhật khi thêm sách mới mà không cần sửa code.
-function getProductMap(): Record<string, string> {
-  try {
-    return JSON.parse(process.env.PORTAL_PRODUCT_MAP || '{}');
-  } catch {
-    return {};
-  }
-}
 
 function unauthorized() {
   return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
@@ -74,25 +64,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Map sản phẩm portal → edition
-    const productMap = getProductMap();
+    // 1. Tra edition theo SKU code (H82, H83...)
+    // Map portal product ID → SKU code (cố định, không cần cấu hình)
+    const PORTAL_SKU_MAP: Record<string, string> = {
+      'nu-cong-tuoc-de-langeais': 'H82',
+      'mot-vu-viec-am-muoi': 'H83',
+      'nicholas-nickleby': 'H84',
+      'la-do-ngan-2': 'H86',
+      'cach-ton-tai-rieng': 'H87',
+      'ngan-1-in-lan-2': 'H88',
+    };
     const orderItems: Array<{ editionId: string; quantity: number; isGiftLine?: boolean }> = [];
     for (const it of items) {
-      const editionId = productMap[it.portalProductId];
-      if (!editionId) {
+      const sku = PORTAL_SKU_MAP[it.portalProductId] || it.sku;
+      if (!sku) {
         return NextResponse.json(
-          { success: false, error: `Chưa map sản phẩm portal: ${it.portalProductId}` },
+          { success: false, error: `Thiếu SKU cho sản phẩm: ${it.portalProductId}` },
+          { status: 400 },
+        );
+      }
+      const edition = (
+        await db.select({ id: editions.id }).from(editions).where(eq(editions.code, sku)).limit(1)
+      )[0];
+      if (!edition) {
+        return NextResponse.json(
+          { success: false, error: `Không tìm thấy ấn bản với mã: ${sku}` },
           { status: 400 },
         );
       }
       const qty = Math.floor(Number(it.qty));
       if (!Number.isFinite(qty) || qty < 1 || qty > 99) {
         return NextResponse.json(
-          { success: false, error: `Số lượng không hợp lệ: ${it.portalProductId}` },
+          { success: false, error: `Số lượng không hợp lệ: ${sku}` },
           { status: 400 },
         );
       }
-      orderItems.push({ editionId, quantity: qty });
+      orderItems.push({ editionId: edition.id, quantity: qty });
     }
     // Quà tri ân: dòng quà 0đ
     if (hasGift) {
