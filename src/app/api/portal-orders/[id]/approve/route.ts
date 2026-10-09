@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole } from '@/lib/auth-session';
-import { db, orders, orderItems } from '@/db';
+import { db, orders, orderItems, inventoryLedger } from '@/db';
 import { eq, and } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
-import { OrderService } from '@/services/order.service';
+import { InventoryService } from '@/services/inventory.service';
+import { withDbRetry } from '@/lib/db-retry';
+import { AppError } from '@/services/app-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +19,7 @@ export const dynamic = 'force-dynamic';
  *
  * Quyền: ROLE_WAREHOUSE, ROLE_MANAGER, ROLE_OWNER
  *
- * Idempotent: nếu đã duyệt (đã có bút toán xuất) thì trả về thành công luôn.
+ * Idempotent: nếu đã duyệt (đã có bút toán DISPATCH_SALE) thì trả về thành công luôn.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -27,34 +29,77 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'ROLE_WAREHOUSE',
     ] as UserRole[]);
     const { id } = await params;
-
-    // Kiểm tra đơn tồn tại, là đơn ONLINE đang PENDING
-    const order = (
-      await db.select().from(orders).where(eq(orders.id, id)).limit(1)
-    )[0];
-    if (!order) {
-      return NextResponse.json({ success: false, error: 'Không tìm thấy đơn.' }, { status: 404 });
-    }
-    if (order.channel !== 'ONLINE') {
+    const actorId = session.staffId || (session as any).userId;
+    if (!actorId) {
       return NextResponse.json(
-        { success: false, error: 'Chỉ duyệt được đơn online.' },
-        { status: 400 }
-      );
-    }
-    if (order.status !== 'PENDING_CONFIRMATION') {
-      return NextResponse.json(
-        { success: false, error: `Đơn đang ở trạng thái ${order.status}, không thể duyệt.` },
-        { status: 400 }
+        { success: false, error: 'Thiếu định danh người duyệt.' },
+        { status: 403 }
       );
     }
 
-    // Gọi OrderService để trừ kho (dùng logic duyệt chuẩn, idempotent)
-    // confirmOrder sẽ trừ kho và giữ đơn ở trạng thái phù hợp cho luồng portal
-    const result = await OrderService.approvePortalOrder(
-      id,
-      session.role,
-      session.staffId || session.userId
-    );
+    const result = await withDbRetry(async () => {
+      return await db.transaction(async (tx) => {
+        // 1. Kiểm tra đơn
+        const ord = (await tx.select().from(orders).where(eq(orders.id, id)).limit(1))[0];
+        if (!ord) throw AppError.notFound('Không tìm thấy đơn.');
+        if (ord.channel !== 'ONLINE') throw AppError.invalid('Chỉ duyệt được đơn online.');
+        if (ord.status !== 'PENDING_CONFIRMATION') {
+          throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể duyệt.`);
+        }
+
+        // 2. Idempotent: đã có bút toán xuất chưa
+        const existing = await tx
+          .select({ id: inventoryLedger.id })
+          .from(inventoryLedger)
+          .where(
+            and(
+              eq(inventoryLedger.correlationId, id),
+              eq(inventoryLedger.eventType, 'DISPATCH_SALE')
+            )
+          )
+          .limit(1);
+        if (existing.length > 0) {
+          return { orderId: id, orderCode: ord.orderCode, alreadyApproved: true };
+        }
+
+        // 3. Lấy items + trừ kho
+        const lines = await tx.select().from(orderItems).where(eq(orderItems.orderId, id));
+        if (!lines.length) throw AppError.invalid('Đơn không có dòng hàng nào.');
+
+        await InventoryService.recordMovementsBatch(
+          lines.map((ln: any) => ({
+            productId: ln.productId,
+            editionId: ln.productId,
+            isBook: !String(ln.productId).startsWith('pr-'),
+            quantityDelta: -ln.quantity,
+            condition: 'NEW' as const,
+          })),
+          {
+            warehouseId: ord.warehouseId,
+            eventType: 'DISPATCH_SALE',
+            documentRef: ord.orderCode,
+            note: `Duyệt đơn portal ${ord.orderCode} (trừ kho, chờ giao hàng)`,
+            actorId,
+            correlationId: id,
+            idempotencyPrefix: `idem-approve-portal-${id}`,
+          },
+          tx
+        );
+
+        // 4. Đơn COD: set số tiền phải thu
+        if (ord.paymentMethod === 'COD') {
+          await tx
+            .update(orders)
+            .set({
+              codAmount: (ord as any).finalAmount || 0,
+              codStatus: 'PENDING',
+            })
+            .where(eq(orders.id, id));
+        }
+
+        return { orderId: id, orderCode: ord.orderCode, alreadyApproved: false };
+      });
+    });
 
     return NextResponse.json({ success: true, data: result });
   } catch (e) {
