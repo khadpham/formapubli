@@ -64,8 +64,8 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
 
   useEffect(() => {
     load();
-    // Danh sách kho để gán phụ trách (thu ngân hội chợ / kho cố định).
-    fetch('/api/warehouses?all=true', { cache: 'no-store' })
+    // Danh sách kho để gán phụ trách (màn quản trị: thấy cả kho ngưng).
+    fetch('/api/warehouses?all=true&includeInactive=true', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => { if (Array.isArray(j?.data)) setWarehouses(j.data); })
       .catch(() => {});

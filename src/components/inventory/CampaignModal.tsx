@@ -57,7 +57,7 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
       try {
         const [c, w, s, b] = await Promise.all([
           fetch('/api/campaigns', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
-          fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
+          fetch('/api/warehouses?all=true&includeInactive=true', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
           fetch('/api/staff', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
           fetch('/api/bank-accounts').then((r) => r.json()).catch(() => null),
         ]);
@@ -89,7 +89,7 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
 
   const refreshDetail = async () => {
     try {
-      const w = await fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json());
+      const w = await fetch('/api/warehouses?all=true&includeInactive=true', { cache: 'no-store' }).then((r) => r.json());
       if (Array.isArray(w?.data)) setFullWh(w.data);
       const s = await fetch('/api/staff', { cache: 'no-store' }).then((r) => r.json());
       if (Array.isArray(s?.data)) setStaff(s.data);

@@ -225,6 +225,8 @@ const ALL_SUITES = [
   'scripts/test-warehouse-labels.ts',
   // Luật 1 modal/lúc: tạo kho inline trong manager, chiến dịch là nút+modal quản lý.
   'scripts/test-campaign-modal.ts',
+  // Kho ngưng = archive: biến khỏi mọi chỗ chọn, chỉ màn quản trị xin rõ.
+  'scripts/test-warehouse-archive.ts',
   // Shopee UI ẩn: config runtime + cờ server (không đụng DB chung ngoài bảng settings).
   'scripts/test-shopee-shop-config.ts',
   'scripts/test-shopee-ui-hidden.ts',

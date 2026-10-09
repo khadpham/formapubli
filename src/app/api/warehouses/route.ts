@@ -52,6 +52,11 @@ export async function GET(req: NextRequest) {
 
     const list = getAll && isPrivileged ? await WarehouseService.listAll() : await WarehouseService.listSellable();
 
+    // Archive: kho đã ngưng biến khỏi mọi chỗ chọn. Chỉ màn quản trị cần thấy
+    // (mở lại/xem lịch sử) thì xin rõ qua ?includeInactive=true.
+    const includeInactive = searchParams.get('includeInactive') === 'true' && isPrivileged;
+    const visible = includeInactive ? list : list.filter((w) => (w as any).isActive !== false);
+
     // Số lượng BÁN ĐƯỢC trong từng kho (1 query gộp) để quản lý thấy kho nào còn
     // hàng. CHỈ quản lý/thủ kho được xem. Trước đây chỉ chặn theo `getAll`, nên thu
     // ngân gọi `?all=true` (đúng URL mà VietQrPay dùng để lấy mẫu nội dung) là lộ
@@ -72,7 +77,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: list.map((w) => ({
+      data: visible.map((w) => ({
         id: w.id,
         code: w.code,
         name: w.name,

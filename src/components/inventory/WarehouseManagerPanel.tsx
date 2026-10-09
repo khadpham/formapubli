@@ -143,7 +143,7 @@ export function WarehouseManagerPanel({
   });
 
   const load = async () => {
-    const j = await fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json());
+    const j = await fetch('/api/warehouses?all=true&includeInactive=true', { cache: 'no-store' }).then((r) => r.json());
     if (j?.success && Array.isArray(j.data)) setWarehouses(j.data);
     else setError('Không tải được danh sách kho.');
   };
