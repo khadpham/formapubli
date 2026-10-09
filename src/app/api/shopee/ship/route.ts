@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_WAREHOUSE',
-      'ROLE_SHOPEE_OPS',
+      'ROLE_SHOPEE_OPS', 'ROLE_WAREHOUSE',
     ] as UserRole[]);
     const body = (await req.json().catch(() => ({}))) as { orderSn?: string };
     const orderSn = `${body.orderSn || ''}`.trim();
