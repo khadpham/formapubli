@@ -204,10 +204,18 @@ export async function POST(req: NextRequest) {
     });
 
     // 0055: lưu mã portal để khách tra đơn bằng mã của họ (datmua).
-    await db
-      .update(orders)
-      .set({ portalRef: madon })
-      .where(eq(orders.id, (order as any).id));
+    // Không để lỗi phụ này giết đơn đã tạo: bắt riêng, log đầy đủ nguyên nhân.
+    try {
+      await db
+        .update(orders)
+        .set({ portalRef: madon })
+        .where(eq(orders.id, (order as any).id));
+    } catch (refErr: any) {
+      console.error(
+        `[portal-orders] portal_ref SAVE FAILED madon=${madonForLog} order=${(order as any)?.orderCode} ` +
+          `code=${refErr?.code || ''} cause=${refErr?.cause?.message || refErr?.cause?.code || ''} msg=${refErr?.message || refErr}`
+      );
+    }
 
     const ord = order as unknown as { id: string; orderCode: string };
     console.log(

@@ -58,7 +58,7 @@ async function main() {
           args: [o.id],
         })
       ).rows as any[];
-      const m = /Mã portal:\s*(\S+)/.exec(`${o.note || ''}`);
+      const m = /Mã portal:\s*(\S+?)[.,;:]?(?:\s|$)/.exec(`${o.note || ''}`);
       const portalRef = m?.[1] || null;
 
       console.log(`\n${o.order_code}: dòng null=${nullLines.length}, portal_ref=${portalRef || '(none)'}`);
