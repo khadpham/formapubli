@@ -46,6 +46,39 @@ async function main() {
 
     const wh = (await db.execute('SELECT id FROM warehouses ORDER BY id')).rows as any[];
     console.log(`PROD kho (${wh.length}): ${wh.map((w) => w.id).join(', ')}`);
+
+    try {
+      const ps = (await db.execute('SELECT key, value FROM portal_settings')).rows as any[];
+      console.log(
+        `PROD portal_settings: ${ps.length ? ps.map((r) => `${r.key}=${r.value}`).join(', ') : '(trống — chưa chọn kho fulfill)'}`
+      );
+    } catch (err: any) {
+      console.log(`PROD portal_settings: THIẾU BẢNG (${err?.message || err}) — cần chạy migration 0053`);
+    }
+
+    // Đơn portal rỗng mà cấu hình đã có → xem datmua chết ở bước nào:
+    // customer cust-portal-* tồn tại mà không có đơn = createOrder ném lỗi.
+    const pc = (
+      await db.execute(
+        "SELECT id, code, email FROM customers WHERE id LIKE 'cust-portal-%' OR code LIKE 'CUST-P%' ORDER BY rowid DESC LIMIT 5"
+      )
+    ).rows as any[];
+    console.log(`PROD customer do portal tạo: ${pc.length}`);
+    for (const c of pc) console.log(`  - ${c.code} ${c.email}`);
+
+    const eds = (
+      await db.execute(
+        "SELECT code FROM editions WHERE code IN ('H82','H83','H84','H86','H87','H88')"
+      )
+    ).rows as any[];
+    console.log(`PROD ấn bản H82-H88: ${eds.length ? eds.map((e) => e.code).join(', ') : 'KHÔNG có mã nào!'}`);
+
+    const ful = (
+      await db.execute(
+        "SELECT id, is_active FROM warehouses WHERE id='wh-kho-dh-ha-noi-thang-10-2026'"
+      )
+    ).rows as any[];
+    console.log(`PROD kho fulfill: ${ful.length ? `is_active=${ful[0].is_active}` : 'KHÔNG tồn tại!'}`);
   } finally {
     try {
       (db as any).close?.();
