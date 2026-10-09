@@ -81,17 +81,22 @@ Gọi lại cùng madon → trả về đơn cũ, không tạo trùng.
 Ví dụ: `{"nu-cong-tuoc-de-langeais":"ed-xxx","nicholas-nickleby":"ed-yyy"}`
 Chưa map → API trả 400, portal log lỗi để nhân viên xử lý tay.
 
-### API cho thủ kho
+## UI Soạn hàng (tab Kho)
 
-**GET /api/portal-orders/picking** — Danh sách soạn hàng.
-Chỉ trả thông tin đóng gói (tên, SĐT, địa chỉ, sách, SL), KHÔNG có giá/doanh thu.
-Quyền: ROLE_WAREHOUSE, ROLE_MANAGER, ROLE_OWNER.
+Component `PortalOrdersPanel` trong tab Kho (hiện cho Thủ Kho / Shopee, Owner, Manager):
+- Danh sách đơn online chờ xử lý (kênh ONLINE, trạng thái PENDING_CONFIRMATION)
+- **Search bar**: tìm theo mã đơn, tên, SĐT, ghi chú
+- **Cột ghi chú**: hiện nổi bật (yêu cầu đóng gói của khách)
+- Hiện tổng tiền đơn, KHÔNG hiện doanh thu/lợi nhuận
+- Bấm vào đơn → modal chi tiết: người nhận, địa chỉ, **ghi chú nổi bật**, danh sách sản phẩm cần đóng
+- Chip trạng thái: Mới nhận → Đã đóng gói → Đã gửi (nhập tracking SPX) → Đã giao
+- Tối ưu desktop
 
-**PATCH /api/portal-orders/[id]/shipping** — Cập nhật trạng thái.
-Body: `{ shippingStatus: 'CREATED'|'PICKED_UP'|'IN_TRANSIT'|'DELIVERED', trackingCode }`
-- CREATED: đã đóng gói
-- IN_TRANSIT: đã gửi (tự set codStatus=PENDING)
-- DELIVERED: đã giao
+## Role
+
+- `ROLE_WAREHOUSE` đổi thành **"Thủ Kho / Shopee"**, thêm tab `shopee`
+- `ROLE_SHOPEE_OPS` ẩn khỏi UI đăng nhập (`hidden: true`), giữ lại để tương thích
+- Shopee APIs đã thêm quyền cho ROLE_WAREHOUSE
 
 ### Biến môi trường
 
