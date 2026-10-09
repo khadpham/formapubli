@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { ShoppingBag, Truck, Printer, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import type { UserRole } from '@/lib/roles';
+import { PortalOrdersPanel } from './PortalOrdersPanel';
 
 interface QueueOrder {
   id: string;
@@ -91,6 +92,8 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           {toast}
         </div>
       )}
+
+      <PortalOrdersPanel currentRole={sessionRole} />
 
       <section aria-label="Đơn Shopee chờ xử lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
