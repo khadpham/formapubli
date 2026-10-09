@@ -43,10 +43,11 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    // Kiểm tra kho tồn tại và đang hoạt động
+    // Kiểm tra kho tồn tại và đang hoạt động (tránh lưu id chết như vụ NV-01:
+    // kho ngưng sau này thì đơn portal báo lỗi rõ lúc tạo, admin cấu hình lại).
     const wh = (
       await db
-        .select({ id: warehouses.id })
+        .select({ id: warehouses.id, isActive: warehouses.isActive })
         .from(warehouses)
         .where(eq(warehouses.id, warehouseId))
         .limit(1)
@@ -54,6 +55,12 @@ export async function POST(req: NextRequest) {
     if (!wh) {
       return NextResponse.json(
         { success: false, error: 'Kho không tồn tại.' },
+        { status: 400 },
+      );
+    }
+    if (wh.isActive !== true) {
+      return NextResponse.json(
+        { success: false, error: 'Kho đã ngưng hoạt động.' },
         { status: 400 },
       );
     }

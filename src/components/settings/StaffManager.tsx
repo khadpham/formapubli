@@ -292,9 +292,14 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                     </select>
                     <div className="max-w-[190px] space-y-1">
                       {warehouses.filter((w) => (w as any).isActive !== false).map((w) => {
-                        const cur: string[] = Array.isArray((r as any).allowedWarehouseIds)
+                        // Lọc bỏ id chết (kho đã ngưng/xóa còn sót trong DB): chỉ giữ
+                        // id đang hoạt động, không thì lần tick nào cũng 400 oan theo
+                        // id cũ vô hình (vụ NV-01 10/2026) và confirm đếm sai số kho.
+                        const cur: string[] = (Array.isArray((r as any).allowedWarehouseIds)
                           ? (r as any).allowedWarehouseIds
-                          : [];
+                          : []).filter((x: string) =>
+                            warehouses.some((v) => v.id === x && (v as any).isActive !== false)
+                          );
                         const checked = cur.includes(w.id);
                         return (
                           <label key={w.id} className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer">

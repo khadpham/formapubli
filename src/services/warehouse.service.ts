@@ -92,6 +92,52 @@ export class WarehouseService {
   }
 
   /**
+   * Gỡ tham chiếu kho khỏi tài khoản nhân viên khi kho ngưng hoạt động hoặc bị
+   * xóa. MẮT XÍCH TỪNG THIẾU (vụ NV-01 10/2026): ngưng kho mà giữ id chết trong
+   * `allowed_warehouse_ids`/`assigned_warehouse_id` thì mọi lần tick kho sau đó
+   * đều 400 oan ("Kho không tồn tại hoặc đã ngưng"), và tài khoản bị khóa cứng
+   * không bán được kho nào. Quy ước sau dọn: allowed rỗng = bán mọi kho,
+   * assigned null = chưa gán (UI hiện "Chưa gán").
+   */
+  static async detachStaffReferences(
+    warehouseId: string,
+    txOrDb: any = db
+  ): Promise<{ cleanedAllowed: number; clearedAssigned: number }> {
+    const { staffAccounts } = await import('../db/schema');
+    const rows = await txOrDb
+      .select({
+        staffId: staffAccounts.staffId,
+        allowed: staffAccounts.allowedWarehouseIds,
+        assigned: staffAccounts.assignedWarehouseId,
+      })
+      .from(staffAccounts);
+    let cleanedAllowed = 0;
+    let clearedAssigned = 0;
+    for (const r of rows) {
+      let allowed: string[];
+      try {
+        const v = typeof r.allowed === 'string' ? JSON.parse(r.allowed) : r.allowed;
+        allowed = Array.isArray(v) ? v.map((x) => `${x || ''}`.trim()).filter(Boolean) : [];
+      } catch {
+        continue; // JSON hỏng: không đụng để tránh mất dữ liệu.
+      }
+      const patch: Record<string, unknown> = {};
+      if (allowed.includes(warehouseId)) {
+        patch.allowedWarehouseIds = JSON.stringify(allowed.filter((x) => x !== warehouseId));
+        cleanedAllowed++;
+      }
+      if (`${r.assigned || ''}` === warehouseId) {
+        patch.assignedWarehouseId = null;
+        clearedAssigned++;
+      }
+      if (Object.keys(patch).length > 0) {
+        await txOrDb.update(staffAccounts).set(patch).where(eq(staffAccounts.staffId, r.staffId));
+      }
+    }
+    return { cleanedAllowed, clearedAssigned };
+  }
+
+  /**
    * Sửa thông tin kho (Owner/Manager). KHÔNG cho đổi `code`/`id` vì đó là
    * khoá nghiệp vụ đã gắn vào đơn, phiếu và sổ kho.
    */
@@ -118,6 +164,11 @@ export class WarehouseService {
     if (patch.sortOrder !== undefined) set.sortOrder = patch.sortOrder;
     if (Object.keys(set).length === 0) throw AppError.invalid('Không có gì để cập nhật.');
     await txOrDb.update(warehouses).set(set).where(eq(warehouses.id, warehouseId));
+    // Ngưng hoạt động (true→false): gỡ id khỏi tài khoản nhân viên ngay để
+    // không còn tham chiếu chết gây 400 oan ở màn gán kho (vụ NV-01 10/2026).
+    if (patch.isActive === false && wh.isActive === true) {
+      await this.detachStaffReferences(warehouseId, txOrDb);
+    }
     return (await this.getWarehouse(warehouseId, txOrDb))!;
   }
 
@@ -167,6 +218,10 @@ export class WarehouseService {
     // ngoại tới warehouses, giữ lại sẽ khiến DELETE ném lỗi FK (500) thay vì
     // thông báo rõ ràng. Bucket tồn = 0 không mang dữ liệu nào.
     await txOrDb.delete(stockBalances).where(eq(stockBalances.warehouseId, warehouseId));
+
+    // Gỡ tham chiếu nhân viên TRƯỚC khi xóa kho (cột assigned có FK tới
+    // warehouses.id — dọn sau sẽ quá muộn nếu FK được bật).
+    await this.detachStaffReferences(warehouseId, txOrDb);
 
     await txOrDb.delete(warehouses).where(eq(warehouses.id, warehouseId));
     return { id: wh.id, name: wh.name };
