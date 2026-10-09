@@ -28,7 +28,7 @@ import {
   ArrowDown,
   Flame,
 } from 'lucide-react';
-import React, { useState, useMemo, useEffect, useRef, useCallback, useTransition } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
@@ -82,11 +82,10 @@ interface WarehouseItem {
   warehouseType?: string;
 }
 
-/** Kho đối tác chỉ là shortcut theo dõi trong tab Đối tác, không phải kho
- *  vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho.
- *  Bắt cả warehouseType lẫn code pattern KHO_KY_GUI% (kho cũ chưa có type đúng). */
-const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string }) =>
-  w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
+/** Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
+ *  không phải kho vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho. */
+const isPhysicalWarehouse = (w: { warehouseType?: string }) =>
+  w.warehouseType !== 'CONSIGNMENT';
 
 interface LedgerEntry {
   id: string;
@@ -162,7 +161,6 @@ export function StockOverviewMatrix({
   const router = useRouter();
   /** Đang làm mới: bật khi bấm, tắt khi props `initialBooks` mới trả về. */
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [, startTransition] = useTransition();
   const refreshFallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -511,12 +509,15 @@ export function StockOverviewMatrix({
   const handleRefresh = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    // Chốt an toàn: nếu vòng lặp server trả về y hệt (hoặc fail), vẫn tắt
-    // spinner thay vì kẹt vô hạn. ponytail: timer 1 tầng; nâng lên
-    // useTransition/stream khi cần báo lỗi chính xác.
+    // Chốt an toàn: tắt spinner sau 15s nếu có sự cố.
     refreshFallbackTimer.current = setTimeout(() => setIsRefreshing(false), 15000);
-    reloadWarehouseChips();
-    startTransition(() => router.refresh());
+    // Chỉ nạp lại danh sách kho (nhẹ). KHÔNG dùng router.refresh() vì nó chạy lại
+    // toàn bộ page.tsx (ma trận tồn kho nặng) gây vượt giới hạn CPU Worker (lỗi 1102).
+    // Muốn nạp lại toàn bộ số liệu thì tải lại trang (F5).
+    reloadWarehouseChips().finally(() => {
+      if (refreshFallbackTimer.current !== undefined) clearTimeout(refreshFallbackTimer.current);
+      setIsRefreshing(false);
+    });
   };
 
   // Props mới đã chảy vào ⇒ tắt trạng thái đang tải.
