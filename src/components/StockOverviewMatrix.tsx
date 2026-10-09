@@ -80,10 +80,11 @@ interface WarehouseItem {
   warehouseType?: string;
 }
 
-/** Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
- *  không phải kho vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho. */
-const isPhysicalWarehouse = (w: { warehouseType?: string }) =>
-  w.warehouseType !== 'CONSIGNMENT';
+/** Kho đối tác chỉ là shortcut theo dõi trong tab Đối tác, không phải kho
+ *  vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho.
+ *  Bắt cả warehouseType lẫn code pattern KHO_KY_GUI% (kho cũ chưa có type đúng). */
+const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string }) =>
+  w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
 
 interface LedgerEntry {
   id: string;
@@ -483,15 +484,13 @@ export function StockOverviewMatrix({
     return { total: list.length, active: list.filter((w) => w.isActive !== false).length };
   }, [localWarehouses]);
 
-  // Nút "Làm mới" cho quản lý: NẠP LẠI DỮ LIỆU chứ không reload trang.
-  // Reload cả trang xóa sạch mọi việc đang dở (phiếu nháp, ô tìm kiếm, tab
-  // đang mở). `router.refresh()` chạy lại server component `page.tsx` — đúng
-  // đường nạp dữ liệu sẵn có — rồi props mới chảy vào mà state client (tìm
-  // kiếm, tab, modal) được giữ nguyên.
-  //
-  // `isRefreshing` bật TỪ LÚC BẤM và tắt khi props `initialBooks` đổi tham
-  // chiếu (server component đã trả xong) — nếu tắt khi hết fetch client thì
-  // chip kho đã mới còn ma trận vẫn cũ ⇒ nhìn như "nút hỏng".
+  // Nút "Làm mới": chỉ nạp lại danh sách kho qua API nhẹ
+  // (`reloadWarehouseChips`), KHÔNG reload trang để giữ nguyên phiếu nháp,
+  // ô tìm kiếm, tab đang mở. Cố tình KHÔNG dùng `router.refresh()` vì nó chạy
+  // lại toàn bộ server component `page.tsx` (ma trận tồn kho nặng) gây vượt
+  // giới hạn CPU Worker (lỗi 1102). Muốn nạp lại toàn bộ số liệu thì F5.
+  // `isRefreshing` bật TỪ LÚC BẤM và tắt khi fetch xong (finally) hoặc sau
+  // 15s (chốt an toàn chống kẹt spinner).
   const handleRefresh = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
@@ -1083,9 +1082,8 @@ export function StockOverviewMatrix({
         </div>
       )}
 
-      {/* Đang làm mới: chip kho nạp xong trước, ma trận tồn phải chờ vòng
-          `router.refresh()` chạy xong server component. Không có dải này thì
-          người dùng thấy chip đổi mà số tồn đứng yên ⇒ tưởng nút hỏng. */}
+      {/* Đang làm mới: chỉ nạp lại chip kho qua API nhẹ, số tồn ma trận giữ
+          nguyên (muốn số mới thì F5). Dải này để người bấm biết nút có chạy. */}
       {isRefreshing && (
         <div
           role="status"
@@ -1093,7 +1091,7 @@ export function StockOverviewMatrix({
           className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold"
         >
           <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" />
-          Đang cập nhật tồn kho…
+          Đang nạp danh sách kho…
         </div>
       )}
 
