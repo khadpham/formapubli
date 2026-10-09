@@ -258,6 +258,9 @@ const ALL_SUITES = [
   'scripts/test-contract-ai-gd3.ts',
   // Contract AI GĐ4: dự án + cột mốc + gợi ý.
   'scripts/test-contract-ai-gd4.ts',
+  // Vòng đời chiến dịch: bảng campaigns riêng + kho/nhân sự prefix CD-TEST riêng,
+  // không đụng dữ liệu chung nên đứng cuối an toàn.
+  'scripts/test-campaign-lifecycle.ts',
 ];
 
 /**
