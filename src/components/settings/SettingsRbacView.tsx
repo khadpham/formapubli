@@ -26,6 +26,7 @@ import { BankAccountsManager } from './BankAccountsManager';
 import { GoodsCatalogManager } from '@/components/products/GoodsCatalogManager';
 import { PromotionsManager } from './PromotionsManager';
 import { ShopeePanel } from './ShopeePanel';
+import { PortalSettingsPanel } from './PortalSettingsPanel';
 import { ShoppingBag } from 'lucide-react';
 
 interface SettingsRbacViewProps {
@@ -34,7 +35,7 @@ interface SettingsRbacViewProps {
 
 // 'activity' (Nhat Ky Hoat Dong) giu lai tu main; 'shortcuts' da bi go
 // tinh goc login-ux loai bo khoi Settings (contract scripts/smoke-mobile-role-navigation.ts).
-type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'promotions' | 'appearance' | 'language' | 'sound' | 'printer' | 'shopee';
+type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'promotions' | 'appearance' | 'language' | 'sound' | 'printer' | 'shopee' | 'portal';
 
 export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   const { canManageAccounts, canManageBanks, canManagePrinter } = getSettingsAccess(sessionRole);
@@ -281,6 +282,19 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
                   Shopee
                 </button>
               )}
+              {canManageAccounts && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('portal')}
+                  aria-current={activeSubTab === 'portal' ? 'page' : undefined}
+                  className={`w-full flex items-center gap-2 min-h-11 px-3 rounded-xl text-left text-xs font-bold transition-colors ${
+                    activeSubTab === 'portal' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Globe className="w-4 h-4" />
+                  Cổng Portal
+                </button>
+              )}
             </div>
           )}
         </nav>
@@ -308,6 +322,11 @@ export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
       {/* TAB: SHOPEE (ẩn theo cờ server SHOPEE_UI_ENABLED) */}
       {activeSubTab === 'shopee' && showShopee && canSeeShopee && sessionRole && (
         <ShopeePanel sessionRole={sessionRole} />
+      )}
+
+      {/* TAB: CỔNG PORTAL */}
+      {activeSubTab === 'portal' && canManageAccounts && (
+        <PortalSettingsPanel />
       )}
 
       {/* TAB 3: THEME & DENSITY */}
