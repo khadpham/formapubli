@@ -74,6 +74,15 @@ export function PortalOrdersPanel() {
   /** Đang hỏi mã vận đơn cho đơn nào (chỉ hiện khi bấm Gửi hàng). */
   const [trackingFor, setTrackingFor] = useState<string | null>(null);
   const [trackingValue, setTrackingValue] = useState('');
+  /** Toast thông báo trong nền tảng (thay alert). */
+  const [toast, setToast] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
+  /** Dialog xác nhận trong nền tảng (thay window.confirm). */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
+
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const fetchOrders = async () => {
     setRefreshing(true);
@@ -119,8 +128,9 @@ export function PortalOrdersPanel() {
       setTrackingValue('');
       setSelected(null);
       fetchOrders();
+      showToast('Đã cập nhật trạng thái đơn.', 'success');
     } else {
-      alert('Lỗi: ' + (data.error || 'Không cập nhật được'));
+      showToast('Lỗi: ' + (data.error || 'Không cập nhật được'));
     }
   };
 
@@ -133,14 +143,18 @@ export function PortalOrdersPanel() {
       setTrackingValue(o.trackingCode || '');
       return;
     }
-    if (window.confirm(`${NEXT_LABEL[o.shippingStatus]} đơn ${displayCode(o).main}?`)) {
-      updateStatus(o.id, next);
-    }
+    setConfirmDlg({
+      msg: `${NEXT_LABEL[o.shippingStatus]} đơn ${displayCode(o).main}?`,
+      onOk: () => {
+        setConfirmDlg(null);
+        updateStatus(o.id, next);
+      },
+    });
   };
 
   const confirmTracking = (o: PickingOrder) => {
     if (!trackingValue.trim()) {
-      alert('Cần nhập mã vận đơn khi gửi hàng.');
+      showToast('Cần nhập mã vận đơn khi gửi hàng.');
       return;
     }
     updateStatus(o.id, 'IN_TRANSIT', trackingValue);
@@ -161,7 +175,37 @@ export function PortalOrdersPanel() {
   if (loading) return <div className="p-4 text-slate-500">Đang tải đơn hàng...</div>;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 relative">
+      {/* Toast thông báo */}
+      {toast && (
+        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+      {/* Dialog xác nhận */}
+      {confirmDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDlg(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-slate-900 font-medium mb-4">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDlg(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDlg.onOk}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-lg font-extrabold text-slate-900">Đơn Online Cần Soạn</h3>
