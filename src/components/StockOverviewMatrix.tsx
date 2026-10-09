@@ -125,7 +125,7 @@ export function StockOverviewMatrix({
   const [modalOpen, setModalOpen] = useState(false);
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
-  const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
+  const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [editingWholesaleDraft, setEditingWholesaleDraft] = useState<any | null>(null);
@@ -368,10 +368,10 @@ export function StockOverviewMatrix({
         return;
       }
 
-      // Tổ hợp Alt + Shift + T (Mac: Option+Shift+T / Cmd+Shift+T) -> Mở Phiếu Chuyển Kho
+      // Tổ hợp Alt + Shift + T -> Mở Chuyển kho hàng loạt (BatchTransferModal)
       if (matchActionShortcut(e, 'KeyT', { shift: true })) {
         e.preventDefault();
-        if (!modalOpen) openAction('TRANSFER');
+        if (!batchTransferOpen) setBatchTransferOpen(true);
         return;
       }
 
@@ -393,7 +393,7 @@ export function StockOverviewMatrix({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [modalOpen, searchTerm, isScrolledPast, toggleListening]);
+  }, [modalOpen, batchTransferOpen, searchTerm, isScrolledPast, toggleListening]);
 
   const getWarehouseStock = useCallback((b: MatrixBookItem, tab: string) => {
     if (tab === 'ALL') return b.totalStock;
@@ -459,7 +459,7 @@ export function StockOverviewMatrix({
     return result;
   }, [searchTerm, initialBooks, onlyLowStock, stockSortMode, warehouseTab, getWarehouseStock]);
 
-  const openAction = (action: 'RECEIPT' | 'DISPATCH' | 'TRANSFER', book: MatrixBookItem | null = null) => {
+  const openAction = (action: 'RECEIPT', book: MatrixBookItem | null = null) => {
     const fallbackBook = book || initialBooks[0] || null;
     if (!fallbackBook) return;
     setModalAction(action);
@@ -821,14 +821,6 @@ export function StockOverviewMatrix({
             </button>
             {actionMenu === 'MOVE' && (
               <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1">
-                <button
-                  type="button"
-                  onClick={() => { setActionMenu(null); openAction('TRANSFER'); }}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
-                >
-                  <span className="font-bold whitespace-nowrap">1 phiếu chuyển kho</span>
-                  <span className="block text-[10px] text-slate-400">Chọn từng đầu sách chuyển giữa 2 kho</span>
-                </button>
                 <button
                   type="button"
                   onClick={() => { setActionMenu(null); setBatchTransferOpen(true); }}
@@ -1345,7 +1337,7 @@ export function StockOverviewMatrix({
                       <td className="px-3 py-2.5 text-center">
                         <button
                           type="button"
-                          onClick={() => openAction('TRANSFER', b)}
+                          onClick={() => setBatchTransferOpen(true)}
                           className="px-2 py-1 whitespace-nowrap text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
                         >
                           Chuyển kho
