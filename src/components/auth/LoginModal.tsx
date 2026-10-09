@@ -19,9 +19,8 @@ interface AccountTile {
 
 const ROLE_ORDER: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
 
-// Vai trò ẩn khỏi màn hình chạm-chọn (vẫn đăng nhập được bằng nhập tay nếu cần).
-// Thủ kho + Kế toán thuế không dùng ở quầy hội chợ.
-const HIDDEN_PICKER_ROLES: UserRole[] = ['ROLE_WAREHOUSE', 'ROLE_TAX'];
+// Vai trò ẩn khỏi màn hình chạm-chọn đọc từ cờ `hidden` trong registry
+// (src/lib/roles.ts) — vẫn đăng nhập được bằng nhập tay nếu cần.
 
 export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: LoginModalProps) {
   const [accounts, setAccounts] = useState<AccountTile[]>([]);
@@ -60,7 +59,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
         const json = await res.json();
         if (alive && res.ok && json.success && Array.isArray(json.data)) {
           const visible = (json.data as AccountTile[]).filter(
-            (a) => !HIDDEN_PICKER_ROLES.includes(a.role)
+            (a) => !USER_ROLES[a.role]?.hidden
           );
           setAccounts(visible);
           const firstCashier =
