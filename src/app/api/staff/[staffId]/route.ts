@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, staffAccounts, activeSessions, warehouses } from '@/db';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 import { requireSessionRole, hashStaffPasscodeV2, parseAllowedWarehouseIds } from '@/lib/auth-session';
 import { UserRole } from '@/lib/roles';
 import { AppError } from '@/services/app-error';
@@ -61,7 +61,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ st
       if (raw !== null && !Array.isArray(raw)) throw AppError.invalid('Danh sách kho không hợp lệ.');
       const ids = Array.from(new Set(((raw ?? []) as any[]).map((x) => `${x || ''}`.trim()).filter(Boolean)));
       if (ids.length > 0) {
-        const rows = await db.select({ id: warehouses.id, isActive: warehouses.isActive }).from(warehouses);
+        // Kho đối tác (CONSIGNMENT) không phải kho vận hành — không được gán cho nhân viên.
+        const rows = await db
+          .select({ id: warehouses.id, isActive: warehouses.isActive })
+          .from(warehouses)
+          .where(ne(warehouses.warehouseType, 'CONSIGNMENT'));
         const ok = new Set(rows.filter((r) => r.isActive === true).map((r) => r.id));
         const bad = ids.filter((id) => !ok.has(id));
         if (bad.length > 0) throw AppError.invalid(`Kho không tồn tại hoặc đã ngưng: ${bad.join(', ')}.`);

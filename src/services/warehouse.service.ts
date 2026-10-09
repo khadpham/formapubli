@@ -1,5 +1,5 @@
 import { db, documentSequences, warehouses, bankAccounts } from '../db';
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, ne, asc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 
@@ -37,16 +37,26 @@ export class WarehouseService {
     return await txOrDb
       .select()
       .from(warehouses)
-      .where(and(eq(warehouses.isActive, true), eq(warehouses.isSellableOnPos, true)))
+      .where(
+        and(
+          eq(warehouses.isActive, true),
+          eq(warehouses.isSellableOnPos, true),
+          // Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
+          // không phải kho vận hành — ẩn khỏi mọi danh sách kho nghiệp vụ.
+          ne(warehouses.warehouseType, 'CONSIGNMENT')
+        )
+      )
       .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
   }
 
   /** Danh sách tất cả các kho (kể cả đã ngưng) — màn hình quản trị cần thấy
-   * kho đã ngưng để bật lại được. */
+   * kho đã ngưng để bật lại được. Không bao gồm kho đối tác (CONSIGNMENT):
+   * chúng chỉ hiện trong tab Đối tác & Đại lý. */
   static async listAll(txOrDb: any = db): Promise<WarehouseRow[]> {
     return await txOrDb
       .select()
       .from(warehouses)
+      .where(ne(warehouses.warehouseType, 'CONSIGNMENT'))
       .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
   }
 
