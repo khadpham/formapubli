@@ -699,14 +699,16 @@ export class OrderService {
 
         // ⚠️ KHÔNG TIN CỜ `isGiftLine` TỪ CLIENT.
         // Client gửi lên là dễ sửa: thu ngân tự gắn cờ ⇒ bán 0đ, miễn trần 20%,
-        // không cần Quản lý duyệt. Server phải tự tra `promotions` xác nhận món
+        // không cần Quản lý duyệt. Server phải tự tra `promotions` xác minh món
         // này THẬT SỰ nằm trong bậc mà đơn đạt tới.
         // Ngoại lệ: caller đã tự xác minh (route portal-orders có PORTAL_API_KEY)
         // truyền trustedGiftIds — server tin, nhưng vẫn chỉ trong tập đó.
+        // ⚠️ `editionMap` dựng từ bảng `products` nên hàng hóa (SP-004) CÓNG
+        // trong map — không được dùng "có edition" để loại trustedGiftIds.
         const isGiftLine =
           claimedGift &&
           (allowedGiftProducts.has(item.editionId) ||
-            (edition ? false : (params.trustedGiftIds?.has(item.editionId) ?? false)));
+            (params.trustedGiftIds?.has(item.editionId) ?? false));
 
         // Cờ client gắn mà không có trong chương trình ⇒ hạ về dòng thường,
         // khách trả đúng giá. KHÔNG báo lỗi: người dùng không có lý do biết.
