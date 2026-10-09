@@ -34,7 +34,6 @@ import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
 import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
-import { CreateWarehouseModal } from './inventory/CreateWarehouseModal';
 import { WarehouseBankManager } from './inventory/WarehouseBankManager';
 import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
@@ -130,7 +129,6 @@ export function StockOverviewMatrix({
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [editingWholesaleDraft, setEditingWholesaleDraft] = useState<any | null>(null);
-  const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [bankManagerOpen, setBankManagerOpen] = useState(false);
   // Panel "Kho": xem tổng số kho + tổng tồn từng kho, ngưng/mở lại/xóa kho.
   const [warehousePanelOpen, setWarehousePanelOpen] = useState(false);
@@ -755,7 +753,7 @@ export function StockOverviewMatrix({
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
-              onClick={() => setWarehousePanelOpen(true)}
+              onClick={() => { setWarehousePanelOpen(true); setBankManagerOpen(false); }}
               title="Quản lý kho: mở kho mới, sửa tên, ẩn/hiện, xóa, đổi thứ tự"
               className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
@@ -765,7 +763,7 @@ export function StockOverviewMatrix({
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
-              onClick={() => setBankManagerOpen(true)}
+              onClick={() => { setBankManagerOpen(true); setWarehousePanelOpen(false); }}
               title="Gán tài khoản nhận VietQR mặc định cho từng kho"
               className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
@@ -1449,40 +1447,31 @@ export function StockOverviewMatrix({
         onSuccess={handleRefresh}
       />
 
-      {/* Create Warehouse Modal */}
-      <CreateWarehouseModal
-        isOpen={createWarehouseOpen}
-        onClose={() => setCreateWarehouseOpen(false)}
-        onCreated={(newWh) => {
-          if (newWh && newWh.id) {
-            setLocalWarehouses((prev) => {
-              if (prev.some((w) => w.id === newWh.id)) return prev;
-              return [
-                ...prev,
-                {
-                  id: newWh.id,
-                  name: newWh.name || 'Kho mới',
-                  code: newWh.code || 'MÃ_KHO',
-                },
-              ];
-            });
-            setCreatedWarehouseToast({
-              id: newWh.id,
-              name: newWh.name || 'Kho mới',
-              code: newWh.code || 'MÃ_KHO',
-            });
-          }
-        }}
-      />
-      {bankManagerOpen && (
-        <WarehouseBankManager onClose={() => { setBankManagerOpen(false); handleRefresh(); }} />
-      )}
       {warehousePanelOpen && (
         <WarehouseManagerPanel
           isOpen={warehousePanelOpen}
           onClose={() => setWarehousePanelOpen(false)}
           onChanged={reloadWarehouseChips}
-          onOpenCreate={() => setCreateWarehouseOpen(true)}
+          onCreated={(newWh) => {
+            if (newWh && newWh.id) {
+              setLocalWarehouses((prev) => {
+                if (prev.some((w) => w.id === newWh.id)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: newWh.id,
+                    name: newWh.name || 'Kho mới',
+                    code: newWh.code || 'MÃ_KHO',
+                  },
+                ];
+              });
+              setCreatedWarehouseToast({
+                id: newWh.id,
+                name: newWh.name || 'Kho mới',
+                code: newWh.code || 'MÃ_KHO',
+              });
+            }
+          }}
         />
       )}
     </div>

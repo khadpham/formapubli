@@ -33,14 +33,14 @@ export function WarehouseManagerPanel({
   isOpen,
   onClose,
   onChanged,
-  onOpenCreate,
+  onCreated,
 }: {
   isOpen: boolean;
   onClose: () => void;
   /** Báo lên cha để nạp lại số liệu kho đang hiện ở chip row. */
   onChanged?: () => void;
-  /** Mở modal tạo kho mới (nút Mở Kho đã gộp vào đây). */
-  onOpenCreate?: () => void;
+  /** Báo kho vừa tạo (cha hiện banner + CTA chuyển hàng vào). */
+  onCreated?: (w: any) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -53,6 +53,85 @@ export function WarehouseManagerPanel({
   // Sửa tên kho inline
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
+
+  // Form "Mở kho mới" gấp gọn NGAY TRONG panel — luật 1 modal: không mở
+  // modal con đè lên panel (nguyên nhân 2 lớp modal chồng nhau).
+  const [showCreate, setShowCreate] = useState(false);
+  const [cName, setCName] = useState('');
+  const [cCode, setCCode] = useState('');
+  const [cAddress, setCAddress] = useState('');
+  const [cType, setCType] = useState<'FAIR_EVENT' | 'PHYSICAL_MAIN'>('FAIR_EVENT');
+  const [cSellable, setCSellable] = useState(true);
+  const [cBankId, setCBankId] = useState('');
+  const [cBanks, setCBanks] = useState<Array<{ id: string; label: string; accountNo: string }>>([]);
+  const [cBusy, setCBusy] = useState(false);
+
+  const toggleCreate = () => {
+    const next = !showCreate;
+    setShowCreate(next);
+    setError(null);
+    if (next && cBanks.length === 0) {
+      fetch('/api/bank-accounts')
+        .then((r) => r.json())
+        .then((j) => {
+          if (j?.success && Array.isArray(j.data?.list)) setCBanks(j.data.list);
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleCName = (val: string) => {
+    setCName(val);
+    const slug = val
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/Đ/g, 'D')
+      .replace(/[^A-Z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '');
+    setCCode(slug ? (slug.startsWith('KHO_') ? slug : `KHO_${slug}`) : '');
+  };
+
+  const submitCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cName.trim()) {
+      setError('Vui lòng nhập tên kho hoặc gian hàng.');
+      return;
+    }
+    setCBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/warehouses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cName.trim(),
+          code: cCode.trim() || undefined,
+          address: cAddress.trim() || undefined,
+          warehouseType: cType,
+          isSellableOnPos: cSellable,
+          defaultBankAccountId: cBankId || undefined,
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(j?.error || j?.message || 'Mở kho thất bại.');
+      setShowCreate(false);
+      setCName('');
+      setCCode('');
+      setCAddress('');
+      setCType('FAIR_EVENT');
+      setCSellable(true);
+      setCBankId('');
+      await afterChange(`Đã mở kho [${j.data?.name || cName.trim()}].`);
+      onCreated?.(j.data);
+    } catch (err: any) {
+      setError(err?.message || 'Mở kho thất bại.');
+    } finally {
+      setCBusy(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -264,10 +343,11 @@ export function WarehouseManagerPanel({
               {warehouses.reduce((s, w) => s + Number(w.stockQuantity || 0), 0).toLocaleString('vi-VN')} cuốn
             </p>
           </div>
-          {onOpenCreate && (
+          {(
             <button
               type="button"
-              onClick={onOpenCreate}
+              onClick={toggleCreate}
+              aria-expanded={showCreate}
               className="shrink-0 inline-flex items-center gap-1 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold transition-colors"
             >
               <Store className="w-3.5 h-3.5" /> Mở kho mới
@@ -294,6 +374,92 @@ export function WarehouseManagerPanel({
         )}
 
         <div className="p-3 space-y-2 max-h-[min(30rem,65vh)] overflow-y-auto">
+          {showCreate && (
+            <form
+              onSubmit={submitCreate}
+              className="rounded-xl border border-amber-300 bg-amber-50/60 p-3 space-y-2.5"
+              aria-label="Mở kho mới"
+            >
+              <p className="text-xs font-extrabold text-slate-900">Mở Kho / Gian Hàng Mới</p>
+              <input
+                type="text"
+                required
+                value={cName}
+                onChange={(e) => handleCName(e.target.value)}
+                placeholder="Tên kho / gian hàng *"
+                aria-label="Tên kho mới"
+                className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-medium outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={cCode}
+                  onChange={(e) => setCCode(e.target.value.toUpperCase())}
+                  placeholder="Mã kho (tự sinh)"
+                  aria-label="Mã kho mới"
+                  className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <input
+                  type="text"
+                  value={cAddress}
+                  onChange={(e) => setCAddress(e.target.value)}
+                  placeholder="Địa chỉ / vị trí"
+                  aria-label="Địa chỉ kho mới"
+                  className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={cType}
+                  onChange={(e) => setCType(e.target.value as 'FAIR_EVENT' | 'PHYSICAL_MAIN')}
+                  aria-label="Phân loại kho mới"
+                  className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold outline-none"
+                >
+                  <option value="FAIR_EVENT">Hội Chợ / Sự Kiện</option>
+                  <option value="PHYSICAL_MAIN">Kho Cố Định</option>
+                </select>
+                <select
+                  value={cBankId}
+                  onChange={(e) => setCBankId(e.target.value)}
+                  aria-label="TK nhận VietQR kho mới"
+                  className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                >
+                  <option value="">— TK mặc định chung —</option>
+                  {cBanks.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.label} — {b.accountNo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={cSellable}
+                  onChange={(e) => setCSellable(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                Bán POS tại kho này
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={cBusy || !cName.trim()}
+                  className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {cBusy ? 'Đang tạo...' : 'Tạo Kho Ngay'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  disabled={cBusy}
+                  className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-600 cursor-pointer"
+                >
+                  Huỷ
+                </button>
+              </div>
+            </form>
+          )}
           {warehouses.length === 0 && <p className="text-[11px] text-slate-500">Chưa có kho nào.</p>}
 
           {warehouses.map((w, idx) => {

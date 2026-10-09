@@ -22,11 +22,13 @@ interface LeftoverLine {
 interface CampaignPanelProps {
   books: any[];
   warehouses: Array<{ id: string; code: string; name: string; isActive?: boolean }>;
+  /** Mở chuyển hàng ở modal cha (1 modal/lúc) thay vì modal chồng modal. */
+  onOpenTransfer?: (c: Campaign) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: 'Nháp', ACTIVE: 'Đang chạy', ENDED: 'Đã xong' };
 
-export function CampaignPanel({ books, warehouses }: CampaignPanelProps) {
+export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPanelProps) {
   const [list, setList] = useState<Campaign[]>([]);
   const [form, setForm] = useState({ name: '', startDate: '', endDate: '', sourceWarehouseId: '' });
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +142,7 @@ export function CampaignPanel({ books, warehouses }: CampaignPanelProps) {
               )}
               {c.status === 'ACTIVE' && (
                 <>
-                  <button type="button" onClick={() => setTransferFor(c)}
+                  <button type="button" onClick={() => (onOpenTransfer ? onOpenTransfer(c) : setTransferFor(c))}
                     className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer">
                     Chuyển hàng vào
                   </button>
@@ -183,7 +185,7 @@ export function CampaignPanel({ books, warehouses }: CampaignPanelProps) {
         </div>
       )}
 
-      {transferFor?.warehouseId && (
+      {!onOpenTransfer && transferFor?.warehouseId && (
         <BatchTransferModal
           isOpen={!!transferFor}
           onClose={() => setTransferFor(null)}

@@ -223,6 +223,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-cod-flag.ts',
   // Nhãn kho dùng chung: đại lý ký gửi không bao giờ hiện chữ "Kho".
   'scripts/test-warehouse-labels.ts',
+  // Luật 1 modal/lúc: tạo kho inline trong manager, chiến dịch là nút+modal quản lý.
+  'scripts/test-campaign-modal.ts',
   // Shopee UI ẩn: config runtime + cờ server (không đụng DB chung ngoài bảng settings).
   'scripts/test-shopee-shop-config.ts',
   'scripts/test-shopee-ui-hidden.ts',

@@ -6,7 +6,7 @@ import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard';
 import { PosCheckoutTerminal } from '@/components/pos/PosCheckoutTerminal';
 import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
 import { PortalOrdersPanel } from '@/components/inventory/PortalOrdersPanel';
-import { CampaignPanel } from '@/components/inventory/CampaignPanel';
+import { CampaignModal } from '@/components/inventory/CampaignModal';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
 import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
@@ -16,7 +16,7 @@ import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { ShopeeTab } from '@/components/shopee/ShopeeTab';
 import { OwnerTab } from '@/components/owner/OwnerTab';
-import { Menu, Shield, Sparkles } from 'lucide-react';
+import { Menu, Shield, Sparkles, Megaphone } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { NotificationBell, type NotifyItem } from '@/components/notifications/NotificationBell';
 import { CopilotDrawer } from '@/components/copilot/CopilotDrawer';
@@ -77,6 +77,8 @@ export function MasterAppShell({
   const [posMobileBar, setPosMobileBar] = useState(false);
   // Copilot 3 trang thai: closed (bong bong) • mini (chat nho goc phai) • full (drawer phai).
   const [copilotView, setCopilotView] = useState<'closed' | 'mini' | 'full'>('closed');
+  // Modal chiến dịch (chỉ quản lý) — nút gọn thay panel chiếm chỗ trong tab.
+  const [campaignOpen, setCampaignOpen] = useState(false);
   // Don nhap tu Copilot (prepare_sale_draft) → op vao gio POS khi qua tab POS.
   const [posDraft, setPosDraft] = useState<{
     nonce: number;
@@ -395,9 +397,30 @@ export function MasterAppShell({
               {(currentRole === 'ROLE_WAREHOUSE' || currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
                 <PortalOrdersPanel />
               )}
-              {/* Chiến dịch bán ngắn hạn — chỉ quản lý trở lên. */}
+              {/* Chiến dịch bán ngắn hạn — nút mở modal riêng, chỉ quản lý trở lên. */}
               {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-                <CampaignPanel books={matrixBooks} warehouses={warehouseList} />
+                <>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setCampaignOpen(true)}
+                      title="Chiến dịch bán ngắn hạn: tạo, bắt đầu, chuyển hàng, kết thúc"
+                      className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 shadow-sm rounded-2xl text-xs font-extrabold text-slate-800 hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors cursor-pointer"
+                    >
+                      <Megaphone className="w-4 h-4 text-indigo-600" />
+                      Chiến Dịch Bán Ngắn Hạn
+                    </button>
+                  </div>
+                  {campaignOpen && (
+                    <CampaignModal
+                      isOpen={campaignOpen}
+                      onClose={() => setCampaignOpen(false)}
+                      books={matrixBooks}
+                      warehouses={warehouseList}
+                      currentRole={currentRole}
+                    />
+                  )}
+                </>
               )}
               {/* Tên kho đã có ở pill top bar — ẩn cả card trên mobile */}
               <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
