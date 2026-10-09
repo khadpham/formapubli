@@ -371,6 +371,20 @@
       "when": 1791587000000,
       "tag": "0052_contract_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": 7,
+      "when": 1791588000000,
+      "tag": "0053_portal_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": 7,
+      "when": 1791589000000,
+      "tag": "0054_campaigns",
+      "breakpoints": true
     }
   ],
   "version": "7"

@@ -950,6 +950,21 @@ export const portalSettings = sqliteTable('portal_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+// 0054: campaigns — chiến dịch bán ngắn hạn gắn kho FAIR_EVENT.
+// Máy trạng thái: DRAFT → ACTIVE → ENDED (ép ở CampaignService).
+export const campaigns = sqliteTable('campaigns', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date').notNull(),
+  status: text('status').notNull().default('DRAFT'),
+  warehouseId: text('warehouse_id').references(() => warehouses.id),
+  sourceWarehouseId: text('source_warehouse_id').references(() => warehouses.id),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  endedAt: text('ended_at'),
+});
+
 // 0042: chi phí công ty cho tab Chủ — GĐ1 ghi tay, GĐ2 lương theo tháng.
 // 0043: GĐ2 — lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
 export const expenseEntries = sqliteTable('expense_entries', {
