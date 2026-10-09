@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
       await db
         .update(orders)
         .set({ portalRef: madon })
-        .where(eq(orders.id, (order as any).id));
+        .where(eq(orders.id, (order as any).orderId));
     } catch (refErr: any) {
       console.error(
         `[portal-orders] portal_ref SAVE FAILED madon=${madonForLog} order=${(order as any)?.orderCode} ` +
@@ -217,14 +217,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ord = order as unknown as { id: string; orderCode: string };
+    // createOrder trả `orderId` (KHÔNG phải `id`) — đọc sai = undefined ⇒
+    // libsql ném "Unsupported type of value" và portal nhận orderId: undefined.
+    const ord = order as unknown as { orderId: string; orderCode: string };
     console.log(
-      `[portal-orders] OK madon=${`${madon || ''}`.slice(0, 32)} order=${ord.orderCode} lines=${orderItems.length}`
+      `[portal-orders] OK madon=${madonForLog} order=${ord.orderCode} lines=${orderItems.length}`
     );
     return NextResponse.json({
       success: true,
       data: {
-        orderId: ord.id,
+        orderId: ord.orderId,
         orderCode: ord.orderCode,
         status: 'PENDING_CONFIRMATION',
       },
