@@ -79,4 +79,8 @@ shopee_images_renamed/
 
 # Du lieu khac - thong tin dai ly/khach hang
 "thong tin dai ly.csv"
+
+
+# File check/sp verification - tu tai user, kh phai code
+check-sp004.ts
 74_anh_bia_theo_ten_sach/
