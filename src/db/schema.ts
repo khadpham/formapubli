@@ -943,6 +943,13 @@ export const shopeeSettings = sqliteTable('shopee_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+// 0053: portal_settings — cấu hình tích hợp Customer Order Portal
+export const portalSettings = sqliteTable('portal_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 // 0042: chi phí công ty cho tab Chủ — GĐ1 ghi tay, GĐ2 lương theo tháng.
 // 0043: GĐ2 — lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
 export const expenseEntries = sqliteTable('expense_entries', {
