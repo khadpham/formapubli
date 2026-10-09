@@ -80,10 +80,13 @@ interface WarehouseItem {
   warehouseType?: string;
 }
 
-/** Kho đối tác chỉ là shortcut theo dõi trong tab Đối tác, không phải kho
- *  vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho.
- *  Bắt cả warehouseType lẫn code pattern KHO_KY_GUI% (kho cũ chưa có type đúng). */
-const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string }) =>
+/** Kho vận hành đang mở: ẩn đại lý ký gửi (xem tab Đối tác) VÀ kho đã ngưng
+ *  (vd Hồ Gươm sau hội chợ) khỏi ma trận, tab, và mọi modal chọn kho.
+ *  Bắt cả warehouseType lẫn code pattern KHO_KY_GUI% (kho cũ chưa có type đúng).
+ *  Màn quản trị (WarehouseManagerPanel) nạp list riêng nên vẫn thấy kho ngưng
+ *  để mở lại/xem lịch sử. */
+const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string; isActive?: boolean }) =>
+  w.isActive !== false &&
   w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
 
 interface LedgerEntry {

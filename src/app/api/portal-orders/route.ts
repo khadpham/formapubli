@@ -36,6 +36,7 @@ function unauthorized() {
 }
 
 export async function POST(req: NextRequest) {
+  let madonForLog = '';
   try {
     const apiKey = process.env.PORTAL_API_KEY;
     if (!apiKey) {
@@ -50,6 +51,12 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const { madon, email, name, phone, address, items, paymentMethod, shippingFee, hasGift } = body;
+    madonForLog = `${madon || ''}`.slice(0, 32);
+    // Nhật ký chẩn đoán (không log key/PIN/SĐT): soi live bằng `wrangler tail`
+    // khi khách đặt test mà đơn không về.
+    console.log(
+      `[portal-orders] POST madon=${`${madon || ''}`.slice(0, 32)} items=${Array.isArray(items) ? items.length : 0} payment=${`${paymentMethod || ''}`.slice(0, 16)} gift=${!!hasGift}`
+    );
 
     if (!madon || !email || !name || !items?.length) {
       return NextResponse.json(
@@ -78,6 +85,18 @@ export async function POST(req: NextRequest) {
     for (const it of items) {
       const sku = PORTAL_SKU_MAP[it.portalProductId] || it.sku;
       if (!sku) {
+        // Dòng quà trong giỏ portal (đã có hasGift thêm SP-004 riêng) thiếu SKU
+        // thì BỎ QUA, không giết cả đơn. Dòng mua thiếu SKU vẫn 400 để không
+        // mất tiền oan.
+        if (it.isGift || hasGift) {
+          console.warn(
+            `[portal-orders] bỏ dòng quà thiếu SKU madon=${`${madon || ''}`.slice(0, 32)} item=${`${it.portalProductId || ''}`.slice(0, 48)}`
+          );
+          continue;
+        }
+        console.warn(
+          `[portal-orders] 400 thiếu SKU madon=${`${madon || ''}`.slice(0, 32)} item=${`${it.portalProductId || ''}`.slice(0, 48)}`
+        );
         return NextResponse.json(
           { success: false, error: `Thiếu SKU cho sản phẩm: ${it.portalProductId}` },
           { status: 400 },
@@ -87,6 +106,9 @@ export async function POST(req: NextRequest) {
         await db.select({ id: editions.id }).from(editions).where(eq(editions.code, sku)).limit(1)
       )[0];
       if (!edition) {
+        console.warn(
+          `[portal-orders] 400 không thấy ấn bản madon=${`${madon || ''}`.slice(0, 32)} sku=${`${sku}`.slice(0, 16)}`
+        );
         return NextResponse.json(
           { success: false, error: `Không tìm thấy ấn bản với mã: ${sku}` },
           { status: 400 },
@@ -94,6 +116,9 @@ export async function POST(req: NextRequest) {
       }
       const qty = Math.floor(Number(it.qty));
       if (!Number.isFinite(qty) || qty < 1 || qty > 99) {
+        console.warn(
+          `[portal-orders] 400 số lượng sai madon=${`${madon || ''}`.slice(0, 32)} sku=${`${sku}`.slice(0, 16)}`
+        );
         return NextResponse.json(
           { success: false, error: `Số lượng không hợp lệ: ${sku}` },
           { status: 400 },
@@ -178,6 +203,9 @@ export async function POST(req: NextRequest) {
     });
 
     const ord = order as unknown as { id: string; orderCode: string };
+    console.log(
+      `[portal-orders] OK madon=${`${madon || ''}`.slice(0, 32)} order=${ord.orderCode} lines=${orderItems.length}`
+    );
     return NextResponse.json({
       success: true,
       data: {
@@ -187,6 +215,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (e) {
+    console.error(`[portal-orders] 500 madon=${madonForLog} ${(e as Error)?.message || e}`);
     return handleApiError(e);
   }
 }
