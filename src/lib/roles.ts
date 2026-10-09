@@ -62,6 +62,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeBg: 'bg-rose-50',
     description: 'Chỉ xem số liệu Hóa đơn điện tử VAT chính thức (OFFICIAL_TAX), cách ly dữ liệu nội bộ',
     allowedNavItems: ['sales', 'inventory', 'settings'],
+    hidden: true, // Ẩn khỏi UI đăng nhập chạm-chọn (kế toán thuế không dùng ở quầy)
   },
   ROLE_SHOPEE_OPS: {
     id: 'ROLE_SHOPEE_OPS',

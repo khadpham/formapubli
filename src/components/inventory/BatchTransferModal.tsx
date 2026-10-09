@@ -798,7 +798,14 @@ export function BatchTransferModal({
                   <select
                     value={fromWarehouseId}
                     onChange={(e) => {
-                      setFromWarehouseId(e.target.value);
+                      const newFrom = e.target.value;
+                      setFromWarehouseId(newFrom);
+                      // Đổi kho nguồn trùng kho đích đang chọn → tự nhảy sang kho
+                      // đích khác, tránh kẹt state from===to rồi báo lỗi sai.
+                      if (newFrom === toWarehouseId) {
+                        const alt = warehouses.find((w) => w.id !== newFrom);
+                        if (alt) setToWarehouseId(alt.id);
+                      }
                       invalidateValidation();
                       setErrorMessage(null);
                       // Cả 2 loại thông báo đều nói về KHO NGUỒN cũ → đổi kho là

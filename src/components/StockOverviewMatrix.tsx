@@ -78,7 +78,14 @@ interface WarehouseItem {
   name: string;
   /** Còn hoạt động không — để thẻ tóm tắt kho đếm đúng (bảng `warehouses`). */
   isActive?: boolean;
+  /** Loại kho: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT. */
+  warehouseType?: string;
 }
+
+/** Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
+ *  không phải kho vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho. */
+const isPhysicalWarehouse = (w: { warehouseType?: string }) =>
+  w.warehouseType !== 'CONSIGNMENT';
 
 interface LedgerEntry {
   id: string;
@@ -131,7 +138,9 @@ export function StockOverviewMatrix({
       const j = await fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json());
       if (j?.success && Array.isArray(j.data)) {
         setLocalWarehouses(
-          j.data.map((w: any) => ({ id: w.id, code: w.code, name: w.name, isActive: w.isActive !== false }))
+          j.data
+            .map((w: any) => ({ id: w.id, code: w.code, name: w.name, isActive: w.isActive !== false, warehouseType: w.warehouseType }))
+            .filter(isPhysicalWarehouse)
         );
       }
     } catch {
@@ -146,7 +155,9 @@ export function StockOverviewMatrix({
     code: string;
   } | null>(null);
   const [presetTargetWarehouseId, setPresetTargetWarehouseId] = useState<string | undefined>(undefined);
-  const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(warehouses);
+  const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(
+    warehouses.filter(isPhysicalWarehouse)
+  );
   const router = useRouter();
   /** Đang làm mới: bật khi bấm, tắt khi props `initialBooks` mới trả về. */
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -160,7 +171,7 @@ export function StockOverviewMatrix({
   }, []);
 
   useEffect(() => {
-    setLocalWarehouses(warehouses);
+    setLocalWarehouses(warehouses.filter(isPhysicalWarehouse));
   }, [warehouses]);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
