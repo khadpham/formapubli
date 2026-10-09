@@ -8,7 +8,6 @@ import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
 import { PortalOrdersPanel } from '@/components/inventory/PortalOrdersPanel';
 import { CampaignModal } from '@/components/inventory/CampaignModal';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
-import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
 import { ContractsTab } from '@/components/contracts/ContractsTab';
 import { CustomersListView } from '@/components/customers/CustomersListView';
@@ -445,10 +444,6 @@ export function MasterAppShell({
 
           {currentRole && effectiveTab === 'sales' && (
             <SalesLedgerView currentRole={currentRole} />
-          )}
-
-          {currentRole && effectiveTab === 'sales' && (
-            <PendingOrdersView currentRole={currentRole} />
           )}
 
           {currentRole && effectiveTab === 'partners' && (
