@@ -13,6 +13,7 @@ interface PickingItem {
 interface PickingOrder {
   id: string;
   orderCode: string;
+  portalRef: string | null;
   customerName: string;
   phone: string;
   address: string;
@@ -50,11 +51,17 @@ const NEXT_STATUS: Record<string, string | null> = {
 };
 
 const NEXT_LABEL: Record<string, string> = {
-  NONE: 'Xác nhận đóng gói',
-  CREATED: 'Xác nhận đã gửi',
-  PICKED_UP: 'Xác nhận đã gửi',
-  IN_TRANSIT: 'Xác nhận đã giao',
+  NONE: 'Đóng gói',
+  CREATED: 'Gửi hàng',
+  PICKED_UP: 'Gửi hàng',
+  IN_TRANSIT: 'Đã giao',
 };
+
+/** Mã hiển thị: ưu tiên mã portal (khách tra theo mã này), mã nội bộ nhỏ phụ. */
+function displayCode(o: PickingOrder): { main: string; sub: string } {
+  if (o.portalRef) return { main: o.portalRef, sub: o.orderCode };
+  return { main: o.orderCode, sub: '' };
+}
 
 export function PortalOrdersPanel() {
   const [orders, setOrders] = useState<PickingOrder[]>([]);
@@ -64,6 +71,9 @@ export function PortalOrdersPanel() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<PickingOrder | null>(null);
   const [trackingInput, setTrackingInput] = useState('');
+  /** Đang hỏi mã vận đơn cho đơn nào (chỉ hiện khi bấm Gửi hàng). */
+  const [trackingFor, setTrackingFor] = useState<string | null>(null);
+  const [trackingValue, setTrackingValue] = useState('');
 
   const fetchOrders = async () => {
     setRefreshing(true);
@@ -82,14 +92,20 @@ export function PortalOrdersPanel() {
     }
   };
 
+  // Real-time: poll 5s, CHỈ khi tab đang mở (chống 1102 — không poll nền).
   useEffect(() => {
     fetchOrders();
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchOrders();
+    }, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const updateStatus = async (orderId: string, newStatus: string) => {
+  const updateStatus = async (orderId: string, newStatus: string, trackingCode?: string) => {
     const body: any = { shippingStatus: newStatus };
-    if (newStatus === 'IN_TRANSIT' && trackingInput.trim()) {
-      body.trackingCode = trackingInput.trim();
+    if (newStatus === 'IN_TRANSIT' && trackingCode?.trim()) {
+      body.trackingCode = trackingCode.trim();
     }
     const res = await fetch(`/api/portal-orders/${orderId}/shipping`, {
       method: 'PATCH',
@@ -99,6 +115,8 @@ export function PortalOrdersPanel() {
     const data = await res.json();
     if (data.success) {
       setTrackingInput('');
+      setTrackingFor(null);
+      setTrackingValue('');
       setSelected(null);
       fetchOrders();
     } else {
@@ -106,11 +124,34 @@ export function PortalOrdersPanel() {
     }
   };
 
+  /** Nút nhanh ngoài bảng: Đóng gói / Đã giao bấm là xong. Gửi hàng hỏi mã. */
+  const quickAction = (o: PickingOrder) => {
+    const next = NEXT_STATUS[o.shippingStatus];
+    if (!next) return;
+    if (next === 'IN_TRANSIT') {
+      setTrackingFor(o.id);
+      setTrackingValue(o.trackingCode || '');
+      return;
+    }
+    if (window.confirm(`${NEXT_LABEL[o.shippingStatus]} đơn ${displayCode(o).main}?`)) {
+      updateStatus(o.id, next);
+    }
+  };
+
+  const confirmTracking = (o: PickingOrder) => {
+    if (!trackingValue.trim()) {
+      alert('Cần nhập mã vận đơn khi gửi hàng.');
+      return;
+    }
+    updateStatus(o.id, 'IN_TRANSIT', trackingValue);
+  };
+
   const filtered = orders.filter((o) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
       o.orderCode.toLowerCase().includes(q) ||
+      (o.portalRef || '').toLowerCase().includes(q) ||
       o.customerName.toLowerCase().includes(q) ||
       o.phone.includes(q) ||
       (o.note || '').toLowerCase().includes(q)
@@ -125,13 +166,13 @@ export function PortalOrdersPanel() {
         <div>
           <h3 className="text-lg font-extrabold text-slate-900">Đơn Online Cần Soạn</h3>
           <p className="text-xs text-slate-500">
-            {filtered.length} đơn chờ xử lý — bấm vào đơn để xem chi tiết và cập nhật trạng thái
+            {filtered.length} đơn chờ xử lý — tự cập nhật mỗi 5s, không cần bấm
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {updatedAt && (
             <span className="text-[11px] text-slate-400 whitespace-nowrap">
-              Cập nhật lúc {updatedAt.toLocaleTimeString('vi-VN')}
+              Cập nhật {updatedAt.toLocaleTimeString('vi-VN')}
             </span>
           )}
           <button
@@ -145,7 +186,7 @@ export function PortalOrdersPanel() {
           </button>
           <input
             type="text"
-            placeholder="Tìm theo mã đơn, tên, SĐT, ghi chú..."
+            placeholder="Tìm mã portal, mã đơn, tên, SĐT..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="px-4 py-2 border border-slate-300 rounded-xl text-sm w-80 max-w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -165,57 +206,100 @@ export function PortalOrdersPanel() {
                 <th className="pb-2 pr-4">Sản phẩm</th>
                 <th className="pb-2 pr-4">Ghi chú</th>
                 <th className="pb-2 pr-4">Trạng thái</th>
-                <th className="pb-2">Thao tác</th>
+                <th className="pb-2">Thao tác nhanh</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((o) => (
-                <tr
-                  key={o.id}
-                  className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
-                  onClick={() => setSelected(o)}
-                >
-                  <td className="py-3 pr-4 font-mono font-bold text-slate-900">{o.orderCode}</td>
-                  <td className="py-3 pr-4">
-                    <div className="font-medium">{o.customerName}</div>
-                    <div className="text-xs text-slate-500">{o.phone}</div>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="text-xs space-y-0.5">
-                      {o.items.map((it, i) => (
-                        <div key={i}>
-                          <span className="font-bold text-slate-900">{it.name || it.editionId}</span>
-                          {it.isGift && ' 🎁'}
-                          <span className="text-slate-400 font-mono"> · {it.code || it.editionId} × {it.quantity}</span>
+              {filtered.map((o) => {
+                const code = displayCode(o);
+                const next = NEXT_STATUS[o.shippingStatus];
+                const isTrackingFor = trackingFor === o.id;
+                return (
+                  <tr
+                    key={o.id}
+                    className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
+                    onClick={() => setSelected(o)}
+                  >
+                    <td className="py-3 pr-4">
+                      <div className="font-mono font-bold text-slate-900">{code.main}</div>
+                      {code.sub && <div className="font-mono text-[11px] text-slate-400">{code.sub}</div>}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <div className="font-medium">{o.customerName}</div>
+                      <div className="text-xs text-slate-500">{o.phone}</div>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <div className="text-xs space-y-0.5">
+                        {o.items.map((it, i) => (
+                          <div key={i}>
+                            <span className="font-bold text-slate-900">{it.name || it.editionId}</span>
+                            {it.isGift && ' 🎁'}
+                            <span className="text-slate-400 font-mono"> · {it.code || it.editionId} × {it.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-4 max-w-xs">
+                      <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 truncate" title={o.note}>
+                        {o.note || <span className="text-slate-400">—</span>}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span
+                        className={`inline-block px-2 py-1 rounded-full text-xs font-medium border ${STATUS_COLORS[o.shippingStatus] || STATUS_COLORS.NONE}`}
+                      >
+                        {STATUS_LABELS[o.shippingStatus] || o.shippingStatus}
+                      </span>
+                    </td>
+                    <td className="py-3" onClick={(e) => e.stopPropagation()}>
+                      {isTrackingFor ? (
+                        <div className="flex items-center gap-1 min-w-[11rem]">
+                          <input
+                            type="text"
+                            value={trackingValue}
+                            onChange={(e) => setTrackingValue(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && confirmTracking(o)}
+                            placeholder="Mã vận đơn"
+                            aria-label="Mã vận đơn"
+                            autoFocus
+                            className="w-24 px-2 py-1.5 border border-indigo-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => confirmTracking(o)}
+                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+                          >
+                            Gửi
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTrackingFor(null)}
+                            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold cursor-pointer"
+                          >
+                            Hủy
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4 max-w-xs">
-                    <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 truncate" title={o.note}>
-                      {o.note || <span className="text-slate-400">—</span>}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-xs font-medium border ${STATUS_COLORS[o.shippingStatus] || STATUS_COLORS.NONE}`}
-                    >
-                      {STATUS_LABELS[o.shippingStatus] || o.shippingStatus}
-                    </span>
-                  </td>
-                  <td className="py-3">
-                    <button
-                      className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelected(o);
-                      }}
-                    >
-                      Chi tiết →
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      ) : next ? (
+                        <button
+                          type="button"
+                          onClick={() => quickAction(o)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap ${
+                            next === 'IN_TRANSIT'
+                              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                              : next === 'DELIVERED'
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
+                        >
+                          {NEXT_LABEL[o.shippingStatus]} →
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Xong</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -233,10 +317,18 @@ export function PortalOrdersPanel() {
           >
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-xl font-extrabold">{selected.orderCode}</h3>
+                <h3 className="text-xl font-extrabold">
+                  {displayCode(selected).main}
+                  {displayCode(selected).sub && (
+                    <span className="ml-2 text-sm font-mono font-normal text-slate-400">
+                      {displayCode(selected).sub}
+                    </span>
+                  )}
+                </h3>
                 <p className="text-sm text-slate-500">
                   {new Date(selected.createdAt).toLocaleString('vi-VN')} •{' '}
                   {selected.paymentMethod === 'COD' ? 'Thu hộ COD' : 'Chuyển khoản'}
+                  {selected.trackingCode && ` • Vận đơn: ${selected.trackingCode}`}
                 </p>
               </div>
               <button
@@ -287,13 +379,9 @@ export function PortalOrdersPanel() {
 
             {NEXT_STATUS[selected.shippingStatus] && (
               <div className="border-t border-slate-200 pt-4">
-                {/* Mã vận đơn chỉ hỏi đúng lúc gửi hàng (→ IN_TRANSIT).
-                    Đóng gói (→ CREATED) và giao xong (→ DELIVERED) không cần. */}
                 {NEXT_STATUS[selected.shippingStatus] === 'IN_TRANSIT' && (
                   <div className="mb-3">
-                    <label className="text-xs text-slate-500 uppercase block mb-1">
-                      Mã vận đơn (khi gửi hàng)
-                    </label>
+                    <label className="text-xs text-slate-500 uppercase block mb-1">Mã vận đơn (khi gửi hàng)</label>
                     <input
                       type="text"
                       value={trackingInput}
@@ -304,7 +392,7 @@ export function PortalOrdersPanel() {
                   </div>
                 )}
                 <button
-                  onClick={() => updateStatus(selected.id, NEXT_STATUS[selected.shippingStatus]!)}
+                  onClick={() => updateStatus(selected.id, NEXT_STATUS[selected.shippingStatus]!, trackingInput)}
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition"
                 >
                   {NEXT_LABEL[selected.shippingStatus]}

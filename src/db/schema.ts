@@ -329,6 +329,9 @@ export const orders = sqliteTable('orders', {
   shippingFee: real('shipping_fee').default(0.0), // Phí ship SPX
   codAmount: real('cod_amount').default(0.0), // Tiền COD SPX thu hộ (= finalAmount nếu COD)
   codStatus: text('cod_status').notNull().default('NONE'), // NONE | PENDING (SPX giữ) | RECEIVED (đã về NH)
+  // 0055: mã đơn của Customer Portal (datmua) — khách tra theo mã này.
+  // order_code vẫn là khóa nội bộ (tăng tự động, không trùng) cho sổ kho.
+  portalRef: text('portal_ref'),
 }, (table) => ({
   fiscalScopeIdx: index('idx_orders_fiscal_scope').on(table.fiscalScope),
   warehouseIdx: index('idx_orders_warehouse').on(table.warehouseId),
@@ -338,6 +341,8 @@ export const orders = sqliteTable('orders', {
   shippingStatusIdx: index('idx_orders_shipping_status').on(table.shippingStatus),
   // 0035: tra cứu "đơn nào đã dùng yêu cầu duyệt này" (đối soát ca, chống dùng lại).
   discountApprovalIdx: index('idx_orders_discount_approval').on(table.discountApprovalId),
+  // 0055: tra cứu đơn theo mã portal (datmua tra đơn bằng mã của họ).
+  portalRefIdx: index('idx_orders_portal_ref').on(table.portalRef),
 }));
 
 // 13. Order Line Items (Chi tiết từng sản phẩm trong đơn)

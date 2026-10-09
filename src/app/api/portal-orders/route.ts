@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
-import { db, customers, editions, portalSettings } from '@/db';
+import { db, customers, editions, portalSettings, orders } from '@/db';
 import { eq } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 
@@ -126,25 +126,23 @@ export async function POST(req: NextRequest) {
       }
       orderItems.push({ editionId: edition.id, quantity: qty });
     }
-    // Quà tri ân: túi tote SP-004, dòng quà 0đ (isGiftLine=true)
+    // Quà tri ân: túi tote SP-004 (hàng hóa, KHÔNG phải ấn bản) — tra products
+    // trực tiếp. Bản deploy cũ chỉ tra editions ⇒ giftId null ⇒ dòng quà mất.
+    let giftId: string | null = null;
     if (hasGift) {
-      const giftEdition = (
-        await db.select({ id: editions.id }).from(editions).where(eq(editions.code, 'SP-004')).limit(1)
+      const { products } = await import('@/db');
+      const giftProduct = (
+        await db.select({ id: products.id }).from(products).where(eq(products.code, 'SP-004')).limit(1)
       )[0];
-      // Nếu SP-004 là hàng hóa (không có trong editions), tìm trong products
-      let giftId = giftEdition?.id;
+      giftId = giftProduct?.id || null;
       if (!giftId) {
-        const { products } = await import('@/db');
-        const giftProduct = (
-          await db.select({ id: products.id }).from(products).where(eq(products.code, 'SP-004')).limit(1)
-        )[0];
-        giftId = giftProduct?.id;
+        console.warn('[portal-orders] Không tìm thấy SP-004 trong products, bỏ quà.');
       }
-      if (giftId) {
-        orderItems.push({ editionId: giftId, quantity: 1, isGiftLine: true });
-      } else {
-        console.warn('[portal-orders] Không tìm thấy SP-004 cho quà tặng, bỏ qua.');
-      }
+    }
+    if (giftId) {
+      // Route đã tự xác minh SP-004 → server tin (trustedGiftIds), không cần
+      // chương trình khuyến mại. Dòng quà 0đ, không tính doanh thu.
+      orderItems.push({ editionId: giftId, quantity: 1, isGiftLine: true });
     }
 
     // 2. Tìm hoặc tạo customer
@@ -200,7 +198,15 @@ export async function POST(req: NextRequest) {
       idempotencyKey: `portal-${madon}`,
       note: `Đơn từ Customer Portal. Mã portal: ${madon}. SĐT: ${phone}. Địa chỉ: ${address}. Phí ship: ${shippingFee || 0}đ.`,
       items: orderItems,
+      // Quà SP-004 do route tự xác minh — server tin mà không cần promotion.
+      ...(giftId ? { trustedGiftIds: new Set([giftId]) } : {}),
     });
+
+    // 0055: lưu mã portal để khách tra đơn bằng mã của họ (datmua).
+    await db
+      .update(orders)
+      .set({ portalRef: madon })
+      .where(eq(orders.id, (order as any).id));
 
     const ord = order as unknown as { id: string; orderCode: string };
     console.log(

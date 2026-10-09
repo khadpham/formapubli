@@ -92,6 +92,12 @@ export interface CreateOrderParams {
   allowOverdraft?: boolean;
   isGift?: boolean; // BV-03: đơn tặng 100% (doanh thu 0đ, vẫn trừ kho)
   giftReason?: string; // BV-03: lý do tặng (bắt buộc khi isGift)
+  /**
+   * Quà đã được caller (vd route portal-orders, có PORTAL_API_KEY) tự xác minh.
+   * Server vẫn KHÔNG tin cờ client — chỉ cộng thêm nhánh này vào tập được phép.
+   * POS thường không truyền ⇒ đường cũ không đổi.
+   */
+  trustedGiftIds?: Set<string>;
   items?: OrderItemInput[];
   bundles?: Array<{ bundleId: string; quantity: number }>; // Combo/boxset (giá do management định, không cộng CK đơn)
   // M1 (contract §1): danh tính Lane A truyền tách khỏi payload client — thắng mọi cashierId client gửi
@@ -185,6 +191,12 @@ export interface OrderFingerprint {
   giftReason?: string | null;
   /** Ngữ nghĩa hoàn tất của request: false = tạo đơn PENDING giữ chỗ, true = chốt. */
   confirmImmediately?: boolean;
+  /**
+   * Quà đã được caller (vd route portal-orders, có PORTAL_API_KEY) tự xác minh.
+   * Server vẫn KHÔNG tin cờ client — chỉ cộng thêm nhánh này vào tập được phép.
+   * POS thường không truyền ⇒ đường cũ không đổi.
+   */
+  trustedGiftIds?: Set<string>;
   items?: OrderItemInput[];
   bundles?: Array<{ bundleId: string; quantity: number }>;
 }
@@ -675,7 +687,12 @@ export class OrderService {
         // Client gửi lên là dễ sửa: thu ngân tự gắn cờ ⇒ bán 0đ, miễn trần 20%,
         // không cần Quản lý duyệt. Server phải tự tra `promotions` xác nhận món
         // này THẬT SỰ nằm trong bậc mà đơn đạt tới.
-        const isGiftLine = claimedGift && allowedGiftProducts.has(item.editionId);
+        // Ngoại lệ: caller đã tự xác minh (route portal-orders có PORTAL_API_KEY)
+        // truyền trustedGiftIds — server tin, nhưng vẫn chỉ trong tập đó.
+        const isGiftLine =
+          claimedGift &&
+          (allowedGiftProducts.has(item.editionId) ||
+            (params.trustedGiftIds?.has(item.editionId) ?? false));
 
         // Cờ client gắn mà không có trong chương trình ⇒ hạ về dòng thường,
         // khách trả đúng giá. KHÔNG báo lỗi: người dùng không có lý do biết.
