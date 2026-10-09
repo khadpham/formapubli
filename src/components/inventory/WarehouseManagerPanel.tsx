@@ -33,11 +33,14 @@ export function WarehouseManagerPanel({
   isOpen,
   onClose,
   onChanged,
+  onOpenCreate,
 }: {
   isOpen: boolean;
   onClose: () => void;
   /** Báo lên cha để nạp lại số liệu kho đang hiện ở chip row. */
   onChanged?: () => void;
+  /** Mở modal tạo kho mới (nút Mở Kho đã gộp vào đây). */
+  onOpenCreate?: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -261,6 +264,15 @@ export function WarehouseManagerPanel({
               {warehouses.reduce((s, w) => s + Number(w.stockQuantity || 0), 0).toLocaleString('vi-VN')} cuốn
             </p>
           </div>
+          {onOpenCreate && (
+            <button
+              type="button"
+              onClick={onOpenCreate}
+              className="shrink-0 inline-flex items-center gap-1 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold transition-colors"
+            >
+              <Store className="w-3.5 h-3.5" /> Mở kho mới
+            </button>
+          )}
           <button
             type="button"
             aria-label="Đóng panel kho"
