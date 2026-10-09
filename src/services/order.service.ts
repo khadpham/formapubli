@@ -1021,10 +1021,12 @@ return {
 
         // B2b. Trần giữ ATP (xem MAX_PENDING_HOLD_UNITS_PER_CASHIER): đo SỐ LƯỢNG
         // đang bị giữ chỗ, mọi phương thức thanh toán, theo (thu ngân, kho).
-        // Manager/Owner miễn. Tính ngay trong transaction để hai lần tạo song song
-        // không cùng lọt qua trần. Đơn đã quá hạn không tính (cùng quy tắc hạn
-        // dùng ở ATP và job dọn).
-        if (isPending && !creatorIsPrivileged) {
+        // Chỉ áp cho kênh quầy (POS) để chống client giữ hàng ảo; đơn portal
+		// (ONLINE) qua API key tin cậy được miễn. Manager/Owner miễn.
+		// Tính ngay trong transaction để hai lần tạo song song không cùng lọt
+		// qua trần. Đơn đã quá hạn không tính (cùng quy tắc hạn dùng ở ATP và job dọn).
+
+        if (isPending && isCounterChannel(channel) && !creatorIsPrivileged) {
           const openHoldLines = await tx
             .select({
               quantity: orderItems.quantity,
