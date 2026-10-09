@@ -5,6 +5,7 @@ import { AppSidebar } from './AppSidebar';
 import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard';
 import { PosCheckoutTerminal } from '@/components/pos/PosCheckoutTerminal';
 import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
+import { PortalOrdersPanel } from '@/components/inventory/PortalOrdersPanel';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
 import { PendingOrdersView } from '@/components/sales/PendingOrdersView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
@@ -389,6 +390,10 @@ export function MasterAppShell({
 
           {currentRole && effectiveTab === 'inventory' && (
             <div className="space-y-6">
+              {/* Đơn online cần soạn — cho Thủ Kho / Shopee */}
+              {(currentRole === 'ROLE_WAREHOUSE' || currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+                <PortalOrdersPanel />
+              )}
               {/* Tên kho đã có ở pill top bar — ẩn cả card trên mobile */}
               <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
