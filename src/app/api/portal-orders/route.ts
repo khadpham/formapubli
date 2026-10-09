@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       'cach-ton-tai-rieng': 'H87',
       'ngan-1-in-lan-2': 'H88',
     };
-    const orderItems: Array<{ editionId: string; quantity: number; isGiftLine?: boolean }> = [];
+    const orderItems: Array<{ editionId: string; productId?: string; quantity: number; isGiftLine?: boolean }> = [];
     for (const it of items) {
       const sku = PORTAL_SKU_MAP[it.portalProductId] || it.sku;
       if (!sku) {
@@ -142,7 +142,8 @@ export async function POST(req: NextRequest) {
     if (giftId) {
       // Route đã tự xác minh SP-004 → server tin (trustedGiftIds), không cần
       // chương trình khuyến mại. Dòng quà 0đ, không tính doanh thu.
-      orderItems.push({ editionId: giftId, quantity: 1, isGiftLine: true });
+      // SP-004 là HÀNG HÓA: ghi productId, editionId để tra giá (sẽ không xuống DB).
+      orderItems.push({ editionId: giftId, productId: giftId, quantity: 1, isGiftLine: true });
     }
 
     // 2. Tìm hoặc tạo customer

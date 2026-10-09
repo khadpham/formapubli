@@ -65,8 +65,9 @@ async function main() {
       if (!DO_IT) continue;
 
       for (const ln of nullLines) {
+        // SP-004 là HÀNG HÓA: ghi product_id (edition_id giữ NULL — FK editions).
         await db.execute({
-          sql: 'UPDATE order_items SET edition_id = ?, is_gift_line = 1 WHERE id = ?',
+          sql: 'UPDATE order_items SET product_id = ?, is_gift_line = 1 WHERE id = ?',
           args: [sp.id, ln.id],
         });
         giftFixed++;

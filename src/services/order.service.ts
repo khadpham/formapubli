@@ -20,6 +20,10 @@ import { priceLine } from '../lib/pricing';
 
 export interface OrderItemInput {
   editionId: string;
+  /** Hàng hóa (SP-...) ghi vào product_id — editionId vẫn truyền để tra giá nhưng
+   *  sẽ KHÔNG ghi vào order_items.edition_id (FK editions). Route portal truyền
+   *  cả hai khi món quà là hàng hóa. */
+  productId?: string;
   quantity: number;
   unitCoverPrice?: number;
   unitDiscountRate?: number;
@@ -677,9 +681,19 @@ export class OrderService {
     const preparedItems = [
       ...looseItems.map((item) => {
         const edition = editionMap.get(item.editionId);
-        // FIX-01: giá bìa LUÔN lấy từ DB, tuyệt đối không tin unitCoverPrice client gửi.
-        if (!edition) throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
-        const coverPrice = edition.coverPrice || 0;
+        // Hàng hóa (SP-...) không có dòng editions — định danh bằng productId.
+        // editionId vẫn truyền (bằng productId) để tra giá ở bảng products, nhưng
+        // KHÔNG ghi vào order_items.edition_id (FK editions sẽ vi phạm).
+        if (!edition) {
+          // Dòng quà hàng hóa (SP-...) do route xác minh qua trustedGiftIds:
+          // không có dòng editions, tra products để lấy giá. KHÔNG ghi edition_id.
+          if (!params.trustedGiftIds?.has(item.editionId)) {
+            throw AppError.invalid(`Ấn bản ${item.editionId} không tồn tại trong danh mục.`);
+          }
+          const prod = dbProducts.find((x) => x.id === item.editionId);
+          if (!prod) throw AppError.invalid(`Sản phẩm ${item.editionId} không tồn tại.`);
+        }
+        const coverPrice = edition?.coverPrice ?? dbProducts.find((x) => x.id === item.editionId)?.coverPrice ?? 0;
         const itemDiscountRate = item.unitDiscountRate ?? discountRate;
         const claimedGift = Boolean(item.isGiftLine);
 
@@ -692,7 +706,7 @@ export class OrderService {
         const isGiftLine =
           claimedGift &&
           (allowedGiftProducts.has(item.editionId) ||
-            (params.trustedGiftIds?.has(item.editionId) ?? false));
+            (edition ? false : (params.trustedGiftIds?.has(item.editionId) ?? false)));
 
         // Cờ client gắn mà không có trong chương trình ⇒ hạ về dòng thường,
         // khách trả đúng giá. KHÔNG báo lỗi: người dùng không có lý do biết.
@@ -724,11 +738,11 @@ return {
           id: `oi-${generateUUIDv7()}`,
           // Hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, vì cột này
           // VẪN CÒN FK `editions(id)` (nullable ≠ bỏ FK).
-          editionId: edition.productKind === 'BOOK' ? item.editionId : null,
-          productId: item.editionId,
+          editionId: edition ? (edition.productKind === 'BOOK' ? item.editionId : null) : null,
+          productId: item.productId || item.editionId,
           // Cờ này đi xuống `recordMovementsBatch` để quyết định ghi sổ kho,
           // thay vì tra thêm một query (đường này sát trần subrequest Worker).
-          isBook: edition.productKind === 'BOOK',
+          isBook: edition ? edition.productKind === 'BOOK' : false,
           isGiftLine,
           quantity: item.quantity,
           unitCoverPrice: priced.coverPrice,

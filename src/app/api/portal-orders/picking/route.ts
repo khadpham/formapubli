@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
           .select({
             orderId: orderItems.orderId,
             editionId: orderItems.editionId,
+            productId: orderItems.productId,
             quantity: orderItems.quantity,
             isGiftLine: orderItems.isGiftLine,
           })
@@ -81,19 +82,18 @@ export async function GET(req: NextRequest) {
     for (const it of allItems) {
       let code = '';
       let name = '';
-      if (it.editionId) {
-        const ed = edMap.get(it.editionId);
-        const p = prodMap.get(it.editionId);
-        if (ed) {
-          code = `${ed.code || ''}`;
-          name = `${ed.title || ed.workTitle || ''}`;
-        } else if (p) {
-          code = `${p.code || ''}`;
-          name = `${p.name || ''}`;
-        }
+      // Hàng hóa (SP-...): edition_id NULL, định danh bằng product_id.
+      const ed = it.editionId ? edMap.get(it.editionId) : undefined;
+      const prod = prodMap.get(it.productId || it.editionId || '');
+      if (ed) {
+        code = `${ed.code || ''}`;
+        name = `${ed.title || ed.workTitle || ''}`;
+      } else if (prod) {
+        code = `${prod.code || ''}`;
+        name = `${prod.name || ''}`;
       }
       const arr = itemsByOrder.get(it.orderId) || [];
-      arr.push({ editionId: it.editionId, code, name, quantity: Number(it.quantity), isGift: !!it.isGiftLine });
+      arr.push({ editionId: it.editionId, productId: it.productId, code, name, quantity: Number(it.quantity), isGift: !!it.isGiftLine });
       itemsByOrder.set(it.orderId, arr);
     }
 
