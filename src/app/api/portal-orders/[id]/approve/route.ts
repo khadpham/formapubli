@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'ROLE_WAREHOUSE',
     ] as UserRole[]);
     const { id } = await params;
-    const actorId = session.staffId || (session as any).userId;
+    const actorId = session.actorId;
     if (!actorId) {
       return NextResponse.json(
         { success: false, error: 'Thiếu định danh người duyệt.' },
