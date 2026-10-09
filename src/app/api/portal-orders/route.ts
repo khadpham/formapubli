@@ -101,9 +101,25 @@ export async function POST(req: NextRequest) {
       }
       orderItems.push({ editionId: edition.id, quantity: qty });
     }
-    // Quà tri ân: dòng quà 0đ
+    // Quà tri ân: túi tote SP-004, dòng quà 0đ (isGiftLine=true)
     if (hasGift) {
-      // TODO: xác định editionId của quà tặng (hoặc dùng isGiftLine với editionId null nếu hỗ trợ)
+      const giftEdition = (
+        await db.select({ id: editions.id }).from(editions).where(eq(editions.code, 'SP-004')).limit(1)
+      )[0];
+      // Nếu SP-004 là hàng hóa (không có trong editions), tìm trong products
+      let giftId = giftEdition?.id;
+      if (!giftId) {
+        const { products } = await import('@/db');
+        const giftProduct = (
+          await db.select({ id: products.id }).from(products).where(eq(products.code, 'SP-004')).limit(1)
+        )[0];
+        giftId = giftProduct?.id;
+      }
+      if (giftId) {
+        orderItems.push({ editionId: giftId, quantity: 1, isGiftLine: true });
+      } else {
+        console.warn('[portal-orders] Không tìm thấy SP-004 cho quà tặng, bỏ qua.');
+      }
     }
 
     // 2. Tìm hoặc tạo customer
