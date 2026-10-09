@@ -92,6 +92,17 @@ export async function GET(req: NextRequest) {
         code = `${prod.code || ''}`;
         name = `${prod.name || ''}`;
       }
+      // Fallback cho quà tặng: nếu không tìm thấy tên, tra trực tiếp SP-004
+      if (!name && it.isGiftLine) {
+        const giftProd = prodMap.get('pr-bc00a57b-25b7-4616-894f-e51849a2fe5a');
+        if (giftProd) {
+          code = giftProd.code || 'SP-004';
+          name = giftProd.name || 'Túi tote';
+        } else {
+          code = 'SP-004';
+          name = 'Túi tote';
+        }
+      }
       const arr = itemsByOrder.get(it.orderId) || [];
       arr.push({ editionId: it.editionId, productId: it.productId, code, name, quantity: Number(it.quantity), isGift: !!it.isGiftLine });
       itemsByOrder.set(it.orderId, arr);
