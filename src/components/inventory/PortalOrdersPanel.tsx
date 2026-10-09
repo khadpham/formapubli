@@ -111,6 +111,30 @@ export function PortalOrdersPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Duyệt đơn portal: trừ kho thực tế (giữ đơn ở PENDING để tiếp tục giao hàng). */
+  const approveOrder = async (orderId: string, orderCode: string) => {
+    setConfirmDlg({
+      msg: `Duyệt đơn ${orderCode}? Hệ thống sẽ trừ kho thực tế.`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        const res = await fetch(`/api/portal-orders/${orderId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.success) {
+          fetchOrders();
+          showToast(
+            data.data?.alreadyApproved ? 'Đơn đã được duyệt trước đó.' : 'Đã duyệt đơn, trừ kho thành công.',
+            'success'
+          );
+        } else {
+          showToast('Lỗi: ' + (data.error || 'Không duyệt được đơn'));
+        }
+      },
+    });
+  };
+
   const updateStatus = async (orderId: string, newStatus: string, trackingCode?: string) => {
     const body: any = { shippingStatus: newStatus };
     if (newStatus === 'IN_TRANSIT' && trackingCode?.trim()) {
@@ -323,10 +347,22 @@ export function PortalOrdersPanel() {
                             Hủy
                           </button>
                         </div>
-                      ) : next ? (
-                        <button
-                          type="button"
-                          onClick={() => quickAction(o)}
+                      ) : (
+                        <>
+                          {o.shippingStatus === 'NONE' && (
+                            <button
+                              type="button"
+                              onClick={() => approveOrder(o.id, displayCode(o).main)}
+                              title="Duyệt đơn: trừ kho thực tế (giữ đơn để tiếp tục giao hàng)"
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap bg-amber-500 hover:bg-amber-600 text-white mr-1"
+                            >
+                              Duyệt đơn
+                            </button>
+                          )}
+                          {next ? (
+                            <button
+                              type="button"
+                              onClick={() => quickAction(o)}
                           className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap ${
                             next === 'IN_TRANSIT'
                               ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
@@ -334,11 +370,13 @@ export function PortalOrdersPanel() {
                                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                 : 'bg-blue-600 hover:bg-blue-700 text-white'
                           }`}
-                        >
-                          {NEXT_LABEL[o.shippingStatus]} →
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">Xong</span>
+                            >
+                              {NEXT_LABEL[o.shippingStatus]} →
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">Xong</span>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>
