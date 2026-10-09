@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole } from '@/lib/auth-session';
-import { db, orders, orderItems, customers } from '@/db';
+import { db, orders, orderItems, editions, works, products } from '@/db';
 import { eq, and } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       )
       .orderBy(orders.createdAt);
 
-    // Lấy items + thông tin customer cho từng đơn
+    // Lấy items + tên sản phẩm cho từng đơn (sách: editions+works; hàng hóa: products)
     const result = [];
     for (const ord of pendingOrders) {
       const items = await db
@@ -54,6 +54,39 @@ export async function GET(req: NextRequest) {
         })
         .from(orderItems)
         .where(eq(orderItems.orderId, ord.id));
+
+      const enriched = [];
+      for (const it of items) {
+        let code = '';
+        let name = '';
+        if (it.editionId) {
+          const ed = (
+            await db
+              .select({ code: editions.code, title: editions.title, workTitle: works.title })
+              .from(editions)
+              .leftJoin(works, eq(editions.workId, works.id))
+              .where(eq(editions.id, it.editionId))
+              .limit(1)
+          )[0];
+          if (ed) {
+            code = `${ed.code || ''}`;
+            name = `${ed.title || ed.workTitle || ''}`;
+          } else {
+            const p = (
+              await db
+                .select({ code: products.code, name: products.name })
+                .from(products)
+                .where(eq(products.id, it.editionId))
+                .limit(1)
+            )[0];
+            if (p) {
+              code = `${p.code || ''}`;
+              name = `${p.name || ''}`;
+            }
+          }
+        }
+        enriched.push({ ...it, code, name });
+      }
 
       // Parse SĐT + địa chỉ từ note (format: "SĐT: ..., Địa chỉ: ...")
       const note = ord.note || '';
@@ -70,8 +103,10 @@ export async function GET(req: NextRequest) {
         shippingStatus: ord.shippingStatus,
         trackingCode: ord.trackingCode,
         createdAt: ord.createdAt,
-        items: items.map((it) => ({
+        items: enriched.map((it) => ({
           editionId: it.editionId,
+          code: it.code,
+          name: it.name,
           quantity: Number(it.quantity),
           isGift: !!it.isGiftLine,
         })),

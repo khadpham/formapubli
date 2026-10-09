@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 
 interface PickingItem {
   editionId: string;
+  code: string;
+  name: string;
   quantity: number;
   isGift: boolean;
 }
@@ -179,11 +181,12 @@ export function PortalOrdersPanel() {
                     <div className="text-xs text-slate-500">{o.phone}</div>
                   </td>
                   <td className="py-3 pr-4">
-                    <div className="text-xs">
+                    <div className="text-xs space-y-0.5">
                       {o.items.map((it, i) => (
                         <div key={i}>
-                          {it.editionId} × {it.quantity}
+                          <span className="font-bold text-slate-900">{it.name || it.editionId}</span>
                           {it.isGift && ' 🎁'}
+                          <span className="text-slate-400 font-mono"> · {it.code || it.editionId} × {it.quantity}</span>
                         </div>
                       ))}
                     </div>
@@ -269,13 +272,14 @@ export function PortalOrdersPanel() {
                 {selected.items.map((it, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between px-4 py-2 border-b border-slate-100 last:border-0"
+                    className="flex items-center justify-between gap-2 px-4 py-2 border-b border-slate-100 last:border-0"
                   >
-                    <span className="font-medium">
-                      {it.editionId}
-                      {it.isGift && <span className="ml-2 text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full">🎁 Quà tặng</span>}
+                    <span className="font-medium min-w-0">
+                      <span className="block truncate">{it.name || it.editionId}</span>
+                      <span className="block text-[11px] font-mono text-slate-400">{it.code || it.editionId}</span>
+                      {it.isGift && <span className="mt-0.5 inline-block text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full">🎁 Quà tặng</span>}
                     </span>
-                    <span className="font-bold text-lg">× {it.quantity}</span>
+                    <span className="font-bold text-lg shrink-0">× {it.quantity}</span>
                   </div>
                 ))}
               </div>
@@ -283,7 +287,9 @@ export function PortalOrdersPanel() {
 
             {NEXT_STATUS[selected.shippingStatus] && (
               <div className="border-t border-slate-200 pt-4">
-                {(selected.shippingStatus === 'CREATED' || selected.shippingStatus === 'NONE') && (
+                {/* Mã vận đơn chỉ hỏi đúng lúc gửi hàng (→ IN_TRANSIT).
+                    Đóng gói (→ CREATED) và giao xong (→ DELIVERED) không cần. */}
+                {NEXT_STATUS[selected.shippingStatus] === 'IN_TRANSIT' && (
                   <div className="mb-3">
                     <label className="text-xs text-slate-500 uppercase block mb-1">
                       Mã vận đơn (khi gửi hàng)
@@ -292,7 +298,7 @@ export function PortalOrdersPanel() {
                       type="text"
                       value={trackingInput}
                       onChange={(e) => setTrackingInput(e.target.value)}
-                      placeholder="Nhập mã tracking SPX..."
+                      placeholder="Nhập mã vận đơn..."
                       className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
                     />
                   </div>
