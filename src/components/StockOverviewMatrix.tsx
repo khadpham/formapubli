@@ -15,7 +15,6 @@ import {
   X,
   Keyboard,
   ShieldAlert,
-  Store,
   Landmark,
   Building2,
   ChevronDown,
@@ -26,7 +25,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Flame,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef, useCallback, useTransition } from 'react';
 import { PortalToBody } from './PortalToBody';
@@ -181,8 +179,6 @@ export function StockOverviewMatrix({
   const [warehouseTab, setWarehouseTab] = useState<string>('ALL');
   // Sắp xếp tồn kho: 'DEFAULT' (giữ nguyên SKU), 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
   const [stockSortMode, setStockSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
-  // Lọc chỉ hiển thị các đầu sách sắp hết (tồn <= 5 cuốn)
-  const [onlyLowStock, setOnlyLowStock] = useState<boolean>(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
   // Menu tab gọn: thay vì dải 4 pill inline (bị bóp + tràn trên ~470px), ta dùng
@@ -401,11 +397,6 @@ export function StockOverviewMatrix({
     return b.stockByWarehouse?.[tab] ?? 0;
   }, []);
 
-  // Số lượng đầu sách có tồn <= 5 tại kho đang chọn (hoặc trên tổng tồn khi xem tất cả kho)
-  const lowStockCount = useMemo(() => {
-    return initialBooks.filter((b) => getWarehouseStock(b, warehouseTab) <= STOCK_THRESHOLD_WARNING).length;
-  }, [initialBooks, warehouseTab, getWarehouseStock]);
-
   const filteredBooks = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     let result = initialBooks;
@@ -434,11 +425,6 @@ export function StockOverviewMatrix({
       });
     }
 
-    // Lọc theo cờ sách sắp hết (tồn <= 5)
-    if (onlyLowStock) {
-      result = result.filter((b) => getWarehouseStock(b, warehouseTab) <= STOCK_THRESHOLD_WARNING);
-    }
-
     // Sắp xếp tồn kho linh hoạt theo ngữ cảnh kho đang chọn
     if (stockSortMode === 'ASC') {
       result = [...result].sort((a, b) => {
@@ -457,7 +443,7 @@ export function StockOverviewMatrix({
     }
 
     return result;
-  }, [searchTerm, initialBooks, onlyLowStock, stockSortMode, warehouseTab, getWarehouseStock]);
+  }, [searchTerm, initialBooks, stockSortMode, warehouseTab, getWarehouseStock]);
 
   const openAction = (action: 'RECEIPT', book: MatrixBookItem | null = null) => {
     const fallbackBook = book || initialBooks[0] || null;
@@ -761,30 +747,16 @@ export function StockOverviewMatrix({
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
-          {/* Nút kho của login-ux: Mở Kho + TK Nhận Tiền nằm thẳng trên dải
-              hành động (nowrap + shrink-0 để không tràn ở 320px). Thanh công cụ
-              là ĐƯỜNG VÀO DUY NHẤT cho mọi hành động kho — thẻ QUẢN LÝ KHO
-              bên dưới chỉ còn tóm tắt trạng thái, không lặp lại nút nào. */}
-          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-            <button
-              type="button"
-              onClick={() => setCreateWarehouseOpen(true)}
-              title="Mở thêm kho hoặc gian hàng hội chợ mới"
-              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-            >
-              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho
-            </button>
-          )}
-          {/* "Kho" — panel xem tổng số kho + tồn từng kho, ngưng/mở lại/xóa.
-              Nhãn ngắn theo luật đặt tên: nút là động từ, mô tả nằm ở title. */}
+          {/* "Quản lý kho" — gộp Mở Kho vào đây: mở kho mới, sửa tên, ẩn/hiện,
+              xóa, đổi thứ tự đều làm trong panel. */}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
               onClick={() => setWarehousePanelOpen(true)}
-              title="Xem tổng số kho, tồn từng kho, ngưng hoạt động hoặc xóa kho"
+              title="Quản lý kho: mở kho mới, sửa tên, ẩn/hiện, xóa, đổi thứ tự"
               className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
-              <Warehouse className="w-3.5 h-3.5" /> Kho
+              <Warehouse className="w-3.5 h-3.5" /> Quản lý kho
             </button>
           )}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
@@ -887,37 +859,6 @@ export function StockOverviewMatrix({
           )}
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-
-          {/* Nút lọc nhanh: Sắp hết (<= 5 cuốn) */}
-          <button
-            type="button"
-            onClick={() => {
-              setOnlyLowStock((prev) => {
-                const next = !prev;
-                // Nếu bật lọc sắp hết mà chưa bật sort, tự động bật xếp Bé -> Lớn để xem sách cạn nhất trước
-                if (next && stockSortMode === 'DEFAULT') {
-                  setStockSortMode('ASC');
-                }
-                return next;
-              });
-            }}
-            title={onlyLowStock ? 'Bỏ lọc sách sắp hết, hiện lại toàn bộ' : 'Chỉ hiện các đầu sách có tồn kho ≤ 5 cuốn để kịp thời nhập thêm'}
-            className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 rounded-lg text-xs font-bold shadow-sm transition-all border cursor-pointer ${
-              onlyLowStock
-                ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200 shadow-rose-100'
-                : 'bg-white hover:bg-rose-50/50 text-slate-700 border-slate-300 hover:border-rose-200'
-            }`}
-          >
-            <Flame className={`w-3.5 h-3.5 shrink-0 ${onlyLowStock ? 'text-rose-600' : 'text-amber-500'}`} />
-            <span>Sắp hết (≤ 5)</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
-                onlyLowStock ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {lowStockCount}
-            </span>
-          </button>
 
           {/* Nút đảo chiều sắp xếp tồn: Bé -> Lớn / Lớn -> Bé / Mặc định */}
           <button
@@ -1024,7 +965,7 @@ export function StockOverviewMatrix({
           "Soạn kệ (gom theo kệ)" trong menu "Chuyển kho", và "Quản lý kho &
           gán nhân sự" lặp nút "TK Nhận Tiền" — cùng một hành động xuất hiện
           hai chỗ. Nay thẻ chỉ TÓM TẮT trạng thái; mọi thao tác nằm trên thanh
-          công cụ phía trên: Mở Kho · Kho · TK Nhận Tiền · Làm mới. */}
+          công cụ phía trên: Quản lý kho · TK Nhận Tiền · Làm mới. */}
       {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
         <div
           className="rounded-2xl border-2 border-indigo-200 bg-white p-4 shadow-sm"
@@ -1046,7 +987,7 @@ export function StockOverviewMatrix({
                   </span>
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Thao tác kho nằm trên thanh công cụ: Mở Kho · Kho · TK Nhận Tiền · Làm mới
+                  Thao tác kho nằm trên thanh công cụ: Quản lý kho · TK Nhận Tiền · Làm mới
                 </p>
               </div>
             </div>
@@ -1263,7 +1204,7 @@ export function StockOverviewMatrix({
               <tbody className="divide-y divide-slate-100">
                 {filteredBooks.map((b) => {
                   const currentStock = getWarehouseStock(b, warehouseTab);
-                  const isSortedLow = stockSortMode === 'ASC' || onlyLowStock;
+                  const isSortedLow = stockSortMode === 'ASC';
                   const rowHighlightClass = getStockRowHighlightClass(currentStock, isSortedLow);
                   const stockBadge = getStockAlertBadge(currentStock);
                   const totalBadge = getStockAlertBadge(b.totalStock);
@@ -1539,6 +1480,7 @@ export function StockOverviewMatrix({
           isOpen={warehousePanelOpen}
           onClose={() => setWarehousePanelOpen(false)}
           onChanged={reloadWarehouseChips}
+          onOpenCreate={() => setCreateWarehouseOpen(true)}
         />
       )}
     </div>
