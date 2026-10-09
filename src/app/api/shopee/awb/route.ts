@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_WAREHOUSE',
-      'ROLE_SHOPEE_OPS',
+      'ROLE_SHOPEE_OPS', 'ROLE_WAREHOUSE',
     ] as UserRole[]);
     const orderSn = `${new URL(req.url).searchParams.get('orderSn') || ''}`.trim();
     if (!orderSn) {
