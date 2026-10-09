@@ -1,5 +1,5 @@
 import { db, documentSequences, warehouses, bankAccounts } from '../db';
-import { and, eq, ne, asc } from 'drizzle-orm';
+import { and, eq, ne, asc, not, like } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { AppError } from './app-error';
 
@@ -43,7 +43,9 @@ export class WarehouseService {
           eq(warehouses.isSellableOnPos, true),
           // Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
           // không phải kho vận hành — ẩn khỏi mọi danh sách kho nghiệp vụ.
-          ne(warehouses.warehouseType, 'CONSIGNMENT')
+          // Bắt cả type lẫn code pattern KHO_KY_GUI% để xử lý kho cũ chưa có type đúng.
+          ne(warehouses.warehouseType, 'CONSIGNMENT'),
+          not(like(warehouses.code, 'KHO_KY_GUI%'))
         )
       )
       .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
@@ -56,7 +58,12 @@ export class WarehouseService {
     return await txOrDb
       .select()
       .from(warehouses)
-      .where(ne(warehouses.warehouseType, 'CONSIGNMENT'))
+      .where(
+        and(
+          ne(warehouses.warehouseType, 'CONSIGNMENT'),
+          not(like(warehouses.code, 'KHO_KY_GUI%'))
+        )
+      )
       .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
   }
 
