@@ -20,14 +20,14 @@ async function main() {
   try {
     const rows = (
       await db.execute(
-        `SELECT o.order_code, o.portal_ref, o.customer_name, c.email
+        `SELECT o.order_code, o.portal_ref, o.customer_name, c.email, o.status, o.shipping_status, o.created_at
          FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
-         WHERE o.channel='ONLINE' ORDER BY o.created_at`
+         WHERE o.channel='ONLINE' ORDER BY o.created_at DESC`
       )
     ).rows as any[];
     console.log(`Đơn ONLINE (${rows.length}):`);
     for (const r of rows) {
-      console.log(`  ${r.order_code} | portal_ref=${r.portal_ref || 'NULL'} | ${r.customer_name} <${r.email || '?'}>`);
+      console.log(`  ${r.order_code} | portal_ref=${r.portal_ref || 'NULL'} | status=${r.status} | ship=${r.shipping_status || 'NONE'} | ${r.customer_name} <${r.email || '?'}> | ${r.created_at}`);
     }
   } finally {
     try {
