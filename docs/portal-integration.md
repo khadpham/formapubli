@@ -77,9 +77,21 @@ Gọi lại cùng madon → trả về đơn cũ, không tạo trùng.
 
 ### Map sản phẩm
 
-`PORTAL_PRODUCT_MAP` trong `src/app/api/portal-orders/route.ts`:
-portal product ID → formapubli edition ID.
+`PORTAL_PRODUCT_MAP` (env, JSON): portal product ID → formapubli edition ID.
+Ví dụ: `{"nu-cong-tuoc-de-langeais":"ed-xxx","nicholas-nickleby":"ed-yyy"}`
 Chưa map → API trả 400, portal log lỗi để nhân viên xử lý tay.
+
+### API cho thủ kho
+
+**GET /api/portal-orders/picking** — Danh sách soạn hàng.
+Chỉ trả thông tin đóng gói (tên, SĐT, địa chỉ, sách, SL), KHÔNG có giá/doanh thu.
+Quyền: ROLE_WAREHOUSE, ROLE_MANAGER, ROLE_OWNER.
+
+**PATCH /api/portal-orders/[id]/shipping** — Cập nhật trạng thái.
+Body: `{ shippingStatus: 'CREATED'|'PICKED_UP'|'IN_TRANSIT'|'DELIVERED', trackingCode }`
+- CREATED: đã đóng gói
+- IN_TRANSIT: đã gửi (tự set codStatus=PENDING)
+- DELIVERED: đã giao
 
 ### Biến môi trường
 
