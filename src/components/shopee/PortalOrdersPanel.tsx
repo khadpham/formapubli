@@ -91,6 +91,7 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
   const [trackingFor, setTrackingFor] = useState<string | null>(null);
   const [trackingValue, setTrackingValue] = useState('');
   const [trackingInputModal, setTrackingInputModal] = useState('');
+  const [filterTab, setFilterTab] = useState<'ACTIVE' | 'DELIVERED' | 'ALL'>('ACTIVE');
   const [toast, setToast] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
   const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
@@ -228,23 +229,31 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
     handleUpdateShipping(o.id, 'IN_TRANSIT', trackingValue);
   };
 
-  const filtered = orders.filter((o) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      o.orderCode.toLowerCase().includes(q) ||
-      (o.portalRef || '').toLowerCase().includes(q) ||
-      o.customerName.toLowerCase().includes(q) ||
-      o.phone.includes(q) ||
-      (o.note || '').toLowerCase().includes(q) ||
-      (o.trackingCode || '').toLowerCase().includes(q)
-    );
-  });
-
+  const countActive = orders.filter((o) => o.shippingStatus !== 'DELIVERED').length;
+  const countDelivered = orders.filter((o) => o.shippingStatus === 'DELIVERED').length;
   const countNew = orders.filter((o) => o.shippingStatus === 'NONE').length;
   const countPacked = orders.filter((o) => o.shippingStatus === 'CREATED').length;
   const countInTransit = orders.filter((o) => o.shippingStatus === 'IN_TRANSIT').length;
   const countUndispatched = orders.filter((o) => !o.isDispatched).length;
+
+  const filtered = orders
+    .filter((o) => {
+      if (filterTab === 'ACTIVE') return o.shippingStatus !== 'DELIVERED';
+      if (filterTab === 'DELIVERED') return o.shippingStatus === 'DELIVERED';
+      return true;
+    })
+    .filter((o) => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (
+        o.orderCode.toLowerCase().includes(q) ||
+        (o.portalRef || '').toLowerCase().includes(q) ||
+        o.customerName.toLowerCase().includes(q) ||
+        o.phone.includes(q) ||
+        (o.note || '').toLowerCase().includes(q) ||
+        (o.trackingCode || '').toLowerCase().includes(q)
+      );
+    });
 
   if (loading) {
     return (
@@ -368,21 +377,78 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
       </div>
 
       {/* Ô tìm kiếm */}
-      <div className="relative">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          placeholder="Tìm theo mã đơn, mã portal, tên khách, số điện thoại, ghi chú..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
-        />
+      {/* Bộ lọc tab trạng thái & Ô tìm kiếm */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl w-fit">
+          <button
+            type="button"
+            onClick={() => setFilterTab('ACTIVE')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              filterTab === 'ACTIVE'
+                ? 'bg-white text-indigo-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Cần soạn / Đang xử lý ({countActive})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('DELIVERED')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              filterTab === 'DELIVERED'
+                ? 'bg-white text-emerald-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Đã xong ({countDelivered})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              filterTab === 'ALL'
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Tất cả ({orders.length})
+          </button>
+        </div>
+
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Tìm mã portal, SĐT, tên..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+          />
+        </div>
       </div>
 
       {/* Bảng danh sách đơn hàng */}
       {filtered.length === 0 ? (
         <div className="text-center py-12 text-slate-400 text-sm">
-          {search ? 'Không tìm thấy đơn nào khớp với từ khóa tìm kiếm.' : 'Không có đơn online nào cần xử lý lúc này 🎉'}
+          {search ? (
+            'Không tìm thấy đơn nào khớp với từ khóa tìm kiếm.'
+          ) : filterTab === 'ACTIVE' ? (
+            <div className="space-y-1">
+              <p className="font-bold text-slate-700 text-base">Tuyệt vời! Không còn đơn online nào cần soạn 🎉</p>
+              <p className="text-xs text-slate-500">Mọi đơn online hiện tại đều đã được xử lý và giao xong.</p>
+              {countDelivered > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterTab('DELIVERED')}
+                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold transition cursor-pointer"
+                >
+                  Xem {countDelivered} đơn đã xong →
+                </button>
+              )}
+            </div>
+          ) : (
+            'Không có đơn nào trong mục này.'
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
