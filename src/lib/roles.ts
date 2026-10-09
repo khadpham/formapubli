@@ -13,6 +13,7 @@ export interface RoleConfig {
   badgeBg: string;
   description: string;
   allowedNavItems: string[];
+  hidden?: boolean; // Ẩn khỏi UI chọn role (vẫn giữ để tương thích dữ liệu cũ)
 }
 
 export interface SettingsAccess {
@@ -48,11 +49,11 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
   },
   ROLE_WAREHOUSE: {
     id: 'ROLE_WAREHOUSE',
-    label: 'Thủ Kho Chuyên Trách (Keeper)',
+    label: 'Thủ Kho / Shopee',
     badgeColor: 'text-amber-700 border-amber-300',
     badgeBg: 'bg-amber-50',
-    description: 'Quản lý thẻ kho, nhập/xuất/chuyển kho 3 kho vật lý, không thấy doanh thu',
-    allowedNavItems: ['inventory', 'settings'],
+    description: 'Quản lý kho, đơn online (portal) và đơn Shopee: nhận đơn, đóng gói, gửi hàng. Thấy tổng tiền đơn, không thấy doanh thu/lợi nhuận.',
+    allowedNavItems: ['inventory', 'shopee', 'settings'],
   },
   ROLE_TAX: {
     id: 'ROLE_TAX',
@@ -69,6 +70,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeBg: 'bg-orange-50',
     description: 'Vận hành đơn Shopee trong kho được cấp, không thấy doanh thu tổng',
     allowedNavItems: ['shopee', 'settings'],
+    hidden: true, // 2026-10-09: ẩn khỏi UI đăng nhập (gộp vào Thủ Kho / Shopee)
   },
 };
 
