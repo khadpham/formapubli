@@ -30,10 +30,16 @@ const env = Object.fromEntries(
 const DO_IT = process.argv.includes('--thuc-hien');
 
 function newNameFor(old: string): string | null {
-  const m = /^kho\s+k[ýy]\s+g[ửửi]\s*-?\s*(.+)$/i.exec(old.trim());
-  if (m) return `Đại lý ${m[1].trim()}`;
-  if (/^đại lý\s+/i.test(old.trim())) return null; // đã đúng, giữ nguyên
-  return null; // mẫu lạ → chủ quyết tay
+  const trimmed = old.trim();
+  if (/^đại lý\s+/i.test(trimmed)) return null; // đã đúng, giữ nguyên
+  if (!/^kho\s+/i.test(trimmed)) return null; // mẫu lạ → chủ quyết tay
+  // Bóc "Kho" rồi bóc "Ký gửi" (+ gạch nối): "Kho Ký gửi - X" → "Đại lý X".
+  const rest = trimmed
+    .replace(/^kho\s+/i, '')
+    .replace(/^k[ýy]\s*g[ửửi]i?\s*-?\s*/i, '')
+    .trim();
+  if (!rest) return null;
+  return `Đại lý ${rest}`;
 }
 
 async function main() {
