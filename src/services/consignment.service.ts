@@ -89,6 +89,9 @@ export class ConsignmentService {
         name: `Kho Ký gửi - ${partner.name}`,
         address: `Quầy ký gửi tại đối tác ${partner.name}`,
         isActive: true,
+        // Kho ký gửi là kho đối tác (không phải kho vật lý vận hành) — đánh dấu
+        // để ẩn khỏi ma trận kho, modal chuyển kho, gán kho nhân sự...
+        warehouseType: 'CONSIGNMENT',
       })
       .onConflictDoNothing({ target: warehouses.id });
     return warehouseId;
