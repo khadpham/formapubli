@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowRightLeft, PlusCircle, MinusCircle, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, PlusCircle, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface BookItem {
   id: string;
@@ -28,7 +28,8 @@ interface StockMovementModalProps {
   books: BookItem[];
   warehouses: WarehouseItem[];
   onSuccess: () => void;
-  defaultAction?: 'RECEIPT' | 'DISPATCH' | 'TRANSFER';
+  /** @deprecated Modal giờ chỉ làm NHẬP NHÀ IN — prop này giữ lại để không vỡ caller cũ. */
+  defaultAction?: 'RECEIPT';
   selectedBook?: BookItem | null;
 }
 
@@ -38,17 +39,13 @@ export function StockMovementModal({
   books,
   warehouses,
   onSuccess,
-  defaultAction = 'TRANSFER',
+  defaultAction = 'RECEIPT',
   selectedBook = null,
 }: StockMovementModalProps) {
-  const [actionType, setActionType] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>(defaultAction);
+  // Modal này chỉ làm NHẬP NHÀ IN (RECEIPT). Chuyển kho dùng BatchTransferModal,
+  // xuất bán dùng Xuất kho — các tab cũ đã bỏ để gọn nghiệp vụ.
+  const actionType = 'RECEIPT' as const;
   const [selectedEditionId, setSelectedEditionId] = useState<string>(selectedBook?.id || (books[0]?.id || ''));
-  const [fromWarehouseId, setFromWarehouseId] = useState<string>(
-    warehouses.find((w) => w.code === 'KHO_QUYNH_MAI')?.id || warehouses[0]?.id || ''
-  );
-  const [toWarehouseId, setToWarehouseId] = useState<string>(
-    warehouses.find((w) => w.code === 'KHO_AU_CO')?.id || warehouses[1]?.id || ''
-  );
   const [targetWarehouseId, setTargetWarehouseId] = useState<string>(
     warehouses.find((w) => w.code === 'KHO_AU_CO')?.id || warehouses[0]?.id || ''
   );
@@ -65,7 +62,6 @@ export function StockMovementModal({
   // Phải đặt trước early-return để giữ thứ tự hooks ổn định.
   useEffect(() => {
     if (!isOpen) return;
-    setActionType(defaultAction);
     const nextBookId =
       selectedBook?.id || books[0]?.id || '';
     setSelectedEditionId((prev) => {
@@ -81,7 +77,7 @@ export function StockMovementModal({
     setErrorMessage(null);
     setSuccessMessage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, defaultAction, selectedBook?.id]);
+  }, [isOpen, selectedBook?.id]);
 
   const [mounted, setMounted] = useState(false);
 
@@ -123,47 +119,24 @@ export function StockMovementModal({
     setSuccessMessage(null);
 
     try {
-      if (actionType === 'TRANSFER') {
-        const res = await fetch('/api/inventory/transfer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            editionId: selectedEditionId,
-            fromWarehouseId,
-            toWarehouseId,
-            quantity,
-            documentRef,
-            actorId,
-            note,
-            // P2-04: key chống double-click nhân đôi chuyến kho
-            idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Lỗi chuyển kho');
-        setSuccessMessage(`Đã chuyển thành công ${quantity} cuốn ${currentBook?.title}!`);
-      } else {
-        const eventType = actionType === 'RECEIPT' ? 'RECEIPT' : 'DISPATCH_SALE';
-        const delta = actionType === 'RECEIPT' ? quantity : -quantity;
-        const res = await fetch('/api/inventory/movement', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            editionId: selectedEditionId,
-            warehouseId: targetWarehouseId,
-            eventType,
-            quantityDelta: delta,
-            documentRef,
-            actorId,
-            note,
-            // P2-02: key chống double-click ghi trùng kho (server từ chối key lặp)
-            idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Lỗi thao tác kho');
-        setSuccessMessage(`Đã ghi sổ cái thành công cho ${currentBook?.title}!`);
-      }
+      const res = await fetch('/api/inventory/movement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          editionId: selectedEditionId,
+          warehouseId: targetWarehouseId,
+          eventType: 'RECEIPT',
+          quantityDelta: quantity,
+          documentRef,
+          actorId,
+          note,
+          // P2-02: key chống double-click ghi trùng kho (server từ chối key lặp)
+          idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi thao tác kho');
+      setSuccessMessage(`Đã ghi sổ cái thành công cho ${currentBook?.title}!`);
 
       setTimeout(() => {
         onSuccess();
@@ -185,13 +158,9 @@ export function StockMovementModal({
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2.5">
-            {actionType === 'TRANSFER' && <ArrowRightLeft className="w-5 h-5 text-indigo-600" />}
-            {actionType === 'RECEIPT' && <PlusCircle className="w-5 h-5 text-emerald-600" />}
-            {actionType === 'DISPATCH' && <MinusCircle className="w-5 h-5 text-rose-600" />}
+            <PlusCircle className="w-5 h-5 text-emerald-600" />
             <h2 className="text-base font-bold text-slate-800">
-              {actionType === 'TRANSFER' && 'Phiếu Điều Chuyển Kho'}
-              {actionType === 'RECEIPT' && 'Phiếu Nhập Kho Từ Nhà In'}
-              {actionType === 'DISPATCH' && 'Phiếu Xuất Hàng / Bán Lẻ'}
+              Phiếu Nhập Kho Từ Nhà In
             </h2>
           </div>
           <button
@@ -202,51 +171,6 @@ export function StockMovementModal({
           </button>
         </div>
 
-        {/* Action Type Toggle */}
-        <div className="px-6 pt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setActionType('TRANSFER');
-              setDocumentRef(`PCK-${Date.now().toString().slice(-6)}`);
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
-              actionType === 'TRANSFER'
-                ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-sm'
-                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Chuyển kho
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActionType('RECEIPT');
-              setDocumentRef(`PNK-${Date.now().toString().slice(-6)}`);
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
-              actionType === 'RECEIPT'
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm'
-                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Nhập nhà in
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActionType('DISPATCH');
-              setDocumentRef(`PXK-${Date.now().toString().slice(-6)}`);
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
-              actionType === 'DISPATCH'
-                ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-sm'
-                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Xuất bán / Tặng
-          </button>
-        </div>
 
         <form id="stock-movement-form" onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Book Select */}
@@ -286,37 +210,9 @@ export function StockMovementModal({
           )}
 
           {/* Warehouse Selection */}
-          {actionType === 'TRANSFER' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Từ Kho (Kho Xuất)</label>
-                <select
-                  value={fromWarehouseId}
-                  onChange={(e) => setFromWarehouseId(e.target.value)}
-                  className="w-full text-xs border border-slate-300 rounded-lg p-2 font-medium"
-                >
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Tới Kho (Kho Nhập)</label>
-                <select
-                  value={toWarehouseId}
-                  onChange={(e) => setToWarehouseId(e.target.value)}
-                  className="w-full text-xs border border-slate-300 rounded-lg p-2 font-medium"
-                >
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          ) : (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {actionType === 'RECEIPT' ? 'Kho Tiếp Nhận' : 'Kho Xuất Hàng'}
+                Kho Tiếp Nhận
               </label>
               <select
                 value={targetWarehouseId}
@@ -328,7 +224,6 @@ export function StockMovementModal({
                 ))}
               </select>
             </div>
-          )}
 
           {/* Quantity & Document Ref */}
           <div className="grid grid-cols-2 gap-3">
