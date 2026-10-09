@@ -57,19 +57,26 @@ const NEXT_LABEL: Record<string, string> = {
 export function PortalOrdersPanel() {
   const [orders, setOrders] = useState<PickingOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<PickingOrder | null>(null);
   const [trackingInput, setTrackingInput] = useState('');
 
   const fetchOrders = async () => {
+    setRefreshing(true);
     try {
-      const res = await fetch('/api/portal-orders/picking');
+      const res = await fetch('/api/portal-orders/picking', { cache: 'no-store' });
       const data = await res.json();
-      if (data.success) setOrders(data.data);
+      if (data.success) {
+        setOrders(data.data);
+        setUpdatedAt(new Date());
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -112,20 +119,36 @@ export function PortalOrdersPanel() {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-lg font-extrabold text-slate-900">Đơn Online Cần Soạn</h3>
           <p className="text-xs text-slate-500">
             {filtered.length} đơn chờ xử lý — bấm vào đơn để xem chi tiết và cập nhật trạng thái
           </p>
         </div>
-        <input
-          type="text"
-          placeholder="Tìm theo mã đơn, tên, SĐT, ghi chú..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="px-4 py-2 border border-slate-300 rounded-xl text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {updatedAt && (
+            <span className="text-[11px] text-slate-400 whitespace-nowrap">
+              Cập nhật lúc {updatedAt.toLocaleTimeString('vi-VN')}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={fetchOrders}
+            disabled={refreshing}
+            aria-label="Làm mới danh sách đơn online"
+            className="px-3 py-2 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 active:scale-[0.99] transition disabled:opacity-50 cursor-pointer whitespace-nowrap"
+          >
+            {refreshing ? 'Đang tải…' : '↻ Làm mới'}
+          </button>
+          <input
+            type="text"
+            placeholder="Tìm theo mã đơn, tên, SĐT, ghi chú..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-xl text-sm w-80 max-w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
       </div>
 
       {filtered.length === 0 ? (
