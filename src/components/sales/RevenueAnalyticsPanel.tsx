@@ -384,7 +384,7 @@ export function RevenueAnalyticsPanel({
       {/* Ký gửi đại lý — tồn vật lý, KHÔNG chia theo kho/sổ nên chỉ lọc ngày */}
       {consignment.length > 0 && (
         <div className="overflow-x-auto">
-          <h4 className="text-xs font-extrabold text-slate-900 mb-2">Hàng ký gửi tại đại lý (wh-consign-*)</h4>
+          <h4 className="text-xs font-extrabold text-slate-900 mb-2">Hàng ký gửi tại các đại lý</h4>
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
               <tr>

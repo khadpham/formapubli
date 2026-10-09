@@ -86,7 +86,9 @@ export class ConsignmentService {
       .values({
         id: warehouseId,
         code: `KHO_KY_GUI_${partner.code.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`,
-        name: `Kho Ký gửi - ${partner.name}`,
+        // Đại lý ký gửi KHÔNG phải kho: tên mới sinh ra đã là "Đại lý X",
+        // không bao giờ mang chữ "Kho" (quy ước warehouse-labels).
+        name: `Đại lý ${partner.name}`,
         address: `Quầy ký gửi tại đối tác ${partner.name}`,
         isActive: true,
         // Kho ký gửi là kho đối tác (không phải kho vật lý vận hành) — đánh dấu

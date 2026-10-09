@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
  *   channels, cashflow : startDate, endDate, warehouseId, fiscalScope(OFFICIAL_TAX|INTERNAL_MANAGEMENT)
  *   top-editions       : startDate, endDate, top, warehouseId, excludeGifts=0 (mặc định ĐÃ loại dòng quà tặng; truyền excludeGifts=0 để GIỮ lại dòng quà)
  *   stock-summary      : warehouseId
- *   consignment        : startDate, endDate  (kho ký gửi suy ra từ mẫu id wh-consign-*, không nhận warehouseId/fiscalScope)
+ *   consignment        : startDate, endDate  (đại lý suy ra từ warehouseType CONSIGNMENT, không nhận warehouseId/fiscalScope)
  *   trending           : top               (tuần hiện tại, không nhận startDate/endDate/warehouseId/fiscalScope)
  *   product-timeline   : productId (bắt buộc), startDate, endDate, warehouseId (Nhịp Bán 1 món trong kỳ)
  * P2-13 / P1b: Chỉ OWNER/MANAGER (Default-Deny fail-closed, bắt buộc session cookie hợp lệ).

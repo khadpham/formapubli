@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     // kho ngưng sau này thì đơn portal báo lỗi rõ lúc tạo, admin cấu hình lại).
     const wh = (
       await db
-        .select({ id: warehouses.id, isActive: warehouses.isActive })
+        .select({ id: warehouses.id, isActive: warehouses.isActive, warehouseType: warehouses.warehouseType })
         .from(warehouses)
         .where(eq(warehouses.id, warehouseId))
         .limit(1)
@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
     if (!wh) {
       return NextResponse.json(
         { success: false, error: 'Kho không tồn tại.' },
+        { status: 400 },
+      );
+    }
+    // Đại lý ký gửi không phải kho vận hành — không thể làm kho fulfill đơn portal.
+    if (wh.warehouseType === 'CONSIGNMENT') {
+      return NextResponse.json(
+        { success: false, error: 'Đây là đại lý ký gửi, không thể chọn làm kho fulfill đơn portal.' },
         { status: 400 },
       );
     }

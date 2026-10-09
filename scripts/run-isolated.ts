@@ -221,6 +221,8 @@ const ALL_SUITES = [
   'scripts/test-shopee-escrow.ts',
   // Shopee Task 9: công tắc COD (mặc định tắt).
   'scripts/test-shopee-cod-flag.ts',
+  // Nhãn kho dùng chung: đại lý ký gửi không bao giờ hiện chữ "Kho".
+  'scripts/test-warehouse-labels.ts',
   // Shopee UI ẩn: config runtime + cờ server (không đụng DB chung ngoài bảng settings).
   'scripts/test-shopee-shop-config.ts',
   'scripts/test-shopee-ui-hidden.ts',

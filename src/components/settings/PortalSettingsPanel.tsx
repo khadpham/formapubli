@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { displayWarehouseName } from '@/lib/warehouse-labels';
 
 interface Warehouse {
   id: string;
   code: string;
   name: string;
+  warehouseType?: string | null;
+  isActive?: boolean;
 }
 
 export function PortalSettingsPanel() {
@@ -20,7 +23,9 @@ export function PortalSettingsPanel() {
     (async () => {
       try {
         const [whRes, cfgRes] = await Promise.all([
-          fetch('/api/warehouses'),
+          // all=true để chọn được mọi kho vận hành (kể cả kho không bán POS);
+          // đại lý ký gửi đã bị loại ở server (listAll).
+          fetch('/api/warehouses?all=true'),
           fetch('/api/portal-settings'),
         ]);
         const whData = await whRes.json();
@@ -87,8 +92,8 @@ export function PortalSettingsPanel() {
         >
           <option value="">-- Chọn kho --</option>
           {warehouses.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name} ({w.code})
+            <option key={w.id} value={w.id} disabled={w.isActive === false}>
+              {displayWarehouseName(w)} ({w.code}){w.isActive === false ? ' — đã ngưng' : ''}
             </option>
           ))}
         </select>
