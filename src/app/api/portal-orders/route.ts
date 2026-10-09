@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
-import { db, customers, editions } from '@/db';
+import { db, customers, editions, portalSettings } from '@/db';
 import { eq } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 
@@ -146,7 +146,18 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Tạo order PENDING (giữ chỗ ATP, chưa trừ kho, chưa ghi doanh thu)
-    const warehouseId = process.env.PORTAL_WAREHOUSE_ID;
+    // Ưu tiên: warehouseId từ body > DB portal_settings > env PORTAL_WAREHOUSE_ID
+    let warehouseId = (body as any).warehouseId as string | undefined;
+    if (!warehouseId) {
+      const setting = (
+        await db
+          .select({ value: portalSettings.value })
+          .from(portalSettings)
+          .where(eq(portalSettings.key, 'PORTAL_WAREHOUSE_ID'))
+          .limit(1)
+      )[0];
+      warehouseId = setting?.value || process.env.PORTAL_WAREHOUSE_ID;
+    }
     if (!warehouseId) {
       return NextResponse.json(
         { success: false, error: 'Chưa cấu hình kho cho đơn portal (PORTAL_WAREHOUSE_ID).' },
