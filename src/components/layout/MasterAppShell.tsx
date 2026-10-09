@@ -5,7 +5,6 @@ import { AppSidebar } from './AppSidebar';
 import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard';
 import { PosCheckoutTerminal } from '@/components/pos/PosCheckoutTerminal';
 import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
-import { PortalOrdersPanel } from '@/components/inventory/PortalOrdersPanel';
 import { CampaignModal } from '@/components/inventory/CampaignModal';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
@@ -392,10 +391,6 @@ export function MasterAppShell({
 
           {currentRole && effectiveTab === 'inventory' && (
             <div className="space-y-6">
-              {/* Đơn online cần soạn — cho Thủ Kho / Shopee */}
-              {(currentRole === 'ROLE_WAREHOUSE' || currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-                <PortalOrdersPanel />
-              )}
               {/* Chiến dịch bán ngắn hạn — nút mở modal riêng, chỉ quản lý trở lên. */}
               {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
                 <>

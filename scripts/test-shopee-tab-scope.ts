@@ -41,9 +41,9 @@ async function main() {
   );
   eq2('tab mặc định là shopee', getDefaultTabForRole('ROLE_SHOPEE_OPS' as never), 'shopee');
   eq2(
-    'kho chung không thấy tab shopee',
+    'thu kho thay tab shopee',
     USER_ROLES['ROLE_WAREHOUSE'].allowedNavItems.includes('shopee'),
-    false
+    true
   );
   eq2('chu thay tab shopee', USER_ROLES['ROLE_OWNER'].allowedNavItems.includes('shopee'), true);
   eq2(

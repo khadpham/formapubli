@@ -2936,11 +2936,7 @@ export function PosCheckoutTerminal({
                 ? `Xem ${pendingOrderCount} đơn chuyển khoản đang chờ xác nhận`
                 : 'Xem đơn chuyển khoản đang chờ xác nhận'
             }
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer min-h-[40px] ${
-              pendingOrderCount
-                ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-            }`}
+            className="hidden"
             title="Đơn chuyển khoản/QR đang chờ. Xác nhận hoặc hủy ở đây — nếu không, sẽ không chốt được ca."
           >
             <Clock className="w-4 h-4" />

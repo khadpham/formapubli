@@ -77,14 +77,6 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
     }
   };
 
-  if (!uiEnabled) {
-    return (
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
-        <p className="text-xs text-slate-500">Tab Shopee đang tắt (chờ quản lý bật).</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {toast && (
@@ -93,9 +85,16 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
         </div>
       )}
 
+      {/* Đơn online portal cần soạn cho thủ kho */}
       <PortalOrdersPanel currentRole={sessionRole} />
 
-      <section aria-label="Đơn Shopee chờ xử lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
+      {!uiEnabled ? (
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm text-xs text-slate-500">
+          Tính năng đồng bộ sàn Shopee đang tắt (chờ quản lý bật).
+        </div>
+      ) : (
+        <>
+          <section aria-label="Đơn Shopee chờ xử lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
           <ShoppingBag className="w-5 h-5 text-orange-600" />
           Đơn Shopee cần gói ({queue.length})
@@ -159,6 +158,8 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           Số đối soát phí sàn xem ở tab Chủ sau (đơn chỉ tính khi đã giao).
         </p>
       </section>
+        </>
+      )}
     </div>
   );
 }

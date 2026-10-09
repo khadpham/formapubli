@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionRole } from '@/lib/auth-session';
-import { db, orders, orderItems, editions, works, products } from '@/db';
+import { db, orders, orderItems, editions, works, products, inventoryLedger } from '@/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
@@ -108,6 +108,20 @@ export async function GET(req: NextRequest) {
       itemsByOrder.set(it.orderId, arr);
     }
 
+    const orderIds = pendingOrders.map((o) => o.id);
+    const dispatchedRows = orderIds.length
+      ? await db
+          .select({ correlationId: inventoryLedger.correlationId })
+          .from(inventoryLedger)
+          .where(
+            and(
+              inArray(inventoryLedger.correlationId, orderIds),
+              eq(inventoryLedger.eventType, 'DISPATCH_SALE')
+            )
+          )
+      : [];
+    const dispatchedSet = new Set(dispatchedRows.map((r) => r.correlationId).filter(Boolean));
+
     const result = [];
     for (const ord of pendingOrders) {
       const enriched = itemsByOrder.get(ord.id) || [];
@@ -127,6 +141,8 @@ export async function GET(req: NextRequest) {
         paymentMethod: ord.paymentMethod,
         shippingStatus: ord.shippingStatus,
         trackingCode: ord.trackingCode,
+        note,
+        isDispatched: dispatchedSet.has(ord.id),
         createdAt: ord.createdAt,
         items: enriched,
       });
