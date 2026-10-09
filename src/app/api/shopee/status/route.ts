@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
       'ROLE_OWNER',
       'ROLE_MANAGER',
       'ROLE_WAREHOUSE',
-      'ROLE_SHOPEE_OPS',
+      'ROLE_SHOPEE_OPS', 'ROLE_WAREHOUSE',
     ] as UserRole[]);
     const shopId = Number(process.env.SHOPEE_SHOP_ID || '0') || 0;
     const stored = shopId ? await new TursoTokenStorage(shopId).get() : null;
