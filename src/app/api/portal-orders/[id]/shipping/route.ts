@@ -4,7 +4,6 @@ import { db, orders } from '@/db';
 import { eq } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
-import { OrderService } from '@/services/order.service';
 
 export const dynamic = 'force-dynamic';
 
