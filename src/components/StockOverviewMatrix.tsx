@@ -15,7 +15,6 @@ import {
   X,
   Keyboard,
   ShieldAlert,
-  Store,
   Landmark,
   Building2,
   ChevronDown,
@@ -26,7 +25,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Flame,
 } from 'lucide-react';
 import React, { useState, useMemo, useEffect, useRef, useCallback, useTransition } from 'react';
 import { PortalToBody } from './PortalToBody';
@@ -78,7 +76,14 @@ interface WarehouseItem {
   name: string;
   /** Còn hoạt động không — để thẻ tóm tắt kho đếm đúng (bảng `warehouses`). */
   isActive?: boolean;
+  /** Loại kho: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT. */
+  warehouseType?: string;
 }
+
+/** Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
+ *  không phải kho vật lý vận hành — ẩn khỏi ma trận và mọi chỗ chọn kho. */
+const isPhysicalWarehouse = (w: { warehouseType?: string }) =>
+  w.warehouseType !== 'CONSIGNMENT';
 
 interface LedgerEntry {
   id: string;
@@ -117,7 +122,7 @@ export function StockOverviewMatrix({
   const [modalOpen, setModalOpen] = useState(false);
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
-  const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
+  const [modalAction, setModalAction] = useState<'RECEIPT' | 'DISPATCH' | 'TRANSFER'>('TRANSFER');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
   const [editingWholesaleDraft, setEditingWholesaleDraft] = useState<any | null>(null);
@@ -131,7 +136,9 @@ export function StockOverviewMatrix({
       const j = await fetch('/api/warehouses?all=true', { cache: 'no-store' }).then((r) => r.json());
       if (j?.success && Array.isArray(j.data)) {
         setLocalWarehouses(
-          j.data.map((w: any) => ({ id: w.id, code: w.code, name: w.name, isActive: w.isActive !== false }))
+          j.data
+            .map((w: any) => ({ id: w.id, code: w.code, name: w.name, isActive: w.isActive !== false, warehouseType: w.warehouseType }))
+            .filter(isPhysicalWarehouse)
         );
       }
     } catch {
@@ -146,7 +153,9 @@ export function StockOverviewMatrix({
     code: string;
   } | null>(null);
   const [presetTargetWarehouseId, setPresetTargetWarehouseId] = useState<string | undefined>(undefined);
-  const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(warehouses);
+  const [localWarehouses, setLocalWarehouses] = useState<WarehouseItem[]>(
+    warehouses.filter(isPhysicalWarehouse)
+  );
   const router = useRouter();
   /** Đang làm mới: bật khi bấm, tắt khi props `initialBooks` mới trả về. */
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -160,7 +169,7 @@ export function StockOverviewMatrix({
   }, []);
 
   useEffect(() => {
-    setLocalWarehouses(warehouses);
+    setLocalWarehouses(warehouses.filter(isPhysicalWarehouse));
   }, [warehouses]);
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
@@ -170,7 +179,6 @@ export function StockOverviewMatrix({
   // Sắp xếp tồn kho: 'DEFAULT' (giữ nguyên SKU), 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
   const [stockSortMode, setStockSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
   // Lọc chỉ hiển thị các đầu sách sắp hết (tồn <= 5 cuốn)
-  const [onlyLowStock, setOnlyLowStock] = useState<boolean>(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isScrolledPast, setIsScrolledPast] = useState(false);
   // Menu tab gọn: thay vì dải 4 pill inline (bị bóp + tràn trên ~470px), ta dùng
@@ -356,10 +364,10 @@ export function StockOverviewMatrix({
         return;
       }
 
-      // Tổ hợp Alt + Shift + T -> Mở Chuyển kho hàng loạt (BatchTransferModal)
+      // Tổ hợp Alt + Shift + T (Mac: Option+Shift+T / Cmd+Shift+T) -> Mở Phiếu Chuyển Kho
       if (matchActionShortcut(e, 'KeyT', { shift: true })) {
         e.preventDefault();
-        if (!batchTransferOpen) setBatchTransferOpen(true);
+        if (!modalOpen) openAction('TRANSFER');
         return;
       }
 
@@ -390,10 +398,6 @@ export function StockOverviewMatrix({
   }, []);
 
   // Số lượng đầu sách có tồn <= 5 tại kho đang chọn (hoặc trên tổng tồn khi xem tất cả kho)
-  const lowStockCount = useMemo(() => {
-    return initialBooks.filter((b) => getWarehouseStock(b, warehouseTab) <= STOCK_THRESHOLD_WARNING).length;
-  }, [initialBooks, warehouseTab, getWarehouseStock]);
-
   const filteredBooks = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     let result = initialBooks;
@@ -423,7 +427,6 @@ export function StockOverviewMatrix({
     }
 
     // Lọc theo cờ sách sắp hết (tồn <= 5)
-    if (onlyLowStock) {
       result = result.filter((b) => getWarehouseStock(b, warehouseTab) <= STOCK_THRESHOLD_WARNING);
     }
 
@@ -445,9 +448,9 @@ export function StockOverviewMatrix({
     }
 
     return result;
-  }, [searchTerm, initialBooks, onlyLowStock, stockSortMode, warehouseTab, getWarehouseStock]);
+  }, [searchTerm, initialBooks, stockSortMode, warehouseTab, getWarehouseStock]);
 
-  const openAction = (action: 'RECEIPT', book: MatrixBookItem | null = null) => {
+  const openAction = (action: 'RECEIPT' | 'DISPATCH' | 'TRANSFER', book: MatrixBookItem | null = null) => {
     const fallbackBook = book || initialBooks[0] || null;
     if (!fallbackBook) return;
     setModalAction(action);
@@ -749,30 +752,16 @@ export function StockOverviewMatrix({
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
-          {/* Nút kho của login-ux: Mở Kho + TK Nhận Tiền nằm thẳng trên dải
-              hành động (nowrap + shrink-0 để không tràn ở 320px). Thanh công cụ
-              là ĐƯỜNG VÀO DUY NHẤT cho mọi hành động kho — thẻ QUẢN LÝ KHO
-              bên dưới chỉ còn tóm tắt trạng thái, không lặp lại nút nào. */}
-          {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
-            <button
-              type="button"
-              onClick={() => setCreateWarehouseOpen(true)}
-              title="Mở thêm kho hoặc gian hàng hội chợ mới"
-              className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-            >
-              <Store className="w-3.5 h-3.5 text-amber-400" /> Mở Kho
-            </button>
-          )}
-          {/* "Kho" — panel xem tổng số kho + tồn từng kho, ngưng/mở lại/xóa.
-              Nhãn ngắn theo luật đặt tên: nút là động từ, mô tả nằm ở title. */}
+          {/* "Quản lý kho" — gộp Mở Kho vào đây: mở kho mới, sửa tên, ẩn/hiện,
+              xóa, đổi thứ tự đều làm trong panel. */}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
               type="button"
               onClick={() => setWarehousePanelOpen(true)}
-              title="Xem tổng số kho, tồn từng kho, ngưng hoạt động hoặc xóa kho"
+              title="Quản lý kho: mở kho mới, sửa tên, ẩn/hiện, xóa, đổi thứ tự"
               className="flex items-center gap-1.5 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
-              <Warehouse className="w-3.5 h-3.5" /> Kho
+              <Warehouse className="w-3.5 h-3.5" /> Quản lý kho
             </button>
           )}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
@@ -809,6 +798,14 @@ export function StockOverviewMatrix({
             </button>
             {actionMenu === 'MOVE' && (
               <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => { setActionMenu(null); openAction('TRANSFER'); }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs text-slate-700"
+                >
+                  <span className="font-bold whitespace-nowrap">1 phiếu chuyển kho</span>
+                  <span className="block text-[10px] text-slate-400">Chọn từng đầu sách chuyển giữa 2 kho</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => { setActionMenu(null); setBatchTransferOpen(true); }}
@@ -875,37 +872,6 @@ export function StockOverviewMatrix({
           )}
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-
-          {/* Nút lọc nhanh: Sắp hết (<= 5 cuốn) */}
-          <button
-            type="button"
-            onClick={() => {
-              setOnlyLowStock((prev) => {
-                const next = !prev;
-                // Nếu bật lọc sắp hết mà chưa bật sort, tự động bật xếp Bé -> Lớn để xem sách cạn nhất trước
-                if (next && stockSortMode === 'DEFAULT') {
-                  setStockSortMode('ASC');
-                }
-                return next;
-              });
-            }}
-            title={onlyLowStock ? 'Bỏ lọc sách sắp hết, hiện lại toàn bộ' : 'Chỉ hiện các đầu sách có tồn kho ≤ 5 cuốn để kịp thời nhập thêm'}
-            className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] px-3 py-2 rounded-lg text-xs font-bold shadow-sm transition-all border cursor-pointer ${
-              onlyLowStock
-                ? 'bg-rose-50 text-rose-800 border-rose-300 ring-2 ring-rose-200 shadow-rose-100'
-                : 'bg-white hover:bg-rose-50/50 text-slate-700 border-slate-300 hover:border-rose-200'
-            }`}
-          >
-            <Flame className={`w-3.5 h-3.5 shrink-0 ${onlyLowStock ? 'text-rose-600' : 'text-amber-500'}`} />
-            <span>Sắp hết (≤ 5)</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
-                onlyLowStock ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {lowStockCount}
-            </span>
-          </button>
 
           {/* Nút đảo chiều sắp xếp tồn: Bé -> Lớn / Lớn -> Bé / Mặc định */}
           <button
@@ -1251,7 +1217,7 @@ export function StockOverviewMatrix({
               <tbody className="divide-y divide-slate-100">
                 {filteredBooks.map((b) => {
                   const currentStock = getWarehouseStock(b, warehouseTab);
-                  const isSortedLow = stockSortMode === 'ASC' || onlyLowStock;
+                  const isSortedLow = stockSortMode === 'ASC';
                   const rowHighlightClass = getStockRowHighlightClass(currentStock, isSortedLow);
                   const stockBadge = getStockAlertBadge(currentStock);
                   const totalBadge = getStockAlertBadge(b.totalStock);
@@ -1325,7 +1291,7 @@ export function StockOverviewMatrix({
                       <td className="px-3 py-2.5 text-center">
                         <button
                           type="button"
-                          onClick={() => setBatchTransferOpen(true)}
+                          onClick={() => openAction('TRANSFER', b)}
                           className="px-2 py-1 whitespace-nowrap text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
                         >
                           Chuyển kho
@@ -1527,6 +1493,7 @@ export function StockOverviewMatrix({
           isOpen={warehousePanelOpen}
           onClose={() => setWarehousePanelOpen(false)}
           onChanged={reloadWarehouseChips}
+          onOpenCreate={() => setCreateWarehouseOpen(true)}
         />
       )}
     </div>
