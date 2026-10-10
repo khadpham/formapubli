@@ -13,7 +13,7 @@ function assertOwner(role: UserRole) {
 
 /**
  * Lệnh in mang giá vốn (GĐ3-P2). Toàn bộ service chặn ở tầng service theo
- * role — route cũng chặn requireSessionRole, double-guard như expense.service.
+ * role - route cũng chặn requireSessionRole, double-guard như expense.service.
  */
 export class PrintOrderService {
   static async create(params: {
@@ -83,7 +83,7 @@ export class PrintOrderService {
     return row;
   }
 
-  /** Chủ sửa giá vốn/số lượng khi phát hiện sai — ghi audit cũ → mới. */
+  /** Chủ sửa giá vốn/số lượng khi phát hiện sai - ghi audit cũ → mới. */
   static async update(id: string, patch: { unitCostAgreed?: number; quantityPlanned?: number; note?: string; status?: string }, actorRole: UserRole, actorId: string) {
     assertOwner(actorRole);
     const cur = await this.getById(id, actorRole);
@@ -125,7 +125,7 @@ export class PrintOrderService {
     return after;
   }
 
-  /** Lấy thông tin lô cho luồng nhập kho — CHỈ dùng server-side, không trả về client. */
+  /** Lấy thông tin lô cho luồng nhập kho - CHỈ dùng server-side, không trả về client. */
   static async getLotInfo(id: string) {
     const [row] = await db.select().from(printOrders).where(eq(printOrders.id, id)).limit(1);
     if (!row) throw AppError.invalid(`Không tìm thấy lệnh in ${id}.`);
@@ -133,7 +133,7 @@ export class PrintOrderService {
     return { id: row.id, code: row.code, unitCostAgreed: Number(row.unitCostAgreed) };
   }
 
-  /** Ghi nhận đã nhận hàng theo lệnh in — gọi từ luồng nhập kho (server-side). */
+  /** Ghi nhận đã nhận hàng theo lệnh in - gọi từ luồng nhập kho (server-side). */
   static async addReceived(id: string, qty: number, tx: any) {
     const [cur] = await tx.select().from(printOrders).where(eq(printOrders.id, id)).limit(1);
     if (!cur) throw AppError.invalid(`Không tìm thấy lệnh in ${id}.`);

@@ -8,7 +8,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * Nhật ký hoạt động — LỊCH SỬ BỀN VỮNG của mọi thao tác đã xảy ra.
+ * Nhật ký hoạt động - LỊCH SỬ BỀN VỮNG của mọi thao tác đã xảy ra.
  * Quản lý/Owner xem toàn bộ; nhân viên chỉ xem việc của chính mình.
  * Dùng để đối soát sau này ("ai làm gì, lúc nào"), không mất khi đóng app.
  */

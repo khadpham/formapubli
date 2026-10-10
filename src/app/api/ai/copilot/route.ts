@@ -6,7 +6,7 @@ import { CopilotGuardrails, renderHistoryForPrompt, sanitizeHistory, type ChatTu
 import { callGeminiWithFallback, callCfWorkerAiJsonRaw, callGroqChatJsonRaw, callOpenAIJsonRaw, resolveOpenAIModel } from '@/services/ai/llm-client';
 
 /**
- * GĐ2: luồng chính của Copilot — tách khỏi POST để stream SSE và để test được.
+ * GĐ2: luồng chính của Copilot - tách khỏi POST để stream SSE và để test được.
  * Emit các sự kiện: planner → tool_start/tool_done → synthesizing → done | error.
  */
 export async function runCopilotStream(opts: {
@@ -25,10 +25,10 @@ export async function runCopilotStream(opts: {
 
     if (plan.action === 'REFUSE_OUT_OF_SCOPE' || plan.action === 'DIRECT_ANSWER') {
       // Câu hỏi ngoài dữ liệu (chuyện đời, câu đùa) vẫn phải có người trả lời tự
-      // nhiên — trả "Không có phản hồi." là lỗi lớn nhất về phong cách.
+      // nhiên - trả "Không có phản hồi." là lỗi lớn nhất về phong cách.
       const emptyAnswer =
         `Câu này tôi chưa có dữ liệu để trả lời chính xác, và tôi cũng không muốn bịa số cho sếp. ` +
-        `Tôi giỏi tồn kho, doanh số, két tiền, danh mục và nhịp bán — sếp hỏi một trong số đó là có số liệu ngay.`;
+        `Tôi giỏi tồn kho, doanh số, két tiền, danh mục và nhịp bán - sếp hỏi một trong số đó là có số liệu ngay.`;
       const finalMsg = CopilotGuardrails.postProcessAnswer((plan.directAnswer || '').trim() || emptyAnswer);
       await emit('done', {
         answer: finalMsg,
@@ -40,9 +40,9 @@ export async function runCopilotStream(opts: {
       return;
     }
 
-    // 6. Thực thi Tool — GĐ2: vòng lặp planner nhiều lượt.
+    // 6. Thực thi Tool - GĐ2: vòng lặp planner nhiều lượt.
     //    Lượt 1 chạy plan ban đầu; các lượt sau do planNextStep quyết định
-    //    (chỉ khi planner là LLM — heuristic giữ single-shot).
+    //    (chỉ khi planner là LLM - heuristic giữ single-shot).
     //    Mỗi bước đi qua executeToolSafely (RBAC + kiểm toán + guard riêng).
     const allowLoop = track.planner !== 'nội bộ';
     const { results } = await CopilotGuardrails.runPlanLoop({
@@ -67,7 +67,7 @@ export async function runCopilotStream(opts: {
       : results[0].toolData;
 
     await emit('synthesizing', {});
-    // 7. Tổng hợp câu trả lời từ kết quả Tool — chuỗi dự phòng:
+    // 7. Tổng hợp câu trả lời từ kết quả Tool - chuỗi dự phòng:
     // Gemini (model chọn/env) → Groq 120B → Groq 20B → OpenAI → formatter nội bộ.
     // Engine báo đúng model đã viết câu trả lời.
     let synthesizedAnswer = '';
@@ -85,7 +85,7 @@ export async function runCopilotStream(opts: {
     if (geminiKey || openaiKey || groqKey || cfReady) {
       // Cau hoi nam o userText (khong noi suy truc tiep vao system) de giam
       // prompt-injection vao ngu canh tong hop; system chi chua du lieu tool.
-      // Chế độ lời dặn (REFLECTIVE_ADVICE): sếp xin lời dặn dò/bàn giao — viết
+      // Chế độ lời dặn (REFLECTIVE_ADVICE): sếp xin lời dặn dò/bàn giao - viết
       // như người đi trước tận tâm, mỗi lời dặn gắn số thật từ dữ liệu.
       const adviceMode = (plan.reason || '').includes('REFLECTIVE_ADVICE');
       const synthPrompt = `Bạn là Trợ lý Điều hành Executive Copilot của Formapubli.
@@ -98,7 +98,7 @@ CÂU HỎI CỦA SẾP: "${question.slice(0, 500)}"
 
 ${
   adviceMode
-    ? `SẾP ĐANG XIN LỜI DẶN DÒ / BÀN GIAO CHO THẾ HỆ SAU — KHÔNG phải báo cáo khô.
+    ? `SẾP ĐANG XIN LỜI DẶN DÒ / BÀN GIAO CHO THẾ HỆ SAU - KHÔNG phải báo cáo khô.
 HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
 - Mở đầu 1 câu đồng cảm, ngắn.
 - Dặn 3–5 điều CỤ THỂ, mỗi điều GẮN CON SỐ THẬT từ dữ liệu trên (tồn tổng bao nhiêu cuốn, bao nhiêu ấn bản, mấy đầu sách cạn kho cần tái bản...).
@@ -108,7 +108,7 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
 - Tự nhiên, gọn, đi thẳng vào ý chính sếp hỏi. KHÔNG giáo điều, KHÔNG nhắc máy móc "theo công cụ...".
 - Mọi con số PHẢI lấy chính xác từ dữ liệu trên; không tự tính thêm ngoài dữ liệu.
 - Câu hỏi nhiều ý thì trình bày từng ý rõ ràng; thiếu số liệu cho 1 ý thì nói thẳng là thiếu.
-- Sếp có thể hỏi tiếp bằng đại từ ("nó", "cuốn đó", "kho đó") — hiểu là nói tiếp lượt trước, đừng hỏi lại.
+- Sếp có thể hỏi tiếp bằng đại từ ("nó", "cuốn đó", "kho đó") - hiểu là nói tiếp lượt trước, đừng hỏi lại.
 - Nếu là két tiền, TUYỆT ĐỐI không suy diễn thành gian lận hay buộc tội.
 - Trình bày danh sách/bảng khi có nhiều mục.
 - Nếu dữ liệu 1 đầu sách (itemsCount=1) chỉ trả đúng cuốn đó; itemsCount=0 báo không tìm thấy, TUYỆT ĐỐI không tự chế tồn kho.`
@@ -215,7 +215,7 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
         }
         synthesizedAnswer = extractNaturalAnswer(raw);
         // Sanitize cuối: model vẫn có thể trả JSON mảng/object lạ mà bộ bóc
-        // không nhận ra — còn { hoặc [ thì rơi về formatter, không bao giờ
+        // không nhận ra - còn { hoặc [ thì rơi về formatter, không bao giờ
         // hiện JSON thô cho lãnh đạo.
         if (/^\s*[\{\[]/.test(synthesizedAnswer)) synthesizedAnswer = '';
       } catch (synthErr) {
@@ -254,7 +254,7 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
       }
       const zeroContradiction = CopilotGuardrails.findZeroClaimContradiction(finalAnswer, toolResult);
       if (orphans.length > 0 || claimsZeroStock || wrongSingleTotal || zeroContradiction) {
-        console.warn(`Copilot ungrounded [${toolCall.toolName}]: orphans=${orphans.join(',')} zeroClaim=${claimsZeroStock} wrongTotal=${wrongSingleTotal} zeroContradiction=${zeroContradiction} — dung fallback.`);
+        console.warn(`Copilot ungrounded [${toolCall.toolName}]: orphans=${orphans.join(',')} zeroClaim=${claimsZeroStock} wrongTotal=${wrongSingleTotal} zeroContradiction=${zeroContradiction} - dung fallback.`);
         finalAnswer = formatFallbackAnswer(toolCall.toolName, toolResult);
       }
     } catch (err) {
@@ -275,7 +275,7 @@ HÃY VIẾT NHƯ MỘT NGƯỜI ĐI TRƯỚC TẬN TÂM:
           ? `${pickedBase} (Cloudflare)`
           : (modelOverride as string);
       finalAnswer =
-        `⚠️ **${pickedLabel} không gọi được lúc này**, tôi đã trả lời bằng **${engineNow}** — số liệu vẫn lấy từ sổ thật, chỉ cách diễn đạt khác.\n\n` +
+        `⚠️ **${pickedLabel} không gọi được lúc này**, tôi đã trả lời bằng **${engineNow}** - số liệu vẫn lấy từ sổ thật, chỉ cách diễn đạt khác.\n\n` +
         finalAnswer;
     }
 
@@ -326,7 +326,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Sliding Window Rate Limiting: 15 req / phút / staffId
-  // Tầng memory (nhanh) + tầng DB bền vững (sống qua restart isolate) — chặn
+  // Tầng memory (nhanh) + tầng DB bền vững (sống qua restart isolate) - chặn
   // nếu MỘT trong hai từ chối.
   const rateKey = `copilot:${sessionPayload.actorId}`;
   const rateResult = checkWindowRateLimit(rateKey, 15, 60 * 1000);
@@ -370,7 +370,7 @@ export async function POST(req: NextRequest) {
   const rawQuestion = (body as { question?: unknown })?.question;
   const question = typeof rawQuestion === 'string' ? rawQuestion.trim() : '';
   // Model do user chọn ở drawer (Tự động / 3.8 / 3.5-lite / nội bộ). Ngoài
-  // allowlist thì bỏ qua (về mặc định env) — không tin input thô.
+  // allowlist thì bỏ qua (về mặc định env) - không tin input thô.
   const rawModel = (body as { model?: unknown })?.model;
   // Lịch sử hội thoại để nhớ ngữ cảnh ("giờ vàng của nó là mấy giờ?"). Chỉ giữ
   // N lượt gần nhất, cắt độ dài, bỏ mọi role ngoài user/assistant.
@@ -399,12 +399,12 @@ export async function POST(req: NextRequest) {
   // Chan DoS CPU/LLM: cau hoi toi da 1000 ky tu (du cho cau phuc tap, chan dump KB).
   if (question.length > 1000) {
     return NextResponse.json(
-      { success: false, code: 'INVALID_INPUT', message: 'Câu hỏi tối đa 1000 ký tự — tách thành nhiều câu ngắn.' },
+      { success: false, code: 'INVALID_INPUT', message: 'Câu hỏi tối đa 1000 ký tự - tách thành nhiều câu ngắn.' },
       { status: 400 }
     );
   }
 
-  // 4. Ghi vết kiểm toán phiên hỏi đáp — KHÔNG log nguyên văn câu hỏi
+  // 4. Ghi vết kiểm toán phiên hỏi đáp - KHÔNG log nguyên văn câu hỏi
   // (có thể chứa tên/SĐT/khách hàng = PII). Chỉ lưu độ dài để debug quota.
   await recordAuditLog({
     action: 'COPILOT_QUERY',
@@ -415,7 +415,7 @@ export async function POST(req: NextRequest) {
     ipAddress: ip,
   });
 
-  // 5+. Stream SSE thay vì JSON một cục — drawer hiện tên tool đang chạy trực tiếp.
+  // 5+. Stream SSE thay vì JSON một cục - drawer hiện tên tool đang chạy trực tiếp.
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -434,7 +434,7 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      // Chặn proxy (nginx) buffer event — stream phải tới drawer ngay khi tool chạy.
+      // Chặn proxy (nginx) buffer event - stream phải tới drawer ngay khi tool chạy.
       'X-Accel-Buffering': 'no',
     },
   });
@@ -443,10 +443,10 @@ export async function POST(req: NextRequest) {
 function extractNaturalAnswer(raw: string): string {
   let text = (raw || '').trim();
   if (!text) return '';
-  // LLM doi khi boc fence ```json ... ``` — lot vo truoc khi parse.
+  // LLM doi khi boc fence ```json ... ``` - lot vo truoc khi parse.
   text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   if (!text) return '';
-  // LLM o che do JSON thuong tra {"response": "..."} — boc lay markdown tu nhien.
+  // LLM o che do JSON thuong tra {"response": "..."} - boc lay markdown tu nhien.
   if (text.startsWith('{')) {
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -455,7 +455,7 @@ function extractNaturalAnswer(raw: string): string {
         const v = parsed[key];
         if (typeof v === 'string' && v.trim()) return v.trim();
       }
-      // Truong hop model boc { "tool": ..., "data": ... } — khong hien JSON tho.
+      // Truong hop model boc { "tool": ..., "data": ... } - khong hien JSON tho.
       return '';
     } catch {
       return text;
@@ -465,7 +465,7 @@ function extractNaturalAnswer(raw: string): string {
 }
 
 /** Nhãn tiếng Việt cho phần trả lời khi câu hỏi có nhiều ý. */
-// Không kèm emoji ở đây — formatter bên dưới đã tự thêm icon cho từng phần.
+// Không kèm emoji ở đây - formatter bên dưới đã tự thêm icon cho từng phần.
 const LABEL_BY_TOOL: Record<string, string> = {
   query_stock_level: 'Tồn kho',
   query_sales_summary: 'Doanh số',
@@ -506,7 +506,7 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     }
     const lines = items.map(
       (it: any, i: number) =>
-        `${i + 1}. **${it.code} - ${it.title}** — ${Number(it.qty || 0).toLocaleString('vi-VN')} cuốn (${Number(it.revenue || 0).toLocaleString('vi-VN')} đ)`
+        `${i + 1}. **${it.code} - ${it.title}** - ${Number(it.qty || 0).toLocaleString('vi-VN')} cuốn (${Number(it.revenue || 0).toLocaleString('vi-VN')} đ)`
     );
     return `🧾 **Món bán trong khung hỏi** (tổng ${Number((data as any).totalQty || 0).toLocaleString('vi-VN')} cuốn):\n${lines.join('\n')}`;
   }
@@ -530,18 +530,18 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     }
     if (data.mode === 'top-authors' && data.authors?.length) {
       const lines = data.authors.slice(0, 20).map((a: { author?: string; titlesCount?: number; soldQty?: number }, i: number) =>
-        `${i + 1}. **${a.author}** — ${a.titlesCount} đầu sách, đã bán ${Number(a.soldQty).toLocaleString('vi-VN')} cuốn`);
-      return `📚 **Top tác giả được yêu thích (${data.query})** — tổng ${data.total} tác giả:\n${lines.join('\n')}`;
+        `${i + 1}. **${a.author}** - ${a.titlesCount} đầu sách, đã bán ${Number(a.soldQty).toLocaleString('vi-VN')} cuốn`);
+      return `📚 **Top tác giả được yêu thích (${data.query})** - tổng ${data.total} tác giả:\n${lines.join('\n')}`;
     }
     const lines = (data.items || []).slice(0, 20).map((it: { code?: string; title?: string; author?: string; coverPrice?: number; availableStock?: number }, i: number) => {
       const stock = Number(it.availableStock || 0);
-      return `${i + 1}. **${it.code} - ${it.title}** (${it.author || 'chưa rõ tác giả'}) — giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ — ${stock > 0 ? 'Còn hàng' : 'Hết hàng'}: ${stock.toLocaleString('vi-VN')} cuốn`;
+      return `${i + 1}. **${it.code} - ${it.title}** (${it.author || 'chưa rõ tác giả'}) - giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ - ${stock > 0 ? 'Còn hàng' : 'Hết hàng'}: ${stock.toLocaleString('vi-VN')} cuốn`;
     });
     const head = data.mode === 'author' ? `📚 **Sách của tác giả ${data.query}**`
       : data.mode === 'title-prefix' ? `📚 **Tác phẩm bắt đầu bằng ${data.query}**`
       : data.mode === 'top-editions' ? `📚 **Sách bán chạy (${data.query})**`
       : `📚 **Danh mục (${data.query})**`;
-    return `${head} — tổng ${data.total} đầu sách:\n${lines.join('\n')}`;
+    return `${head} - tổng ${data.total} đầu sách:\n${lines.join('\n')}`;
   }
   if (toolName === 'query_product_flow') {
     if ((data as any).warning) {
@@ -578,7 +578,7 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
       `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (giá bìa ${Number(it.coverPrice || 0).toLocaleString('vi-VN')} đ, tồn ${Number(it.availableStock || 0).toLocaleString('vi-VN')})`);
     const warn = (data.warnings || []).length > 0 ? `\n⚠️ ${(data.warnings || []).join(' ')}` : '';
     const who = data.customerName ? ` cho **${data.customerName}**` : '';
-    return `🧾 **Đơn nháp${who}** (${data.items.length} dòng) — mới là NHÁP, chưa tạo đơn, chưa trừ kho:\n${lines.join('\n')}${warn}\n\nBấm **Áp vào POS** để đổ vào giỏ, kiểm tra lại rồi tự bấm Thanh toán.`;
+    return `🧾 **Đơn nháp${who}** (${data.items.length} dòng) - mới là NHÁP, chưa tạo đơn, chưa trừ kho:\n${lines.join('\n')}${warn}\n\nBấm **Áp vào POS** để đổ vào giỏ, kiểm tra lại rồi tự bấm Thanh toán.`;
   }
   if (toolName === 'query_shift_split') {
     const d = data as any;
@@ -608,7 +608,7 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
       return `🚚 **Luân chuyển kho** (${d.windowDays} ngày): không có phiếu nào.`;
     }
     const lines = items.map((it: any, i: number) =>
-      `${i + 1}. **${it.id}** — ${it.fromWarehouse} → ${it.toWarehouse} (${it.status}): gửi ${it.dispatchedQty}, nhận ${it.receivedQty}${it.lostQty > 0 ? `, **thất lạc ${it.lostQty}**` : ''}`);
+      `${i + 1}. **${it.id}** - ${it.fromWarehouse} → ${it.toWarehouse} (${it.status}): gửi ${it.dispatchedQty}, nhận ${it.receivedQty}${it.lostQty > 0 ? `, **thất lạc ${it.lostQty}**` : ''}`);
     return `🚚 **Luân chuyển kho** (${d.windowDays} ngày, ${d.total} phiếu):\n${lines.join('\n')}`;
   }
   if (toolName === 'query_gift_return') {
@@ -616,7 +616,7 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     const g = d.gifts || { qty: 0, orders: 0, top: [] };
     const r = d.returns || { count: 0, refundAmount: 0, byStatus: {} };
     const top = (g.top || []).slice(0, 10).map((t: any, i: number) => `${i + 1}. **${t.code} - ${t.title}** × ${t.qty}`).join('\n');
-    const statuses = Object.entries(r.byStatus || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '—';
+    const statuses = Object.entries(r.byStatus || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || '-';
     return `🎁 **Quà & Trả hàng** (${d.windowDays} ngày):
 - Quà đã xuất: **${Number(g.qty || 0).toLocaleString('vi-VN')} cuốn** (${g.orders} đơn).${top ? `\n${top}` : ''}
 - Phiếu trả: **${r.count}** phiếu, hoàn **${Number(r.refundAmount || 0).toLocaleString('vi-VN')} đ** (${statuses}).`;
@@ -632,7 +632,7 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
       DRAFT: 'Nháp', FINALIZED: 'Đã chốt', SIGNED: 'Đã ký', CANCELLED: 'Đã hủy',
     };
     const lines = items.map((it: any, i: number) =>
-      `${i + 1}. **${it.contractNumber}** — ${it.title}${it.partnerName ? ` (${it.partnerName})` : ''} — ${STATUS_VI[it.status] || it.status} — ${Number(it.totalAmount || 0).toLocaleString('vi-VN')} đ`);
+      `${i + 1}. **${it.contractNumber}** - ${it.title}${it.partnerName ? ` (${it.partnerName})` : ''} - ${STATUS_VI[it.status] || it.status} - ${Number(it.totalAmount || 0).toLocaleString('vi-VN')} đ`);
     return `📄 **Hợp đồng** (tìm thấy ${d.total}):\n${lines.join('\n')}`;
   }
   if (toolName === 'query_agency_debt') {
@@ -644,7 +644,7 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     const lines = items.map((it: any, i: number) => {
       // Minor 12: hiện hạn mức tín dụng (đã fetch về nhưng bỏ phí).
       const limit = Number(it.creditLimit || 0) > 0 ? ` / hạn mức ${Number(it.creditLimit).toLocaleString('vi-VN')} đ` : '';
-      const base = `${i + 1}. **${it.partnerName}** — dư nợ ${Number(it.balance || 0).toLocaleString('vi-VN')} đ${limit}`;
+      const base = `${i + 1}. **${it.partnerName}** - dư nợ ${Number(it.balance || 0).toLocaleString('vi-VN')} đ${limit}`;
       return it.overdue > 0
         ? `${base}, quá hạn **${Number(it.overdue).toLocaleString('vi-VN')} đ** (${it.overdueCount} phiếu, lâu nhất ${it.oldestOverdueDays} ngày)`
         : `${base}, không quá hạn`;
@@ -658,13 +658,13 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     const items = (d.items || []).slice(0, 20);
     const warn = (d.warnings || []).length > 0 ? `\n⚠️ ${(d.warnings || []).join('\n⚠️ ')}` : '';
     if (items.length === 0) {
-      return `🚚 **Phiếu chuyển kho (nháp)**: chưa có dòng hàng nào.${warn}\nBổ sung thông tin rồi tôi chuẩn bị lại — tôi không tự tạo phiếu khi thiếu dữ liệu.`;
+      return `🚚 **Phiếu chuyển kho (nháp)**: chưa có dòng hàng nào.${warn}\nBổ sung thông tin rồi tôi chuẩn bị lại - tôi không tự tạo phiếu khi thiếu dữ liệu.`;
     }
     const lines = items.map((it: any, i: number) => {
       const stock = d.fromWarehouseId ? Number(it.availableStock || 0).toLocaleString('vi-VN') : 'chưa rõ';
       return `${i + 1}. **${it.code} - ${it.title}** × ${it.quantity} (tồn kho gửi: ${stock})`;
     });
-    return `🚚 **Phiếu chuyển kho NHÁP** — mới là nháp, chưa tạo phiếu, chưa trừ kho:\nTừ: **${from}** → Đến: **${to}**\n${lines.join('\n')}${warn}\n\nXem lại kỹ rồi bấm **"Xác nhận tạo phiếu"** bên dưới để tạo phiếu thật.`;
+    return `🚚 **Phiếu chuyển kho NHÁP** - mới là nháp, chưa tạo phiếu, chưa trừ kho:\nTừ: **${from}** → Đến: **${to}**\n${lines.join('\n')}${warn}\n\nXem lại kỹ rồi bấm **"Xác nhận tạo phiếu"** bên dưới để tạo phiếu thật.`;
   }
   if (toolName === 'query_order_lookup') {    const d = data as any;
     if (!d.found) {
@@ -672,8 +672,8 @@ function formatFallbackAnswer(toolName: string, data: Record<string, any>): stri
     }
     const o = d.order || {};
     const lines = (d.items || []).map((it: any, i: number) =>
-      `${i + 1}. **${it.code} - ${it.title}** × ${it.qty}${it.isGift ? ' (quà)' : ''} — ${Number(it.total || 0).toLocaleString('vi-VN')} đ`);
-    return `🧾 **Đơn ${d.orderCode}** (${o.status}, ${o.warehouse}):\n${lines.join('\n')}\n- Tổng: ${Number(o.subtotal || 0).toLocaleString('vi-VN')} đ, giảm ${Number(o.discountAmount || 0).toLocaleString('vi-VN')} đ, thu **${Number(o.finalAmount || 0).toLocaleString('vi-VN')} đ** (${o.paymentMethod || '—'}).`;
+      `${i + 1}. **${it.code} - ${it.title}** × ${it.qty}${it.isGift ? ' (quà)' : ''} - ${Number(it.total || 0).toLocaleString('vi-VN')} đ`);
+    return `🧾 **Đơn ${d.orderCode}** (${o.status}, ${o.warehouse}):\n${lines.join('\n')}\n- Tổng: ${Number(o.subtotal || 0).toLocaleString('vi-VN')} đ, giảm ${Number(o.discountAmount || 0).toLocaleString('vi-VN')} đ, thu **${Number(o.finalAmount || 0).toLocaleString('vi-VN')} đ** (${o.paymentMethod || '-'}).`;
   }
   // Đa bước: toolName là "a + b + c". Ghép formatter từng phần, KHÔNG nhét thẳng
   // toolData dạng thô vào markdown (đã dính: sếp thấy khối JSON trong chat).

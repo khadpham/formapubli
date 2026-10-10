@@ -22,7 +22,7 @@ interface QuarantineItem {
 }
 
 /**
- * Tab Shopee — vận hành đơn trong kho được cấp.
+ * Tab Shopee - vận hành đơn trong kho được cấp.
  * Ẩn nút thao tác khi cờ server SHOPEE_UI_ENABLED tắt (giống ShopeePanel).
  * Thẻ doanh thu để link chờ tab Chủ, không gọi escrow ở đây.
  */
@@ -67,7 +67,7 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
         body: JSON.stringify({ orderSn }),
       }).then((x) => x.json());
       if (r?.success) {
-        showToast(`Đã giao đơn ${orderSn} — mã vận đơn ${r.data.trackingCode}.`);
+        showToast(`Đã giao đơn ${orderSn} - mã vận đơn ${r.data.trackingCode}.`);
         loadAll();
       } else showToast(r?.error || 'Giao hàng thất bại.');
     } catch {
@@ -103,9 +103,9 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
         {queue.map((o) => (
           <div key={o.id} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
             <div className="min-w-0">
-              <p className="text-xs font-extrabold text-slate-800 truncate">#{o.orderSn} — {o.customerName}</p>
+              <p className="text-xs font-extrabold text-slate-800 truncate">#{o.orderSn} - {o.customerName}</p>
               <p className="text-[11px] text-slate-500">
-                {Number(o.finalAmount || 0).toLocaleString('vi-VN')}đ · {o.paymentMethod} · {o.carrier || '—'}
+                {Number(o.finalAmount || 0).toLocaleString('vi-VN')}đ · {o.paymentMethod} · {o.carrier || '-'}
               </p>
             </div>
             <div className="shrink-0 flex items-center gap-2">
@@ -142,7 +142,7 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           </h3>
           {quarantine.map((q) => (
             <p key={q.id} className="text-xs text-amber-800">
-              <span className="font-extrabold">#{q.orderSn}</span> — {q.reason}
+              <span className="font-extrabold">#{q.orderSn}</span> - {q.reason}
               {q.sku ? ` (SKU: ${q.sku})` : ''}
             </p>
           ))}

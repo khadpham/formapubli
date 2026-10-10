@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
 /**
- * Team B — LLM CLIENT DÙNG CHUNG (P3, docs/PHASE5_LANE_CONTRACT.md).
+ * Team B - LLM CLIENT DÙNG CHUNG (P3, docs/PHASE5_LANE_CONTRACT.md).
  *
  * Edge-safe: chỉ dùng native `fetch` + `AbortController`, không import
  * module Node (`https`, `fs`...). Tương thích Cloudflare Pages/Workers (V8 isolate).
  *
  * Quy tắc cấu hình:
  * - Tên model đọc từ env (`GEMINI_MODEL`, `OPENAI_MODEL`). KHÔNG default
- *   model Gemini cũ trong code — thiếu env mà có API key thì ném
+ *   model Gemini cũ trong code - thiếu env mà có API key thì ném
  *   `LlmConfigError` để caller rơi về fallback, không âm thầm gọi model stale.
  */
 
@@ -34,17 +34,17 @@ export class LlmSchemaError extends Error {
 export type LlmEngine = 'LLM_GEMINI' | 'LLM_OPENAI';
 
 /**
- * Model Gemini bắt buộc cấu hình qua env — không default cứng model cũ.
+ * Model Gemini bắt buộc cấu hình qua env - không default cứng model cũ.
  *
  * QUYẾT ĐỊNH SPRINT 0 + ĐO THẬT 17/09/2026 (Chủ dự án duyệt):
  * - gemini-1.5-flash-002: retired 24/09/2025. gemini-2.0-flash: retired 01/06/2026.
- * - gemini-2.5-flash: retirement 20/10/2026 (đã ghi nhận 404 sớm) — KHÔNG dùng.
+ * - gemini-2.5-flash: retirement 20/10/2026 (đã ghi nhận 404 sớm) - KHÔNG dùng.
  * - CHỐT 05/10/2026: GEMINI_MODEL=gemini-3.8-flash (Stable, đã xác minh tồn tại
  *   trên docs Google 01/10/2026). Google bỏ temperature/top_p/top_k từ 3.6+
  *   nên generationConfig KHÔNG gửi temperature (gửi là 400).
  * - Tầng Groq đo thật cùng prompt: gpt-oss-20b đúng (~1150ms), qwen3.8-27b
- *   nhanh (~420ms) nhưng bịa mã H01-001/H01-002 và chẻ số lượng — LOẠI khỏi chuỗi.
- * - Nếu chuyển sang 3.6+: Google đã bỏ temperature/top_p/top_k — phải cập nhật
+ *   nhanh (~420ms) nhưng bịa mã H01-001/H01-002 và chẻ số lượng - LOẠI khỏi chuỗi.
+ * - Nếu chuyển sang 3.6+: Google đã bỏ temperature/top_p/top_k - phải cập nhật
  *   generationConfig trong file này trước (xóa temperature).
  */
 export function resolveGeminiModel(): string {
@@ -52,7 +52,7 @@ export function resolveGeminiModel(): string {
   if (!model) {
     throw new LlmConfigError(
       'Thiếu cấu hình GEMINI_MODEL. Đặt GEMINI_MODEL=gemini-3.8-flash ' +
-        '(đã chốt + xác minh 05/10/2026) — không dùng model mặc định cũ.'
+        '(đã chốt + xác minh 05/10/2026) - không dùng model mặc định cũ.'
     );
   }
   return model;
@@ -89,7 +89,7 @@ export function resolveGroqApiKey(): string {
 /** Chat JSON qua Cloudflare Workers AI (REST, Chat Completions shape).
  * Dùng cho model free (vd GLM-4.7-flash) khi Gemini/Groq nghẽn.
  * Credentials KHÔNG bao giờ vào repo: WORKERS_AI_TOKEN + CF_ACCOUNT_ID là secret.
- * KHÔNG đặt tên biến là CF_API_TOKEN — wrangler tự đọc nó làm credential deploy
+ * KHÔNG đặt tên biến là CF_API_TOKEN - wrangler tự đọc nó làm credential deploy
  * và sẽ hỏng deploy (đã dính 1 lần 06/10/2026).
  */
 /** Model free đo THẬT trên Cloudflare Workers AI (06/10/2026, 3 lần mỗi model):
@@ -98,7 +98,7 @@ export function resolveGroqApiKey(): string {
  *  - glm-4.7-flash:    HTTP 1/3, 25–45s ⇒ quá chậm, chỉ chọn tay
  *  - glm-5.2 / glm-5.3: HTTP 403 ⇒ không dùng được
  *  - llama-3.3-70b:    trả văn bản tự do, KHÔNG JSON ⇒ loại
- * Chủ nghi ngờ "GLM-4.7 là model free tốt nhất" — đo thật thì sai (loại mặc định).
+ * Chủ nghi ngờ "GLM-4.7 là model free tốt nhất" - đo thật thì sai (loại mặc định).
  */
 export const CF_DEFAULT_MODEL = 'nemotron-3-120b-a12b';
 
@@ -144,7 +144,7 @@ export async function callCfWorkerAiJsonRaw(params: {
       params.timeoutMs ?? 25000,
       'CfWorkersAI'
     )) as { result?: { choices?: Array<{ message?: { content?: string } }> }; errors?: unknown };
-    // Mảng rỗng `[]` là truthy trong JS — kiểm tra chiều dài, không kiểm tra
+    // Mảng rỗng `[]` là truthy trong JS - kiểm tra chiều dài, không kiểm tra
     // sự tồn tại (đã dính: throw oan dù API trả 200, errors=[]).
     const errs = (data as any)?.errors;
     if (Array.isArray(errs) && errs.length > 0) {
@@ -314,7 +314,7 @@ export async function callOpenAIJsonRaw(params: {
 
 /**
  * Chuỗi optional chịu được null: LLM (đặc biệt Gemini) hay trả
- * `"phone": null` thay vì省略 trường — coi null như không có.
+ * `"phone": null` thay vì省略 trường - coi null như không có.
  */
 export function nullableString(max: number): z.ZodType<string | undefined> {
   return z.preprocess(
@@ -325,7 +325,7 @@ export function nullableString(max: number): z.ZodType<string | undefined> {
 
 /**
  * Parse JSON từ LLM qua Zod schema. Ném `LlmSchemaError` khi JSON vỡ
- * hoặc lệch schema — caller bắt và rơi về fallback, không crash.
+ * hoặc lệch schema - caller bắt và rơi về fallback, không crash.
  */
 export function parseLlmJson<T>(rawJson: string, schema: z.ZodType<T, any, any>, label: string): T {
   let parsed: unknown;
@@ -348,7 +348,7 @@ export function parseLlmJson<T>(rawJson: string, schema: z.ZodType<T, any, any>,
 // - Budget: chặn số lượt gọi/tháng (in-memory, theo process). Khi vượt, ném
 //   LlmBudgetExceededError để caller rơi về fallback nội bộ.
 // - GIỚI HẠN: in-memory reset khi restart/multi-instance. Muốn hạch toán
-//   chuẩn theo tháng cần ledger DB (Team A, migration riêng — ngoài Sprint 0).
+//   chuẩn theo tháng cần ledger DB (Team A, migration riêng - ngoài Sprint 0).
 // - Edge-safe: chỉ dùng Date.now(), không dùng Timer thường trực.
 // ---------------------------------------------------------------------------
 
@@ -432,7 +432,7 @@ export function getLlmHealth(): Record<
   };
 }
 
-/** Dùng cho test/eval — reset mạch và ngân sách về trạng thái sạch. */
+/** Dùng cho test/eval - reset mạch và ngân sách về trạng thái sạch. */
 export function resetLlmBreaker(engine?: LlmEngineKey): void {
   const keys: LlmEngineKey[] = engine ? [engine] : ['gemini', 'openai', 'groq'];
   for (const k of keys) breakerStates[k] = { consecutiveFailures: 0, openedAt: 0 };
@@ -445,16 +445,16 @@ export async function withLlmCircuit<T>(engine: LlmEngineKey, fn: () => Promise<
   const state = breakerStates[engine];
 
   // 1. Mạch đang mở trong cooldown -> fail-fast MIỄN PHÍ (không gọi mạng,
-  //    KHÔNG trừ budget — vì không tốn quota nhà cung cấp).
+  //    KHÔNG trừ budget - vì không tốn quota nhà cung cấp).
   if (state.consecutiveFailures >= cfg.maxFailures) {
     if (Date.now() - state.openedAt < cfg.cooldownMs) {
       throw new LlmCircuitOpenError(engine);
     }
-    // Hết cooldown: half-open — cho 1 trial bằng cách hạ failures xuống ngưỡng-1.
+    // Hết cooldown: half-open - cho 1 trial bằng cách hạ failures xuống ngưỡng-1.
     state.consecutiveFailures = cfg.maxFailures - 1;
   }
 
-  // 2. Ngân sách tháng (đếm lượt gọi thật, kể cả lỗi — vì lỗi vẫn có thể tốn quota).
+  // 2. Ngân sách tháng (đếm lượt gọi thật, kể cả lỗi - vì lỗi vẫn có thể tốn quota).
   if (cfg.monthlyBudget > 0) {
     const key = currentMonthKey();
     if (budgetState.monthKey !== key) {
@@ -483,7 +483,7 @@ export async function withLlmCircuit<T>(engine: LlmEngineKey, fn: () => Promise<
 
 // ---------------------------------------------------------------------------
 // Độ tin cậy heuristic (thay số ghi cứng 0.98/0.95 cũ).
-// Thang đo có định nghĩa, nguồn ghi rõ 'heuristic' — KHÔNG phải đo thực tế.
+// Thang đo có định nghĩa, nguồn ghi rõ 'heuristic' - KHÔNG phải đo thực tế.
 // - fallback không khớp item nào  -> 0.40 (không đủ cơ sở)
 // - LLM parse + khớp catalog toàn bộ -> 0.90 (cao nhưng vẫn heuristic)
 // - các trường hợp giữa            -> nội suy theo tỉ lệ khớp

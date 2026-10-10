@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { CartItemSnapshot } from './DiscountApprovalModal';
 
-/** F4: giỏ đã khóa lúc xin duyệt — parse an toàn, dữ liệu hỏng coi như rỗng. */
+/** F4: giỏ đã khóa lúc xin duyệt - parse an toàn, dữ liệu hỏng coi như rỗng. */
 function parseCartSnapshot(raw?: string | null): CartItemSnapshot[] {
   try {
     const parsed = JSON.parse(`${raw ?? '[]'}`);
@@ -72,7 +72,7 @@ export type QuickApproveDecision =
  * (order.service.ts:559 → extractShortCode, discount-approval.service.ts:128)
  * ⇒ chỉ 65.536 giá trị, trùng chắc chắn xảy ra trong một hội chợ. Server so
  * shortCode với CHÍNH request client chọn (discount-approval.service.ts:434)
- * nên không chặn được — quản lý đọc mã A có thể duyệt đơn B của thu ngân khác.
+ * nên không chặn được - quản lý đọc mã A có thể duyệt đơn B của thu ngân khác.
  * Vì vậy trả về MỌI đơn khớp: 1 thì duyệt, nhiều thì bắt quản lý chọn.
  */
 export function decideQuickApprove(
@@ -96,7 +96,7 @@ export function ManagerApprovalDrawer({
 }: ManagerApprovalDrawerProps) {
   const [items, setItems] = useState<PendingApprovalItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  /** Lỗi tải danh sách — phải nhìn ra khác hẳn "không có yêu cầu nào". */
+  /** Lỗi tải danh sách - phải nhìn ra khác hẳn "không có yêu cầu nào". */
   const [loadError, setLoadError] = useState<string | null>(null);
   /** true = xem mọi kho, false = chỉ kho đang chọn. */
   const [showAllWarehouses, setShowAllWarehouses] = useState(false);
@@ -104,7 +104,7 @@ export function ManagerApprovalDrawer({
   const [otherWarehouseCount, setOtherWarehouseCount] = useState(0);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [quickShortCode, setQuickShortCode] = useState('');
-  /** id các thẻ đang bay — khoá từng thẻ, xong thẻ nào bỏ thẻ nó. */
+  /** id các thẻ đang bay - khoá từng thẻ, xong thẻ nào bỏ thẻ nó. */
   const [busyIds, setBusyIds] = useState<string[]>([]);
   /** Mã 4 số bị trùng: bắt quản lý chọn đúng đơn thay vì duyệt bừa. */
   const [ambiguous, setAmbiguous] = useState<{ code: string; items: PendingApprovalItem[] } | null>(null);
@@ -182,7 +182,7 @@ export function ManagerApprovalDrawer({
   };
 
   const markBusy = (id: string) => setBusyIds((prev) => addBusyId(prev, id));
-  /** Chỉ bỏ khoá đúng thẻ vừa xong — không đụng trạng thái của thẻ khác. */
+  /** Chỉ bỏ khoá đúng thẻ vừa xong - không đụng trạng thái của thẻ khác. */
   const clearBusy = (id: string) => setBusyIds((prev) => removeBusyId(prev, id));
 
   // 1-Chạm duyệt
@@ -254,7 +254,7 @@ export function ManagerApprovalDrawer({
       handleApprove(decision.item.id, decision.code);
       return;
     }
-    // Trùng mã: không tự chọn đơn — đưa danh sách để quản lý chọn đúng thẻ.
+    // Trùng mã: không tự chọn đơn - đưa danh sách để quản lý chọn đúng thẻ.
     setAmbiguous({ code: decision.code, items: decision.items });
   };
 
@@ -354,7 +354,7 @@ export function ManagerApprovalDrawer({
             </button>
           </div>
 
-          {/* Trùng mã 4 số: KHÔNG duyệt bừa — bắt quản lý chọn đúng đơn */}
+          {/* Trùng mã 4 số: KHÔNG duyệt bừa - bắt quản lý chọn đúng đơn */}
           {ambiguous && ambiguous.items.length > 1 && (
             <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-2.5 space-y-2">
               <p className="text-[11px] font-extrabold text-rose-800">
@@ -539,7 +539,7 @@ export function ManagerApprovalDrawer({
                   </div>
                 </div>
 
-                {/* F4: giỏ đã khóa tại thời điểm xin duyệt — Quản lý đối chiếu TRƯỚC khi duyệt */}
+                {/* F4: giỏ đã khóa tại thời điểm xin duyệt - Quản lý đối chiếu TRƯỚC khi duyệt */}
                 {parseCartSnapshot(item.cartSnapshot).length > 0 && (
                   <button
                     type="button"
@@ -558,7 +558,7 @@ export function ManagerApprovalDrawer({
                     {parseCartSnapshot(item.cartSnapshot).map((line) => (
                       <div key={line.editionId} className="flex items-center justify-between">
                         <span className="text-slate-900 font-bold">
-                          {line.editionId} × {line.quantity} — {line.unitPrice.toLocaleString('vi-VN')} đ
+                          {line.editionId} × {line.quantity} - {line.unitPrice.toLocaleString('vi-VN')} đ
                         </span>
                       </div>
                     ))}

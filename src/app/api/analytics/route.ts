@@ -6,7 +6,7 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * Bước 5 — OLAP read-only (0 migration).
+ * Bước 5 - OLAP read-only (0 migration).
  * GET /api/analytics?view=channels|trending|consignment|cashflow|top-editions|stock-summary|product-timeline
  *   &startDate=&endDate=
  *

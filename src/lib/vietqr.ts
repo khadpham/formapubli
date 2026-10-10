@@ -4,7 +4,7 @@ function tlv(id: string, value: string): string {
 
 /**
  * VietQR chỉ mang tối đa 23 ký tự trong trường `add_info` (tag 62.08). Đây là
- * giới hạn của CHUẨN, không phải lựa chọn của app — mọi thứ đi vào ô nội dung
+ * giới hạn của CHUẨN, không phải lựa chọn của app - mọi thứ đi vào ô nội dung
  * chuyển khoản đều phải chịu nó. `resolveTransferContent` cần biết con số này
  * để dồn ngân sách ký tự, nên nó sống ở đây (chỗ thi hành) thay vì nhân bản.
  */

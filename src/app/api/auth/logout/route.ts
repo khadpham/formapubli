@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     if (cookie) {
       const payload = await verifySession(cookie);
       if (payload) {
-        // S-01: nhả lease CÓ ĐIỀU KIỆN (staff + session) — cookie cũ không
+        // S-01: nhả lease CÓ ĐIỀU KIỆN (staff + session) - cookie cũ không
         // xóa lease của phiên mới hơn nếu đã có máy khác chiếm.
         if (isLeaseEnforcedRole(payload.role)) {
           await releaseCashierLease(payload.actorId, payload.sessionId).catch(() => false);

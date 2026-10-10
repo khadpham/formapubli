@@ -5,13 +5,13 @@ import InspectModule from 'docxtemplater/js/inspect-module';
 const ENGINE_OPTIONS = {
   paragraphLoop: true,
   linebreaks: true,
-  // Draft lưu thiếu biến là bình thường (điền dần) — thiếu thì để trống,
+  // Draft lưu thiếu biến là bình thường (điền dần) - thiếu thì để trống,
   // không ném 500. Lỗi CÚ PHÁP vẫn ném ở constructor (validate bắt được).
   nullGetter: () => '',
 };
 
 function toBinary(templateBase64: string): string {
-  // Dùng Buffer path khi có — atob ở Node cũ gây lệch byte với file thật.
+  // Dùng Buffer path khi có - atob ở Node cũ gây lệch byte với file thật.
   return Buffer.from(templateBase64, 'base64').toString('binary');
 }
 
@@ -22,7 +22,7 @@ export interface TemplateValidationResult {
 }
 
 /**
- * Engine merge .docx — 1 nguồn sự thật cho preview lẫn export (D1).
+ * Engine merge .docx - 1 nguồn sự thật cho preview lẫn export (D1).
  * Extract/validate placeholder bằng inspect-module (D4): CẤM regex trên XML
  * vì Word bẻ `{ten_bien}` thành nhiều run.
  */

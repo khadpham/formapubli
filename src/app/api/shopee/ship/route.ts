@@ -8,7 +8,7 @@ import { getShopeeConfig, isShopeeOrderInScope } from '@/services/shopee/shop-co
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/shopee/ship { orderSn } — thủ kho bấm giao + lấy tracking.
+ * POST /api/shopee/ship { orderSn } - thủ kho bấm giao + lấy tracking.
  * Role và trạng thái chặn trong service; route chỉ bóc session.
  */
 export async function POST(req: NextRequest) {

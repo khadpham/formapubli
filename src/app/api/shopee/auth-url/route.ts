@@ -7,7 +7,7 @@ import { generateShopeeSign } from '@/services/shopee/sign';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/shopee/auth-url — link ủy quyền gian hàng cho Anh bấm (chủ only).
+ * GET /api/shopee/auth-url - link ủy quyền gian hàng cho Anh bấm (chủ only).
  * Chưa cấu hình key → 400 rõ ràng, không sinh link hỏng.
  */
 export async function GET(req: NextRequest) {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       `${process.env.SHOPEE_BASE_URL || 'https://partner.shopeemobile.com'}`.replace(/\/$/, '');
     if (!partnerId || !partnerKey) {
       return NextResponse.json(
-        { success: false, error: 'Chưa cấu hình key Shopee — liên hệ kỹ thuật.' },
+        { success: false, error: 'Chưa cấu hình key Shopee - liên hệ kỹ thuật.' },
         { status: 400 }
       );
     }

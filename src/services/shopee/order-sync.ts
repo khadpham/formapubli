@@ -15,10 +15,10 @@ export interface ShopeeSyncConfig {
   partnerId: number;
   partnerKey: string;
   baseUrl: string;
-  /** Kho xuất hàng Shopee (cấu hình — hiện tại kho Âu Cơ). CẤM hardcode. */
+  /** Kho xuất hàng Shopee (cấu hình - hiện tại kho Âu Cơ). CẤM hardcode. */
   warehouseId: string;
   /**
-   * COD đang bật? Mặc định TẮT (Anh chốt) — đơn COD khi tắt sẽ vào cách ly
+   * COD đang bật? Mặc định TẮT (Anh chốt) - đơn COD khi tắt sẽ vào cách ly
    * với lý do rõ ràng thay vì lọt vào kho. Bật sau không cần migration.
    */
   codEnabled?: boolean;
@@ -82,7 +82,7 @@ async function shopeeGet(
   const res = await fetchFn(`${cfg.baseUrl}${apiPath}?${qs.toString()}`, { method: 'GET' });
   const data = (await res.json()) as any;
   if (data?.error) {
-    throw new Error(`Shopee API lỗi: ${data.error} — ${data.message || ''}`);
+    throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   }
   return data.response;
 }
@@ -99,7 +99,7 @@ export async function pullShopeeOrders(
   timeFrom: number,
   timeTo: number
 ): Promise<PullResult> {
-  // Cấu hình runtime (DB) làm nền; giá trị truyền tường minh luôn thắng —
+  // Cấu hình runtime (DB) làm nền; giá trị truyền tường minh luôn thắng -
   // nhờ vậy test và cron dùng chung một đường mà không hardcode kho.
   const shopCfg = await getShopeeConfig();
   const eff: ShopeeSyncConfig = {
@@ -112,7 +112,7 @@ export async function pullShopeeOrders(
   }
   const result: PullResult = { pulled: 0, skipped: 0, quarantined: [] };
 
-  // Danh mục ISBN/code để map SKU — đọc 1 lần cho cả đợt kéo.
+  // Danh mục ISBN/code để map SKU - đọc 1 lần cho cả đợt kéo.
   const editionOf = await buildCatalogResolver();
 
   let cursor = '';
@@ -136,7 +136,7 @@ export async function pullShopeeOrders(
   return result;
 }
 
-/** Kéo chi tiết + nhập N đơn theo mã — dùng chung cho sync định kỳ và webhook. */
+/** Kéo chi tiết + nhập N đơn theo mã - dùng chung cho sync định kỳ và webhook. */
 export async function ingestShopeeOrderSns(
   cfg: ShopeeSyncConfig,
   orderSns: string[],
@@ -178,7 +178,7 @@ async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
   };
 }
 
-/** Ghi đơn lỗi vào hàng đợi để UI hiển thị — đã có dòng chưa xử lý thì thôi. */
+/** Ghi đơn lỗi vào hàng đợi để UI hiển thị - đã có dòng chưa xử lý thì thôi. */
 async function quarantine(orderSn: string, sku: string, reason: string): Promise<ShopeeQuarantine> {
   const q = { orderSn, sku, reason };
   const existing = await withDbRetry(async () =>
@@ -226,7 +226,7 @@ async function ingestOne(
     const editionId = editionOf(sku);
     if (!editionId) {
       result.quarantined.push(await quarantine(d.order_sn, sku, 'SKU không khớp ISBN/code'));
-      return; // Cách ly CẢ đơn — không trừ nửa vời.
+      return; // Cách ly CẢ đơn - không trừ nửa vời.
     }
     resolved.push({
       editionId,
@@ -242,13 +242,13 @@ async function ingestOne(
 
   const isCod = d.payment_method === 'COD';
   if (isCod && !cfg.codEnabled) {
-    result.quarantined.push(await quarantine(d.order_sn, '', 'COD đang tắt — bật cờ mới xử lý'));
+    result.quarantined.push(await quarantine(d.order_sn, '', 'COD đang tắt - bật cờ mới xử lý'));
     return;
   }
   const finalAmount = resolved.reduce((s, r) => s + r.qty * r.discounted, 0);
   const subtotal = resolved.reduce((s, r) => s + r.qty * r.original, 0);
   const addr = d.recipient_address;
-  // Đơn vị vận chuyển do khách chọn lúc checkout — giữ để lúc ship khỏi đoán.
+  // Đơn vị vận chuyển do khách chọn lúc checkout - giữ để lúc ship khỏi đoán.
   const carrier = (d.shipping_carrier || '').trim().toUpperCase().slice(0, 32) || null;
 
   await withDbRetry(async () =>
@@ -272,7 +272,7 @@ async function ingestOne(
         codStatus: isCod ? 'PENDING' : 'NONE',
         cashierId: 'system-shopee-sync',
         idempotencyKey: idemKey,
-        note: `Đơn Shopee #${d.order_sn} — ${addr?.full_address || ''} — ${addr?.phone || ''}`,
+        note: `Đơn Shopee #${d.order_sn} - ${addr?.full_address || ''} - ${addr?.phone || ''}`,
       });
       await tx.insert(orderItems).values(
         resolved.map((r) => ({

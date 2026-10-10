@@ -8,8 +8,8 @@ import { getShopeeConfig } from '@/services/shopee/shop-config';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/shopee/status — trạng thái kết nối cho UI.
- * Không trả secret. Cờ UI nằm ở server (SHOPEE_UI_ENABLED) — bật/tắt không
+ * GET /api/shopee/status - trạng thái kết nối cho UI.
+ * Không trả secret. Cờ UI nằm ở server (SHOPEE_UI_ENABLED) - bật/tắt không
  * cần deploy lại, không sửa code.
  */
 export async function GET(req: NextRequest) {

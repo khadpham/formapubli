@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** POST /api/ai/contracts/draft-template — AI soạn nháp mẫu từ lời mô tả. */
+/** POST /api/ai/contracts/draft-template - AI soạn nháp mẫu từ lời mô tả. */
 export async function POST(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const category = `${body.category || ''}`.trim();
     const description = `${body.description || ''}`.trim();
     if (!CONTRACT_CATEGORIES.includes(category as never)) throw AppError.invalid('Loại hợp đồng không hợp lệ.');
-    if (description.length < 10) throw AppError.invalid('Mô tả quá ngắn — hãy mô tả rõ hơn nhu cầu hợp đồng.');
+    if (description.length < 10) throw AppError.invalid('Mô tả quá ngắn - hãy mô tả rõ hơn nhu cầu hợp đồng.');
     const draft = await draftTemplateFromDescription({ category, description });
     return NextResponse.json({ success: true, data: draft });
   } catch (error: any) {

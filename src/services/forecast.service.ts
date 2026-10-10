@@ -3,7 +3,7 @@ import { AppError } from './app-error';
 import { eq, and, or, sql, inArray, isNull } from 'drizzle-orm';
 
 /**
- * ĐỘNG CƠ DỰ BÁO TÁI BẢN (REPRINT RUNOUT FORECASTING) — stateless, không migration.
+ * ĐỘNG CƠ DỰ BÁO TÁI BẢN (REPRINT RUNOUT FORECASTING) - stateless, không migration.
  *
  * - V_sale: tổng cuốn xuất bán (DISPATCH_SALE + CONSIGNMENT_SOLD) trong N ngày
  *   gần nhất / N. Nguồn ledger (sự thật vật lý), mốc recordedAt.
@@ -88,7 +88,7 @@ export class ForecastService {
       .where(
         and(
           inArray(inventoryLedger.eventType, ['DISPATCH_SALE', 'CONSIGNMENT_SOLD']),
-          // FIX-08b + P2-12 (KIỂM ĐỊNH 30/09): `recorded_at` tồn tại CẢ HAI họ —
+          // FIX-08b + P2-12 (KIỂM ĐỊNH 30/09): `recorded_at` tồn tại CẢ HAI họ -
           // SQLite CURRENT_TIMESTAMP 'YYYY-MM-DD HH:mm:ss' (mặc định CSDL) và ISO
           // 'YYYY-MM-DDTHH:mm:ss.sssZ' (app ghi tay ở delivery-order.service).
           // So CHUỖI THÔ giữa hai họ là vô nghĩa: ' ' (0x20) < 'T' (0x54) nên mọi
@@ -218,7 +218,7 @@ export class ForecastService {
     }
 
     items.sort((a, b) => (a.doi ?? Number.POSITIVE_INFINITY) - (b.doi ?? Number.POSITIVE_INFINITY));
-    // Summary dem tren TOAN danh muc (truoc loc) — loc RED khong duoc lam mat so lieu tong.
+    // Summary dem tren TOAN danh muc (truoc loc) - loc RED khong duoc lam mat so lieu tong.
     const summary: Record<RunoutLevel, number> = {
       RED_ALERT: 0,
       YELLOW_WARNING: 0,

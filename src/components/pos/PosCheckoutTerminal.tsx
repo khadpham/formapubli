@@ -108,7 +108,7 @@ interface BookItem {
 /**
  * Nhóm sách đặc biệt hiện bằng một nút bấm ở POS mobile.
  *
- * Tên ở đây KHỚP CHÍNH XÁC với DB — đã đọc trực tiếp `editions` để đối chiếu:
+ * Tên ở đây KHỚP CHÍNH XÁC với DB - đã đọc trực tiếp `editions` để đối chiếu:
  *   H74 "Tên mọi trên tàu Narcissus" · H65 "Job, tiểu thuyết về một người thuần hậu"
  *   H69 "Lý thuyết tầng lớp nhàn rỗi" · H67 "Một người tên là Thứ Năm"
  *   H71 "Ông cha đạo ở Wakefield" · H72 "Người phụ tá" · H49 "In illo tempore"
@@ -125,7 +125,7 @@ const SPECIAL_BOOK_TITLES = new Set([
   'In illo tempore',
 ]);
 
-/** Nhãn hiển thị khi nút đang bật BỊ ĐẢO CHIỀU — phải đúng nghĩa thật. */
+/** Nhãn hiển thị khi nút đang bật BỊ ĐẢO CHIỀU - phải đúng nghĩa thật. */
 const REVERSED_LABEL: Record<string, string> = {
   az: 'Z → A',
   year: 'Mới → Cũ',
@@ -140,7 +140,7 @@ interface CartItem {
   quantity: number;
   stockAvailable: number;
   // 0031: dòng quà của chương trình mốc tiền (bán 0đ). Đường offline PHẢI giữ
-  // cờ này tới lúc đồng bộ — mất cờ thì dòng quà bị áp chiết khấu cả đơn và
+  // cờ này tới lúc đồng bộ - mất cờ thì dòng quà bị áp chiết khấu cả đơn và
   // đơn offline thu thiếu tiền (xem `toOfflineSyncItem`).
   isGiftLine?: boolean;
   // 1.0: tồn khả dụng ATP tại thời điểm thêm (null = chưa tra / offline)
@@ -153,7 +153,7 @@ interface ParserImportSnapshot {
   note: string;
 }
 
-/** Quà TAY ("Tặng thêm") — thu ngân tự chọn, quản lý duyệt trong cùng yêu cầu duyệt. */
+/** Quà TAY ("Tặng thêm") - thu ngân tự chọn, quản lý duyệt trong cùng yêu cầu duyệt. */
 interface ManualGift {
   editionId: string;
   quantity: number;
@@ -165,10 +165,10 @@ interface PosCheckoutTerminalProps {
   actorId?: string;
   isShellInteractionBlocked?: boolean;
   onBusyChange?: (busy: boolean) => void;
-  /** Báo cho shell biết thanh giỏ nổi mobile có hiển thị — chỉ chừa khoảng đáy khi cần. */
+  /** Báo cho shell biết thanh giỏ nổi mobile có hiển thị - chỉ chừa khoảng đáy khi cần. */
   onMobileBarVisibleChange?: (visible: boolean) => void;
   onOrderCompleted?: () => void;
-  /** Don nhap tu Copilot (prepare_sale_draft) — op vao gio 1 lan duy nhat. */
+  /** Don nhap tu Copilot (prepare_sale_draft) - op vao gio 1 lan duy nhat. */
   externalDraft?: {
     nonce: number;
     items: Array<{ editionId: string; quantity: number }>;
@@ -209,10 +209,10 @@ export function PosCheckoutTerminal({
   // chặn ở server (`/api/cashbox` OPEN).
   const [allowedWarehouseIds, setAllowedWarehouseIds] = useState<string[]>([]);
   const [allowedMissing, setAllowedMissing] = useState<string[]>([]);
-  // true khi đã biết allowed (kể cả offline/lỗi) — effect nạp kho chờ cờ này.
+  // true khi đã biết allowed (kể cả offline/lỗi) - effect nạp kho chờ cờ này.
   const [authReady, setAuthReady] = useState(false);
   // Tên thật của thu ngân đang đăng nhập. Lấy từ /api/auth/me (session đã có sẵn
-  // fullName) thay vì dựng chuỗi từ vai trò — dựng từ vai trò ra chuỗi giả như
+  // fullName) thay vì dựng chuỗi từ vai trò - dựng từ vai trò ra chuỗi giả như
   // "User-ROLE_CASHIER" và lẫn tên kho, thu ngân không biết ca đang mở là của ai.
   const [cashierFullName, setCashierFullName] = useState<string>('');
 
@@ -261,7 +261,7 @@ export function PosCheckoutTerminal({
   const [catalogReady, setCatalogReady] = useState(false);
   const [showAllBooks, setShowAllBooks] = useState(false); // mặc định ẩn sách hết hàng tại kho
   // Danh mục thu gọn mặc định (scan-first trên mobile): chỉ hiện vài món đầu.
-  // Desktop giữ full grid nguyên bản (không gian rộng) — chỉ mobile mới thu gọn.
+  // Desktop giữ full grid nguyên bản (không gian rộng) - chỉ mobile mới thu gọn.
   const [catalogExpanded, setCatalogExpanded] = useState(false);
   const CATALOG_COLLAPSED_COUNT = 4; // 2x2 grid gọn gàng trên mobile (Ticket #11)
   // FAB quét chỉ hiện khi nút Quét to đã trôi khỏi viewport (IntersectionObserver)
@@ -346,7 +346,7 @@ export function PosCheckoutTerminal({
   const [customerName, setCustomerName] = useState('Khách lẻ');
   // Khuyến mại: chiến dịch lấy từ server (nguồn sự thật) để badge "Quà" hiện
   // ngay khi giỏ đủ mốc. `dismissedGiftProductIds` = sản phẩm thu ngân đã bấm
-  // "Bỏ quà" — engine không tặng lại nữa.
+  // "Bỏ quà" - engine không tặng lại nữa.
   const [promoCampaigns, setPromoCampaigns] = useState<PromotionCampaign[]>([]);
   const [dismissedGiftProductIds, setDismissedGiftProductIds] = useState<ReadonlySet<string>>(new Set());
   const [discountRate, setDiscountRate] = useState(0.0);
@@ -392,7 +392,7 @@ export function PosCheckoutTerminal({
    * Không có bước này, cashier quay lại thấy màn hình trống và bấm "Tạo đơn &
    * hiện QR" lần nữa, tạo PENDING thứ hai cho cùng giỏ hàng trong khi đơn cũ
    * vẫn giữ ATP. Ảnh xác nhận được nạp lại từ IndexedDB theo id; nếu ảnh đã mất
-   * thì phiên mở với `paymentProof: null` — nút Xác nhận vẫn khoá, không có đường
+   * thì phiên mở với `paymentProof: null` - nút Xác nhận vẫn khoá, không có đường
    * nào coi là đã chụp ảnh khi thực tế chưa có.
    */
   useEffect(() => {
@@ -464,7 +464,7 @@ export function PosCheckoutTerminal({
   }, [completedOrder?.orderCode]);
 
   /**
-   * Đơn đã bán + hai số liệu mà bản gốc hiển thị sai (tên kho, tổng số sách) —
+   * Đơn đã bán + hai số liệu mà bản gốc hiển thị sai (tên kho, tổng số sách) -
    * dùng chung cho màn "Bán Hàng Thành Công" lẫn phiếu in. Quy tắc và bằng chứng
    * lỗi (đã đo trên production) nằm ở `resolveReceiptSummary`.
    */
@@ -511,7 +511,7 @@ export function PosCheckoutTerminal({
   // hồi. Tách token là vá đúng chỗ gốc.
   const cashboxReadRef = useRef(0);
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
-  // 30/09: màn hình "Đơn Chờ" — lối ra DUY NHẤT khi chốt ca bị chặn vì còn đơn
+  // 30/09: màn hình "Đơn Chờ" - lối ra DUY NHẤT khi chốt ca bị chặn vì còn đơn
   // chuyển khoản/QR chưa xác nhận. Trước đây `PendingOrdersView` đã viết đầy đủ
   // (xem / xác nhận / huỷ) nhưng KHÔNG được gắn vào đâu cả ⇒ thu ngân bị kẹt:
   // không xác nhận được đơn, mà chốt ca lại bị chặn vì chính đơn đó.
@@ -532,7 +532,7 @@ export function PosCheckoutTerminal({
   const [pendingDiscountRate, setPendingDiscountRate] = useState<number | null>(null);
   // A1-F / #1 UI: Freeze giỏ hàng khi chờ phê duyệt chiết khấu bảo mật
   const [isApprovalPending, setIsApprovalPending] = useState(false);
-  // requestId yêu cầu đang chờ (do modal tạo) — cần để gọi API CANCEL trước khi mở khóa
+  // requestId yêu cầu đang chờ (do modal tạo) - cần để gọi API CANCEL trước khi mở khóa
   const [pendingApprovalRequestId, setPendingApprovalRequestId] = useState<string | null>(null);
   /**
    * Mã đơn THẬT mà server cấp cho yêu cầu duyệt chiết khấu (`data.orderCode`).
@@ -540,7 +540,7 @@ export function PosCheckoutTerminal({
    * VÌ SAO cần giữ: `activeOrderCode` là mã máy tự sinh, server KHÔNG dùng nó
    * làm `orders.order_code` mà cấp mã 13 ký tự trong DB. Đơn có duyệt thì mã
    * đơn = mã của yêu cầu, nên giữ lại đây chỉ để dự phòng khi response chốt
-   * đơn thiếu `orderCode` — không bao giờ ghi đè bằng mã máy.
+   * đơn thiếu `orderCode` - không bao giờ ghi đè bằng mã máy.
    */
   const [approvedOrderCode, setApprovedOrderCode] = useState<string | null>(null);
   const [isCancellingApproval, setIsCancellingApproval] = useState(false);
@@ -608,7 +608,7 @@ export function PosCheckoutTerminal({
   /**
    * Khoá bằng ref chứ không bằng `isTransferSubmitting`: state cập nhật bất đồng
    * bộ, nên hai cú tap liên tiếp (điện thoại, ngón tay nhanh) cùng đọc được
-   * `transferSession` cũ và cùng gửi POST CONFIRM — server chỉ chặn được cú
+   * `transferSession` cũ và cùng gửi POST CONFIRM - server chỉ chặn được cú
    * thứ hai sau khi đơn đã COMPLETED, còn đơn offline thì không có server nào
    * để chặn cả hai.
    */
@@ -623,7 +623,7 @@ export function PosCheckoutTerminal({
   const captureLockRef = useRef(false);
 
   /**
-   * Ghi phiên chuyển khoản xuống cache mỗi khi nó đổi — kể cả lúc mới tạo, trước
+   * Ghi phiên chuyển khoản xuống cache mỗi khi nó đổi - kể cả lúc mới tạo, trước
    * khi cashier kịp chụp ảnh. Nếu chỉ ghi sau khi chụp, refresh đúng giữa chừng
    * (khách đã chuyển xong, cashier chưa mở camera) lại mất phiên.
    * Ảnh không nằm trong cache: chỉ lưu id, POS nạp lại blob từ IndexedDB.
@@ -668,7 +668,7 @@ export function PosCheckoutTerminal({
     setIsScannerOpen(true);
   };
   // Nút "Xem Giỏ & Thanh Toán" trong module máy quét (30/09): đóng camera rồi đi
-  // thẳng tới hộp "Chi tiết Đơn hàng & Thanh toán" — ĐÚNG hộp mà nút giỏ xanh ở
+  // thẳng tới hộp "Chi tiết Đơn sách & Thanh toán" - ĐÚNG hộp mà nút giỏ xanh ở
   // màn POS mở, KHÔNG phải chốt thẳng. Lần trước tôi nối vào
   // `handleCheckoutButtonClick` nên nó bỏ qua hộp này và quay về màn POS.
   //
@@ -676,7 +676,7 @@ export function PosCheckoutTerminal({
   // toán thẳng của POS để không bấm lênh mà không thấy gì.
   //
   // PHẢI CHỜ MỘT NHỊP mới gọi: `handleCheckout` từ chối chạy khi `isScannerOpen`
-  // còn true, mà `setIsScannerOpen(false)` là bất đồng bộ — gọi thẳng trong cùng
+  // còn true, mà `setIsScannerOpen(false)` là bất đồng bộ - gọi thẳng trong cùng
   // lần bấm thì vẫn thấy `isScannerOpen === true` và im lặng bỏ qua. Chờ một nhịp
   // để React render lại, effect dọn camera chạy, rồi mới mở hộp.
   const goToCheckoutFromScanner = () => {
@@ -770,12 +770,12 @@ export function PosCheckoutTerminal({
         }
       }
       // ponytail: nếu thu ngân hủy đúng lúc modal đang tạo yêu cầu (chưa có id) thì
-      // yêu cầu đó tự hết hạn sau 5 phút — không có rủi ro tiền, không thêm cơ chế chờ.
+      // yêu cầu đó tự hết hạn sau 5 phút - không có rủi ro tiền, không thêm cơ chế chờ.
        clearApprovalState();
        setErrorMessage(null);
     } catch (err: any) {
-      setApprovalCancelError(err?.message || 'Không hủy được yêu cầu duyệt — giữ nguyên trạng thái.');
-      setErrorMessage('Không hủy được yêu cầu duyệt — giữ nguyên trạng thái.');
+      setApprovalCancelError(err?.message || 'Không hủy được yêu cầu duyệt - giữ nguyên trạng thái.');
+      setErrorMessage('Không hủy được yêu cầu duyệt - giữ nguyên trạng thái.');
     } finally {
       setIsCancellingApproval(false);
     }
@@ -803,7 +803,7 @@ export function PosCheckoutTerminal({
     setSearchQuery(text);
   });
 
-  // Xử lý đồng bộ các đơn hàng ngoại tuyến lên máy chủ
+  // Xử lý đồng bộ các đơn sách ngoại tuyến lên máy chủ
   const syncPendingOrders = async () => {
     if (!actorId?.trim() || syncLockRef.current) return;
     syncLockRef.current = true;
@@ -1204,7 +1204,7 @@ export function PosCheckoutTerminal({
         fetchActiveCashboxSession().catch(() => {});
         setErrorMessage(
           err?.name === 'AbortError'
-            ? 'Mạng quá chậm, chốt ca quá thời gian chờ. Ca vẫn đang mở — bấm lại để thử, hoặc kiểm tra mạng.'
+            ? 'Mạng quá chậm, chốt ca quá thời gian chờ. Ca vẫn đang mở - bấm lại để thử, hoặc kiểm tra mạng.'
             : 'Lỗi chốt ca: ' + (err?.message || 'không rõ nguyên nhân.')
         );
       }
@@ -1217,7 +1217,7 @@ export function PosCheckoutTerminal({
     }
   };
 
-  // V4.1 S2.4: áp dụng CK lẻ từ ô nhập — chỉ CK thường (không phải tặng 100%)
+  // V4.1 S2.4: áp dụng CK lẻ từ ô nhập - chỉ CK thường (không phải tặng 100%)
   const applyCustomDiscount = () => {
     if (isInteractionLocked) {
       setErrorMessage('Giỏ hàng đang tạm khóa do chờ Quản lý duyệt chiết khấu.');
@@ -1315,11 +1315,11 @@ export function PosCheckoutTerminal({
   // dưới đây. Nếu `catalogAtp` chưa nạp (offline, hoặc kho vừa đổi), mọi cuốn ở
   // các kho đó trả 0 ⇒ màn kho hiện "hết hàng" và modal trùng mã hiện "0 cuốn"
   // cho MỌI ấn bản. Đó là số 0 GIẢ, không phải hết hàng. Cần sửa ở Kế hoạch 2
-  // (mảng tồn theo kho thay vì 3 con số) — không vá tên kho ở đây vì kho hội chợ
+  // (mảng tồn theo kho thay vì 3 con số) - không vá tên kho ở đây vì kho hội chợ
   // được tạo mới theo từng sự kiện, không có danh sách đóng.
   const getBookStock = (book: BookItem): number => {
     // Chỉ tin ATP khi nó ĐÚNG là của kho đang chọn. Đổi kho xong nhưng chưa nạp
-    // xong (hoặc nạp lỗi) thì `catalogAtp` còn là của KHO CŨ — đọc nó là hiện
+    // xong (hoặc nạp lỗi) thì `catalogAtp` còn là của KHO CŨ - đọc nó là hiện
     // tồn sai, và từ 03/10 modal còn KHOÁ dòng 0 tồn ⇒ khoá nhầm cả cuốn đang
     // có hàng.
     const hit =
@@ -1336,7 +1336,7 @@ export function PosCheckoutTerminal({
     setErrorMessage(null);
     const cleanScanned = scannedCode.replace(/[^0-9X]/gi, '');
 
-    // Matcher dùng chung (`src/lib/scan-resolve.ts`) — cùng hàm mà test đang gọi.
+    // Matcher dùng chung (`src/lib/scan-resolve.ts`) - cùng hàm mà test đang gọi.
     // Trên 1 ứng viên thì LUÔN hỏi (chủ chốt 03/10/2026, xem file đó): thu ngân
     // là người biết mình đang cầm cuốn nào, tồn kho chỉ là dữ liệu server.
     const resolution = resolveScan(scannedCode, books);
@@ -1372,7 +1372,7 @@ export function PosCheckoutTerminal({
   // Bộ lọc sách thời gian thực + V4.1 S2.2/S2.3: ẩn hết hàng mặc định, sắp xếp A-Z / bán chạy
   const hasSearchQuery = searchQuery.trim().length > 0;
   // Mobile: chủ yếu quét scanner, danh mục thường xuyên chỉ làm nhiễu. Không có từ
-  // khoá thì không hiện danh mục — chỉ hiện kết quả tìm kiếm. Desktop giữ nguyên.
+  // khoá thì không hiện danh mục - chỉ hiện kết quả tìm kiếm. Desktop giữ nguyên.
   // Ngoại lệ: bấm nút "Sách đặc biệt" thì hiện nhóm đó kể cả khi không có từ khoá,
   // vì ở hội chợ thu ngân cần bấm 1 cái là ra đúng các cuốn đó.
   const showCatalogGrid = !isMobileView || hasSearchQuery || showSpecialBooks;
@@ -1385,13 +1385,13 @@ export function PosCheckoutTerminal({
         )
       : books.slice();
     // Nhóm sách đặc biệt: so KHỚP CHÍNH XÁC tên trong DB (đã kiểm trực tiếp),
-    // không so "gần giống" — tên rút gọn dễ dính nhầm cuốn khác.
+    // không so "gần giống" - tên rút gọn dễ dính nhầm cuốn khác.
     if (showSpecialBooks) {
       list = list.filter((b) => SPECIAL_BOOK_TITLES.has((b.title || '').trim()));
     }
     if (!showAllBooks) list = list.filter((b) => getBookStock(b) > 0);
     // `dir` = 1 tăng dần, -1 giảm dần. Nút đảo chiều chỉ đổi `dir`, không sinh
-    // thêm nút mới — giữ danh sách nút ngắn trên mobile.
+    // thêm nút mới - giữ danh sách nút ngắn trên mobile.
     const dir = sortReversed ? -1 : 1;
     if (sortMode === 'az') {
       list = [...list].sort((a, b) => dir * (a.title || '').localeCompare(b.title || '', 'vi'));
@@ -1428,7 +1428,7 @@ export function PosCheckoutTerminal({
     const effectiveLimit = atp === null ? availableStock : Math.min(availableStock, atp);
     if (effectiveLimit <= 0) {
       if (parserImportLockRef.current) parserImportFailedRef.current = true;
-      setErrorMessage(`Sách [${book.code}] ${book.title} đã bị giữ hết cho đơn online — tồn khả dụng tại quầy: 0 cuốn!`);
+      setErrorMessage(`Sách [${book.code}] ${book.title} đã bị giữ hết cho đơn online - tồn khả dụng tại quầy: 0 cuốn!`);
       return;
     }
 
@@ -1467,7 +1467,7 @@ export function PosCheckoutTerminal({
     });
   };
 
-  // 1.0: bọc tra ATP trước khi thêm — cảnh báo hổ phách khi có giữ chỗ, rớt mạng thì bán theo tồn vật lý
+  // 1.0: bọc tra ATP trước khi thêm - cảnh báo hổ phách khi có giữ chỗ, rớt mạng thì bán theo tồn vật lý
   const handleAddToCart = async (book: BookItem, times = 1, importController?: AbortController) => {
     const isParserCall = Boolean(importController);
     if ((!isParserCall && isInteractionLocked) || cartFrozenRef.current || checkoutLockRef.current) {
@@ -1488,7 +1488,7 @@ export function PosCheckoutTerminal({
         if (json.success) {
           atp = Math.max(0, Math.floor(json.data.atp));
           if (json.data.held > 0) {
-            setSyncToast(`⚠️ [${book.code}] có ${json.data.held} cuốn đang giữ chỗ online — khả dụng tại quầy: ${atp} cuốn.`);
+            setSyncToast(`⚠️ [${book.code}] có ${json.data.held} cuốn đang giữ chỗ online - khả dụng tại quầy: ${atp} cuốn.`);
             setTimeout(() => setSyncToast(null), 4000);
           }
         }
@@ -1658,7 +1658,7 @@ export function PosCheckoutTerminal({
         });
         appliedDraftNonce.current = draft.nonce;
         if (parserImportSucceededRef.current) {
-          setSyncToast('Đã ốp đơn nháp từ Copilot vào giỏ — kiểm tra lại rồi bấm Thanh toán (Ctrl+Enter).');
+          setSyncToast('Đã ốp đơn nháp từ Copilot vào giỏ - kiểm tra lại rồi bấm Thanh toán (Ctrl+Enter).');
           setTimeout(() => setSyncToast(null), 4000);
         }
       } catch (err: any) {
@@ -1719,7 +1719,7 @@ export function PosCheckoutTerminal({
   const totalCopies = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Lấy cấu hình khuyến mại từ server (nguồn sự thật). Thất bại thì coi như
-  // không có chương trình — POS vẫn bán bình thường, chỉ không hiện quà.
+  // không có chương trình - POS vẫn bán bình thường, chỉ không hiện quà.
   // Lọc theo kho đang bán (0034) và tải lại khi đổi kho hoặc giỏ vừa có hàng
   // (chiến dịch tạo sau khi mở POS vẫn bắt được mà không cần tải lại trang).
   const cartIsEmpty = cart.length === 0;
@@ -1811,7 +1811,7 @@ export function PosCheckoutTerminal({
   //
   // `pendingDiscountRate = 0` hợp lệ vì `createRequest` cho phép rate 0 khi đơn
   // có ít nhất 1 dòng quà tay (`discount-approval.service.ts:248`). Giá trị này
-  // KHÔNG phải 0 của `discountRate` — nó chỉ là con số quản lý nhìn thấy.
+  // KHÔNG phải 0 của `discountRate` - nó chỉ là con số quản lý nhìn thấy.
   const requestManualGiftApproval = () => {
     setApprovalCancelError(null);
     setPendingDiscountRate(discountRate > 0 ? discountRate : 0);
@@ -1820,7 +1820,7 @@ export function PosCheckoutTerminal({
   };
 
   // Quà TAY ("Tặng thêm"): thu ngân tự chọn món ngoài chương trình. Không tự
-  // bán 0đ được — phải đi qua duyệt quản lý (discountApprovalId); server chỉ
+  // bán 0đ được - phải đi qua duyệt quản lý (discountApprovalId); server chỉ
   // công nhận dòng nào nằm trong snapshot đã duyệt (approvedManual).
   const [manualGifts, setManualGifts] = useState<ManualGift[]>([]);
   const [manualGiftPick, setManualGiftPick] = useState('');
@@ -1848,7 +1848,7 @@ export function PosCheckoutTerminal({
     return book ? { ...g, code: book.code, title: book.title, coverPrice: book.coverPrice } : null;
   };
   // Quà tay ở dạng dòng giỏ (giá 0đ khi hiển thị) để tái dùng cho cả gửi đơn
-  // online/offline lẫn badge trong giỏ. Server KHÔNG tin cờ này — chỉ công
+  // online/offline lẫn badge trong giỏ. Server KHÔNG tin cờ này - chỉ công
   // nhận dòng nằm trong yêu cầu đã duyệt (approvedManual).
   const manualGiftLines = useMemo<CartItem[]>(
     () =>
@@ -2017,7 +2017,7 @@ export function PosCheckoutTerminal({
 
     const isDigitalPayment = paymentMethod === 'BANK_TRANSFER' || paymentMethod === 'QR_CODE';
     // Chuyển khoản/QR: chưa có ảnh xác nhận thì KHÔNG tạo đơn. Đơn PENDING giữ chỗ
-    // ATP 30 phút mà không ai mở được modal để huỷ — nên chỉ tạo sau khi ảnh về.
+    // ATP 30 phút mà không ai mở được modal để huỷ - nên chỉ tạo sau khi ảnh về.
     if (!isGift && isDigitalPayment && !captureFile) {
       checkoutLockRef.current = false;
       setIsSubmitting(false);
@@ -2036,7 +2036,7 @@ export function PosCheckoutTerminal({
       // S-01 (S-OFFLINE, quyết định đã chốt): cashier chỉ tạo đơn offline mới
       // khi lease còn sống gần đây (heartbeat thành công trong 10 phút).
       // FAIL-CLOSED: không đọc được stamp (private mode, storage lỗi) cũng
-      // CHẶN — trường hợp không xác định được lease thì không tạo đơn mới,
+      // CHẶN - trường hợp không xác định được lease thì không tạo đơn mới,
       // trái với bản trước cho qua khi catch. Giỏ giữ nguyên, báo rõ để thu
       // ngân đăng nhập lại khi có mạng. Server vẫn kiểm tra lại lease lúc
       // sync nên đơn lọt vẫn bị chặn ở đó, không mất.
@@ -2046,7 +2046,7 @@ export function PosCheckoutTerminal({
         try {
           const lastOk = Number(window.localStorage.getItem('formapubli.last_lease_ok') || 0);
           const now = Date.now();
-          // Từ chối cả stamp tương lai (đồng hồ thiết bị sai) — chỉ chấp nhận
+          // Từ chối cả stamp tương lai (đồng hồ thiết bị sai) - chỉ chấp nhận
           // mốc trong quá khứ và trong TTL 10 phút.
           leaseFresh = !!lastOk && lastOk <= now && now - lastOk <= 10 * 60 * 1000;
         } catch {
@@ -2054,7 +2054,7 @@ export function PosCheckoutTerminal({
         }
         if (!leaseFresh) {
           setErrorMessage(
-            'Không xác minh được phiên (mất mạng lâu hoặc bộ nhớ bị chặn). Không tạo đơn ngoại tuyến mới — giỏ được giữ nguyên. Có mạng hãy đăng nhập lại rồi bán tiếp.'
+            'Không xác minh được phiên (mất mạng lâu hoặc bộ nhớ bị chặn). Không tạo đơn ngoại tuyến mới - giỏ được giữ nguyên. Có mạng hãy đăng nhập lại rồi bán tiếp.'
           );
           return;
         }
@@ -2135,7 +2135,7 @@ export function PosCheckoutTerminal({
             paymentMethod,
             createdAt: orderTimestamp,
             // Nội dung ĐỂ TRỐNG có chủ đích: chưa có nội dung đã resolve thì
-            // không được điền bằng mã đơn trần — đó chính là lỗi "số tài khoản
+            // không được điền bằng mã đơn trần - đó chính là lỗi "số tài khoản
             // và nội dung không khớp ảnh QR". VietQrPay phát ra bộ đóng băng.
             qrSnapshot: { dataUrl: '', payload: '', accountNo: '', content: '', orderQuantity: totalCopies },
           };
@@ -2230,7 +2230,7 @@ export function PosCheckoutTerminal({
               editionId: item.editionId,
               quantity: item.quantity,
               // Dòng quà tự động (engine): gửi cờ để server tự xác minh lại.
-              // Dòng giả bị server hạ về thường — cờ này chỉ là GỢI Ý.
+              // Dòng giả bị server hạ về thường - cờ này chỉ là GỢI Ý.
               isGiftLine: item.isGiftLine === true,
               unitDiscountRate: item.isGiftLine === true ? 1 : undefined,
             })),
@@ -2245,7 +2245,7 @@ export function PosCheckoutTerminal({
           orderId: resData.data?.orderId || resData.data?.id || orderUuid,
           // Mã đơn = mã server vừa cấp. Rơi về mã của yêu cầu duyệt (cũng do
           // server cấp, và chính là mã server dùng cho đơn này) trước khi rơi
-          // về mã máy — mã máy là mã KHÔNG tồn tại trong DB.
+          // về mã máy - mã máy là mã KHÔNG tồn tại trong DB.
           orderCode: resData.data?.orderCode || approvedOrderCode || orderCode,
           idempotencyKey,
           warehouseId: selectedWarehouseId,
@@ -2255,7 +2255,7 @@ export function PosCheckoutTerminal({
           // đơn đã tạo ⇒ khách chuyển khoản thiếu/tải, mà hệ thống đã ghi nhận
           // đơn đủ tiền. Đã đo thật: QR 151.470đ trong khi đơn 168.300đ.
           // Các trường khác trong phiên này (orderId, orderCode, totalQuantity)
-          // đã lấy từ server theo đúng nguyên tắc đó — tiền cũng phải vậy.
+          // đã lấy từ server theo đúng nguyên tắc đó - tiền cũng phải vậy.
           amount: isGift ? 0 : Number(resData.data?.finalAmount ?? finalAmount),
           paymentMethod,
           createdAt: orderTimestamp,
@@ -2304,11 +2304,11 @@ export function PosCheckoutTerminal({
           setErrorMessage(err.message || 'Lỗi xử lý thanh toán.');
         }
         // Ảnh đã được chụp TRƯỚC khi có đơn. Nếu đơn không tạo được thì ảnh mồi
-        // côi không được gắn vào bất cứ thứ gì — báo rõ để thu ngân không
+        // côi không được gắn vào bất cứ thứ gì - báo rõ để thu ngân không
         // tưởng đã chụp xong rồi bấm nhầm Xác nhận.
         if (captureFile) {
           setErrorMessage((prev) =>
-            `${prev ? `${prev} ` : ''}Ảnh vừa chụp không dùng được — chưa có đơn để gắn. Tạo đơn thành công rồi hãy chụp lại.`
+            `${prev ? `${prev} ` : ''}Ảnh vừa chụp không dùng được - chưa có đơn để gắn. Tạo đơn thành công rồi hãy chụp lại.`
           );
         }
       } finally {
@@ -2327,7 +2327,7 @@ export function PosCheckoutTerminal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: orderUuid,
-          // KHÔNG gửi `orderCode` lên — giống hệt nhánh chuyển khoản (:1999).
+          // KHÔNG gửi `orderCode` lên - giống hệt nhánh chuyển khoản (:1999).
           // Server cấp mã 13 ký tự bằng bộ đếm NGUYÊN TẢ ở DB. Bắt buộc: hội
           // chợ có nhiều máy POS, mỗi máy tự đếm thì hai máy cùng tạo đơn đầu
           // ngày sẽ ra trùng mã, mà `order_code` là UNIQUE nên đơn của máy sau
@@ -2341,7 +2341,7 @@ export function PosCheckoutTerminal({
           //
           // An toàn với duyệt chiết khấu: `consumeApproval` băm hash theo
           // `request.orderCode` (mã đã khoá lúc xin duyệt) chứ không theo mã
-          // của đơn đang tạo — xem `discount-approval.service.ts:886-894`.
+          // của đơn đang tạo - xem `discount-approval.service.ts:886-894`.
           idempotencyKey,
            createdAt: orderTimestamp,
            warehouseId: selectedWarehouseId,
@@ -2374,7 +2374,7 @@ export function PosCheckoutTerminal({
       setCompletedOrder({
         ...resData.data,
         // Mã trên phiếu phải là mã server cấp (`...resData.data` đã có sẵn).
-        // Chỉ khi response thiếu mã mới rơi về mã của yêu cầu duyệt — với đơn có
+        // Chỉ khi response thiếu mã mới rơi về mã của yêu cầu duyệt - với đơn có
         // duyệt, đó CHÍNH LÀ mà server gán cho `orders.order_code`; tuyệt đối
         // không ghi đè bằng mã máy tự sinh.
         orderCode: resData.data?.orderCode || approvedOrderCode,
@@ -2422,7 +2422,7 @@ export function PosCheckoutTerminal({
    * VietQrPay phát QR mới.
    *
    * ĐÃ ĐÓNG BĂNG: khi phiên đã có tài khoản + nội dung thì bộ thông này là
-   * chốt — mọi phát sau bị bỏ qua. Nhờ vậy modal không bao giờ hiện tài khoản
+   * chốt - mọi phát sau bị bỏ qua. Nhờ vậy modal không bao giờ hiện tài khoản
    * của đơn khác: đổi kho, đổi số lượng giỏ hay VietQrPay dựng lại sau đều
    * không xoá được ảnh QR đã sinh cho đơn này.
    */
@@ -2466,7 +2466,7 @@ export function PosCheckoutTerminal({
     //
     // PHẢI gắn ảnh vào đơn TRƯỚC khi mở đường xác nhận. Nếu set paymentProof vào
     // session trước, attach ném lỗi thì camera báo lỗi nhưng session đã có ảnh:
-    // cashier đóng camera rồi bấm Xác nhận, thấy toast thành công, giỏ bị xoá —
+    // cashier đóng camera rồi bấm Xác nhận, thấy toast thành công, giỏ bị xoá -
     // trong khi đơn vẫn AWAITING_PAYMENT, không bao giờ tự sync, dù tiền đã thu.
     if (transferOfflineOrderId) {
       await attachOfflineOrderPaymentProof(transferOfflineOrderId, {
@@ -2525,7 +2525,7 @@ export function PosCheckoutTerminal({
           orderId: session.orderId,
           paymentProofId: session.paymentProof.id,
           paymentProofCapturedAt: session.paymentProof.capturedAt,
-          // Ô Ghi chú trong modal mở SAU khi đơn đã tạo — gửi kèm lúc chốt để
+          // Ô Ghi chú trong modal mở SAU khi đơn đã tạo - gửi kèm lúc chốt để
           // chữ không rớt (server chỉ ghi đè khi chuỗi non-blank).
           note: note.trim() ? note.trim() : undefined,
         }),
@@ -2539,7 +2539,7 @@ export function PosCheckoutTerminal({
       setCompletedOrder({
         ...resData.data,
         orderCode: session.orderCode,
-        // API CONFIRM chỉ trả { orderId, orderCode, status } — KHÔNG có tiền, số
+        // API CONFIRM chỉ trả { orderId, orderCode, status } - KHÔNG có tiền, số
         // lượng, kho. Phiếu thu cần chúng, và `completedOrder.finalAmount
         // .toLocaleString()` là deref không chống undefined ⇒ chết render. Lấy
         // từ PHIÊN ĐÃ ĐÓNG BĂNG (đúng bằng số lúc tạo đơn) + số của giỏ.
@@ -2642,16 +2642,16 @@ export function PosCheckoutTerminal({
 
   /**
    * Một chạm mở camera: `.click()` phải là ĐẦU TIÊN trong handler, không được
-   * `await` gì trước — iOS Safari chỉ mở được picker trong user gesture thật.
+   * `await` gì trước - iOS Safari chỉ mở được picker trong user gesture thật.
    * KHÔNG tạo đơn ở đây: modal chuyển khoản (fixed inset-0 z-[70]) mở chung lúc
    * với hộp thoại native sẽ che mất hộp thoại trên desktop. Đơn chỉ tạo ở
    * handleCheckoutCaptureChange, tức là sau khi thật sự có ảnh.
    */
   // Chốt chặn mở ca cho nút thanh toán (30/09). Thu ngân chưa mở ca thì KHÔNG
-  // cho bán — mọi khoản thu phải thuộc về một ca để đối soát (đây chính là ý
+  // cho bán - mọi khoản thu phải thuộc về một ca để đối soát (đây chính là ý
   // nghĩa của "mở ca để theo dõi thanh toán tiền mặt"). Không chặn ở server vì
   // 21 luồng nội bộ (hoa hồng, dự báo, trả hàng, offline, bundle, đồng bộ) tạo
-  // đơn tiền mặt ngoài ca một cách hợp lệ — siết ở server phá vỡ chúng. Siết ở
+  // đơn tiền mặt ngoài ca một cách hợp lệ - siết ở server phá vỡ chúng. Siết ở
   // đúng chỗ thu ngân thao tác: nút thanh toán. Unit TẶNG không có dòng tiền nên
   // cho qua; Owner/Manager miễn theo đúng luật B2a ở server.
   const checkoutNeedsOpenShift =
@@ -2667,7 +2667,7 @@ export function PosCheckoutTerminal({
   const handleCheckoutButtonClick = () => {
     if (checkoutNeedsOpenShift && !hasMatchingOpenShift) {
       setErrorMessage(
-        'Chưa mở ca két tại kho này. Vui lòng mở ca trước khi bán — mọi khoản thu phải thuộc về một ca để đối soát.'
+        'Chưa mở ca két tại kho này. Vui lòng mở ca trước khi bán - mọi khoản thu phải thuộc về một ca để đối soát.'
       );
       return;
     }
@@ -2675,7 +2675,7 @@ export function PosCheckoutTerminal({
       // DẤU HIỆU BẤM RÕ: iOS huỷ camera KHÔNG bắn `change` event, nên không có
       // gì để báo "bạn đã huỷ". Nếu không báo trước, nút trông chết và thu ngân
       // tưởng app treo. Báo ngay khi bấm, tự tắt sau 6s.
-      setSyncToast('📷 Đang mở camera — chụp màn hình xác nhận chuyển khoản rồi bấm Xác nhận.');
+      setSyncToast('📷 Đang mở camera - chụp màn hình xác nhận chuyển khoản rồi bấm Xác nhận.');
       setTimeout(() => setSyncToast(null), 6000);
       checkoutCaptureInputRef.current?.click();
       return;
@@ -2696,7 +2696,7 @@ export function PosCheckoutTerminal({
           // Hàm này tự xác nhận việc ghi/xoá có thật sự xảy ra. Gọi
           // updateOfflineOrderPaymentState + removeOfflineOrder rồi coi là xong
           // là sai: cả hai resolve im lặng khi record không tồn tại, và nếu xoá
-          // hỏng thì đơn quay lại trạng thái chờ — không ai thấy, không ai sửa.
+          // hỏng thì đơn quay lại trạng thái chờ - không ai thấy, không ai sửa.
           const cancelled = await cancelOfflineOrderLocally(
             transferOfflineOrderId,
             Boolean(session.paymentProof)
@@ -2720,7 +2720,7 @@ export function PosCheckoutTerminal({
           body: JSON.stringify({ action: 'CANCEL', orderId: session.orderId, reason: 'Thu ngân huỷ đơn' }),
         });
         // F6: phải đọc response trước khi dọn state. 409 từ cashbox guard, 403
-        // phân quyền, 400 input, 500 lỗi server — tất cả đều để nguyên đơn PENDING
+        // phân quyền, 400 input, 500 lỗi server - tất cả đều để nguyên đơn PENDING
         // trên server (còn giữ ATP tới 48h). Bỏ qua bước này thì cashier thấy
         // "đã huỷ" và giỏ bị xoá, còn tồn kho vẫn bị giữ chỗ.
         const cancelData = await res.json().catch(() => null);
@@ -2879,7 +2879,7 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Warehouse Selector — kho được gán thì khóa, không cho đổi */}
+          {/* Warehouse Selector - kho được gán thì khóa, không cho đổi */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500 shrink-0">Kho:</span>
             {lockedWarehouseId ? (
@@ -2900,7 +2900,7 @@ export function PosCheckoutTerminal({
                      addToCartAbortRef.current = null;
                     setSelectedWarehouseId(e.target.value);
                 setCart([]); // Reset giỏ khi đổi kho để đảm bảo tồn kho
-                clearManualGifts(); // Quà tay gắn tồn kho cũ — phải gỡ cùng giỏ
+                clearManualGifts(); // Quà tay gắn tồn kho cũ - phải gỡ cùng giỏ
               }}
               className="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer min-h-[40px]"
             >
@@ -2920,7 +2920,7 @@ export function PosCheckoutTerminal({
             )}
             {allowedMissing.length > 0 && (
               <p className="text-[11px] font-bold text-amber-700">
-                Kho được gán đã ngưng/bị ẩn ({allowedMissing.join(', ')}) — liên hệ quản lý.
+                Kho được gán đã ngưng/bị ẩn ({allowedMissing.join(', ')}) - liên hệ quản lý.
               </p>
             )}
           </div>
@@ -2937,7 +2937,7 @@ export function PosCheckoutTerminal({
                 : 'Xem đơn chuyển khoản đang chờ xác nhận'
             }
             className="hidden"
-            title="Đơn chuyển khoản/QR đang chờ. Xác nhận hoặc hủy ở đây — nếu không, sẽ không chốt được ca."
+            title="Đơn chuyển khoản/QR đang chờ. Xác nhận hoặc hủy ở đây - nếu không, sẽ không chốt được ca."
           >
             <Clock className="w-4 h-4" />
             <span>Đơn Chờ</span>
@@ -2950,7 +2950,7 @@ export function PosCheckoutTerminal({
 
           {/* 30/09: thư viện ảnh XÁC NHẬN lên UI chính. Trước đây nút "Ảnh thanh
               toán" nằm sâu trong panel thanh toán, thu ngân muốn xem lại ảnh phải
-              lặn vào giỏ hàng mới thấy — không hợp lý. */}
+              lặn vào giỏ hàng mới thấy - không hợp lý. */}
           <button
             type="button"
             id="btn-open-photo-gallery"
@@ -3030,7 +3030,7 @@ export function PosCheckoutTerminal({
 
   return (
     <div className="space-y-3 md:space-y-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
-      {/* Mobile: panel chọn kho nằm TRONG luồng, không sticky — chỉ thanh tìm kiếm mới nổi khi cuộn.
+      {/* Mobile: panel chọn kho nằm TRONG luồng, không sticky - chỉ thanh tìm kiếm mới nổi khi cuộn.
           Card "Top Header Controls" là `hidden md:flex`; các controls nằm trong panel này, hiện khi mở. */}
       <div className="md:hidden -mx-3 px-3 pt-2 pb-1">
         <button
@@ -3057,7 +3057,7 @@ export function PosCheckoutTerminal({
         )}
       </div>
 
-      {/* Top Header Controls — desktop: toolbar 1 hàng gọn (thay card cao 90px). Phím tắt dồn vào title của ô tìm kiếm. */}
+      {/* Top Header Controls - desktop: toolbar 1 hàng gọn (thay card cao 90px). Phím tắt dồn vào title của ô tìm kiếm. */}
       <div className="hidden md:flex bg-white rounded-xl px-3 py-2 border border-slate-200/80 shadow-sm flex-row items-center justify-between gap-2">
         <div className="hidden md:block shrink-0">
           <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
@@ -3090,7 +3090,7 @@ export function PosCheckoutTerminal({
             const needsCashbox = action === 'REASSIGN_CASHBOX';
             // Không có hành động sửa tự động (đơn AWAITING_PAYMENT, hoặc xung đột
             // ATP/idempotency): không được hiện nút "Xác nhận đã nhận tiền" vì
-            // bấm vào sẽ không làm gì — cashier bấm hoài, mất niềm tin vào cảnh báo.
+            // bấm vào sẽ không làm gì - cashier bấm hoài, mất niềm tin vào cảnh báo.
             // Thay bằng hướng dẫn cụ thể để họ biết cần gọi ai.
             return (
               <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200 pt-2">
@@ -3208,7 +3208,7 @@ export function PosCheckoutTerminal({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0 lg:overflow-hidden">
         {/* Left Side: Search & Book Catalog Selection */}
         <div className="lg:col-span-7 space-y-3 md:space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1 lg:pb-2">
-          {/* Search Box with Voice Mic — mobile sticky theo header app; desktop sticky đỉnh cột scroll (lg:top-0). */}
+          {/* Search Box with Voice Mic - mobile sticky theo header app; desktop sticky đỉnh cột scroll (lg:top-0). */}
           <div ref={searchContainerRef} className="sticky top-[max(3.5rem,calc(2.75rem_+_env(safe-area-inset-top)))] md:top-[max(4rem,calc(2.75rem_+_env(safe-area-inset-top)))] lg:top-0 z-20">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-5 h-5" />
@@ -3261,7 +3261,7 @@ export function PosCheckoutTerminal({
               >
                 <Camera className="w-4 h-4" />
               </button>
-              {/* Nút Dán Chat Khách (Smart Parser FB/Zalo) — gọn trên điện thoại hẹp */}
+              {/* Nút Dán Chat Khách (Smart Parser FB/Zalo) - gọn trên điện thoại hẹp */}
               <button
                 type="button"
                 onClick={() => setIsParserOpen(true)}
@@ -3276,7 +3276,7 @@ export function PosCheckoutTerminal({
                   type="button"
                   onClick={() => setIsManagerApprovalDrawerOpen(true)}
                   className="relative p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 active:scale-95 transition-all min-h-[36px] min-w-[36px] flex items-center justify-center font-bold"
-                  title="Duyệt chiết khấu POS — chuông đếm mọi kho, bảng duyệt lọc theo kho đang chọn"
+                  title="Duyệt chiết khấu POS - chuông đếm mọi kho, bảng duyệt lọc theo kho đang chọn"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   {pendingApprovals.length > 0 && (
@@ -3377,7 +3377,7 @@ export function PosCheckoutTerminal({
                 }`}
               >
                 {/* Nút đang chạy thì hiện chiều THỰC TẾ đang sắp xếp, không phải
-                    chiều mặc định — sau khi bấm "Đảo chiều" người dùng nhìn là biết
+                    chiều mặc định - sau khi bấm "Đảo chiều" người dùng nhìn là biết
                     đang A→Z hay Z→A, không phải đoán. */}
                 {mode === sortMode && sortReversed ? REVERSED_LABEL[mode] : label}
               </button>
@@ -3407,7 +3407,7 @@ export function PosCheckoutTerminal({
                 const next = !showSpecialBooks;
                 setShowSpecialBooks(next);
                 // Nhóm đặc biệt và từ khoá tìm kiếm trước đó được ghép AND, nên bấm
-                // nút khi đang gõ dở sẽ ra "Danh mục (0)" — thu ngân ở hội chợ tưởng
+                // nút khi đang gõ dở sẽ ra "Danh mục (0)" - thu ngân ở hội chợ tưởng
                 // danh mục hỏng. Bật nhóm thì XOÁ từ khoá cho khớp trực giác
                 // "tôi bấm xem 4 cuốn này".
                 if (next) setSearchQuery('');
@@ -3438,7 +3438,7 @@ export function PosCheckoutTerminal({
             )}
           </div>
 
-          {/* Mobile: nút Quét mã to rõ — cách thêm món chính khi bán thực tế */}
+          {/* Mobile: nút Quét mã to rõ - cách thêm món chính khi bán thực tế */}
           <button
             ref={scanButtonRef}
             type="button"
@@ -3449,7 +3449,7 @@ export function PosCheckoutTerminal({
             Quét mã thêm vào giỏ
           </button>
 
-          {/* Book Catalog Grid — mobile thu gọn mặc định, desktop full như cũ.
+          {/* Book Catalog Grid - mobile thu gọn mặc định, desktop full như cũ.
               Hàng nút và slice dùng chung 1 cờ isMobileView (không dùng md:hidden
               để 2 phía không bao giờ lệch nhau). */}
           {!showCatalogGrid && (
@@ -3585,10 +3585,10 @@ export function PosCheckoutTerminal({
                           // không phải "chiết khấu 0%" (đọc như vậy thu ngân tưởng
                           // mình vừa xin duyệt nhầm).
                           approvedDiscountRequestId
-                            ? 'Quản lý đã duyệt quà tặng thêm — giỏ tạm khóa để giữ đúng phê duyệt.'
+                            ? 'Quản lý đã duyệt quà tặng thêm - giỏ tạm khóa để giữ đúng phê duyệt.'
                             : 'Đang chờ Quản lý duyệt quà tặng thêm. Không thể sửa giỏ.'
                         ) : approvedDiscountRequestId ? (
-                          `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% — giỏ tạm khóa để giữ đúng phê duyệt.`
+                          `Quản lý đã duyệt chiết khấu ${Math.round(discountRate * 100)}% - giỏ tạm khóa để giữ đúng phê duyệt.`
                         ) : (
                           `Đang chờ Quản lý duyệt chiết khấu ${Math.round((pendingDiscountRate || 0) * 100)}%. Không thể sửa giỏ.`
                         )
@@ -3709,7 +3709,7 @@ export function PosCheckoutTerminal({
                   </div>
                 ))
               )}
-              {/* Dòng quà tự động từ chương trình — desktop */}
+              {/* Dòng quà tự động từ chương trình - desktop */}
               {giftItems.map((g) => (
                 <div
                   key={`gift-${g.editionId}`}
@@ -3735,7 +3735,7 @@ export function PosCheckoutTerminal({
               ))}
             </div>
 
-              {/* Quà TAY ("Tặng thêm") — dòng đã thêm vẫn hiện khi giỏ khoá,
+              {/* Quà TAY ("Tặng thêm") - dòng đã thêm vẫn hiện khi giỏ khoá,
                   chỉ ô CHỌN món mới ẩn (xem showManualGiftUi) */}
               {canRequestManualGift && manualGiftLines.map((g) => (
                 <div
@@ -3754,7 +3754,7 @@ export function PosCheckoutTerminal({
                     type="button"
                     disabled={isInteractionLocked}
                     aria-label={`Gỡ quà tặng thêm: ${g.title}`}
-                    title={isInteractionLocked ? 'Giỏ đang khoá chờ Quản lý duyệt — hãy hủy duyệt để sửa giỏ' : undefined}
+                    title={isInteractionLocked ? 'Giỏ đang khoá chờ Quản lý duyệt - hãy hủy duyệt để sửa giỏ' : undefined}
                     onClick={() => removeManualGift(g.editionId)}
                     className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-violet-300 text-violet-800 text-[11px] font-bold hover:bg-violet-100 disabled:opacity-40"
                   >
@@ -3773,7 +3773,7 @@ export function PosCheckoutTerminal({
                   <option value="">Tặng thêm món…</option>
                   {books.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.title} — {(b.coverPrice || 0).toLocaleString('vi-VN')} đ
+                      {b.title} - {(b.coverPrice || 0).toLocaleString('vi-VN')} đ
                     </option>
                   ))}
                 </select>
@@ -3807,7 +3807,7 @@ export function PosCheckoutTerminal({
                     aria-label="Mẫu đối tượng khách"
                     onChange={(e) => {
                       // POS chỉ dành cho BÁN LẺ (đặc biệt ở hội chợ). Đại lý sỉ và
-                      // doanh nghiệp đã có luồng XUẤT KHO riêng nên không để ở đây —
+                      // doanh nghiệp đã có luồng XUẤT KHO riêng nên không để ở đây -
                       // mẫu cũ "Đại lý sỉ Đình Lễ (-40%) [Cần PIN]" và "Doanh nghiệp
                       // (Xuất VAT)" chỉ làm thu ngân bấm nhầm ở chỗ không đúng chỗ.
                       //
@@ -3880,7 +3880,7 @@ export function PosCheckoutTerminal({
                       </button>
                     );
                   })}
-                  {/* Nut tang 100% gon nhe — tai dung luong PIN quan ly nhu cu */}
+                  {/* Nut tang 100% gon nhe - tai dung luong PIN quan ly nhu cu */}
                   <button
                     type="button"
                     disabled={isInteractionLocked}
@@ -4116,7 +4116,7 @@ export function PosCheckoutTerminal({
               id="btn-desktop-checkout"
               onClick={handleCheckoutButtonClick}
               disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0 || (checkoutNeedsOpenShift && !hasMatchingOpenShift)}
-              title={checkoutNeedsOpenShift && !hasMatchingOpenShift ? 'Mở ca két trước khi bán — mọi khoản thu phải thuộc về một ca' : undefined}
+              title={checkoutNeedsOpenShift && !hasMatchingOpenShift ? 'Mở ca két trước khi bán - mọi khoản thu phải thuộc về một ca' : undefined}
               className={`w-full py-3.5 px-4 active:scale-[0.99] disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-xl transition-all flex items-center justify-center gap-2 min-h-[50px] ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'}`}
             >
               {isSubmitting ? (
@@ -4135,14 +4135,14 @@ export function PosCheckoutTerminal({
       {/* KHÔNG mở có điều kiện theo `qrSnapshot.dataUrl`: ảnh chụp xác nhận không
           phụ thuộc QR có dựng được hay không. Gating theo dataUrl khiến modal
           (và camera) không bao giờ mở khi kho chưa có tài khoản nhận / QR lỗi /
-          mất mạng — cashier bấm nút rồi không có gì xảy ra. */}
+          mất mạng - cashier bấm nút rồi không có gì xảy ra. */}
       {/* Input chụp ảnh của nút ở quầy. LUÔN có mặt trong DOM (không theo vòng
           đời modal) vì iOS chỉ mở được camera picker khi `.click()` chạy đồng
           bộ trong user gesture. Modal chỉ dùng nút "Chụp lại" để thay ảnh mờ.
 
           SỬA iOS 2026-09-29: input này PHẢI nằm ở document.body, KHÔNG được nằm
           trong cây component. Sheet thanh toán di động (createPortal ở dưới) gọi
-          useModalFocusTrap, và hook đó đánh dấu `inert` lên #app-main-content —
+          useModalFocusTrap, và hook đó đánh dấu `inert` lên #app-main-content -
           tức là chính input này. Trên iPhone nút chụp ảnh DUY NHẤT nằm trong
           sheet, nên nó luôn gọi .click() vào một phần tử đang inert. Safari hiện
           thực `inert` (từ 15.5) nên camera có thể không mở, tùy phiên bản iOS.
@@ -4261,7 +4261,7 @@ export function PosCheckoutTerminal({
               </div>
             </div>
 
-            {/* 30/09: hiện ẢNH XÁC NHẬN thay mã QR — khách đã quét QR và chuyển
+            {/* 30/09: hiện ẢNH XÁC NHẬN thay mã QR - khách đã quét QR và chuyển
                 xong ở bước trước, QR ở đây vô dụng và chiếm chỗ. Ảnh ẨN mặc định
                 giống modal thanh toán, bấm "Xem ảnh" mới hiện cho gọn phiếu. */}
             {completedOrder.paymentProofUrl ? (
@@ -4390,7 +4390,7 @@ export function PosCheckoutTerminal({
 
             <div className="space-y-2.5 my-4">
               {/* Bản in MỚI lên trên (`publicationYear` giảm dần, rồi `code` tăng dần
-                  để thứ tự ổn định). Thứ tự cũ là thứ tự quét bảng — thay đổi theo
+                  để thứ tự ổn định). Thứ tự cũ là thứ tự quét bảng - thay đổi theo
                   tên miền/truy vấn nên không có nghĩa gì cả cho người bán. */}
               {[...ambiguousMatches]
                 .sort(
@@ -4409,7 +4409,7 @@ export function PosCheckoutTerminal({
                     // `handleAddToCart` từ chối, nhưng modal ĐÃ ĐÓNG và mã ĐÃ ĐƯỢC
                     // GHI NHỚ ⇒ thu ngân phải quét lại từ đầu. Ở hội chợ, nơi
                     // `getBookStock` có thể trả 0 cho mọi cuốn, mọi dòng đều là
-                    // 0 tồn — bấm là mất hết ca.
+                    // 0 tồn - bấm là mất hết ca.
                     disabled={stock <= 0}
                     onClick={() => {
                       handleAddToCart(book);
@@ -4523,7 +4523,7 @@ export function PosCheckoutTerminal({
                 </label>
                 {/* Chỉ TÊN THẬT của thu ngân. Trước đây in
                     `User-{currentRole} - Kho Âu Cơ`: vừa là chuỗi vai trò giả, vừa
-                    lẫn tên kho — thu ngân không xác định được ca là của ai. */}
+                    lẫn tên kho - thu ngân không xác định được ca là của ai. */}
                 <div className="px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-800">
                   {cashierFullName || actorId || 'Chưa đăng nhập'}
                 </div>
@@ -4654,7 +4654,7 @@ export function PosCheckoutTerminal({
                   Tiền mặt thực tế đếm được trong két:
                 </label>
                 <p className="text-[11px] text-amber-700 font-semibold mb-1.5">
-                  Đếm tiền trong két rồi tự nhập. Không dùng số của hệ thống — chênh
+                  Đếm tiền trong két rồi tự nhập. Không dùng số của hệ thống - chênh
                   lệch luôn 0 đ thì ca nào cũng "khớp", kể cả ca thiếu tiền thật.
                 </p>
                 <div className="relative">
@@ -4758,7 +4758,7 @@ export function PosCheckoutTerminal({
               quantity: item.quantity,
               unitPrice: item.coverPrice,
             })),
-            // Quà TAY đi cùng yêu cầu duyệt — server ép miễn phí 100% và chỉ
+            // Quà TAY đi cùng yêu cầu duyệt - server ép miễn phí 100% và chỉ
             // công nhận khi đúng yêu cầu này được duyệt (approvedManual).
             ...manualGiftLines.map((g) => ({
               editionId: g.editionId,
@@ -4855,7 +4855,7 @@ export function PosCheckoutTerminal({
         </div>
       )}
 
-      {/* MODAL: ĐƠN CHỜ XÁC NHẬN (30/09) — lối ra khi chốt ca bị chặn. */}
+      {/* MODAL: ĐƠN CHỜ XÁC NHẬN (30/09) - lối ra khi chốt ca bị chặn. */}
       {isPendingOrdersOpen && mounted && createPortal(
         <div
           role="dialog"
@@ -4968,7 +4968,7 @@ export function PosCheckoutTerminal({
                     </span>
                   </div>
                 ))}
-                {/* Dòng quà tự động từ chương trình — giá 0đ, badge "Quà", có nút Bỏ quà */}
+                {/* Dòng quà tự động từ chương trình - giá 0đ, badge "Quà", có nút Bỏ quà */}
                 {giftItems.map((g) => (
                   <div key={`gift-${g.editionId}`} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 bg-amber-50/60 rounded-lg px-1.5">
                     <div className="truncate flex-1 pr-2">
@@ -5004,7 +5004,7 @@ export function PosCheckoutTerminal({
                       disabled={isInteractionLocked}
                       onClick={() => removeManualGift(g.editionId)}
                       aria-label={`Gỡ quà tặng thêm: ${g.title}`}
-                      title={isInteractionLocked ? 'Giỏ đang khoá chờ Quản lý duyệt — hãy hủy duyệt để sửa giỏ' : undefined}
+                      title={isInteractionLocked ? 'Giỏ đang khoá chờ Quản lý duyệt - hãy hủy duyệt để sửa giỏ' : undefined}
                       className="shrink-0 px-2 py-1 rounded-lg bg-white border border-violet-300 text-violet-800 text-[10px] font-bold hover:bg-violet-100 disabled:opacity-40"
                     >
                       Gỡ
@@ -5022,7 +5022,7 @@ export function PosCheckoutTerminal({
                     <option value="">Tặng thêm món…</option>
                     {books.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.title} — {(b.coverPrice || 0).toLocaleString('vi-VN')} đ
+                        {b.title} - {(b.coverPrice || 0).toLocaleString('vi-VN')} đ
                       </option>
                     ))}
                   </select>
@@ -5189,7 +5189,7 @@ export function PosCheckoutTerminal({
                 id="btn-confirm-mobile-checkout"
                 disabled={isSubmitting || isApprovalPendingState || isParserImporting || isAddingToCart || cart.length === 0 || (checkoutNeedsOpenShift && !hasMatchingOpenShift)}
                 onClick={handleCheckoutButtonClick}
-                title={checkoutNeedsOpenShift && !hasMatchingOpenShift ? 'Mở ca két trước khi bán — mọi khoản thu phải thuộc về một ca' : undefined}
+                title={checkoutNeedsOpenShift && !hasMatchingOpenShift ? 'Mở ca két trước khi bán - mọi khoản thu phải thuộc về một ca' : undefined}
                 className={`w-full py-3 rounded-xl text-white text-xs font-extrabold shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isGift ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/25' : 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 shadow-emerald-950/20'}`}
               >
                 {isSubmitting ? (

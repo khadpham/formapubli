@@ -17,11 +17,11 @@ export async function GET(req: NextRequest) {
     const cashierId =
       session.role === 'ROLE_CASHIER' ? session.actorId : searchParams.get('cashierId');
 
-    // CHECK CHỐT CA QUÁ GIỜ — rẻ, chỉ đọc, idempotent, KHÔNG ghi gì.
+    // CHECK CHỐT CA QUÁ GIỜ - rẻ, chỉ đọc, idempotent, KHÔNG ghi gì.
     // POS gọi mỗi lần mở app: GET /api/cashbox?check=stale-shifts&warehouseId=...
     // Câu hỏi: ca nào còn mở quá giờ chốt ngày, cần ai làm gì.
     //
-    // TRIỂN KHAI (repo KHÔNG có cron/scheduler/instrumentation — không tự bịa):
+    // TRIỂN KHAI (repo KHÔNG có cron/scheduler/instrumentation - không tự bịa):
     //   1) POS: gọi endpoint này mỗi lần mở app (và sau mỗi lần đóng app /
     //      quay lại foreground) cho từng kho bán tại quầy.
     //   2) Hằng ngày SAU cutoff, một cron/job của hạ tầng gọi, mỗi kho 1 lần:

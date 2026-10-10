@@ -110,7 +110,7 @@ export function PresetManagerModal({ onClose, onChanged }: { onClose: () => void
           {errorMessage && <p className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-semibold">{errorMessage}</p>}
           <div className="grid grid-cols-1 gap-2 bg-slate-50 border rounded-2xl p-3">
             <label className="block">Nhãn preset
-              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="VD: Giám đốc — Phạm Đam Ca" className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white" />
+              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="VD: Giám đốc - Phạm Đam Ca" className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white" />
             </label>
             <label className="block">Giá trị (JSON: tên biến → nội dung)
               <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} rows={3} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none font-mono bg-white" />

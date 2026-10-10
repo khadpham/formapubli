@@ -144,7 +144,7 @@ export function AIContractReview({ onClose }: { onClose: () => void }) {
         {analysis && (
           <div className="mt-4 border rounded-xl p-4 bg-slate-50">
             <p className="font-bold text-sm mb-2">📋 {analysis.contractType}</p>
-            <p className="text-xs mb-1"><b>Các bên:</b> {analysis.parties.join(' — ')}</p>
+            <p className="text-xs mb-1"><b>Các bên:</b> {analysis.parties.join(' - ')}</p>
             {analysis.valueText && <p className="text-xs mb-1"><b>Giá trị:</b> {analysis.valueText}</p>}
             {analysis.keyDates.length > 0 && <p className="text-xs mb-1"><b>Ngày quan trọng:</b> {analysis.keyDates.join(', ')}</p>}
             {analysis.obligations.length > 0 && (

@@ -115,7 +115,7 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
           className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none" />
         <select value={form.sourceWarehouseId} onChange={(e) => setForm({ ...form, sourceWarehouseId: e.target.value })}
           className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none max-w-[190px]">
-          <option value="">— Kho nguồn —</option>
+          <option value="">- Kho nguồn -</option>
           {activeSources.map((w) => (<option key={w.id} value={w.id}>{w.name}</option>))}
         </select>
         <button type="button" onClick={doCreate}
@@ -159,8 +159,8 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
 
       {leftover && (
         <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 space-y-2">
-          <p className="text-xs font-extrabold text-amber-900">Tồn thừa "{leftover.campaign.name}" — sửa số rồi Duyệt:</p>
-          {leftover.lines.length === 0 && <p className="text-[11px] text-slate-500">Kho trống — Duyệt để ngưng kho luôn.</p>}
+          <p className="text-xs font-extrabold text-amber-900">Tồn thừa "{leftover.campaign.name}" - sửa số rồi Duyệt:</p>
+          {leftover.lines.length === 0 && <p className="text-[11px] text-slate-500">Kho trống - Duyệt để ngưng kho luôn.</p>}
           {leftover.lines.map((l, i) => (
             <div key={l.editionId} className="flex items-center gap-2">
               <span className="text-[11px] font-semibold text-slate-700 flex-1 truncate">{l.name}</span>

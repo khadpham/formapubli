@@ -4,13 +4,13 @@ import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { businessDateOf, createdAtBetween } from './order.service';
 
 /**
- * SỔ BẢN QUYỀN & NHUẬN BÚT (RIGHTS & ROYALTIES LEDGER) — chỉ đọc ledger.
+ * SỔ BẢN QUYỀN & NHUẬN BÚT (RIGHTS & ROYALTIES LEDGER) - chỉ đọc ledger.
  *
  * - Hạn ngạch in: SUM RECEIPT (mọi kho) của các ấn bản thuộc tác phẩm trong
  *   thời hạn hợp đồng. Cảnh báo khi còn <= 200 cuốn hoặc <= 10% quota.
  *   KHÔNG chặn cứng nhập kho: phần mềm không ngăn được máy in chạy, chặn
  *   cứng chỉ tạo tồn ảo + đơn treo. Cảnh báo + audit là đúng bản chất.
- * - Nhuận bút: xem `royaltyBasis` bên dưới — mặc định NET_SOLD (tiền thực
+ * - Nhuận bút: xem `royaltyBasis` bên dưới - mặc định NET_SOLD (tiền thực
  *   thu trong sổ cái) hoặc COVER_PRICE (hợp đồng trả theo giá bìa).
  * - Vòng đời: TERMINATED (tay) > EXPIRED (quá hạn) > ACTIVE (suy ra theo ngày).
  */
@@ -18,7 +18,7 @@ export const QUOTA_WARN_ABSOLUTE = 200;
 export const QUOTA_WARN_RATIO = 0.1;
 
 /**
- * Cơ sở tính tiền nhuận bút — quyết định nghiệp vụ, KHÔNG phải chi tiết kỹ thuật.
+ * Cơ sở tính tiền nhuận bút - quyết định nghiệp vụ, KHÔNG phải chi tiết kỹ thuật.
  *
  * - `NET_SOLD` (MẶC ĐỊNH): tiền thực thu = SUM(`order_items.total_amount`) của
  *   đơn COMPLETED trong hạn. Đây là đúng số tiền khách đã trả sau chiết khấu,
@@ -59,7 +59,7 @@ export interface RoyaltyStatement {
   contractNumber: string;
   workId: string;
   royaltyRate: number;
-  /** Cơ sở đã dùng để ra con số này — bảng kê phải nói rõ, không để đối tác đoán. */
+  /** Cơ sở đã dùng để ra con số này - bảng kê phải nói rõ, không để đối tác đoán. */
   royaltyBasis: RoyaltyBasis;
   /** Nhãn tiếng Việt của `royaltyBasis`, dán thẳng lên header bản in. */
   royaltyBasisLabel: string;
@@ -67,11 +67,11 @@ export interface RoyaltyStatement {
   /** Lượng × GIÁ BÌA HIỆN HÀNH. Chỉ là con số đối chiếu, KHÔNG phải doanh thu
    *  dùng để trả khi `royaltyBasis = NET_SOLD`. */
   coverRevenue: number;
-  /** Doanh thu theo cơ sở đang áp dụng — đây mới là số nhân với `royaltyRate`. */
+  /** Doanh thu theo cơ sở đang áp dụng - đây mới là số nhân với `royaltyRate`. */
   basisRevenue: number;
-  /** Bao nhiêu cuốn trong `soldQty` KHÔNG bốc được giá từ đơn hàng (ký gửi, ghi
+  /** Bao nhiêu cuốn trong `soldQty` KHÔNG bốc được giá từ đơn sách (ký gửi, ghi
    *  tay) nên phải tính theo giá bìa. Không có số này thì việc lấp bằng giá bìa
-   *  là vô hình — sẽ không ai biết mình đang trả theo cơ sở nào cho phần này. */
+   *  là vô hình - sẽ không ai biết mình đang trả theo cơ sở nào cho phần này. */
   soldQtyUnpriced: number;
   accrued: number;
   advanceAmount: number;
@@ -96,7 +96,7 @@ export function deriveLifecycle(
  * Tập `orders.id` ĐỦ điều kiện sinh nhuận bút: COMPLETED + không phải kênh
  * SPONSORSHIP + phát sinh trong hạn hợp đồng (ngày nghiệp vụ VN).
  *
- * Tách riêng thành hàm để `royaltyStatement` không phải tự viết lại bộ lọc —
+ * Tách riêng thành hàm để `royaltyStatement` không phải tự viết lại bộ lọc -
  * cùng bộ với `OrderService.getSalesSummary` (`status = COMPLETED`, bỏ
  * SPONSORSHIP, `createdAtBetween`). Trả về Set rỗng khi không có id nào.
  */
@@ -244,12 +244,12 @@ export class RoyaltyService {
   /**
    * Bảng nhuận bút.
    * `soldQty` và `coverRevenue` luôn lấy từ SỔ KHO (DISPATCH_SALE +
-   * CONSIGNMENT_SOLD trong hạn) — đó là sự thật vật lý "đã bán được mấy cuốn",
+   * CONSIGNMENT_SOLD trong hạn) - đó là sự thật vật lý "đã bán được mấy cuốn",
    * và là nguồn duy nhất mà hạn ngạch in cũng dùng.
    *
    * `basisRevenue` là số được nhân với `royaltyRate`, chọn theo `royaltyBasis`:
    *   · NET_SOLD (mặc định) = SUM(`order_items.total_amount`) của những lần bán
-   *     đó — tức tiền thực thu sau chiết khấu, đúng số trong sổ cái.
+   *     đó - tức tiền thực thu sau chiết khấu, đúng số trong sổ cái.
    *   · COVER_PRICE = `coverRevenue` (giá bìa hiện hành), giữ đúng hành vi cũ
    *     cho hợp đồng ghi rõ trả theo giá bìa.
    *
@@ -267,13 +267,13 @@ export class RoyaltyService {
 
     // Chặn ngay ở cổng đọc: `royalty_rate` là hệ số nhân tiền thật. Giá trị hỏng
     // (NaN / null / âm / ≥1) sẽ biến `accrued` và `payable` thành NaN rồi in ra
-    // bảng kê — `createContract` chặn lúc GHI, nhưng dữ liệu có thể còn từ
+    // bảng kê - `createContract` chặn lúc GHI, nhưng dữ liệu có thể còn từ
     // import cũ hoặc sửa tay trong DB, nên phải chặn lúc ĐỌC nữa.
     const rate = Number(c.royaltyRate);
     if (!Number.isFinite(rate) || rate <= 0 || rate >= 1) {
       throw AppError.invalid(
         `royalty_rate của hợp đồng ${c.contractNumber} không hợp lệ (${c.royaltyRate}). ` +
-          `Phải nằm trong (0, 1) — sửa hợp đồng rồi tính lại bảng kê.`
+          `Phải nằm trong (0, 1) - sửa hợp đồng rồi tính lại bảng kê.`
       );
     }
     const basis: RoyaltyBasis = c.royaltyBasis === 'COVER_PRICE' ? 'COVER_PRICE' : 'NET_SOLD';
@@ -285,8 +285,8 @@ export class RoyaltyService {
     let soldQtyUnpriced = 0;
 
     if (editionIds.length > 0) {
-      // Bước 1 — sổ kho. Nhóm theo (ấn bản, correlation_id) để từng lần bán còn
-      // giữ được mối nối tới đơn hàng (correlation_id = orders.id khi bán qua
+      // Bước 1 - sổ kho. Nhóm theo (ấn bản, correlation_id) để từng lần bán còn
+      // giữ được mối nối tới đơn sách (correlation_id = orders.id khi bán qua
       // POS/online; ký gửi thì correlation_id = mã kỳ đối soát, không khớp đơn
       // nào ⇒ tự rơi vào phần "không có giá thực thu").
       const ledgerRows = await db
@@ -303,14 +303,14 @@ export class RoyaltyService {
             // `effective_date`/`expiration_date` là NGÀY VIỆT NAM còn
             // `recorded_at` là UTC. Dùng lại `createdAtBetween` của
             // order.service (chung với getSalesSummary) để không tự viết lại
-            // một bản lọc ngày — so chuỗi trần làm mất ngày hết hạn và lệch 7
+            // một bản lọc ngày - so chuỗi trần làm mất ngày hết hạn và lệch 7
             // tiếng, tức tác giả mất tiền.
             ...createdAtBetween(inventoryLedger.recordedAt, c.effectiveDate, c.expirationDate)
           )
         )
         .groupBy(inventoryLedger.editionId, inventoryLedger.correlationId);
 
-      // Bước 2 — giá bìa hiện hành (chỉ để đối chiếu / lấp phần không có đơn).
+      // Bước 2 - giá bìa hiện hành (chỉ để đối chiếu / lấp phần không có đơn).
       const covers = new Map(
         (
           await db
@@ -320,10 +320,10 @@ export class RoyaltyService {
         ).map((e) => [e.id, e.coverPrice ?? 0])
       );
 
-      // Bước 3 — phân loại từng lần bán theo dòng đơn.
+      // Bước 3 - phân loại từng lần bán theo dòng đơn.
       //
       // Bộ lọc CỐ TÌNH giống hệt `OrderService.getSalesSummary`: đơn COMPLETED +
-      // bỏ kênh SPONSORSHIP (đơn rút quỹ, final 0đ) + ngày nghiệp vụ VN — để bảng
+      // bỏ kênh SPONSORSHIP (đơn rút quỹ, final 0đ) + ngày nghiệp vụ VN - để bảng
       // kê royalty và sổ doanh số phải khớp nhau. Chạy cho CẢ HAI cơ sở, không
       // chỉ NET_SOLD: một đơn SPONSORSHIP là ĐƠN TÀI TRỢ (sách rút từ quỹ, không
       // phải khách mua), nên nó không phải doanh số bán và không được sinh
@@ -369,12 +369,12 @@ export class RoyaltyService {
       for (const r of ledgerRows) {
         // `edition_id` NULLABLE từ 0033 (hàng hóa không có dòng `editions`).
         // Truy vấn trên đã lọc `inArray(edition_id, editionIds)` nên dòng hàng
-        // hóa không lọt vào đây — guard chỉ để thu hẹp kiểu, không đổi hành vi.
+        // hóa không lọt vào đây - guard chỉ để thu hẹp kiểu, không đổi hành vi.
         if (r.editionId === null) continue;
         const q = Number(r.qty ?? 0);
         if (!q) continue;
         // Đơn không đạt điều kiện (tài trợ / chưa hoàn tất / ngoài hạn): không phải
-        // doanh số bán, không tính vào bảng kê — khớp `getSalesSummary`.
+        // doanh số bán, không tính vào bảng kê - khớp `getSalesSummary`.
         if (r.correlationId && nonQualifying.has(r.correlationId)) continue;
 
         const cover = covers.get(r.editionId) ?? 0;
@@ -400,7 +400,7 @@ export class RoyaltyService {
     // Làm tròn MỘT LẦN ở cuối trên tổng, không làm tròn từng dòng: làm tròn mỗi
     // dòng rồi cộng lại lệch với tổng (đã có test B1.3 bắt). Bảng kê là số tích
     // lũy từ đầu hạn đến nay chứ không chia theo kỳ, nên không có chuyện "lệch
-    // so với kỳ trước" — cùng dữ liệu là ra cùng một con số.
+    // so với kỳ trước" - cùng dữ liệu là ra cùng một con số.
     const accrued = Math.round(basisRevenue * rate);
     const advanceAmount = Number.isFinite(Number(c.advanceAmount)) ? Math.max(0, Number(c.advanceAmount)) : 0;
     return {
@@ -431,7 +431,7 @@ export class RoyaltyService {
    * đang hiệu lực. Đây cũng là chỗ "limit cắt rồi mới cộng" mà báo cáo phải khớp.
    */
   static async listContracts(lifecycle?: ContractLifecycle, limit = 100) {
-    // Ngày nghiệp vụ VN, đúng như `deriveLifecycle` dùng — lọc SQL và gán nhãn
+    // Ngày nghiệp vụ VN, đúng như `deriveLifecycle` dùng - lọc SQL và gán nhãn
     // phải cùng một đồng hồ, nếu không sẽ lệch ở khung 00:00–07:00 VN.
     const today = businessDateOf(new Date());
     const conds = [];

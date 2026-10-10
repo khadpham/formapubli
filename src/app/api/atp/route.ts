@@ -7,7 +7,7 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * Bước 1 — Tra cứu tồn khả dụng ATP (physical NEW − đơn PENDING giữ chỗ).
+ * Bước 1 - Tra cứu tồn khả dụng ATP (physical NEW − đơn PENDING giữ chỗ).
  * GET /api/atp?editionId=&warehouseId=            → 1 ấn bản (giữ nguyên cho
  *                                                   các nơi gọi cũ)
  * GET /api/atp?editionIds=a,b,c&warehouseId=      → nhiều ấn bản trong 1 vòng

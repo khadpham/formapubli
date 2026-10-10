@@ -16,20 +16,20 @@ export interface BankAccountDecision {
   cachedAt: number | null;
   /**
    * Server ĐÃ trả lời và nói không còn tài khoản nào dùng được. Khác hẳn với
-   * "không tải được" (mất mạng / HTTP lỗi) — thu ngân phải được báo khác.
+   * "không tải được" (mất mạng / HTTP lỗi) - thu ngân phải được báo khác.
    */
   serverSaysEmpty: boolean;
 }
 
 /**
- * NGUỒN TÀI KHOẢN NGÂN HÀNG — quyết định thuần, không I/O, để test được.
+ * NGUỒN TÀI KHOẢN NGÂN HÀNG - quyết định thuần, không I/O, để test được.
  *
  * VÌ SAO phải tách "hỏng" với "thành công và rỗng": `listBankAccounts` chỉ lấy
  * `isActive === true`, nên danh sách rỗng đúng lúc MỌI tài khoản nhận đã bị
  * ngưng (ngân hàng đóng tài khoản). Trước đây nhánh này cũng rơi về cache 24h
  * ⇒ POS mã hoá tài khoản ĐÃ ĐÓNG vào mã QR và khách chuyển tiền vào tài khoản
  * chết. Cache chỉ được ghi ở nhánh có dữ liệu, nên cache còn đó là tài khoản
- * TỪNG hoạt động — dùng lại nó sau khi server nói "không còn" là sai.
+ * TỪNG hoạt động - dùng lại nó sau khi server nói "không còn" là sai.
  */
 export function decideBankAccounts(input: {
   /** false = mất mạng / HTTP lỗi / body hỏng. */
@@ -102,7 +102,7 @@ export function VietQrPay({
   // Biến hỗ trợ: {SL} tổng số lượng, {MA} mã đơn, {KHO} tên kho, {KH} mã kho.
   const [template, setTemplate] = useState<string | null>(null);
   // Chỉ hiện nhắc "chưa có mẫu" SAU khi đã hỏi xong server, tránh nháy nhắc
-  // giả trong lúc fetch — thu ngân không bị dọn dẹp bằng cảnh báo giả.
+  // giả trong lúc fetch - thu ngân không bị dọn dẹp bằng cảnh báo giả.
   const [templateLoaded, setTemplateLoaded] = useState(false);
   // Người dùng đã tự sửa nội dung → giữ bản của họ, không đè lại bằng template.
   const [manualContent, setManualContent] = useState<string | null>(null);
@@ -139,10 +139,10 @@ export function VietQrPay({
   }, [warehouseId]);
 
   // Nguồn DUY NHẤT ghi nội dung chuyển khoản. Trước đây có thêm effect
-  // `setContent(initialContent)` chạy kèm theo — nó đè ngược mẫu tuỳ biến mỗi
+  // `setContent(initialContent)` chạy kèm theo - nó đè ngược mẫu tuỳ biến mỗi
   // khi mã đơn đổi, nên QR ra mã đơn dài thay vì nội dung đã cấu hình.
   // KHÔNG return sớm khi manualContent: `resolveTransferContent` đã tự quyết
-  // định "gõ tay thì giữ bản của họ" — một nơi quyết luật, không hai.
+  // định "gõ tay thì giữ bản của họ" - một nơi quyết luật, không hai.
   useEffect(() => {
     setContent(
       resolveTransferContent({
@@ -169,7 +169,7 @@ export function VietQrPay({
   useEffect(() => { onCachedAtRef.current = onCachedAt; }, [onCachedAt]);
 
   // Ưu tiên mạng; CHỈ fallback sang cache 24h khi thật sự không tải được. Server
-  // trả lời rồi mà danh sách rỗng là quyết định thật, không phải sự cố — quyết
+  // trả lời rồi mà danh sách rỗng là quyết định thật, không phải sự cố - quyết
   // định đó nằm trong `decideBankAccounts`. Không có nguồn nào → source NONE +
   // onQr(null) để cha không bao giờ hiện QR cũ.
   useEffect(() => {
@@ -256,7 +256,7 @@ export function VietQrPay({
   return (
     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
       <select aria-label="Tài khoản nhận tiền" value={selectedId} onChange={(e) => setSelectedId(e.target.value)} disabled={locked} className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none disabled:opacity-70 disabled:bg-slate-100">
-        {list.map((b) => <option key={b.id} value={b.id}>{b.label} — {b.accountNo}</option>)}
+        {list.map((b) => <option key={b.id} value={b.id}>{b.label} - {b.accountNo}</option>)}
       </select>
       <input
         aria-label="Nội dung chuyển khoản"
@@ -269,7 +269,7 @@ export function VietQrPay({
       />
       {locked ? (
         <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-          Đã khoá theo đơn — muốn đổi tài khoản hoặc nội dung thì huỷ đơn và tạo lại.
+          Đã khoá theo đơn - muốn đổi tài khoản hoặc nội dung thì huỷ đơn và tạo lại.
         </p>
       ) : null}
       {templateLoaded && !hasTransferTemplate(template) ? (
@@ -277,7 +277,7 @@ export function VietQrPay({
         // thì SỐ LƯỢNG vẫn lên QR (mã đơn bị rút gọn). Chỉ còn thiếu phần tuỳ
         // biến của kho ⇒ nhắc, không cảnh báo.
         <p className="text-[10px] text-amber-600 font-medium leading-relaxed">
-          Kho chưa có mẫu riêng — đang dùng mẫu mặc định: {DEFAULT_TRANSFER_TEMPLATE.replace('{SL}', 'SL').replace('{MA}', 'mã đơn')}. Sửa ở Quản Lý Kho.
+          Kho chưa có mẫu riêng - đang dùng mẫu mặc định: {DEFAULT_TRANSFER_TEMPLATE.replace('{SL}', 'SL').replace('{MA}', 'mã đơn')}. Sửa ở Quản Lý Kho.
         </p>
       ) : null}
       {source === 'CACHE' && cachedAt ? (
@@ -294,10 +294,10 @@ export function VietQrPay({
           {list.length
             ? 'Đang sinh QR offline…'
             : serverSaysEmpty
-              ? 'Kho không còn tài khoản nhận nào đang hoạt động — bật lại ở Quản Lý Kho, hoặc thu tiền mặt.'
+              ? 'Kho không còn tài khoản nhận nào đang hoạt động - bật lại ở Quản Lý Kho, hoặc thu tiền mặt.'
               : source === 'CACHE'
-                ? 'Cache tài khoản đã hết hạn — cần mạng để tải lại, hãy dùng tiền mặt.'
-                : 'Chưa có tài khoản nhận — thêm ở bảng bank_accounts.'}
+                ? 'Cache tài khoản đã hết hạn - cần mạng để tải lại, hãy dùng tiền mặt.'
+                : 'Chưa có tài khoản nhận - thêm ở bảng bank_accounts.'}
         </div>
       )}
     </div>

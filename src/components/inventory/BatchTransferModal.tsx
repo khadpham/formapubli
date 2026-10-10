@@ -92,11 +92,11 @@ export function BatchTransferModal({
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
   // Thông báo sau thao tác thêm dòng. `kind` quyết định màu + icon: 'success' là
   // "Đã thêm: N đầu sách" (thắng lợi), còn 'warning' là kết quả RỖNG ("kho nguồn
-  // không còn sách nào có tồn") — không được vẽ bằng hộp xanh như thắng lợi.
+  // không còn sách nào có tồn") - không được vẽ bằng hộp xanh như thắng lợi.
   const [addNotice, setAddNotice] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển — không bao giờ gọi
+  // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển - không bao giờ gọi
   // validate/submit; người dùng vẫn phải bấm nút Kiểm tra tồn kho rồi Xác nhận.
   const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
@@ -139,7 +139,7 @@ export function BatchTransferModal({
   };
 
   // MỘT nơi duy nhất cho mọi thay đổi bảng chuyển: huỷ validate, xoá lỗi cũ và
-  // bỏ thông báo "Đã thêm: N đầu sách" — sau khi người dùng sửa/xoá dòng thì con
+  // bỏ thông báo "Đã thêm: N đầu sách" - sau khi người dùng sửa/xoá dòng thì con
   // số đó không còn đúng nữa. Cảnh báo "kho nguồn rỗng" vẫn được giữ vì nó nói
   // về kho nguồn, không nói về bảng chuyển.
   const invalidateCart = () => {
@@ -232,7 +232,7 @@ export function BatchTransferModal({
         (b) =>
           !existingIds.has(b.id) &&
           // Dùng helper tìm tiếng Việt có sẵn thay vì `.toLowerCase().includes()`.
-          // Bản cũ chỉ khớp khi gõ ĐÚNG dấu, nên gõ "doramon" không ra "Đờrămôn" —
+          // Bản cũ chỉ khớp khi gõ ĐÚNG dấu, nên gõ "doramon" không ra "Đờrămôn" -
     // người dùng gõ tiếng Việt không dấu là chịu không tìm được.
           // `matchesAnyVietnameseField` bỏ dấu hai bên và null-safe, nên bản ghi
           // thiếu `isbnLast4` cũng không làm hỏng render.
@@ -293,7 +293,7 @@ export function BatchTransferModal({
     if (filteredBooksToAdd.length === 0) setIsSuggestOpen(false);
   }, [filteredBooksToAdd.length]);
 
-  // Hàm thêm dòng DUY NHẤT — dùng chung cho cả tìm kiếm và dán, để hai đường
+  // Hàm thêm dòng DUY NHẤT - dùng chung cho cả tìm kiếm và dán, để hai đường
   // sinh ra đúng một hình dạng dòng (và validate/toctou xử lý y hệt nhau).
   // Trùng editionId thì CỘNG dồn số lượng vào dòng đang có, không thêm dòng mới.
   const addBookLine = (book: BookItem, quantity?: number) => {
@@ -429,7 +429,7 @@ export function BatchTransferModal({
     }
     const parsed = Number(trimmed);
     if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
-      setErrorMessage('Số lượng hàng loạt phải là số nguyên không âm (0 được phép — dòng 0 sẽ bị bỏ qua lúc chuyển).');
+      setErrorMessage('Số lượng hàng loạt phải là số nguyên không âm (0 được phép - dòng 0 sẽ bị bỏ qua lúc chuyển).');
       return;
     }
 
@@ -491,13 +491,13 @@ export function BatchTransferModal({
     );
   };
 
-  // 1. Kiểm tra tồn trước (Dry-Run TOCTOU Validation) — chỉ gửi dòng > 0.
+  // 1. Kiểm tra tồn trước (Dry-Run TOCTOU Validation) - chỉ gửi dòng > 0.
   const handleValidateBatch = async () => {
     if (activeLines.length === 0) {
       setErrorMessage(
         lines.length === 0
           ? 'Vui lòng chọn ít nhất một đầu sách cần chuyển.'
-          : 'Mọi dòng đang để số lượng 0 — tăng số lượng hoặc xóa dòng trước khi kiểm tra.'
+          : 'Mọi dòng đang để số lượng 0 - tăng số lượng hoặc xóa dòng trước khi kiểm tra.'
       );
       return;
     }
@@ -620,14 +620,14 @@ export function BatchTransferModal({
     }
   };
 
-  // 2. Commit Chuyển Kho Hàng Loạt — dòng 0 bị loại (đã cho phép nhập 0
+  // 2. Commit Chuyển Kho Hàng Loạt - dòng 0 bị loại (đã cho phép nhập 0
   // để xóa hết gõ lại, nhưng server chỉ nhận > 0).
   const handleSubmitBatch = async () => {
     if (activeLines.length === 0) {
       setErrorMessage(
         lines.length === 0
           ? 'Vui lòng chọn ít nhất một đầu sách.'
-          : 'Mọi dòng đang để số lượng 0 — tăng số lượng hoặc xóa dòng trước khi xác nhận.'
+          : 'Mọi dòng đang để số lượng 0 - tăng số lượng hoặc xóa dòng trước khi xác nhận.'
       );
       return;
     }
@@ -773,7 +773,7 @@ export function BatchTransferModal({
                 Tổng cộng {lines.length} đầu sách ({successInfo.totalItems} cuốn) đã được trừ kho nguồn và nhập kho đích đồng thời.
               </p>
               <p className="text-[11px] text-emerald-700/90">
-                Kho nguồn đã về 0: vào Quản Lý Kho bấm <span className="font-bold">Ngưng hoạt động</span> — đừng bấm
+                Kho nguồn đã về 0: vào Quản Lý Kho bấm <span className="font-bold">Ngưng hoạt động</span> - đừng bấm
                 &quot;Xoá&quot;, kho đã có sổ kho nên xoá luôn bị từ chối.
               </p>
               <div className="pt-2">
@@ -867,7 +867,7 @@ export function BatchTransferModal({
                       className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
                       title="Chuẩn bị hàng ra hội chợ: mỗi đầu sách lấy tối đa 30 cuốn"
                     >
-                      <Sparkles className="w-3.5 h-3.5" /> Thêm nhanh — tối đa 30 cuốn/đầu
+                      <Sparkles className="w-3.5 h-3.5" /> Thêm nhanh - tối đa 30 cuốn/đầu
                     </button>
                     <button
                       type="button"
@@ -916,7 +916,7 @@ export function BatchTransferModal({
                       setSearchBookTerm(v);
                       // PHẢI mở danh sách gợi ý khi gõ. Bản cũ chỉ gán từ khoá ở
                       // đây, còn chỗ DUY NHẤT mở dropdown là `onFocus` và nó lại
-                      // bị chặn bởi "phải có kết quả" — mà lúc focus ô còn trống nên
+                      // bị chặn bởi "phải có kết quả" - mà lúc focus ô còn trống nên
                       // chưa có kết quả nào. Kết quả là có vòng luẩn quẩn: mở cần
                       // kết quả, kết quả cần gõ, gõ không mở. Người dùng gõ mãi mà
                       // danh sách không bao giờ hiện, tưởng ô tìm kiếm hỏng.
@@ -930,7 +930,7 @@ export function BatchTransferModal({
                 </div>
               </div>
 
-              {/* Gợi ý sách — render NGOÀI modal, trên document.body.
+              {/* Gợi ý sách - render NGOÀI modal, trên document.body.
                   Trước đây nó là `absolute z-20` nằm trong modal card
                   `overflow-hidden` + body `overflow-y-auto`, nên danh sách bị cắt
                   mất phần dưới và không cuộn tới được. */}
@@ -978,7 +978,7 @@ export function BatchTransferModal({
 
               {/* FIX: nút "Dán" phải luôn thấy được, kể cả khi bảng còn TRỐNG.
                   Nó nằm trong khối {lines.length > 0} là nên biến mất đúng lúc
-                  người dùng cần nhất — dán danh sách lần đầu. Đưa ra ngoài. */}
+                  người dùng cần nhất - dán danh sách lần đầu. Đưa ra ngoài. */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -1031,7 +1031,7 @@ export function BatchTransferModal({
                         placeholder="SL mới..."
                         disabled={isSubmitting || selectedIds.size === 0}
                         className="w-20 px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100"
-                        title="Số nguyên không âm (0 được phép — dòng 0 bị bỏ qua lúc chuyển)"
+                        title="Số nguyên không âm (0 được phép - dòng 0 bị bỏ qua lúc chuyển)"
                       />
                       <button
                         type="button"
@@ -1268,7 +1268,7 @@ export function BatchTransferModal({
     document.body
     )}
 
-    {/* Hộp thoại dán danh sách — portal riêng trên document.body để không bị
+    {/* Hộp thoại dán danh sách - portal riêng trên document.body để không bị
         `overflow-hidden` của modal cha cắt. max-h + overflow-y-auto để luôn
         cuộn tới được trên màn 375px. KHÔNG có nút nào gửi phiếu ở đây. */}
     {isPasteOpen && (
@@ -1299,7 +1299,7 @@ export function BatchTransferModal({
               <p className="text-[11px] leading-relaxed text-slate-600">
                 Dán 2 cột: <span className="font-semibold">tên sách · số lượng</span> (cột cách nhau
                 bằng Tab hoặc dấu phẩy). Tên sách phải khớp <span className="font-semibold">CHÍNH XÁC</span> với danh
-                mục — hệ thống không tự đoán. Dòng nào không có số lượng thì lấy mặc định{' '}
+                mục - hệ thống không tự đoán. Dòng nào không có số lượng thì lấy mặc định{' '}
                 <span className="font-mono font-bold">5</span>. Dán chỉ thêm vào bảng chuyển, vẫn
                 phải bấm &quot;Kiểm tra tồn kho&quot; rồi &quot;Xác nhận chuyển kho&quot;.
               </p>
@@ -1345,7 +1345,7 @@ export function BatchTransferModal({
                         .filter((r): r is Extract<ParsedRow, { status: 'matched' }> => r.status === 'matched')
                         .map((r) => (
                           <li key={`m-${r.line}`} className="text-[11px] text-slate-700 break-words">
-                            {r.title} — <span className="font-mono font-bold">{r.quantity}</span>
+                            {r.title} - <span className="font-mono font-bold">{r.quantity}</span>
                           </li>
                         ))}
                     </ul>
@@ -1359,7 +1359,7 @@ export function BatchTransferModal({
                     </button>
                   </section>
 
-                  {/* 2. Cần xác nhận — bấm vào đầu sách đúng để thêm vào phiếu. */}
+                  {/* 2. Cần xác nhận - bấm vào đầu sách đúng để thêm vào phiếu. */}
                   {pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
                     <section className="rounded-xl border border-amber-300 bg-amber-50/70 p-3">
                       <h3 className="text-[11px] font-extrabold text-amber-900 mb-1 flex items-center gap-1">
@@ -1411,7 +1411,7 @@ export function BatchTransferModal({
                       </ul>
                     </section>
                   )}
-                  {/* 3. Không tìm thấy — chỉ hiển thị, KHÔNG có nút thêm. */}
+                  {/* 3. Không tìm thấy - chỉ hiển thị, KHÔNG có nút thêm. */}
                   {pasteResult.rows.some((r) => r.status === 'not_found') && (
                     <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <h3 className="text-[11px] font-extrabold text-slate-700 mb-1">
@@ -1425,7 +1425,7 @@ export function BatchTransferModal({
                           .filter((r): r is Extract<ParsedRow, { status: 'not_found' }> => r.status === 'not_found')
                           .map((r) => (
                             <li key={`n-${r.line}`} className="text-[11px] text-slate-500 line-through break-words">
-                              {r.line} — {r.quantity}
+                              {r.line} - {r.quantity}
                             </li>
                           ))}
                       </ul>

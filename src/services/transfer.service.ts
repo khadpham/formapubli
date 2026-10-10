@@ -103,7 +103,7 @@ export class TransferService {
   }
 
   /**
-   * BƯỚC 1 — Xuất kho gửi: trừ kho nguồn, cộng kho transit, mở phiếu IN_TRANSIT.
+   * BƯỚC 1 - Xuất kho gửi: trừ kho nguồn, cộng kho transit, mở phiếu IN_TRANSIT.
    */
   static async dispatch(params: DispatchParams) {
     const { fromWarehouseId, toWarehouseId, vehicleInfo, notes, items, actorContext, idempotencyKey } = params;
@@ -117,7 +117,7 @@ export class TransferService {
     // Direct-transfer gate (CP3-D) CHẠY TRƯỚC mọi từ chối INVALID của luồng
     // warehouse 2 bước: caller đánh dấu actorRole muốn ngữ nghĩa direct thì
     // mọi vi phạm role/pair đều là FORBIDDEN.
-    // Phạm vi (CP3-B1.2): gate này áp SSOT §9 cho nhánh direct-marked —
+    // Phạm vi (CP3-B1.2): gate này áp SSOT §9 cho nhánh direct-marked -
     // role Owner/Manager + cấm tuyệt đối virtual families (FORBIDDEN).
     // Allowlist cặp cấu hình được thực thi tại InventoryService.transfer
     // (mọi direct transfer 1 bước đều qua đó).
@@ -181,7 +181,7 @@ export class TransferService {
     }
     const effDispatcherId = actorContext.staffId.trim();
 
-    // Idempotency Key bắt buộc — KHÔNG tự sinh key (fail-closed, mục A).
+    // Idempotency Key bắt buộc - KHÔNG tự sinh key (fail-closed, mục A).
     const idemKey = idempotencyKey?.trim() || '';
     if (!idemKey) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác xuất kho luân chuyển (dispatch).');
@@ -341,7 +341,7 @@ export class TransferService {
   }
 
   /**
-   * BƯỚC 2 — Thực nhận tại kho đích: kiểm đếm R lành + D hỏng + L mất = X.
+   * BƯỚC 2 - Thực nhận tại kho đích: kiểm đếm R lành + D hỏng + L mất = X.
    */
   static async receive(params: ReceiveParams) {
     const { shipmentId, items, notes, actorContext, idempotencyKey } = params;
@@ -357,7 +357,7 @@ export class TransferService {
     }
     const effReceiverId = actorContext.staffId.trim();
 
-    // Idempotency Key bắt buộc — KHÔNG tự sinh key (fail-closed, mục A).
+    // Idempotency Key bắt buộc - KHÔNG tự sinh key (fail-closed, mục A).
     const idemKey = idempotencyKey?.trim() || '';
     if (!idemKey) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác nhận hàng luân chuyển (receive).');
@@ -369,7 +369,7 @@ export class TransferService {
 
     // Chặn số dòng: hàm này mỗi dòng hàng tốn ~9 truy vấn (đo thật: 186 round-trip
     // cho phiếu 20 dòng). Cloudflare Workers giới hạn 50 subrequest ⇒ phiếu vài
-    // chục dòng sẽ ném lỗi 500 thô "Too many subrequests" — người dùng thấy màn
+    // chục dòng sẽ ném lỗi 500 thô "Too many subrequests" - người dùng thấy màn
     // hình lỗi kỹ thuật và phiếu nhận hằng nằm dở. Chặn sớm ở đây để thấy lỗi
     // tiếng Việt có hướng dẫn, và tách phiếu lớn thành 2 lần nhận.
     if (items.length > RECEIVE_MAX_LINES) {

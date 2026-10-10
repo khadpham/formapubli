@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 const PRIVILEGED: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
 /**
- * POST /api/campaigns/[id]/start — Bắt đầu (DRAFT → ACTIVE, sinh kho FAIR_EVENT).
+ * POST /api/campaigns/[id]/start - Bắt đầu (DRAFT → ACTIVE, sinh kho FAIR_EVENT).
  * Quyền: Owner, Manager.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

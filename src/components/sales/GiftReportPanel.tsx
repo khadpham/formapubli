@@ -12,7 +12,7 @@ interface GiftReportPanelProps {
   /** Ngày nghiệp vụ VN 'YYYY-MM-DD' từ tab; rỗng = không lọc ngày. */
   from: string;
   to: string;
-  /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, như 3 bảng kia. */
+  /** Mã nhân viên THẬT đóng watermark - lấy từ Sổ Kép, như 3 bảng kia. */
   actorId: string;
 }
 
@@ -43,7 +43,7 @@ function GiftTable({ rows, emptyText, title, sortKey, sortDir, onToggle }: { row
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
             <tr key={r.productId} className="hover:bg-slate-50/80">
-              <td className="p-2.5 font-medium text-slate-800">{r.productName || '—'}</td>
+              <td className="p-2.5 font-medium text-slate-800">{r.productName || '-'}</td>
               <td className="p-2.5 text-right font-mono">{Number(r.lineCount || 0).toLocaleString('vi-VN')}</td>
               <td className="p-2.5 text-right font-mono font-bold">{Number(r.totalQty || 0).toLocaleString('vi-VN')}</td>
             </tr>
@@ -57,7 +57,7 @@ function GiftTable({ rows, emptyText, title, sortKey, sortDir, onToggle }: { row
 
 export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPanelProps) {
   // Server chỉ cho OWNER/MANAGER. Trước đây panel vẫn gọi API với mọi vai nên
-  // thu ngân/kế toán thuế thấy HỘP ĐỎ 403 — thông báo lỗi cho người không có
+  // thu ngân/kế toán thuế thấy HỘP ĐỎ 403 - thông báo lỗi cho người không có
   // quyền xem là vô nghĩa. Ẩn hẳn thay vì báo lỗi.
   const canView = ROLE_CAN_VIEW.includes(currentRole);
   const [inStock, setInStock] = useState<GiftRow[]>([]);
@@ -139,7 +139,7 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
         rawObjects.push({ group: g.label, product: r.productName || '', lines: r.lineCount, qty: r.totalQty });
         csvRows.push([
           exportCsvCell(g.label),
-          exportCsvCell(r.productName || '—'),
+          exportCsvCell(r.productName || '-'),
           String(Number(r.lineCount || 0)),
           String(Number(r.totalQty || 0)),
           exportCsvCell(rangeLabel),
@@ -154,7 +154,7 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
       meta: {
         actorId,
         actorRole: currentRole,
-        reportName: `BÁO CÁO QUÀ TẶNG — ${rangeLabel}`,
+        reportName: `BÁO CÁO QUÀ TẶNG - ${rangeLabel}`,
         fiscalScope: 'ALL',
       },
     });
@@ -164,7 +164,7 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
    * Một nhóm quà dạng bảng thật (sort + overlay dùng chung). Mỗi nhóm sort
    * riêng vì hai nhóm là hai bản chất khác nhau (đã phát vs hết tồn).
    */
-  // Sort nằm ở PANEL (không unmount khi bật/tắt overlay) — GiftTable chỉ nhận
+  // Sort nằm ở PANEL (không unmount khi bật/tắt overlay) - GiftTable chỉ nhận
   // dòng đã xếp. Hai bảng chung 1 khóa sort.
   const [giftSortKey, setGiftSortKey] = React.useState('totalQty');
   const [giftSortDir, setGiftSortDir] = React.useState<SortDir>('desc');
@@ -198,7 +198,7 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
         <div>
           <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
             <Gift className="w-4 h-4 text-amber-600" />
-            Quà Tặng — đã phát {totalDelivered.toLocaleString('vi-VN')} phần
+            Quà Tặng - đã phát {totalDelivered.toLocaleString('vi-VN')} phần
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Hết tồn chưa phát: <b className={totalShortfall > 0 ? 'text-rose-700' : ''}>{totalShortfall.toLocaleString('vi-VN')} phần</b>{' '}
@@ -216,7 +216,7 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
         <button
           onClick={exportCsv}
           disabled={!actorId || (inStock.length === 0 && shortfall.length === 0)}
-          title={actorId ? 'Xuất báo cáo quà tặng' : 'Chưa đọc được người đăng nhập — tải lại trang'}
+          title={actorId ? 'Xuất báo cáo quà tặng' : 'Chưa đọc được người đăng nhập - tải lại trang'}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
         >
           <Download className="w-3.5 h-3.5" />

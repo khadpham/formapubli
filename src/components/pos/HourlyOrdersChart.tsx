@@ -6,7 +6,7 @@
  * Hai chế độ qua prop `metric` (mặc định `orders` để giữ nguyên hành vi cũ):
  * - `orders` → "Số Đơn Theo Giờ" (đếm đơn mỗi giờ).
  * - `sales` → "Doanh Thu Theo Giờ" (tiền thu mỗi giờ, cùng dữ liệu `sales` đã
- *   có sẵn trong từng bucket — không query thêm).
+ *   có sẵn trong từng bucket - không query thêm).
  *
  * Vì sao tự dựng SVG mà không dùng thư viện:
  * - Repo không cài sẵn chart lib nào (recharts/chart.js/victory… đều không có), thêm
@@ -15,7 +15,7 @@
  *   được trên A4 (Chrome không in màu nền CSS khi tắt "Background graphics").
  *   Dùng chung ngôn ngữ `<rect>`/`<text>` ⇒ in khỏi lo mất biểu đồ.
  *
- * Dữ liệu vào là `data.ordersByHour` — service ĐÃ gom sẵn 24 bucket theo giờ Việt
+ * Dữ liệu vào là `data.ordersByHour` - service ĐÃ gom sẵn 24 bucket theo giờ Việt
  * Nam (`daily-settlement.service.ts:355`), không query thêm.
  */
 import React, { useMemo, useState } from 'react';
@@ -72,20 +72,20 @@ export function HourlyOrdersChart({
   baseline?: Array<number | null>;
   /**
    * Giờ hiện tại 0..23. Giờ LỚN HƠN ⇒ "chưa tới": chỉ vẽ khung đứt, không tô màu,
-   * không ghi số 0 — vì 0 ở đó là "chưa bán", khác hẳn 0 ở giờ đã qua là "hết giờ
+   * không ghi số 0 - vì 0 ở đó là "chưa bán", khác hẳn 0 ở giờ đã qua là "hết giờ
    * mà không ai mua". Không truyền ⇒ không phân biệt, mọi giờ coi như đã qua.
    */
   currentHour?: number | null;
   /**
    * Giấu khối tiêu đề bên trong. Thẻ bọc (`HourlyTodayCard` trên bảng quản trị)
-   * đã có tiêu đề riêng kèm chú giải về đường TB và khung "chưa tới" — để cả hai
+   * đã có tiêu đề riêng kèm chú giải về đường TB và khung "chưa tới" - để cả hai
    * cùng hiện thì thẻ có hai tiêu đề chồng nhau. Không truyền ⇒ giữ nguyên, báo
    * cáo chốt ngày không đổi.
    */
   hideHeader?: boolean;
   /**
    * Chế độ vẽ: `orders` đếm đơn, `sales` cộng tiền. `baseline` (nếu có) phải
-   * cùng đơn vị với chế độ đang vẽ — thẻ bọc tự truyền đúng loại.
+   * cùng đơn vị với chế độ đang vẽ - thẻ bọc tự truyền đúng loại.
    */
   metric?: 'orders' | 'sales';
   className?: string;
@@ -114,7 +114,7 @@ export function HourlyOrdersChart({
     const maxV = list.reduce((m, r) => Math.max(m, val(r)), 0);
 
     // Đường TB các ngày trước, theo đúng thứ tự cột đang vẽ. `-1` = giờ đó không
-    // có số để so (`null` trong `baseline`) — giữ lỗ hổng thay vì điền 0, vì 0
+    // có số để so (`null` trong `baseline`) - giữ lỗ hổng thay vì điền 0, vì 0
     // là một con số thật (không ai mua ở giờ đó), điền 0 sẽ kéo đường xuống sát
     // đáy rồi bịa ra "giờ đó không bán được" trong khi dữ liệu chỉ thiếu.
     const baseValues: number[] = list.map((r) => {
@@ -132,13 +132,13 @@ export function HourlyOrdersChart({
       (best, r) => (best == null || val(r) > val(best) ? r : best),
       null
     );
-    // Giờ có giá trị nhưng ít nhất — "giờ lãng phí", có ích khi xếp ca/tăng người.
+    // Giờ có giá trị nhưng ít nhất - "giờ lãng phí", có ích khi xếp ca/tăng người.
     const quiet = list.filter((r) => val(r) > 0).reduce<typeof list[number] | null>(
       (best, r) => (best == null || val(r) < val(best) ? r : best),
       null
     );
 
-    // Số giờ THỰC SỰ bán hàng — mẫu số cho "tiền bình quân mỗi giờ". Cố ý KHÔNG
+    // Số giờ THỰC SỰ bán hàng - mẫu số cho "tiền bình quân mỗi giờ". Cố ý KHÔNG
     // chia cho `list.length`: khung giờ luôn kéo từ giờ mở cửa tới giờ chốt ca
     // nên có cả giờ nghỉ trưa không ai mua. Chia 14 giờ (8h–21h) trong khi chỉ
     // 10 giờ bán được ra con số nhỏ giả tỉnh, đọc dễ tưởng buổi nghỉ cũng bán
@@ -191,7 +191,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
   const active = activeHour == null ? null : list.find((r) => r.hour === activeHour) ?? null;
 
   const money = (n: number) => n.toLocaleString('vi-VN');
-  // Trục Y và nhãn cột chế độ tiền có thể lên tới hàng triệu — in gọn (Tr/nghìn)
+  // Trục Y và nhãn cột chế độ tiền có thể lên tới hàng triệu - in gọn (Tr/nghìn)
   // để số không tràn cột. Dải chi tiết bên dưới vẫn in đầy đủ.
   const moneyShort = (n: number) =>
     isSales && n >= 1000
@@ -233,7 +233,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
   return (
     <div className={`bg-white rounded-2xl border border-slate-200 p-5 space-y-4 ${className}`}>
       {/* Đầu: tiêu đề + khung giờ đang xét. `hideHeader` chỉ giấu TIÊU ĐỀ, vẫn
-          giữ ô "Tổng N đơn" — thẻ bọc không có ô đó. */}
+          giữ ô "Tổng N đơn" - thẻ bọc không có ô đó. */}
       <div className={`flex items-start justify-between gap-3 ${hideHeader ? '' : ''}`}>
         {hideHeader ? (
           <span className="sr-only">
@@ -255,14 +255,14 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
         </span>
       </div>
 
-      {/* Ô số tóm tắt — đọc được ngay không cần nhìn biểu đồ */}
+      {/* Ô số tóm tắt - đọc được ngay không cần nhìn biểu đồ */}
       <div className="grid grid-cols-3 gap-2.5">
         <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl px-3 py-2">
           <p className="text-[10px] font-bold text-amber-700 flex items-center gap-1">
             <Flame className="w-3 h-3" /> Giờ cao điểm
           </p>
           <p className="text-sm font-black font-mono text-amber-800 mt-0.5">
-            {peak ? hourLabel(peak.hour) : '—'}
+            {peak ? hourLabel(peak.hour) : '-'}
             {peakV > 0 ? (
               <span className="text-[10px] font-bold ml-1 text-amber-700">
                 {isSales ? `${money(peakV)} đ` : `${peakV} đơn`}
@@ -282,7 +282,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
           </p>
         </div>
         {/* Ô số này KHÔNG lặp lại tổng doanh thu (đã có ở KPI "Thực thu" phía
-            trên và ở bản in) — lặp lại chỉ tốn chỗ. Thay bằng TIỀN BÌNH QUÂN
+            trên và ở bản in) - lặp lại chỉ tốn chỗ. Thay bằng TIỀN BÌNH QUÂN
             MỘT GIỜ BÁN, chia cho số giờ THỰC SỰ CÓ ĐƠN (xem `openHours`).
             Chế độ tiền thì soi ngược lại: SỐ ĐƠN bình quân mỗi giờ bán. */}
         <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl px-3 py-2">
@@ -296,7 +296,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
             <span className="text-[10px] font-bold ml-0.5">{isSales ? 'đơn' : 'đ'}</span>
           </p>
           {/* Nói rõ mẫu số, không thì "bình quân" bị đọc nhầm là chia hết khung giờ
-              — mà khung giờ luôn kéo từ giờ mở cửa tới giờ chốt ca, có cả giờ
+              - mà khung giờ luôn kéo từ giờ mở cửa tới giờ chốt ca, có cả giờ
               nghỉ trưa không ai mua. */}
           <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
             {openHours} giờ có đơn
@@ -352,7 +352,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
           const isPeak = peak != null && r.hour === peak.hour && rv > 0;
           const isActive = r.hour === activeHour;
           // "Chưa tới": giờ chưa tới nắm. Giờ đã qua không có đơn vẫn giữ vạch
-          // xám 2px như cũ — đó là "đã bán 0", khác hẳn "chưa bán được gì".
+          // xám 2px như cũ - đó là "đã bán 0", khác hẳn "chưa bán được gì".
           const isFuture = nowHour != null && r.hour > nowHour;
           const isNow = nowHour != null && r.hour === nowHour;
           const barH =
@@ -372,7 +372,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
                 onMouseLeave={() => setHover(null)}
                 onClick={() => setLocked((p) => (p === r.hour ? null : r.hour))}
               />
-              {/* Khung đứt của giờ chưa tới: chỉ viền, không tô, không ghi số 0 —
+              {/* Khung đứt của giờ chưa tới: chỉ viền, không tô, không ghi số 0 -
                   người xem phải hiểu đây là "chưa có dữ liệu", không phải "bán 0". */}
               {isFuture ? (
                 <rect
@@ -441,7 +441,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
           );
         })}
 
-        {/* Đường TB các ngày trước — vẽ SAU (trên mặt) các cột, không vẽ trước:
+        {/* Đường TB các ngày trước - vẽ SAU (trên mặt) các cột, không vẽ trước:
             cột cao hơn sẽ che mất đoạn đường, mà đường mới là đường cần đọc. */}
         {baselineRuns.map((run, ri) => (
           <polyline
@@ -458,7 +458,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
         ))}
 
 
-        {/* Vạch nhắc giờ đang xem — đọc giá trị khi rê chuột/bấm ở dải số bên dưới */}
+        {/* Vạch nhắc giờ đang xem - đọc giá trị khi rê chuột/bấm ở dải số bên dưới */}
         {active && (
           <line
             x1={PAD_L + list.findIndex((r) => r.hour === active.hour) * slot + slot / 2}
@@ -473,7 +473,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
         )}
       </svg>
 
-      {/* Dải số giờ đang xem — thay cho tooltip bay (không tràn ra ngoài modal) */}
+      {/* Dải số giờ đang xem - thay cho tooltip bay (không tràn ra ngoài modal) */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-[11px]">
         {active ? (
           <>
@@ -545,7 +545,7 @@ list, totalOrders, totalSales, totalV, maxOrders, yMax, peak, quiet,
           </>
         ) : null}
         {locked != null ? (
-          <span className="text-indigo-600"> Đang Ghim giờ {hourLabel(locked)} — bấm lại để bỏ ghim.</span>
+          <span className="text-indigo-600"> Đang Ghim giờ {hourLabel(locked)} - bấm lại để bỏ ghim.</span>
         ) : null}
       </p>
     </div>

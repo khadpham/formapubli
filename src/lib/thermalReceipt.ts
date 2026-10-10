@@ -33,7 +33,7 @@ export interface PrintableReceiptOrder {
   finalAmount: number;
   /**
    * "Tổng số sách" = số CUỐN SÁCH, không phải số DÒNG HÀNG. Ở hội chợ mỗi đơn đều
-   * kèm quà hàng hóa (bookmark, móc khoá — dòng `edition_id = NULL`), nên cộng
+   * kèm quà hàng hóa (bookmark, móc khoá - dòng `edition_id = NULL`), nên cộng
    * `totalQuantity` in ra "2 cuốn" cho một đơn chỉ có 1 cuốn.
    * `bookQuantity` do server tính (nguồn sự thật); thiếu thì lùi về `totalQuantity`
    * để phiếu cũ và đơn offline vẫn in được.

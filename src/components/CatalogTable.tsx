@@ -33,7 +33,7 @@ interface CatalogTableProps {
 
 export function CatalogTable({ initialBooks, warehouseCount, partnerCount }: CatalogTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  // BV-05: debounce 200ms — input gõ mượt, filter chạy trên bản debounced
+  // BV-05: debounce 200ms - input gõ mượt, filter chạy trên bản debounced
   const [debouncedTerm, setDebouncedTerm] = useState('');
   // BV-04: filter tồn kho + sort
   const [stockFilter, setStockFilter] = useState<StockFilter>('ALL');

@@ -41,10 +41,10 @@ export interface CopilotMessage {
 }
 
 /**
- * Lấy draft chuyển kho từ message — hỗ trợ cả single-tool
+ * Lấy draft chuyển kho từ message - hỗ trợ cả single-tool
  * (`toolUsed === 'prepare_transfer_draft'`) và multi-tool
  * (`toolUsed === 'a + prepare_transfer_draft'`, data nằm ở
- * `toolData['prepare_transfer_draft']` — mirror formatFallbackAnswer).
+ * `toolData['prepare_transfer_draft']` - mirror formatFallbackAnswer).
  */
 export function getTransferDraftData(toolUsed: string | null | undefined, toolData: any): any | null {
   if (!toolUsed || !toolData) return null;
@@ -89,7 +89,7 @@ const QUICK_PROMPT_CHIPS = [
   },
 ];
 
-/** Tên gọi mặc định khi chưa có tên người dùng — thống nhất một chỗ. */
+/** Tên gọi mặc định khi chưa có tên người dùng - thống nhất một chỗ. */
 const DEFAULT_LEADER_NAME = 'Lãnh đạo';
 
 /** Các giai đoạn loading hiển thị luân phiên khi chờ Copilot trả lời. */
@@ -99,7 +99,7 @@ const LOADING_STAGES = [
   'Đang tổng hợp câu trả lời…',
 ];
 
-/** Chips gợi ý theo ngữ cảnh giờ/ngày — sáng sớm và cuối tháng có chip riêng. */
+/** Chips gợi ý theo ngữ cảnh giờ/ngày - sáng sớm và cuối tháng có chip riêng. */
 function getContextualChips(): Array<{ label: string; query: string }> {
   const now = new Date();
   const chips = [...QUICK_PROMPT_CHIPS];
@@ -156,11 +156,11 @@ function formatInline(text: string): React.ReactNode {
 }
 
 /** Danh sách LLM cho lãnh đạo chọn tay. `hint` là ghi chú ngắn về độ ổn định
- *  đo thật 06/10/2026 — giúp chọn mà không phải đoán. */
-/** Danh sách LLM cho lãnh đạo chọn tay — CHỈ model đã đo thật gọi được:
+ *  đo thật 06/10/2026 - giúp chọn mà không phải đoán. */
+/** Danh sách LLM cho lãnh đạo chọn tay - CHỈ model đã đo thật gọi được:
  *  - Gemini 3.8 / 3.5 / 3.5-lite: server gọi qua fallback (3.8 hay 503, lite ổn định nhất)
- *  - Nemotron 120B (CF): HTTP 3/3 + JSON 3/3 — mặc định free
- *  - GPT-OSS 120B (CF): HTTP 3/3, JSON 1/3 — giữ để so sánh
+ *  - Nemotron 120B (CF): HTTP 3/3 + JSON 3/3 - mặc định free
+ *  - GPT-OSS 120B (CF): HTTP 3/3, JSON 1/3 - giữ để so sánh
  *  - GLM-4.7 Flash (CF): chủ yêu cầu giữ, chậm 25–45s, HTTP 1/3
  *  - Groq 120B/20B: rất nhanh, JSON chuẩn
  *  LOẠI có lý do: llama-3.3-70b (trả văn bản tự do, không JSON), glm-5.2/5.3
@@ -190,7 +190,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
   const [loading, setLoading] = useState(false);
   /** Giai đoạn loading đang hiển thị (luân phiên mỗi 2.5s khi chờ). */
   const [loadingStage, setLoadingStage] = useState(0);
-  /** GĐ2: tên tool đang chạy thật từ SSE — ưu tiên hơn loadingStage chung chung. */
+  /** GĐ2: tên tool đang chạy thật từ SSE - ưu tiên hơn loadingStage chung chung. */
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
   useEffect(() => {
     if (!loading) {
@@ -214,7 +214,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
     {
       id: 'welcome',
       sender: 'assistant',
-      content: `Chào sếp. Em tra cứu giúp tồn kho, doanh số, két tiền, danh mục và nhịp bán — sếp cứ hỏi, em đi lấy số thật.`,
+      content: `Chào sếp. Em tra cứu giúp tồn kho, doanh số, két tiền, danh mục và nhịp bán - sếp cứ hỏi, em đi lấy số thật.`,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -436,7 +436,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
         throw new Error(json.message || `Lỗi máy chủ (${res.status})`);
       }
 
-      // GĐ2: đọc SSE stream — hiện tên tool đang chạy trực tiếp.
+      // GĐ2: đọc SSE stream - hiện tên tool đang chạy trực tiếp.
       const reader = res.body?.getReader();
       if (!reader) throw new Error('Không đọc được luồng phản hồi.');
       const decoder = new TextDecoder();
@@ -444,7 +444,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
       let finalData: any = null;
       const handleSseEvent = (event: string, data: any) => {
         if (event === 'tool_start') {
-          // "Chuẩn bị" cho tool ghi nháp — "tra cứu" chỉ đúng với tool đọc.
+          // "Chuẩn bị" cho tool ghi nháp - "tra cứu" chỉ đúng với tool đọc.
           const verb = data.toolName === 'prepare_transfer_draft' ? 'Đang chuẩn bị' : 'Đang tra cứu';
           setLiveStatus(`${verb}: ${data.label || data.toolName}...`);
         } else if (event === 'synthesizing') {
@@ -471,7 +471,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
               try {
                 eventData = JSON.parse(m[2]);
               } catch {
-                continue; // chunk hỏng — bỏ qua
+                continue; // chunk hỏng - bỏ qua
               }
               // event error phải văng ra ngoài để hiện lỗi, không được nuốt
               handleSseEvent(eventName, eventData);
@@ -546,7 +546,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
         return;
       }
       if (!res.ok || !json?.success) {
-        setVoiceError(json?.message || 'STT lỗi — hãy nhập tay.');
+        setVoiceError(json?.message || 'STT lỗi - hãy nhập tay.');
         return;
       }
       const transcript: string = json.data?.transcript || '';
@@ -554,10 +554,10 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
         setInputQuery((prev) => (prev.trim() ? prev.trim() + ' ' + transcript : transcript));
         inputRef.current?.focus();
       } else {
-        setVoiceError('Không nghe rõ — nói lại gần mic hơn hoặc nhập tay.');
+        setVoiceError('Không nghe rõ - nói lại gần mic hơn hoặc nhập tay.');
       }
     } catch {
-      setVoiceError('Mất kết nối STT — hãy nhập tay.');
+      setVoiceError('Mất kết nối STT - hãy nhập tay.');
     } finally {
       setVoiceBusy(false);
     }
@@ -565,7 +565,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
 
   const handleMicClick = () => {
     if (voiceLive.isSupported) {
-      // Engine mac dinh: Web Speech API — interim live, noi den dau chu hien den day.
+      // Engine mac dinh: Web Speech API - interim live, noi den dau chu hien den day.
       if (voiceLive.isListening) {
         voiceLive.stopListening();
       } else {
@@ -598,7 +598,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
     setVoiceError(null);
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        setVoiceError('Thiết bị/trình duyệt không hỗ trợ micro — hãy nhập tay.');
+        setVoiceError('Thiết bị/trình duyệt không hỗ trợ micro - hãy nhập tay.');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -620,7 +620,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
       rec.start();
       setIsRecording(true);
     } catch {
-      setVoiceError('Không mở được micro — kiểm tra quyền trình duyệt.');
+      setVoiceError('Không mở được micro - kiểm tra quyền trình duyệt.');
     }
   };
 
@@ -708,7 +708,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
 
   return createPortal(
     <>
-      {/* Backdrop — chi o che do full */}
+      {/* Backdrop - chi o che do full */}
       {!isMini && (
         <div
           className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-xs transition-opacity"
@@ -864,7 +864,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                     </div>
                   )}
 
-                  {/* Nut Ap don nhap vao gio POS — user van tu bam Thanh toan */}
+                  {/* Nut Ap don nhap vao gio POS - user van tu bam Thanh toan */}
                   {msg.toolUsed === 'prepare_sale_draft' && Array.isArray(msg.toolData?.items) && msg.toolData.items.length > 0 && onApplyDraft && (
                     <button
                       disabled={appliedDraftIds.has(msg.id)}
@@ -889,11 +889,11 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                       className="mt-2.5 w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-default"
                     >
                       <ShoppingCart className="w-4 h-4" />
-                      {appliedDraftIds.has(msg.id) ? 'Đã áp vào POS — qua quầy để thanh toán' : `Áp vào POS (${msg.toolData.items.length} dòng) — qua quầy để thanh toán`}
+                      {appliedDraftIds.has(msg.id) ? 'Đã áp vào POS - qua quầy để thanh toán' : `Áp vào POS (${msg.toolData.items.length} dòng) - qua quầy để thanh toán`}
                     </button>
                   )}
 
-                  {/* Dialog xac nhan phieu chuyen kho — user bam moi goi API dispatch that.
+                  {/* Dialog xac nhan phieu chuyen kho - user bam moi goi API dispatch that.
                       Dung getTransferDraftData de ho tro ca multi-tool ("a + prepare_transfer_draft"). */}
                   {(() => {
                     const draftData = getTransferDraftData(msg.toolUsed, msg.toolData);
@@ -944,7 +944,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                             });
                             const json = await res.json();
                             if (json.success) {
-                              setTransferResults((prev) => ({ ...prev, [msg.id]: `✅ Đã tạo phiếu ${json.data?.shipmentId || json.data?.id || ''} — theo dõi trong Luân chuyển kho.` }));
+                              setTransferResults((prev) => ({ ...prev, [msg.id]: `✅ Đã tạo phiếu ${json.data?.shipmentId || json.data?.id || ''} - theo dõi trong Luân chuyển kho.` }));
                             } else {
                               setTransferResults((prev) => ({ ...prev, [msg.id]: `❌ Không tạo được phiếu: ${json.error || 'lỗi không rõ'}` }));
                               // Cho phep bam lai khi loi
@@ -961,7 +961,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                         {confirmedTransferIds.has(msg.id) && !transferResults[msg.id] ? 'Đang tạo phiếu...' : 'Xác nhận tạo phiếu'}
                       </button>
                       {(!draftData.fromWarehouseId || !draftData.toWarehouseId) && (
-                        <div className="text-[11px] text-amber-700 mt-1">Thiếu thông tin kho — bổ sung rồi hỏi lại để tôi chuẩn bị lại nháp.</div>
+                        <div className="text-[11px] text-amber-700 mt-1">Thiếu thông tin kho - bổ sung rồi hỏi lại để tôi chuẩn bị lại nháp.</div>
                       )}
                     </div>
                     );
@@ -1023,7 +1023,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
                   micActive
                     ? 'Dừng nghe'
                     : voiceLive.isSupported
-                    ? 'Nói để nhập câu hỏi — chữ hiện trực tiếp khi nói (nhận diện trên trình duyệt)'
+                    ? 'Nói để nhập câu hỏi - chữ hiện trực tiếp khi nói (nhận diện trên trình duyệt)'
                     : 'Nói để nhập câu hỏi (ghi âm gửi Whisper)'
                 }
                 className={`h-10 w-10 rounded-xl border flex items-center justify-center transition-all shrink-0 disabled:opacity-50 cursor-pointer ${
@@ -1126,7 +1126,7 @@ export function CopilotDrawer({ currentRole, displayName, isOpen, onClose, mode 
               >
                 {MODEL_OPTIONS.map((m) => (
                   <option key={m.value} value={m.value}>
-                    {m.label} — {m.hint}
+                    {m.label} - {m.hint}
                   </option>
                 ))}
               </select>

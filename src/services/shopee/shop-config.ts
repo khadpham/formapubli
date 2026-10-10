@@ -27,7 +27,7 @@ export async function getShopeeConfig(): Promise<ShopeeShopConfig> {
 }
 
 /**
- * Ghi cấu hình — CHỈ chủ. Kho phải tồn tại (check ở route gọi, tránh import
+ * Ghi cấu hình - CHỈ chủ. Kho phải tồn tại (check ở route gọi, tránh import
  * vòng với warehouse.service).
  */
 export async function setShopeeConfig(
@@ -52,7 +52,7 @@ export async function setShopeeConfig(
 /**
  * Kho đội Shopee được thấy (nhiều kho, quản lý trở lên cấp).
  * Mặc định = [kho xuất] khi chưa cấu hình.
- * Đọc DB mỗi lần gọi — quản lý đổi có hiệu lực ngay, không restart.
+ * Đọc DB mỗi lần gọi - quản lý đổi có hiệu lực ngay, không restart.
  */
 export async function getShopeeOpsWarehouses(): Promise<string[]> {
   const rows = await db.select().from(shopeeSettings);
@@ -70,7 +70,7 @@ export async function getShopeeOpsWarehouses(): Promise<string[]> {
   return cfg.warehouseId ? [cfg.warehouseId] : [];
 }
 
-/** Ghi phạm vi kho — CHỈ chủ/quản lý. */
+/** Ghi phạm vi kho - CHỈ chủ/quản lý. */
 export async function setShopeeOpsWarehouses(
   ids: string[],
   actorRole: UserRole

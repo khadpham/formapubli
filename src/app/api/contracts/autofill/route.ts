@@ -6,7 +6,7 @@ import { ContractService } from '@/services/contract.service';
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/contracts/autofill?partnerId=&workId=&editionId= — dữ liệu tự điền (override được). */
+/** GET /api/contracts/autofill?partnerId=&workId=&editionId= - dữ liệu tự điền (override được). */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);

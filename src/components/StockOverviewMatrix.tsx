@@ -64,7 +64,7 @@ interface MatrixBookItem {
   stockAuCo: number;
   stockQuynhMai: number;
   stockDuPhong: number;
-  /** Tồn theo warehouseId — động, gồm mọi kho kể cả kho hội chợ. */
+  /** Tồn theo warehouseId - động, gồm mọi kho kể cả kho hội chợ. */
   stockByWarehouse?: Record<string, number>;
   totalStock: number;
 }
@@ -73,7 +73,7 @@ interface WarehouseItem {
   id: string;
   code: string;
   name: string;
-  /** Còn hoạt động không — để thẻ tóm tắt kho đếm đúng (bảng `warehouses`). */
+  /** Còn hoạt động không - để thẻ tóm tắt kho đếm đúng (bảng `warehouses`). */
   isActive?: boolean;
   /** Loại kho: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT. */
   warehouseType?: string;
@@ -175,7 +175,7 @@ export function StockOverviewMatrix({
 
   const [selectedBookForAction, setSelectedBookForAction] = useState<MatrixBookItem | null>(null);
   const [activeTab, setActiveTab] = useState<MainTabId>('MATRIX');
-  // Ticket 3 MVP: tab kho kiểu Sheets — chỉ lọc hiển thị read-only, không đụng ledger.
+  // Ticket 3 MVP: tab kho kiểu Sheets - chỉ lọc hiển thị read-only, không đụng ledger.
   const [warehouseTab, setWarehouseTab] = useState<string>('ALL');
   // Sắp xếp tồn kho: 'DEFAULT' (giữ nguyên SKU), 'ASC' (Bé -> Lớn, xem sách sắp hết), 'DESC' (Lớn -> Bé).
   const [stockSortMode, setStockSortMode] = useState<'DEFAULT' | 'ASC' | 'DESC'>('DEFAULT');
@@ -393,7 +393,7 @@ export function StockOverviewMatrix({
 
   const getWarehouseStock = useCallback((b: MatrixBookItem, tab: string) => {
     if (tab === 'ALL') return b.totalStock;
-    // Động theo mọi kho (kể cả kho hội chợ) — không hardcode 3 kho nữa.
+    // Động theo mọi kho (kể cả kho hội chợ) - không hardcode 3 kho nữa.
     return b.stockByWarehouse?.[tab] ?? 0;
   }, []);
 
@@ -453,7 +453,7 @@ export function StockOverviewMatrix({
     setModalOpen(true);
   };
 
-  // Tổng tồn TỪNG KHO cho tab bar (kể cả kho hội chợ) — tính từ matrix, không query thêm.
+  // Tổng tồn TỪNG KHO cho tab bar (kể cả kho hội chợ) - tính từ matrix, không query thêm.
   const warehouseTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     let all = 0;
@@ -479,7 +479,7 @@ export function StockOverviewMatrix({
   }, [localWarehouses, warehouseTotals]);
 
   // Tóm tắt trạng thái kho cho thẻ QUẢN LÝ KHO (thẻ này không còn nút hành
-  // động nào — mọi thao tác đã gộp lên thanh công cụ).
+  // động nào - mọi thao tác đã gộp lên thanh công cụ).
   const warehouseSummary = useMemo(() => {
     const list = localWarehouses || [];
     return { total: list.length, active: list.filter((w) => w.isActive !== false).length };
@@ -530,7 +530,7 @@ export function StockOverviewMatrix({
 
   return (
     <div className="space-y-6">
-      {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN — render qua portal trên
+      {/* 1. THANH TÌM KIẾM NAM CHÂM CÓ ĐIỀU KIỆN - render qua portal trên
           document.body để không tổ tiên nào (overflow:hidden / transform) cắt mất nó. */}
       {showMagnetBar && mounted && (
         <PortalToBody>
@@ -690,7 +690,7 @@ export function StockOverviewMatrix({
         {/* Tab & Action Buttons with Keyboard Shortcut Tooltips.
             Dải hành động WRAP + min-w-0; tab đi qua 1 chip gọn + dropdown portal
             nên không còn flex pill lồng nhau (nguyên nhân gốc của bug tràn nút).
-            Số kho hiển thị động theo danh sách kho thật (kể cả kho hội chợ) —
+            Số kho hiển thị động theo danh sách kho thật (kể cả kho hội chợ) -
             giữ intent của main trong chip gọn của login-ux. */}
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           <button
@@ -748,7 +748,7 @@ export function StockOverviewMatrix({
 
           <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
-          {/* "Quản lý kho" — gộp Mở Kho vào đây: mở kho mới, sửa tên, ẩn/hiện,
+          {/* "Quản lý kho" - gộp Mở Kho vào đây: mở kho mới, sửa tên, ẩn/hiện,
               xóa, đổi thứ tự đều làm trong panel. */}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
@@ -832,7 +832,7 @@ export function StockOverviewMatrix({
             <ShieldAlert className="w-3.5 h-3.5" /> Cách Ly Sách Lỗi
           </button>
 
-          {/* Làm mới — chỉ quản lý. Nạp lại dữ liệu, KHÔNG reload trang nên
+          {/* Làm mới - chỉ quản lý. Nạp lại dữ liệu, KHÔNG reload trang nên
               không mất việc đang làm dở. min-h 38px + nowrap + shrink-0: nút
               đủ lớn để bấm trên điện thoại và không làm dải tràn ngang. */}
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
@@ -900,7 +900,7 @@ export function StockOverviewMatrix({
           <div className="fixed inset-0 z-40" onClick={() => setActionMenu(null)} aria-hidden="true" />
         )}
 
-        {/* 2.4 MENU TAB — portal trên document.body + clamp trong viewport.
+        {/* 2.4 MENU TAB - portal trên document.body + clamp trong viewport.
             Nhãn dài "Sổ Cái Bất Biến (n)" chỉ xuất hiện ở đây, trong 1 menu riêng,
             nên trên điện thoại không còn dải pill inline bị bóp/tràn.
             Điều hướng bàn phím: ArrowUp/Down di chuyển, Home/End nhảy đầu/cuối,
@@ -908,7 +908,7 @@ export function StockOverviewMatrix({
             aria-activedescendant) để không mất vị trí focus sau khi menu đóng. */}
         {/* FIX: `fixed` + toạ độ đo đạc phải nằm trên CÙNG một phần tử. Trước đây
             `fixed z-[80]` nằm trên wrapper của portal còn `top`/`left` đo được nằm
-            trên div con — div con không có position nên CSS bỏ qua top/left, còn
+            trên div con - div con không có position nên CSS bỏ qua top/left, còn
             wrapper fixed không có top/left thì rơi về vị trí tĩnh (con cuối của
             body, nằm dưới viewport). Menu hiện ra nhưng ngoài màn hình: bấm chip
             "Ma trận" không thấy gì. Giống hệt shape đang chạy ở BatchTransferModal. */}
@@ -961,10 +961,10 @@ export function StockOverviewMatrix({
         )}
       </div>
 
-      {/* QUẢN LÝ KHO — sau khi gộp, thẻ này KHÔNG còn nút hành động nào.
+      {/* QUẢN LÝ KHO - sau khi gộp, thẻ này KHÔNG còn nút hành động nào.
           Trước đây "Mở kho mới" lặp đúng nút "Mở Kho", "Soạn kệ" lặp mục
           "Soạn kệ (gom theo kệ)" trong menu "Chuyển kho", và "Quản lý kho &
-          gán nhân sự" lặp nút "TK Nhận Tiền" — cùng một hành động xuất hiện
+          gán nhân sự" lặp nút "TK Nhận Tiền" - cùng một hành động xuất hiện
           hai chỗ. Nay thẻ chỉ TÓM TẮT trạng thái; mọi thao tác nằm trên thanh
           công cụ phía trên: Quản lý kho · TK Nhận Tiền · Làm mới. */}
       {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
@@ -1106,7 +1106,7 @@ export function StockOverviewMatrix({
             isRefreshing ? 'opacity-60 pointer-events-none' : ''
           }`}
         >
-          {/* Ticket 3 MVP: Thanh tab kho kiểu Sheets — read-only, Transit/RMA để sprint sau */}
+          {/* Ticket 3 MVP: Thanh tab kho kiểu Sheets - read-only, Transit/RMA để sprint sau */}
           <div className="flex items-center gap-1.5 px-3 pt-3 pb-2 overflow-x-auto border-b border-slate-100 bg-slate-50/60">
             {warehouseTabs.map((t) => (
               <button
@@ -1300,7 +1300,7 @@ export function StockOverviewMatrix({
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Sổ Cái Kho Bất Biến — Nghiêm Cấm Sửa/Xóa Lịch Sử
+              Sổ Cái Kho Bất Biến - Nghiêm Cấm Sửa/Xóa Lịch Sử
             </div>
             <span className="text-xs text-slate-400">Thời gian thực</span>
           </div>

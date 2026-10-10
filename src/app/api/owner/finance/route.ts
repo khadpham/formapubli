@@ -13,13 +13,13 @@ import { PeriodLockService } from '@/services/period-lock.service';
 export const dynamic = 'force-dynamic';
 
 function vnMonthNow(): string {
-  // Tháng VN 'YYYY-MM' — không lấy toISOString trực tiếp (đó là UTC).
+  // Tháng VN 'YYYY-MM' - không lấy toISOString trực tiếp (đó là UTC).
   const d = new Date(Date.now() + 7 * 3600 * 1000);
   return d.toISOString().slice(0, 7);
 }
 
 /**
- * GET ?month=YYYY-MM — tổng theo kỳ cho tab Chủ (OWNER only).
+ * GET ?month=YYYY-MM - tổng theo kỳ cho tab Chủ (OWNER only).
  * Doanh thu Shopee đọc thẳng bảng shopee_order_finance (chỉ có dòng cho đơn
  * DELIVERED ⇒ không thể phồng số), lọc theo synced_at; chi phí theo entry_date.
  */
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST { category, amount, note?, entryDate?, staffId?, recurrence? } — ghi chi phí, chỉ Chủ. */
+/** POST { category, amount, note?, entryDate?, staffId?, recurrence? } - ghi chi phí, chỉ Chủ. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);

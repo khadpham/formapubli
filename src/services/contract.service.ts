@@ -41,7 +41,7 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 /**
- * Năm theo ngày nghiệp vụ VN — server (Cloudflare) chạy UTC: rạng sáng 1/1 giờ
+ * Năm theo ngày nghiệp vụ VN - server (Cloudflare) chạy UTC: rạng sáng 1/1 giờ
  * VN vẫn là 31/12 UTC, dùng getFullYear() thường sẽ ghi nhầm năm cũ vào số HĐ.
  */
 function currentVnYear(): number {
@@ -54,7 +54,7 @@ function currentVnYear(): number {
  * snapshot chống hồi tố (D3), bản cuối upload nhiều lần (D9), preset (D11).
  */
 export class ContractService {
-  /** Cấp số HĐ nguyên tử cho (category, year) — pattern allocateOrderCode
+  /** Cấp số HĐ nguyên tử cho (category, year) - pattern allocateOrderCode
    * (order-code.ts): INSERT...ON CONFLICT DO UPDATE...RETURNING qua API bảng
    * Drizzle, chạy TRONG transaction gọi nó. KHÔNG dùng COUNT+1 (race). */
   static async nextSeq(txOrDb: any, category: string, year: number): Promise<number> {
@@ -71,7 +71,7 @@ export class ContractService {
     return seq;
   }
 
-  /** Dữ liệu tự điền — chỉ là DEFAULT, form vẫn sửa tay (D8). */
+  /** Dữ liệu tự điền - chỉ là DEFAULT, form vẫn sửa tay (D8). */
   static async getAutoFillData(params: { partnerId?: string; workId?: string; editionId?: string }) {
     const out: Record<string, any> = {};
     const [profile] = await db.select().from(contractCompanyProfile).where(eq(contractCompanyProfile.id, 'main')).limit(1);
@@ -241,7 +241,7 @@ export class ContractService {
     let bytes: Uint8Array;
     try {
       bytes = base64ToBytes(base64);
-      // PizZip nhận Uint8Array trực tiếp — KHÔNG qua binary string (mất byte
+      // PizZip nhận Uint8Array trực tiếp - KHÔNG qua binary string (mất byte
       // với file thật có vùng text rộng/nhị phân, gây fail validate).
       const zip = new PizZip(bytes);
       if (!zip.file('word/document.xml')) throw new Error('not-docx');
@@ -276,7 +276,7 @@ export class ContractService {
     return doc;
   }
 
-  /** Xóa hợp đồng — chỉ DRAFT/CANCELLED, chặn xóa nhầm HĐ đã ký/chốt. */
+  /** Xóa hợp đồng - chỉ DRAFT/CANCELLED, chặn xóa nhầm HĐ đã ký/chốt. */
   static async deleteDocument(id: string) {
     const [doc] = await db.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
     if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/shopee/callback?code=XYZ&shop_id=123
  * Shopee điều hướng về đây sau khi Anh bấm ủy quyền gian hàng.
- * Đổi code lấy token và lưu DB — xong đưa Anh về Cài Đặt.
+ * Đổi code lấy token và lưu DB - xong đưa Anh về Cài Đặt.
  */
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code') || '';
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       { status: 502 }
     );
   }
-  // App chỉ có 1 route `/` (tab nội bộ trong MasterAppShell) — không có
+  // App chỉ có 1 route `/` (tab nội bộ trong MasterAppShell) - không có
   // `/settings`. Trả Anh về trang chính kèm cờ để UI sau này đón.
   return NextResponse.redirect(new URL('/?shopee=ok', req.url));
 }

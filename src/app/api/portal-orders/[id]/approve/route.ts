@@ -11,7 +11,7 @@ import { AppError } from '@/services/app-error';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/portal-orders/[id]/approve — Duyệt đơn portal (trừ kho).
+ * POST /api/portal-orders/[id]/approve - Duyệt đơn portal (trừ kho).
  *
  * Thủ kho bấm "Duyệt đơn" sau khi đã soạn đủ hàng. Hệ thống trừ kho thực tế
  * (chuyển ATP giữ chỗ thành xuất kho), đơn vẫn ở PENDING_CONFIRMATION để tiếp

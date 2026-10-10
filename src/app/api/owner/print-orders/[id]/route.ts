@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER'] as UserRole[];
 
-/** GET /api/owner/print-orders/[id] — chi tiết (chỉ chủ). */
+/** GET /api/owner/print-orders/[id] - chi tiết (chỉ chủ). */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-/** PATCH /api/owner/print-orders/[id] — sửa giá vốn/số lượng (chỉ chủ, có audit). */
+/** PATCH /api/owner/print-orders/[id] - sửa giá vốn/số lượng (chỉ chủ, có audit). */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);

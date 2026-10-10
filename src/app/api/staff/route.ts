@@ -36,7 +36,7 @@ function validatePasscodeForRole(role: UserRole, raw: unknown): string {
   return v;
 }
 
-// GET /api/staff — OWNER/MANAGER xem toàn bộ tài khoản (không bao giờ trả hash/salt).
+// GET /api/staff - OWNER/MANAGER xem toàn bộ tài khoản (không bao giờ trả hash/salt).
 // S-01: kèm lease summary (sessionId/version/startedAt/leaseExpiresAt/device)
 // để UI force-release có expected fields. Chỉ manager/owner đúng scope thấy.
 export async function GET(req: NextRequest) {
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/staff — tạo tài khoản. MANAGER chỉ được tạo CASHIER/WAREHOUSE/TAX.
+// POST /api/staff - tạo tài khoản. MANAGER chỉ được tạo CASHIER/WAREHOUSE/TAX.
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);

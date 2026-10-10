@@ -1,5 +1,5 @@
 /**
- * CỔNG GHI ẢNH XÁC NHẬN — giữ đúng thứ tự giữa các lần ghi.
+ * CỔNG GHI ẢNH XÁC NHẬN - giữ đúng thứ tự giữa các lần ghi.
  *
  * VÌ SAO CẦN: lưu ảnh xác nhận chuyển khoản có thể KẸT (IndexedDB bị dồn bộ
  * nhớ trên iOS, ITP). Modal hết giờ chờ thì mở khoá cho cashier chụp lại, nhưng
@@ -11,7 +11,7 @@
  * Cổng này chặn đúng điều đó:
  *   - `begin()` mở lần ghi mới ⇒ mọi lần ghi cũ hơn mất hiệu lực (thế hệ).
  *   - `run()` chạy lần ghi THEO HÀNG ĐỢI: lần sau chỉ gọi task sau khi lần
- *     trước kết thúc, và lần đã bị thay thế thì không gọi task — nên không bao
+ *     trước kết thúc, và lần đã bị thay thế thì không gọi task - nên không bao
  *     giờ ghi đè lần mới hơn.
  */
 export interface PhotoWriteGate {

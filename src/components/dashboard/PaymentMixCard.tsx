@@ -13,7 +13,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 const PALETTE = ['bg-emerald-600', 'bg-indigo-600', 'bg-amber-500'];
 
 /**
- * Khoá ngày nghiệp vụ VN của 7 ngày gần nhất — cùng cửa sổ với ChannelMixCard
+ * Khoá ngày nghiệp vụ VN của 7 ngày gần nhất - cùng cửa sổ với ChannelMixCard
  * để tổng số đơn của hai thẻ luôn bằng nhau.
  */
 function recentDayKeys(now: Date = new Date()): Set<string> {

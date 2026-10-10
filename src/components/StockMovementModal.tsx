@@ -28,7 +28,7 @@ interface StockMovementModalProps {
   books: BookItem[];
   warehouses: WarehouseItem[];
   onSuccess: () => void;
-  /** @deprecated Modal giờ chỉ làm NHẬP NHÀ IN — prop này giữ lại để không vỡ caller cũ. */
+  /** @deprecated Modal giờ chỉ làm NHẬP NHÀ IN - prop này giữ lại để không vỡ caller cũ. */
   defaultAction?: 'RECEIPT';
   selectedBook?: BookItem | null;
 }
@@ -43,7 +43,7 @@ export function StockMovementModal({
   selectedBook = null,
 }: StockMovementModalProps) {
   // Modal này chỉ làm NHẬP NHÀ IN (RECEIPT). Chuyển kho dùng BatchTransferModal,
-  // xuất bán dùng Xuất kho — các tab cũ đã bỏ để gọn nghiệp vụ.
+  // xuất bán dùng Xuất kho - các tab cũ đã bỏ để gọn nghiệp vụ.
   const actionType = 'RECEIPT' as const;
   const [selectedEditionId, setSelectedEditionId] = useState<string>(selectedBook?.id || (books[0]?.id || ''));
   const [targetWarehouseId, setTargetWarehouseId] = useState<string>(

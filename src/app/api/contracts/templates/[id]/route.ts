@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** GET /api/contracts/templates/[id] — chi tiết mẫu. */
+/** GET /api/contracts/templates/[id] - chi tiết mẫu. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireSessionRole(req, ROLES);
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-/** PUT /api/contracts/templates/[id] — sửa; gửi file mới thì version + 1. */
+/** PUT /api/contracts/templates/[id] - sửa; gửi file mới thì version + 1. */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -70,7 +70,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-/** DELETE /api/contracts/templates/[id] — ngưng dùng (không xóa cứng). */
+/** DELETE /api/contracts/templates/[id] - ngưng dùng (không xóa cứng). */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);

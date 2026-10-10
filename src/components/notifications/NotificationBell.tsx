@@ -12,13 +12,13 @@ export type NotifyItem = {
   body: string;
   at: string;
   href?: string;
-  /** Khu vực nguồn sinh thông báo — hiển thị để biết việc này từ đâu. */
+  /** Khu vực nguồn sinh thông báo - hiển thị để biết việc này từ đâu. */
   area?: string;
 };
 
 const POLL_MS = 5000;
 const MAX_BADGE = 99;
-/** Set rỗng dùng chung — `items` đã lọc sẵn mục bị ẩn nên badge không cần lọc lần hai. */
+/** Set rỗng dùng chung - `items` đã lọc sẵn mục bị ẩn nên badge không cần lọc lần hai. */
 const HIDDEN_NONE: Set<string> = new Set();
 
 /** Nhãn khu vực khi server chưa gửi `area` (fallback theo `kind`). */
@@ -61,7 +61,7 @@ export function computeUnreadBadge(items: NotifyItem[], lastSeen: string | null,
 }
 
 /**
- * MỘT chuông thông báo duy nhất trong header — gộp mọi nguồn (POS + nghiệp vụ),
+ * MỘT chuông thông báo duy nhất trong header - gộp mọi nguồn (POS + nghiệp vụ),
  * mới nhất trước, có nhãn khu vực, xóa được từng mục hoặc xóa tất cả.
  * Panel render qua portal + z-index cao nên không bị nội dung trang (POS, kho) che.
  */

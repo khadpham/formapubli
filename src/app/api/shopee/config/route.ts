@@ -7,7 +7,7 @@ import { WarehouseService } from '@/services/warehouse.service';
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/shopee/config — cấu hình hiện tại (3 role tab Shopee). */
+/** GET /api/shopee/config - cấu hình hiện tại (3 role tab Shopee). */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_SHOPEE_OPS'] as UserRole[]);
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** PUT /api/shopee/config { warehouseId?, codEnabled?, opsWarehouseIds? } — kho xuất + COD chỉ chủ; phạm vi kho chủ/quản lý. */
+/** PUT /api/shopee/config { warehouseId?, codEnabled?, opsWarehouseIds? } - kho xuất + COD chỉ chủ; phạm vi kho chủ/quản lý. */
 export async function PUT(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);

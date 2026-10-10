@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic';
 const PRIVILEGED: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
 /**
- * POST /api/campaigns/[id]/end — Kết thúc (ACTIVE → ENDED): chuyển tồn thừa
+ * POST /api/campaigns/[id]/end - Kết thúc (ACTIVE → ENDED): chuyển tồn thừa
  * đã duyệt về kho nguồn, ngưng kho (tự gỡ nhân sự), lưu trữ.
- * Body: { items: [{ editionId, quantity }] } — rỗng được (tồn 0).
+ * Body: { items: [{ editionId, quantity }] } - rỗng được (tồn 0).
  * Quyền: Owner, Manager.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -115,9 +115,9 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
             <label className="block text-xs font-bold mb-1">Chọn mẫu</label>
             <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}
               className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Chọn mẫu hợp đồng">
-              <option value="">— Chọn mẫu —</option>
+              <option value="">- Chọn mẫu -</option>
               {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.code} — {t.title}{t.legalReviewed ? ' ✓ đã duyệt' : ''}</option>
+                <option key={t.id} value={t.id}>{t.code} - {t.title}{t.legalReviewed ? ' ✓ đã duyệt' : ''}</option>
               ))}
             </select>
             {fieldKeys.map((k) => (
@@ -140,7 +140,7 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
 
         {step === 2 && (
           <>
-            <p className="text-xs font-bold text-amber-600 mb-2">⚠️ AI đã điền dữ liệu — điều khoản gốc được giữ nguyên. Duyệt từng đề xuất điều chỉnh bên dưới.</p>
+            <p className="text-xs font-bold text-amber-600 mb-2">⚠️ AI đã điền dữ liệu - điều khoản gốc được giữ nguyên. Duyệt từng đề xuất điều chỉnh bên dưới.</p>
             <label className="block text-xs font-bold mb-1">Văn bản đã điền</label>
             <textarea value={filledText} readOnly rows={10}
               className="w-full border rounded-xl px-3 py-2 text-sm font-mono bg-slate-50 mb-3" aria-label="Văn bản đã điền" />

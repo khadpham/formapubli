@@ -7,7 +7,7 @@ import { recordAuditLog } from '@/lib/rbac-guard';
 export const dynamic = 'force-dynamic';
 
 /**
- * PATCH /api/partners/[id] — sửa hồ sơ đại lý (OWNER/MANAGER).
+ * PATCH /api/partners/[id] - sửa hồ sơ đại lý (OWNER/MANAGER).
  * Body: bất kỳ trường nào trong { name, type, discountRate, address, phone,
  * email, taxCode, receiverName, shipNote, creditLimit, paymentDueDays,
  * paymentNote }. CK sửa ở đây chỉ đổi mặc định, không hồi tố phiếu cũ.

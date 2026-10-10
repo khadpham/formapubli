@@ -34,7 +34,7 @@ import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
 import { vnBusinessDay, shiftVnDay, vnDayFmt, vnHmFmt } from '@/lib/vn-time';
 export { vnBusinessDay };
 // Số dashboard đi CHUNG đường ống với tab Doanh Số (Task 7): khoảng ngày lấy từ
-// helper tháng lịch dùng chung, không tự cắt ngày — trước đây fetch toàn bộ
+// helper tháng lịch dùng chung, không tự cắt ngày - trước đây fetch toàn bộ
 // lịch sử nên số lệch tab đúng bằng số đơn ngoài kỳ.
 import { monthPreset } from '@/lib/sales-view';
 
@@ -49,7 +49,7 @@ export interface DayRevenue {
   total: number;
 }
 
-/** Nhãn tiếng Việt (có dấu) cho `warehouses.warehouseType` — dùng ở thẻ "Kho Vận Vật Lý". */
+/** Nhãn tiếng Việt (có dấu) cho `warehouses.warehouseType` - dùng ở thẻ "Kho Vận Vật Lý". */
 const WAREHOUSE_TYPE_LABEL: Record<string, string> = {
   PHYSICAL_MAIN: 'Kho vật lý chính',
   FAIR_EVENT: 'Gian hàng hội chợ',
@@ -59,13 +59,13 @@ const WAREHOUSE_TYPE_LABEL: Record<string, string> = {
 
 // Mọi cột thời gian trong DB là UTC; ngày/giờ người đọc là giờ Việt Nam
 // (UTC+7, không DST). Các helper `vnBusinessDay` / `shiftVnDay` / `vnHmFmt` nay
-// nằm ở `@/lib/vn-time` (import ở đầu file) — dùng chung để bảng quản trị, báo
+// nằm ở `@/lib/vn-time` (import ở đầu file) - dùng chung để bảng quản trị, báo
 // cáo chốt ngày và các biểu đồ mới không tự quy định lại "ngày hôm nay" riêng.
 
 /**
  * Gom doanh thu 7 ngày nghiệp vụ gần nhất.
  *
- * TRƯỚC ĐÂY gom theo `toISOString().slice(0,10)` — tức NGÀY UTC — trong khi
+ * TRƯỚC ĐÂY gom theo `toISOString().slice(0,10)` - tức NGÀY UTC - trong khi
  * nhãn cột lấy theo ngày máy/người dùng. Hai lịch lệch nhau 7 tiếng nên cột
  * "hôm nay" hụt trọn ca 00:00–07:00 và nuốt luôn 17:00–24:00 của hôm qua:
  * đơn 06:30 sáng 10/3 (UTC 23:30 ngày 9/3) rơi vào cột "9/3", cột "10/3" hiện
@@ -114,10 +114,10 @@ export function buildFiscalSplit(summary: any): FiscalSplit {
   return { tax, internal, taxPct, internalPct: 100 - taxPct, total };
 }
 
-/** Giờ Việt Nam trong bảng "Đơn Hàng Gần Đây" — trước đây in thẳng UTC. */
+/** Giờ Việt Nam trong bảng "Đơn Hàng Gần Đây" - trước đây in thẳng UTC. */
 export function formatOrderTime(createdAt: string | null | undefined): string {
   const day = vnBusinessDay(createdAt);
-  if (!day) return '—';
+  if (!day) return '-';
   const [, mm, dd] = day.split('-');
   const time = vnHmFmt.format(parseDbTimestamp(createdAt)!);
   return `${dd}/${mm} ${time}`;
@@ -130,7 +130,7 @@ export function ExecutiveDashboard({
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
-  /** Mốc thời gian nạp xong gần nhất — để nút "Làm mới" có trạng thái SAU khi bấm. */
+  /** Mốc thời gian nạp xong gần nhất - để nút "Làm mới" có trạng thái SAU khi bấm. */
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [isLiveMonitorOpen, setIsLiveMonitorOpen] = useState(false);
@@ -145,10 +145,10 @@ export function ExecutiveDashboard({
   } | null>(null);
   /**
    * Phạm vi kho của TOÀN TRANG. Trước đây dropdown chỉ đổi kho cho modal báo cáo
-   * ngày, còn số liệu tổng quan luôn là toàn hệ thống — bấm kho nào cũng thấy
+   * ngày, còn số liệu tổng quan luôn là toàn hệ thống - bấm kho nào cũng thấy
    * cùng một con số. Nay `selectedWarehouseId` gắn vào MỌI fetch (`/api/orders`
    * và `/api/analytics?view=stock-summary`), nên 4 KPI, tách sổ kép, trend 7 ngày,
-   * donut, top 5 và đơn gần đây đều tính từ `orders`/`stockSummary` đã lọc —
+   * donut, top 5 và đơn gần đây đều tính từ `orders`/`stockSummary` đã lọc -
    * các khối đó KHÔNG cần sửa code.
    *
 * 'ALL' = toàn hệ thống. Được nhớ lại giữa các phiên.
@@ -168,7 +168,7 @@ export function ExecutiveDashboard({
   /**
    * Đã biết vai trò + kho gán hay chưa. CHƯA biết thì KHÔNG fetch số liệu: nếu
    * fetch ngay lúc mount, thu ngân nhìn thấy một vòng số "toàn hệ thống" trước khi
-   * `/api/auth/me` kịp trả về kho của ca — tức là lộ số của kho khác trước mắt.
+   * `/api/auth/me` kịp trả về kho của ca - tức là lộ số của kho khác trước mắt.
    */
   const [assignmentResolved, setAssignmentResolved] = useState(false);
   /** Modal "Báo Cáo Ngày" luôn cần MỘT kho: khi phạm vi là toàn hệ thống thì lấy kho hội chợ đầu tiên (giữ hành vi cũ). */
@@ -239,7 +239,7 @@ export function ExecutiveDashboard({
     try {
       setSelectedWarehouseId(localStorage.getItem('dashboard.warehouseId') || 'ALL');
     } catch {
-      // Storage bị chặn (Safari ẩn danh / chính sách trình duyệt) — giữ 'ALL'.
+      // Storage bị chặn (Safari ẩn danh / chính sách trình duyệt) - giữ 'ALL'.
       setSelectedWarehouseId('ALL');
     }
   }, []);
@@ -252,7 +252,7 @@ export function ExecutiveDashboard({
       .then((j) => {
         if (!alive) return;
         const wid = j?.data?.assignedWarehouseId;
-        // Kho của ca thắng lựa chọn đã nhớ — thu ngân không tự chọn được kho khác.
+        // Kho của ca thắng lựa chọn đã nhớ - thu ngân không tự chọn được kho khác.
         if (wid) {
           setLockedWarehouseId(wid);
           setSelectedWarehouseId(wid);
@@ -278,7 +278,7 @@ export function ExecutiveDashboard({
           setWarehouses(json.data);
           // API trả `warehouseType`, KHÔNG có `type` ⇒ trước đây fairWh luôn
           // undefined và kho được ghim cứng 'wh-du-phong'; nếu kho đó không tồn
-          // tại, API chốt ngày trả 400 và modal báo "không có dữ liệu" — tưởng
+          // tại, API chốt ngày trả 400 và modal báo "không có dữ liệu" - tưởng
           // không có dữ liệu trong khi thực ra là chọn sai kho.
           const fairWh = json.data.find((w: any) => w.warehouseType === 'FAIR_EVENT');
           if (fairWh) {
@@ -305,7 +305,7 @@ export function ExecutiveDashboard({
     try {
       localStorage.setItem('dashboard.warehouseId', 'ALL');
     } catch {
-      /* storage bị chặn — không sao, chỉ mất nhớ lựa chọn */
+      /* storage bị chặn - không sao, chỉ mất nhớ lựa chọn */
     }
   }, [warehouses, selectedWarehouseId, lockedWarehouseId]);
 
@@ -314,9 +314,9 @@ export function ExecutiveDashboard({
   // nhưng không chỗ nào render. Dữ liệu tồn chỉ có ở server prop
   // `page.tsx` → `MasterAppShell`, mà shell KHÔNG truyền xuống Dashboard.
   // Không tự bịa số: cần thêm `books={matrixBooks}` ở MasterAppShell:333 và
-  // render thẻ — cả hai đều ngoài phạm vi sửa của phiên này.
+  // render thẻ - cả hai đều ngoài phạm vi sửa của phiên này.
 
-  // Sáu thẻ biểu đồ dưới đây tự tính từ `orders`/`summary` đã fetch — không thư
+  // Sáu thẻ biểu đồ dưới đây tự tính từ `orders`/`summary` đã fetch - không thư
   // viện chart, không gọi API mới. `buildLast7DaysRevenue` và `buildFiscalSplit`
   // vẫn được export vì `scripts/test-executive-reporting.ts` gọi trực tiếp để chốt
   // lỗi múi giờ và lỗi làm tròn tỷ lệ sổ kép.
@@ -349,7 +349,7 @@ export function ExecutiveDashboard({
       ? null
       : (warehouses.find((w: any) => w.id === selectedWarehouseId)?.name ?? selectedWarehouseId);
 
-  /** Thu ngân bị gán kho không được chọn kho khác — chỉ hiện đúng kho của ca. */
+  /** Thu ngân bị gán kho không được chọn kho khác - chỉ hiện đúng kho của ca. */
   const selectableWarehouses = lockedWarehouseId
     ? warehouses.filter((w: any) => w.id === lockedWarehouseId)
     : warehouses;
@@ -387,7 +387,7 @@ export function ExecutiveDashboard({
           {/* Dòng phạm vi: mọi số bên dưới thuộc đúng kho đang chọn ở thanh nút
               trên cùng. Bản desktop nằm ở đây; bản mobile ở ngoài khối
               `hidden md:block` (xem bên dưới) vì mobile không thấy tiêu đề ở
-              trên này — mà tên kho là thứ duy nhất cho biết số đang xem. */}
+              trên này - mà tên kho là thứ duy nhất cho biết số đang xem. */}
           <p className="hidden md:block text-sm font-bold text-amber-300 mt-0.5">
             Phạm vi: {scopeWarehouseName ?? 'Tất cả kho'}
           </p>
@@ -429,7 +429,7 @@ export function ExecutiveDashboard({
             Mở Quầy POS
           </button>
           {/* Trạng thái hội chờ lúc NÀY: ai đang bán, đơn nào chờ tiền, cần duyệt gì.
-              Modal tự làm mới 10 giây khi mở và dừng hẳn khi đóng — không tốn
+              Modal tự làm mới 10 giây khi mở và dừng hẳn khi đóng - không tốn
               request khi không ai xem. */}
           <button
             onClick={() => setIsLiveMonitorOpen(true)}
@@ -447,7 +447,7 @@ export function ExecutiveDashboard({
               value={selectedWarehouseId}
               onChange={(e) => pickWarehouse(e.target.value)}
               className="bg-transparent text-amber-300 text-xs font-bold outline-none cursor-pointer pr-2 max-w-[200px] truncate min-w-0"
-              title="Chọn kho muốn xem — mọi số liệu trên trang đổi theo kho này"
+              title="Chọn kho muốn xem - mọi số liệu trên trang đổi theo kho này"
               aria-label="Chọn kho để xem số liệu tổng quan"
             >
               {!lockedWarehouseId && (
@@ -535,7 +535,7 @@ export function ExecutiveDashboard({
           </p>
         </div>
 
-        {/* Tổng Tồn Kho Vật Lý — bấm vào chuyển ngay sang Kho Hàng để xem chi tiết & sắp xếp tồn */}
+        {/* Tổng Tồn Kho Vật Lý - bấm vào chuyển ngay sang Kho Hàng để xem chi tiết & sắp xếp tồn */}
         <div
           role="button"
           tabIndex={0}
@@ -587,7 +587,7 @@ export function ExecutiveDashboard({
             {summary?.totalOrders || 0} Đơn
           </p>
           {/* Số cuốn + giá trị đơn trung bình: hai con số phân biệt "bán nhiều đơn
-              rẻ" với "bán ít đơn giá cao" — thống kê số đơn đơn thuần không nói được. */}
+              rẻ" với "bán ít đơn giá cao" - thống kê số đơn đơn thuần không nói được. */}
           <p className="text-xs text-slate-500 mt-1 font-mono">
             {soldQty.toLocaleString('vi-VN')} cuốn
             {avgOrderValue > 0 ? ` · TB ${avgOrderValue.toLocaleString('vi-VN')} đ/đơn` : ''}
@@ -598,11 +598,11 @@ export function ExecutiveDashboard({
         </div>
       </div>
 
-      {/* Middle Section: Cash Flow Breakdown — full width. Thẻ "Kho Vận Vật Lý"
+      {/* Middle Section: Cash Flow Breakdown - full width. Thẻ "Kho Vận Vật Lý"
           đã chuyển xuống dưới dải biểu đồ (chế độ ALL): nó liệt kê kho chứ
           không phải số điều hành, để trên cùng vướng mắt. */}
       <div className="grid grid-cols-1 gap-6">
-        {/* Dual-Bookkeeping Financial Breakdown — luôn ăn hết chiều rộng vì cột
+        {/* Dual-Bookkeeping Financial Breakdown - luôn ăn hết chiều rộng vì cột
             phải (danh sách kho) đã chuyển xuống dưới. */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -681,17 +681,17 @@ export function ExecutiveDashboard({
         </div>
       </div>
 
-      {/* BIỂU ĐỒ — dải 1: xu hướng 7 ngày + nhịp bán trong ngày.
+      {/* BIỂU ĐỒ - dải 1: xu hướng 7 ngày + nhịp bán trong ngày.
           Ô donut "Cơ cấu Sổ Thuế vs Sổ Thực" đã bỏ: nó nói lại đúng hai ô Sổ
           Kép nằm ngay phía trên nên không thêm thông tin nào. Chỗ trống đó nay
-          là "Top 5 bản bán" — thứ quản lý dùng được ngay để in thêm, chuẩn bị hàng.
+          là "Top 5 bản bán" - thứ quản lý dùng được ngay để in thêm, chuẩn bị hàng.
           Cả hai biểu đồ đều tự tính từ `orders` đã fetch, không gọi API mới. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Revenue7DaysChart orders={orders} />
         <HourlyTodayCard orders={orders} />
       </div>
 
-      {/* Kho Vận Vật Lý — chỉ ở chế độ ALL, nằm DƯỚI dải biểu đồ. Dạng danh
+      {/* Kho Vận Vật Lý - chỉ ở chế độ ALL, nằm DƯỚI dải biểu đồ. Dạng danh
           sách ngang (2-3 cột) thay vì cột dọc hẹp như trước. */}
       {selectedWarehouseId === 'ALL' && (
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
@@ -709,7 +709,7 @@ export function ExecutiveDashboard({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {/* Trước đây 3 thẻ này viết CỨNG tên kho + mô tả — thêm kho thứ 4 là
+          {/* Trước đây 3 thẻ này viết CỨNG tên kho + mô tả - thêm kho thứ 4 là
               sai ngay, còn kho bị xoá thì vẫn hiện. Nay dựng từ /api/warehouses. */}
           {warehouses.length === 0 ? (
             <p className="text-xs text-slate-400">Đang tải danh sách kho…</p>
@@ -746,14 +746,14 @@ export function ExecutiveDashboard({
       </div>
       )}
 
-      {/* BIỂU ĐỒ — dải 2: bản bán chạy, đơn lớn nhất, cơ cấu kênh và thanh toán. */}
+      {/* BIỂU ĐỒ - dải 2: bản bán chạy, đơn lớn nhất, cơ cấu kênh và thanh toán. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         <TopProductsCard
           warehouseId={selectedWarehouseId !== 'ALL' ? selectedWarehouseId : undefined}
         />
         <TopOrdersCard orders={orders} onSelectOrder={setSelectedOrderId} />
         {/* Cột thứ ba xếp hai thẻ nhỏ chồng lên nhau ở màn rộng, tách ngang ở
-            màn vừa — để khoảng trống của ô donut không thành một ô trống. */}
+            màn vừa - để khoảng trống của ô donut không thành một ô trống. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
           <ChannelMixCard orders={orders} />
           <PaymentMixCard orders={orders} />
@@ -864,7 +864,7 @@ export function ExecutiveDashboard({
         currentRole={currentRole}
       />
 
-      {/* Modal Trạng Thái Hội Chợ — lúc này, không phải báo cáo cuối ngày.
+      {/* Modal Trạng Thái Hội Chợ - lúc này, không phải báo cáo cuối ngày.
           undefined = TẤT CẢ kho hội chợ, hoặc kho đang chọn không phải hội chợ. */}
       <LiveFairMonitorModal
         isOpen={isLiveMonitorOpen}

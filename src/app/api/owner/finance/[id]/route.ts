@@ -7,7 +7,7 @@ import { updateExpense } from '@/services/expense.service';
 export const dynamic = 'force-dynamic';
 
 /**
- * PATCH /api/owner/finance/[id] — sửa chi phí (amount/category/note/entryDate/
+ * PATCH /api/owner/finance/[id] - sửa chi phí (amount/category/note/entryDate/
  * staffId/recurrence). Chỉ Chủ; mỗi lần sửa ghi 1 dòng EXPENSE_UPDATED.
  */
 export async function PATCH(

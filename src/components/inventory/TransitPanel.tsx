@@ -68,7 +68,7 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
     if (!detail) return;
     setActing(true);
     try {
-      // CP3-B1.2 (mục 5): không parseInt cắt thập phân — gửi Number nguyên vẹn,
+      // CP3-B1.2 (mục 5): không parseInt cắt thập phân - gửi Number nguyên vẹn,
       // route/service từ chối "1.5" và hiển thị lỗi.
       const num = (v: string) => (v.trim() === '' ? 0 : Number(v.trim()));
       const items = (detail.items || []).map((it: any) => ({
@@ -84,7 +84,7 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
           action: 'receive',
           shipmentId: detail.id,
           items,
-          // CP3-B1.1 (mục 4): route bắt buộc idempotencyKey — sinh key mỗi lần bấm.
+          // CP3-B1.1 (mục 4): route bắt buộc idempotencyKey - sinh key mỗi lần bấm.
           idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-recv-${Date.now()}`,
         }),
       });
@@ -108,7 +108,7 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
         body: JSON.stringify({
           action: 'cancel',
           shipmentId: id,
-          // CP3-B1.1 (mục 4): route bắt buộc idempotencyKey — sinh key mỗi lần bấm.
+          // CP3-B1.1 (mục 4): route bắt buộc idempotencyKey - sinh key mỗi lần bấm.
           idempotencyKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `ui-cancel-${Date.now()}`,
         }),
       });
@@ -167,7 +167,7 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
       {detail && (
         <div className="border-t border-slate-200 p-4 bg-slate-50/60 space-y-2">
           <p className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Biên bản nhận {detail.id} — nhập R lành + D hỏng + L mất = X gửi
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Biên bản nhận {detail.id} - nhập R lành + D hỏng + L mất = X gửi
           </p>
           {(detail.items || []).map((it: any) => (
             <div key={it.editionId} className="grid grid-cols-4 gap-2 items-center bg-white p-2 rounded-lg border border-slate-200">

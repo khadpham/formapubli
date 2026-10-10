@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER'] as UserRole[];
 
-/** GET /api/owner/period-locks?month=YYYY-MM — trạng thái khóa sổ (chỉ chủ). */
+/** GET /api/owner/period-locks?month=YYYY-MM - trạng thái khóa sổ (chỉ chủ). */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/owner/period-locks — { month, action: 'lock' | 'unlock', note? }.
+ * POST /api/owner/period-locks - { month, action: 'lock' | 'unlock', note? }.
  * Chỉ chủ.
  */
 export async function POST(req: NextRequest) {

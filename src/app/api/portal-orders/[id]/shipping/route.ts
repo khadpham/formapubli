@@ -8,7 +8,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * PATCH /api/portal-orders/[id]/shipping — Cập nhật trạng thái giao hàng.
+ * PATCH /api/portal-orders/[id]/shipping - Cập nhật trạng thái giao hàng.
  *
  * Body: { shippingStatus: 'CREATED'|'PICKED_UP'|'IN_TRANSIT'|'DELIVERED', trackingCode?: string }
  *

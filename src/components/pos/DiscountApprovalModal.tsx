@@ -259,7 +259,7 @@ export function DiscountApprovalModal({
   useEffect(() => { syncRef.current = syncFromServer; }, [syncFromServer]);
 
   // 3b. Đếm lùi TTL (5 phút). Về 0 thì HỎI SERVER MỘT LẦN trước khi khai
-  //     EXPIRED — nếu không hỏi thì duyệt hợp lệ trong 2.5s cuối bị bỏ rơi.
+  //     EXPIRED - nếu không hỏi thì duyệt hợp lệ trong 2.5s cuối bị bỏ rơi.
   //     Hỏi lỗi/offline thì vẫn khai EXPIRED như cũ: an toàn cho thu ngân.
   useEffect(() => {
     if (!expiresAt || status !== 'PENDING') return;
@@ -299,7 +299,7 @@ export function DiscountApprovalModal({
   }, [requestId, status]);
 
 
-  // 6. Xử lý nhập mã khẩn cấp ngoại tuyến — ĐÃ GỠ 2026-09-29.
+  // 6. Xử lý nhập mã khẩn cấp ngoại tuyến - ĐÃ GỠ 2026-09-29.
   // Lý do: không có bảng mã nào tồn tại, service từ chối phương thức này nên mọi
   // nút gửi mã đều trả lỗi. Xoá hẳn thay vì để lại một nút luôn hỏng.
 
@@ -309,7 +309,7 @@ export function DiscountApprovalModal({
   const seconds = secondsRemaining % 60;
   const timeFormatted = `${minutes}:${String(seconds).padStart(2, '0')}`;
   // Mã hiện cho thu ngân/đối chiếu: mã server trước, prop (mã máy) chỉ là
-  // chốt chặn cuối cho lúc chưa có phản hồi nào — tránh hiện `undefined`.
+  // chốt chặn cuối cho lúc chưa có phản hồi nào - tránh hiện `undefined`.
   const displayOrderCode = serverOrderCode || orderCode;
 
   return createPortal(
@@ -350,7 +350,7 @@ export function DiscountApprovalModal({
           </button>
         </div>
 
-        {/* Thông tin đơn hàng & Chiết khấu */}
+        {/* Thông tin đơn sách & Chiết khấu */}
         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500">Mã đơn:</span>
@@ -451,7 +451,7 @@ export function DiscountApprovalModal({
             Trước đây đây là `currentRole === 'ROLE_CASHIER' ? (chờ) : (form QR/OTP)`.
             Nhánh QR/OTP KHÔNG BAO GIỜ chạy: `status` chỉ thành PENDING sau khi POST
             thành công, mà endpoint đó chỉ nhận ROLE_CASHIER
-            (api/pos/discount-approvals/route.ts:58) — nên CASHIER ⟹ đúng nhánh
+            (api/pos/discount-approvals/route.ts:58) - nên CASHIER ⟹ đúng nhánh
             "chờ". `currentRole` lấy từ phiên đăng nhập, không có bộ chuyển vai trò
             ở client. Giao diện duyệt thật nằm ở ManagerApprovalDrawer.
             Nhánh chết đã gỡ cùng state/effect/handler của nó. */}

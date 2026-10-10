@@ -176,7 +176,7 @@ export class AllocationService {
     warehouseId: string
   ) {
     if (!warehouseId || !warehouseId.trim()) {
-      throw AppError.invalid('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
+      throw AppError.invalid('Thiếu warehouseId - hạn ngạch bàn quầy phải khoá theo kho.');
     }
     const allocs = await db
       .select()
@@ -219,7 +219,7 @@ export class AllocationService {
   }
 
   /**
-   * Ghi nhận số lượng đã bán vào hạn ngạch bàn quầy (khoá theo kho — xem
+   * Ghi nhận số lượng đã bán vào hạn ngạch bàn quầy (khoá theo kho - xem
    * checkCounterQuota). Trả về số dòng hạn ngạch thực sự được cập nhật để
    * caller biết có dồn số vào nhầm bàn hay không.
    */
@@ -229,7 +229,7 @@ export class AllocationService {
     warehouseId: string
   ): Promise<number> {
     if (!warehouseId || !warehouseId.trim()) {
-      throw AppError.invalid('Thiếu warehouseId — hạn ngạch bàn quầy phải khoá theo kho.');
+      throw AppError.invalid('Thiếu warehouseId - hạn ngạch bàn quầy phải khoá theo kho.');
     }
     let touched = 0;
     for (const item of items) {

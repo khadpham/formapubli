@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** GET /api/ai/contracts/projects — danh sách dự án + đếm milestones. */
+/** GET /api/ai/contracts/projects - danh sách dự án + đếm milestones. */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/ai/contracts/projects — tạo dự án/sự kiện. */
+/** POST /api/ai/contracts/projects - tạo dự án/sự kiện. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

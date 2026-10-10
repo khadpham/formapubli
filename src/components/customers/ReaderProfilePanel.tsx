@@ -55,7 +55,7 @@ export function ReaderProfilePanel({ customerId, customerName }: { customerId: s
             <>
               <p className="font-extrabold text-slate-900 flex items-center gap-1.5">
                 <UserRound className="w-3.5 h-3.5 text-indigo-600" />
-                {profile.customer?.fullName} — {profile.orders?.count ?? 0} đơn · {(profile.orders?.spent ?? 0).toLocaleString('vi-VN')} đ · {profile.orders?.booksQty ?? 0} cuốn
+                {profile.customer?.fullName} - {profile.orders?.count ?? 0} đơn · {(profile.orders?.spent ?? 0).toLocaleString('vi-VN')} đ · {profile.orders?.booksQty ?? 0} cuốn
               </p>
               {profile.tags?.length > 0 && (
                 <p className="text-slate-600">
@@ -71,7 +71,7 @@ export function ReaderProfilePanel({ customerId, customerName }: { customerId: s
                 <div className="space-y-1">
                   {profile.topEditions.map((e: any) => (
                     <p key={e.editionId} className="text-slate-700">
-                      <span className="font-mono font-bold text-indigo-700">[{e.code}]</span> {e.title} — x{e.qty}
+                      <span className="font-mono font-bold text-indigo-700">[{e.code}]</span> {e.title} - x{e.qty}
                     </p>
                   ))}
                 </div>

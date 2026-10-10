@@ -7,7 +7,7 @@ import { asc } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/partners/list — id/code/name/type cho ô chọn đối tác (composer HĐ). */
+/** GET /api/partners/list - id/code/name/type cho ô chọn đối tác (composer HĐ). */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);

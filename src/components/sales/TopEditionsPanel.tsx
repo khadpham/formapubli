@@ -18,7 +18,7 @@ interface TopEditionsPanelProps {
   warehouseLabel: string;
   /** Sổ đang lọc ở tab; undefined = cả hai sổ. */
   fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
-  /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
+  /** Mã nhân viên THẬT đóng watermark - lấy từ Sổ Kép, KHÔNG ghi hằng số. */
   actorId: string;
   /** Bấm dòng sản phẩm → mở Nhịp Bán (timeline 1 món); null = mở danh sách. */
   onPickProduct?: (productId: string | null) => void;
@@ -102,19 +102,19 @@ export function TopEditionsPanel({
         setTotals({
           totalQty: Number(json.data?.totalQty || 0),
           totalRevenue: Number(json.data?.totalRevenue || 0),
-          // Quà đã phát không nằm trong bảng (dòng quà 0đ, khách không chọn) —
+          // Quà đã phát không nằm trong bảng (dòng quà 0đ, khách không chọn) -
           // nhưng phải hiện riêng, không giấu: không có thì "Top bán chạy" nghe
           // như hết tặng quà.
           totalGiftQty: Number(json.data?.totalGiftQty || 0),
         });
       } else {
         setItems([]);
-        setLoadError('Không tải được số liệu sách bán chạy — kiểm tra mạng rồi bấm Tải lại.');
+        setLoadError('Không tải được số liệu sách bán chạy - kiểm tra mạng rồi bấm Tải lại.');
       }
     } catch {
       if (controller.signal.aborted) return;
       setItems([]);
-      setLoadError('Không tải được số liệu sách bán chạy — kiểm tra mạng rồi bấm Tải lại.');
+      setLoadError('Không tải được số liệu sách bán chạy - kiểm tra mạng rồi bấm Tải lại.');
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -161,7 +161,7 @@ export function TopEditionsPanel({
       const s = `${v ?? ''}`;
       return /^[=+\-@\t\r]/.test(s) ? `"'${s.replace(/"/g, '""')}"` : `"${s.replace(/"/g, '""')}"`;
     };
-    // Watermark hash trên DỮ LIỆU THÔ (chưa escape) — số phải khớp số thứ tự
+    // Watermark hash trên DỮ LIỆU THÔ (chưa escape) - số phải khớp số thứ tự
     // trên bảng nên map kèm index.
     const rawObjects = sortedItems.map((it, i) => ({
       rank: i + 1,
@@ -176,8 +176,8 @@ export function TopEditionsPanel({
     }));
     const rows = sortedItems.map((it, i) => [
       i + 1,
-      cell(it.code || '—'),
-      cell(it.title || '—'),
+      cell(it.code || '-'),
+      cell(it.title || '-'),
       Number(it.qty || 0),
       Number(it.orders || 0),
       Number(it.revenue || 0),
@@ -189,7 +189,7 @@ export function TopEditionsPanel({
     const watermarked = appendExportWatermark(baseCsv, rawObjects, {
       actorId,
       actorRole: currentRole,
-      reportName: `SÁCH BÁN CHẠY NHẤT — ${rangeLabel} — ${warehouseLabel}`,
+      reportName: `SÁCH BÁN CHẠY NHẤT - ${rangeLabel} - ${warehouseLabel}`,
       fiscalScope: 'ALL',
     });
     const blob = new Blob(['\uFEFF' + watermarked], { type: 'text/csv;charset=utf-8;' });
@@ -249,7 +249,7 @@ export function TopEditionsPanel({
           <button
             onClick={exportCsv}
             disabled={!actorId}
-            title={actorId ? 'Xuất báo cáo sách bán chạy' : 'Chưa đọc được người đăng nhập — tải lại trang'}
+            title={actorId ? 'Xuất báo cáo sách bán chạy' : 'Chưa đọc được người đăng nhập - tải lại trang'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
@@ -315,13 +315,13 @@ export function TopEditionsPanel({
                         title="Mở Nhịp Bán của món này"
                         className="text-left hover:underline cursor-pointer"
                       >
-                        <span className="font-mono font-bold text-indigo-700">{it.code || '—'}</span>
-                        <span className="text-slate-600"> — {it.title || '—'}</span>
+                        <span className="font-mono font-bold text-indigo-700">{it.code || '-'}</span>
+                        <span className="text-slate-600"> - {it.title || '-'}</span>
                       </button>
                     ) : (
                       <>
-                        <span className="font-mono font-bold text-indigo-700">{it.code || '—'}</span>
-                        <span className="text-slate-600"> — {it.title || '—'}</span>
+                        <span className="font-mono font-bold text-indigo-700">{it.code || '-'}</span>
+                        <span className="text-slate-600"> - {it.title || '-'}</span>
                       </>
                     )}
                   </td>

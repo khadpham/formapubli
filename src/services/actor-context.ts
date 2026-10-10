@@ -1,10 +1,10 @@
 import type { UserRole } from '../lib/roles';
 
 /**
- * Lane B — Danh tính nội bộ truyền tách khỏi payload client (theo docs/PHASE0_CONTRACT.md §1).
+ * Lane B - Danh tính nội bộ truyền tách khỏi payload client (theo docs/PHASE0_CONTRACT.md §1).
  * Lane A trích từ session đã xác thực; Lane B chỉ dùng để phân quyền + ghi audit.
  * staffId là khóa ổn định; fullName chỉ hiển thị, KHÔNG dùng phân quyền.
- * (Lane A centralize khi có kiểu dùng chung — hiện đặt tạm ở services để Lane B chạy trước.)
+ * (Lane A centralize khi có kiểu dùng chung - hiện đặt tạm ở services để Lane B chạy trước.)
  */
 export interface ActorContext {
   staffId: string;

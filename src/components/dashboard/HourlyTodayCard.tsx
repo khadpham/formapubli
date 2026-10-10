@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * THẺ "BÁN HÀNG THEO GIỜ" — bảng quản trị.
+ * THẺ "BÁN HÀNG THEO GIỜ" - bảng quản trị.
  *
  * Vì sao có riêng một thẻ bọc `HourlyOrdersChart` (đã tồn tại cho báo cáo chốt
  * ngày) mà không sửa thẳng vào đó: báo cáo chốt ngày vẽ MỘT ngày đã chốt, còn ở
@@ -100,7 +100,7 @@ export function HourlyTodayCard({
     const todayOrders = rows.reduce((s, r) => s + Number(r.orders || 0), 0);
 
     // TB các ngày trước: mẫu số là SỐ NGÀY THẬT SỰ CÓ ĐƠN Ở GIỜ ĐÓ (tối đa 6),
-    // không phải 6 cứng — ngày không bán được gì ở giờ đó không có mặt trong TB.
+    // không phải 6 cứng - ngày không bán được gì ở giờ đó không có mặt trong TB.
     const prevDays = days.slice(0, -1);
     const baseline: Array<number | null> = Array.from({ length: 24 }, (_, hour) => {
       let sum = 0;
@@ -115,7 +115,7 @@ export function HourlyTodayCard({
       return withData > 0 ? sum / withData : null;
     });
     // TB doanh thu: cùng mẫu số ngày với TB đơn ở trên để hai biểu đồ so được
-    // với nhau — ngày không bán ở giờ đó thì không mặt ở cả hai.
+    // với nhau - ngày không bán ở giờ đó thì không mặt ở cả hai.
     const salesBaseline: Array<number | null> = Array.from({ length: 24 }, (_, hour) => {
       let sum = 0;
       let withData = 0;
@@ -131,7 +131,7 @@ export function HourlyTodayCard({
 
     // Không tự tính cao điểm/thấp điểm ở đây: `HourlyOrdersChart` đã có sẵn ô
     // "Giờ cao điểm" và dòng nhận xét kèm giờ vắng nhất. Tính lần thứ hai ở thẻ
-    // bọc chỉ để có hai nơi hiện cùng một con số — sửa ở một chỗ, hai nơi lệch nhau.
+    // bọc chỉ để có hai nơi hiện cùng một con số - sửa ở một chỗ, hai nơi lệch nhau.
     return {
       rows,
       baseline,
@@ -153,7 +153,7 @@ export function HourlyTodayCard({
   return (
     <>
       <div className={`rounded-2xl bg-white border border-slate-200/80 shadow-sm p-5 hover:shadow-md transition-shadow ${className}`}>
-        {/* 1.2 — đầu thẻ: tiêu đề + phụ đề nói rõ cách đọc, không lặp lại số liệu */}
+        {/* 1.2 - đầu thẻ: tiêu đề + phụ đề nói rõ cách đọc, không lặp lại số liệu */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
@@ -168,7 +168,7 @@ export function HourlyTodayCard({
           </div>
         </div>
 
-        {/* 1.7 — trạng thái rỗng: icon + một câu + hướng dẫn hành động. Chỉ hiện
+        {/* 1.7 - trạng thái rỗng: icon + một câu + hướng dẫn hành động. Chỉ hiện
             khi KHÔNG còn gì để vẽ; nếu còn đường TB thì biểu đồ vẫn đứng được. */}
         {todayOrders === 0 && !hasBaseline ? (
           <p className="mt-4 text-xs text-slate-400 flex items-center gap-2">

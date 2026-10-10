@@ -13,7 +13,7 @@ function asciiFilename(name: string): string {
     .replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120) || 'hop-dong.docx';
 }
 
-/** GET /api/contracts/documents/[id]/export-docx — final ?? rendered ?? re-render. */
+/** GET /api/contracts/documents/[id]/export-docx - final ?? rendered ?? re-render. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);

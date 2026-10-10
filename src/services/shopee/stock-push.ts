@@ -6,7 +6,7 @@ import { generateShopeeSign } from './sign';
 import { TursoTokenStorage } from './token-store';
 import { refreshShopeeTokenOnce } from './auth';
 
-/** Tồn giữ lại phục vụ quầy POS — không đẩy lên sàn. */
+/** Tồn giữ lại phục vụ quầy POS - không đẩy lên sàn. */
 export const SHOPEE_SAFETY_BUFFER = 2;
 
 export interface StockPushResult {
@@ -64,6 +64,6 @@ export async function pushStockToShopee(
     }),
   });
   const data = (await res.json()) as any;
-  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} — ${data.message || ''}`);
+  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   return { pushed: display, itemId: map.itemId };
 }

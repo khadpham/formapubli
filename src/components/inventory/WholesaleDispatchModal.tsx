@@ -303,7 +303,7 @@ export function WholesaleDispatchModal({
     });
     setPasteNotice(
       `Đã thêm ${added}/${summary.matched} đầu sách` +
-        (problems.length > 0 ? ` — cần xem: ${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '…' : ''}` : '')
+        (problems.length > 0 ? ` - cần xem: ${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '…' : ''}` : '')
     );
     if (added > 0) {
       setPasteText('');
@@ -721,7 +721,7 @@ export function WholesaleDispatchModal({
                   )}
                 </div>
                 <p className="text-xs text-slate-400">
-                  Xuất hàng đối tác: nhà sách, thư viện, trường học, đại lý — Cấp số liên tục trong Transaction
+                  Xuất hàng đối tác: nhà sách, thư viện, trường học, đại lý - Cấp số liên tục trong Transaction
                 </p>
               </div>
             </div>

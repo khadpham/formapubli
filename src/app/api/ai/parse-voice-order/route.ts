@@ -10,14 +10,14 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * 5.1 — SMART VOICE POS DISPATCHER (route).
- * POST /api/ai/parse-voice-order — multipart {audio} hoặc JSON {text}.
+ * 5.1 - SMART VOICE POS DISPATCHER (route).
+ * POST /api/ai/parse-voice-order - multipart {audio} hoặc JSON {text}.
  * Trả về GIỎ NHÁP cho thu ngân xác nhận. KHÔNG tạo đơn, KHÔNG trừ kho.
  * RBAC: OWNER/MANAGER/CASHIER (giọng thu ngân). P1b default-deny.
  */
 export async function POST(req: NextRequest) {
   try {
-    // P1b: Default-Deny — bắt buộc session cookie hợp lệ.
+    // P1b: Default-Deny - bắt buộc session cookie hợp lệ.
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
 
     let audio: Blob | undefined;

@@ -16,7 +16,7 @@ const PREVIEW_ORDER_CODE = 'ORD-20260928-A1B2C3D4E5F60718293A4B5C';
 /**
  * Xem trước nội dung QR cho kho: `raw` là chuỗi sau khi nội suy biến, `norm` là
  * thứ ngân hàng THỰC SỰ nhận (VietQR chỉ mang 23 ký tự, vietqr.ts). Không có
- * `norm` này thì quản lý tưởng phần bị cắt vẫn lên QR — đó là lý do `{SL}` hay
+ * `norm` này thì quản lý tưởng phần bị cắt vẫn lên QR - đó là lý do `{SL}` hay
  * "biến mất" dù mẫu đã lưu đúng.
  *
  * Ô trống KHÔNG phải lỗi: `resolveTransferContent` rơi về mẫu mặc định (có số
@@ -216,13 +216,13 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                           </p>
                           {p.usingDefault ? (
                             <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                              Đang trống nên dùng mẫu mặc định <b>{DEFAULT_TRANSFER_TEMPLATE.replace('{SL}', 'số lượng').replace('{MA}', 'mã đơn')}</b> — vẫn có số lượng. Gõ vào đây để tuỳ biến.
+                              Đang trống nên dùng mẫu mặc định <b>{DEFAULT_TRANSFER_TEMPLATE.replace('{SL}', 'số lượng').replace('{MA}', 'mã đơn')}</b> - vẫn có số lượng. Gõ vào đây để tuỳ biến.
                             </p>
                           ) : null}
                           {p.cut ? (
                             <p className="text-[10px] text-amber-700 font-semibold mt-0.5 flex items-start gap-1 leading-relaxed">
                               <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
-                              Bị cắt — đặt {`{SL}`} trước phần dài, hoặc rút gọn mẫu. Phần bị cắt KHÔNG lên QR.
+                              Bị cắt - đặt {`{SL}`} trước phần dài, hoặc rút gọn mẫu. Phần bị cắt KHÔNG lên QR.
                             </p>
                           ) : null}
                         </>
@@ -238,7 +238,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                         // Trạng thái sau khi bấm phải nói rõ đã lưu CÁI GÌ.
                         hasTransferTemplate(editTemplate)
                           ? `Đã lưu mẫu: ${previewTransfer(editTemplate, w).norm}`
-                          : `Đã lưu: để trống — dùng mẫu mặc định ${previewTransfer(editTemplate, w).norm}`
+                          : `Đã lưu: để trống - dùng mẫu mặc định ${previewTransfer(editTemplate, w).norm}`
                       )}
                       disabled={savingId === w.id}
                       aria-label="Lưu thông tin kho"
@@ -275,14 +275,14 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                       </span>
                       {/* Trạng thái mẫu phải thấy được NGAY ở danh sách, không phải
                           mở sửa mới thấy. Ô trống KHÔNG phải lỗi: kho đó dùng mẫu
-                          mặc định (có số lượng) — chỉ chưa tuỳ biến. */}
+                          mặc định (có số lượng) - chỉ chưa tuỳ biến. */}
                       {hasTransferTemplate(w.qrTransferTemplate) ? (
                         <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
                           Mẫu QR: {normalizeVietqrContent(previewTransfer(w.qrTransferTemplate || '', w).raw)}
                         </span>
                       ) : (
                         <span
-                          title={`Chưa cấu hình mẫu nội dung chuyển khoản — đang dùng mẫu mặc định: ${normalizeVietqrContent(previewTransfer('', w).raw)}. Bấm bút chî để tuỳ biến.`}
+                          title={`Chưa cấu hình mẫu nội dung chuyển khoản - đang dùng mẫu mặc định: ${normalizeVietqrContent(previewTransfer('', w).raw)}. Bấm bút chî để tuỳ biến.`}
                           className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-0.5"
                         >
                           <AlertTriangle className="w-2.5 h-2.5" /> Mặc định QR
@@ -323,8 +323,8 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setDefault(w.id, e.target.value)}
                   className="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                 >
-                  <option value="">— Mặc định chung —</option>
-                  {banks.map((b) => <option key={b.id} value={b.id}>{b.label} — {b.accountNo}</option>)}
+                  <option value="">- Mặc định chung -</option>
+                  {banks.map((b) => <option key={b.id} value={b.id}>{b.label} - {b.accountNo}</option>)}
                 </select>
               </div>
             </div>

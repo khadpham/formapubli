@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Chi tiết 1 đơn (cho màn chờ ATP + xem đơn trong ngày).
- * Bấm mới tải — không tải N+1 lúc mở danh sách (trần 50 subrequest của Workers).
+ * Bấm mới tải - không tải N+1 lúc mở danh sách (trần 50 subrequest của Workers).
  */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {

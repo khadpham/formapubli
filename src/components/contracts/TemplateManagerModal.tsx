@@ -79,7 +79,7 @@ export function TemplateManagerModal({ onClose }: { onClose: () => void }) {
       setIsWorking(true);
       setErrorMessage(null);
       const base64 = await readBase64(file);
-      // Nhãn biến đặt SAU khi lưu (nút "Nhãn biến" ở từng mẫu) — server tự
+      // Nhãn biến đặt SAU khi lưu (nút "Nhãn biến" ở từng mẫu) - server tự
       // sinh schema_fields tạm từ placeholder khi tạo.
       const res = await fetch('/api/contracts/templates', {
         method: 'POST',

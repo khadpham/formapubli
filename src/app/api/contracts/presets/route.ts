@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** GET /api/contracts/presets — { active, all } (D11). */
+/** GET /api/contracts/presets - { active, all } (D11). */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/contracts/presets — { label, valuesJson, sortOrder? }. */
+/** POST /api/contracts/presets - { label, valuesJson, sortOrder? }. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** PUT /api/contracts/presets — { id, label?, valuesJson?, sortOrder?, isActive? }. */
+/** PUT /api/contracts/presets - { id, label?, valuesJson?, sortOrder?, isActive? }. */
 export async function PUT(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -66,7 +66,7 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-/** DELETE /api/contracts/presets?id= — xóa preset. */
+/** DELETE /api/contracts/presets?id= - xóa preset. */
 export async function DELETE(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

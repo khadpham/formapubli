@@ -7,8 +7,8 @@ import { setLotCost } from '@/services/owner-finance.service';
 export const dynamic = 'force-dynamic';
 
 /**
- * PUT /api/owner/lots/[lotId]/cost — chủ nhập/sửa giá vốn lô (chỉ chủ, có audit).
- * Body: { unitCost, force? } — force=true để ghi đè giá vốn đã có.
+ * PUT /api/owner/lots/[lotId]/cost - chủ nhập/sửa giá vốn lô (chỉ chủ, có audit).
+ * Body: { unitCost, force? } - force=true để ghi đè giá vốn đã có.
  */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ lotId: string }> }) {
   try {

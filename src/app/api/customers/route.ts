@@ -6,10 +6,10 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/customers?q=sdt-hoac-ten&limit=50 — danh bạ read-only GĐ1 (không tạo/sửa ở ticket này).
+// GET /api/customers?q=sdt-hoac-ten&limit=50 - danh bạ read-only GĐ1 (không tạo/sửa ở ticket này).
 export async function GET(req: NextRequest) {
   try {
-    // P1b: Default-Deny — bắt buộc session cookie hợp lệ.
+    // P1b: Default-Deny - bắt buộc session cookie hợp lệ.
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get('q') || '').trim();

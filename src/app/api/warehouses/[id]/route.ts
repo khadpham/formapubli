@@ -13,7 +13,7 @@ const PRIVILEGED: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
 /**
  * Nạp kho trước khi ghi. Trả về chính row để so trước/sau (ví dụ isActive),
- * hoặc response 404 nếu kho không tồn tại (không phải 400 — cùng pattern với
+ * hoặc response 404 nếu kho không tồn tại (không phải 400 - cùng pattern với
  * /api/staff/[staffId]).
  */
 async function loadExisting(
@@ -32,7 +32,7 @@ async function loadExisting(
   return { row, res: null };
 }
 
-/** PATCH /api/warehouses/[id] — sửa tên/địa chỉ/bán trên POS/ngưng hoạt động. */
+/** PATCH /api/warehouses/[id] - sửa tên/địa chỉ/bán trên POS/ngưng hoạt động. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, PRIVILEGED);
@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
 
     // Ngưng / mở lại là thao tác nhạy cảm: phải có vết riêng trong nhật ký hoạt
-    // động, không gộp vào "Sửa kho" — ai tắt kho, ai bật lại kho.
+    // động, không gộp vào "Sửa kho" - ai tắt kho, ai bật lại kho.
     const toggled = updated.isActive !== before.isActive;
     await recordAuditLog({
       action: (toggled
@@ -77,7 +77,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 /**
- * DELETE /api/warehouses/[id] — chỉ xóa được kho RỖNG và chưa phát sinh nghiệp vụ.
+ * DELETE /api/warehouses/[id] - chỉ xóa được kho RỖNG và chưa phát sinh nghiệp vụ.
  * Kho còn tồn / có đơn / có sổ kho → 409 kèm lý do, hướng dẫn dùng "Ngưng hoạt động".
  */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

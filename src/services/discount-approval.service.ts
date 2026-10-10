@@ -17,15 +17,15 @@ export interface CartItemInput {
   unitDiscountRate?: number;
   // 0031: dòng QUÀ của chương trình mốc tiền (giá bán 0đ).
   isGiftLine?: boolean;
-  // 0031: quà thu ngân TỰ thêm — cần Quản lý duyệt, nên vẫn là phần của
+  // 0031: quà thu ngân TỰ thêm - cần Quản lý duyệt, nên vẫn là phần của
   // phê duyệt (khác quà tự động, xem `isAutoGiftLine`).
   isManual?: boolean;
 }
 
 /**
  * Dòng quà TỰ ĐỘNG (`is_gift_line = 1` và `is_manual = 0`): chương trình tự thêm
- * khi đơn đạt mốc tiền. Ngoài phạm vi phê duyệt chiết khấu — không ai duyệt món
- * quà, và nó không phải tiền khách trả — nên nó bị loại khỏi `cartHash` và khỏi
+ * khi đơn đạt mốc tiền. Ngoài phạm vi phê duyệt chiết khấu - không ai duyệt món
+ * quà, và nó không phải tiền khách trả - nên nó bị loại khỏi `cartHash` và khỏi
  * phép so tổng tiền. Nếu không, mọi đơn "vừa có quà vừa cần duyệt chiết khấu" chết
  * 409 vì hash lệch đúng bằng giá món quà.
  *
@@ -41,7 +41,7 @@ export function isAutoGiftLine(item: {
 }
 
 /**
- * Giá bìa (trước chiết khấu) của các dòng quà tự động trong `items` — đúng số
+ * Giá bìa (trước chiết khấu) của các dòng quà tự động trong `items` - đúng số
  * tiền bị loại khỏi tổng. Dùng `priceLine` (nguồn sự thật chung) để lệch bao
  * nhiêu cũng không vượt sai số làm tròn.
  */
@@ -69,7 +69,7 @@ function assertTransitionApplied(result: any, message: string) {
 /**
  * Secret ký QR-JWT duyệt chiết khấu. Fail-closed trên production/strict
  * (đồng chuẩn getAuthSecret): thiếu AUTH_SECRET là từ chối thay vì dùng
- * secret cứng mặc định — kẻ biết default không thể giả mạo QR duyệt giảm giá.
+ * secret cứng mặc định - kẻ biết default không thể giả mạo QR duyệt giảm giá.
  */
 function getDiscountSecret(): string {
   const s = process.env.AUTH_SECRET;
@@ -105,7 +105,7 @@ function base64UrlDecode(str: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-/** HMAC-SHA256 qua WebCrypto (edge-safe) — định dạng base64url giữ nguyên. */
+/** HMAC-SHA256 qua WebCrypto (edge-safe) - định dạng base64url giữ nguyên. */
 async function hmacBase64Url(message: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -119,7 +119,7 @@ async function hmacBase64Url(message: string, secret: string): Promise<string> {
   return bytesToBase64Url(sig);
 }
 
-/** So sánh hằng thời gian (timing-safe) thuần TS — thay crypto.timingSafeEqual. */
+/** So sánh hằng thời gian (timing-safe) thuần TS - thay crypto.timingSafeEqual. */
 function constTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -127,7 +127,7 @@ function constTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Hex ngẫu nhiên edge-safe — thay crypto.randomBytes(n).toString('hex'). */
+/** Hex ngẫu nhiên edge-safe - thay crypto.randomBytes(n).toString('hex'). */
 function randomHex(byteLength: number): string {
   const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -138,9 +138,9 @@ function randomHex(byteLength: number): string {
  * - Sắp xếp ấn bản theo editionId tăng dần (deterministic)
  * - Ép giá và discountRate về số nguyên VND
  * - Khóa chặt theo warehouseId + orderCode để tránh đụng độ giữa các quầy/kho
- * - P1a: token mỗi dòng gồm cả mức giảm dòng (fallback = mức tổng) —
+ * - P1a: token mỗi dòng gồm cả mức giảm dòng (fallback = mức tổng) -
  *   không bind là lọt gian lận line-discount sau duyệt.
- * - 0031: dòng quà TỰ ĐỘNG bị loại (xem `isAutoGiftLine`) — nó ngoài phạm vi
+ * - 0031: dòng quà TỰ ĐỘNG bị loại (xem `isAutoGiftLine`) - nó ngoài phạm vi
  *   phê duyệt, nên có trong giỏ lúc chốt hay không cũng không được làm lệch
  *   phê duyệt. Quà tay vẫn băm bình thường.
  */
@@ -212,7 +212,7 @@ export class DiscountApprovalService {
    * `orderCode` ở đây là MÃ PHIẾU TẠM do máy thu ngân sinh, KHÔNG phải mã đơn thật.
    * Nó chỉ làm khoá nhận diện "phiên giỏ hàng này" để bấm nút hai lần không sinh hai
    * yêu cầu. MÃ ĐƠN THẬT do server cấp (`allocateOrderCode`) và đó mới là giá trị
-   * ghi vào `order_code` và trả về cho client — xem `clientOrderCode` ở schema.
+   * ghi vào `order_code` và trả về cho client - xem `clientOrderCode` ở schema.
    */
   static async createRequest(params: {
     /** Mã phiếu tạm của máy thu ngân (khoá nhận diện phiên), KHÔNG phải mã đơn. */
@@ -242,17 +242,17 @@ export class DiscountApprovalService {
       throw AppError.invalid('Giỏ hàng không được để trống khi xin duyệt chiết khấu');
     }
     // Quà TAY đi kèm đơn không chiết khấu: cho phép rate = 0, nhưng BẮT BUỘC
-    // phải có ít nhất 1 dòng quà tay — nếu không rate 0 nghĩa là "không xin
+    // phải có ít nhất 1 dòng quà tay - nếu không rate 0 nghĩa là "không xin
     // gì cả" và yêu cầu duyệt là dòng rác không ai dọn.
     const hasManualGift = items.some((i) => i?.isManual === true && i?.isGiftLine === true);
     if (requestedDiscountRate < 0 || requestedDiscountRate > 1.0 || (!hasManualGift && requestedDiscountRate <= 0)) {
       throw AppError.invalid('Tỷ lệ chiết khấu yêu cầu không hợp lệ (phải từ > 0% đến 100%)');
     }
 
-    // A1-H: chuẩn hóa giá bìa từ DB (bỏ qua unitPrice client gửi — client có
+    // A1-H: chuẩn hóa giá bìa từ DB (bỏ qua unitPrice client gửi - client có
     // thể khai sai để lừa số tiền duyệt). Tra từ `products` (tầng gốc), KHÔNG
     // phải `editions`: hàng hóa không có dòng editions nên tra đó là chết ngay
-    // với "Ấn bản không tồn tại" — đúng lỗi đã tốn một đêm ở order.service.
+    // với "Ấn bản không tồn tại" - đúng lỗi đã tốn một đêm ở order.service.
     // Sách có `products.id === editions.id` và trigger giữ giá khớp nên kết
     // quả y hệt. Hash + số tiền duyệt tính trên giá chuẩn này; route checkout
     // recompute y hệt để khớp.
@@ -289,7 +289,7 @@ export class DiscountApprovalService {
         unitPrice: editionPriceMap.get(`${item.editionId}`.trim()) || 0,
         unitDiscountRate: lineRate,
         // Giữ cờ dòng quà: hash và tổng tiền phải loại quà tự động (xem
-        // `isAutoGiftLine`) — không có cờ thì không biết dòng nào là quà.
+        // `isAutoGiftLine`) - không có cờ thì không biết dòng nào là quà.
         isGiftLine: item.isGiftLine === true,
         isManual: item.isManual === true,
       };
@@ -299,7 +299,7 @@ export class DiscountApprovalService {
     }
 
     // priceLine là nguồn sự thật chung cho cả giảm giá dòng lẫn giảm cả giỏ.
-    // 0031: số tiền CHIẾT KHẤU chỉ tính trên dòng hàng bán — dòng quà tự động bị
+    // 0031: số tiền CHIẾT KHẤU chỉ tính trên dòng hàng bán - dòng quà tự động bị
     // loại (nó không phải tiền khách trả, không ai duyệt nó). `order.service.ts`
     // cũng bỏ đúng các dòng đó khỏi `calculatedSubtotal`, nên hai đầu khớp mà
     // không cần nới sai số 0.01đ. Quà TAY vẫn tính vào đây.
@@ -318,7 +318,7 @@ export class DiscountApprovalService {
 
 // KHÔNG tính `cartHash` ở đây: hash phải khoá theo MÃ ĐƠN THẬT (mã mà
     // `assertValidForCheckout` dùng lúc chốt đơn sẽ tính lại), mà mã đơn thật chỉ
-    // biết được sau bước "còn yêu cầu cũ nào không" bên dưới — bấm lại nút duyệt
+    // biết được sau bước "còn yêu cầu cũ nào không" bên dưới - bấm lại nút duyệt
     // trong cùng phiên thì dùng lại mã của yêu cầu cũ, không cấp mã mới.
     const hashFor = (orderCodeForHash: string) =>
       generateCanonicalCartHash(canonicalItems, requestedDiscountRate, warehouseId, orderCodeForHash);
@@ -396,7 +396,7 @@ export class DiscountApprovalService {
     const nonce = randomHex(8);
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString(); // 5 phút TTL
 
-    // MÃ ĐƠN THẬT, do server cấp NGAY LÚC TẠO YÊU CẦU — không đợi tới lúc chốt đơn.
+    // MÃ ĐƠN THẬT, do server cấp NGAY LÚC TẠO YÊU CẦU - không đợi tới lúc chốt đơn.
     //
     // VÌ SAO phải cấp ở đây: mã đơn là thứ thu ngân ĐỌC TO ra cho quản lý ghi
     // lên phiếu, và là thứ báo cáo đối soát ca dùng để nối. Nếu để tới lúc chốt
@@ -653,9 +653,9 @@ export class DiscountApprovalService {
   }
 
   /**
-   * A1-F: hủy yêu cầu duyệt — nút "Sửa giỏ và hủy phê duyệt" phía UI gọi
+   * A1-F: hủy yêu cầu duyệt - nút "Sửa giỏ và hủy phê duyệt" phía UI gọi
    * trước khi bỏ khóa giỏ. Chủ yêu cầu (cashier) hoặc Manager/Owner.
-   * Dùng lại SUPERSEDED (không thêm enum mới — UI đã hiểu "xin duyệt lại").
+   * Dùng lại SUPERSEDED (không thêm enum mới - UI đã hiểu "xin duyệt lại").
    * Conditional UPDATE có điều kiện VERSION + PENDING/APPROVED: race
    * cancel-vs-checkout chỉ một bên chuyển trạng thái được (checkout consume
    * cũng là conditional từ APPROVED), bên thua nhận 409 để tải lại.
@@ -808,11 +808,11 @@ export class DiscountApprovalService {
   /**
    * A1-H: xác minh phê duyệt khớp với giỏ checkout TRƯỚC khi tạo đơn.
    * - Không tìm thấy / chưa APPROVED / hết hạn: INVALID (route cho rẽ sang
-   *   PIN quản lý như hành vi cũ — phê duyệt cũ không phải bằng chứng gian lận).
+   *   PIN quản lý như hành vi cũ - phê duyệt cũ không phải bằng chứng gian lận).
    * - Đã APPROVED nhưng lệch kho / mức giảm / người xin / giỏ hàng: FORBIDDEN
    *   cứng, route từ chối ngay không cho rẽ PIN (PIN không rửa được giỏ tráo).
    * - Giỏ tính lại từ giá bìa DB (bỏ qua unitPrice client), dùng orderCode của
-   *   chính approval (checkout sinh mã khác — không đòi bằng mã).
+   *   chính approval (checkout sinh mã khác - không đòi bằng mã).
    */
   static async assertValidForCheckout(params: {
     requestId: string;
@@ -842,7 +842,7 @@ export class DiscountApprovalService {
       throw AppError.forbidden('Phê duyệt thuộc về thu ngân khác.');
     }
     const editionIds = Array.from(new Set(params.items.map((i) => `${i.editionId || ''}`.trim()).filter(Boolean)));
-    // Tra `products` (tầng gốc) như `createRequest` — hàng hóa không có dòng
+    // Tra `products` (tầng gốc) như `createRequest` - hàng hóa không có dòng
     // `editions`, tra đó là quà tay hàng hóa chết oan ở bước verify.
     const coverRows =
       editionIds.length > 0
@@ -924,7 +924,7 @@ export class DiscountApprovalService {
     const payableItems = currentItems.filter((i) => !isAutoGiftLine(i));
     const giftSubtotal = autoGiftSubtotal(currentItems, discountRate);
     // Quà TAY nằm trong số tiền duyệt (quản lý thấy đúng giá trị cho đi) nhưng
-    // KHÔNG nằm trong tiền đơn (đơn không cộng giá quà — luật chống nhiễm tiền).
+    // KHÔNG nằm trong tiền đơn (đơn không cộng giá quà - luật chống nhiễm tiền).
     // Đọc giá trị quà tay từ chính `cartSnapshot` đã duyệt (giá DB lúc duyệt),
     // không tốn thêm query trong transaction chật subrequest này.
     let manualGiftSubtotal = 0;
@@ -944,7 +944,7 @@ export class DiscountApprovalService {
     // Chống tráo giỏ hàng: giỏ hàng thanh toán phải khớp 100% với giỏ đã duyệt.
     // MERGE: hash theo `request.orderCode` (mã đã khoá lúc tạo yêu cầu) chứ không
     // theo orderCode của đơn đang tạo. assertValidForCheckout() phía trên cũng
-    // dùng appr.orderCode, nên hai đầu phải dùng CÙNG một mã — nếu lúc tiêu thụ
+    // dùng appr.orderCode, nên hai đầu phải dùng CÙNG một mã - nếu lúc tiêu thụ
     // lấy mã đơn mới thì hash luôn lệch và mọi đơn chiết khấu đều chết.
     const currentHash = generateCanonicalCartHash(
       payableItems,
@@ -973,7 +973,7 @@ export class DiscountApprovalService {
       (originalAmount !== undefined && !amountMatches(request.originalAmount, originalAmount)) ||
       (discountAmount !== undefined && !amountMatches(request.discountAmount, discountAmount)) ||
       // finalAmount so KHÔNG nới: dòng quà bán 0đ nên nó không đổi tiền khách
-      // phải trả — lệch ở đây là lệch tiền thật.
+      // phải trả - lệch ở đây là lệch tiền thật.
       (finalAmount !== undefined && Math.abs(request.finalAmount - finalAmount) > 0.01)
     ) {
       throw AppError.conflict('Tổng tiền của giỏ không khớp yêu cầu đã được duyệt.');

@@ -13,7 +13,7 @@ type TopProduct = {
 
 /**
  * Thay ô donut Sổ Thuế/Nội bộ: bảng quản trị cần câu "khách mua gì nhiều nhất"
- * nhiều hơn câu "tiền thuế chia bao nhiêu" — donut bị bỏ và tiền của nó đã lên
+ * nhiều hơn câu "tiền thuế chia bao nhiêu" - donut bị bỏ và tiền của nó đã lên
  * thẻ Sổ kế toán khác.
  */
 export function TopProductsCard({
@@ -66,7 +66,7 @@ export function TopProductsCard({
     };
   }, [warehouseId, reloadKey]);
 
-  // Chia theo số cuốn (không phải tiền) vì tiêu đề thẻ là "bán chạy" — một cuốn
+  // Chia theo số cuốn (không phải tiền) vì tiêu đề thẻ là "bán chạy" - một cuốn
   // rẻ bán 200 lượt vẫn là "bán chạy" hơn một cuốn đắt bán 3 lượt.
   const maxQty = Math.max(1, ...items.map((it) => Number(it.qty || 0)));
 
@@ -116,8 +116,8 @@ export function TopProductsCard({
           items.map((it, i) => {
             const qty = Number(it.qty || 0);
             const revenue = Number(it.revenue || 0);
-            // API đã fallback '—' khi không có tên; ở đây chỉ chặn rỗng/null.
-            const title = String(it.title || '—');
+            // API đã fallback '-' khi không có tên; ở đây chỉ chặn rỗng/null.
+            const title = String(it.title || '-');
             const pct = Math.max(4, Math.round((qty / maxQty) * 100));
             return (
               <div key={String(it.editionId || i)}>

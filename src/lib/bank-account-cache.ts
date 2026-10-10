@@ -4,7 +4,7 @@ import { isPaymentWindowExpired } from './offline-db';
  * CACHE TÀI KHOẢN NGÂN HÀNG THEO KHO (offline QR).
  *
  * POS mất mạng vẫn phải sinh được QR: nguồn duy nhất cần mạng là
- * `/api/bank-accounts`. Cache JSON theo kho, tối đa 24 giờ — quá hạn thì
+ * `/api/bank-accounts`. Cache JSON theo kho, tối đa 24 giờ - quá hạn thì
  * chặn QR offline thay vì hiển thị tài khoản có thể đã đổi.
  * Không phụ thuộc thư viện ngoài.
  */
@@ -101,7 +101,7 @@ export function writeBankAccountsCache(value: CachedBankAccounts): void {
 //
 // Ảnh xác nhận KHÔNG nằm trong cache: blob không JSON hoá được. Phiên khôi
 // phục luôn `paymentProof: null` và POS nạp lại ảnh từ IndexedDB theo
-// `paymentProofId` — không bao giờ coi là đã có ảnh khi chưa thấy ảnh thật.
+// `paymentProofId` - không bao giờ coi là đã có ảnh khi chưa thấy ảnh thật.
 // ---------------------------------------------------------------------------
 
 const SESSION_KEY_PREFIX = 'formapubli.transferSession.';
@@ -127,7 +127,7 @@ export interface CachedTransferSession {
   /**
    * Danh sách mặc hàng + TổNG TIỀN đã đóng băng cùng phiên. Tuỳ chọn vì phiên
    * cũ lưu trước khi có các trường này. Giữ lại để phiếu thu in ra được cả
-   * dòng sách sau khi F5, khi giỏ đang sống đã rỗng — xem `items` trong
+   * dòng sách sau khi F5, khi giỏ đang sống đã rỗng - xem `items` trong
    * `TransferPaymentSession`.
    */
   items?: Array<{ editionId: string; code: string; title: string; quantity: number; price: number }>;

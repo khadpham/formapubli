@@ -7,10 +7,10 @@ import { AppError } from './app-error';
  * Sản phẩm (migration 0031/0032).
  *
  * TẦNG GỐC chung cho sách và hàng hóa. Sách đã có sẵn ở `works`/`editions` và
- * được mirror sang `products` với `id` TRÙNG `editions.id` — nên phần lớn mã ở
+ * được mirror sang `products` với `id` TRÙNG `editions.id` - nên phần lớn mã ở
  * đây lo phần HÀNG HÓA: tạo, sửa, tìm, quét mã vạch.
  *
- * `code` CHỈ dành cho hàng hóa (`SP-0001`). Sách giữ mã ở `editions.code` —
+ * `code` CHỈ dành cho hàng hóa (`SP-0001`). Sách giữ mã ở `editions.code` -
  * copy sang `products` sẽ tạo hai nguồn sự thật cho cùng một SKU, và
  * `migrate-book-skus.ts` đã từng đổi `editions.code` (H01 → HH001).
  * Vì vậy mỗi khi so trùng mã hàng hóa, ta kiểm tra CẢ `editions.code`.
@@ -26,7 +26,7 @@ export interface CreateProductInput {
   kind?: ProductKind;
   sellingPrice: number;
   /**
-   * KHÔNG dùng — giá vốn chưa được nhập ở giai đoạn này (chốt #4).
+   * KHÔNG dùng - giá vốn chưa được nhập ở giai đoạn này (chốt #4).
    * Key vẫn còn trong type để route cũ truyền `costPrice` không làm TypeScript
    * đỏ; `create` CỐ Ý BỎ QUA nó và luôn ghi `cost_price = NULL`.
    * Muốn mở lại: bỏ comment ở `create` + `update` và xoá dòng này.
@@ -40,7 +40,7 @@ export interface CreateProductInput {
 export interface UpdateProductInput {
   name?: string;
   sellingPrice?: number;
-  /** @see {@link CreateProductInput.costPrice} — cố ý bỏ qua. */
+  /** @see {@link CreateProductInput.costPrice} - cố ý bỏ qua. */
   costPrice?: number | null;
   barcode?: string | null;
   description?: string | null;
@@ -51,7 +51,7 @@ export interface UpdateProductInput {
 /**
  * DANH SÁCH CỘT ĐƯỢC PHÉP LỘ RA NGOÀI.
  *
- * `cost_price` CỐ Ý VẮNG MẶT (chốt #4 — giá vốn chưa lên UI). Không dùng
+ * `cost_price` CỐ Ý VẮNG MẶT (chốt #4 - giá vốn chưa lên UI). Không dùng
  * `db.select()` không giới hạn rồi `delete row.costPrice`: SQL vẫn ĐỌC cột đó
  * từ DB (không tiết kiệm gì) và dễ sót ở một hàm mới. Liệt kê tường minh ở đây
  * ⇒ thêm cột nhạy cảm sau này mặc định KHÔNG lọt.
@@ -100,7 +100,7 @@ function normalizeCode(raw: string | null | undefined, required: boolean): strin
 
 /**
  * Chặn trùng mã ở TẦNG ỨNG DỤNG, không đợi UNIQUE constraint.
- * UNIQUE chỉ bắt được trùng trong `products`, còn mã sách nằm ở `editions` —
+ * UNIQUE chỉ bắt được trùng trong `products`, còn mã sách nằm ở `editions` -
  * một hàng hóa tên `H01` sẽ đâm thẳng vào dãi mã sách mà UNIQUE không thấy.
  */
 async function assertCodeFree(code: string, excludeId?: string) {
@@ -153,7 +153,7 @@ export const ProductService = {
     const code = normalizeCode(input.code, true);
     const barcode = normalizeBarcode(input.barcode);
     // `await` là BẮT BUỘC ở cả hai. Thiếu `await` ở `assertCodeFree` khiến lời
-    // gọi chạy nền, lỗi bay vào hư không, và UNIQUE của DB phải đỡ thay — người
+    // gọi chạy nền, lỗi bay vào hư không, và UNIQUE của DB phải đỡ thay - người
     // dùng nhận thông báo kỹ thuật. `test-products.ts` khoá đúng điểm này.
     await assertCodeFree(code!);
     await assertBarcodeFree(barcode);
@@ -176,7 +176,7 @@ export const ProductService = {
     };
     await db.insert(products).values(row);
     // Đọc lại bằng `PUBLIC_COLUMNS` để `create` trả về ĐÚNG shape của
-    // `listGoods`/`update` — không có `costPrice` lọt ra JSON.
+    // `listGoods`/`update` - không có `costPrice` lọt ra JSON.
     const inserted = await db
       .select(PUBLIC_COLUMNS)
       .from(products)
@@ -245,7 +245,7 @@ export const ProductService = {
   },
 
   /**
-   * Tra theo mã vạch. POS quét EAN-13 — sách khớp qua `editions.isbn`/`code`,
+   * Tra theo mã vạch. POS quét EAN-13 - sách khớp qua `editions.isbn`/`code`,
    * hàng hóa qua `products.barcode`. Hai bên có thể trùng EAN (bút/túi bán kèm
    * sách) nên hàm này KHÔNG tự quyết, caller phải xử lý khi ra >1 kết quả.
    */

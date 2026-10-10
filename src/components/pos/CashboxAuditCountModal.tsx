@@ -256,7 +256,7 @@ export function CashboxAuditCountModal({
                     (s.closingCashActual === null || s.closingCashActual === undefined);
                   return (
                     <option key={s.id} value={s.id}>
-                      Thu ngân: {s.cashierId} — {unrec ? '⚠️ Chưa nhập thực đếm' : 'Đã có số đếm'} (Mở: {s.openedAt?.slice(11, 16) || '—'})
+                      Thu ngân: {s.cashierId} - {unrec ? '⚠️ Chưa nhập thực đếm' : 'Đã có số đếm'} (Mở: {s.openedAt?.slice(11, 16) || '-'})
                     </option>
                   );
                 })}
@@ -280,7 +280,7 @@ export function CashboxAuditCountModal({
                   Thời gian ca:
                 </span>
                 <span className="font-mono text-slate-800">
-                  {currentSession.openedAt ? new Date(currentSession.openedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                  {currentSession.openedAt ? new Date(currentSession.openedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '-'}
                   {' → '}
                   {currentSession.closedAt ? new Date(currentSession.closedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Đang mở'}
                 </span>

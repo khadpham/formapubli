@@ -5,7 +5,7 @@ import { requireSessionRole, resolveActorId, assertAssignedWarehouse } from '@/l
 
 import { handleApiError } from '@/lib/api-response';
 
-// P2-06 — Hardened RMA: ép hàng lỗi vào QUARANTINE/DEFECTIVE (không rửa thành NEW),
+// P2-06 - Hardened RMA: ép hàng lỗi vào QUARANTINE/DEFECTIVE (không rửa thành NEW),
 // gate vai trò, validate lý do/hành động/số nguyên.
 const QUARANTINE_ONLY = ['QUARANTINE', 'DEFECTIVE'];
 const VALID_REASONS = ['PRINT_DEFECT', 'BINDING_DEFECT', 'TRANSIT_DAMAGE', 'CUSTOMER_RETURN', 'WATER_DAMAGE', 'OTHER'];
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const warehouseId = searchParams.get('warehouseId') || undefined;
     // Ràng buộc kho được gán: thủ kho gán kho A không đọc được phiếu RMA kho B.
-    // `warehouseId ?? assigned` — client bỏ tham số thì ép về kho của mình thay
+    // `warehouseId ?? assigned` - client bỏ tham số thì ép về kho của mình thay
     // vì biến thành "xem tất cả" (fail-closed).
     const assigned = `${session.assignedWarehouseId || ''}`.trim();
     const scopeId = warehouseId || assigned || undefined;
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // Mặc định là tạo ticket mới — OWNER, MANAGER, WAREHOUSE
+    // Mặc định là tạo ticket mới - OWNER, MANAGER, WAREHOUSE
     const session = await requireSessionRole(request, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
     const userRole = session.role;
     // Chống mạo danh: strict ép session.actorId (bỏ header/body).
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
     if (safeSource !== 'NEW' && safeSource !== 'NONE') {
       return NextResponse.json({ error: 'sourceCondition chỉ nhận: NEW | NONE.' }, { status: 400 });
     }
-    // P2-06: ép cách ly — mọi hàng lỗi vào QUARANTINE/DEFECTIVE, không có đường về NEW
+    // P2-06: ép cách ly - mọi hàng lỗi vào QUARANTINE/DEFECTIVE, không có đường về NEW
     const safeTarget = targetCondition && QUARANTINE_ONLY.includes(targetCondition) ? targetCondition : 'QUARANTINE';
 
     const ticket = await RmaService.createTicket({

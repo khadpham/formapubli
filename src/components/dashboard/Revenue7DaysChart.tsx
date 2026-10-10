@@ -21,7 +21,7 @@ interface DayBucket {
 
 type Mode = 'revenue' | 'qty';
 
-/** Bố cục SVG cố định — không đo bằng DOM nên không nhảy khi đổi số liệu. */
+/** Bố cục SVG cố định - không đo bằng DOM nên không nhảy khi đổi số liệu. */
 const W = 420;
 const H = 196;
 const PLOT_TOP = 26;
@@ -110,7 +110,7 @@ export function Revenue7DaysChart({ orders, className = '' }: { orders: any[]; c
         </div>
       </header>
 
-      {/* Trên là số cuốn, dưới là doanh thu — cùng dữ liệu, cùng khung ngày. */}
+      {/* Trên là số cuốn, dưới là doanh thu - cùng dữ liệu, cùng khung ngày. */}
       <div className="mt-3 space-y-5">
         <div>
           <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Số cuốn</p>
@@ -206,7 +206,7 @@ function SevenDayChart({ days, mode }: { days: DayBucket[]; mode: Mode }) {
         role="img"
         aria-label={ariaLabel}
       >
-        {/* Đường trung bình 7 ngày — vẽ trước để cột đè lên, không che số trên cột. */}
+        {/* Đường trung bình 7 ngày - vẽ trước để cột đè lên, không che số trên cột. */}
         <line x1={8} y1={avgY} x2={W - 8} y2={avgY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
         <text
           x={W - 8}

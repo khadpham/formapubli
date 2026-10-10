@@ -2,11 +2,11 @@ import { eq, ne, or } from 'drizzle-orm';
 import { orders } from '@/db';
 
 /**
- * Guard doanh thu Shopee — MỘT CHỖ duy nhất.
+ * Guard doanh thu Shopee - MỘT CHỖ duy nhất.
  *
  * Đơn Shopee (`channel='SHOPEE'`) mới đóng gói (shippingStatus != 'DELIVERED')
  * CHƯA phải doanh thu: khách có thể hủy, bưu tá có thể giao thất bại. Mọi báo
- * cáo doanh thu phải AND thêm điều kiện này — nếu không số phồng ảo mà test
+ * cáo doanh thu phải AND thêm điều kiện này - nếu không số phồng ảo mà test
  * cũ vẫn xanh (test cũ không có đơn SHOPEE nào).
  */
 export function shopeeDeliveredOnly() {

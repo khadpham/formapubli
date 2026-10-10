@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       actorRole: session.role,
       actorId: session.actorId,
       resource: '/api/promotions',
-      details: `Tạo chương trình khuyến mại ${created.id} — ${created.name}.`,
+      details: `Tạo chương trình khuyến mại ${created.id} - ${created.name}.`,
     });
 
     return NextResponse.json({ success: true, promotion: created }, { status: 201 });

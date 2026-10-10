@@ -108,7 +108,7 @@ export function OwnerTab() {
   const [editAmount, setEditAmount] = useState('');
   const [editNote, setEditNote] = useState('');
   const [marginChannel, setMarginChannel] = useState('');
-  // Nợ vay — GĐ3-P4.
+  // Nợ vay - GĐ3-P4.
   const [loanLender, setLoanLender] = useState('');
   const [loanPrincipal, setLoanPrincipal] = useState('');
   const [loanBorrowedAt, setLoanBorrowedAt] = useState('');
@@ -349,15 +349,15 @@ export function OwnerTab() {
         )}
       </div>
 
-      {/* Doanh thu theo kênh — GĐ3-P1 (chưa có giá vốn/biên) */}
+      {/* Doanh thu theo kênh - GĐ3-P1 (chưa có giá vốn/biên) */}
       {data.channels && (
         <section aria-label="Doanh thu theo kênh" className="space-y-3">
           <h3 className="text-sm font-extrabold text-slate-700">
-            Doanh thu theo kênh — {month} · Thực thu {vnd(data.totals?.cashCollected ?? 0)}
+            Doanh thu theo kênh - {month} · Thực thu {vnd(data.totals?.cashCollected ?? 0)}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-3 rounded-xl bg-blue-50 border border-blue-100">
-              <p className="text-[11px] text-blue-700 font-bold">Đại lý — thực thu</p>
+              <p className="text-[11px] text-blue-700 font-bold">Đại lý - thực thu</p>
               <p className="text-lg font-extrabold text-blue-900">{vnd(data.channels.agency.received)}</p>
               <p className="text-[11px] text-blue-600 mt-0.5">
                 Phải thu {vnd(data.channels.agency.receivable)} · Còn lại {vnd(data.channels.agency.balance)} · {data.channels.agency.orders} phiếu
@@ -381,7 +381,7 @@ export function OwnerTab() {
               )}
             </div>
             <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100">
-              <p className="text-[11px] text-indigo-700 font-bold">Shopee — tiền về</p>
+              <p className="text-[11px] text-indigo-700 font-bold">Shopee - tiền về</p>
               <p className="text-lg font-extrabold text-indigo-900">{vnd(s.escrowTotal)}</p>
               <p className="text-[11px] text-indigo-600 mt-0.5">{s.orders} đơn đã giao</p>
             </div>
@@ -389,11 +389,11 @@ export function OwnerTab() {
         </section>
       )}
 
-      {/* Pivot biên lợi nhuận — GĐ3-P3 */}
+      {/* Pivot biên lợi nhuận - GĐ3-P3 */}
       {data.margin && data.margin.length > 0 && (
         <section aria-label="Biên lợi nhuận" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <h3 className="text-sm font-extrabold text-slate-800">Biên lợi nhuận theo kênh × đầu sách — {month}</h3>
+            <h3 className="text-sm font-extrabold text-slate-800">Biên lợi nhuận theo kênh × đầu sách - {month}</h3>
             <label className="text-xs font-bold text-slate-600">
               Kênh
               <select
@@ -440,10 +440,10 @@ export function OwnerTab() {
                         )}
                       </td>
                       <td className={`py-2 pr-3 text-right font-bold ${r.grossProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {r.unknownCostQty !== 0 ? '—' : vnd(r.grossProfit)}
+                        {r.unknownCostQty !== 0 ? '-' : vnd(r.grossProfit)}
                       </td>
                       <td className="py-2 text-right font-bold text-indigo-700">
-                        {r.margin === null ? '—' : `${(r.margin * 100).toFixed(1)}%`}
+                        {r.margin === null ? '-' : `${(r.margin * 100).toFixed(1)}%`}
                       </td>
                     </tr>
                   ))}
@@ -456,10 +456,10 @@ export function OwnerTab() {
         </section>
       )}
 
-      {/* Dòng tiền theo nơi tiền đang nằm — GĐ3-P3 */}
+      {/* Dòng tiền theo nơi tiền đang nằm - GĐ3-P3 */}
       {data.cashByAccount && data.cashByAccount.length > 0 && (
         <section aria-label="Dòng tiền theo tài khoản" className="space-y-3">
-          <h3 className="text-sm font-extrabold text-slate-700">Tiền đang nằm ở đâu — {month}</h3>
+          <h3 className="text-sm font-extrabold text-slate-700">Tiền đang nằm ở đâu - {month}</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {data.cashByAccount.map((b, i) => (
               <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -472,7 +472,7 @@ export function OwnerTab() {
         </section>
       )}
 
-      {/* Tiến độ thanh toán đại lý — GĐ3-P3 */}
+      {/* Tiến độ thanh toán đại lý - GĐ3-P3 */}
       {data.agencyPayments && data.agencyPayments.length > 0 && (
         <section aria-label="Tiến độ thanh toán đại lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
           <h3 className="text-sm font-extrabold text-slate-800">Tiến độ thanh toán đại lý</h3>
@@ -498,7 +498,7 @@ export function OwnerTab() {
                       {p.overdue > 0 ? (
                         <span className="font-bold text-rose-700">{vnd(p.overdue)} ({p.overdueCount} phiếu)</span>
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-slate-400">-</span>
                       )}
                     </td>
                   </tr>
@@ -509,10 +509,10 @@ export function OwnerTab() {
         </section>
       )}
 
-      {/* Khóa sổ kỳ — GĐ3-P4 */}
+      {/* Khóa sổ kỳ - GĐ3-P4 */}
       {data.periodLock?.locked && (
         <div role="status" className="p-3 bg-slate-100 border border-slate-300 rounded-2xl text-xs text-slate-700 font-bold flex items-center justify-between gap-2">
-          <span>🔒 Kỳ {month} đã khóa sổ{data.periodLock.info?.lockedBy ? ` bởi ${data.periodLock.info.lockedBy}` : ''} — không ghi/sửa chi phí trong kỳ này nữa.</span>
+          <span>🔒 Kỳ {month} đã khóa sổ{data.periodLock.info?.lockedBy ? ` bởi ${data.periodLock.info.lockedBy}` : ''} - không ghi/sửa chi phí trong kỳ này nữa.</span>
           <button
             onClick={async () => {
               if (!confirm(`Mở khóa sổ kỳ ${month}?`)) return;
@@ -533,7 +533,7 @@ export function OwnerTab() {
 
       {/* Hàng 4 thẻ theo kỳ */}
       <section aria-label="Doanh thu Shopee" className="space-y-3">
-        <h3 className="text-sm font-extrabold text-slate-700">Doanh thu Shopee — {month}</h3>
+        <h3 className="text-sm font-extrabold text-slate-700">Doanh thu Shopee - {month}</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <p className="text-[11px] text-slate-500 font-bold">Đơn đã giao</p>
@@ -554,11 +554,11 @@ export function OwnerTab() {
         </div>
       </section>
 
-      {/* Nợ vay — GĐ3-P4 */}
+      {/* Nợ vay - GĐ3-P4 */}
       {data.loans && (
         <section aria-label="Nợ vay" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
           <h3 className="text-sm font-extrabold text-slate-800">
-            Nợ vay / Vốn huy động — dư nợ {vnd(data.loans.totalOutstanding)} ({data.loans.activeCount} khoản)
+            Nợ vay / Vốn huy động - dư nợ {vnd(data.loans.totalOutstanding)} ({data.loans.activeCount} khoản)
           </h3>
 
           {data.loans.dueSoon.length > 0 && (
@@ -566,7 +566,7 @@ export function OwnerTab() {
               <p>⚠️ Sắp đến hạn:</p>
               {data.loans.dueSoon.map((l) => (
                 <p key={l.id}>
-                  {l.lender} — {vnd(l.outstanding)} (hạn {l.dueAt}
+                  {l.lender} - {vnd(l.outstanding)} (hạn {l.dueAt}
                   {l.daysToDue !== null && l.daysToDue < 0 ? `, quá ${-l.daysToDue} ngày` : l.daysToDue === 0 ? ', hôm nay' : `, còn ${l.daysToDue} ngày`})
                 </p>
               ))}
@@ -593,7 +593,7 @@ export function OwnerTab() {
                       <td className="py-2 pr-3 text-right text-slate-600">{vnd(l.principal)}</td>
                       <td className="py-2 pr-3 text-right text-emerald-700 font-bold">{vnd(l.paidPrincipal)}</td>
                       <td className="py-2 pr-3 text-right font-bold text-slate-800">{vnd(l.outstanding)}</td>
-                      <td className="py-2 pr-3 text-slate-600">{l.dueAt || '—'}</td>
+                      <td className="py-2 pr-3 text-slate-600">{l.dueAt || '-'}</td>
                       <td className="py-2 text-slate-600">{l.status === 'ACTIVE' ? 'Đang vay' : l.status === 'PAID' ? 'Đã trả hết' : 'Đã hủy'}</td>
                     </tr>
                   ))}
@@ -607,9 +607,9 @@ export function OwnerTab() {
               Khoản vay
               <select value={payLoanId} onChange={(e) => setPayLoanId(e.target.value)}
                 className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]">
-                <option value="">—</option>
+                <option value="">-</option>
                 {(data.loans?.loans || []).filter((l) => l.status === 'ACTIVE').map((l) => (
-                  <option key={l.id} value={l.id}>{l.lender} — dư {vnd(l.outstanding)}</option>
+                  <option key={l.id} value={l.id}>{l.lender} - dư {vnd(l.outstanding)}</option>
                 ))}
               </select>
             </label>
@@ -677,7 +677,7 @@ export function OwnerTab() {
       <section aria-label="Lãi ròng sau chi phí" className="p-4 bg-purple-50 border border-purple-200 rounded-2xl">
         <h3 className="text-sm font-extrabold text-purple-900 flex items-center gap-2">
           <PiggyBank className="w-4 h-4" />
-          Lãi ròng sau chi phí — {month}
+          Lãi ròng sau chi phí - {month}
         </h3>
         <p className="text-2xl font-black text-purple-900 mt-1">{vnd(data.profitAfterExpenses)}</p>
         <p className="text-[11px] text-purple-700 mt-0.5">
@@ -689,7 +689,7 @@ export function OwnerTab() {
       <section aria-label="Chi phí công ty" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
         <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
           <Wallet className="w-4 h-4 text-amber-600" />
-          Chi phí — {month} ({vnd(data.expenses.total)})
+          Chi phí - {month} ({vnd(data.expenses.total)})
         </h3>
 
         <form onSubmit={submit} className="flex flex-wrap items-end gap-2" aria-label="Thêm chi phí">
@@ -713,7 +713,7 @@ export function OwnerTab() {
               disabled={category !== 'SALARY' && category !== 'BONUS'}
               className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px] disabled:opacity-50"
             >
-              <option value="">—</option>
+              <option value="">-</option>
               {['ADMIN-01', 'QL-01', 'NV-01', 'NV-02', 'NV-03', 'NV-04', 'KHO-01', 'SHP-01'].map((id) => (
                 <option key={id} value={id}>{id}</option>
               ))}
@@ -820,7 +820,7 @@ export function OwnerTab() {
                               {e.recurrence === 'MONTHLY' ? 'Định kỳ' : 'Phát sinh'}
                             </span>
                             {e.staffId ? <span className="ml-1 text-slate-500">· {e.staffId}</span> : null}
-                            {e.note ? ` — ${e.note}` : ''}
+                            {e.note ? ` - ${e.note}` : ''}
                           </span>
                           <span className="shrink-0 flex items-center gap-2">
                             <span className="text-xs font-extrabold text-rose-700">{vnd(e.amount)}</span>

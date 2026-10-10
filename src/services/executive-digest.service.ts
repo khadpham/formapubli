@@ -13,9 +13,9 @@ import {
 } from './ai/llm-client';
 
 /**
- * 5.5 — MONTHLY EXECUTIVE DIGEST (tầng dữ liệu + briefing).
+ * 5.5 - MONTHLY EXECUTIVE DIGEST (tầng dữ liệu + briefing).
  * Read-only. Không gửi mail (Worker + Resend ở tầng deploy riêng).
- * Mọi số liệu từ service nghiệp vụ hiện có — digest không tự tính lại.
+ * Mọi số liệu từ service nghiệp vụ hiện có - digest không tự tính lại.
  */
 
 export interface MonthRange {
@@ -33,13 +33,13 @@ export function monthRangeOf(year: number, month: number): MonthRange {
   //
   // `Date.UTC(...)` cho tháng Kế Toán VN = [ngày 1 00:00 VN, ngày cuối 23:59 VN),
   // tức [K-1 17:00 UTC, K 16:59 UTC). Trước đây lấy ranh giới UTC thuần nên thiếu
-  // 7 giờ đầu tháng và lấy thừa 7 giờ cuối tháng — doanh thu tháng bị lệch.
+  // 7 giờ đầu tháng và lấy thừa 7 giờ cuối tháng - doanh thu tháng bị lệch.
   // Dùng `cutoffInstantOf` sẵn có để không dựng mốc thủ công lần nữa.
   const pad = (n: number) => String(n).padStart(2, '0');
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const start = cutoffInstantOf(`${year}-${pad(month)}-01`, '00:00');
   // Mốc CUỐI phải phủ trọn phút cuối ngày: `lte(created_at, 23:59:00)` loại mất
-  // đơn trong 60 giây cuối ngày (23:59:00–23:59:59) — tức mất tiền đầu tháng sau
+  // đơn trong 60 giây cuối ngày (23:59:00–23:59:59) - tức mất tiền đầu tháng sau
   // khỏi digest tháng này. `lte` là so sánh bao hàm nên lấy 23:59:59.999.
   const end = new Date(cutoffInstantOf(`${year}-${pad(month)}-${pad(lastDay)}`, '23:59').getTime() + 60_000 - 1);
   return { year, month, startDate: start.toISOString(), endDate: end.toISOString() };
@@ -76,7 +76,7 @@ export interface MonthlyDigest {
 
 async function topEditions(range: { startDate: string; endDate: string }, topN = 5): Promise<TopEditionRow[]> {
   // Một câu duy nhất: JOIN sẵn bảng editions. Trước đây mỗi dòng top lại tra
-  // riêng bảng editions (N+1) — cùng một dữ liệu thì lấy bằng 1 câu.
+  // riêng bảng editions (N+1) - cùng một dữ liệu thì lấy bằng 1 câu.
   const rows = await db
     .select({
       editionId: orderItems.editionId,
@@ -227,7 +227,7 @@ export async function generateBriefing(digest: MonthlyDigest): Promise<{ briefin
 
   if (groqKey && groqModels.length > 0) {
     try {
-      // Groq json_object mode bắt prompt chứa chữ "json" — đã có trong prompt bên dưới.
+      // Groq json_object mode bắt prompt chứa chữ "json" - đã có trong prompt bên dưới.
       const raw = await callGroqChatJsonRaw({ systemPrompt: prompt + ' (tra JSON: {"highlight","risk","decision"})', userText: 'Viết briefing.', apiKey: groqKey, model: groqModels[0] });
       const b = tryParse(raw);
       if (b) return { briefing: b, engine: 'LLM_GROQ' };

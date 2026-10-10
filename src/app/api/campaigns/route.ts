@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 const PRIVILEGED: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
 /**
- * GET /api/campaigns — Danh sách chiến dịch (mới nhất trước).
+ * GET /api/campaigns - Danh sách chiến dịch (mới nhất trước).
  * Quyền: Owner, Manager.
  */
 export async function GET(req: NextRequest) {
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/campaigns — Tạo chiến dịch (DRAFT).
+ * POST /api/campaigns - Tạo chiến dịch (DRAFT).
  * Body: { name, startDate: YYYY-MM-DD, endDate: YYYY-MM-DD, sourceWarehouseId }
  * Quyền: Owner, Manager.
  */

@@ -2,7 +2,7 @@ import { db, customers, customerTags } from '../db';
 import { AppError } from './app-error';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 
-// Bước 3 — Tag chuẩn hóa tệp CRM (allowlist server-side, không cho tag tự do)
+// Bước 3 - Tag chuẩn hóa tệp CRM (allowlist server-side, không cho tag tự do)
 export const VALID_CUSTOMER_TAGS = [
   'TAG_SUBSCRIPTION',
   'TAG_NEWSLETTER',

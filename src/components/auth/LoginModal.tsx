@@ -20,7 +20,7 @@ interface AccountTile {
 const ROLE_ORDER: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
 
 // Vai trò ẩn khỏi màn hình chạm-chọn đọc từ cờ `hidden` trong registry
-// (src/lib/roles.ts) — vẫn đăng nhập được bằng nhập tay nếu cần.
+// (src/lib/roles.ts) - vẫn đăng nhập được bằng nhập tay nếu cần.
 
 export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: LoginModalProps) {
   const [accounts, setAccounts] = useState<AccountTile[]>([]);
@@ -259,7 +259,7 @@ export function LoginModal({ onLoginSuccess, onCancel, isClosable = false }: Log
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 block flex items-center justify-between">
               <span>
-                Mã PIN{selected ? ` — ${selected.fullName}` : ''}
+                Mã PIN{selected ? ` - ${selected.fullName}` : ''}
               </span>
               <span className="text-[10px] text-slate-400 font-normal">PIN 4+ ký tự mọi vai trò</span>
             </label>

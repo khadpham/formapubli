@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** POST /api/ai/contracts/smart-draft — AI điền placeholder + đề xuất điều chỉnh (chờ duyệt). */
+/** POST /api/ai/contracts/smart-draft - AI điền placeholder + đề xuất điều chỉnh (chờ duyệt). */
 export async function POST(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);

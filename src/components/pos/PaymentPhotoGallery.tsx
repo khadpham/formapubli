@@ -219,7 +219,7 @@ export function PaymentPhotoGallery({
                   <p className="text-[11px] font-mono font-bold text-slate-800 truncate">{photo.orderCode}</p>
                   <p className="text-[10px] text-slate-500">{new Date(photo.capturedAt).toLocaleString('vi-VN')}</p>
                   {photo.syncState === 'NEEDS_RECONCILIATION' ? (
-                    <p className="text-[10px] text-amber-600 font-bold">Cần đối soát — không tự xóa</p>
+                    <p className="text-[10px] text-amber-600 font-bold">Cần đối soát - không tự xóa</p>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

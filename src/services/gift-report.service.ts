@@ -18,7 +18,7 @@ export const GiftReportService = {
     // để đúng signature `summary(from?, to?)`.
     const f = from ?? null;
     const t = to ?? null;
-    // Tối giản: chỉ trả về cả bảng gift grouped. Ngày VN +7 — áp dụng cùng
+    // Tối giản: chỉ trả về cả bảng gift grouped. Ngày VN +7 - áp dụng cùng
     // quy ước của toàn hệ thống.
     const rows: any[] = await db.all(sql`
       SELECT
@@ -47,7 +47,7 @@ export const GiftReportService = {
       totalQty: sumQty(rows),
       /** Quà đã phát (còn tồn). UI dùng làm tiêu đề "đã phát" (Task 6). */
       totalDelivered: sumQty(inStock),
-      /** Quà hết tồn — đã nợ nhưng không phát được, tách khỏi tổng đã phát. */
+      /** Quà hết tồn - đã nợ nhưng không phát được, tách khỏi tổng đã phát. */
       totalShortfall: sumQty(shortfall),
     };
   },

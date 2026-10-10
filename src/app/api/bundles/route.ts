@@ -6,8 +6,8 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/bundles — danh sách combo đang bán
-// GET /api/bundles?id=<bundleId>&warehouseId=<wh> — chi tiết + tồn khả dụng bottleneck
+// GET /api/bundles - danh sách combo đang bán
+// GET /api/bundles?id=<bundleId>&warehouseId=<wh> - chi tiết + tồn khả dụng bottleneck
 // P1b (a): Khóa phiên đăng nhập cho nhân viên (OWNER, MANAGER, CASHIER, WAREHOUSE)
 export async function GET(req: NextRequest) {
   try {

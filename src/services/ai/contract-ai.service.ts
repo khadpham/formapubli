@@ -36,7 +36,7 @@ function geminiKey(): string {
 }
 
 function parseJson<T>(raw: string): T {
-  // LLM đôi khi bọc JSON trong ``` — lột vỏ trước khi parse
+  // LLM đôi khi bọc JSON trong ``` - lột vỏ trước khi parse
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
   try {
     return JSON.parse(cleaned) as T;
@@ -109,7 +109,7 @@ export interface StructuredTemplate {
   suggestedPlaceholders: { placeholder: string; originalText: string }[];
 }
 
-/** GĐ1b: cấu trúc hóa văn bản mẫu thật — giữ nguyên điều khoản, chỉ đánh dấu điểm điền. */
+/** GĐ1b: cấu trúc hóa văn bản mẫu thật - giữ nguyên điều khoản, chỉ đánh dấu điểm điền. */
 export async function structureGdocTemplate(
   rawText: string,
   callLlm: LlmCaller = defaultCaller,
@@ -118,7 +118,7 @@ export async function structureGdocTemplate(
     systemPrompt:
       LEGAL_STYLE +
       `\nNhiệm vụ: cấu trúc hóa một mẫu hợp đồng CÓ SẴN. GIỮ NGUYÊN từng câu chữ ` +
-      `của điều khoản gốc — CẤM viết lại, cấm thêm bớt điều khoản. Chỉ tìm các điểm ` +
+      `của điều khoản gốc - CẤM viết lại, cấm thêm bớt điều khoản. Chỉ tìm các điểm ` +
       `cần điền thông tin (tên công ty/cá nhân, số tiền, ngày tháng, địa chỉ...) và ` +
       `thay bằng {placeholder} (snake_case, tiếng Việt không dấu). Chỉ trả JSON.`,
     userText:
@@ -163,7 +163,7 @@ export async function finalizeAiTemplate(input: FinalizeInput): Promise<string> 
   const buffer = await Packer.toBuffer(doc);
   const templateData = buffer.toString('base64');
 
-  // Validate bằng engine hiện tại — .docx sinh ra phải merge được
+  // Validate bằng engine hiện tại - .docx sinh ra phải merge được
   const check = ContractEngineService.validateTemplate(templateData);
   if (!check.isValid) {
     throw new ContractAIError('DOCX_KHONG_HOP_LE', `File mẫu lỗi: ${(check.errors || []).join('; ')}`);
@@ -175,7 +175,7 @@ export async function finalizeAiTemplate(input: FinalizeInput): Promise<string> 
     code,
     title,
     category: input.category,
-    description: 'Mẫu do AI soạn/nhập — CHƯA DUYỆT PHÁP LÝ.',
+    description: 'Mẫu do AI soạn/nhập - CHƯA DUYỆT PHÁP LÝ.',
     templateFilename: `${code}.docx`,
     templateData,
     schemaFields,
@@ -220,7 +220,7 @@ export async function smartDraft(
     systemPrompt:
       LEGAL_STYLE +
       `\nNhiệm vụ: soạn thảo thông minh từ mẫu. Hai quy tắc BẤT DI BẤT DỊCH:\n` +
-      `1. filledText: điền giá trị vào các {placeholder} theo bảng giá trị. GIỮ NGUYÊN từng câu chữ điều khoản gốc — CẤM sửa/xóa/thêm điều khoản trong filledText.\n` +
+      `1. filledText: điền giá trị vào các {placeholder} theo bảng giá trị. GIỮ NGUYÊN từng câu chữ điều khoản gốc - CẤM sửa/xóa/thêm điều khoản trong filledText.\n` +
       `2. Mọi điều chỉnh điều khoản theo ghi chú tình huống PHẢI đưa vào adjustments (mảng riêng), mỗi mục ghi rõ điều khoản gốc (original), bản đề xuất (proposed), lý do (reason). ` +
       `Không có gì để điều chỉnh thì adjustments = []. Chỉ trả JSON.`,
     userText:
@@ -239,7 +239,7 @@ export async function smartDraft(
   return { filledText: data.filledText, adjustments };
 }
 
-/** GĐ2: trích text từ file .docx (base64) — chỉ đọc, không merge. */
+/** GĐ2: trích text từ file .docx (base64) - chỉ đọc, không merge. */
 export function extractDocxText(base64: string): string {
   let zip: PizZip;
   try {
@@ -314,7 +314,7 @@ export async function reviewContract(
       `\nNhiệm vụ: PHẢN BIỆN hợp đồng theo checklist. Với mỗi mục checklist, đánh giá: ` +
       `DAT (điều khoản đã có và ổn), THIEU (thiếu hẳn), MO_HO (có nhưng mơ hồ), RUI_RO (có nhưng rủi ro cho công ty). ` +
       `finding: nhận xét ngắn gọn. suggestion: đề xuất câu chữ cụ thể để bổ sung/sửa (để trống nếu DAT). ` +
-      `Kết quả là THAM KHẢO — không phải tư vấn pháp lý. Chỉ trả JSON.`,
+      `Kết quả là THAM KHẢO - không phải tư vấn pháp lý. Chỉ trả JSON.`,
     userText:
       `Checklist:\n${checklistText}\n\nVăn bản hợp đồng:\n"""\n${clean.slice(0, 12000)}\n"""\n\n` +
       `Trả JSON: {"issues": [{"checklistId": "...", "level": "THIEU|MO_HO|RUI_RO|DAT", "finding": "...", "suggestion": "..."}]}. ` +

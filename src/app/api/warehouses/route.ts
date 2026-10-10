@@ -12,7 +12,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * V4.1 S2.1 — Danh sách kho POS được phép chọn (active + is_sellable_on_pos)
+ * V4.1 S2.1 - Danh sách kho POS được phép chọn (active + is_sellable_on_pos)
  * hoặc toàn bộ kho nếu có param all=true (chỉ dành cho quản lý/thủ kho).
  */
 export async function GET(req: NextRequest) {
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
 
-    // `?qrTemplate=<warehouseId>` — hợp đồng HẸP cho POS: chỉ trả mẫu nội dung
+    // `?qrTemplate=<warehouseId>` - hợp đồng HẸP cho POS: chỉ trả mẫu nội dung
     // chuyển khoản của đúng một kho, KHÔNG tên/địa chỉ, KHÔNG số tồn. Cần vì
     // kho POS có thể là kho được GÁN mà không bán được (is_sellable_on_pos=0
     // hoặc đã ngưng) ⇒ `listSellable()` không có nó, mà POS vẫn phải dựng QR

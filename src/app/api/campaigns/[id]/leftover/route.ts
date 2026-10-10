@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 const PRIVILEGED: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
 /**
- * GET /api/campaigns/[id]/leftover — Xem trước tồn thừa tại kho chiến dịch
+ * GET /api/campaigns/[id]/leftover - Xem trước tồn thừa tại kho chiến dịch
  * để quản lý duyệt trước khi Kết thúc.
  * Quyền: Owner, Manager.
  */

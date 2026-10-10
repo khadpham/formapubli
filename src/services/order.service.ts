@@ -20,7 +20,7 @@ import { priceLine } from '../lib/pricing';
 
 export interface OrderItemInput {
   editionId: string;
-  /** Hàng hóa (SP-...) ghi vào product_id — editionId vẫn truyền để tra giá nhưng
+  /** Hàng hóa (SP-...) ghi vào product_id - editionId vẫn truyền để tra giá nhưng
    *  sẽ KHÔNG ghi vào order_items.edition_id (FK editions). Route portal truyền
    *  cả hai khi món quà là hàng hóa. */
   productId?: string;
@@ -44,7 +44,7 @@ const VALID_CHANNELS: OrderChannel[] = [
 ];
 const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE', 'COD'];
 
-// V4.1 S1.2: SELLABLE_WAREHOUSE_IDS hardcode đã XÓA — quy tắc kho bán đọc từ
+// V4.1 S1.2: SELLABLE_WAREHOUSE_IDS hardcode đã XÓA - quy tắc kho bán đọc từ
 // DB qua WarehouseService.assertSellable(). (Giữ comment để ai grep cũng thấy.)
 
 
@@ -52,7 +52,7 @@ const VALID_PAYMENTS: OrderPaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'QR_CODE'
 export const PENDING_TTL_HOURS = 48;
 
 // Trần SỐ LƯỢNG sách một thu ngân được giữ chỗ ATP bằng đơn PENDING_CONFIRMATION
-// chưa thu tiền, tính theo (thu ngân, kho) — mọi phương thức thanh toán.
+// chưa thu tiền, tính theo (thu ngân, kho) - mọi phương thức thanh toán.
 // Lý do: đơn PENDING giữ ATP mà không thu được đồng nào; nếu trần đo SỐ DÒNG
 // đơn thì một client độc hại chỉ cần vài đơn (mỗi đơn số lượng tùy ý, khai
 // paymentMethod CASH/COD để né trần chuyển khoản) là giữ hết kho. Đo số lượng
@@ -98,17 +98,17 @@ export interface CreateOrderParams {
   giftReason?: string; // BV-03: lý do tặng (bắt buộc khi isGift)
   /**
    * Quà đã được caller (vd route portal-orders, có PORTAL_API_KEY) tự xác minh.
-   * Server vẫn KHÔNG tin cờ client — chỉ cộng thêm nhánh này vào tập được phép.
+   * Server vẫn KHÔNG tin cờ client - chỉ cộng thêm nhánh này vào tập được phép.
    * POS thường không truyền ⇒ đường cũ không đổi.
    */
   trustedGiftIds?: Set<string>;
   items?: OrderItemInput[];
   bundles?: Array<{ bundleId: string; quantity: number }>; // Combo/boxset (giá do management định, không cộng CK đơn)
-  // M1 (contract §1): danh tính Lane A truyền tách khỏi payload client — thắng mọi cashierId client gửi
+  // M1 (contract §1): danh tính Lane A truyền tách khỏi payload client - thắng mọi cashierId client gửi
   actorContext?: ActorContext;
   // A1-H: ID phê duyệt chiết khấu đã được route verify khớp (giỏ/mức/kho/người).
   // Service tiêu thụ NGUYÊN TỬ trong cùng transaction tạo đơn (conditional
-  // APPROVED→CONSUMED, đòi đúng 1 row) — chống reuse/race. Bỏ qua trên đường
+  // APPROVED→CONSUMED, đòi đúng 1 row) - chống reuse/race. Bỏ qua trên đường
   // replay idempotency (trả đơn cũ, không consume lại).
   discountApprovalId?: string;
   requiredAudit?: Array<{
@@ -135,7 +135,7 @@ function requiresPaymentProof(paymentMethod: string | null | undefined): boolean
 }
 
 /**
- * Số lượng MUA (không tính dòng quà khuyến mại) — vào {SL} nội dung QR.
+ * Số lượng MUA (không tính dòng quà khuyến mại) - vào {SL} nội dung QR.
  * Quà tặng đi kèm đơn nhưng khách không trả tiền cho nó; ghi nó vào {SL} làm
  * nội dung chuyển khoản sai (mua 1 + tặng 1 ⇒ QR ghi 2). Server tự xác minh
  * cờ quà (không tin client) nên đây là nơi duy nhất định nghĩa đúng.
@@ -145,12 +145,12 @@ function pricedQuantityOf(lines: Array<{ quantity: number; isGiftLine?: boolean 
 }
 
 /**
- * Số CUỐN SÁCH thật trong đơn — dòng có `edition_id` (0032 cho phép hàng hóa như
+ * Số CUỐN SÁCH thật trong đơn - dòng có `edition_id` (0032 cho phép hàng hóa như
  * bookmark, móc khoá nằm ở `order_items` với `edition_id = NULL`).
  *
  * VÌ SAO cần riêng `totalQuantity`: phiếu in và màn "Bán Hàng Thành Công" ghi
  * "Tổng số sách", mà `totalQuantity` cộng MỌI dòng. Ở hội chợ mỗi đơn đều kèm
- * 1 quà hàng hóa, nên thu ngân bán 1 cuốn mà phiếu báo "2 cuốn" — đúng bằng cái
+ * 1 quà hàng hóa, nên thu ngân bán 1 cuốn mà phiếu báo "2 cuốn" - đúng bằng cái
  * báo động giống hệt việc hệ thống tự thêm sách vào đơn. Đã đo trên production:
  * ORD261002000V bán 1 cuốn + tặng 1 bookmark mà `totalQuantity = 2`.
  *
@@ -168,11 +168,11 @@ function bookQuantityOf(lines: Array<{ quantity: number; editionId?: string | nu
  * hội chợ gửi channel='FAIR_EVENT'. Trước đây chỉ nhận RETAIL_OFFICE khiến
  * chuyển khoản tại hội chợ rơi vào ngõ cụt: chặn đơn chờ, mất cửa sổ 30 phút,
  * và lách được yêu cầu mở ca két. Giá trị 'FAIR_EVENT' trong orders.channel là
- * hợp lệ và độc lập với quy tắc này (isFairOfflineSync, analytics) — KHÔNG
+ * hợp lệ và độc lập với quy tắc này (isFairOfflineSync, analytics) - KHÔNG
  * chuẩn hoá channel, chỉ mở rộng tập "kênh quầy".
  *
  * Cửa sổ thanh toán 30 phút và yêu cầu có ca két phải bám vào KÊNH, không bám
- * vào cashboxSessionId — vì cashboxSessionId do client gửi: bỏ đi là rơi về
+ * vào cashboxSessionId - vì cashboxSessionId do client gửi: bỏ đi là rơi về
  * TTL 48h và lách được cửa sổ ngắn.
  */
 function isCounterChannel(channel: string | null | undefined): boolean {
@@ -197,7 +197,7 @@ export interface OrderFingerprint {
   confirmImmediately?: boolean;
   /**
    * Quà đã được caller (vd route portal-orders, có PORTAL_API_KEY) tự xác minh.
-   * Server vẫn KHÔNG tin cờ client — chỉ cộng thêm nhánh này vào tập được phép.
+   * Server vẫn KHÔNG tin cờ client - chỉ cộng thêm nhánh này vào tập được phép.
    * POS thường không truyền ⇒ đường cũ không đổi.
    */
   trustedGiftIds?: Set<string>;
@@ -219,7 +219,7 @@ export interface OrderFilterParams {
 
 export class OrderService {
   /**
-   * Tạo đơn hàng bán sách, tự động trừ kho vật lý tức thì (Append-Only Ledger)
+   * Tạo đơn sách bán sách, tự động trừ kho vật lý tức thì (Append-Only Ledger)
    * và ghi nhận sổ kép tài chính (Dual Projection).
    */
   static async createOrder(params: CreateOrderParams) {
@@ -256,13 +256,13 @@ export class OrderService {
     // đã thu sẵn từ nhà tài trợ). Trước khi chặn, `channel` do CLIENT gửi nên
     // đường bán hàng nhận được kênh này, và hậu quả kép:
     //  (1) MỘT ĐƠN TIỀN MẶT thật bị `getSalesSummary` (và forecast, executive,
-    //      analytics — tất cả đều lọc `channel != 'SPONSORSHIP'`) loại khỏi
+    //      analytics - tất cả đều lọc `channel != 'SPONSORSHIP'`) loại khỏi
     //      doanh số: tiền nằm trong két nhưng không có mặt trong báo cáo.
     //  (2) `isCounterChannel()` = false nên lách trọn bộ guard ca két của
-    //      kênh quầy (B2a mở ca, B2c quá giờ chốt ngày) — bán tiền mặt ở
+    //      kênh quầy (B2a mở ca, B2c quá giờ chốt ngày) - bán tiền mặt ở
     //      hội chợ mà không cần mở ca, `cashbox_session_id` = NULL.
-    // Chặn ở service (không phải route) vì đây là nơu mọi caller — kể cả
-    // đồng bộ offline và caller nội bộ — đều phải đi qua.
+    // Chặn ở service (không phải route) vì đây là nơu mọi caller - kể cả
+    // đồng bộ offline và caller nội bộ - đều phải đi qua.
     if (channel === 'SPONSORSHIP') {
       throw AppError.invalid(
         'Kênh SPONSORSHIP do Quỹ tài trợ quản lý, không dùng để bán hàng. Rút sách tài trợ dùng luồng Quỹ tài trợ.'
@@ -340,7 +340,7 @@ export class OrderService {
 
     // V4.1 S1.2: chặn bán từ kho ảo/ký gửi/ngưng bán ngay từ cổng vào (đọc DB, không hardcode).
     const sellRow = await WarehouseService.assertSellable(warehouseId);
-    // V4.1 S1.2 (lock Q5): đơn giữ chỗ ONLINE (PENDING) chỉ được giữ ở kho chính —
+    // V4.1 S1.2 (lock Q5): đơn giữ chỗ ONLINE (PENDING) chỉ được giữ ở kho chính -
     // sách đã ra gian hàng hội chợ chỉ bán trực tiếp tại quầy, không giữ chỗ cho
     // khách online. Chặn theo KÊNH (isCounterChannel), KHÔNG chặn theo kho: gian
     // hàng hội chợ vẫn bán chuyển khoản/QR tại quầy (POS gửi FAIR_EVENT). Chặn
@@ -367,7 +367,7 @@ export class OrderService {
         throw AppError.invalid(`Két ca của thu ngân ${sess.cashierId}, không khớp người bán ${effCashierId}.`);
       }
     }
-    // P2-10: kẹp ngày lập đơn — chặn tương lai, gõ bù > 7 ngày cần duyệt quản lý
+    // P2-10: kẹp ngày lập đơn - chặn tương lai, gõ bù > 7 ngày cần duyệt quản lý
     if (params.createdAt) {
       const ts = new Date(params.createdAt).getTime();
       if (Number.isNaN(ts)) throw AppError.invalid('createdAt không phải ngày hợp lệ.');
@@ -412,7 +412,7 @@ export class OrderService {
         throw AppError.invalid(`Chiết khấu dòng ${it.editionId} phải nằm trong khoảng 0 - 100%.`);
       }
     }
-    // BV-03: chuan hoa co tang — discount 1.0 bat buoc di kem isGift tuong minh
+    // BV-03: chuan hoa co tang - discount 1.0 bat buoc di kem isGift tuong minh
     const rawGift = Boolean((params as any).isGift);
     if (discountRate === 1 && !rawGift) {
       throw AppError.invalid('Chiết khấu 100% chỉ áp dụng cho đơn Tặng sách (thiếu cờ isGift).');
@@ -452,7 +452,7 @@ export class OrderService {
 
     // Với đơn combo (bundles > 0): nếu caller truyền idempotencyKey và đơn đã tồn tại trong DB:
     // Kiểm tra fingerprint ngay; nếu khớp, trả về đơn cũ mà không fail do validateAvailability khi tồn linh kiện đã cạn.
-    // Đối với đơn hàng thông thường (không combo), kiểm tra idempotency diễn ra hoàn toàn bên trong write transaction.
+    // Đối với đơn sách thông thường (không combo), kiểm tra idempotency diễn ra hoàn toàn bên trong write transaction.
     if (params.idempotencyKey && bundleOrders.length > 0) {
       const existingPre = await withDbRetry(async () => {
         return await db
@@ -535,7 +535,7 @@ export class OrderService {
     }
 
     // Phiên két ghi trên đơn: client gửi thì dùng, không gửi thì (đơn quầy chờ,
-    // có ca mở) server tự gắn vào ca đang mở — xem khối B2a trong transaction.
+    // có ca mở) server tự gắn vào ca đang mở - xem khối B2a trong transaction.
     let resolvedCashboxSessionId = params.cashboxSessionId ?? null;
 
     const isPending = confirmImmediately === false;
@@ -572,7 +572,7 @@ export class OrderService {
     // đây; hàng hóa thì chỉ có `products`.
     //
     // Trước đây tra `FROM editions` ⇒ hàng hóa không có dòng editions nên chết
-    // NGAY TẠI ĐÂY, trước cả bước kiểm ATP — đơn không tạo được. Đây là lỗi
+    // NGAY TẠI ĐÂY, trước cả bước kiểm ATP - đơn không tạo được. Đây là lỗi
     // đã lên production; bằng chứng ở scripts/test-goods-sell-e2e.ts.
     const editionIds = stockCheckItems.map((i) => i.editionId);
     const dbProducts = await withDbRetry(async () => {
@@ -581,7 +581,7 @@ export class OrderService {
           id: products.id,
           name: products.name,
           coverPrice: products.sellingPrice,
-          // Lấy LUÔN ở đây vì câu này đã chạy rồi — không tốn thêm subrequest.
+          // Lấy LUÔN ở đây vì câu này đã chạy rồi - không tốn thêm subrequest.
           // Dùng để biết dòng này là SÁCH hay HÀNG HÓA, quyết định ghi
           // `inventory_ledger.edition_id` là NULL hay không. Đường này gần với
           // trần 50 subrequest của Worker nên tuyệt đối không thêm query.
@@ -595,17 +595,17 @@ export class OrderService {
     // nhau) để không phá vỡ các call site phía dưới.
     const editionMap = new Map(dbProducts.map((e) => [e.id, e]));
 
-    // 3. Tính toán dòng tiền và chi tiết đơn hàng ngoài transaction
+    // 3. Tính toán dòng tiền và chi tiết đơn sách ngoài transaction
     let calculatedSubtotal = 0;
     let calculatedFinalAmount = 0;
 
     // Tra chương trình khuyến mại đang chạy. Đây là nguồn SỰ THẬT để xác minh
-    // dòng quà — client KHÔNG được tự quyết mình có quà.
+    // dòng quà - client KHÔNG được tự quyết mình có quà.
     // Chỉ tra khi client có gắn cờ quà, để không tốn query cho đơn thường
     // (đường này sát trần 50 subrequest của Worker).
     const claimedGiftIds = looseItems.filter((i) => i.isGiftLine).map((i) => i.editionId);
     let allowedGiftProducts = new Set<string>();
-    // Quà tay đã duyệt (theo `discountApprovalId`) — dùng ở cả engine lẫn
+    // Quà tay đã duyệt (theo `discountApprovalId`) - dùng ở cả engine lẫn
     // `consumeApproval` phía dưới nên khai ở scope hàm, không phải trong `if`.
     const approvedManualSet = new Set<string>();
     if (claimedGiftIds.length) {
@@ -640,7 +640,7 @@ export class OrderService {
       // eligibleBase = tổng giá GỐC của các dòng KHÔNG phải quà.
       // Tuyệt đối không lấy `calculatedSubtotal` vì nó đã bị trừ chiết khấu, và
       // không bao giờ lấy tổng cả đơn vì dòng quà sẽ tự đẩy tổng lên bậc kế
-      // tiếp (vòng lặp — đã tốn một đêm tìm hiểu).
+      // tiếp (vòng lặp - đã tốn một đêm tìm hiểu).
       const eligibleBase = looseItems
         .filter((i) => !claimedGiftIds.includes(i.editionId))
         .reduce((s, i) => {
@@ -652,7 +652,7 @@ export class OrderService {
         }, 0);
 
       // Dòng quà do người tự thêm đã qua duyệt thì được phép, kể cả khi không
-      // nằm trong cấu hình — nhưng BẮT BUỘC phải có `discountApprovalId`.
+      // nằm trong cấu hình - nhưng BẮT BUỘC phải có `discountApprovalId`.
       // Engine nhận `approvedManual` để công nhận chúng là quà hợp lệ.
       let approvedManual: Set<string> | undefined;
       if (params.discountApprovalId) {
@@ -681,7 +681,7 @@ export class OrderService {
     const preparedItems = [
       ...looseItems.map((item) => {
         const edition = editionMap.get(item.editionId);
-        // Hàng hóa (SP-...) không có dòng editions — định danh bằng productId.
+        // Hàng hóa (SP-...) không có dòng editions - định danh bằng productId.
         // editionId vẫn truyền (bằng productId) để tra giá ở bảng products, nhưng
         // KHÔNG ghi vào order_items.edition_id (FK editions sẽ vi phạm).
         if (!edition) {
@@ -702,9 +702,9 @@ export class OrderService {
         // không cần Quản lý duyệt. Server phải tự tra `promotions` xác minh món
         // này THẬT SỰ nằm trong bậc mà đơn đạt tới.
         // Ngoại lệ: caller đã tự xác minh (route portal-orders có PORTAL_API_KEY)
-        // truyền trustedGiftIds — server tin, nhưng vẫn chỉ trong tập đó.
+        // truyền trustedGiftIds - server tin, nhưng vẫn chỉ trong tập đó.
         // ⚠️ `editionMap` dựng từ bảng `products` nên hàng hóa (SP-004) CÓNG
-        // trong map — không được dùng "có edition" để loại trustedGiftIds.
+        // trong map - không được dùng "có edition" để loại trustedGiftIds.
         const isGiftLine =
           claimedGift &&
           (allowedGiftProducts.has(item.editionId) ||
@@ -776,7 +776,7 @@ return {
           unitDiscountRate: line.unitDiscountRate,
           unitSellingPrice: line.unitSellingPrice,
           totalAmount: line.totalAmount,
-          // PHẢI giữ `line.*` — tôi đã đổi nhầm thành `undefined` một lần, làm
+          // PHẢI giữ `line.*` - tôi đã đổi nhầm thành `undefined` một lần, làm
           // dòng combo mất `bundle_id` ⇒ đếm chiết khấu sai, replay combo đụng
           // IDEMPOTENCY_CONFLICT. Bằng chứng: test-pay2-money-audit F4.
           bundleId: line.bundleId,
@@ -788,7 +788,7 @@ return {
     const calculatedDiscountAmount = calculatedSubtotal - calculatedFinalAmount;
 
     // 4. Sinh Idempotency Key cố định (giữ nguyên khi retry)
-    // MÃ ĐƠN KHÔNG sinh ở đây nữa — nó cần số thứ tự từ DB, mà số đó phải được
+    // MÃ ĐƠN KHÔNG sinh ở đây nữa - nó cần số thứ tự từ DB, mà số đó phải được
     // cấp BÊN TRONG transaction (xem `allocateOrderCode`) mới nguyên tử giữa các
     // máy POS. `orderId` vẫn sinh ở đây vì không cần thứ tự.
     const orderId = params.id || `ord-${generateUUIDv7()}`;
@@ -797,9 +797,9 @@ return {
     const giftTag = isGift ? `[QUÀ TẶNG: ${giftReason || (note || '').trim() || 'Tặng sách / Quà tặng sự kiện'}]` : '';
     const mergedNote = [giftTag, note].filter((s) => s && `${s}`.trim()).join(' | ') || undefined;
 
-    // 5. Ghi nhận Đơn hàng & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
+    // 5. Ghi nhận Đơn sách & Khấu trừ kho nguyên tử trong 1 Transaction (ACID + Retry)
     // Toàn bộ kiểm tra idempotency, phiên két, tính ATP và ghi chép nằm trong write transaction.
-    // B3: mã hàng hóa có dòng quà hết tồn — ghi ledger, KHÔNG trừ stock_balances.
+    // B3: mã hàng hóa có dòng quà hết tồn - ghi ledger, KHÔNG trừ stock_balances.
     const shortfallEditionIds = new Set<string>();
     return await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
@@ -872,12 +872,12 @@ return {
         // B0b (A1-H): tiêu thụ phê duyệt chiết khấu NGUYÊN TỬ trong cùng
         // transaction, SAU kiểm tra replay (replay trả đơn cũ, không consume
         // lại), TRƯỚC khi ghi đơn. consumeApproval tự UPDATE có điều kiện
-        // (đúng 1 row còn APPROVED + version + hạn) — hai request tranh nhau
+        // (đúng 1 row còn APPROVED + version + hạn) - hai request tranh nhau
         // chỉ một thắng, còn lại rollback toàn bộ (không ghi đơn, không trừ kho).
         // Không UPDATE trần ở đây: UPDATE trần trước sẽ đốt trạng thái APPROVED
         // khiến consumeApproval (bước verify giỏ/tiền) luôn fail-closed oan.
 
-        // B0c (S-01): kiểm tra lại lease cashier BẰNG CHÍNH tx hiện hành —
+        // B0c (S-01): kiểm tra lại lease cashier BẰNG CHÍNH tx hiện hành -
         // đọc qua db global sẽ thấy snapshot khác, mất nguyên tử với ghi đơn.
         // Chỉ enforce khi caller truyền sessionId (route luôn có từ session;
         // caller nội bộ legacy thiếu sessionId thì bỏ qua) và khi cờ rollout
@@ -925,13 +925,13 @@ return {
 
         // B2a. Đơn quầy CHỜ (mọi phương thức trừ thanh toán tức thì) bắt buộc phải
         // có ca két đang mở của chính thu ngân tại đúng kho này. Nếu không, đơn vừa
-        // tạo sẽ không bao giờ duyệt được (confirmOrder cũng chặn) — thu ngân thấy
+        // tạo sẽ không bao giờ duyệt được (confirmOrder cũng chặn) - thu ngân thấy
         // QR, thu tiền, rồi đơn kẹt giữ ATP tới 30 phút. Chặn ngay lúc tạo để lỗi
         // có hành động được: mở ca két. Owner/Manager miễn (giữ phạm vi quản lý);
         // bán tiền mặt / quà tặng / đơn chốt ngay không đi qua đây (không phải PENDING).
         // Client bỏ trống cashboxSessionId thì gắn vào ca đang mở của chính thu ngân
         // (openSession giữ tối đa 1 ca OPEN cho mỗi (thu ngân, kho) nên không mơ hồ):
-        // nếu không gắn, đơn sẽ tồn tại mà không bao giờ xác nhận được — đúng cái bẫy
+        // nếu không gắn, đơn sẽ tồn tại mà không bao giờ xác nhận được - đúng cái bẫy
         // im lặng ta muốn diệt.
         const creatorRole = params.actorContext?.role;
         const creatorIsPrivileged = creatorRole === 'ROLE_OWNER' || creatorRole === 'ROLE_MANAGER';
@@ -965,7 +965,7 @@ return {
         // B2a; đơn tức thì chỉ thêm 1 câu đọc theo index (cashier,kho,status).
         // ponytail: trần hiện tại = 1 câu đọc có index mỗi đơn quầy tức thì.
         // Nếu sau này thấy nóng, nâng lên cache theo (cashier, kho) đã đóng
-        // bằng cách bắn bus/event khi AUTO_CLOSE/CLOSE chạy — không cache ở
+        // bằng cách bắn bus/event khi AUTO_CLOSE/CLOSE chạy - không cache ở
         // đây vì cache hỏng = bán được sau giờ.
         if (isCounterChannel(channel) && !creatorIsPrivileged) {
           const guardShift: Array<{ openedAt: string | null }> = openShiftRows.length > 0
@@ -993,7 +993,7 @@ return {
         // B2. Tính toán & Kiểm tra ATP nguyên tử bên trong Transaction
         // BATCH (2 câu cố định thay vì 2 câu/dòng): `getATP` chính là
         // `getBatchATP([id])` nên ngữ nghĩa y hệt, chỉ gom lại. Đo trước khi
-        // sửa (bọc client.execute): đơn 10 dòng = 77 câu, biên 7 câu/dòng —
+        // sửa (bọc client.execute): đơn 10 dòng = 77 câu, biên 7 câu/dòng -
         // Workers free plan chỉ có 50 subrequest/lần gọi, tức đơn ≥ 7 dòng là
         // 500 "Too many subrequests" ⇒ KHÔNG chốt được đơn. Xem
         // scripts/test-auditC-nplus1.ts.
@@ -1003,7 +1003,7 @@ return {
             const atp = atpMap.get(editionId) ?? 0;
             if (atp < qty) {
               // B3: dòng quà hết tồn KHÔNG chặn đơn. Chỉ miễn khi TOÀN BỘ nhu
-              // cầu của mã này đều là dòng quà đã xác minh — còn mã vừa bán
+              // cầu của mã này đều là dòng quà đã xác minh - còn mã vừa bán
               // thường vừa tặng quà thì vẫn chặn nếu tổng vượt tồn.
               const giftDemand = preparedItems
                 .filter((i) => i.isGiftLine && i.productId === editionId)
@@ -1057,7 +1057,7 @@ return {
           }
         }
 
-        // B3: Tạo bản ghi Master đơn hàng bên trong Transaction
+        // B3: Tạo bản ghi Master đơn sách bên trong Transaction
         // Cấp mã đơn 13 ký tự, bên trong transaction đang tạo đơn. Vị trí này có
         // chủ đích:
         //   · sau kiểm tra idempotency ⇒ chơi lại đơn cũ không hao số thứ tự
@@ -1099,18 +1099,18 @@ return {
           }
           // MERGE: giữ consumeApproval() của c-login-ux vì nó chặn cả 2 lớp:
           // (1) verify lại hash giỏ + tổng tiền trong transaction, (2) conditional
-          // UPDATE đòi đúng 1 row còn APPROVED + version + chưa hết hạn — mạnh
+          // UPDATE đòi đúng 1 row còn APPROVED + version + chưa hết hạn - mạnh
           // hơn UPDATE trần của origin/main. Hash đã sửa để dùng orderCode của
           // yêu cầu nên không còn lệch với đơn đang tạo.
           await DiscountApprovalService.consumeApproval({
             requestId: params.discountApprovalId,
             currentItems: preparedItems
               // Quà TỰ ĐỘNG loại (consumeApproval tự lọc lại); quà TAY giữ lại
-              // kèm cờ để hash khớp với lúc duyệt — lọc mất là mọi đơn quà tay
+              // kèm cờ để hash khớp với lúc duyệt - lọc mất là mọi đơn quà tay
               // chết 409 dù đã duyệt đúng.
               .filter((item) => !item.bundleId && (!item.isGiftLine || approvedManualSet.has(item.productId)))
               .map((item) => ({
-                // `consumeApproval` cần `products.id` để băm hash giỏ — với sách
+                // `consumeApproval` cần `products.id` để băm hash giỏ - với sách
                 // nó BẰNG `edition_id`. `edition_id` có thể NULL cho hàng hóa nên
                 // dùng `product_id` (luôn khác NULL).
                 editionId: item.productId,
@@ -1162,7 +1162,7 @@ return {
           createdAt,
         });
 
-        // B4: Ghi nhận các dòng sản phẩm của đơn hàng — MỘT câu INSERT cho cả
+        // B4: Ghi nhận các dòng sản phẩm của đơn sách - MỘT câu INSERT cho cả
         // đơn thay vì 1 câu/dòng (đo trước: 5 câu/dòng, xem B2). Cùng
         // transaction, cùng thứ tự chỉ số `lineIdx` ⇒ idempotency key bút toán
         // kho y hệt, không đổi hợp đồng với `confirmOrder`/đối soát.
@@ -1173,10 +1173,10 @@ return {
               orderId,
               // 0032/0033: `order_items.edition_id` nullable nhưng VẪN CÒN FK
               // `editions(id)`. Hàng hóa không có dòng editions nên phải ghi
-              // NULL — ghi id hàng hóa vào đây là FK violation, đơn rollback.
+              // NULL - ghi id hàng hóa vào đây là FK violation, đơn rollback.
               editionId: item.isBook ? item.editionId : null,
               // 0032: NOT NULL + FK `products(id)`. PHẢI dùng `item.productId`
-              // chứ không phải `item.editionId` — với hàng hóa `editionId` đã là
+              // chứ không phải `item.editionId` - với hàng hóa `editionId` đã là
               // NULL ở dòng trên, dùng nó sẽ vi phạm NOT NULL.
               productId: item.productId,
               quantity: item.quantity,
@@ -1184,10 +1184,10 @@ return {
               unitDiscountRate: item.unitDiscountRate,
               unitSellingPrice: item.unitSellingPrice,
               totalAmount: item.totalAmount,
-              // 0031: cột chặn vòng lặp khi tính mốc khuyến mại — phải ghi
+              // 0031: cột chặn vòng lặp khi tính mốc khuyến mại - phải ghi
               // xuống DB, không chỉ giữ trong RAM.
               isGiftLine: Boolean(item.isGiftLine),
-              // B3: quà hết tồn vẫn bán được — gắn cờ để báo cáo tách riêng.
+              // B3: quà hết tồn vẫn bán được - gắn cờ để báo cáo tách riêng.
               isGiftShortfall:
                 Boolean(item.isGiftLine) && shortfallEditionIds.has(item.productId),
             };
@@ -1197,7 +1197,7 @@ return {
           })
         );
 
-        // Đơn PENDING chỉ giữ chỗ ATP — KHÔNG sinh bút toán kho.
+        // Đơn PENDING chỉ giữ chỗ ATP - KHÔNG sinh bút toán kho.
         if (!isPending) {
           // B5: Khấu trừ tồn kho vật lý tự động qua Thẻ kho bất biến (Append-Only Ledger)
           let lineIdx = 0;
@@ -1215,7 +1215,7 @@ return {
               skipStockUpdate: shortfall,
               documentRef: orderCode,
               note: shortfall
-                ? `Quà hết tồn — ghi sổ xuất, KHÔNG trừ bảng cân đối (is_gift_shortfall) trong đơn ${orderCode}`
+                ? `Quà hết tồn - ghi sổ xuất, KHÔNG trừ bảng cân đối (is_gift_shortfall) trong đơn ${orderCode}`
                 : item.bundleId
                 ? `Bán combo ${item.bundleId} x${item.bundleQty} trong đơn ${orderCode}`
                 : isGift
@@ -1287,7 +1287,7 @@ return {
     if (!ord) return;
 
     // Đơn CÓ phê duyệt: mã đơn do server cấp khi tạo yêu cầu, KHÔNG phải mã máy POS
-    // gửi lên. Nên không so mã của client với đơn đã có — nếu so, mọi lần POS thử
+    // gửi lên. Nên không so mã của client với đơn đã có - nếu so, mọi lần POS thử
     // lại cùng `idempotencyKey` (mạng hội chợ chập chờn, bấm lại nút) sẽ sinh
     // IDEMPOTENCY_CONFLICT giả, dù đơn y hệt.
     const ordHasApproval = Boolean((ord as any).discountApprovalId);
@@ -1310,7 +1310,7 @@ return {
     }
 
     // Ngữ nghĩa hoàn tất là một phần của fingerprint: replay key của đơn PENDING
-    // với confirmImmediately mặc định (true) là payload của sync offline — nếu
+    // với confirmImmediately mặc định (true) là payload của sync offline - nếu
     // im lặng trả lại đơn PENDING, client tưởng đã bán, xoá bản ghi offline và
     // không có bút toán kho nào. Phải báo xung đột để client giữ đơn + ảnh ở
     // NEEDS_RECONCILIATION. Chiều ngược lại (key của đơn đã COMPLETED) vẫn trả
@@ -1350,16 +1350,16 @@ return {
     // → tạo lại cùng payload ⇒ "phiên két khác (cbs-… vs null)" dù nội dung
     // đơn y hệt. CHỈ bỏ qua đúng trường hợp đó: đơn PENDING kênh quầy mà ca đó
     // do server tự gắn (đã kiểm vẫn OPEN + đúng thu ngân + đúng kho). Mọi trường
-    // hợp khác — kể cả "đơn đã chốt mà replay bỏ session" — vẫn so chặt như cũ.
+    // hợp khác - kể cả "đơn đã chốt mà replay bỏ session" - vẫn so chặt như cũ.
     if (dbCashbox === wantCashbox) {
-      // Khớp (kể cả cả hai null) — không có gì để soi.
+      // Khớp (kể cả cả hai null) - không có gì để soi.
     } else if (
       wantCashbox === null &&
       dbCashbox !== null &&
       ord.status === 'PENDING_CONFIRMATION' &&
       isCounterChannel(ord.channel)
     ) {
-      // Server tự gắn: hợp lệ khi ca đó vẫn OPEN và thuộc đúng thu ngân/đúng kho —
+      // Server tự gắn: hợp lệ khi ca đó vẫn OPEN và thuộc đúng thu ngân/đúng kho -
       // các điều kiện đó đã bị chặn ở B1/B2a khi ghi đơn đầu tiên.
       const sessRows = await txOrDb
         .select({
@@ -1501,7 +1501,7 @@ return {
   }
 
   /**
-   * V4.1 S1.2 (lock Q5) — Tồn khả dụng ATP:
+   * V4.1 S1.2 (lock Q5) - Tồn khả dụng ATP:
    * - Mọi kho: ATP = physical NEW trừ phần đơn PENDING còn hạn giữ chỗ.
    *   Kể cả kho hội chợ (FAIR_EVENT): quầy tại đó tạo đơn chuyển khoản
    *   PENDING_CONFIRMATION tại chính kho đó, giữ hàng thật, nên cũng phải trừ.
@@ -1511,7 +1511,7 @@ return {
    * Hỗ trợ nhận `txOrDb` để thực thi đồng nhất trong cùng write transaction.
    */
   /**
-   * Batch ATP cho nhiều ấn bản — CÙNG semantics với getATP nhưng 2 query cố
+   * Batch ATP cho nhiều ấn bản - CÙNG semantics với getATP nhưng 2 query cố
    * định thay vì 2N. Bắt buộc cho phiếu nhiều dòng trên Cloudflare Workers:
    * gọi getATP từng cuốn vượt giới hạn subrequest → 500 "Too many subrequests".
    */
@@ -1549,7 +1549,7 @@ return {
     // Xem scripts/test-fair-atp-hold.ts (P1/P2/P3).
     // CHỈ so NGÀY UTC ('YYYY-MM-DD'), không so timestamp đầy đủ: created_at
     // trong DB lẫn thứ tự "YYYY-MM-DD HH:MM:SS" (SQLite) lẫn ISO "...T...Z"
-    // (app) — so chuỗi giữa hai họ này là vô nghĩa (' ' < 'T') và âm thầm
+    // (app) - so chuỗi giữa hai họ này là vô nghĩa (' ' < 'T') và âm thầm
     // loại mất đơn do DB ghi, tức là nhả ATP oan. Ngày là tiền tố chung nên
     // luôn siêu tập, không bao giờ loại nhầm.
     const cutoffDate = new Date(Date.now() - PENDING_TTL_HOURS * 3600000).toISOString().slice(0, 10);
@@ -1585,7 +1585,7 @@ return {
   }
 
   /**
-   * ATP một ấn bản (đường lẻ) — uỷ quyền cho batch để chỉ có MỘT nơi định
+   * ATP một ấn bản (đường lẻ) - uỷ quyền cho batch để chỉ có MỘT nơi định
    * nghĩa semantics: fair = physical, còn lại trừ giữ chỗ PENDING còn hạn
    * (payment_expires_at nếu có, nếu không thì TTL 48h).
    */
@@ -1630,7 +1630,7 @@ return {
    *  không kiểm chứng ảnh).
    *  `actorId` TUYỆT ĐỐI không có giá trị mặc định: mọi duyệt đơn đều là quyết định
    *  của con người nên phải truy ra được người đó (session/actorContext). Không có
-   *  định danh thì fail loud — không bao giờ ghi 'staff-admin' (vừa là actor giả
+   *  định danh thì fail loud - không bao giờ ghi 'staff-admin' (vừa là actor giả
    *  trong audit + bút toán kho, vừa trùng cashierId mặc định của đơn legacy và
    *  biến thành điều kiện vượt phân quyền của một caller không định danh). */
   static async confirmOrder(
@@ -1641,7 +1641,7 @@ return {
     paymentProof?: TransferPaymentProof,
     /**
      * Ghi chú chốt lúc xác nhận (04/10/2026): ô Ghi chú trong modal thanh
-     * toán mở SAU khi đơn PENDING đã tạo — thu ngân gõ ở đó mà CONFIRM không
+     * toán mở SAU khi đơn PENDING đã tạo - thu ngân gõ ở đó mà CONFIRM không
      * nhận note thì chữ rớt mất. Chỉ ghi đè khi chuỗi non-blank; blank giữ
      * nguyên note lúc tạo đơn.
      */
@@ -1724,10 +1724,10 @@ return {
            }
          } else if (isCounterChannel(ord.channel)) {
            // Đơn quầy mà không gắn phiên két: KHÔNG được duyệt. cashboxSessionId do
-           // client gửi nên bỏ trống là lách toàn bộ guard két — tiền chuyển khoản/QR
+           // client gửi nên bỏ trống là lách toàn bộ guard két - tiền chuyển khoản/QR
            // thu được sẽ không nằm trong két nào và đối soát tiền mặt lệch. Đơn quầy
            // phải mở ca két trước rồi mới bán được; hủy thì vẫn cho phép để không
-           // kẹt vĩnh viễn (xem cancelOrder — hủy không ghi doanh thu vào két nào).
+           // kẹt vĩnh viễn (xem cancelOrder - hủy không ghi doanh thu vào két nào).
            throw AppError.conflict('Đơn tại quầy chưa gắn phiên két ca đang mở, không thể duyệt.');
          }
 
@@ -1745,7 +1745,7 @@ return {
           ownNeed.set(key, (ownNeed.get(key) || 0) + ln.quantity);
         }
     const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
-    // TỒN VẬT LÝ GỘP 1 CÂU (30/09). Trước đây gọi `getBalance` TỪNG DÒNG — mỗi
+    // TỒN VẬT LÝ GỘP 1 CÂU (30/09). Trước đây gọi `getBalance` TỪNG DÒNG - mỗi
     // dòng là 1 subrequest từ Cloudflare Worker tới Turso. Đơn 12 dòng thì riêng
     // vòng này đã 12 subrequest, cộng `recordMovement` ~4/dòng nữa thì vượt trần
     // 50 subrequest của Workers ⇒ Worker ném lỗi runtime thô ⇒
@@ -1770,7 +1770,7 @@ return {
       }
     }
 
-    // 7. Ghi sổ kho (DISPATCH_SALE) — GỘP CẢ ĐƠN trong 1 lần gọi (30/09).
+    // 7. Ghi sổ kho (DISPATCH_SALE) - GỘP CẢ ĐƠN trong 1 lần gọi (30/09).
     // Trước đây gọi `recordMovement` TỪNG DÒNG = ~4 câu SQL/dòng. Trên Turso từ
     // xa mỗi câu là 1 subrequest từ Cloudflare Worker, mà Worker chỉ chịu 50 ⇒ đơn
     // từ 5 dòng trở lên vượt trần và hỏng (lỗi bị che thành "Lỗi hệ thống").
@@ -1782,7 +1782,7 @@ return {
         // `product_id` NOT NULL và với sách thì BẰNG `edition_id`.
         //
         // 0033: `inventory_ledger.edition_id` cũng nullable. Hàng hóa KHÔNG có
-        // dòng `editions` nên phải để NULL — còn sách thì giữ nguyên để báo cáo
+        // dòng `editions` nên phải để NULL - còn sách thì giữ nguyên để báo cáo
         // và royalty vẫn tra được. Cờ `is_gift_line` không đủ vì quà tặng cũng
         // có thể là sách; dùng `product_id` có trong `products` (không tốn query
         // thêm vì đã tra ở bước 2).
@@ -1885,7 +1885,7 @@ return {
 
         // Đóng ca = không được xử lý đơn chờ thuộc két (đồng bộ với confirmOrder).
         // Đơn quầy KHÔNG gắn két thì vẫn hủy được: hủy không ghi doanh thu vào
-        // két nào mà chỉ nhả chỗ giữ ATP — từ chối hủy sẽ kẹt vĩnh viễn đơn.
+        // két nào mà chỉ nhả chỗ giữ ATP - từ chối hủy sẽ kẹt vĩnh viễn đơn.
         if (ord.cashboxSessionId) {
           const sessionRows = await tx
             .select()
@@ -1922,7 +1922,7 @@ return {
             actorRole,
             // Mọi hủy đơn ở đây đều do con người quyết định (đã qua assertOrderActor).
             // Không có mã nhân viên thì ghi đúng vai trò đã khai, TUYỆT ĐỐI không ghi
-            // SYSTEM — SYSTEM chỉ dành cho các đường hủy tự động (cleanup/quá hạn),
+            // SYSTEM - SYSTEM chỉ dành cho các đường hủy tự động (cleanup/quá hạn),
             // vốn không đi qua hàm này.
             actorId: resolvedActorId || `unattributed:${actorRole}`,
             resource: '/api/orders',
@@ -2107,7 +2107,7 @@ return {
   }
 
   /**
-   * Truy vấn danh sách đơn hàng có lọc theo Sổ Kép (Thuế vs Toàn cảnh Nội bộ).
+   * Truy vấn danh sách đơn sách có lọc theo Sổ Kép (Thuế vs Toàn cảnh Nội bộ).
    */
   static async getOrders(filters: OrderFilterParams = {}) {
     const { fiscalScope = 'ALL', warehouseId, partnerId, cashierId, startDate, endDate, status, channel } = filters;
@@ -2153,7 +2153,7 @@ return {
   static async getSalesSummary(filters: OrderFilterParams = {}) {
     // Bước 1: báo cáo doanh thu mặc định loại đơn PENDING/CANCELLED (chưa thu tiền thật)
     const list = await this.getOrders({ ...filters, status: filters.status || 'COMPLETED' });
-    // Bước 4: đơn SPONSORSHIP (final 0đ, rút từ quỹ) không phải doanh số bán —
+    // Bước 4: đơn SPONSORSHIP (final 0đ, rút từ quỹ) không phải doanh số bán -
     // loại khỏi tổng hợp trừ khi caller lọc channel tường minh.
     // Đơn SHOPEE chưa giao (shipping != DELIVERED) cũng chưa phải doanh thu.
     const sales = (filters.channel ? list : list.filter((o) => o.channel !== 'SPONSORSHIP')).filter(
@@ -2233,12 +2233,12 @@ export interface AutoCloseCashboxParams {
 }
 
 // ============================================================================
-// CHỐT CA QUÁ GIỜ (auto-close shift) — bảo vệ "không ca nào bị bỏ quên qua ngày"
+// CHỐT CA QUÁ GIỜ (auto-close shift) - bảo vệ "không ca nào bị bỏ quên qua ngày"
 // ----------------------------------------------------------------------------
 // Ràng buộc toàn vẹn: KHÔNG BAO GIỜ bịa số tiền thực đếm. closeSession tính
 // cashDiscrepancy = closingCashActual - expectedCash; nếu tự động chốt bằng
 // closingCashActual = expectedCash thì hệ thống khẳng định một con người đã
-// đếm két — đúng thứ ta không được phép nói. Mọi chốt tự động ghi
+// đếm két - đúng thứ ta không được phép nói. Mọi chốt tự động ghi
 // closingCashActual = NULL, cashDiscrepancy = NULL và đánh dấu UNVERIFIED.
 // ============================================================================
 
@@ -2292,16 +2292,16 @@ function pad2(n: number): string {
 }
 
 /**
- * Ngày nghiệp vụ (YYYY-MM-DD) theo GIỜ VIỆT NAM — KHÔNG theo múi giờ máy chủ.
+ * Ngày nghiệp vụ (YYYY-MM-DD) theo GIỜ VIỆT NAM - KHÔNG theo múi giờ máy chủ.
  *
  * Trước đây dùng `getFullYear/getMonth/getDate()` tức múi giờ của máy đang chạy.
  * Đó là lỗi thật: Cloudflare Workers luôn chạy UTC còn máy dev là GMT+7, nên
- * CÙNG một đoạn code trả về ngày khác nhau giữa production và máy dev — trong
+ * CÙNG một đoạn code trả về ngày khác nhau giữa production và máy dev - trong
  * khung 00:00-07:00 giờ VN. Ngày nghiệp vụ là khái niệm kế toán của Việt Nam, phải
  * cố định theo múi giờ Việt Nam ở mọi môi trường.
  *
  * `en-CA` cho ra đúng định dạng YYYY-MM-DD. Cùng cách với `vnToday()` ở
- * GET /api/pos/live-monitor và hàm `d(back)` ở cron auto-close — ba nơi này giờ
+ * GET /api/pos/live-monitor và hàm `d(back)` ở cron auto-close - ba nơi này giờ
  * cùng một định nghĩa.
  */
 export const VN_TZ = 'Asia/Ho_Chi_Minh';
@@ -2315,7 +2315,7 @@ export const VN_UTC_OFFSET_MIN = 7 * 60;
  * Số nguyên → chuỗi base36 đệm `width` ký tự.
  *
  * Nhờ base36, số thứ tự tự động "tràn" sang chữ cái: 9999 = `23P`, 10000 = `23Q`.
- * Nên KHÔNG cần nhánh xử lý riêng cho giới hạn 9999 — 36^4 = 1.679.616 đơn/ngày.
+ * Nên KHÔNG cần nhánh xử lý riêng cho giới hạn 9999 - 36^4 = 1.679.616 đơn/ngày.
  */
 
 export function businessDateOf(instant: Date): string {
@@ -2329,7 +2329,7 @@ const BARE_DAY = /^\d{4}-\d{2}-\d{2}$/;
  *
  * `created_at` luôn là UTC, còn mọi nút "HÔM NAY / 7 NGÀY / 30 NGÀY" người dùng
  * bấm đều nghĩa là ngày VIỆT NAM. Trước đây caller gửi `toISOString().slice(0,10)`
- * — tức NGÀY UTC — rồi ta so chuỗi thô. Hậu quả: báo cáo hôm nay thiếu trọn
+ * - tức NGÀY UTC - rồi ta so chuỗi thô. Hậu quả: báo cáo hôm nay thiếu trọn
  * ca 00:00–07:00 và lại nuốt đơn 17:00–24:00 của hôm qua. Người dùng đối chiếu
  * sổ với két thì lệch, và không có màn hình nào chỉ ra lệch ở đâu.
  *
@@ -2337,7 +2337,7 @@ const BARE_DAY = /^\d{4}-\d{2}-\d{2}$/;
  *   · 'YYYY-MM-DD' trần  = NGÀY NGHIỆP VỤ → so ngày VN của `created_at`,
  *     bao trọn cả ngày, không lệch 7 tiếng, và không lỗ với việc cột lưu
  *     hai họ timestamp (SQLite CURRENT_TIMESTAMP 'YYYY-MM-DD HH:mm:ss' và ISO
- *     'YYYY-MM-DDTHH:mm:ssZ' mà app ghi) — vì `datetime()` nhận được cả hai.
+ *     'YYYY-MM-DDTHH:mm:ssZ' mà app ghi) - vì `datetime()` nhận được cả hai.
  *   · chuỗi dài hơn (ISO đầy đủ) = MỐC THỜI GIAN UTC → so thô như trước, giữ
  *     nguyên hành vi cho `TopEditionsPanel` và `executive-query` vốn truyền
  *     `toISOString()`.
@@ -2388,7 +2388,7 @@ export function cutoffInstantOf(businessDate: string, cutoff: string): Date {
 
 /**
  * Đồng hồ dùng cho kiểm tra chốt ca. CASHBOX_TEST_NOW chỉ dùng cho test tự
- * động (đồng hồ thật ở mọi lần chạy thật) — để case "quá giờ" không phụ thuộc
+ * động (đồng hồ thật ở mọi lần chạy thật) - để case "quá giờ" không phụ thuộc
  * giờ thật lúc chạy suite.
  */
 function businessDayNow(): Date {
@@ -2412,7 +2412,7 @@ export interface ShiftCutoffEvaluation {
 /**
  * Ca quá giờ khi ĐÃ QUA mốc chốt ngày của chính ngày nghiệp vụ mà ca mở.
  * Nhờ vậy ca mở SAU NỬA ĐÊM (bán đêm, mở 00:10) thuộc ngày mới nên chưa quá
- * giờ — ca đêm hợp lệ không bị chặn.
+ * giờ - ca đêm hợp lệ không bị chặn.
  *
  * opened_at phải đi qua parseDbTimestamp: SQLite CURRENT_TIMESTAMP ghi UTC
  * không kèm múi giờ, đọc bằng `new Date()` sẽ lệch +7 tiếng ở GMT+7 và chặn
@@ -2427,7 +2427,7 @@ export function evaluateShiftCutoff(
   const opened = openedAt instanceof Date ? openedAt : parseDbTimestamp(openedAt);
 
   if (opened === null) {
-    // opened_at hỏng (dữ liệu cũ/sửa tay): KHÔNG chặn bán — một chốt chặn sai
+    // opened_at hỏng (dữ liệu cũ/sửa tay): KHÔNG chặn bán - một chốt chặn sai
     // chặn cả POS. Đồng thời cờ openedAtValid=false để báo cáo/cảnh báo thấy.
     const today = businessDateOf(now);
     return {
@@ -2550,7 +2550,7 @@ export class CashboxService {
   }
 
   /**
-   * Tính toán doanh thu tiền mặt, chuyển khoản và số đơn hàng thuộc phiên làm việc.
+   * Tính toán doanh thu tiền mặt, chuyển khoản và số đơn sách thuộc phiên làm việc.
    */
   static async calculateSessionStats(sessionId: string, txOrDb: any = db) {
     const sessionOrders = await txOrDb
@@ -2578,12 +2578,12 @@ export class CashboxService {
       }
     }
 
-    // FIX-09: trừ tiền hoàn (phiếu COMPLETED cùng ca) khỏi két — chốt ca khỏi lệch.
+    // FIX-09: trừ tiền hoàn (phiếu COMPLETED cùng ca) khỏi két - chốt ca khỏi lệch.
     // CHỈ tính hoàn của đơn gốc trả bằng TIỀN MẶT: hoàn chuyển khoản/QR đối soát
     // ngân hàng riêng, tiền đó chưa từng nằm trong két nên trừ vào két là BỎA
     // thêm một khoản tiền mặt. `return_orders.cashbox_session_id` do CLIENT gửi
     // và `createRequest` (return.service.ts:315) ghi thẳng, kể cả khi đơn gốc
-    // trả bằng chuyển khoản — nên phải lọc theo `orders.payment_method` thật.
+    // trả bằng chuyển khoản - nên phải lọc theo `orders.payment_method` thật.
     const refunds = await txOrDb
       .select({ refundAmount: returnOrders.refundAmount })
       .from(returnOrders)
@@ -2772,7 +2772,7 @@ export class CashboxService {
         cashierId: s.cashierId,
         // openedAt = ISO chuẩn có Z (mọi client parse đúng); openedAtRaw = giá trị
         // nguyên trong DB để đối chiếu. TUYỆT ĐỐI không đưa thẳng chuỗi DB ra
-        // API cho client tự parse — đó là chính là lỗi múi giờ này.
+        // API cho client tự parse - đó là chính là lỗi múi giờ này.
         openedAt: evaluation.openedAt,
         openedAtRaw: s.openedAt,
         businessDate: evaluation.businessDate,
@@ -2805,7 +2805,7 @@ export class CashboxService {
   }
 
   /**
-   * CHỐT CA TỰ ĐỘNG — chỉ gọi được bởi quản lý.
+   * CHỐT CA TỰ ĐỘNG - chỉ gọi được bởi quản lý.
    *
    * KHÔNG bịa tiền thực đếm: closingCashActual = NULL, cashDiscrepancy = NULL,
    * discrepancyVerified = false. Audit riêng (AUTO_CLOSE_SHIFT, actor SYSTEM)
@@ -2898,7 +2898,7 @@ export class CashboxService {
       const updateResult = await tx
         .update(cashboxSessions)
         .set({
-          closingCashActual: null, // KHÔNG có số đếm — KHÔNG được bịa
+          closingCashActual: null, // KHÔNG có số đếm - KHÔNG được bịa
           expectedCash,
           cashDiscrepancy: null, // lệch chưa kiểm chứng
           totalCashSales: stats.totalCashSales,
@@ -2951,7 +2951,7 @@ export class CashboxService {
   }
 
   /**
-   * CẬP NHẬT SỐ TIỀN THỰC ĐẾM (POST-AUDIT) — Chỉ Quản lý/Chủ cửa hàng.
+   * CẬP NHẬT SỐ TIỀN THỰC ĐẾM (POST-AUDIT) - Chỉ Quản lý/Chủ cửa hàng.
    * Dùng khi ca bị tự động chốt (closingCashActual = null) hoặc cần đối soát
    * lại số tiền thực tế trong két sau khi đã đóng ca.
    */

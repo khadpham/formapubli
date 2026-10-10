@@ -14,7 +14,7 @@ const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 const CATEGORIES = [...CONTRACT_CATEGORIES, 'TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
 
 /**
- * POST /api/ai/contracts/smart-finalize — chốt bản soạn thông minh thành hợp đồng.
+ * POST /api/ai/contracts/smart-finalize - chốt bản soạn thông minh thành hợp đồng.
  * Tạo mẫu AI one-off từ văn bản cuối (đã áp dụng adjustments được duyệt) rồi tạo document.
  */
 export async function POST(req: NextRequest) {
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     });
     // Ghi chú mẫu gốc vào description
     await db.update(contractTemplates)
-      .set({ description: `Soạn thông minh từ mẫu ${parent.code} — ${accepted.length} điều chỉnh được duyệt.` })
+      .set({ description: `Soạn thông minh từ mẫu ${parent.code} - ${accepted.length} điều chỉnh được duyệt.` })
       .where(eq(contractTemplates.id, oneOffId));
 
     const fieldValues: Record<string, string> =

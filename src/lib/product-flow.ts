@@ -1,5 +1,5 @@
 /**
- * Nhịp Bán — insight thuần túy từ buckets ngày + sự kiện bán (quy tắc cố định,
+ * Nhịp Bán - insight thuần túy từ buckets ngày + sự kiện bán (quy tắc cố định,
  * không AI). Mọi con số chủ đọc được đều từ hàm này mà ra.
  */
 
@@ -69,7 +69,7 @@ export function buildFlowInsights(
       byHour[(d.getUTCHours() + 7) % 24] += q;
     }
     if (focusWarehouseId && e.warehouseId === focusWarehouseId) focusQty += q;
-    const ch = e.channel || '—';
+    const ch = e.channel || '-';
     byChannel.set(ch, (byChannel.get(ch) || 0) + q);
   }
   let peakHour: number | null = null;

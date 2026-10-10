@@ -9,12 +9,12 @@ import type { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * Trạng thái quầy hội chợ — TẠI THỜI ĐIỂM NÀY, không phải báo cáo.
+ * Trạng thái quầy hội chợ - TẠI THỜI ĐIỂM NÀY, không phải báo cáo.
  *
  * Khác Báo Cáo Chốt Ngày ở 3 điểm, và đó là cả tính năng:
  *  1. Tự làm mới khi modal mở, không cần bấm (chốt ngày thì bấm tay một lần).
  *  2. Mặc định TẤT CẢ kho hội chợ; có thể chọn 1 kho và 1 ngày (02/10/2026).
- *  3. Có đơn CHƯA ĐÓNG (`PENDING_CONFIRMATION`) — báo cáo ngày chỉ tính
+ *  3. Có đơn CHƯA ĐÓNG (`PENDING_CONFIRMATION`) - báo cáo ngày chỉ tính
  *     `COMPLETED` nên không bao giờ thấy trạng thái "đang chờ".
  *
  * Ngày nghiệp vụ theo GIỜ VIỆT NAM, giống hệt `businessDateOf` mà báo cáo
@@ -31,7 +31,7 @@ function vnToday(now = new Date()): string {
 }
 
 /**
- * Điều kiện "đơn thuộc ngày nghiệp vụ `date`" — NGÀY VIỆT NAM, không phải ngày UTC.
+ * Điều kiện "đơn thuộc ngày nghiệp vụ `date`" - NGÀY VIỆT NAM, không phải ngày UTC.
  *
  * `created_at` luôn là UTC, còn `date` ở đây là ngày VN. So `created_at LIKE
  * 'YYYY-MM-DD%'` tức là so với NGÀY UTC, lệch 7 giờ với ngày đang hiển thị:
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
     const fairIds = fairRows.map((w) => w.id);
     // `?warehouseId=` trỏ tới kho không phải kho hội chợ, hoặc không tồn tại, là lỗi
     // cấu hình/đường dẫn. Trả 200 rỗng im lặng sẽ khiến người dùng tưởng kho hôm
-    // nay không có phát sinh — nguy hiểm hơn là báo lỗi.
+    // nay không có phát sinh - nguy hiểm hơn là báo lỗi.
     if (onlyWarehouse && !fairIds.includes(onlyWarehouse)) {
       return NextResponse.json(
         {
@@ -192,7 +192,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 4. Đơn vừa đóng (5 dòng) — câu trả lời "vừa xong gì". Lọc theo ngày làm
+    // 4. Đơn vừa đóng (5 dòng) - câu trả lời "vừa xong gì". Lọc theo ngày làm
     // việc như KPI và top sản phẩm, nếu không sẽ lọt đơn của hôm qua vào.
     const recentClosedRows = await db
       .select({
@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(orders.createdAt))
       .limit(5);
 
-    // 5. Ca nào đang mở — ai đang ở gian hàng nào.
+    // 5. Ca nào đang mở - ai đang ở gian hàng nào.
     const shiftRows = await db
       .select({
         id: cashboxSessions.id,
@@ -229,7 +229,7 @@ export async function GET(req: NextRequest) {
 
     // Tiền mặt thu trong TỪNG CA đang mở. Phải gom theo `cashboxSessionId`, KHÔNG
     // theo warehouseId+cashierId: một thu ngân mở hai ca cùng kho sẽ bị cộng chung
-    // một số. Cũng KHÔNG lọc theo ngày — tiền thuộc về ca, nên ca qua nửa đêm vẫn
+    // một số. Cũng KHÔNG lọc theo ngày - tiền thuộc về ca, nên ca qua nửa đêm vẫn
     // phải tính đủ cả hai mốc ngày. KHÔNG dùng cột `totalCashSales`: đó là bản chốt
     // lúc đóng ca nên LUÔN bằng 0 khi ca còn mở (báo cáo chốt ngày đang mắc lỗi này;
     // kế hoạch B sẽ sửa cho khớp).
@@ -335,7 +335,7 @@ export async function GET(req: NextRequest) {
       success: true,
       data: {
         businessDate: date,
-        timezoneNote: 'Ngày làm việc Việt Nam (UTC+7) — cùng mốc ngày với Báo Cáo Chốt Ngày, hai nơi không lệch nhau.',
+        timezoneNote: 'Ngày làm việc Việt Nam (UTC+7) - cùng mốc ngày với Báo Cáo Chốt Ngày, hai nơi không lệch nhau.',
         actorRole: session.role,
         fairWarehouses: fairRows,
         today: {

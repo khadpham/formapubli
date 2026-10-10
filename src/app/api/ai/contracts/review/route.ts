@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 const MAX_BYTES = 5 * 1024 * 1024;
 
-/** POST /api/ai/contracts/review — AI phản biện theo checklist loại hợp đồng. */
+/** POST /api/ai/contracts/review - AI phản biện theo checklist loại hợp đồng. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       success: true,
-      data: { issues, disclaimer: 'Kết quả chỉ mang tính tham khảo — cần người có trách nhiệm duyệt trước khi quyết định.' },
+      data: { issues, disclaimer: 'Kết quả chỉ mang tính tham khảo - cần người có trách nhiệm duyệt trước khi quyết định.' },
     });
   } catch (error: any) {
     if (error instanceof ContractAIError) {

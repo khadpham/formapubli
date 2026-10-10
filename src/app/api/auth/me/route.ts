@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     try {
       await validateSessionAccount(session);
     } catch (err: any) {
-      // Lỗi CSDL tạm thời (503) không xóa cookie — client retry, tránh văng
+      // Lỗi CSDL tạm thời (503) không xóa cookie - client retry, tránh văng
       // oan khi DB sụt nhất thời. Chỉ xóa cookie khi auth thật sự hết hiệu lực.
       if (err?.status === 503) return handleApiError(err);
       const res = handleApiError(err);

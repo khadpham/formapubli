@@ -1,5 +1,5 @@
 /**
- * src/lib/stock-highlight.ts — Chuẩn hoá ngưỡng cảnh báo tồn kho và màu sắc hiển thị.
+ * src/lib/stock-highlight.ts - Chuẩn hoá ngưỡng cảnh báo tồn kho và màu sắc hiển thị.
  *
  * Tiêu chí thiết kế theo phản hồi thực tế:
  *  - Màu sắc nhẹ nhàng, dịu mắt (pastel nhẹ), không dùng màu đỏ rực gay gắt.

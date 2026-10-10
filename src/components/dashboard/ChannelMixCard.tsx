@@ -16,7 +16,7 @@ const CHANNEL_LABELS: Record<string, string> = {
 const PALETTE = ['bg-indigo-600', 'bg-amber-500', 'bg-emerald-600', 'bg-rose-500', 'bg-slate-400'];
 
 /**
- * Khoá ngày nghiệp vụ VN của 7 ngày gần nhất — ĐÚNG cửa sổ với biểu đồ doanh thu 7 ngày.
+ * Khoá ngày nghiệp vụ VN của 7 ngày gần nhất - ĐÚNG cửa sổ với biểu đồ doanh thu 7 ngày.
  * Dùng `vnBusinessDay` + `shiftVnDay` để không lệch 7 tiếng với ngày người đọc.
  */
 function recentDayKeys(now: Date = new Date()): Set<string> {
@@ -63,7 +63,7 @@ function buildRows(orders: any[], now: Date = new Date()): ChannelRow[] {
 }
 
 /**
- * Nhận xét chân thẻ — CHỈ dùng số đã tính ở trên, không bịa thêm số liệu nào.
+ * Nhận xét chân thẻ - CHỈ dùng số đã tính ở trên, không bịa thêm số liệu nào.
  */
 function footnote(rows: ChannelRow[], totalOrders: number): string {
   if (rows.length === 0) return '';

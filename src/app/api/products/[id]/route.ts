@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
  * KHÔNG cho đổi `code` sau khi đã nhập: mã là mã vạch người bán dán lên sản
  * phẩm, đổi giữa chừng làm hàng cũ không tra được. Muốn đổi thì tạo mới.
  *
- * `costPrice` KHÔNG còn được nhận — xem giải thích ở `/api/products/route.ts`.
+ * `costPrice` KHÔNG còn được nhận - xem giải thích ở `/api/products/route.ts`.
  */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -39,12 +39,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     });
 
     await recordAuditLog({
-      // Xem giải thích ở /api/products/route.ts — `ADJUST_STOCK`, không tự thêm action.
+      // Xem giải thích ở /api/products/route.ts - `ADJUST_STOCK`, không tự thêm action.
       action: 'ADJUST_STOCK',
       actorRole: session.role,
       actorId: session.actorId,
       resource: '/api/products',
-      details: `Sửa hàng hóa ${updated.code} — ${updated.name}.`,
+      details: `Sửa hàng hóa ${updated.code} - ${updated.name}.`,
     });
 
     return NextResponse.json({ success: true, product: updated });

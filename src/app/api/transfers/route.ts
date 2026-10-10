@@ -17,8 +17,8 @@ function toQty(v: unknown): number {
 }
 
 // GET /api/transfers?status=IN_TRANSIT&limit=50
-// GET /api/transfers?staleHours=12 — phiếu kẹt quá ngưỡng
-// GET /api/transfers?id=TRF-... — chi tiết 1 phiếu
+// GET /api/transfers?staleHours=12 - phiếu kẹt quá ngưỡng
+// GET /api/transfers?id=TRF-... - chi tiết 1 phiếu
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
         );
       }
       // Ràng buộc kho được gán: chỉ được xuất hàng TỪ kho của mình. Kho nhận
-      // (`to`) là kho người khác nên không ràng — chỉ chặn phía gửi (fail-closed).
+      // (`to`) là kho người khác nên không ràng - chỉ chặn phía gửi (fail-closed).
       assertAssignedWarehouse(session, fromWarehouseId);
       const result = await TransferService.dispatch({
         fromWarehouseId,
