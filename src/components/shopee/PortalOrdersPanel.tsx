@@ -164,6 +164,33 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
     });
   };
 
+  /** Hủy đơn portal */
+  const handleCancelOrder = async (orderId: string, orderCode: string) => {
+    setConfirmDlg({
+      msg: `Hủy đơn ${orderCode}? Đơn sẽ bị hủy và nhả giữ chỗ kho.`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        try {
+          const res = await fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'CANCEL', orderId }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            await fetchOrders();
+            if (selected && selected.id === orderId) setSelected(null);
+            showToast('Đã hủy đơn.', 'success');
+          } else {
+            showToast('Lỗi hủy đơn: ' + (data.error || 'Thao tác không thành công'), 'error');
+          }
+        } catch {
+          showToast('Lỗi mạng khi hủy đơn', 'error');
+        }
+      },
+    });
+  };
+
   /** Cập nhật trạng thái giao hàng */
   const handleUpdateShipping = async (orderId: string, newStatus: string, trackingCode?: string) => {
     const body: any = { shippingStatus: newStatus };
@@ -610,6 +637,14 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
                               Xuất kho
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleCancelOrder(o.id, displayCode(o).main)}
+                            title="Hủy đơn này"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap bg-slate-100 hover:bg-rose-100 hover:text-rose-700 text-slate-600 transition active:scale-95"
+                          >
+                            Hủy đơn
+                          </button>
 
                           {/* Bước 2 & 3: Các bước chuyển trạng thái vận chuyển */}
                           {next ? (
