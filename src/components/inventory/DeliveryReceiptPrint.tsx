@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Printer, X } from 'lucide-react';
+import { Printer, Trash2, X } from 'lucide-react';
 import { BrowserQRCodeSvgWriter } from '@zxing/library';
 import { COMPANY_HOTLINE } from '@/lib/companyInfo';
 
@@ -48,6 +48,8 @@ interface DeliveryReceiptPrintProps {
   order: DeliveryOrderData;
   isOpen: boolean;
   onClose: () => void;
+  /** Callback xóa phiếu nháp — chỉ dùng khi order.status === 'DRAFT'. */
+  onDeleteDraft?: (orderId: string) => Promise<void>;
 }
 
 interface CompanyProfileState {
@@ -60,7 +62,7 @@ interface CompanyProfileState {
 /**
  * Chuyển số nguyên thành chữ tiếng Việt chuẩn kế toán
  */
-function numberToVietnameseWords(n: number): string {
+export function numberToVietnameseWords(n: number): string {
   if (n === 0) return 'Không đồng';
   const units = ['', 'nghìn', 'triệu', 'tỷ', 'nghìn tỷ', 'triệu tỷ'];
   const digits = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
@@ -72,8 +74,12 @@ function numberToVietnameseWords(n: number): string {
     let res = '';
 
     if (h > 0 || t > 0 || u > 0) {
-      res += digits[h] + ' trăm ';
-      if (t === 0 && u > 0) res += 'lẻ ';
+      // Chỉ đọc "trăm"/"lẻ" khi có hàng trăm — nhóm cao nhất (vd: 1 triệu)
+      // không được đọc thành "không trăm lẻ một triệu".
+      if (h > 0) {
+        res += digits[h] + ' trăm ';
+        if (t === 0 && u > 0) res += 'lẻ ';
+      }
       if (t === 1) res += 'mười ';
       if (t > 1) res += digits[t] + ' mươi ';
       if (t > 0 && u === 1 && t !== 1) res += 'mốt ';
@@ -381,7 +387,7 @@ function ReceiptContent({
   );
 }
 
-export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceiptPrintProps) {
+export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: DeliveryReceiptPrintProps) {
   const [mounted, setMounted] = useState(false);
   const [qrSvgXml, setQrSvgXml] = useState<string>('');
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileState>({
@@ -449,6 +455,21 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
+
+  const handleDeleteDraft = async () => {
+    if (!onDeleteDraft || order.status !== 'DRAFT' || isDeletingDraft) return;
+    if (!window.confirm(`Xoá bản nháp ${order.code}? Hành động này không thể hoàn tác.`)) return;
+    setIsDeletingDraft(true);
+    try {
+      await onDeleteDraft(order.id);
+    } catch (err: any) {
+      alert(err?.message || 'Xoá bản nháp thất bại');
+    } finally {
+      setIsDeletingDraft(false);
+    }
   };
 
   return (
@@ -558,6 +579,17 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose }: DeliveryReceipt
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {order.status === 'DRAFT' && onDeleteDraft && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteDraft}
+                    disabled={isDeletingDraft}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {isDeletingDraft ? 'Đang xoá...' : 'Xoá Nháp'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handlePrint}

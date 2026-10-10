@@ -1184,20 +1184,46 @@ export function WholesaleDispatchModal({
       </div>
 
       {/* Modal in phiếu xuất kho A4 (Chính thức hoặc Xem trước) */}
-      {(createdOrderForPrint || previewOrderForPrint) && (
-        <DeliveryReceiptPrint
-          order={createdOrderForPrint || previewOrderForPrint!}
-          isOpen={!!(createdOrderForPrint || previewOrderForPrint)}
-          onClose={() => {
-            if (createdOrderForPrint) {
-              setCreatedOrderForPrint(null);
-              onClose();
-            } else {
-              setPreviewOrderForPrint(null);
-            }
-          }}
-        />
-      )}
+      {(createdOrderForPrint || previewOrderForPrint) &&
+        (() => {
+          const orderForPrint = createdOrderForPrint || previewOrderForPrint!;
+          // Chỉ cho xóa khi là nháp THẬT trong DB (preview chưa lưu dùng id giả 'preview-id').
+          const canDeleteDraft =
+            orderForPrint.status === 'DRAFT' && orderForPrint.id !== 'preview-id';
+          return (
+            <DeliveryReceiptPrint
+              order={orderForPrint}
+              isOpen={true}
+              onClose={() => {
+                if (createdOrderForPrint) {
+                  setCreatedOrderForPrint(null);
+                  onClose();
+                } else {
+                  setPreviewOrderForPrint(null);
+                }
+              }}
+              onDeleteDraft={
+                canDeleteDraft
+                  ? async (orderId: string) => {
+                      const res = await fetch(`/api/delivery-orders/${orderId}`, {
+                        method: 'DELETE',
+                        headers: { 'x-formapubli-role': currentRole },
+                      });
+                      const json = await res.json().catch(() => ({}));
+                      if (!res.ok || !json.success) {
+                        throw new Error(json.error || 'Xoá bản nháp thất bại');
+                      }
+                      setPreviewOrderForPrint(null);
+                      setCreatedOrderForPrint(null);
+                      setEditingDraftId(null);
+                      setEditingDraftCode(null);
+                      fetchDrafts();
+                    }
+                  : undefined
+              }
+            />
+          );
+        })()}
     </>,
     document.body
   );
