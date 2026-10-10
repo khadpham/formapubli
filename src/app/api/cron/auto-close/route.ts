@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { CashboxService, OrderService } from '@/services/order.service';
 import { DailySettlementService } from '@/services/daily-settlement.service';
 import { db, warehouses, idempotencyKeys, orders, cashboxSessions } from '@/db';
-import { eq, like, sql } from 'drizzle-orm';
+import { eq, like, sql, ne, notLike, and } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,8 +60,18 @@ export async function GET(req: NextRequest) {
 async function handle(req: NextRequest) {
   const url = new URL(req.url);
   // Danh sách kho để bên gọi quét từng kho (xem giải thích giới hạn bên dưới).
+  // Chỉ lấy kho vật lý — loại kho ký gửi (CONSIGNMENT hoặc code KHO_KY_GUI%)
+  // vì kho ký gửi không phải kho thật, không cần chốt ca/ngày.
   if (url.searchParams.get('list') === '1') {
-    const all = await db.select({ code: warehouses.code, id: warehouses.id }).from(warehouses);
+    const all = await db
+      .select({ code: warehouses.code, id: warehouses.id })
+      .from(warehouses)
+      .where(
+        and(
+          ne(warehouses.warehouseType, 'CONSIGNMENT'),
+          notLike(warehouses.code, 'KHO_KY_GUI%')
+        )
+      );
     return NextResponse.json({ success: true, data: { warehouses: all } });
   }
 
@@ -128,7 +138,13 @@ async function listUnclosed(days: number) {
       // lệch 7 tiếng: kho sinh lúc 02:00 VN bị coi là đã tồn tại từ hôm trước.
       bornDay: sql<string | null>`substr(datetime(${warehouses.createdAt}, '+7 hours'), 1, 10)`,
     })
-    .from(warehouses);
+    .from(warehouses)
+    .where(
+      and(
+        ne(warehouses.warehouseType, 'CONSIGNMENT'),
+        notLike(warehouses.code, 'KHO_KY_GUI%')
+      )
+    );
   const closedKeys = await db
     .select({ key: idempotencyKeys.key })
     .from(idempotencyKeys)
@@ -258,7 +274,15 @@ async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
   );
   }
 
-  const all = await db.select().from(warehouses);
+  const all = await db
+    .select()
+    .from(warehouses)
+    .where(
+      and(
+        ne(warehouses.warehouseType, 'CONSIGNMENT'),
+        notLike(warehouses.code, 'KHO_KY_GUI%')
+      )
+    );
   const target = onlyWarehouse
     ? all.filter((w) => w.code === onlyWarehouse || w.id === onlyWarehouse)
     : all;
