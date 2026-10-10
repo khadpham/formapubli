@@ -14,17 +14,29 @@ import {
 export const revalidate = 0; // Dynamic real-time server rendering
 
 export default async function HomePage() {
+  // DIAG 1101 (tam thoi — go khi tim ra root cause): do thoi gian tung buoc
+  // de biet request treo o dau trong Workers Logs.
+  const diagT = (label: string) => {
+    const s = Date.now();
+    return () => console.log(`[DIAG-1101] ${label}: ${Date.now() - s}ms`);
+  };
+  const doneCookies = diagT('cookies()');
   const cookieStore = await cookies();
+  doneCookies();
   const sessionRaw = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  const doneVerify = diagT('verifySessionCookie');
   let session: SessionPayload | null = await verifySessionCookie(sessionRaw);
+  doneVerify();
 
   // Kiểm tra thời gian thực trạng thái tài khoản
   if (session) {
+    const doneValidate = diagT('validateSessionAccount');
     try {
       await validateSessionAccount(session);
     } catch {
       session = null;
     }
+    doneValidate();
   }
 
   // LÁ CHẮN BẢO MẬT SSR (Data Leakage Guard):
@@ -55,15 +67,24 @@ export default async function HomePage() {
     const isTaxRole = role === 'ROLE_TAX';
     const isCashierRole = role === 'ROLE_CASHIER';
 
+    const doneMatrix = diagT('getStockMatrix');
     matrixBooks = await InventoryService.getStockMatrix();
+    doneMatrix();
     // ROLE_TAX và ROLE_CASHIER không xem thẻ kho chi tiết nội bộ
+    const doneLedger = diagT('getLedgerHistory');
     ledgerList = isTaxRole || isCashierRole ? [] : await InventoryService.getLedgerHistory(25);
+    doneLedger();
+    const doneWh = diagT('WarehouseService.listAll');
     warehouseList = await WarehouseService.listAll();
+    doneWh();
     // ROLE_TAX và ROLE_CASHIER không load danh sách đối tác nhà cung cấp nhạy cảm
+    const donePartners = diagT('partners select');
     partnerList = isTaxRole || isCashierRole ? [] : await db.select().from(partners);
+    donePartners();
   } catch (error: any) {
     dbStatus = 'Lỗi kết nối: ' + error.message;
   }
+  diagT('render MasterAppShell')();
 
   return (
     <MasterAppShell

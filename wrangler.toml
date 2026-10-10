@@ -1,7 +1,10 @@
 name = "formapubli"
 main = ".open-next/worker.js"
 compatibility_date = "2024-12-30"
-compatibility_flags = ["nodejs_compat"]
+# DIAG 1101 (tam thoi): fail-fast thay vi treo câm khi promise dung chung
+# state giua cac request — bien 1101 "hung" thanh loi doc duoc.
+# Xem: https://developers.cloudflare.com/workers/observability/errors/
+compatibility_flags = ["nodejs_compat", "no_handle_cross_request_promise_resolution"]
 
 [assets]
 directory = ".open-next/assets"
