@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** POST /api/ai/contracts/milestones — thêm cột mốc. */
+/** POST /api/ai/contracts/milestones - thêm cột mốc. */
 export async function POST(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** PATCH /api/ai/contracts/milestones — link hợp đồng đã ký / đổi trạng thái. */
+/** PATCH /api/ai/contracts/milestones - link hợp đồng đã ký / đổi trạng thái. */
 export async function PATCH(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);

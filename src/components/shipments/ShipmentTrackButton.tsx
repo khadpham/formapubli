@@ -3,7 +3,7 @@
 import React from 'react';
 import { Truck } from 'lucide-react';
 
-/** Base tra cứu SPX — team đối chiếu lại với tài liệu SPX khi có AppKey. */
+/** Base tra cứu SPX - team đối chiếu lại với tài liệu SPX khi có AppKey. */
 export const SPX_TRACK_URL_BASE = 'https://spx.vn/track';
 
 export function buildTrackingUrl(carrier: string | null, trackingCode: string | null): string | null {
@@ -13,7 +13,7 @@ export function buildTrackingUrl(carrier: string | null, trackingCode: string | 
 }
 
 /**
- * Bước 2 — Nút tra cứu vận đơn 1-click (team wire vào màn chi tiết đơn).
+ * Bước 2 - Nút tra cứu vận đơn 1-click (team wire vào màn chi tiết đơn).
  * Không fetch gì, chỉ mở link tracking.
  */
 export function ShipmentTrackButton({
@@ -31,7 +31,7 @@ export function ShipmentTrackButton({
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition"
-      title={`Tra cứu ${carrier} — ${trackingCode}`}
+      title={`Tra cứu ${carrier} - ${trackingCode}`}
     >
       <Truck className="w-4 h-4" />
       <span>Tra cứu {carrier} ({trackingCode})</span>

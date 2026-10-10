@@ -68,7 +68,7 @@ function formatPrice(value: number): string {
  *
  * Người Việt gõ `8.900` / `89.000` (dấu chấm = phân cách nghìn) hoặc `89,000`
  * (dấu phẩy = phân cách nghìn theo thói quen gõ phím). Ô nhập là `type="text"`
- * vì `type="number"` sẽ đọc `8.900` thành 8.9 và lưu 9đ — hỏng tiền âm thầm,
+ * vì `type="number"` sẽ đọc `8.900` thành 8.9 và lưu 9đ - hỏng tiền âm thầm,
  * không báo lỗi nào, chỉ phát hiện khi đối chiếu cuối ngày.
  *
  * Có CẢ dấu chấm và dấu phẩy ⇒ dấu CUỐI cùng mới là dấu thập phân.
@@ -87,7 +87,7 @@ export function normalizePrice(raw: string): number {
     norm = s.replace(/,/g, '');
   } else if (lastDot > -1) {
     // Chỉ có dấu chấm: coi là phân cách nghìn theo thói quen gõ phím VN, TRỪ KHI
-    // dấu chấm ở cuối và chỉ 1–2 chữ số sau — đó mới là thập phân (89.900,50).
+    // dấu chấm ở cuối và chỉ 1–2 chữ số sau - đó mới là thập phân (89.900,50).
     norm = /^\d{1,3}\.\d{1,2}$/.test(s) ? s : s.replace(/\./g, '');
   } else {
     norm = s;
@@ -558,7 +558,7 @@ export function GoodsCatalogManager() {
             Hàng Hóa
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Mã bắt đầu bằng SP-. Hàng đã bán không xoá được — dùng Ngưng hoạt động.
+            Mã bắt đầu bằng SP-. Hàng đã bán không xoá được - dùng Ngưng hoạt động.
           </p>
         </div>
         <button
@@ -647,7 +647,7 @@ export function GoodsCatalogManager() {
                   <td className="px-3 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
                     {formatPrice(row.sellingPrice)}
                   </td>
-                  <td className="px-3 py-2 font-mono text-slate-500">{row.barcode || '—'}</td>
+                  <td className="px-3 py-2 font-mono text-slate-500">{row.barcode || '-'}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {row.isActive ? (
                       <span className="text-emerald-700 font-bold">Đang bán</span>

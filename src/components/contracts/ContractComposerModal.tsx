@@ -231,7 +231,7 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
             <div className="flex gap-2 items-end">
               <label className="block flex-1">Đối tác (tự điền)
                 <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white">
-                  <option value="">— Không chọn —</option>
+                  <option value="">- Không chọn -</option>
                   {partners.map((p: any) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -292,7 +292,7 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
             </button>
           </div>
           <div className="p-5 overflow-y-auto bg-slate-100">
-            <p className="text-[11px] text-slate-500 mb-2">Xem trước trực tiếp (xấp xỉ — bản in chuẩn là file Word tải về)</p>
+            <p className="text-[11px] text-slate-500 mb-2">Xem trước trực tiếp (xấp xỉ - bản in chuẩn là file Word tải về)</p>
             {previewError && <p className="text-[11px] text-rose-600 font-semibold mb-2">{previewError}</p>}
             <ContractPrintPreview previewRef={previewBox} />
           </div>

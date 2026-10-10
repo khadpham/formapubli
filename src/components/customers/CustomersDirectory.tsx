@@ -39,7 +39,7 @@ export function CustomersDirectory() {
       <div className="p-4 border-b border-slate-100 flex items-center gap-2">
         <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
           <Users className="w-4 h-4 text-rose-600" />
-          Danh Bạ Độc Giả (GĐ1 read-only) — {total} hồ sơ
+          Danh Bạ Độc Giả (GĐ1 read-only) - {total} hồ sơ
         </div>
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-1.5 border border-slate-300 rounded-lg px-2 py-1.5">
@@ -65,7 +65,7 @@ export function CustomersDirectory() {
         <p className="p-4 text-center text-xs text-slate-400">Đang tải danh bạ...</p>
       ) : rows.length === 0 ? (
         <p className="p-6 text-center text-xs text-slate-400">
-          Chưa có hồ sơ nào (seed Sheets cũ chưa nạp customers). Thêm/sửa để sprint CRM sau — ticket này chỉ đọc.
+          Chưa có hồ sơ nào (seed Sheets cũ chưa nạp customers). Thêm/sửa để sprint CRM sau - ticket này chỉ đọc.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -86,9 +86,9 @@ export function CustomersDirectory() {
                 <tr key={c.id} className="hover:bg-slate-50/60">
                   <td className="px-3 py-2 font-mono font-bold text-rose-700">{c.code}</td>
                   <td className="px-3 py-2 font-semibold text-slate-900">{c.fullName}</td>
-                  <td className="px-3 py-2 font-mono">{c.phone || '—'}</td>
-                  <td className="px-3 py-2">{c.channel || '—'}</td>
-                  <td className="px-3 py-2">{c.segment || '—'}</td>
+                  <td className="px-3 py-2 font-mono">{c.phone || '-'}</td>
+                  <td className="px-3 py-2">{c.channel || '-'}</td>
+                  <td className="px-3 py-2">{c.segment || '-'}</td>
                   <td className="px-3 py-2 text-right font-mono">{Number(c.totalSpent || 0).toLocaleString('vi-VN')} đ</td>
                   <td className="px-3 py-2"><ReaderProfilePanel customerId={c.id} customerName={c.fullName} /></td>
                 </tr>
@@ -98,7 +98,7 @@ export function CustomersDirectory() {
         </div>
       )}
       <p className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100">
-        Tích lũy LTV / tủ sách chống trùng / gói Mùa để sprint CRM sau — không nhúng vào POS ở ticket này để giữ speed 2-3s.
+        Tích lũy LTV / tủ sách chống trùng / gói Mùa để sprint CRM sau - không nhúng vào POS ở ticket này để giữ speed 2-3s.
       </p>
     </div>
   );

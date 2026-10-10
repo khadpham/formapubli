@@ -5,7 +5,7 @@ import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
 /**
- * V4.1 S1.3 — Nút "Kiểm tra tồn kho": dry-run thuần đọc, không ghi gì.
+ * V4.1 S1.3 - Nút "Kiểm tra tồn kho": dry-run thuần đọc, không ghi gì.
  * Stale trả 200 + {ok:false} để UI highlight đỏ dòng thiếu (không toast lỗi);
  * chỉ commit mới ném 409.
  */

@@ -6,7 +6,7 @@ import { requireSessionRole, assertAssignedWarehouse } from '@/lib/auth-session'
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
-// P2-01/02/03 / P1b — Hardened: route bút toán kho trực tiếp (Default-Deny).
+// P2-01/02/03 / P1b - Hardened: route bút toán kho trực tiếp (Default-Deny).
 // - Chỉ OWNER, MANAGER, WAREHOUSE có session cookie hợp lệ.
 // - Allowlist event + nhất quán dấu + số nguyên + khóa chống lặp BẮT BUỘC.
 const ALLOWED_EVENTS = ['RECEIPT', 'ADJUSTMENT', 'DISPATCH_SALE'];
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     }
     if (!idempotencyKey || !`${idempotencyKey}`.trim()) {
       return NextResponse.json(
-        { error: 'Thiếu idempotencyKey — client phải sinh key mỗi lần bấm để chống double-click ghi trùng kho.' },
+        { error: 'Thiếu idempotencyKey - client phải sinh key mỗi lần bấm để chống double-click ghi trùng kho.' },
         { status: 400 }
       );
     }
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       unitCostSnapshot,
     });
 
-    // Cập nhật số lượng đã nhận của lệnh in (bộ đếm phụ — lỗi không chặn phiếu nhập).
+    // Cập nhật số lượng đã nhận của lệnh in (bộ đếm phụ - lỗi không chặn phiếu nhập).
     if (printOrderRef) {
       try {
         const { db } = await import('@/db');

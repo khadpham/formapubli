@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 
 /**
  * Khóa brute-force bền vững dùng chung DB (sống qua restart isolate và đa
- * instance edge — điều Map process-local không làm được).
+ * instance edge - điều Map process-local không làm được).
  *
  * - Tầng 2 sau limiter in-memory ở auth-session: route login gọi cả hai,
  *   chặn nếu MỘT trong hai từ chối; ghi fail vào cả hai; reset cả hai khi đúng.
@@ -113,7 +113,7 @@ export async function recordDbDualFail(
   return { staffLocked, ipLocked, remainingStaffAttempts };
 }
 
-/** Ghi 1 lần fail cho key tuỳ ý (vd: `mgrpin:<actor>`) — dùng cho rate-limit
+/** Ghi 1 lần fail cho key tuỳ ý (vd: `mgrpin:<actor>`) - dùng cho rate-limit
  *  mã PIN quản lý ở orders/returns. Fail-open khi lỗi DB như mọi tầng DB. */
 export async function recordDbFailKey(key: string, maxFails: number): Promise<{ locked: boolean; remaining: number }> {
   return bumpDbKey(key, maxFails);

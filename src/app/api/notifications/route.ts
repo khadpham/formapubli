@@ -21,7 +21,7 @@ const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * Cột `*_at` của các bảng nghiệp vụ có CẢ HAI kiểu giá trị đang tồn tại ngoài đời:
  * service POS ghi ISO-8601 (`2026-09-28T16:08:16.294Z`), còn cột có
  * `.default(sql\`CURRENT_TIMESTAMP\`)` mặc định là SQLite `YYYY-MM-DD HH:MM:SS`
- * (UTC, KHÔNG có `T`/`Z`). So sánh chuỗi giữa hai kiểu này là vô nghĩa —
+ * (UTC, KHÔNG có `T`/`Z`). So sánh chuỗi giữa hai kiểu này là vô nghĩa -
  * `'2026-09-28 16:08:16' > '2026-09-28T16:08:16.294Z'` luôn sai vì `' '` < `'T'`.
  */
 function toEpoch(value: unknown): number {
@@ -35,7 +35,7 @@ function toEpoch(value: unknown): number {
 }
 
 /**
- * Chuông thông báo — việc CẦN NGƯỜI DÙNG XỬ LÝ, hai chiều:
+ * Chuông thông báo - việc CẦN NGƯỜI DÙNG XỬ LÝ, hai chiều:
  * - Quản lý/Owner: thấy yêu cầu duyệt đang chờ, đơn chờ xác nhận, ca chưa chốt.
  * - Thu ngân: thấy trạng thái yêu cầu DUYỆT CỦA MÌNH (đã gửi / được duyệt / bị từ chối).
  * Người ngoài cuộc không thấy gì của người khác.
@@ -93,14 +93,14 @@ export async function GET(req: NextRequest) {
             .orderBy(desc(staffAccounts.createdAt))
             .limit(3)
         : Promise.resolve([]),
-      // 5) Danh sách đã ẩn — bảng phụ: đọc lỗi thì nuốt ngay tại đây, giữ nguyên
+      // 5) Danh sách đã ẩn - bảng phụ: đọc lỗi thì nuốt ngay tại đây, giữ nguyên
       // hành vi cũ (coi như chưa ẩn gì cả, tuyệt đối không để bảng phụ sập endpoint).
       Promise.resolve(
         db.select({ itemId: notificationDismissals.itemId, expiresAt: notificationDismissals.expiresAt })
           .from(notificationDismissals)
           .where(eq(notificationDismissals.actorId, session.actorId))
       ).catch((err: any) => {
-        console.warn('[notifications] Không đọc được notification_dismissals — coi như chưa ẩn mục nào:', err?.message ?? err);
+        console.warn('[notifications] Không đọc được notification_dismissals - coi như chưa ẩn mục nào:', err?.message ?? err);
         return [];
       }),
     ]);
@@ -117,11 +117,11 @@ export async function GET(req: NextRequest) {
         area: 'Duyệt chiết khấu',
         severity: expired ? 'danger' : (isManager ? 'warn' : 'info'),
         title: isManager
-          ? `Cần duyệt chiết khấu — đơn ${r.orderCode}`
-          : `Đã gửi yêu cầu duyệt chiết khấu — đơn ${r.orderCode}`,
+          ? `Cần duyệt chiết khấu - đơn ${r.orderCode}`
+          : `Đã gửi yêu cầu duyệt chiết khấu - đơn ${r.orderCode}`,
         body: (isManager
           ? `${r.cashierId} xin duyệt, hạn ${r.expiresAt}`
-          : `Đang chờ quản lý duyệt, hạn ${r.expiresAt}`) + (expired ? ' — ĐÃ HẾT HẠN' : ''),
+          : `Đang chờ quản lý duyệt, hạn ${r.expiresAt}`) + (expired ? ' - ĐÃ HẾT HẠN' : ''),
         at: `${r.createdAt || ''}`,
         href: isManager ? 'pos' : undefined,
       });
@@ -133,8 +133,8 @@ export async function GET(req: NextRequest) {
         area: 'Duyệt chiết khấu',
         severity: r.status === 'APPROVED' ? 'info' : 'danger',
         title: r.status === 'APPROVED'
-          ? `Yêu cầu duyệt chiết khấu ĐÃ ĐƯỢC DUYỆT — đơn ${r.orderCode}`
-          : `Yêu cầu duyệt chiết khấu BỊ TỪ CHỐI — đơn ${r.orderCode}`,
+          ? `Yêu cầu duyệt chiết khấu ĐÃ ĐƯỢC DUYỆT - đơn ${r.orderCode}`
+          : `Yêu cầu duyệt chiết khấu BỊ TỪ CHỐI - đơn ${r.orderCode}`,
         body: `${r.approvedBy || 'quản lý'} · ${r.rejectedReason || 'không có lý do'}`,
         at: `${r.updatedAt || r.createdAt || ''}`,
       });
@@ -142,9 +142,9 @@ export async function GET(req: NextRequest) {
 
     // 2) [ĐÃ GỠ 02/10 theo quyết định chủ] Đơn chờ xác nhận KHÔNG báo nữa:
     // đơn chờ (quầy chuyển khoản chờ ảnh, online chờ duyệt) không xin phê duyệt
-    // của ai — thu ngân tự thấy trong "Đơn Chờ" của POS mình. Báo cho quản lý/
+    // của ai - thu ngân tự thấy trong "Đơn Chờ" của POS mình. Báo cho quản lý/
     // thủ kho chỉ gây ồn, sai kho (không lọc kho), sai chữ ("khách online" cho
-    // cả đơn quầy). Giữ PendingOrdersView nguyên — đó là danh sách việc của
+    // cả đơn quầy). Giữ PendingOrdersView nguyên - đó là danh sách việc của
     // thu ngân, không phải thông báo.
 
     // 3) Ca của chính người dùng / ca đang mở (quản lý thấy hết).
@@ -153,7 +153,7 @@ export async function GET(req: NextRequest) {
       items.push({
         id: `shift-${s.id}`, kind: 'shift', area: 'Ca làm',
         severity: s.cashierId === session.actorId ? 'info' : 'warn',
-        title: `Ca đang mở — ${s.cashierId}`,
+        title: `Ca đang mở - ${s.cashierId}`,
         body: `Từ ${s.openedAt || '?'} · ${s.totalOrdersCount || 0} đơn. Nhớ chốt ca khi xong.`,
         at: `${s.openedAt || ''}`, href: 'sales',
       });
@@ -172,7 +172,7 @@ export async function GET(req: NextRequest) {
     items.sort((a, b) => toEpoch(b.at) - toEpoch(a.at));
 
     // Loại các mục người dùng đã ẩn/xóa (bảng dismissal, xem POST bên dưới).
-    // ĐỒNG BỘ: bảng này chỉ là bộ lọc phụ — đọc lỗi đã được nuốt trong Promise.all
+    // ĐỒNG BỘ: bảng này chỉ là bộ lọc phụ - đọc lỗi đã được nuốt trong Promise.all
     // ở trên (coi như CHƯA ẩn gì cả, vẫn trả đủ thông báo). Tuyệt đối không để một
     // bảng phụ làm sập toàn bộ endpoint.
     const hidden = new Set<string>(
@@ -195,16 +195,16 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Ẩn thông báo — vì thông báo SUY RA từ bảng nghiệp vụ (không có dòng lưu riêng),
+ * Ẩn thông báo - vì thông báo SUY RA từ bảng nghiệp vụ (không có dòng lưu riêng),
  * ta ghi danh sách id bị ẩn vào bảng nhỏ `notification_dismissals` (mẫu customer_tags).
  * action = 'dismiss' (ẩn 1 mục) | 'clear' (ẩn toàn bộ mục client đang hiện).
  *
  * Mỗi lần ẩn ghi kèm `expires_at` = nay + DISMISS_TTL_MS. Nếu không có hạn, quản lý
  * bấm "Xóa tất cả" lúc đang có yêu cầu duyệt sẽ không bao giờ thấy lại yêu cầu đó,
  * kể cả sau khi mở lại trang. Đây là dữ liệu dùng để giảm ồn trên UI, KHÔNG phải
- * audit log nên hết hạn là hành vi đúng — muốn duyệt thì phải còn thấy việc cần làm.
+ * audit log nên hết hạn là hành vi đúng - muốn duyệt thì phải còn thấy việc cần làm.
  *
- * ponytail: trần client gửi tối đa 200 id/lần và chỉ id đang hiện — không phình vô hạn.
+ * ponytail: trần client gửi tối đa 200 id/lần và chỉ id đang hiện - không phình vô hạn.
  */
 export async function POST(req: NextRequest) {
   try {

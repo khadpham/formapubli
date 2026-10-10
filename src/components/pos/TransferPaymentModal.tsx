@@ -8,7 +8,7 @@ import { createPhotoWriteGate } from '@/lib/photo-write-gate';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import type { PaymentProofPhoto } from '@/lib/offline-db';
 
-/** Cạnh dài tối đa của ảnh chụp — giữ file nhẹ để lưu IndexedDB trên máy thu ngân. */
+/** Cạnh dài tối đa của ảnh chụp - giữ file nhẹ để lưu IndexedDB trên máy thu ngân. */
 const MAX_CAPTURE_EDGE = 1280;
 const CAPTURE_MIME = 'image/jpeg';
 const CAPTURE_QUALITY = 0.8;
@@ -59,7 +59,7 @@ export const normalizeCapture = async (file: File): Promise<Blob> => {
  *
  * Một nguồn duy nhất cho modal: số tài khoản, nội dung và ảnh QR đều đọc từ
  * đây, nên chúng không thể mâu thuẫn nhau. `orderQuantity` là số lượng CHÍNH
- * THỨC của đơn (server trả về lúc tạo) — {SL} trên QR dựng từ số này, không
+ * THỨC của đơn (server trả về lúc tạo) - {SL} trên QR dựng từ số này, không
  * phải từ giỏ hàng.
  */
 export interface TransferQrSnapshot {
@@ -101,7 +101,7 @@ export interface TransferPaymentSession {
    * Số CUỐN SÁCH của đơn, do server tính lúc tạo (`bookQuantity`).
    *
    * Phiếu ghi "Tổng số sách" mà `totalQuantity` cộng cả dòng quà HÀNG HÓA (bookmark,
-   * móc khoá — dòng `edition_id = NULL`), nên đơn 1 cuốn ở hội chợ in ra "2 cuốn".
+   * móc khoá - dòng `edition_id = NULL`), nên đơn 1 cuốn ở hội chợ in ra "2 cuốn".
    * Đóng băng số sách vào phiên vì sau khi F5 thì giỏ rỗng, không còn cách nào tính
    * lại. Phiên cũ (lưu trước khi có trường này) không có giá trị ⇒ dùng
    * `qrSnapshot.orderQuantity`.
@@ -117,12 +117,12 @@ export interface TransferPaymentModalProps {
   cacheLabel?: string | null;
   /**
    * VietQrPay chưa tải xong danh sách tài khoản. Phải phân biệt với "không có
-   * tài khoản" (nguồn NONE) — nếu không, mọi đơn chuyển khoản bình thường đều báo
+   * tài khoản" (nguồn NONE) - nếu không, mọi đơn chuyển khoản bình thường đều báo
    * "chưa có tài khoản nhận" trong lúc tài khoản đang tải.
    */
   bankInfoLoading?: boolean;
   cashierId: string;
-  /** Ô Ghi chú dùng chung state với panel quầy — không phải state riêng. */
+  /** Ô Ghi chú dùng chung state với panel quầy - không phải state riêng. */
   note: string;
   setNote: (value: string) => void;
   onUsePhoto: (photo: PaymentProofPhoto) => Promise<void>;
@@ -133,7 +133,7 @@ export interface TransferPaymentModalProps {
 
 /**
  * Bước XÁC NHẬN của luồng chuyển khoản/QR: mã đơn, số tiền, tài khoản, nội
- * dung và QR — tất cả đọc từ MỘT bộ thông tin đã đóng băng của đơn, nên không
+ * dung và QR - tất cả đọc từ MỘT bộ thông tin đã đóng băng của đơn, nên không
  * thể lệch nhau. Camera đã mở ngay từ nút ở quầy; ảnh chụp trước khi modal này
  * hiện, nút ở đây chỉ để chụp lại. Đơn PENDING đang giữ ATP nên chỉ có hai lối
  * thoát: Xác nhận hoặc Huỷ đơn (kể cả ESC và nút X).
@@ -170,7 +170,7 @@ export function TransferPaymentModal({
 
   /**
    * Object URL của ảnh đã lưu. Thu hồi mỗi khi blob đổi (chụp lại) và khi
-   * unmount — không thì mỗi lần bấm "Xem ảnh" rò một URL trong RAM.
+   * unmount - không thì mỗi lần bấm "Xem ảnh" rò một URL trong RAM.
    */
   const proofBlob = session?.paymentProof?.blob ?? null;
   const [proofUrl, setProofUrl] = useState<string | null>(null);
@@ -186,7 +186,7 @@ export function TransferPaymentModal({
 
   // Đếm ngược thuần client, không ghi hạn lên server. `setInterval` bị throttle
   // khi tab chạy nền (điện thoại bị khoá màn hình, cashier đổi app), nên phải
-  // tính lại khi tab quay lại foreground — nếu không cashier thấy đồng hồ đứng
+  // tính lại khi tab quay lại foreground - nếu không cashier thấy đồng hồ đứng
   // ở "còn 20 phút" trên một đơn đã hết hạn từ lâu và bấm Xác nhận.
   useEffect(() => {
     if (!session?.expiresAt) return;
@@ -206,7 +206,7 @@ export function TransferPaymentModal({
   }, [session?.expiresAt]);
 
   // ESC / focus trap: KHÔNG có đường đóng tạm. Đơn PENDING đang giữ ATP nên
-  // chỉ có hai lối thoát hợp lệ — Xác nhận hoặc Huỷ đơn. ESC = Huỷ đơn.
+  // chỉ có hai lối thoát hợp lệ - Xác nhận hoặc Huỷ đơn. ESC = Huỷ đơn.
   const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted && !busy, onCancel);
 
   const handlePickPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,7 +223,7 @@ export function TransferPaymentModal({
     // được đứng "Đang lưu ảnh..." mãi. Mở khoá + báo lỗi; lần ghi vẫn chạy nền
     // và nếu nó xong sau đó thì ảnh vẫn được gắn vào phiên như bình thường.
     // NHƯNG nếu cashier đã chụp lại (thế hệ mới) thì lần cũ chỉ được bỏ, tuyệt
-    // đối không ghi đè ảnh mới — xem createPhotoWriteGate.
+    // đối không ghi đè ảnh mới - xem createPhotoWriteGate.
     const watchdog = setTimeout(() => {
       if (!writeGateRef.current.isCurrent(gen)) return;
       savingRef.current = false;
@@ -289,7 +289,7 @@ export function TransferPaymentModal({
           <button
             type="button"
             aria-label="Huỷ đơn, trả lại tồn kho"
-            title="Huỷ đơn — trả lại tồn kho đang giữ chỗ"
+            title="Huỷ đơn - trả lại tồn kho đang giữ chỗ"
             onClick={onCancel}
             disabled={busy}
             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
@@ -393,7 +393,7 @@ export function TransferPaymentModal({
             onChange={handlePickPhoto}
           />
           {/* Camera đã mở ngay từ nút ở quầy (một chạm). Nút ở đây chỉ để chụp
-              lại khi ảnh bị mờ — không phải bước phải qua để tới camera. */}
+              lại khi ảnh bị mờ - không phải bước phải qua để tới camera. */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}

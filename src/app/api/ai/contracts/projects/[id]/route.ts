@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** GET /api/ai/contracts/projects/[id] — chi tiết dự án + milestones. */
+/** GET /api/ai/contracts/projects/[id] - chi tiết dự án + milestones. */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await requireSessionRole(_req, ROLES);
@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-/** PATCH /api/ai/contracts/projects/[id] — sửa dự án. */
+/** PATCH /api/ai/contracts/projects/[id] - sửa dự án. */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await requireSessionRole(req, ROLES);
@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-/** DELETE /api/ai/contracts/projects/[id] — xóa dự án (milestones theo, HĐ đã ký giữ nguyên). */
+/** DELETE /api/ai/contracts/projects/[id] - xóa dự án (milestones theo, HĐ đã ký giữ nguyên). */
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await requireSessionRole(req, ROLES);

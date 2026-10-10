@@ -6,8 +6,8 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/royalties — danh sách (?lifecycle=ACTIVE)
-// GET /api/royalties?id=<contractId> — chi tiết + quota + bảng nhuận bút
+// GET /api/royalties - danh sách (?lifecycle=ACTIVE)
+// GET /api/royalties?id=<contractId> - chi tiết + quota + bảng nhuận bút
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);

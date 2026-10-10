@@ -26,7 +26,7 @@ export class PeriodLockService {
     return row || null;
   }
 
-  /** Ném lỗi nếu kỳ đã khóa — gọi ở mọi API ghi dữ liệu theo kỳ. */
+  /** Ném lỗi nếu kỳ đã khóa - gọi ở mọi API ghi dữ liệu theo kỳ. */
   static async assertUnlocked(month: string) {
     if (await this.isLocked(month)) {
       throw AppError.forbidden(`Kỳ ${month} đã khóa sổ. Chỉ chủ mở khóa mới được ghi tiếp.`);

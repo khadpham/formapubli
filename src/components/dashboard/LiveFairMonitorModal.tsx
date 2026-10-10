@@ -10,12 +10,12 @@ import {
 } from 'lucide-react';
 
 /**
- * Trạng thái quầy hội chợ — LÚC NÀY, không phải báo cáo.
+ * Trạng thái quầy hội chợ - LÚC NÀY, không phải báo cáo.
  *
  * Ba điều làm nên khác Báo Cáo Chốt Ngày:
  *  - tự làm mới khi đang mở, dừng hẳn khi đóng / tab ẩn (0 request khi không xem);
  *  - theo kho dashboard đang chọn, hoặc TẤT CẢ kho hội chợ khi chưa chọn kho nào;
- *  - thấy đơn CHƯA ĐÓNG — thứ báo cáo ngày không bao giờ hiện.
+ *  - thấy đơn CHƯA ĐÓNG - thứ báo cáo ngày không bao giờ hiện.
  *
  * `isOpen` là cổng duy nhất quyết định có poll hay không. Đây là bản sao có
  * chủ đích của cách ManagerApprovalDrawer làm; sai chỗ là poll vô tình tiêu
@@ -49,7 +49,7 @@ interface MonitorPayload {
     paymentMethod: string; createdAt: string | null;
   }>;
   topSellers: Array<{ code: string; title: string; copies: number; revenue: number }>;
-  /** Đơn giá trị cao nhất trong ngày đang xem — chuyển từ Báo Cáo Chốt Ngày sang. */
+  /** Đơn giá trị cao nhất trong ngày đang xem - chuyển từ Báo Cáo Chốt Ngày sang. */
   largestOrder: {
     orderCode: string; warehouseName: string; finalAmount: number;
     paymentMethod: string; itemCount: number; createdAt: string | null;
@@ -65,7 +65,7 @@ const PAY_LABEL: Record<string, string> = {
 };
 
 function payLabel(m?: string | null) {
-  return PAY_LABEL[`${m}`] || `${m || '—'}`;
+  return PAY_LABEL[`${m}`] || `${m || '-'}`;
 }
 
 function money(v: number | null | undefined) {
@@ -73,9 +73,9 @@ function money(v: number | null | undefined) {
 }
 
 function clockOf(iso: string | null | undefined) {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '—';
+  if (Number.isNaN(t)) return '-';
   return new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -103,7 +103,7 @@ export function LiveFairMonitorModal({
   // Nhớ lựa chọn của chính người dùng qua localStorage: người hay xem 1 kho
   // hội chợ cụ thể, mở lại thấy đúng kho đó thì không phải chọn lại.
   const [scopeWarehouseId, setScopeWarehouseId] = useState<string>(warehouseId || '');
-  // Ngày đang xem. KHÔNG nhớ — mỗi lần mở về hôm nay, vì mở nhầm ngày cũ
+  // Ngày đang xem. KHÔNG nhớ - mỗi lần mở về hôm nay, vì mở nhầm ngày cũ
   // khiến người dùng tưởng hôm nay chưa bán được gì (số liệu = 0).
   const [viewDate, setViewDate] = useState<string>(() =>
     new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -188,7 +188,7 @@ export function LiveFairMonitorModal({
       const j = await res.json();
       if (!aliveRef.current) return;
       // Fetch kho/ngày cũ về sau khi đã đổi: BỎ, đừng set state. `aliveRef` không
-      // chặn được chuyện này — nó chỉ đổi khi ĐÓNG modal, còn đổi kho/ngày thì
+      // chặn được chuyện này - nó chỉ đổi khi ĐÓNG modal, còn đổi kho/ngày thì
       // modal vẫn mở ⇒ không có state nào báo là lần nạp này đã lỗi thời.
       if (scope !== scopeWarehouseIdRef.current || date !== viewDateRef.current) return;
       setData(j.data);
@@ -260,7 +260,7 @@ export function LiveFairMonitorModal({
   }, [isOpen, load, schedule]);
 
   // Đổi kho hoặc đổi ngày thì nạp NGAY. Không có effect này thì màn vẫn hiện số
-  // của kho/ngày cũ cho tới lượt poll kế tiếp (10s, hoặc 40s nếu đang backoff) —
+  // của kho/ngày cũ cho tới lượt poll kế tiếp (10s, hoặc 40s nếu đang backoff) -
   // người dùng chọn "hôm qua" rồi thấy số của hôm nay, tưởng hôm nay chưa bán.
   useEffect(() => {
     if (!isOpen) return;
@@ -320,7 +320,7 @@ export function LiveFairMonitorModal({
       flash(`Đã huỷ: ${orderCode}`);
       await load();
     } catch {
-      flash(`Không huỷ được ${orderCode} — mạng lỗi.`);
+      flash(`Không huỷ được ${orderCode} - mạng lỗi.`);
     } finally {
       setBusyOrder(null);
     }
@@ -330,7 +330,7 @@ export function LiveFairMonitorModal({
 
   const t = data?.today;
   const showStaleBanner = isStale || (!!error && !!data);
-  // Tên kho lấy từ chính payload (server đã trả kèm fairWarehouses) — không cần
+  // Tên kho lấy từ chính payload (server đã trả kèm fairWarehouses) - không cần
   // thêm prop thứ hai. Chỉ hiện khi đã có tên: đừng in ra id thô cho người dùng.
   const scopeName = scopeWarehouseId
     ? data?.fairWarehouses?.find((w) => w.id === scopeWarehouseId)?.name || null
@@ -346,7 +346,7 @@ export function LiveFairMonitorModal({
   // createPortal trực tiếp, khớt với 18 file khác trong src/components. Lưu ý:
   // KHÔNG dùng PortalToBody ở đây. Helper đó gate nội dung bằng state `mounted` riêng
   // nên panel xuất hiện ở commit SAU commit mà useModalFocusTrap chạy effect
-  // (deps của hook là [isOpen]) — ref chưa có mặt lúc đó, hook return sớm và không
+  // (deps của hook là [isOpen]) - ref chưa có mặt lúc đó, hook return sớm và không
   // bao giờ thử lại ⇒ mất cả bẫy focus lẫn `inert` trên #app-main-content.
   return createPortal(
     <>
@@ -401,7 +401,7 @@ export function LiveFairMonitorModal({
           </div>
 
           {/* Chọn kho + ngày. Trước đây màn này chỉ xem được TẤT CẢ kho hội chợ
-              và chỉ hôm nay — không có đường vào một kho cụ thể. */}
+              và chỉ hôm nay - không có đường vào một kho cụ thể. */}
           <div className="no-print shrink-0 px-4 py-2 bg-white border-b border-slate-200 flex flex-wrap items-center gap-2">
             <label className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
               <MapPin className="w-3.5 h-3.5 text-indigo-500" />
@@ -593,7 +593,7 @@ export function LiveFairMonitorModal({
                             <div className="text-right">
                               <p className="font-mono font-bold text-slate-900">{money(p.finalAmount)}</p>
                               {p.overdue ? (
-                                <p className="text-[10px] font-bold text-rose-600">Quá hạn — cần NV chụp lại ảnh</p>
+                                <p className="text-[10px] font-bold text-rose-600">Quá hạn - cần NV chụp lại ảnh</p>
                               ) : p.minutesLeft != null ? (
                                 <p className="text-[10px] font-mono text-slate-400">còn {p.minutesLeft} phút</p>
                               ) : null}
@@ -640,7 +640,7 @@ export function LiveFairMonitorModal({
                 </Block>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* 5a. Đơn lớn nhất — chuyển từ Báo Cáo Chốt Ngày sang đây vì nó
+                  {/* 5a. Đơn lớn nhất - chuyển từ Báo Cáo Chốt Ngày sang đây vì nó
                       thuộc loại "đang bán gì", không phải quyết toán tiền cuối ngày. */}
                   <Block icon={Trophy} title="Đơn lớn nhất">
                     {!data.largestOrder ? (
@@ -701,7 +701,7 @@ export function LiveFairMonitorModal({
                     )}
                   </Block>
 
-                  {/* 6. Duyệt chiết khấu — tái dùng drawer có sẵn, không viết lại logic */}
+                  {/* 6. Duyệt chiết khấu - tái dùng drawer có sẵn, không viết lại logic */}
                   <Block icon={ShieldAlert} title="Cần Quản lý duyệt">
                     <button
                       type="button"
@@ -715,7 +715,7 @@ export function LiveFairMonitorModal({
                     </button>
                     <p className="text-[11px] text-slate-500 mt-2 flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      Đơn chờ tiền không phải đơn chờ duyệt — hai việc khác nhau.
+                      Đơn chờ tiền không phải đơn chờ duyệt - hai việc khác nhau.
                     </p>
                   </Block>
                 </div>
@@ -747,7 +747,7 @@ export function LiveFairMonitorModal({
 
       {/* Drawer duyệt chiết khấu: tự fetch + tự poll, không cần props POS.
           Cả hai đều nằm ở document.body, nên useModalFocusTrap chỉ inert
-          #app-main-content — nó KHÔNG chạm tới modal monitor. Không tự inert
+          #app-main-content - nó KHÔNG chạm tới modal monitor. Không tự inert
           panel ở đây thì Tab trong drawer nhảy được xuống modal phía dưới. */}
       {approvalOpen && (
         <ManagerApprovalDrawer isOpen onClose={() => setApprovalOpen(false)} onActionCompleted={() => { void load(); }} />

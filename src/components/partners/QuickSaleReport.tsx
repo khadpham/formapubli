@@ -73,7 +73,7 @@ export function QuickSaleReport({ partners, currentRole = 'ROLE_OWNER' }: QuickS
 
   const applyReport = async () => {
     if (!statementId) {
-      setErrorMessage('Chưa có kỳ đối soát DRAFT — hãy mở kỳ trong panel đối soát trước.');
+      setErrorMessage('Chưa có kỳ đối soát DRAFT - hãy mở kỳ trong panel đối soát trước.');
       return;
     }
     const { rows, summary } = parsePastedBookList(

@@ -38,7 +38,7 @@ export async function syncEscrow(
     .limit(1);
   if (ords.length === 0) throw AppError.invalid(`Không tìm thấy đơn Shopee #${orderSn}.`);
   if (ords[0].shippingStatus !== 'DELIVERED') {
-    throw AppError.invalid(`Đơn #${orderSn} chưa giao xong — chưa đối soát được.`);
+    throw AppError.invalid(`Đơn #${orderSn} chưa giao xong - chưa đối soát được.`);
   }
 
   const fetchFn = cfg.fetchFn ?? globalThis.fetch;
@@ -65,7 +65,7 @@ export async function syncEscrow(
   });
   const res = await fetchFn(`${cfg.baseUrl}${apiPath}?${qs.toString()}`, { method: 'GET' });
   const data = (await res.json()) as any;
-  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} — ${data.message || ''}`);
+  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   const inc = data.response?.order_income ?? {};
   const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
 

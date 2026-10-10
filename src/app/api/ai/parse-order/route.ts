@@ -8,7 +8,7 @@ import { handleApiError } from '@/lib/api-response';
 
 export async function POST(req: NextRequest) {
   try {
-    // P1b: Default-Deny — giữ nguyên WAREHOUSE trong allowlist phục vụ 5.1, chỉ khóa fallback.
+    // P1b: Default-Deny - giữ nguyên WAREHOUSE trong allowlist phục vụ 5.1, chỉ khóa fallback.
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE']);
     const body = await req.json();
     const { text, source, forceFallback } = body;

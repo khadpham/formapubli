@@ -1,6 +1,6 @@
 /**
  * OFFLINE-FIRST INDEXEDDB ENGINE FOR FORMAPUBLI OS
- * Quản lý lưu trữ đơn hàng ngoại tuyến an toàn trên trình duyệt nhân viên.
+ * Quản lý lưu trữ đơn sách ngoại tuyến an toàn trên trình duyệt nhân viên.
  * Không phụ thuộc thư viện ngoài, zero-cost, tương thích 100% mọi trình duyệt.
  */
 
@@ -36,7 +36,7 @@ export interface OfflineSyncItem {
  * Trước đây đường offline gửi `undefined` cho mọi dòng, nên dòng quà nhận chiết
  * khấu CẢ ĐƠN (vd 10%) thay vì 100%: đơn offline 800.000đ + quà 300.000đ ghi
  * `finalAmount` 1.040.000đ ⇒ **thu 240.000đ tiền món quà từ khách**. Đúng kịch
- * bản hội chợ mất mạng, và nó im lặng — không ai thấy lỗi cho tới khi đối chiếu két.
+ * bản hội chợ mất mạng, và nó im lặng - không ai thấy lỗi cho tới khi đối chiếu két.
  *
  * `wholeOrderGift` = đơn Tặng sách (BV-03): mọi dòng bán 0đ, giữ nguyên như cũ.
  */
@@ -130,24 +130,24 @@ export const PAYMENT_PHOTO_MAX_COUNT = 100;
  * Mỗi mã ở đây đều là mã server thật sự phát ra (xem statusMap trong
  * `handleApiError`) và đều là lỗi VĨNH VIỄN với payload hiện tại: gửi lại y
  * hệt sẽ cho cùng kết quả. Với đơn đã thu tiền + đã có ảnh, điều đó nghĩa là
- * retry mãi chỉ làm đơn biến mất khỏi màn hình — nên phải đưa sang đối soát
+ * retry mãi chỉ làm đơn biến mất khỏi màn hình - nên phải đưa sang đối soát
  * để người có quyền quyết định, giữ cả bản ghi lẫn ảnh.
  *
  * - `INSUFFICIENT_ATP` (409): tồn đã bị bán/giữ chỗ mất.
  * - `IDEMPOTENCY_CONFLICT` (409): key đã gắn với đơn khác (vd. replay key của
  *   một đơn PENDING bằng payload sync offline).
- * - `STATE_CONFLICT` (409): trạng thái thực tế không cho phép — gồm quy tắc
+ * - `STATE_CONFLICT` (409): trạng thái thực tế không cho phép - gồm quy tắc
  *   mới: đơn tại quầy phải có ca két OPEN nên thu ngân chưa mở ca sẽ bị chặn
  *   khi sync lại đơn gom offline.
  * - `INVALID_INPUT` (400): ca két không tồn tại/đã đóng khi tạo đơn, thiếu cặp
- *   proof, chiết khấu sai — sửa payload không giúp, phải có người xử lý.
+ *   proof, chiết khấu sai - sửa payload không giúp, phải có người xử lý.
  * - `FORBIDDEN` (403): cashier không có quyền tạo/xác nhận đơn này.
  *
  * Cố ý KHÔNG có `RATE_LIMITED` (429), `INTERNAL_ERROR` (500), `AUTH_REQUIRED`
  * (401) và các mã 409 của miền khác: đó là lỗi tạm thời, thử lại sau là đúng,
  * và đơn vẫn nằm trong `getPendingOfflineOrders` nên cashier vẫn thấy badge
  * đang chờ. `CASHBOX_SESSION_NOT_FOUND` đã bị gỡ: không mã nào trong statusMap
- * mang tên đó, nên nó là mã bịa — ca két hỏng thật sự đến dưới dạng
+ * mang tên đó, nên nó là mã bịa - ca két hỏng thật sự đến dưới dạng
  * `STATE_CONFLICT` (đơn chờ) hoặc `INVALID_INPUT` (tạo đơn).
  */
 export const RECONCILIATION_ERROR_CODES: ReadonlySet<string> = new Set([
@@ -176,7 +176,7 @@ function isDigitalPaymentMethod(paymentMethod: string | undefined): boolean {
 /**
  * Trạng thái thanh toán chuẩn hoá của một đơn offline.
  * Ưu tiên `order.paymentState` nếu đã có (record cũ hoặc luồng QR đã đặt tường minh),
- * chỉ suy ra từ `moneyReceived` khi trường đó vắng mặt — nếu không một
+ * chỉ suy ra từ `moneyReceived` khi trường đó vắng mặt - nếu không một
  * AWAITING_PAYMENT sẽ bị nâng nhầm lên PAID_PENDING_SYNC bởi moneyReceived=false.
  */
 export function normalizeOfflinePaymentState(order: OfflineOrder): OfflinePaymentState {
@@ -292,7 +292,7 @@ function getDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Lưu một đơn hàng bán ngoại tuyến vào IndexedDB
+ * Lưu một đơn sách bán ngoại tuyến vào IndexedDB
  */
 export async function saveOfflineOrder(order: OfflineOrder): Promise<void> {
   const db = await getDB();
@@ -307,7 +307,7 @@ export async function saveOfflineOrder(order: OfflineOrder): Promise<void> {
 }
 
 /**
- * Lấy danh sách đơn hàng đủ điều kiện TỰ ĐỘNG đồng bộ (PENDING/FAILED và chỉ ở
+ * Lấy danh sách đơn sách đủ điều kiện TỰ ĐỘNG đồng bộ (PENDING/FAILED và chỉ ở
  * READY_TO_SYNC / PAID_PENDING_SYNC). Được sắp xếp tự nhiên theo thời gian
  * nhờ khóa UUID v7.
  *
@@ -341,7 +341,7 @@ export async function getPendingOfflineOrders(cashierId?: string): Promise<Offli
 }
 
 /**
- * Mọi đơn đang chờ xử lý, kể cả đơn cần đối soát — chỉ dùng cho bề mặt rà soát
+ * Mọi đơn đang chờ xử lý, kể cả đơn cần đối soát - chỉ dùng cho bề mặt rà soát
  * thủ công, không dùng để tự động sync.
  */
 export async function getOfflineOrdersForReview(cashierId?: string): Promise<OfflineOrder[]> {
@@ -363,7 +363,7 @@ export async function getOfflineOrdersForReview(cashierId?: string): Promise<Off
 }
 
 /**
- * Đếm số lượng đơn hàng ngoại tuyến đang chờ đồng bộ
+ * Đếm số lượng đơn sách ngoại tuyến đang chờ đồng bộ
  */
 export async function getPendingOrdersCount(cashierId?: string): Promise<number> {
   try {
@@ -410,7 +410,7 @@ export async function claimLegacyOfflineOrders(actorId: string): Promise<number>
 }
 
 /**
- * Xóa một đơn hàng ngoại tuyến sau khi đã đồng bộ thành công lên máy chủ
+ * Xóa một đơn sách ngoại tuyến sau khi đã đồng bộ thành công lên máy chủ
  */
 export async function removeOfflineOrder(id: string): Promise<void> {
   const db = await getDB();
@@ -425,7 +425,7 @@ export async function removeOfflineOrder(id: string): Promise<void> {
 }
 
 /**
- * Cập nhật trạng thái đồng bộ cho đơn hàng
+ * Cập nhật trạng thái đồng bộ cho đơn sách
  */
 export async function updateOfflineOrderStatus(
   id: string,
@@ -459,7 +459,7 @@ export async function updateOfflineOrderStatus(
  *
  * `updateOfflineOrderForRetry` ghi `moneyReceived`/ca két rồi đặt lại
  * `syncStatus: 'PENDING'`, nhưng nếu giữ nguyên `paymentState` là
- * NEEDS_RECONCILIATION thì đơn vẫn bị `getPendingOfflineOrders` loại — POS báo
+ * NEEDS_RECONCILIATION thì đơn vẫn bị `getPendingOfflineOrders` loại - POS báo
  * "đã cập nhật, đang đồng bộ lại" rồi không bao giờ đồng bộ được, và mọi lần
  * sync sau lại loại nó một lần nữa. Sửa xong thì phải thực sự sync được.
  *
@@ -479,7 +479,7 @@ export function paymentStateAfterManualRepair(order: OfflineOrder): OfflinePayme
 
 /**
  * Chuẩn bị lại một đơn offline bị kẹt để sync. Trả về `false` nếu record không
- * tồn tại — để bề mặt rà soát không báo "đã cập nhật" cho một đơn không có thật.
+ * tồn tại - để bề mặt rà soát không báo "đã cập nhật" cho một đơn không có thật.
  */
 export async function updateOfflineOrderForRetry(
   id: string,
@@ -576,7 +576,7 @@ export async function getPaymentProofPhoto(id: string): Promise<PaymentProofPhot
  * Tiến trạng thái đồng bộ của ảnh.
  *
  * Không có hàm này thì ảnh kẹt ở LOCAL_ONLY mãi mãi: retention chỉ miễn xoá
- * ảnh NEEDS_RECONCILIATION và gallery chỉ chặn xoá ảnh đó — cả hai đều là code
+ * ảnh NEEDS_RECONCILIATION và gallery chỉ chặn xoá ảnh đó - cả hai đều là code
  * chết. Ảnh của đơn đã vào đối soát phải được giữ lại cho tới khi người có
  * quyền xử lý xong.
  */
@@ -608,7 +608,7 @@ export async function markPaymentProofPhotoSyncState(
 
 /**
  * Xoá ảnh. Khi `scope` được truyền (mọi thao tác của người dùng), ảnh nằm ngoài
- * phạm vi kho/thu ngân hiện tại sẽ bị từ chối — không xoá, không ném lỗi.
+ * phạm vi kho/thu ngân hiện tại sẽ bị từ chối - không xoá, không ném lỗi.
  * Retention gọi KHÔNG scope: đó là dọn bộ nhớ máy, được phép thấy mọi ảnh.
  */
 export async function deletePaymentProofPhoto(id: string, scope?: PaymentProofScope): Promise<void> {
@@ -635,7 +635,7 @@ export async function updateOfflineOrderPaymentState(id: string, state: OfflineP
 
 /**
  * Ghi ảnh xác nhận vào đơn offline và đánh dấu đã thu tiền.
- * Đồng thời bật `moneyReceived` để lần sync kế tiếp gửi đúng trạng thái —
+ * Đồng thời bật `moneyReceived` để lần sync kế tiếp gửi đúng trạng thái -
  * server dùng cặp `moneyReceived` + proof fields làm chốt quy trình.
  */
 export async function attachOfflineOrderPaymentProof(
@@ -706,7 +706,7 @@ export async function cancelOfflineOrderLocally(id: string, hasPaymentProof: boo
  *
  * POS dùng hàm này trước khi báo "đã ghi nhận" cho đường offline. Nếu bỏ qua,
  * một phiên mà `attachOfflineOrderPaymentProof` đã hỏng vẫn bị coi là thành
- * công: cashier thấy toast, giỏ bị xoá, còn đơn thì kẹt AWAITING_PAYMENT —
+ * công: cashier thấy toast, giỏ bị xoá, còn đơn thì kẹt AWAITING_PAYMENT -
  * không bao giờ tự sync, dù tiền đã thu.
  */
 export async function isOfflineTransferReadyToConfirm(id: string): Promise<boolean> {

@@ -91,7 +91,7 @@ export class ConsignmentService {
         name: `Đại lý ${partner.name}`,
         address: `Quầy ký gửi tại đối tác ${partner.name}`,
         isActive: true,
-        // Kho ký gửi là kho đối tác (không phải kho vật lý vận hành) — đánh dấu
+        // Kho ký gửi là kho đối tác (không phải kho vật lý vận hành) - đánh dấu
         // để ẩn khỏi ma trận kho, modal chuyển kho, gán kho nhân sự...
         warehouseType: 'CONSIGNMENT',
       })
@@ -135,7 +135,7 @@ export class ConsignmentService {
     });
   }
 
-  /** Xác nhận đại lý đã nhận đủ (theo biên bản ký tay) — receive toàn bộ. */
+  /** Xác nhận đại lý đã nhận đủ (theo biên bản ký tay) - receive toàn bộ. */
   static async confirmConsignmentReceipt(params: {
     shipmentId: string;
     actorContext: import('./actor-context').ActorContext;
@@ -296,7 +296,7 @@ export class ConsignmentService {
     idempotencyKey?: string;
   }) {
     const { statementId, editionId, quantity, actorId } = params;
-    // CP3-B1.2 (mục 5): số lượng phải là số nguyên > 0 — "1.5" bị từ chối,
+    // CP3-B1.2 (mục 5): số lượng phải là số nguyên > 0 - "1.5" bị từ chối,
     // không cắt phần thập phân.
     if (!Number.isInteger(quantity) || quantity <= 0) throw AppError.invalid('Số lượng bán phải là số nguyên lớn hơn 0.');
 
@@ -366,7 +366,7 @@ export class ConsignmentService {
     idempotencyKey?: string;
   }) {
     const { statementId, toWarehouseId, editionId, newQty = 0, damagedQty = 0, actorId, notes } = params;
-    // CP3-B1.2 (mục 5): số lượng phải là số nguyên không âm — "1.5" bị từ chối.
+    // CP3-B1.2 (mục 5): số lượng phải là số nguyên không âm - "1.5" bị từ chối.
     if (!Number.isInteger(newQty) || !Number.isInteger(damagedQty)) {
       throw AppError.invalid('Số lượng thu hồi phải là số nguyên không âm.');
     }
@@ -517,7 +517,7 @@ export class ConsignmentService {
 
           if (lost < 0) {
             throw AppError.conflict(
-              `Ấn bản ${line.editionId} thặng dư ${-lost} cuốn so với sổ — dừng chốt để điều tra, không tự bù.`
+              `Ấn bản ${line.editionId} thặng dư ${-lost} cuốn so với sổ - dừng chốt để điều tra, không tự bù.`
             );
           }
           if (lost > 0) {

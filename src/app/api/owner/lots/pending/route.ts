@@ -6,7 +6,7 @@ import { listPendingCostLots } from '@/services/owner-finance.service';
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/owner/lots/pending — các lô chờ nhập giá vốn (chỉ chủ). */
+/** GET /api/owner/lots/pending - các lô chờ nhập giá vốn (chỉ chủ). */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER'] as UserRole[]);

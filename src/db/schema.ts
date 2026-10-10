@@ -1,17 +1,17 @@
 import { sqliteTable, text, integer, real, index, uniqueIndex, check, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
-// 0. Products / Sản phẩm — TẦNG GỐC chung cho sách và hàng hóa (migration 0031).
+// 0. Products / Sản phẩm - TẦNG GỐC chung cho sách và hàng hóa (migration 0031).
 //
 // VÌ SAO TÁCH RA: mô hình cũ (`works` + `editions`) giả định MỌI THỨ BÁN ĐƯỢC
-// ĐỀU LÀ SÁCH — `editions` bắt buộc có `work_id` (FK `works`), `isbn`, `isbn_last4`
+// ĐỀU LÀ SÁCH - `editions` bắt buộc có `work_id` (FK `works`), `isbn`, `isbn_last4`
 // đều NOT NULL. Món hàng hóa không có tác giả, không có ISBN.
 //
 // `products.id` CỦA SÁCH = `editions.id` (`ed-h01`) ⇒ backfill chỉ cần
 // `SET product_id = id`, không phải viết lại khóa ngoại ở nhiều bảng.
 //
 // `code` CỐ Ý NULLABLE: chỉ hàng hóa mới có mã riêng (`SP-0001`). Sách giữ mã
-// ở `editions.code` — copy sang đây sẽ tạo HAI nguồn sự thật cho cùng một SKU,
+// ở `editions.code` - copy sang đây sẽ tạo HAI nguồn sự thật cho cùng một SKU,
 // và `migrate-book-skus.ts` đã từng đổi `editions.code` (H01 → HH001).
 export const products = sqliteTable('products', {
   id: text('id').primaryKey(),
@@ -19,7 +19,7 @@ export const products = sqliteTable('products', {
   name: text('name').notNull(),
   productKind: text('product_kind').notNull().default('BOOK'), // BOOK | GOODS
   sellingPrice: real('selling_price').notNull().default(0), // Giá bán (giá bìa niêm yết)
-  costPrice: real('cost_price'), // Giá vốn — CỐ Ý CHƯA đưa lên UI (chốt #4)
+  costPrice: real('cost_price'), // Giá vốn - CỐ Ý CHƯA đưa lên UI (chốt #4)
   barcode: text('barcode'), // EAN-13. NULL = chưa gán
   description: text('description'),
   isGiftItem: integer('is_gift_item', { mode: 'boolean' }).notNull().default(false), // GỢI Ý quà, KHÔNG phải rào chặn (chốt #22)
@@ -32,7 +32,7 @@ export const products = sqliteTable('products', {
   barcodeIdx: uniqueIndex('products_barcode_unique').on(table.barcode).where(sql`${table.barcode} IS NOT NULL`),
 }));
 
-// 0b. Promotions / promotion_gifts — chương trình khuyến mại (migration 0031).
+// 0b. Promotions / promotion_gifts - chương trình khuyến mại (migration 0031).
 //
 // Mô hình BẬC THANG: các dòng `promotion_gifts` CÙNG `min_subtotal` là cùng
 // một bậc; đơn chỉ kích hoạt bậc CAO NHẤT mà đạt được (đơn 1 triệu tặng A+B+C
@@ -53,11 +53,11 @@ export const promotionGifts = sqliteTable('promotion_gifts', {
   promotionId: text('promotion_id').notNull().references(() => promotions.id),
   minSubtotal: real('min_subtotal').notNull(), // Mốc tiền, TÍNH TRÊN GIÁ GỐC
   productId: text('product_id').notNull().references(() => products.id),
-  // SỐ CỐ ĐỊNH. Không bao giờ theo tỉ lệ — nếu "mua 4 tặng 1" sinh động thì quà
+  // SỐ CỐ ĐỊNH. Không bao giờ theo tỉ lệ - nếu "mua 4 tặng 1" sinh động thì quà
   // sinh quà, đó là vòng lặp thật.
   giftQuantity: integer('gift_quantity').notNull().default(1),
   // KHÔNG khai `created_at`: migration 0031 không tạo cột này trên
-  // `promotion_gifts`. Khai thêm ở đây là lệch schema — drizzle sẽ sinh SQL đọc
+  // `promotion_gifts`. Khai thêm ở đây là lệch schema - drizzle sẽ sinh SQL đọc
   // cột không tồn tại ⇒ mọi truy vấn chạm bảng này đều 500. Bắt được nhờ
   // scripts/test-gift-forgery.ts.
 }, (table) => ({
@@ -125,7 +125,7 @@ export const warehouses = sqliteTable('warehouses', {
   name: text('name').notNull(),
   address: text('address'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
-  // V4.1 S1: cờ tường minh thay hardcode SELLABLE_WAREHOUSE_IDS — POS chỉ bán kho active + cờ này.
+  // V4.1 S1: cờ tường minh thay hardcode SELLABLE_WAREHOUSE_IDS - POS chỉ bán kho active + cờ này.
   isSellableOnPos: integer('is_sellable_on_pos', { mode: 'boolean' }).default(false).notNull(),
   // V4.1 S1: PHYSICAL_MAIN | FAIR_EVENT | CONSIGNMENT | IN_TRANSIT
   warehouseType: text('warehouse_type').default('PHYSICAL_MAIN').notNull(),
@@ -236,7 +236,7 @@ export const customerOwnedBooks = sqliteTable('customer_owned_books', {
 // 10. Append-Only Inventory Ledger (Sổ cái Kho Bất biến)
 export const inventoryLedger = sqliteTable('inventory_ledger', {
   id: text('id').primaryKey(),
-  // 0033: `edition_id` NULLABLE — hàng hóa không có dòng `editions`.
+  // 0033: `edition_id` NULLABLE - hàng hóa không có dòng `editions`.
   editionId: text('edition_id').references(() => editions.id),
   // 0033: NOT NULL + FK. Sách có `products.id === editions.id` nên chép thẳng từ
   // `edition_id` khi backfill.
@@ -266,7 +266,7 @@ export const inventoryLedger = sqliteTable('inventory_ledger', {
 // 11. Real-time Stock Balances (Bảng cân đối tồn kho tức thời)
 export const stockBalances = sqliteTable('stock_balances', {
   id: text('id').primaryKey(),
-  // 0032: edition_id NULLABLE — hàng hóa không có dòng `editions`.
+  // 0032: edition_id NULLABLE - hàng hóa không có dòng `editions`.
   // Sách cũ vẫn giữ nguyên giá trị này.
   editionId: text('edition_id').references(() => editions.id),
   productId: text('product_id').notNull().references(() => products.id),
@@ -281,7 +281,7 @@ export const stockBalances = sqliteTable('stock_balances', {
   nonNegativeCheck: check('check_stock_non_negative', sql`${table.physicalQuantity} >= 0`),
 }));
 
-// 12. Commercial Sales Orders (Đơn hàng Bán sách - Sổ Kép)
+// 12. Commercial Sales Orders (Đơn sách - Sổ Kép)
 export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(), // UUID v7 or unique client ID
   orderCode: text('order_code').notNull().unique(), // e.g. ORD-20260911-0001
@@ -306,7 +306,7 @@ export const orders = sqliteTable('orders', {
   discountAmount: real('discount_amount').default(0.0), // Tiền chiết khấu
   finalAmount: real('final_amount').notNull(), // Tiền thực thu sau chiết khấu
   paymentMethod: text('payment_method').notNull().default('CASH'), // CASH, BANK_TRANSFER, QR_CODE
-  // 0048: tài khoản nhận tiền (nullable — dữ liệu cũ = "chưa phân loại").
+  // 0048: tài khoản nhận tiền (nullable - dữ liệu cũ = "chưa phân loại").
   destAccountId: text('dest_account_id').references(() => bankAccounts.id),
   fiscalScope: text('fiscal_scope').notNull().default('INTERNAL_MANAGEMENT'), // OFFICIAL_TAX vs INTERNAL_MANAGEMENT
   vatRate: real('vat_rate').default(0.0), // 0.05 hoặc 0.0
@@ -322,14 +322,14 @@ export const orders = sqliteTable('orders', {
   // 0022_pos_payment_expiry: hạn thanh toán cho đơn chuyển khoản/QR tại quầy.
   // NULL = đơn PENDING cũ → dùng TTL 48h (PENDING_TTL_HOURS).
   paymentExpiresAt: text('payment_expires_at'),
-  // Bước 2 — SPX & COD (toàn bộ nullable, additive-only, slot 0012)
+  // Bước 2 - SPX & COD (toàn bộ nullable, additive-only, slot 0012)
   carrier: text('carrier'), // SPX | null (chưa đẩy vận chuyển)
   trackingCode: text('tracking_code'), // Mã vận đơn SPX
   shippingStatus: text('shipping_status').notNull().default('NONE'), // NONE | CREATED | PICKED_UP | IN_TRANSIT | DELIVERED | RETURNED | FAILED
   shippingFee: real('shipping_fee').default(0.0), // Phí ship SPX
   codAmount: real('cod_amount').default(0.0), // Tiền COD SPX thu hộ (= finalAmount nếu COD)
   codStatus: text('cod_status').notNull().default('NONE'), // NONE | PENDING (SPX giữ) | RECEIVED (đã về NH)
-  // 0055: mã đơn của Customer Portal (datmua) — khách tra theo mã này.
+  // 0055: mã đơn của Customer Portal (datmua) - khách tra theo mã này.
   // order_code vẫn là khóa nội bộ (tăng tự động, không trùng) cho sổ kho.
   portalRef: text('portal_ref'),
 }, (table) => ({
@@ -349,7 +349,7 @@ export const orders = sqliteTable('orders', {
 export const orderItems = sqliteTable('order_items', {
   id: text('id').primaryKey(),
   orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
-  // 0032: edition_id NULLABLE — hàng hóa không có dòng `editions`.
+  // 0032: edition_id NULLABLE - hàng hóa không có dòng `editions`.
   editionId: text('edition_id').references(() => editions.id),
   productId: text('product_id').notNull().references(() => products.id),
   quantity: integer('quantity').notNull(), // Số lượng bán (> 0)
@@ -359,7 +359,7 @@ export const orderItems = sqliteTable('order_items', {
   totalAmount: real('total_amount').notNull(), // Thành tiền = quantity * unitSellingPrice
   bundleId: text('bundle_id').references(() => seasonalBundles.id), // Combo chứa dòng này (null = bán lẻ)
   bundleQty: integer('bundle_qty'), // Số bộ combo của dòng này (null = bán lẻ)
-  // 0031: định danh dòng quà tặng. `isGiftLine` là cột CHẶN VÒNG LẶP — dòng
+  // 0031: định danh dòng quà tặng. `isGiftLine` là cột CHẶN VÒNG LẶP - dòng
   // quà không được tính vào tổng dùng để so mốc khuyến mại, kể cả quà tay
   // (promotion_id = NULL).
   promotionId: text('promotion_id').references(() => promotions.id),
@@ -367,7 +367,7 @@ export const orderItems = sqliteTable('order_items', {
   isManual: integer('is_manual', { mode: 'boolean' }).notNull().default(false),
   // B3 = (b*): quà HẾT TỒN vẫn cho thanh toán nhưng không ghi stock_balances,
   // nên tồn quà không giảm. Không có cột này thì quà ảo không có dấu vết và
-  // báo cáo sẽ nói dối — phải tách "còn tồn" với "hết tồn".
+  // báo cáo sẽ nói dối - phải tách "còn tồn" với "hết tồn".
   isGiftShortfall: integer('is_gift_shortfall', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
@@ -478,7 +478,7 @@ export const consignmentPayments = sqliteTable('consignment_payments', {
 
 // 22b. Partner Receipts (Phiếu thu công nợ bán đứt đại lý, bất biến + VOID).
 // Gối đầu: trừ vào nợ chung theo FIFO (phiếu cũ trước), không gắn cứng từng
-// phiếu — deliveryOrderId nullable chỉ để ghi chú. Ký gửi dùng
+// phiếu - deliveryOrderId nullable chỉ để ghi chú. Ký gửi dùng
 // consignment_payments riêng, không dùng bảng này.
 export const partnerReceipts = sqliteTable('partner_receipts', {
   id: text('id').primaryKey(), // e.g. RC-20261007-AB12
@@ -489,7 +489,7 @@ export const partnerReceipts = sqliteTable('partner_receipts', {
   reference: text('reference').notNull(), // Mã bill/sao kê đối chiếu (bắt buộc)
   paidAt: text('paid_at').notNull(), // Ngày tiền về (YYYY-MM-DD)
   receivedBy: text('received_by').notNull(), // Người thu tiền
-  // 0048: tài khoản nhận tiền (nullable — dữ liệu cũ = "chưa phân loại").
+  // 0048: tài khoản nhận tiền (nullable - dữ liệu cũ = "chưa phân loại").
   destAccountId: text('dest_account_id').references(() => bankAccounts.id),
   status: text('status').notNull().default('ACTIVE'), // ACTIVE, VOIDED
   voidReason: text('void_reason'), // Lý do hủy (bắt buộc khi VOID)
@@ -512,7 +512,7 @@ export const rightsContracts = sqliteTable('rights_contracts', {
   royaltyRate: real('royalty_rate').notNull(), // 0.08 - 0.12 giá bìa
   printQuota: integer('print_quota').notNull(), // Số cuốn được phép in tối đa
   advanceAmount: real('advance_amount').notNull().default(0), // Tạm ứng trừ dần
-  // Cơ sở tính nhuận bút: 'NET_SOLD' (tiền thực thu sau chiết khấu — mặc định)
+  // Cơ sở tính nhuận bút: 'NET_SOLD' (tiền thực thu sau chiết khấu - mặc định)
   // hoặc 'COVER_PRICE' (lượng bán × giá bìa hiện hành, cho HĐ ghi rõ trả theo
   // giá bìa). Trước khi có cột này, mọi HĐ đều nhân với giá bìa ⇒ khách chiết
   // khấu 10% thì tác giả vẫn nhận nhuận bút trên 100% giá bìa.
@@ -611,7 +611,7 @@ export const rmaTickets = sqliteTable('rma_tickets', {
   transferShipmentIdx: index('idx_rma_transfer_shipment').on(table.transferShipmentId),
 }));
 
-// 21. Sales Return Orders (Phiếu Đổi/Trả sách — BV-06)
+// 21. Sales Return Orders (Phiếu Đổi/Trả sách - BV-06)
 // Order gốc bất biến: mọi hoàn/trả là phiếu độc lập + bút toán RETURN_INBOUND trên inventory_ledger.
 export const returnOrders = sqliteTable('return_orders', {
   id: text('id').primaryKey(), // RET-YYYYMMDD-XXXX (UUIDv7)
@@ -651,7 +651,7 @@ export const returnOrderItems = sqliteTable('return_order_items', {
   orderItemIdx: index('idx_return_items_order_item').on(table.orderItemId),
 }));
 
-// 23. Customer Tags (Bước 3 — junction phân tệp CRM, PK composite customer_id + tag)
+// 23. Customer Tags (Bước 3 - junction phân tệp CRM, PK composite customer_id + tag)
 export const customerTags = sqliteTable('customer_tags', {
   customerId: text('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
   tag: text('tag').notNull(), // TAG_SUBSCRIPTION | TAG_NEWSLETTER | SOURCE_CAMPAIGN | SOURCE_EVENT | PARTNER_REFERRED
@@ -661,7 +661,7 @@ export const customerTags = sqliteTable('customer_tags', {
   tagIdx: index('idx_customer_tags_tag').on(table.tag),
 }));
 
-// 24. Sponsorship Funds (Bước 4 — Quỹ tài trợ: tiền cọc INTERNAL, không VAT lúc nhận)
+// 24. Sponsorship Funds (Bước 4 - Quỹ tài trợ: tiền cọc INTERNAL, không VAT lúc nhận)
 export const sponsorshipFunds = sqliteTable('sponsorship_funds', {
   id: text('id').primaryKey(), // fund-<uuid7>
   fundCode: text('fund_code').notNull().unique(), // SPF-YYYYMM-XXXX
@@ -719,7 +719,7 @@ export const staffAccounts = sqliteTable('staff_accounts', {
   warehouseIdx: index('idx_staff_assigned_warehouse').on(table.assignedWarehouseId),
 }));
 
-// 28. Active Sessions (lease một phiên cashier — S-01: giữ máy cũ, chặn máy mới).
+// 28. Active Sessions (lease một phiên cashier - S-01: giữ máy cũ, chặn máy mới).
 // Một staff tối đa một row đang sống; hết TTL coi như không có (không cần cron).
 export const activeSessions = sqliteTable('active_sessions', {
   staffId: text('staff_id').primaryKey().references(() => staffAccounts.staffId),
@@ -732,7 +732,7 @@ export const activeSessions = sqliteTable('active_sessions', {
   sessionIdx: uniqueIndex('uq_active_session_id').on(table.sessionId),
 }));
 
-// 27. Transfer Actions (Lịch sử hành động receive / cancel của phiếu luân chuyển — CP3)
+// 27. Transfer Actions (Lịch sử hành động receive / cancel của phiếu luân chuyển - CP3)
 export const transferActions = sqliteTable('transfer_actions', {
   id: text('id').primaryKey(),
   shipmentId: text('shipment_id').notNull().references(() => transferShipments.id, { onDelete: 'cascade' }),
@@ -747,7 +747,7 @@ export const transferActions = sqliteTable('transfer_actions', {
   idempotencyIdx: uniqueIndex('idx_transfer_actions_idempotency').on(table.idempotencyKey),
 }));
 
-// 28. Return Actions (Lịch sử hành động approve / reject / complete / void của phiếu trả — CP3)
+// 28. Return Actions (Lịch sử hành động approve / reject / complete / void của phiếu trả - CP3)
 export const returnActions = sqliteTable('return_actions', {
   id: text('id').primaryKey(),
   returnId: text('return_id').notNull().references(() => returnOrders.id, { onDelete: 'cascade' }),
@@ -762,7 +762,7 @@ export const returnActions = sqliteTable('return_actions', {
   idempotencyIdx: uniqueIndex('idx_return_actions_idempotency').on(table.idempotencyKey),
 }));
 
-// 29. Exchange Replacement Items (Chi tiết ấn bản xuất thay thế khi đổi hàng — CP3)
+// 29. Exchange Replacement Items (Chi tiết ấn bản xuất thay thế khi đổi hàng - CP3)
 export const exchangeReplacementItems = sqliteTable('exchange_replacement_items', {
   id: text('id').primaryKey(),
   returnId: text('return_id').notNull().references(() => returnOrders.id, { onDelete: 'cascade' }),
@@ -776,7 +776,7 @@ export const exchangeReplacementItems = sqliteTable('exchange_replacement_items'
   uniqueReturnEdition: uniqueIndex('idx_exchange_rep_unique').on(table.returnId, table.editionId),
 }));
 
-// 30. Login Attempt Buckets (khóa brute-force bền vững, sống qua restart/đa instance — dùng chung DB).
+// 30. Login Attempt Buckets (khóa brute-force bền vững, sống qua restart/đa instance - dùng chung DB).
 export const loginAttemptBuckets = sqliteTable('login_attempt_buckets', {
   key: text('key').primaryKey(), // staff:<id> | ip:<ip>
   fails: integer('fails').default(0).notNull(),
@@ -784,7 +784,7 @@ export const loginAttemptBuckets = sqliteTable('login_attempt_buckets', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
-// 31. Document Sequences (cấp số PCK/PXK/PXK_R liên tục — V4.1 S1, gọi TRONG cùng tx với insert phiếu)
+// 31. Document Sequences (cấp số PCK/PXK/PXK_R liên tục - V4.1 S1, gọi TRONG cùng tx với insert phiếu)
 export const documentSequences = sqliteTable('document_sequences', {
   id: text('id').primaryKey(), // seq-<doc_type>-<fiscal_year>
   docType: text('doc_type').notNull(), // PCK | PXK | PXK_R | ORD
@@ -795,7 +795,7 @@ export const documentSequences = sqliteTable('document_sequences', {
   docYearIdx: uniqueIndex('uq_doc_seq').on(table.docType, table.fiscalYear),
 }));
 
-// 32. Idempotency Keys (chống double-commit transfer-batch/checkout/pxk-create — V4.1 S1)
+// 32. Idempotency Keys (chống double-commit transfer-batch/checkout/pxk-create - V4.1 S1)
 export const idempotencyKeys = sqliteTable('idempotency_keys', {
   key: text('key').primaryKey(),
   scope: text('scope').notNull(), // transfer-batch | checkout | pxk-create
@@ -803,7 +803,7 @@ export const idempotencyKeys = sqliteTable('idempotency_keys', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
-// 33. Discount Approval Requests (Duyệt chiết khấu POS thông minh — V4.1 S3)
+// 33. Discount Approval Requests (Duyệt chiết khấu POS thông minh - V4.1 S3)
 export const discountApprovalRequests = sqliteTable('discount_approval_requests', {
   id: text('id').primaryKey(),
   /**
@@ -814,7 +814,7 @@ export const discountApprovalRequests = sqliteTable('discount_approval_requests'
   /**
    * Mã phiếu tạm do MÁY thu ngân sinh (29 ký tự dạng
    * `ORD-20261002-BFC3DCBC00CB7738`). Chỉ dùng làm khoá nhận diện "phiên giỏ hàng"
-   * để bấm nút hai lần không sinh hai yêu cầu — KHÔNG phải mã đơn, không in ra phiếu.
+   * để bấm nút hai lần không sinh hai yêu cầu - KHÔNG phải mã đơn, không in ra phiếu.
    *
    * Trước 0035, cột này là `order_code` và mã phiếu tạm nằm đúng chỗ của mã đơn thật
    * ⇒ không có đường nối nào giữa yêu cầu đã duyệt và đơn đã bán.
@@ -844,7 +844,7 @@ export const discountApprovalRequests = sqliteTable('discount_approval_requests'
   whIdx: index('idx_disc_appr_warehouse').on(table.warehouseId),
 }));
 
-// 34. Delivery Orders (Phiếu xuất kho bán buôn đại lý / ký gửi — V4.1 S3)
+// 34. Delivery Orders (Phiếu xuất kho bán buôn đại lý / ký gửi - V4.1 S3)
 export const deliveryOrders = sqliteTable('delivery_orders', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(), // PXK-YYYY-XXXX hoặc PXK_R-YYYY-XXXX
@@ -868,7 +868,7 @@ export const deliveryOrders = sqliteTable('delivery_orders', {
   statusIdx: index('idx_delivery_orders_status').on(table.status),
 }));
 
-// 35. Delivery Order Items (Chi tiết ấn bản xuất kho bán buôn — V4.1 S3)
+// 35. Delivery Order Items (Chi tiết ấn bản xuất kho bán buôn - V4.1 S3)
 export const deliveryOrderItems = sqliteTable('delivery_order_items', {
   id: text('id').primaryKey(),
   deliveryOrderId: text('delivery_order_id').notNull().references(() => deliveryOrders.id, { onDelete: 'cascade' }),
@@ -883,7 +883,7 @@ export const deliveryOrderItems = sqliteTable('delivery_order_items', {
   editionIdx: index('idx_delivery_items_edition').on(table.editionId),
 }));
 
-// 36. Notification Dismissals (chuông thông báo — danh sách mục người dùng đã ẩn)
+// 36. Notification Dismissals (chuông thông báo - danh sách mục người dùng đã ẩn)
 // KHÔNG phải audit log: có `expiresAt` để yêu cầu duyệt còn PENDING không bị ẩn vĩnh viễn.
 export const notificationDismissals = sqliteTable('notification_dismissals', {
   actorId: text('actor_id').notNull(), // ai ẩn
@@ -896,7 +896,7 @@ export const notificationDismissals = sqliteTable('notification_dismissals', {
 }));
 
 /**
- * Bộ đếm số phiếu theo ngày — sinh mã đơn 13 ký tự (`ORD` + `YYMMDD` + base36 4).
+ * Bộ đếm số phiếu theo ngày - sinh mã đơn 13 ký tự (`ORD` + `YYMMDD` + base36 4).
  *
  * Phải nằm ở DB chứ không đếm ở máy: hội chợ có nhiều máy POS, mỗi máy tự đếm
  * từ 0001 sẽ sinh trùng mã, mà `orders.order_code` là UNIQUE nên đơn sẽ không
@@ -948,14 +948,14 @@ export const shopeeSettings = sqliteTable('shopee_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
-// 0053: portal_settings — cấu hình tích hợp Customer Order Portal
+// 0053: portal_settings - cấu hình tích hợp Customer Order Portal
 export const portalSettings = sqliteTable('portal_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
-// 0054: campaigns — chiến dịch bán ngắn hạn gắn kho FAIR_EVENT.
+// 0054: campaigns - chiến dịch bán ngắn hạn gắn kho FAIR_EVENT.
 // Máy trạng thái: DRAFT → ACTIVE → ENDED (ép ở CampaignService).
 export const campaigns = sqliteTable('campaigns', {
   id: text('id').primaryKey(),
@@ -970,8 +970,8 @@ export const campaigns = sqliteTable('campaigns', {
   endedAt: text('ended_at'),
 });
 
-// 0042: chi phí công ty cho tab Chủ — GĐ1 ghi tay, GĐ2 lương theo tháng.
-// 0043: GĐ2 — lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
+// 0042: chi phí công ty cho tab Chủ - GĐ1 ghi tay, GĐ2 lương theo tháng.
+// 0043: GĐ2 - lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
 export const expenseEntries = sqliteTable('expense_entries', {
   id: text('id').primaryKey(),
   category: text('category').notNull(), // 7 loại ở expense.service (SALARY..OTHER)
@@ -999,7 +999,7 @@ export const shopeeQuarantine = sqliteTable('shopee_quarantine', {
 
 // 0046: Quản lý mẫu hợp đồng, hợp đồng đã soạn, bộ đếm số HĐ, thông tin
 // công ty Bên A, preset nhanh (D11). DDL nguồn sự thật ở
-// src/db/migrations/0046_contract_management.sql — tên cột ở đây phải khớp.
+// src/db/migrations/0046_contract_management.sql - tên cột ở đây phải khớp.
 export const contractTemplates = sqliteTable('contract_templates', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(),
@@ -1131,9 +1131,9 @@ export const contractPresets = sqliteTable('contract_presets', {
   sortIdx: index('idx_contract_presets_sort').on(table.sortOrder),
 }));
 
-// 47. Print Orders — Lệnh in (GĐ3-P2). Chủ tạo lệnh in kèm đơn giá vốn thỏa thuận
+// 47. Print Orders - Lệnh in (GĐ3-P2). Chủ tạo lệnh in kèm đơn giá vốn thỏa thuận
 // với nhà in; thủ kho nhập kho đối chiếu lệnh in → hệ thống tự gắn giá vốn vào lô.
-// GIÁ VỐN CHỈ CHỦ ĐƯỢC THẤY — mọi API khác không được select cột unitCostAgreed.
+// GIÁ VỐN CHỈ CHỦ ĐƯỢC THẤY - mọi API khác không được select cột unitCostAgreed.
 export const printOrders = sqliteTable('print_orders', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(),
@@ -1152,7 +1152,7 @@ export const printOrders = sqliteTable('print_orders', {
   editionIdx: index('idx_print_orders_edition').on(table.editionId),
 }));
 
-// 48. Loans — Nợ vay/vốn huy động (GĐ3-P4). CHỈ CHỦ — không API nào khác được đọc.
+// 48. Loans - Nợ vay/vốn huy động (GĐ3-P4). CHỈ CHỦ - không API nào khác được đọc.
 export const loans = sqliteTable('loans', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(),
@@ -1184,7 +1184,7 @@ export const loanPayments = sqliteTable('loan_payments', {
   loanIdx: index('idx_loan_payments_loan').on(table.loanId),
 }));
 
-// 49. Period Locks — Khóa sổ kỳ đã quyết toán (GĐ3-P4). Chỉ chủ khóa/mở.
+// 49. Period Locks - Khóa sổ kỳ đã quyết toán (GĐ3-P4). Chỉ chủ khóa/mở.
 export const periodLocks = sqliteTable('period_locks', {
   month: text('month').primaryKey(), // YYYY-MM
   lockedBy: text('locked_by').notNull(),

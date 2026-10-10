@@ -279,7 +279,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
       {aiBuilderOpen && (
         <AITemplateBuilder
           onClose={() => setAiBuilderOpen(false)}
-          onSaved={() => { setAiBuilderOpen(false); setToast('Đã lưu mẫu AI — nhớ duyệt pháp lý trước khi dùng.'); }}
+          onSaved={() => { setAiBuilderOpen(false); setToast('Đã lưu mẫu AI - nhớ duyệt pháp lý trước khi dùng.'); }}
         />
       )}
       {aiReviewOpen && <AIContractReview onClose={() => setAiReviewOpen(false)} />}

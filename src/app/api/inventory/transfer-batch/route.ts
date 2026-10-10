@@ -6,7 +6,7 @@ import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 
 /**
- * V4.1 S1.3 — Chốt chuyển kho hàng loạt: server cấp số PCK trong cùng tx,
+ * V4.1 S1.3 - Chốt chuyển kho hàng loạt: server cấp số PCK trong cùng tx,
  * TOCTOU stale ném 409 TRANSFER_TOCTOU_ATP_STALE kèm staleItems để UI re-cap.
  * Client KHÔNG được tự đặt documentRef (xem V4.1 mục 8-Q1; draft offline chỉ là UUID local).
  */

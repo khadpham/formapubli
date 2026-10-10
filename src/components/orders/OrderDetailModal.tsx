@@ -36,7 +36,7 @@ export function OrderDetailModal({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Trạng thái hủy đơn hàng an toàn
+  // Trạng thái hủy đơn sách an toàn
   const [showVoidConfirm, setShowVoidConfirm] = useState<boolean>(false);
   const [voidReason, setVoidReason] = useState<string>('');
   const [voidForce, setVoidForce] = useState<boolean>(false);
@@ -61,7 +61,7 @@ export function OrderDetailModal({
     try {
       const res = await fetch(`/api/orders/${id}`);
       const json = await res.json();
-      if (seq !== seqRef.current) return; // phản hồi cũ — bỏ, không ghi đè
+      if (seq !== seqRef.current) return; // phản hồi cũ - bỏ, không ghi đè
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Không thể tải chi tiết đơn.');
       }
@@ -111,7 +111,7 @@ export function OrderDetailModal({
       setVoidSuccess('Đã hủy đơn thành công! Toàn bộ tồn kho đã được hoàn trả.');
       setShowVoidConfirm(false);
 
-      // Cập nhật trạng thái đơn hàng hiện tại trên modal
+      // Cập nhật trạng thái đơn sách hiện tại trên modal
       if (orderDetail?.order) {
         setOrderDetail({
           ...orderDetail,
@@ -219,11 +219,11 @@ export function OrderDetailModal({
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Kho xuất:</span>
-                  <span className="font-bold text-slate-800">{orderDetail.order.warehouseName || '—'}</span>
+                  <span className="font-bold text-slate-800">{orderDetail.order.warehouseName || '-'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Thu ngân:</span>
-                  <span className="font-bold text-slate-800">{orderDetail.order.cashierName || '—'}</span>
+                  <span className="font-bold text-slate-800">{orderDetail.order.cashierName || '-'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Kênh bán:</span>
@@ -243,14 +243,14 @@ export function OrderDetailModal({
                 </div>
               </div>
 
-              {/* Ghi chú đơn — LUÔN hiện (trống thì gạch ngang) để phân biệt
+              {/* Ghi chú đơn - LUÔN hiện (trống thì gạch ngang) để phân biệt
                   "đơn không có ghi chú" với "mất trường ghi chú". */}
               <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-900">
                 <strong>Ghi chú:</strong>{' '}
                 {orderDetail.order.note && `${orderDetail.order.note}`.trim() ? (
                   orderDetail.order.note
                 ) : (
-                  <span className="text-amber-400 italic">—</span>
+                  <span className="text-amber-400 italic">-</span>
                 )}
               </div>
 

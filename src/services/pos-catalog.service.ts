@@ -16,17 +16,17 @@ export interface PosCatalogLine {
   author: string;
   isbn: string;
   isbnLast4: string;
-  /** Mã vạch EAN-13 — hàng hóa quét mã này. Sách để '' nếu chưa gán. */
+  /** Mã vạch EAN-13 - hàng hóa quét mã này. Sách để '' nếu chưa gán. */
   barcode: string;
   coverPrice: number;
-  /** Năm phát hành — POS sắp xếp "Cũ → Mới / Mới → Cũ" theo trường này. Có thể null. */
+  /** Năm phát hành - POS sắp xếp "Cũ → Mới / Mới → Cũ" theo trường này. Có thể null. */
   publicationYear: number | null;
   atp: number;
   soldToday: number;
 }
 
 /**
- * V4.1 S2 — Danh mục POS theo kho: metadata + ATP khóa chốt + số bán hôm nay.
+ * V4.1 S2 - Danh mục POS theo kho: metadata + ATP khóa chốt + số bán hôm nay.
  * 1 request thay 81 request /api/atp. Sprint 3 tái dùng soldToday cho báo cáo ngày.
  */
 export class PosCatalogService {
@@ -42,7 +42,7 @@ export class PosCatalogService {
     // chuỗi thô. Sai ở chỗ cột `created_at` đang lưu HAI họ timestamp: app ghi
     // ISO, còn SQLite CURRENT_TIMESTAMP ghi 'YYYY-MM-DD HH:mm:ss'. Khi so chuỗi,
     // '2026-09-28 20:00:00' < '2026-09-28T17:00:00.000Z' vì ' ' < 'T', nên dòng
-    // định dạng SQLite bị loại — mà đó lại đúng là đơn 03:00 VN hôm nay, phải
+    // định dạng SQLite bị loại - mà đó lại đúng là đơn 03:00 VN hôm nay, phải
     // tính. `substr(datetime(...,'+7 hours'),1,10)` nhận được cả hai họ nên
     // không còn phụ thuộc định dạng lưu, và bỏ luôn 3 dòng toán học múi giờ dễ
     // sai ở trên.
@@ -65,14 +65,14 @@ export class PosCatalogService {
       .groupBy(orderItems.productId);
     const soldMap = new Map<string, number>();
     // 0032: nhóm theo `product_id` (NOT NULL). Với sách `product_id` ===
-    // `edition_id`, nên `soldMap` y hệt trước đây — nhưng không còn rơi dữ liệu
+    // `edition_id`, nên `soldMap` y hệt trước đây - nhưng không còn rơi dữ liệu
     // hàng hóa vì `edition_id` NULL.
     for (const r of soldRows) soldMap.set(r.productId, Number(r.qty || 0));
 
     // NGUỒN LÀ `products` (tầng gốc), LEFT JOIN `editions` + `works` để lấy
     // metadata sách. Sách đã được mirror vào `products` với `id` TRÙNG
     // `editions.id` (migration 0031b), nên một câu này trả CẢ sách lẫn hàng
-    // hóa. Trước đây lấy `FROM editions INNER JOIN works` — hàng hóa không có
+    // hóa. Trước đây lấy `FROM editions INNER JOIN works` - hàng hóa không có
     // dòng `editions` nên biến mất khỏi lưới quét mã, thứ lỗi "không báo lỗi,
     // chỉ thiếu dòng".
     const all = await db
@@ -131,11 +131,11 @@ export class PosCatalogService {
             .innerJoin(orders, eq(orderItems.orderId, orders.id))
             .where(
               and(
-                // `product_id` — xem giải thích ở truy vấn `stock_balances` phía trên.
+                // `product_id` - xem giải thích ở truy vấn `stock_balances` phía trên.
                 inArray(orderItems.productId, ids),
                 eq(orders.warehouseId, warehouseId),
                 eq(orders.status, 'PENDING_CONFIRMATION'),
-                // Prefilter rộng (siêu tập) — y hệt OrderService.getBatchATP.
+                // Prefilter rộng (siêu tập) - y hệt OrderService.getBatchATP.
                 // created_at trong DB lẫn thứ tự "YYYY-MM-DD HH:MM:SS" (SQLite
                 // CURRENT_TIMESTAMP) lẫn ISO "...T...Z" (app), nên chỉ so được
                 // NGÀY UTC (tiền tố chung), không so timestamp đầy đủ.
@@ -150,7 +150,7 @@ export class PosCatalogService {
     const balMap = new Map<string, number>();
     // 0032: khoá theo `product_id` (NOT NULL); với sách bằng `edition_id`.
     for (const r of balRows) balMap.set(r.productId, Number(r.qty || 0));
-    // Quyết định giữ chỗ cuối cùng do OrderService.getPendingEffectiveExpiry —
+    // Quyết định giữ chỗ cuối cùng do OrderService.getPendingEffectiveExpiry -
     // MỘT quy tắc hạn duy nhất của hệ thống. Trước đây danh mục POS cộng thẳng
     // mọi đơn PENDING trong 48h nên đơn chuyển khoản quầy hết hạn sau 30 phút
     // vẫn chặn ATP tới 48 giờ ⇒ quầy báo hết hàng oan.
@@ -170,13 +170,13 @@ export class PosCatalogService {
       const physical = balMap.get(e.id) || 0;
       items.push({
         // `editionId` giữ nguyên tên để không phá vỡ hợp đồng với POS và các
-        // test hiện có, nhưng giá trị giờ là `products.id` — với sách thì BẰNG
+        // test hiện có, nhưng giá trị giờ là `products.id` - với sách thì BẰNG
         // `editions.id` (chốt #2 spec), với hàng hóa thì là `pr-…`.
         editionId: e.id,
         productKind: e.productKind === 'GOODS' ? 'GOODS' : 'BOOK',
         code: e.code || e.editionCode || '',
         title: e.title || e.code || e.editionCode || '',
-        // Hàng hóa không có tác giả/ISBN — để '' thay vì null để UI không in
+        // Hàng hóa không có tác giả/ISBN - để '' thay vì null để UI không in
         // chữ "null" ra giữa quầy.
         author: e.author || '',
         isbn: e.isbn || '',

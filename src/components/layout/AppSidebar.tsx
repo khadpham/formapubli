@@ -255,7 +255,7 @@ export function AppSidebar({
           </button>
         </div>
 
-        {/* Role Selector Card — Go-live: hiển thị vai trò phiên đăng nhập thật (read-only), đã xóa mô phỏng */}
+        {/* Role Selector Card - Go-live: hiển thị vai trò phiên đăng nhập thật (read-only), đã xóa mô phỏng */}
         <div className="p-3 border-b border-slate-800">
           {!isCollapsed ? (
             <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 flex flex-col gap-2">
@@ -275,7 +275,7 @@ export function AppSidebar({
           ) : (
             <button
               type="button"
-              title={`Vai trò: ${roleConfig.label} — bấm để mở rộng menu`}
+              title={`Vai trò: ${roleConfig.label} - bấm để mở rộng menu`}
               aria-label={`Vai trò hiện tại: ${roleConfig.label}. Bấm để mở rộng menu.`}
               className="w-full flex items-center justify-center p-2 rounded-xl bg-slate-800 text-indigo-400 cursor-pointer hover:bg-slate-700"
               onClick={onToggleCollapse}

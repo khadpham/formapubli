@@ -31,7 +31,7 @@ export const HoGuomSummaryService = {
     const range: any = await DailySettlementService.getSettlementRange(params, txOrDb);
     const { createdAtBetween, businessDateOf } = await import('./order.service');
     const { parseDbTimestamp } = await import('../lib/db-timestamp');
-    // Trục ngày cho bảng "số lượng bán theo sản phẩm × ngày" — lấy đúng mốc
+    // Trục ngày cho bảng "số lượng bán theo sản phẩm × ngày" - lấy đúng mốc
     // ngày mà getSettlementRange đã gom (bao gồm ngày 0 đơn), không tự suy.
     const dayList: string[] = (range.days || []).map((d: any) => d.date);
     const dayIdx = new Map<string, number>(dayList.map((d, i) => [d, i]));
@@ -151,11 +151,11 @@ export const HoGuomSummaryService = {
       payment: range.paymentBreakdown,
       days: range.days,
       peakDay: range.peakDay,
-      // Đơn lớn nhất kỳ (luật hòa: tiền → giờ → id — giữ nguyên của getSettlementRange).
+      // Đơn lớn nhất kỳ (luật hòa: tiền → giờ → id - giữ nguyên của getSettlementRange).
       highlight: range.highlight ?? null,
       lines,
       // Số lượng bán sản phẩm theo ngày: 1 dòng = 1 đầu sách, 1 cột = 1 ngày VN
-      // trong kỳ (chỉ dòng bán CÓ THU TIỀN — quà tặng không tính).
+      // trong kỳ (chỉ dòng bán CÓ THU TIỀN - quà tặng không tính).
       dailyMatrix: {
         dates: dayList,
         rows: all.map((r) => ({

@@ -7,7 +7,7 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/auth/accounts — danh sách tài khoản đang hoạt động cho màn hình
+// GET /api/auth/accounts - danh sách tài khoản đang hoạt động cho màn hình
 // đăng nhập chạm-chọn. Công khai trước auth (login screen cần), nhưng CHỈ trả
 // field an toàn: staffId, fullName, role. Tuyệt đối không trả passcodeHash/salt.
 export async function GET(req: NextRequest) {
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
         { status: 429 }
       );
     }
-    // Tầng DB bền vững (sống qua restart isolate) — chặn nếu một trong hai từ chối.
+    // Tầng DB bền vững (sống qua restart isolate) - chặn nếu một trong hai từ chối.
     const dbRl = await checkDbWindowLimit(`acctlist:${ip}`, 60, 60 * 1000);
     if (!dbRl.allowed) {
       return NextResponse.json(

@@ -113,7 +113,7 @@ export class BundleService {
         .filter((c) => c.possibleBoxes < qty)
         .map((c) => `[${c.code}] chỉ còn ${c.stock} cuốn (cần ${c.requiredPerBox * qty} cho ${qty} bộ)`);
       throw AppError.atp(
-        `Hộp sách không khả dụng: ${shorts.join('; ')} — không đủ đóng bộ!`
+        `Hộp sách không khả dụng: ${shorts.join('; ')} - không đủ đóng bộ!`
       );
     }
     return avail;
@@ -122,7 +122,7 @@ export class BundleService {
   /**
    * Phân bổ comboPrice theo tỉ trọng giá bìa, dồn lẻ vào dòng cuối.
    * Tổng các dòng khớp 100% comboPrice × số bộ (chuẩn COGS/kê khai).
-   * FIX-10: tính theo TỔNG DÒNG (cover×số lượng/bộ), không theo đơn giá —
+   * FIX-10: tính theo TỔNG DÒNG (cover×số lượng/bộ), không theo đơn giá -
    * bản cũ dồn dư sai khi linh kiện có quantityInBundle > 1 (300k thành 400k).
    */
   static async priceLines(bundleId: string, qty: number): Promise<PricedBundleLine[]> {

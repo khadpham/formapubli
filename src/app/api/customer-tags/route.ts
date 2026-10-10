@@ -7,13 +7,13 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * Bước 3 — Contract API phân tệp CRM.
+ * Bước 3 - Contract API phân tệp CRM.
  * GET /api/customer-tags?tags=TAG_SUBSCRIPTION,TAG_NEWSLETTER&match=any|all&limit=500
  * POST /api/customer-tags { action:'ASSIGN'|'UNASSIGN', customerId, tag }
  */
 export async function GET(req: NextRequest) {
   try {
-    // P1b: Default-Deny — bắt buộc session cookie hợp lệ.
+    // P1b: Default-Deny - bắt buộc session cookie hợp lệ.
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
     const { searchParams } = new URL(req.url);
     const tags = (searchParams.get('tags') || '').split(',').map((t) => t.trim()).filter(Boolean);
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    // P1b: Default-Deny — TAX không có trong allowlist nên bị chặn 403 tại requireSessionRole.
+    // P1b: Default-Deny - TAX không có trong allowlist nên bị chặn 403 tại requireSessionRole.
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
     const userRole = session.role;
     const actorHeader = session.actorId;

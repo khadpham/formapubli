@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** GET /api/contracts/documents/[id] — chi tiết. */
+/** GET /api/contracts/documents/[id] - chi tiết. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireSessionRole(req, ROLES);
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-/** PUT /api/contracts/documents/[id] — sửa khi DRAFT (service chặn trạng thái khác). */
+/** PUT /api/contracts/documents/[id] - sửa khi DRAFT (service chặn trạng thái khác). */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -43,7 +43,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-/** DELETE /api/contracts/documents/[id] — chỉ xóa khi DRAFT/CANCELLED. */
+/** DELETE /api/contracts/documents/[id] - chỉ xóa khi DRAFT/CANCELLED. */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);

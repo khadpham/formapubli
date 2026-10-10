@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Panel "Kho" — danh sách kho + Sửa tên / Đổi thứ tự / Ngưng hoạt động / Mở lại / Xoá.
+ * Panel "Kho" - danh sách kho + Sửa tên / Đổi thứ tự / Ngưng hoạt động / Mở lại / Xoá.
  *
  * Tiêu chuẩn:
  * - 100% tiếng Việt có dấu.
@@ -26,7 +26,7 @@ type Warehouse = {
   sortOrder?: number;
 };
 
-/** Kho còn tồn thì server trả 409 kèm lý do — ta hiện nguyên message đó. */
+/** Kho còn tồn thì server trả 409 kèm lý do - ta hiện nguyên message đó. */
 type DeleteBlock = { id: string; name: string; code: string; message: string };
 
 export function WarehouseManagerPanel({
@@ -54,7 +54,7 @@ export function WarehouseManagerPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
 
-  // Form "Mở kho mới" gấp gọn NGAY TRONG panel — luật 1 modal: không mở
+  // Form "Mở kho mới" gấp gọn NGAY TRONG panel - luật 1 modal: không mở
   // modal con đè lên panel (nguyên nhân 2 lớp modal chồng nhau).
   const [showCreate, setShowCreate] = useState(false);
   const [cName, setCName] = useState('');
@@ -238,7 +238,7 @@ export function WarehouseManagerPanel({
         throw new Error(
           failed.length === results.length
             ? 'Đổi vị trí kho thất bại.'
-            : `Chỉ lưu được ${results.length - failed.length}/${results.length} kho — thứ tự chưa chắc đúng.`
+            : `Chỉ lưu được ${results.length - failed.length}/${results.length} kho - thứ tự chưa chắc đúng.`
         );
       }
 
@@ -424,10 +424,10 @@ export function WarehouseManagerPanel({
                   aria-label="TK nhận VietQR kho mới"
                   className="px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
                 >
-                  <option value="">— TK mặc định chung —</option>
+                  <option value="">- TK mặc định chung -</option>
                   {cBanks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.label} — {b.accountNo}
+                      {b.label} - {b.accountNo}
                     </option>
                   ))}
                 </select>

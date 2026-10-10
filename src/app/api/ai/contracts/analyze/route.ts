@@ -31,7 +31,7 @@ function getText(body: any): { text: string; sourceName: string } {
   throw new ContractAIError('DINH_DANG_KHONG_HO_TRO', 'GĐ2 hỗ trợ file .docx và .txt (chưa hỗ trợ PDF).');
 }
 
-/** POST /api/ai/contracts/analyze — AI đọc hiểu: tóm tắt + trích xuất thực thể. */
+/** POST /api/ai/contracts/analyze - AI đọc hiểu: tóm tắt + trích xuất thực thể. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

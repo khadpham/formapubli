@@ -36,7 +36,7 @@ interface WarehouseOption {
 }
 
 /**
- * Giờ Việt Nam (UTC+7, không DST) — đơn vị duy nhất hệ thống dùng cho ngày
+ * Giờ Việt Nam (UTC+7, không DST) - đơn vị duy nhất hệ thống dùng cho ngày
  * nghiệp vụ. `datetime-local` của trình duyệt KHÔNG kèm múi giờ nên phải gắn
  * `+07:00` tường minh: trước đây convert qua `toISOString()` (UTC) làm giờ
  * hiển thị lệch đúng 7 tiếng và chiến dịch rơi ngoài cửa sổ giờ đã đặt.
@@ -102,7 +102,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
     setEndsAt(row?.endsAt ? vnInputValue(row.endsAt) : '');
     setWarehouseId(row?.warehouseId ?? '');
     if (row?.gifts?.length) {
-      // Gộp các dòng cùng mốc thành một bậc để hiện đúng "1 mốc — nhiều quà".
+      // Gộp các dòng cùng mốc thành một bậc để hiện đúng "1 mốc - nhiều quà".
       const grouped = new Map<number, Array<{ productId: string; giftQuantity: string }>>();
       for (const g of row.gifts) {
         const list = grouped.get(g.minSubtotal) ?? [];
@@ -186,7 +186,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
         return;
       }
       if (seenTiers.has(min)) {
-        setError(`Trùng mốc ${min.toLocaleString('vi-VN')}đ ở hai bậc — gộp quà vào cùng một bậc.`);
+        setError(`Trùng mốc ${min.toLocaleString('vi-VN')}đ ở hai bậc - gộp quà vào cùng một bậc.`);
         return;
       }
       seenTiers.add(min);
@@ -291,7 +291,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Mua sách hội chợ — tặng quà"
+              placeholder="Mua sách hội chợ - tặng quà"
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
             />
           </div>
@@ -341,7 +341,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
 
           <div className="space-y-2">
             <p className="text-xs font-bold text-slate-700">
-              Bậc quà — chỉ bậc CAO NHẤT đạt được chạy, không cộng dồn. Muốn mốc lớn tặng nhiều món thì thêm quà vào CÙNG bậc.
+              Bậc quà - chỉ bậc CAO NHẤT đạt được chạy, không cộng dồn. Muốn mốc lớn tặng nhiều món thì thêm quà vào CÙNG bậc.
             </p>
             {tiers.map((t, ti) => (
               <div key={ti} className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
@@ -385,7 +385,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
                       <option value="">Chọn quà…</option>
                       {products.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} — {(p.sellingPrice || 0).toLocaleString('vi-VN')} đ
+                          {p.name} - {(p.sellingPrice || 0).toLocaleString('vi-VN')} đ
                         </option>
                       ))}
                     </select>

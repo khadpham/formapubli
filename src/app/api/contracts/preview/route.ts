@@ -9,7 +9,7 @@ import { ContractEngineService } from '@/services/contract-engine.service';
 
 export const dynamic = 'force-dynamic';
 
-/** POST /api/contracts/preview — merge template + data, trả bytes docx (D1, debounce 400ms ở client). */
+/** POST /api/contracts/preview - merge template + data, trả bytes docx (D1, debounce 400ms ở client). */
 export async function POST(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);

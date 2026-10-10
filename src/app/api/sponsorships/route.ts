@@ -7,7 +7,7 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * Bước 4 — Contract API Quỹ Tài trợ (INTERNAL, không VAT lúc nhận).
+ * Bước 4 - Contract API Quỹ Tài trợ (INTERNAL, không VAT lúc nhận).
  * POST /api/sponsorships { action, ... }:
  * - CREATE_FUND: { sponsorName, amountReceived, quotaType:'CAPPED'|'OPEN', quotaLimit?, partnerId?, note? }
  * - DRAW: { fundId, editionId, warehouseId, quantity, note?, idempotencyKey? }

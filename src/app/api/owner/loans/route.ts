@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER'] as UserRole[];
 
-/** GET /api/owner/loans — tổng quan nợ vay (chỉ chủ). */
+/** GET /api/owner/loans - tổng quan nợ vay (chỉ chủ). */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/owner/loans — ghi nhận khoản vay mới (chỉ chủ). */
+/** POST /api/owner/loans - ghi nhận khoản vay mới (chỉ chủ). */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

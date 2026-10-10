@@ -1,11 +1,11 @@
 /**
- * Engine tính quà khuyến mại — HÀM THUẦN KHIẾT, KHÔNG truy vấn DB.
+ * Engine tính quà khuyến mại - HÀM THUẦN KHIẾT, KHÔNG truy vấn DB.
  *
  * Ràng buộc cứng (đã chốt):
  *  · Mô hình BẬC THANG: đơn chỉ nhận mốc CAO NHẤT mà đạt được. Đơn 1 triệu
  *    với bậc 500k→A, 800k→A+B, 1tr→A+B+C thì tặng A+B+C MỘT LẦN, không phải
  *    2A+2B+C.
- *  · `giftQuantity` LUÔN là số cố định, không bao giờ theo tỉ lệ — nếu sinh
+ *  · `giftQuantity` LUÔN là số cố định, không bao giờ theo tỉ lệ - nếu sinh
  *    động thì quà sinh quà, đó là vòng lặp thật.
  *  · Bật đối xứng bảo mật: thao tác TĂNG lợi ích khách thì phải qua duyệt
  *    (do UI/server quyết), thao tác GIẢM thì không cần ("Bỏ quà").
@@ -45,7 +45,7 @@ export interface ComputeGiftInput {
   /** TỔNG GIÁ GỐC của các dòng KHÔNG phải quà. Đừng truyền tổng cả đơn. */
   eligibleBase: number;
   campaigns: PromotionCampaign[];
-  /** Sản phẩm thu ngân đã bấm "Bỏ quà" — KHÔNG tặng lại. */
+  /** Sản phẩm thu ngân đã bấm "Bỏ quà" - KHÔNG tặng lại. */
   dismissed?: ReadonlySet<string>;
   /** Dòng quà tay đã được Quản lý duyệt. Bỏ qua bước tự tính. */
   approvedManual?: ReadonlySet<string>;
@@ -66,7 +66,7 @@ function inWindow(c: PromotionCampaign, at: Date): boolean {
  *
  * Mốc 0 ("đơn bất kỳ cũng tặng") chỉ kích hoạt khi đơn có tiền thật
  * (`eligibleBase > 0`): đơn 0đ (toàn dòng quà, không dòng bán) mà cũng tặng
- * thì thu ngân tạo đơn quà-only 0đ tuỳ ý — đúng lỗ hổng tự tặng đã chặn ở
+ * thì thu ngân tạo đơn quà-only 0đ tuỳ ý - đúng lỗ hổng tự tặng đã chặn ở
  * server. Giữ luật này ở engine để client và server cùng đúng.
  */
 function topTierReached(campaign: PromotionCampaign, eligibleBase: number): number | null {
@@ -121,7 +121,7 @@ export function computeGifts(input: ComputeGiftInput): ComputedGift[] {
   // downlevelIteration nên `for...of` trên Set là TS2802.
   for (const productId of Array.from(approvedManual ?? [])) {
     // "Bỏ quà" phải THẮNG cả quà tay. Thiếu dòng này thì thu ngân bấm "Bỏ
-    // quà" xong quà tay vẫn hiện lại — đúng loại lỗi im lặng mà test bắt được.
+    // quà" xong quà tay vẫn hiện lại - đúng loại lỗi im lặng mà test bắt được.
     if (dismissed?.has(productId)) continue;
     const existing = out.find((x) => x.productId === productId);
     if (existing) {
@@ -153,7 +153,7 @@ export function giftValueWarning(
   if (giftTotalValue <= 0 || eligibleBase <= 0) return null;
   const ratio = giftTotalValue / eligibleBase;
   if (ratio >= 0.5) {
-    return `Giá trị quà bằng ${Math.round(ratio * 100)}% giá trị đơn — kiểm tra lại mức quà cho mốc này.`;
+    return `Giá trị quà bằng ${Math.round(ratio * 100)}% giá trị đơn - kiểm tra lại mức quà cho mốc này.`;
   }
   return null;
 }

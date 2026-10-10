@@ -14,11 +14,11 @@ import {
 import { CatalogRef, ParsedItem, parseSmartOrder } from '@/lib/smart-order-parser';
 
 /**
- * 5.1 — SMART VOICE POS DISPATCHER (backend).
+ * 5.1 - SMART VOICE POS DISPATCHER (backend).
  *
  * Luồng: audio thu ngân -> Groq Whisper STT (tiếng Việt) -> trích xuất thực thể
  * (Gemini -> OpenAI -> Rule-based) -> GIỎ NHÁP cho thu ngân xác nhận.
- * Service này KHÔNG tạo đơn, KHÔNG trừ kho — Human-in-the-loop bắt buộc ở UI.
+ * Service này KHÔNG tạo đơn, KHÔNG trừ kho - Human-in-the-loop bắt buộc ở UI.
  *
  * Edge-safe: native fetch/FormData/Blob/AbortController, không module Node.
  */
@@ -39,7 +39,7 @@ export function resolveGroqApiKey(): string {
   const key = (process.env.GROQ_API_KEY || '').trim();
   if (!key) {
     throw new VoiceConfigError(
-      'Thiếu GROQ_API_KEY. Chế độ giọng nói tắt — dùng nhập/dán text dự phòng.'
+      'Thiếu GROQ_API_KEY. Chế độ giọng nói tắt - dùng nhập/dán text dự phòng.'
     );
   }
   return key;
@@ -110,7 +110,7 @@ export async function transcribeAudio(params: {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Trích xuất thực thể đơn hàng từ transcript (LLM -> Rule-based).
+// 2. Trích xuất thực thể đơn sách từ transcript (LLM -> Rule-based).
 // ---------------------------------------------------------------------------
 
 const VoiceOrderItemSchema = z.object({
@@ -155,7 +155,7 @@ function crossCheckCatalog(
   for (const it of items) {
     const ref = byId.get(it.editionId);
     if (!ref) {
-      warnings.push(`Loại dòng lạ không có trong danh mục: ${it.code || it.editionId} — thu ngân kiểm tra tay.`);
+      warnings.push(`Loại dòng lạ không có trong danh mục: ${it.code || it.editionId} - thu ngân kiểm tra tay.`);
       continue;
     }
     const qty = Math.max(1, Math.min(999, it.quantity));
@@ -234,7 +234,7 @@ export async function extractOrderEntities(
       warnings: fallback.warnings,
     },
     checked: fallback.items,
-    checkWarnings: [...fallback.warnings, 'LLM không khả dụng — dùng bộ phân tích nội bộ, thu ngân kiểm tra kỹ.'],
+    checkWarnings: [...fallback.warnings, 'LLM không khả dụng - dùng bộ phân tích nội bộ, thu ngân kiểm tra kỹ.'],
     engine: 'FALLBACK_RULE_BASED',
   };
 }
@@ -294,7 +294,7 @@ export async function parseVoiceOrder(params: {
     confidence,
     aiNote:
       engine === 'FALLBACK_RULE_BASED'
-        ? 'LLM không khả dụng — giỏ nháp từ bộ phân tích nội bộ, thu ngân kiểm tra từng dòng trước khi chốt.'
-        : 'Giỏ nháp do AI đề xuất — thu ngân kiểm tra và bấm xác nhận (Human-in-the-loop).',
+        ? 'LLM không khả dụng - giỏ nháp từ bộ phân tích nội bộ, thu ngân kiểm tra từng dòng trước khi chốt.'
+        : 'Giỏ nháp do AI đề xuất - thu ngân kiểm tra và bấm xác nhận (Human-in-the-loop).',
   };
 }

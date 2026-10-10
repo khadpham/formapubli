@@ -1,7 +1,7 @@
 import { removeAccents } from './vietnamese';
 
 /**
- * Bước 1 — Trợ lý Lên đơn Nhanh (Smart Paste / Quick Order Parser).
+ * Bước 1 - Trợ lý Lên đơn Nhanh (Smart Paste / Quick Order Parser).
  * Thuần function (0 dependency, 0 schema) để unit-test dễ dàng.
  * Fail-safe: thứ gì không chắc → warnings để nhân viên xác nhận tay, không đoán bừa.
  */
@@ -74,7 +74,7 @@ export function parseSmartOrder(chat: string, catalog: CatalogRef[]): SmartParse
   if (phoneMatch) {
     result.phone = normalizePhone(phoneMatch[0]);
   } else {
-    warnings.push('Không tách được SĐT — kiểm tra lại đoạn chat.');
+    warnings.push('Không tách được SĐT - kiểm tra lại đoạn chat.');
   }
 
   // 2. Địa chỉ: dòng chứa từ khóa giao/nhận (lấy đoạn dài nhất)
@@ -93,7 +93,7 @@ export function parseSmartOrder(chat: string, catalog: CatalogRef[]): SmartParse
   if (bestAddr) {
     result.address = bestAddr;
   } else {
-    warnings.push('Không tách được địa chỉ — nhập tay giúp.');
+    warnings.push('Không tách được địa chỉ - nhập tay giúp.');
   }
 
   // 3. Tên khách: chỉ nhận khi ghi rõ "tên (là) X" / "mình là X"
@@ -102,7 +102,7 @@ export function parseSmartOrder(chat: string, catalog: CatalogRef[]): SmartParse
   if (nameMatch) {
     result.customerName = nameMatch[1].split(/[,.\d]/)[0].trim();
   } else {
-    warnings.push('Chưa rõ tên khách — nhập tay hoặc để "Khách FB".');
+    warnings.push('Chưa rõ tên khách - nhập tay hoặc để "Khách FB".');
   }
 
   // 4. Sách: dò tên không dấu trong chat, số lượng theo số đứng gần nhất
@@ -126,14 +126,14 @@ export function parseSmartOrder(chat: string, catalog: CatalogRef[]): SmartParse
   }
   result.items = Array.from(merged.values());
   if (result.items.length === 0) {
-    warnings.push('Không nhận diện được tên sách nào — chọn tay trong danh mục.');
+    warnings.push('Không nhận diện được tên sách nào - chọn tay trong danh mục.');
   }
 
   // 5. Số lẻ không gắn được với sách nào → cảnh báo (trừ SĐT đã tách)
   const textNoPhone = phoneMatch ? rawChat.replace(phoneMatch[0], ' ') : rawChat;
   const strayNums = textNoPhone.match(/\b\d{2,}\b/g) || [];
   if (strayNums.length > 0 && result.items.every((it) => it.quantity === 1)) {
-    warnings.push(`Có con số chưa rõ nghĩa (${strayNums.slice(0, 3).join(', ')}) — kiểm tra số lượng.`);
+    warnings.push(`Có con số chưa rõ nghĩa (${strayNums.slice(0, 3).join(', ')}) - kiểm tra số lượng.`);
   }
 
   return result;

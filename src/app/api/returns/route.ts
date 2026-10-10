@@ -8,7 +8,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * BV-06 — Contract API Phiếu Đổi/Trả sách.
+ * BV-06 - Contract API Phiếu Đổi/Trả sách.
  *
  * POST /api/returns { action, ... }:
  * - REQUEST: { orderId, returnType, reason, targetWarehouseId, inventoryDisposition,
@@ -18,10 +18,10 @@ export const dynamic = 'force-dynamic';
  * - COMPLETE: { returnId, exchangeItems?: [{editionId, quantity}] }
  * - REJECT: { returnId, rejectNote? }
  * - VOID: { returnId, voidReason! }
- * GET /api/returns?orderId=&status= — tra cứu phiếu.
+ * GET /api/returns?orderId=&status= - tra cứu phiếu.
  *
  * Phân quyền: ROLE_TAX không được mutate. APPROVE/COMPLETE/REJECT/VOID chỉ
- * ROLE_OWNER/ROLE_MANAGER. Cửa sổ trả hàng do ReturnService giữ nguyên — không
+ * ROLE_OWNER/ROLE_MANAGER. Cửa sổ trả hàng do ReturnService giữ nguyên - không
  * có đường override cho thu ngân (đã gỡ 2026-09-29, xem chú thích bên trong).
  */
 
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const ALLOWED_VIEW_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE'];
-    // P1b: Default-Deny — bắt buộc session cookie hợp lệ.
+    // P1b: Default-Deny - bắt buộc session cookie hợp lệ.
     const session = await requireSessionRole(req, ALLOWED_VIEW_ROLES);
     const userRole = session.role;
     const actorHeader = session.actorId;
@@ -57,12 +57,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     const needPriv = action !== 'REQUEST';
-    // CP3-R1 (mục 6): REQUEST chỉ OWNER/MANAGER/CASHIER — TAX và WAREHOUSE bị chặn.
+    // CP3-R1 (mục 6): REQUEST chỉ OWNER/MANAGER/CASHIER - TAX và WAREHOUSE bị chặn.
     const allowedRoles: UserRole[] = needPriv
       ? ['ROLE_OWNER', 'ROLE_MANAGER']
       : ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'];
 
-    // P1b: Default-Deny — danh tính lấy từ session (giữ nguyên CP3-R1:
+    // P1b: Default-Deny - danh tính lấy từ session (giữ nguyên CP3-R1:
     // body.createdBy không bao giờ được dùng làm identity).
     const session = await requireSessionRole(req, allowedRoles);
     const userRole = session.role;
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Vai trò này không được thao tác phiếu đổi/trả.' }, { status: 403 });
     }
 
-    // CP3-R1: số lượng không cắt thập phân — "1.5" tới service nguyên vẹn để bị chặn.
+    // CP3-R1: số lượng không cắt thập phân - "1.5" tới service nguyên vẹn để bị chặn.
     const toQty = (v: unknown): number => {
       if (typeof v === 'number') return v;
       if (typeof v === 'string' && v.trim() !== '') return Number(v.trim());
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     if (action === 'REQUEST') {
       // Gỡ nhánh PIN quản lý (2026-09-29).
       //
-      // Nhánh cũ chỉ chạy khi client gửi `expectWindowOverride` — mà KHÔNG client
+      // Nhánh cũ chỉ chạy khi client gửi `expectWindowOverride` - mà KHÔNG client
       // nào gửi tham số đó (grep toàn src/ chỉ còn đúng dòng kiểm tra này). Nên nó
       // là code chết: tính năng "cho thu ngân trả hàng quá hạn bằng PIN" chưa
       // bao giờ tồn tại trên UI.
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
         idempotencyKey: body.idempotencyKey,
         note: body.note,
         // Quản lý/Owner vẫn bypass được cửa sổ trả hàng như trước. Thu ngân thì
-        // không — trước đây nhánh PIN cho phép, nhưng PIN không bao giờ đúng nên
+        // không - trước đây nhánh PIN cho phép, nhưng PIN không bao giờ đúng nên
         // thực tế đã là không cho phép từ lâu. Giữ nguyên hành vi quan sát được.
         bypassWindow: isPrivileged(userRole),
         items: Array.isArray(body.items) ? body.items.map((it: any) => ({

@@ -16,7 +16,7 @@ interface RevenueAnalyticsPanelProps {
   warehouseId: string;
   /** undefined = không lọc sổ (API chỉ nhận đúng 2 giá trị này). */
   fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
-  /** Mã nhân viên THẬT đóng watermark — lấy từ Sổ Kép, KHÔNG ghi hằng số. */
+  /** Mã nhân viên THẬT đóng watermark - lấy từ Sổ Kép, KHÔNG ghi hằng số. */
   actorId: string;
 }
 
@@ -29,7 +29,7 @@ interface ChannelRow {
   share: number;
 }
 
-/** `GET /api/analytics?view=cashflow` — server đã loại SPONSORSHIP khỏi `salesRevenue`. */
+/** `GET /api/analytics?view=cashflow` - server đã loại SPONSORSHIP khỏi `salesRevenue`. */
 interface Cashflow {
   channels: ChannelRow[];
   salesRevenue: number;
@@ -47,7 +47,7 @@ const SOURCE_GROUPS: { id: string; label: string; channels: string[]; icon: any 
   { id: 'gift', label: 'Tặng / Tài trợ', channels: ['SPONSORSHIP'], icon: Gift },
 ];
 
-/** Nhóm bán hàng THẬT — nhóm tặng/tài trợ hiện dòng riêng, ngoài doanh thu. */
+/** Nhóm bán hàng THẬT - nhóm tặng/tài trợ hiện dòng riêng, ngoài doanh thu. */
 const SELL_GROUPS = SOURCE_GROUPS.filter((g) => g.id !== 'gift');
 const GIFT_GROUP = SOURCE_GROUPS.find((g) => g.id === 'gift')!;
 
@@ -100,14 +100,14 @@ export function RevenueAnalyticsPanel({
       ]);
       if (controller.signal.aborted) return;
       const failed: string[] = [];
-      // `cashflow.channels` CHÍNH LÀ breakdown kênh đã lọc — dùng lại thay vì
+      // `cashflow.channels` CHÍNH LÀ breakdown kênh đã lọc - dùng lại thay vì
       // gọi thêm `view=channels` (hai nguồn cùng câu truy vấn, dễ lệch nhau).
       if (fRes?.success) setCashflow(fRes.data || null);
       else failed.push('dòng tiền');
       if (sRes?.success) setConsignment(sRes.data || []);
       else failed.push('ký gửi');
       if (failed.length > 0) {
-        setLoadError(`Không tải được số liệu ${failed.join(', ')} — kiểm tra mạng rồi bấm Tải lại.`);
+        setLoadError(`Không tải được số liệu ${failed.join(', ')} - kiểm tra mạng rồi bấm Tải lại.`);
       }
     } finally {
       if (!controller.signal.aborted) setLoading(false);
@@ -180,12 +180,12 @@ export function RevenueAnalyticsPanel({
     for (const g of groups) {
       for (const r of g.rows) {
         // Tỷ trọng TÍNH LẠI trên `salesRevenue` (mẫu số như dòng TỔNG) chứ không
-        // dùng `share` của server — server chia trên TỔNG CẢ kênh kể cả tài trợ.
+        // dùng `share` của server - server chia trên TỔNG CẢ kênh kể cả tài trợ.
         const rev = Number(r.revenue || 0);
         push(g.label, r.channel, Number(r.orders || 0), rev, salesRevenue > 0 ? (rev / salesRevenue) * 100 : 0);
       }
     }
-    // Dòng tài trợ RIÊNG, KHÔNG gộp vào doanh thu bán — và LUÔN có mặt (kể cả
+    // Dòng tài trợ RIÊNG, KHÔNG gộp vào doanh thu bán - và LUÔN có mặt (kể cả
     // khi 0đ) để file khớp đúng bảng trên màn hình, nơi dòng này hiện hoài.
     push('Tặng / Tài trợ (ngoài doanh thu)', 'SPONSORSHIP', gift.orders, gift.revenue, 0);
     push('TỔNG', '', totalOrders, salesRevenue, salesRevenue > 0 ? 100 : 0);
@@ -195,7 +195,7 @@ export function RevenueAnalyticsPanel({
     const watermarked = appendExportWatermark(baseCsv, rawObjects, {
       actorId,
       actorRole: currentRole,
-      reportName: `Phân tích nguồn doanh thu & dòng tiền — ${rangeLabel} — ${fiscalScope ? fiscalScopeLabel(fiscalScope) : 'mọi sổ'}`,
+      reportName: `Phân tích nguồn doanh thu & dòng tiền - ${rangeLabel} - ${fiscalScope ? fiscalScopeLabel(fiscalScope) : 'mọi sổ'}`,
       fiscalScope: fiscalScope || 'ALL',
     });
     const blob = new Blob(['\uFEFF' + watermarked], { type: 'text/csv;charset=utf-8;' });
@@ -218,7 +218,7 @@ export function RevenueAnalyticsPanel({
             Phân Tích Nguồn Doanh Thu & Dòng Tiền
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Bán lẻ • Đại lý • Online • Tặng/đối tác — kèm tỷ trọng %, COD và ký gửi. Chỉ Chủ sở hữu / Quản lý.
+            Bán lẻ • Đại lý • Online • Tặng/đối tác - kèm tỷ trọng %, COD và ký gửi. Chỉ Chủ sở hữu / Quản lý.
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             Số liệu theo đúng bộ lọc của bảng trên: kho, ngày, sổ.
@@ -236,7 +236,7 @@ export function RevenueAnalyticsPanel({
           <button
             onClick={exportSourceCsv}
             disabled={!actorId}
-            title={actorId ? 'Xuất báo cáo nguồn doanh thu' : 'Chưa đọc được người đăng nhập — tải lại trang'}
+            title={actorId ? 'Xuất báo cáo nguồn doanh thu' : 'Chưa đọc được người đăng nhập - tải lại trang'}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
@@ -245,7 +245,7 @@ export function RevenueAnalyticsPanel({
         </div>
       </div>
 
-      {/* Bao loi tai — phan biet "tai loi" voi "khong co du lieu" */}
+      {/* Bao loi tai - phan biet "tai loi" voi "khong co du lieu" */}
       {loadError && (
         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center justify-between gap-2">
           <span className="font-medium">{loadError}</span>
@@ -259,7 +259,7 @@ export function RevenueAnalyticsPanel({
         </div>
       )}
 
-      {/* Trạng thái tải / rỗng RIÊNG — không hiện 0 đ giả khi chưa có số liệu */}
+      {/* Trạng thái tải / rỗng RIÊNG - không hiện 0 đ giả khi chưa có số liệu */}
       {showLoading && (
         <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
           Đang tải số liệu theo bộ lọc kho/ngày/sổ…
@@ -273,7 +273,7 @@ export function RevenueAnalyticsPanel({
 
       {cashflow && !showEmpty && (
         <>
-          {/* Tổng quan dòng tiền — số lấy thẳng từ cashflow, không cộng lại client */}
+          {/* Tổng quan dòng tiền - số lấy thẳng từ cashflow, không cộng lại client */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
               <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1"><Wallet className="w-3.5 h-3.5" /> Doanh thu bán hàng</p>
@@ -297,7 +297,7 @@ export function RevenueAnalyticsPanel({
             </div>
           </div>
 
-          {/* Bảng theo nhóm nguồn — dòng tài trợ RIÊNG, dòng TỔNG ở cuối */}
+          {/* Bảng theo nhóm nguồn - dòng tài trợ RIÊNG, dòng TỔNG ở cuối */}
           <TableExpandOverlay title="Nguồn doanh thu" onExport={exportSourceCsv} exportLabel="Xuất Excel/CSV">
           <div className="overflow-x-auto table-scroll">
             <table className="w-full text-left text-xs">
@@ -351,7 +351,7 @@ export function RevenueAnalyticsPanel({
                   </td>
                   <td className="p-3 font-mono font-bold">{gift.orders.toLocaleString('vi-VN')}</td>
                   <td className="p-3 font-mono font-bold text-amber-700">{gift.revenue.toLocaleString('vi-VN')} đ</td>
-                  <td className="p-3 font-mono text-slate-500">—</td>
+                  <td className="p-3 font-mono text-slate-500">-</td>
                   <td className="p-3 text-slate-600">
                     {gift.rows.length === 0 ? (
                       <span className="text-slate-400">Chưa phát sinh</span>
@@ -381,7 +381,7 @@ export function RevenueAnalyticsPanel({
         </>
       )}
 
-      {/* Ký gửi đại lý — tồn vật lý, KHÔNG chia theo kho/sổ nên chỉ lọc ngày */}
+      {/* Ký gửi đại lý - tồn vật lý, KHÔNG chia theo kho/sổ nên chỉ lọc ngày */}
       {consignment.length > 0 && (
         <div className="overflow-x-auto">
           <h4 className="text-xs font-extrabold text-slate-900 mb-2">Hàng ký gửi tại các đại lý</h4>

@@ -13,7 +13,7 @@ export interface TransferContentInput {
 /**
  * Kho có cấu hình mẫu nội dung chuyển khoản chưa.
  *
- * Tách ra để POS và màn Quản Lý Kho cùng hỏi một chỗ — trước đây UI tự đoán
+ * Tách ra để POS và màn Quản Lý Kho cùng hỏi một chỗ - trước đây UI tự đoán
  * bằng `template ? ... : ...` ở hai file, dễ lệch nhau.
  */
 export function hasTransferTemplate(template: string | null | undefined): boolean {
@@ -31,14 +31,14 @@ export { VIETQR_CONTENT_MAX };
  * với sao kê. Trước đây kho trắng mẫu ⇒ nội dung = mã đơn trần 29 ký tự, bị
  * `normalizeVietqrContent` cắt còn 23 ⇒ mất 3 ký tự cuối, và thu ngân không
  * thấy số lượng. Nay nhường chỗ cho số lượng bằng CÁCH RÚT GỌN mã đơn trong QR
- * (mã đơn đầy đủ vẫn nằm nguyên trong DB và mọi nơi khác — nó là khoá đối soát).
+ * (mã đơn đầy đủ vẫn nằm nguyên trong DB và mọi nơi khác - nó là khoá đối soát).
  *
  * VÌ SAO NGẮN THẾ: chuỗi này phải ổn định (mỗi đơn một nội dung, không đổi theo
  * thời gian) và ngắn, để sau `normalizeVietqrContent` (bỏ dấu, bỏ ký tự lạ, cắt
  * còn 23) phần định danh mã đơn KHÔNG bị cắt. Không dùng chữ có dấu/ký tự lạ vì
  * chúng bị bỏ mà vẫn ăn chỗ.
  *
- * Mẫu đã cấu hình cho kho LUÔN thắng mẫu này — đây chỉ là dự phòng.
+ * Mẫu đã cấu hình cho kho LUÔN thắng mẫu này - đây chỉ là dự phòng.
  */
 export const DEFAULT_TRANSFER_TEMPLATE = '{SL}cuon {MA}';
 
@@ -57,7 +57,7 @@ function fnv1aHex(s: string): string {
  *
  * VÌ SAO KHÁC MÃ ĐƠN TRONG DB: VietQR cắt `add_info` còn 23 ký tự, mà mã đơn thật
  * (`ORD-20260928-<16 hex>`) dài 29 ⇒ phần cuối bị mất và số lượng không còn chỗ.
- * Nên bản ĐI VÀO QR dùng tham chiếu ngắn. MÃ ĐƠN ĐẦY ĐỦ TRONG DB KHÔNG ĐỔI — nó
+ * Nên bản ĐI VÀO QR dùng tham chiếu ngắn. MÃ ĐƠN ĐẦY ĐỦ TRONG DB KHÔNG ĐỔI - nó
  * mới là khoá đối soát sao kê.
  *
  * Thuần, không I/O, không `Math.random`: cùng mã đơn ⇒ luôn ra cùng tham chiếu,
@@ -78,7 +78,7 @@ export function resolveTransferContent(input: TransferContentInput): string {
   const tpl = hasTransferTemplate(template) ? (template as string) : DEFAULT_TRANSFER_TEMPLATE;
 
   // Mã đơn trong QR LUÔN là bản rút gọn, kể cả khi kho có mẫu riêng. Mã đơn đầy
-  // đủ (29 ký tự) chiếm trọn ô 23 ký tự và đẩy {SL} ra ngoài — đó chính là lỗi
+  // đủ (29 ký tự) chiếm trọn ô 23 ký tự và đẩy {SL} ra ngoài - đó chính là lỗi
   // "mất số lượng". Bản đầy đủ vẫn nằm nguyên trong DB, nó mới là khoá đối soát.
   const ma = compactOrderCode(orderCode);
   const sl = String(itemCount || 0);

@@ -7,7 +7,7 @@ export type WarehouseRow = typeof warehouses.$inferSelect;
 export type BankAccountRow = typeof bankAccounts.$inferSelect;
 
 /**
- * V4.1 S1.2 — Single Source of Truth thay hardcode SELLABLE_WAREHOUSE_IDS.
+ * V4.1 S1.2 - Single Source of Truth thay hardcode SELLABLE_WAREHOUSE_IDS.
  * Quy tắc bán: kho phải tồn tại + is_active + is_sellable_on_pos.
  * Mọi call site (order/sponsorship/return) dùng chung guard này.
  */
@@ -32,7 +32,7 @@ export class WarehouseService {
     return row!;
   }
 
-  /** Danh sách kho POS được phép chọn (màn hình chọn kho ca làm việc — Sprint 2 dùng). */
+  /** Danh sách kho POS được phép chọn (màn hình chọn kho ca làm việc - Sprint 2 dùng). */
   static async listSellable(txOrDb: any = db): Promise<WarehouseRow[]> {
     return await txOrDb
       .select()
@@ -42,7 +42,7 @@ export class WarehouseService {
           eq(warehouses.isActive, true),
           eq(warehouses.isSellableOnPos, true),
           // Kho đối tác (CONSIGNMENT) chỉ là shortcut theo dõi trong tab Đối tác,
-          // không phải kho vận hành — ẩn khỏi mọi danh sách kho nghiệp vụ.
+          // không phải kho vận hành - ẩn khỏi mọi danh sách kho nghiệp vụ.
           // Bắt cả type lẫn code pattern KHO_KY_GUI% để xử lý kho cũ chưa có type đúng.
           ne(warehouses.warehouseType, 'CONSIGNMENT'),
           not(like(warehouses.code, 'KHO_KY_GUI%'))
@@ -51,7 +51,7 @@ export class WarehouseService {
       .orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
   }
 
-  /** Danh sách tất cả các kho (kể cả đã ngưng) — màn hình quản trị cần thấy
+  /** Danh sách tất cả các kho (kể cả đã ngưng) - màn hình quản trị cần thấy
    * kho đã ngưng để bật lại được. Không bao gồm kho đối tác (CONSIGNMENT):
    * chúng chỉ hiện trong tab Đối tác & Đại lý. */
   static async listAll(txOrDb: any = db): Promise<WarehouseRow[]> {
@@ -220,7 +220,7 @@ export class WarehouseService {
     await txOrDb.delete(stockBalances).where(eq(stockBalances.warehouseId, warehouseId));
 
     // Gỡ tham chiếu nhân viên TRƯỚC khi xóa kho (cột assigned có FK tới
-    // warehouses.id — dọn sau sẽ quá muộn nếu FK được bật).
+    // warehouses.id - dọn sau sẽ quá muộn nếu FK được bật).
     await this.detachStaffReferences(warehouseId, txOrDb);
 
     await txOrDb.delete(warehouses).where(eq(warehouses.id, warehouseId));
@@ -290,7 +290,7 @@ export class WarehouseService {
   }
 
   /**
-   * V4.1 S1.3 — Cấp số chứng từ liên tục (PCK/PXK/PXK_R).
+   * V4.1 S1.3 - Cấp số chứng từ liên tục (PCK/PXK/PXK_R).
    * BẮT BUỘC gọi trong cùng tx với INSERT phiếu (cùng commit/rollback → không nhảy số).
    */
   static async getNextDocumentCode(

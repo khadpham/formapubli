@@ -8,7 +8,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/portal-orders/picking — Danh sách soạn hàng cho thủ kho.
+ * GET /api/portal-orders/picking - Danh sách soạn hàng cho thủ kho.
  *
  * Chỉ trả về thông tin đóng gói (KHÔNG có giá/doanh thu):
  * - Tên, SĐT, địa chỉ khách
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       'ROLE_WAREHOUSE',
     ] as UserRole[]);
 
-    // Lấy đơn ONLINE đang PENDING (chưa hoàn tất). LIMIT chống 1102 — panel
+    // Lấy đơn ONLINE đang PENDING (chưa hoàn tất). LIMIT chống 1102 - panel
     // chỉ cần đợi xử lý, không cần 100 đơn cùng lúc.
     const pendingOrders = await db
       .select({
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
       .limit(50);
 
     // Gộp items của MỌI đơn thành 1 query (N+1 cũ gọi ~40 lần Turso mỗi poll
-    // 5s — nguyên nhân gần CPU limit ⇒ 1102). Rồi gộp editions/products 1 lần.
+    // 5s - nguyên nhân gần CPU limit ⇒ 1102). Rồi gộp editions/products 1 lần.
     const allItems = pendingOrders.length
       ? await db
           .select({

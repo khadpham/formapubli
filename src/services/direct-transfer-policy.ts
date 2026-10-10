@@ -2,7 +2,7 @@
  * Direct Internal Transfer Policy (/api/inventory/transfer).
  * Single Source of Truth: docs/CP3_EXECUTION_PLAN.md §9.
  *
- * 04/10/2026 — allowlist tĩnh (mặc định rỗng ⇒ 403 MỌI tuyến) đã gây tê liệt
+ * 04/10/2026 - allowlist tĩnh (mặc định rỗng ⇒ 403 MỌI tuyến) đã gây tê liệt
  * chuyển kho thật: kho hội chợ tạo động không bao giờ kịp cấu hình, trong khi
  * đường batch (cùng role OWNER/MANAGER, cùng hiệu ứng) vốn đã mở. Quy tắc hiện
  * hành do InventoryService.assertTransferPair làm chủ: 2 kho tồn tại + active
@@ -31,7 +31,7 @@ export const FORBIDDEN_DIRECT_TRANSFER_WAREHOUSES: ReadonlySet<string> = new Set
 
 /**
  * V4.1 S1.3: kiểm tra họ kho cấm dùng chung cho cả direct 1-cuốn và batch nhiều-cuốn.
- * (transit / consignment / quarantine / damaged — theo id hoặc substring).
+ * (transit / consignment / quarantine / damaged - theo id hoặc substring).
  */
 export function isForbiddenWarehouseFamily(warehouseId: string): boolean {
   const w = (warehouseId || '').trim();

@@ -18,14 +18,14 @@ export const dynamic = 'force-dynamic';
  *   - sessionId: ID phiên két tiền ca làm việc (tùy chọn).
  *   - includeOpenShiftCheck: '0' để bỏ qua phần cảnh báo ca quá giờ.
  *
- * POST /api/pos/daily-settlement — CHỐT NGÀY (quản lý/owner), đúng 1 lần/ngày/kho.
+ * POST /api/pos/daily-settlement - CHỐT NGÀY (quản lý/owner), đúng 1 lần/ngày/kho.
  *   Body: { warehouseId, date?, notes?, autoCloseOpenShifts? }
  */
 export async function GET(req: NextRequest) {
   try {
     // B1 (bug #3): báo cáo tổng ngày chỉ OWNER/MANAGER. Cashier xem ca của
     // mình qua /api/cashbox (server ép actor); warehouse/tax 403 ở endpoint
-    // POS này. Ẩn nút UI thôi là không đủ — chặn ở server.
+    // POS này. Ẩn nút UI thôi là không đủ - chặn ở server.
     const session = await requireSessionRole(req, [
       'ROLE_OWNER',
       'ROLE_MANAGER',

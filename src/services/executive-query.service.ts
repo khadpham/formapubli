@@ -9,7 +9,7 @@ import { eq, desc, sql, and, inArray, ne, or } from 'drizzle-orm';
 export interface QueryStockParams {
   editionId?: string;
   warehouseId?: string;
-  /** Ten hoac ma sach nguoi dung nhac trong cau hoi (vd "H01", "Benh tuong") — server tu phan giai. */
+  /** Ten hoac ma sach nguoi dung nhac trong cau hoi (vd "H01", "Benh tuong") - server tu phan giai. */
   codeOrTitle?: string;
 }
 
@@ -42,7 +42,7 @@ export interface QueryCashboxParams {
 }
 
 export interface QueryCatalogParams {
-  /** Cau hoi nguyen van — server tu phan tich y dinh (tac gia, chu cai dau, top, liet ke). */
+  /** Cau hoi nguyen van - server tu phan tich y dinh (tac gia, chu cai dau, top, liet ke). */
   q?: string;
   author?: string;
   titleStartsWith?: string;
@@ -160,7 +160,7 @@ export class ExecutiveQueryService {
     const tWords = t.split(/[^a-z0-9]+/).filter(Boolean);
     if (tWords.length === 0) return 0;
     const q = ` ${normQ} `;
-    // Tên 1 từ ("Khách", "Ondine"): bắt buộc ngữ cảnh sách — nếu không từ
+    // Tên 1 từ ("Khách", "Ondine"): bắt buộc ngữ cảnh sách - nếu không từ
     // "khách hàng" sẽ bắt nhầm cuốn "Khách".
     if (tWords.length === 1) {
       const bookCtx = /cuon|sach|tua|quyen|tap|tac pham|dau sach|ban chay|ton kho|nhip ban|gio vang|ma [a-z]{0,4}\d/.test(normQ);
@@ -169,7 +169,7 @@ export class ExecutiveQueryService {
     // Tên đầy đủ nằm trong câu hỏi (ranh giới từ, chắc nhất).
     if (q.includes(` ${t} `)) return tWords.length + 10;
     // Cụm dài nhất của tên (≥2 từ) xuất hiện trong câu hỏi: "nữ công tước",
-    // "ba lối", "con chó" — đủ đặc trưng nên không cần ngữ cảnh thêm.
+    // "ba lối", "con chó" - đủ đặc trưng nên không cần ngữ cảnh thêm.
     let run = 0;
     for (let i = 0; i < tWords.length; i++) {
       for (let j = i + 2; j <= tWords.length; j++) {
@@ -525,7 +525,7 @@ export class ExecutiveQueryService {
     };
 
     // c. Ten + SDT khach TRUOC, tren CUNG 1 chuoi chuan hoa (scanQ) de span cat
-    // chinh xac tuyet doi — khong con map ti le gay lech. SDT chap nhan cach so
+    // chinh xac tuyet doi - khong con map ti le gay lech. SDT chap nhan cach so
     // ("0912 345 678") bang cach dan so lien nhau truoc khi do.
     const ROLE_WORDS = /^(khach|anh|chi|em|co|chu|bac|ban|minh|shop)$/;
     // SDT chiu cach so ("0912 345 678"): scanQ giu nguyen, tach SDT bang pattern
@@ -545,7 +545,7 @@ export class ExecutiveQueryService {
       if (hit >= 0) scanQ = scanQ.slice(0, hit) + ' '.repeat(compact(nameMatch[1]).length) + scanQ.slice(hit + compact(nameMatch[1]).length);
     }
     if (customerName === undefined) {
-      // Khong co ten cu the nhung co cum xuat don ("cho khach:", "ban cho em") — cat luon
+      // Khong co ten cu the nhung co cum xuat don ("cho khach:", "ban cho em") - cat luon
       // de tu vai tro (khach/em/anh/chi) khong khop nham tua sach.
       const rolePrefix = scanQ.match(/(cho|gui|giao|ban)\s+(cho\s+)?(khach|anh|chi|em|co|chu|bac)\b[:\s]*/);
       if (rolePrefix && rolePrefix.index !== undefined) {
@@ -632,22 +632,22 @@ export class ExecutiveQueryService {
     for (const it of items) {
       it.availableStock = await ForecastService.availableStock(it.editionId);
       if (it.quantity > it.availableStock) {
-        warnings.push(`[${it.code}] ${it.title} chỉ còn ${it.availableStock} cuốn — POS sẽ chặn ở mức tồn, kiểm tra lại số lượng.`);
+        warnings.push(`[${it.code}] ${it.title} chỉ còn ${it.availableStock} cuốn - POS sẽ chặn ở mức tồn, kiểm tra lại số lượng.`);
       }
     }
     if (items.length === 0) {
-      warnings.push('Không nhận diện được tên/mã sách nào — thử nói rõ mã (H01) hoặc tên đầy đủ.');
+      warnings.push('Không nhận diện được tên/mã sách nào - thử nói rõ mã (H01) hoặc tên đầy đủ.');
     }
     const stray = scanQ.match(/\b\d{2,}\b/g) || [];
     if (stray.length > 0 && items.every((it) => it.quantity === 1)) {
-      warnings.push(`Có con số chưa rõ nghĩa (${stray.slice(0, 3).join(', ')}) — kiểm tra lại số lượng từng dòng.`);
+      warnings.push(`Có con số chưa rõ nghĩa (${stray.slice(0, 3).join(', ')}) - kiểm tra lại số lượng từng dòng.`);
     }
 
     return { customerName, phone, note: `[COPILOT] ${q.slice(0, 300)}`, items, warnings };
   }
 
   /**
-   * GĐ2 — prepare_transfer_draft: ngôn ngữ tự nhiên → PHIẾU CHUYỂN KHO NHÁP.
+   * GĐ2 - prepare_transfer_draft: ngôn ngữ tự nhiên → PHIẾU CHUYỂN KHO NHÁP.
    * CHỈ chuẩn bị draft, TUYỆT ĐỐI không ghi DB, không gọi dispatch.
    * Người dùng xem lại trong dialog xác nhận và bấm "Xác nhận tạo phiếu"
    * mới gọi API dispatch thật (có idempotency-key chống double-click).
@@ -668,10 +668,10 @@ export class ExecutiveQueryService {
       fromWh = await this.resolveWarehouseFromText(m[1]);
       toWh = await this.resolveWarehouseFromText(m[3]);
     }
-    if (!fromWh) warnings.push('Chưa xác định được kho gửi — cho xin tên kho gửi (vd "kho Âu Cơ").');
-    if (!toWh) warnings.push('Chưa xác định được kho nhận — cho xin tên kho nhận.');
+    if (!fromWh) warnings.push('Chưa xác định được kho gửi - cho xin tên kho gửi (vd "kho Âu Cơ").');
+    if (!toWh) warnings.push('Chưa xác định được kho nhận - cho xin tên kho nhận.');
     if (fromWh && toWh && fromWh.warehouseId === toWh.warehouseId) {
-      warnings.push('Kho gửi và kho nhận đang trùng nhau — kiểm tra lại.');
+      warnings.push('Kho gửi và kho nhận đang trùng nhau - kiểm tra lại.');
     }
 
     // 2. Sách + số lượng: quét mã sách theo token, số lượng kề bên.
@@ -688,7 +688,7 @@ export class ExecutiveQueryService {
     const nearbyQty = (text: string, idx: number, len: number): number => {
       const cap = (n: number, raw: string): number => {
         if (n > 999) {
-          warnings.push(`Số lượng ${raw} vượt quá 999 — đã giới hạn ở 999, kiểm tra lại giúp.`);
+          warnings.push(`Số lượng ${raw} vượt quá 999 - đã giới hạn ở 999, kiểm tra lại giúp.`);
           return 999;
         }
         return n;
@@ -738,12 +738,12 @@ export class ExecutiveQueryService {
           .where(and(eq(stockBalances.editionId, it.editionId), eq(stockBalances.warehouseId, fromWh.warehouseId)));
         it.availableStock = Number(bal[0]?.qty || 0);
         if (it.quantity > it.availableStock) {
-          warnings.push(`[${it.code}] xin chuyển ${it.quantity} nhưng kho gửi chỉ còn ${it.availableStock} — giảm số lượng hoặc chọn kho khác.`);
+          warnings.push(`[${it.code}] xin chuyển ${it.quantity} nhưng kho gửi chỉ còn ${it.availableStock} - giảm số lượng hoặc chọn kho khác.`);
         }
       }
     }
     if (items.length === 0) {
-      warnings.push('Chưa nhận diện được sách nào — cho xin mã sách (vd HH001) kèm số lượng.');
+      warnings.push('Chưa nhận diện được sách nào - cho xin mã sách (vd HH001) kèm số lượng.');
     }
 
     return {
@@ -755,7 +755,7 @@ export class ExecutiveQueryService {
   }
 
   /**
-   * 5. query_catalog: Truy van danh muc — sach cua 1 tac gia, tua bat dau bang chu X,
+   * 5. query_catalog: Truy van danh muc - sach cua 1 tac gia, tua bat dau bang chu X,
    * top tac gia / top sach ban chay, liet ke. Tach khoi 4 tool so lieu de khong doan mo.
    */
   static async queryCatalog(params: QueryCatalogParams = {}): Promise<{
@@ -884,7 +884,7 @@ export class ExecutiveQueryService {
     const n = norm(q);
 
     // a. Top tac gia / top sach ban chay (chiu cach noi long vong: "ban cung chay",
-    // "nhieu dau sach nhat" — khong doi cum tu lien tuc).
+    // "nhieu dau sach nhat" - khong doi cum tu lien tuc).
     const hasTopSignal =
       /(yeu thich|pho bien|hang dau)/.test(n) ||
       (n.includes('nhieu') && n.includes('nhat')) ||
@@ -1000,7 +1000,7 @@ export class ExecutiveQueryService {
       eq(orders.status, 'COMPLETED'),
       shopeeDeliveredOnly(),
       // Dùng CHUNG helper ngày với getSalesSummary (chuẩn hoá qua datetime())
-      // thay vì so chuỗi thô — nếu không, breakdown lệch tổng summary khi cột
+      // thay vì so chuỗi thô - nếu không, breakdown lệch tổng summary khi cột
       // có timestamp họ 'YYYY-MM-DD HH:MM:SS'.
       ...createdAtBetween(orders.createdAt, cutoff, singleDay || undefined),
       sql`${orders.channel} != 'SPONSORSHIP'`,
@@ -1142,7 +1142,7 @@ export class ExecutiveQueryService {
     // `date` là ngày nghiệp vụ (người dùng hỏi copilot bằng tiếng Việt: "hôm
     // nay", "ngày 28/9"), còn `opened_at` là UTC. Điều kiện PHẢI nằm trong SQL:
     // trước đây lấy 20 ca mới nhất RỒI MỚI lọc tay trong JS, nên hỏi một ngày
-    // cũ (ngoài 20 ca gần nhất) trả về rỗng — im lặng báo "không có ca nào"
+    // cũ (ngoài 20 ca gần nhất) trả về rỗng - im lặng báo "không có ca nào"
     // trong khi ca đó có thật. `datetime()` đọc được cả ISO lẫn CURRENT_TIMESTAMP.
     const conds = [];
     if (sessionId) {
@@ -1175,7 +1175,7 @@ export class ExecutiveQueryService {
       // Ca chốt TỰ ĐỘNG ghi cash_discrepancy = NULL vì KHÔNG ai đếm két
       // (xem CashboxService.autoCloseSession: closingCashActual = NULL,
       // discrepancyVerified = false). Báo "Cân bằng" cho ca đó là khẳng định
-      // một sự thật chưa ai kiểm chứng — cấm. Không đọc được số thì báo chưa
+      // một sự thật chưa ai kiểm chứng - cấm. Không đọc được số thì báo chưa
       // xác minh, không suy diễn thành khớp / không khớp.
       let discrepancyStatus: 'BALANCED' | 'OVER' | 'SHORT' | 'OPEN' | 'UNVERIFIED';
       if (r.status === 'OPEN') {
@@ -1464,7 +1464,7 @@ export class ExecutiveQueryService {
       .where(and(...gConds))
       .groupBy(orderItems.productId);
     const gifts = gRows
-      .map((r) => ({ code: r.code || '?', title: r.title || '—', qty: Number(r.qty || 0), orders: Number(r.orders || 0) }))
+      .map((r) => ({ code: r.code || '?', title: r.title || '-', qty: Number(r.qty || 0), orders: Number(r.orders || 0) }))
       .filter((r) => r.qty > 0)
       .sort((a, b) => b.qty - a.qty);
     const rConds = [...createdAtBetween(returnOrders.createdAt, from, todayVn)];
@@ -1522,7 +1522,7 @@ export class ExecutiveQueryService {
       if (m) code = m[1].trim();
     }
     if (!code) {
-      return { found: false, orderCode: null, warning: 'Chưa rõ mã đơn cần tra — cho xin mã đơn (vd ORD-...).' };
+      return { found: false, orderCode: null, warning: 'Chưa rõ mã đơn cần tra - cho xin mã đơn (vd ORD-...).' };
     }
     let row: any = (await db.select().from(orders).where(eq(orders.orderCode, code)).limit(1))[0];
     if (!row && code.toUpperCase() !== code) {
@@ -1563,7 +1563,7 @@ export class ExecutiveQueryService {
       },
       items: lines.map((l) => ({
         code: l.code || '?',
-        title: l.title || '—',
+        title: l.title || '-',
         qty: Number(l.qty || 0),
         price: Number(l.price || 0),
         total: Number(l.total || 0),
@@ -1600,10 +1600,10 @@ export class ExecutiveQueryService {
     // đẩy điều kiện ilike xuống DB cho nhánh codeHit (khớp chính xác), giữ in-memory
     // cho nhánh fuzzy (SQL không so khớp không dấu được).
     const rawStatus = `${params.status || ''}`.trim().toUpperCase();
-    // Minor 4: validate status ở tầng service — gọi trực tiếp với status lạ
+    // Minor 4: validate status ở tầng service - gọi trực tiếp với status lạ
     // thì báo warning, không lặng lẽ trả rỗng.
     const status = VALID_CONTRACT_STATUSES.includes(rawStatus) ? rawStatus : '';
-    const statusWarning = rawStatus && !status ? `Trạng thái "${rawStatus}" không hợp lệ — bỏ qua lọc trạng thái.` : '';
+    const statusWarning = rawStatus && !status ? `Trạng thái "${rawStatus}" không hợp lệ - bỏ qua lọc trạng thái.` : '';
     const rows = await db
       .select({
         contractNumber: contractDocuments.contractNumber,
@@ -1618,7 +1618,7 @@ export class ExecutiveQueryService {
       .from(contractDocuments)
       .leftJoin(partners, eq(contractDocuments.partnerId, partners.id))
       .orderBy(desc(contractDocuments.createdAt));
-    // Bóc mã HĐ trước — chính xác nhất ("hợp đồng HD-BQ-2026-901").
+    // Bóc mã HĐ trước - chính xác nhất ("hợp đồng HD-BQ-2026-901").
     const codeHit = rawQ.match(CONTRACT_CODE_RE);
     let filtered = rows;
     if (codeHit) {
@@ -1626,7 +1626,7 @@ export class ExecutiveQueryService {
       filtered = rows.filter((r) => (r.contractNumber || '').toLowerCase().includes(needle));
     } else {
       // Minor 1: "còn hiệu lực" là filter ngữ nghĩa, không phải từ khóa tìm kiếm.
-      // Phát hiện trước khi strip — strip sẽ xóa "còn"/"hiệu lực" thành rỗng.
+      // Phát hiện trước khi strip - strip sẽ xóa "còn"/"hiệu lực" thành rỗng.
       const normRaw = removeAccents(rawQ.toLowerCase());
       const wantsEffective = /\bcon hieu luc\b/.test(normRaw);
       const stripped = stripToolKeywords(rawQ, [
@@ -1713,7 +1713,7 @@ export class ExecutiveQueryService {
       if (hits.length > 0) {
         matched = hits;
       } else {
-        // Không khớp tên đối tác nào — liệt kê top nợ thay vì "not found".
+        // Không khớp tên đối tác nào - liệt kê top nợ thay vì "not found".
         usedFallback = true;
       }
     }
@@ -1738,7 +1738,7 @@ export class ExecutiveQueryService {
           paymentDueDays: Number(p.paymentDueDays ?? DEFAULT_PAYMENT_DUE_DAYS),
         });
       } catch {
-        // Bỏ qua đối tác lỗi lẻ, không sập cả tool — nhưng phải báo số lượng.
+        // Bỏ qua đối tác lỗi lẻ, không sập cả tool - nhưng phải báo số lượng.
         skipped++;
       }
     }
@@ -1747,7 +1747,7 @@ export class ExecutiveQueryService {
       return { items: [], total: 0, warning: 'Không tìm thấy đối tác nào.' };
     }
     const warnings: string[] = [];
-    if (usedFallback) warnings.push(`Không tìm thấy đối tác khớp "${rawQ.slice(0, 80)}" — hiển thị các đối tác nợ nhiều nhất.`);
+    if (usedFallback) warnings.push(`Không tìm thấy đối tác khớp "${rawQ.slice(0, 80)}" - hiển thị các đối tác nợ nhiều nhất.`);
     if (skipped > 0) warnings.push(`Bỏ qua ${skipped} đối tác do lỗi tính toán.`);
     return {
       items,
@@ -1770,7 +1770,7 @@ function stripToolKeywords(q: string, stopwords: string[]): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
-/** Pattern bóc mã hợp đồng trong câu hỏi — format "HD-BQ-..." (dùng trong test/seed). */
+/** Pattern bóc mã hợp đồng trong câu hỏi - format "HD-BQ-..." (dùng trong test/seed). */
 const CONTRACT_CODE_RE = /HD-BQ-[\w-]+/i;
 
 /** Trạng thái hợp đồng hợp lệ (giá trị thật từ contract.service.ts). */

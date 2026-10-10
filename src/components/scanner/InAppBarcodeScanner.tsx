@@ -22,12 +22,12 @@ interface InAppBarcodeScannerProps {
   onScan: (scannedCode: string) => void;
   /** Mở thẳng bước thanh toán. Bấm ở đây sẽ tự đóng camera trước. */
   onGoToCheckout?: () => void;
-  /** Số cuốn trong giỏ — hiện trên nút xanh để thu ngân biết còn bao nhiêu. */
+  /** Số cuốn trong giỏ - hiện trên nút xanh để thu ngân biết còn bao nhiêu. */
   cartCount?: number;
 }
 
 /**
- * VÙNG QUÉT (ROI) — dùng CHUNG cho khung nhìn và cho bộ giải mã, nên thứ người
+ * VÙNG QUÉT (ROI) - dùng CHUNG cho khung nhìn và cho bộ giải mã, nên thứ người
  * dùng thấy ĐÚNG là thứ máy quét.
  *
  * VÌ SAO CẦN (30/09, người dùng báo): trước đây khung nhìn là ô `w-64 h-44` nhưng
@@ -40,7 +40,7 @@ interface InAppBarcodeScannerProps {
  * phải giữ nguyên kích thước trên màn hình ở mọi mức zoom.
  *
  * Vì khung quét phải nhìn như khung ngắm, kích thước tính theo TỈ LỆ KHUNG HÌNH
- * (`ROI_BOX_ASPECT`) chứ không phải hai phần trăm cứng — màn hình cao (dọc, full
+ * (`ROI_BOX_ASPECT`) chứ không phải hai phần trăm cứng - màn hình cao (dọc, full
  * screen) và màn hàn rộng (ngang) đều ra khung cùng dáng.
  */
 export const ROI_BOX_ASPECT = 1.45;
@@ -55,7 +55,7 @@ export interface NormalizedRect {
 }
 
 /**
- * Khung quét luôn CĂN GIỮA — người dùng chỉ cần đưa mã vào giữa khung.
+ * Khung quét luôn CĂN GIỮA - người dùng chỉ cần đưa mã vào giữa khung.
  * `elW`/`elH` là kích thước ô xem camera; hàm trả về tỉ lệ 0..1.
  */
 export function roiRect(elW: number, elH: number): NormalizedRect {
@@ -77,7 +77,7 @@ export function roiRect(elW: number, elH: number): NormalizedRect {
  *
  * Rất dễ sơ sai: `object-cover` CẮT bớt phần dư của video, nên "100% khung nhìn"
  * KHÔNG phải "100% khung hình". Nếu quy vùng quét theo khung hình mà vẽ khung
- * nhìn theo phần hiển thị thì hai thứ lệch nhau — đúng loại lỗi người dùng đang
+ * nhìn theo phần hiển thị thì hai thứ lệch nhau - đúng loại lỗi người dùng đang
  * gặp. Hàm này là nguồn sự thật chung cho cả hai.
  *
  * Trả về tỉ lệ theo KHUNG HÌNH video.
@@ -155,7 +155,7 @@ export function InAppBarcodeScanner({
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // Máy quét luôn dùng camera sau (đã bỏ nút chuyển trước/sau 30/09), nên không
-  // cần setter — giữ cố định cho vòng lặp camera không đổi hướng ngoài ý muốn.
+  // cần setter - giữ cố định cho vòng lặp camera không đổi hướng ngoài ý muốn.
   const [facingMode] = useState<'environment' | 'user'>('environment');
   const [hasTorch, setHasTorch] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
@@ -197,7 +197,7 @@ export function InAppBarcodeScanner({
   displayScaleRef.current = displayScale;
 
   // Kích thước ô xem camera, đo bằng ResizeObserver. ROI tính từ đây nên khung
-  // nhìn và bộ giải mã LUÔN dùng cùng một con số — kể cả khi xoay ngang/dọc.
+  // nhìn và bộ giải mã LUÔN dùng cùng một con số - kể cả khi xoay ngang/dọc.
   const viewRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const viewSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -228,9 +228,9 @@ export function InAppBarcodeScanner({
     setMounted(true);
   }, []);
 
-  // MỞ KHOÁ ÂM THANH — phải bắt ở WINDOW, không bắt ở modal.
+  // MỞ KHOÁ ÂM THANH - phải bắt ở WINDOW, không bắt ở modal.
   //
-  // LÝ DO (review 30/09 — lỗi nghiêm trọng, chỉ lộ trên iPhone):
+  // LÝ DO (review 30/09 - lỗi nghiêm trọng, chỉ lộ trên iPhone):
   //   Bản trước gắn listener vào `modalRef.current`. Nhưng modal CHƯA TỒN TẠI cho
   //   tới khi `openScanner()` đã chạy xong ⇒ lúc thu ngân bấm nút "Quét mã" thì
   //   chưa có modal để bắt chạm ⇒ listener không chạy ⇒ `AudioContext` được tạo
@@ -239,7 +239,7 @@ export function InAppBarcodeScanner({
   //   rung ⇒ mất hẳn kênh báo. Đây đúng là triệu chứng mà commit này định sửa.
   //
   //   Cách sửa: bắt ở `window` và đăng ký NGAY khi component mount (component luôn
-  //   được render trong POS) — không phụ thuộc `isOpen`, không `once`. Nhờ vậy lần
+  //   được render trong POS) - không phụ thuộc `isOpen`, không `once`. Nhờ vậy lần
   //   chạm vào nút "Quét mã" chính là gesture thật và mở khoá được.
   useEffect(() => {
     const unlock = () => {
@@ -276,13 +276,13 @@ export function InAppBarcodeScanner({
   const lockedCodeRef = useRef<string | null>(null); // Mã đang bị khóa trong khung hình
   const framesWithoutBarcodeRef = useRef<number>(0); // Đếm số frame liên tiếp không thấy mã để reset lock
 
-  // 1. BÍP BÁO ĐÃ NHẬN BARCODE — tổng hợp bằng Web Audio, KHÔNG dùng file âm.
+  // 1. BÍP BÁO ĐÃ NHẬN BARCODE - tổng hợp bằng Web Audio, KHÔNG dùng file âm.
   //
   // VÌ SAO KHÔNG TẠO AudioContext MỚI MỖI LẦN BÍP (lỗi đã có trong bản cũ):
   //   `new AudioContext()` mỗi lần quét là thói quen sai trên mobile. iOS giới
   //   hạn số AudioContext đồng thời, và context sinh ra NGOÀI user gesture thường
   //   rơi vào trạng thái "suspended" ⇒ bíp vài lần là mất tiếng hẳn. Đó là lý do
-  //   thu ngân báo "tiếng bé / không nghe thấy" chứ KHÔNG phải vì gain thấp — nên
+  //   thu ngân báo "tiếng bé / không nghe thấy" chứ KHÔNG phải vì gain thấp - nên
   //   chỉ tăng `gain` sẽ không sửa được. Nay dùng MỘT context cho cả phiên.
   //
   //   Mở khoá âm thanh bằng chính user gesture: lần chạm đầu tiên vào khung
@@ -300,7 +300,7 @@ export function InAppBarcodeScanner({
       }
       if (audioCtxRef.current.state === 'suspended') {
         void audioCtxRef.current.resume().catch(() => {
-          /* chưa có gesture — lần chạm sau sẽ mở khoá */
+          /* chưa có gesture - lần chạm sau sẽ mở khoá */
         });
       }
       return audioCtxRef.current;
@@ -327,7 +327,7 @@ export function InAppBarcodeScanner({
     osc.frequency.exponentialRampToValueAtTime(toHz, at + dur);
     // Hình chữ nhạt bằng hàm mũ: bùng gần như tức thì (bắt đầu ngay, không bị
     // bỏ sót khi thu ngân quét nhanh) rồi tắt mềm để không "bụp" gây giật.
-    // 0.95 — sát trần trước khi bị cắt/khếch. Nâng cao hơn chỉ làm méo tiếng.
+    // 0.95 - sát trần trước khi bị cắt/khếch. Nâng cao hơn chỉ làm méo tiếng.
     gain.gain.setValueAtTime(0.0001, at);
     gain.gain.exponentialRampToValueAtTime(0.95, at + 0.006);
     gain.gain.setValueAtTime(0.95, at + dur * 0.75);
@@ -402,7 +402,7 @@ export function InAppBarcodeScanner({
       }
 
       // ƯU TIÊN 2: Bất kỳ camera sau nào không phải ống kính phụ.
-      // (KHÔNG loại 'wide': Apple gọi ống kính chính của iPhone là "Wide" —
+      // (KHÔNG loại 'wide': Apple gọi ống kính chính của iPhone là "Wide" -
       // loại 'wide' sẽ vứt nhầm cam chính. Chỉ loại ultra/tele/depth/macro.)
       const nonMacroBack = candidateList.find((d) => {
         const l = d.label.toLowerCase();
@@ -632,13 +632,13 @@ export function InAppBarcodeScanner({
     }
   };
 
-  // 4b. Đổi zoom 1x/2x — PHÓNG HÌNH CAMERA, không đụng khung quét.
+  // 4b. Đổi zoom 1x/2x - PHÓNG HÌNH CAMERA, không đụng khung quét.
   //
   // Người dùng nói rõ (30/09): zoom phải phóng cảnh camera lên. Lần trước tôi làm
   // zoom = thu hẹp vùng đọc, đó là "phóng/thu frame quét" chứ không phải zoom.
   //
   // Thứ tự ưu tiên:
-  //  1. Ràng buộc zoom của camera (ảnh thật bị thu, nét nhất) — thử trước.
+  //  1. Ràng buộc zoom của camera (ảnh thật bị thu, nét nhất) - thử trước.
   //  2. Nếu máy không nhận ràng buộc ⇒ phóng bằng CSS `scale` quanh tâm. Vẫn là
   //     phóng hình, và `displayScale` bù lại khi quy đổi toạ độ crop.
   // Cả hai đều GIỮ NGUYÊN khung quét trên màn hình.
@@ -752,10 +752,10 @@ export function InAppBarcodeScanner({
           if (!ctx) throw new Error('Không đọc được hình ảnh từ camera.');
 
           // CHỈ vẽ VÙNG QUÉT (ROI), rồi phóng lên kích thước giải mã.
-          // ROI LẤY TỪ `viewSize` ĐÃ ĐO — đúng bằng cái hộp người dùng thấy.
+          // ROI LẤY TỪ `viewSize` ĐÃ ĐO - đúng bằng cái hộp người dùng thấy.
           // `displayScale` bù lại lúc camera phóng bằng CSS: khi đó người dùng
           // chỉ thấy phần giữa khung hình, nên vùng quét phải thu lại tương ứng.
-          // Lưu ý: zoom KHÔNG đổi `roi` — nó chỉ phóng hình, khung quét giữ
+          // Lưu ý: zoom KHÔNG đổi `roi` - nó chỉ phóng hình, khung quét giữ
           // nguyên kích thước trên màn hình ở mọi mức zoom.
           const vs = viewSizeRef.current;
           const laidOut = vs.w > 0 && vs.h > 0;
@@ -873,7 +873,7 @@ export function InAppBarcodeScanner({
           </button>
         </div>
 
-        {/* Viewfinder Video Area — CHIẾM TOÀN BỘ MÀN HÌNH (30/09: người dùng
+        {/* Viewfinder Video Area - CHIẾM TOÀN BỘ MÀN HÌNH (30/09: người dùng
             muốn xem hết màn hình điện thoại khi mở camera). */}
         <div ref={viewRef} className="relative flex-1 min-h-0 bg-black overflow-hidden">
           <video
@@ -954,7 +954,7 @@ export function InAppBarcodeScanner({
         </div>
 
         {/* Controls Bar */}
-        {/* Thanh nút: hàng 1 là nút phụ, hàng 2 là nút CHÍNH (xanh) — thu ngân
+        {/* Thanh nút: hàng 1 là nút phụ, hàng 2 là nút CHÍNH (xanh) - thu ngân
             nhìn là thấy ngay bước thanh toán. Nút chuyển ống trước/sau đã bỏ
             (30/09): máy quét luôn dùng camera sau, nút đó chỉ chiếm chỗ. */}
         <div

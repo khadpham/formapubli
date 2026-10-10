@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** POST /api/ai/contracts/finalize-template — chốt nháp thành mẫu chính thức (ai_generated=1, legal_reviewed=0). */
+/** POST /api/ai/contracts/finalize-template - chốt nháp thành mẫu chính thức (ai_generated=1, legal_reviewed=0). */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

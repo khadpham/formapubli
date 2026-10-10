@@ -7,9 +7,9 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * 5.4 — READER PERSONA (route read-only).
- * GET /api/ai/reader-persona?customerId=<id> — hồ sơ 360°.
- * GET /api/ai/reader-persona?matchForEdition=<editionId>&limit=50 — gợi ý độc giả.
+ * 5.4 - READER PERSONA (route read-only).
+ * GET /api/ai/reader-persona?customerId=<id> - hồ sơ 360°.
+ * GET /api/ai/reader-persona?matchForEdition=<editionId>&limit=50 - gợi ý độc giả.
  * RBAC: OWNER/MANAGER/CASHIER (thu ngân tra cứu ở quầy). P1b default-deny.
  */
 export async function GET(req: NextRequest) {

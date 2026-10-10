@@ -101,7 +101,7 @@ export function PortalOrdersPanel() {
     }
   };
 
-  // Real-time: poll 5s, CHỈ khi tab đang mở (chống 1102 — không poll nền).
+  // Real-time: poll 5s, CHỈ khi tab đang mở (chống 1102 - không poll nền).
   useEffect(() => {
     fetchOrders();
     const t = setInterval(() => {
@@ -196,7 +196,7 @@ export function PortalOrdersPanel() {
     );
   });
 
-  if (loading) return <div className="p-4 text-slate-500">Đang tải đơn hàng...</div>;
+  if (loading) return <div className="p-4 text-slate-500">Đang tải đơn sách...</div>;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 relative">
@@ -234,7 +234,7 @@ export function PortalOrdersPanel() {
         <div>
           <h3 className="text-lg font-extrabold text-slate-900">Đơn Online Cần Soạn</h3>
           <p className="text-xs text-slate-500">
-            {filtered.length} đơn chờ xử lý — tự cập nhật mỗi 5s, không cần bấm
+            {filtered.length} đơn chờ xử lý - tự cập nhật mỗi 5s, không cần bấm
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -309,7 +309,7 @@ export function PortalOrdersPanel() {
                     </td>
                     <td className="py-3 pr-4 max-w-xs">
                       <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 truncate" title={o.note}>
-                        {o.note || <span className="text-slate-400">—</span>}
+                        {o.note || <span className="text-slate-400">-</span>}
                       </div>
                     </td>
                     <td className="py-3 pr-4">

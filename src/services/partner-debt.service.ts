@@ -33,7 +33,7 @@ function receiptCode(): string {
  * - Mỗi phiếu thu trừ vào nợ chung theo FIFO (phiếu cũ trước);
  *   `deliveryOrderId` chỉ để ghi chú, không gắn cứng phân bổ.
  * - Quá hạn = còn dư sau `dispatchedAt + paymentDueDays`. Chỉ CẢNH BÁO
- *   (summary), không chặn giao hàng mới — chặn là quyết định UX riêng.
+ *   (summary), không chặn giao hàng mới - chặn là quyết định UX riêng.
  * - Ký gửi KHÔNG dùng bảng này (có `consignment_payments` riêng).
  */
 export class PartnerDebtService {
@@ -96,7 +96,7 @@ export class PartnerDebtService {
 
   /**
    * Sửa chiết khấu cố định hợp đồng của đại lý (tab Đối tác).
-   * Chỉ đổi mức mặc định để phiếu sau prefill theo — phiếu cũ không hồi tố.
+   * Chỉ đổi mức mặc định để phiếu sau prefill theo - phiếu cũ không hồi tố.
    */
   static async updateTerms(params: { id: string; discountRate: number }) {
     return await this.updateProfile({ id: params.id, discountRate: params.discountRate });

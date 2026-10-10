@@ -6,7 +6,7 @@ import { PartnerDebtService } from '@/services/partner-debt.service';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/partner-debt?partnerId=... — tổng phải thu/đã thu/còn nợ/quá hạn
+ * GET /api/partner-debt?partnerId=... - tổng phải thu/đã thu/còn nợ/quá hạn
  * bán đứt (FIFO, cảnh báo). OWNER/MANAGER.
  */
 export async function GET(req: NextRequest) {

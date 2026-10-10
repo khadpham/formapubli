@@ -27,7 +27,7 @@ interface CampaignModalProps {
 }
 
 /**
- * Modal "Chiến dịch bán ngắn hạn" — chỉ Chủ/Quản lý.
+ * Modal "Chiến dịch bán ngắn hạn" - chỉ Chủ/Quản lý.
  * Luật 1 modal/lúc: chuyển hàng vào là 1 view bên trong, không modal chồng modal.
  * Gom đầy đủ: tạo/vận hành + kho hội chợ (POS, ngưng/mở, TK nhận tiền) + nhân sự.
  */
@@ -193,11 +193,11 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
                   <div className="text-xs text-slate-600 space-y-1">
                     <p>
                       <span className="font-bold text-slate-800">Kho hội chợ:</span>{' '}
-                      {fairWh ? fairWh.name : detail.warehouseId || '(chưa sinh — bấm Bắt đầu)'}
+                      {fairWh ? fairWh.name : detail.warehouseId || '(chưa sinh - bấm Bắt đầu)'}
                     </p>
                     <p>
                       <span className="font-bold text-slate-800">Kho nguồn:</span>{' '}
-                      {sourceWh ? sourceWh.name : detail.sourceWarehouseId || '—'}
+                      {sourceWh ? sourceWh.name : detail.sourceWarehouseId || '-'}
                     </p>
                     <p>
                       <span className="font-bold text-slate-800">Thời gian:</span> {detail.startDate} → {detail.endDate}
@@ -256,10 +256,10 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
                         }
                         className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
                       >
-                        <option value="">— TK mặc định chung —</option>
+                        <option value="">- TK mặc định chung -</option>
                         {banks.map((b) => (
                           <option key={b.id} value={b.id}>
-                            {b.label} — {b.accountNo}
+                            {b.label} - {b.accountNo}
                           </option>
                         ))}
                       </select>
@@ -296,7 +296,7 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
                           ))}
                         </div>
                       ) : (
-                        <p className="text-[11px] text-slate-400 mb-2">Chưa gán ai — thu ngân tự chọn kho.</p>
+                        <p className="text-[11px] text-slate-400 mb-2">Chưa gán ai - thu ngân tự chọn kho.</p>
                       )}
                       <select
                         aria-label="Gán nhân sự vào kho hội chợ"

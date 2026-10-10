@@ -73,7 +73,7 @@ export async function exchangeCodeForToken(
   if (!data.response?.access_token || data.error) {
     throw new AppError(
       'SHOPEE_AUTH_EXPIRED',
-      'Đổi mã ủy quyền Shopee thất bại — Anh bấm ủy quyền lại.',
+      'Đổi mã ủy quyền Shopee thất bại - Anh bấm ủy quyền lại.',
       { error: data.error, message: data.message }
     );
   }
@@ -83,7 +83,7 @@ export async function exchangeCodeForToken(
 }
 
 /**
- * Gia hạn token — ĐÚNG 1 lần, không vòng lặp.
+ * Gia hạn token - ĐÚNG 1 lần, không vòng lặp.
  * Shopee xoay refresh_token mỗi lần: bắt buộc lưu cả cặp mới.
  * Thất bại ném SHOPEE_AUTH_EXPIRED để tab Chủ báo Anh ủy quyền lại.
  */
@@ -94,7 +94,7 @@ export async function refreshShopeeTokenOnce(
   if (!stored?.refresh_token) {
     throw new AppError(
       'SHOPEE_AUTH_EXPIRED',
-      'Gian hàng Shopee chưa ủy quyền — Anh bấm ủy quyền trước.'
+      'Gian hàng Shopee chưa ủy quyền - Anh bấm ủy quyền trước.'
     );
   }
   const data = await postShopee(
@@ -104,7 +104,7 @@ export async function refreshShopeeTokenOnce(
     false
   );
   if (!data.response?.access_token || data.error) {
-    throw new AppError('SHOPEE_AUTH_EXPIRED', 'Token Shopee hết hạn — Anh bấm ủy quyền lại.', {
+    throw new AppError('SHOPEE_AUTH_EXPIRED', 'Token Shopee hết hạn - Anh bấm ủy quyền lại.', {
       error: data.error,
       message: data.message,
     });

@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 const PRIVILEGED_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 const VALID_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
 
-// PATCH /api/staff/[staffId] — sửa tên / đổi role / reset passcode / khóa-mở.
+// PATCH /api/staff/[staffId] - sửa tên / đổi role / reset passcode / khóa-mở.
 // Không xóa cứng: khóa = isActive=false (giữ audit + két ca nguyên vẹn).
 // MANAGER chỉ được chạm CASHIER/WAREHOUSE/TAX, không leo thang đặc quyền.
 // Không ai được tự hạ role / tự khóa chính mình (chống tự khóa quầy).
@@ -61,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ st
       if (raw !== null && !Array.isArray(raw)) throw AppError.invalid('Danh sách kho không hợp lệ.');
       const ids = Array.from(new Set(((raw ?? []) as any[]).map((x) => `${x || ''}`.trim()).filter(Boolean)));
       if (ids.length > 0) {
-        // Kho đối tác (CONSIGNMENT) không phải kho vận hành — không được gán cho nhân viên.
+        // Kho đối tác (CONSIGNMENT) không phải kho vận hành - không được gán cho nhân viên.
         const rows = await db
           .select({ id: warehouses.id, isActive: warehouses.isActive })
           .from(warehouses)

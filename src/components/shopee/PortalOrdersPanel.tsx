@@ -109,7 +109,7 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
         setOrders(data.data || []);
         setUpdatedAt(new Date());
       } else {
-        showToast(data.error || 'Lỗi tải đơn hàng', 'error');
+        showToast(data.error || 'Lỗi tải đơn sách', 'error');
       }
     } catch (e: any) {
       console.error(e);
@@ -454,7 +454,7 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
         </div>
       </div>
 
-      {/* Bảng danh sách đơn hàng */}
+      {/* Bảng danh sách đơn sách */}
       {filtered.length === 0 ? (
         <div className="text-center py-12 text-slate-400 text-sm">
           {search ? (
@@ -677,7 +677,7 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
         </div>
       )}
 
-      {/* Modal chi tiết đơn hàng */}
+      {/* Modal chi tiết đơn sách */}
       {selected && (
         <div
           role="dialog"
@@ -842,7 +842,7 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
                 </button>
               ) : (
                 <div className="text-center py-2 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200">
-                  Đơn hàng đã được giao hoàn tất
+                  Đơn sách đã được giao hoàn tất
                 </div>
               )}
             </div>

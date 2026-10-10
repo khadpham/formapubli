@@ -126,7 +126,7 @@ export function AITemplateBuilder({ onClose, onSaved }: { onClose: () => void; o
 
         {draft && (
           <div className="mt-4 border-t pt-4">
-            <p className="text-xs font-bold text-amber-600 mb-2">⚠️ Bản nháp do AI soạn — CHƯA DUYỆT PHÁP LÝ. Hãy đọc kỹ và sửa trước khi chốt.</p>
+            <p className="text-xs font-bold text-amber-600 mb-2">⚠️ Bản nháp do AI soạn - CHƯA DUYỆT PHÁP LÝ. Hãy đọc kỹ và sửa trước khi chốt.</p>
             <label className="block text-xs font-bold mb-1">Tiêu đề mẫu</label>
             <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Tiêu đề mẫu" />

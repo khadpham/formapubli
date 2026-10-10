@@ -184,7 +184,7 @@ export class RmaService {
       // Conditional update CHỐT trạng thái trước: ai cũng thấy phiếu đã xử lý
       // ngay khi vào tx, và nếu bút toán hỏng thì cả nhóm rollback.
       // 'INSPECTING' chỉ tồn tại trong write transaction (SQLite một-writer) và
-      // bị rollback theo — không có dòng nào mang trạng thái này sau commit,
+      // bị rollback theo - không có dòng nào mang trạng thái này sau commit,
       // nên không rò sang listTickets.
       const claim: any = await tx.run(sql`
         UPDATE rma_tickets SET status = 'INSPECTING'

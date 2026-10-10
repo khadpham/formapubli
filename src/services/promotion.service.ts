@@ -6,7 +6,7 @@ import { AppError } from './app-error';
 /**
  * Chương trình khuyến mại (migration 0031).
  *
- * Mô hình BẬC THANG — các dòng `promotion_gifts` CÙNG `min_subtotal` là cùng
+ * Mô hình BẬC THANG - các dòng `promotion_gifts` CÙNG `min_subtotal` là cùng
  * một bậc. Engine (`src/lib/promotion-engine.ts`) là nguồn sự thật tính quà;
  * service này chỉ lo CRUD cấu hình, KHÔNG tính quà.
  */

@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** GET /api/contracts/company-profile — thông tin công ty Bên A. */
+/** GET /api/contracts/company-profile - thông tin công ty Bên A. */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** PUT /api/contracts/company-profile — sửa toàn phần, không khóa field nào (D8). */
+/** PUT /api/contracts/company-profile - sửa toàn phần, không khóa field nào (D8). */
 export async function PUT(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

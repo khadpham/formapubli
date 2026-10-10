@@ -7,7 +7,7 @@ import { vnDayOf } from '@/lib/vn-time';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { PeriodLockService } from './period-lock.service';
 
-/** Loại chi phí hợp lệ — nguồn sự thật cho test + UI. GĐ2 mở rộng ở ĐÂY. */
+/** Loại chi phí hợp lệ - nguồn sự thật cho test + UI. GĐ2 mở rộng ở ĐÂY. */
 export const EXPENSE_CATEGORIES = [
   'SALARY',
   'BONUS',
@@ -51,7 +51,7 @@ export async function listExpenses(limit = 100): Promise<ExpenseEntry[]> {
   return rows;
 }
 
-/** Lọc theo tháng VN từ `entry_date` — tiền tố 7 ký tự an toàn cho kỳ tháng. */
+/** Lọc theo tháng VN từ `entry_date` - tiền tố 7 ký tự an toàn cho kỳ tháng. */
 export async function listExpensesMonth(month: string): Promise<ExpenseEntry[]> {
   const clean = `${month || ''}`.trim();
   if (!/^\d{4}-\d{2}$/.test(clean)) {
@@ -81,7 +81,7 @@ async function validateAndShape(
   if (!Number.isFinite(amount) || amount <= 0) {
     throw AppError.invalid('Số tiền chi phí phải lớn hơn 0.');
   }
-  // Lương/thưởng phải gắn người — lương không người là dòng mù, không đối soát được.
+  // Lương/thưởng phải gắn người - lương không người là dòng mù, không đối soát được.
   const staffId = `${input.staffId || ''}`.trim() || null;
   if (STAFF_REQUIRED_CATEGORIES.includes(category) && !staffId) {
     throw AppError.invalid('Chi phí Lương/Thưởng phải chọn nhân viên.');
@@ -140,7 +140,7 @@ export interface ExpensePatch {
   recurrence?: string;
 }
 
-/** Sửa chi phí — CHỈ Chủ. Mỗi lần sửa ghi 1 dòng audit trước→sau. */
+/** Sửa chi phí - CHỈ Chủ. Mỗi lần sửa ghi 1 dòng audit trước→sau. */
 export async function updateExpense(
   id: string,
   patch: ExpensePatch,
@@ -155,7 +155,7 @@ export async function updateExpense(
   const before = existing[0];
 
   // Gộp patch lên dòng cũ rồi chạy lại toàn bộ validate (1 đường duy nhất,
-  // không phân biệt "thêm" hay "sửa" — sửa sai kiểu nào cũng bị chặn).
+  // không phân biệt "thêm" hay "sửa" - sửa sai kiểu nào cũng bị chặn).
   const merged = {
     category: patch.category !== undefined ? `${patch.category}` : before.category,
     amount: patch.amount !== undefined ? Number(patch.amount) : before.amount,

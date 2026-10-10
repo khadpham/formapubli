@@ -37,7 +37,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 /**
- * Sổ cái lịch trình — mọi thao tác đã xảy ra, lưu lâu trong DB.
+ * Sổ cái lịch trình - mọi thao tác đã xảy ra, lưu lâu trong DB.
  * Quản lý/Owner xem toàn bộ; nhân viên chỉ xem việc của chính mình.
  */
 export function ActivityLogView() {
@@ -71,7 +71,7 @@ export function ActivityLogView() {
             Nhật Ký Hoạt Động (Sổ Cái Lịch Trình)
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Ai làm gì, lúc nào — lưu lâu trong hệ thống, đóng app vẫn còn, dùng để đối soát.
+            Ai làm gì, lúc nào - lưu lâu trong hệ thống, đóng app vẫn còn, dùng để đối soát.
           </p>
         </div>
         <button

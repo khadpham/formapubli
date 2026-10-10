@@ -2,7 +2,7 @@
  * Định dạng ngày tháng văn bản hành chính Việt Nam (Nghị định 30/2020/NĐ-CP).
  * Ngày và tháng viết bằng 2 chữ số: "ngày 05 tháng 03 năm 2026".
  *
- * Chuỗi 'YYYY-MM-DD' được tách từng phần trực tiếp (không qua Date UTC) —
+ * Chuỗi 'YYYY-MM-DD' được tách từng phần trực tiếp (không qua Date UTC) -
  * tránh lệch ngày khi timezone máy/server lùi sau UTC.
  */
 export function formatVietnameseDate(dateInput: string | Date, prefixLocation?: string): string {

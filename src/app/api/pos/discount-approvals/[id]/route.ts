@@ -55,10 +55,10 @@ export async function POST(
     const { action, method, shortCode, qrToken, rejectedReason } = body;
 
     // Thu ngân KHÔNG được duyệt: mọi phương thức duyệt (1-chạm, mã 4 số, QR)
-    // đều quyết định của Quản lý — service chặn ở approveRequest/rejectRequest
+    // đều quyết định của Quản lý - service chặn ở approveRequest/rejectRequest
     // và từ chối tự duyệt đơn của chính mình. Route chỉ cho phép CANCEL đơn của
     // chính thu ngân; KHÔNG mở cửa sổ "mã khẩn cấp/OTP" vì không có bảng mã nào
-    // tồn tại và service vẫn chặn — cửa sổ đó chỉ là lời hứa không có thật.
+    // tồn tại và service vẫn chặn - cửa sổ đó chỉ là lời hứa không có thật.
     if (session.role === 'ROLE_CASHIER' && action !== 'CANCEL') {
       throw AppError.forbidden('Thu ngân chỉ có thể hủy yêu cầu duyệt chiết khấu của chính mình.');
     }
@@ -102,7 +102,7 @@ export async function POST(
     }
 
     // A1-F: cashier hủy yêu cầu của mình (hoặc manager/owner hủy hộ) trước
-    // khi sửa giỏ — server chuyển SUPERSEDED có điều kiện, UI mới bỏ khóa.
+    // khi sửa giỏ - server chuyển SUPERSEDED có điều kiện, UI mới bỏ khóa.
     // (nhánh CANCEL đã được xử lý ở trên, trước khi mở khóa APPROVE)
     throw AppError.invalid(`Hành động '${action}' không được hỗ trợ (chỉ APPROVE, REJECT hoặc CANCEL)`);
   } catch (error: any) {

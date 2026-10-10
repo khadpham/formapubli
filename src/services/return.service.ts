@@ -108,7 +108,7 @@ export class ReturnService {
    * Lập phiếu đổi/trả (status REQUESTED). CP3-R1: dòng hàng định danh bằng
    * orderItemId, mọi kiểm tra + idempotency + quota nằm trong write tx
    * (BEGIN IMMEDIATE để 2 request đồng thời không cùng ăn một quota).
-   * Chưa đụng ledger/két — chỉ snapshot giá và tổng tiền dự kiến.
+   * Chưa đụng ledger/két - chỉ snapshot giá và tổng tiền dự kiến.
    */
   static async createRequest(params: CreateReturnParams) {
     const {
@@ -116,7 +116,7 @@ export class ReturnService {
       cashboxSessionId, note, bypassWindow = false,
       items,
     } = params;
-    // CP3-R1 repair (mục 1-2): actorContext BẮT BUỘC — không fallback
+    // CP3-R1 repair (mục 1-2): actorContext BẮT BUỘC - không fallback
     // createdBy/actorRole, không suy role.
     if (!params.actorContext?.staffId?.trim()) {
       throw AppError.invalid('Thiếu actorContext cho thao tác lập phiếu đổi/trả.');
@@ -141,7 +141,7 @@ export class ReturnService {
     if (effRole !== 'ROLE_OWNER' && effRole !== 'ROLE_MANAGER' && effRole !== 'ROLE_CASHIER') {
       throw AppError.forbidden(`Vai trò ${effRole} không được lập phiếu đổi/trả.`);
     }
-    // Key bắt buộc — không tự sinh (mục 1-2).
+    // Key bắt buộc - không tự sinh (mục 1-2).
     const key = params.idempotencyKey?.trim() || '';
     if (!key) {
       throw AppError.invalid('Bắt buộc cung cấp idempotencyKey cho thao tác lập phiếu đổi/trả.');
@@ -155,7 +155,7 @@ export class ReturnService {
           .from(returnOrders)
           .where(eq(returnOrders.idempotencyKey, key))
           .limit(1);
-        // Fingerprint tính sau khi resolve dòng (cần orderLine) — đọc order trước.
+        // Fingerprint tính sau khi resolve dòng (cần orderLine) - đọc order trước.
         const ordRows = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
         if (ordRows.length === 0) throw AppError.invalid('Đơn gốc không tồn tại.');
         const origin: any = ordRows[0];
@@ -186,7 +186,7 @@ export class ReturnService {
             const cands = lineByEdition.get(it.editionId) || [];
             if (cands.length === 0) throw AppError.invalid(`Ấn bản ${it.editionId} không có trong đơn gốc.`);
             if (cands.length > 1) {
-              throw AppError.invalid(`Ấn bản ${it.editionId} xuất hiện nhiều dòng giá trong đơn — bắt buộc chỉ định orderItemId.`);
+              throw AppError.invalid(`Ấn bản ${it.editionId} xuất hiện nhiều dòng giá trong đơn - bắt buộc chỉ định orderItemId.`);
             }
             line = cands[0];
           } else {
@@ -196,7 +196,7 @@ export class ReturnService {
         });
 
         // CP3-R1 repair (mục 3): GỘP các dòng trùng orderItemId TRƯỚC KHI
-        // fingerprint, quota và insert — [1+1] và [2] cùng fingerprint.
+        // fingerprint, quota và insert - [1+1] và [2] cùng fingerprint.
         const consolidated = new Map<string, { orderItemId: string; editionId: string; quantity: number; unitPrice: number }>();
         for (const r of resolved) {
           const prev = consolidated.get(r.orderItemId);
@@ -277,7 +277,7 @@ export class ReturnService {
         }
 
         // CP3-R1 repair (mục 4): Server TỰ TÍNH refundAmount từ snapshot giá
-        // thực bán — bỏ qua mọi giá trị client gửi (kể cả refundAmount param).
+        // thực bán - bỏ qua mọi giá trị client gửi (kể cả refundAmount param).
         // REFUND: đủ giá trị dòng; EXCHANGE/DAMAGED_REPLACE: 0đ (đổi hàng, không tiền).
         let computedRefund = 0;
         for (const r of lines) computedRefund += r.unitPrice * r.quantity;
@@ -666,29 +666,29 @@ export class ReturnService {
               )[0];
               if (!sess || sess.status !== 'OPEN') {
                 throw AppError.conflict(
-                  `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không OPEN — rollback toàn bộ phiếu hoàn.`
+                  `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không OPEN - rollback toàn bộ phiếu hoàn.`
                 );
               }
               if (sess.warehouseId !== header.targetWarehouseId) {
                 throw AppError.conflict(
-                  `STATE_CONFLICT: Két ${sess.id} thuộc kho ${sess.warehouseId}, không khớp kho trả ${header.targetWarehouseId} — rollback toàn bộ.`
+                  `STATE_CONFLICT: Két ${sess.id} thuộc kho ${sess.warehouseId}, không khớp kho trả ${header.targetWarehouseId} - rollback toàn bộ.`
                 );
               }
               // Tiền hoàn phải bớt đúng ở KÉT ĐÃ THU TIỀN, tức két của kho
               // xuất đơn gốc. `targetWarehouseId` do CLIENT gửi và có thể là kho
               // khác (trả sách về kho nào tuỳ chọn của người lập phiếu) nên
-              // kiểm tra so với nó không đủ: đo được trước khi sửa — đơn 36.000đ
+              // kiểm tra so với nó không đủ: đo được trước khi sửa - đơn 36.000đ
               // ở kho A bị hoàn ghi vào két kho B ⇒ `expectedCash` két B = −36.000đ
               // (âm), còn két A vẫn hiện đã bán trọn. Chốt 2 kho đều lệch.
               if (sess.warehouseId !== origin.warehouseId) {
                 throw AppError.conflict(
                   `STATE_CONFLICT: Tiền hoàn mặt phải trừ két kho đã thu (${origin.warehouseId}), ` +
-                    `nhưng két ${sess.id} thuộc kho ${sess.warehouseId} — rollback toàn bộ.`
+                    `nhưng két ${sess.id} thuộc kho ${sess.warehouseId} - rollback toàn bộ.`
                 );
               }
               if (sess.cashierId !== effActor) {
                 throw AppError.forbidden(
-                  `FORBIDDEN: Két ${sess.id} thuộc thu ngân ${sess.cashierId}, người hoàn tất ${effActor} không phải chủ sở hữu — rollback toàn bộ.`
+                  `FORBIDDEN: Két ${sess.id} thuộc thu ngân ${sess.cashierId}, người hoàn tất ${effActor} không phải chủ sở hữu - rollback toàn bộ.`
                 );
               }
             }
@@ -966,7 +966,7 @@ export class ReturnService {
             )[0];
             if (!sess || sess.status !== 'OPEN') {
               throw AppError.conflict(
-                `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không còn OPEN — từ chối hủy tài chính phiếu hoàn tiền mặt.`
+                `STATE_CONFLICT: Phiên két ${header.cashboxSessionId} không còn OPEN - từ chối hủy tài chính phiếu hoàn tiền mặt.`
               );
             }
           }

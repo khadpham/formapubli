@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     ] as UserRole[]);
     const { searchParams } = new URL(req.url);
     // Quản lý Cài Đặt cần thấy cả TK tạm ngưng (đổi trạng thái, không biến mất
-    // khỏi list — Chủ tưởng đã xóa). POS giữ nguyên: chỉ TK active.
+    // khỏi list - Chủ tưởng đã xóa). POS giữ nguyên: chỉ TK active.
     if (searchParams.get('includeInactive') === '1') {
       if (session.role !== 'ROLE_OWNER' && session.role !== 'ROLE_MANAGER') {
         return NextResponse.json({ success: false, error: 'Chỉ chủ/quản lý được xem TK ngưng.' }, { status: 403 });

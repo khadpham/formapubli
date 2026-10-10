@@ -7,7 +7,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * V4.1 S2.2/S2.3 — Danh mục POS theo kho: metadata + ATP + số bán hôm nay.
+ * V4.1 S2.2/S2.3 - Danh mục POS theo kho: metadata + ATP + số bán hôm nay.
  * GET /api/pos/catalog?warehouseId=wh-hoi-cho-a
  * POS lọc atp > 0 và sắp xếp A-Z / bán chạy ngay trên response này.
  */

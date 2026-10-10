@@ -11,7 +11,7 @@ export interface SessionPayload {
   sessionId?: string;
   issuedAt: number;
   expiresAt: number;
-  // M2: version thu hồi — đổi passcode bump DB, token cũ lệch -> 401.
+  // M2: version thu hồi - đổi passcode bump DB, token cũ lệch -> 401.
   // Token cấp trước khi có version (undefined) được ân hạn tới hết hạn tự nhiên.
   sessionVersion?: number;
   // Kho được quản lý gán cho nhân viên. Ràng buộc: nhân viên chỉ được bán/điều
@@ -97,7 +97,7 @@ function base64UrlDecodeUtf8(input: string): string {
 
 /**
  * Ký tạo Session Token: base64Payload.hexSignature
- * (base64url thuần Web API — edge-safe, không Buffer)
+ * (base64url thuần Web API - edge-safe, không Buffer)
  */
 export async function signSession(payload: SessionPayload, secret = getAuthSecret()): Promise<string> {
   const jsonStr = JSON.stringify(payload);
@@ -331,13 +331,13 @@ function hashPasscode(passcode: string): string {
   return hashString(`${passcode}${AUTH_PASSCODE_SALT}`);
 }
 
-/** Băm mật khẩu nhân viên với salt riêng của từng tài khoản — Pure-TS, Edge-safe */
+/** Băm mật khẩu nhân viên với salt riêng của từng tài khoản - Pure-TS, Edge-safe */
 export function hashStaffPasscode(passcode: string, salt: string): string {
   return hashString(`${passcode}:${salt}`);
 }
 
 // ---------------------------------------------------------------------------
-// KDF V2 (PBKDF2-SHA256 qua WebCrypto — native, Edge-safe, zero-dependency).
+// KDF V2 (PBKDF2-SHA256 qua WebCrypto - native, Edge-safe, zero-dependency).
 // Hash SHA-256 1 vòng (legacy) quá nhanh → PIN 4 số bị vét cạn tức thì nếu
 // lộ DB. V2 dùng 100k vòng PBKDF2 + salt riêng + định dạng versioned:
 //   `v2$<iterations>$<hex>`
@@ -402,7 +402,7 @@ export async function verifyStaffPasscode(
   return { match, needsUpgrade: match };
 }
 
-/** So sánh hằng thời gian (timing-safe) cho hash passcode — Edge-safe, thuần TS. */
+/** So sánh hằng thời gian (timing-safe) cho hash passcode - Edge-safe, thuần TS. */
 export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -527,7 +527,7 @@ export function verifyRolePasscode(role: UserRole, passcode: string): boolean {
 
 // ---------------------------------------------------------------------------
 // CONTRACT ADAPTERS cho Bước 3 (rbac-guard): tên export khóa cứng theo thỏa thuận
-// Zero-Conflict — chỉ thêm mới, không đổi logic Lane 2 ở trên.
+// Zero-Conflict - chỉ thêm mới, không đổi logic Lane 2 ở trên.
 // ---------------------------------------------------------------------------
 
 /** Alias tên cookie đúng contract. */
@@ -556,7 +556,7 @@ export function recordLoginFailure(key: string): { locked: boolean; remainingAtt
  * Chốt danh tính actor cho nghiệp vụ ghi sổ (chống mạo danh).
  * - strict/production: LUÔN session.actorId, bỏ qua mọi actor client gửi
  *   (header x-formapubli-actor, body.actorId/createdBy/receivedBy/inspectedBy).
- * - non-strict (dev/test tương thích cũ): giữ hành vi legacy — ưu tiên
+ * - non-strict (dev/test tương thích cũ): giữ hành vi legacy - ưu tiên
  *   candidate client gửi, fallback session.
  */
 export function resolveActorId(
@@ -572,7 +572,7 @@ export function resolveActorId(
 }
 
 // ---------------------------------------------------------------------------
-// BƯỚC 3 — ĐỌC SESSION TỪ REQUEST (async, dùng chung mọi route).
+// BƯỚC 3 - ĐỌC SESSION TỪ REQUEST (async, dùng chung mọi route).
 // Đọc header Cookie thô nên chạy được cả NextRequest runtime lẫn Request
 // thường trong test. Không đụng logic Lane 2 ở trên.
 // ---------------------------------------------------------------------------
@@ -600,7 +600,7 @@ export async function getSessionFromRequest(req: Request): Promise<SessionPayloa
 export function extractClientIp(req: Request): string {
   // Ranh giới tin cậy IP: CHỈ tin header proxy khi triển khai sau Cloudflare
   // (TRUST_PROXY=cloudflare) và chỉ tin cf-connecting-ip do Cloudflare ký.
-  // Mặc định KHÔNG tin x-forwarded-for/x-real-ip — kẻ tấn công tự đặt các
+  // Mặc định KHÔNG tin x-forwarded-for/x-real-ip - kẻ tấn công tự đặt các
   // header này để xoay IP, vượt khóa brute-force theo IP và đầu độc audit log.
   // Khóa theo tài khoản (staff) không phụ thuộc IP nên vẫn bảo vệ đầy đủ.
   if (process.env.TRUST_PROXY === 'cloudflare') {
@@ -612,7 +612,7 @@ export function extractClientIp(req: Request): string {
 
 /**
  * M2: token không version (cấp trước migration) được ân hạn tới hết hạn;
- * token có version phải khớp DB — đổi passcode bump version là thu hồi.
+ * token có version phải khớp DB - đổi passcode bump version là thu hồi.
  */
 function enforceSessionVersion(sess: SessionPayload, rowVersion: number | null | undefined): void {
   if (sess.sessionVersion === undefined) return;
@@ -631,7 +631,7 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
   if (!sess || !sess.actorId) return;
   // Thử lại đọc DB (tối đa 3 lần, backoff 300/800ms): kết nối Turso lạnh hoặc
   // sụt nhất thời không được tính là phiên hết hạn. Hết 3 lần mới fail-closed
-  // như cũ — chống vòng lặp "đăng nhập xong bị văng ra bắt đăng nhập lại".
+  // như cũ - chống vòng lặp "đăng nhập xong bị văng ra bắt đăng nhập lại".
   let rows: Array<typeof staffAccounts.$inferSelect> = [];
   let dbOk = false;
   let lastErr: any = null;
@@ -679,8 +679,8 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
     }
 
     // S-01: cashier có sessionId (cấp sau deploy) phải có lease đang sống khớp
-    // session — giữ máy cũ, chặn máy mới. Token legacy KHÔNG có sessionId
-    // (ký trước deploy): grace cho qua, tự hết hạn ≤12h theo expiresAt —
+    // session - giữ máy cũ, chặn máy mới. Token legacy KHÔNG có sessionId
+    // (ký trước deploy): grace cho qua, tự hết hạn ≤12h theo expiresAt -
     // không miễn trừ vô thời hạn, và PIN đổi/version bump vẫn thu hồi ngay.
     // Grace này cũng giữ mọi suite test ký tay cũ chạy được mà không cần sửa.
     // Tắt hẳn khi rollout: SESSION_LEASE_ENFORCE=false.
@@ -701,7 +701,7 @@ export async function validateSessionAccount(sess: SessionPayload): Promise<void
 }
 
 // ---------------------------------------------------------------------------
-// S-01 — LEASE MỘT PHIÊN CASHIER (giữ máy cũ, chặn máy mới).
+// S-01 - LEASE MỘT PHIÊN CASHIER (giữ máy cũ, chặn máy mới).
 // ---------------------------------------------------------------------------
 
 /** TTL lease: heartbeat client 5 phút, hết 10 phút không thấy coi như nhả. */
@@ -888,7 +888,7 @@ export async function renewCashierLease(params: {
 }
 
 /**
- * Logout: xóa CÓ ĐIỀU KIỆN (staff + session) — cookie cũ không xóa lease máy mới.
+ * Logout: xóa CÓ ĐIỀU KIỆN (staff + session) - cookie cũ không xóa lease máy mới.
  * sessionId bắt buộc: token legacy không sessionId thì KHÔNG xóa gì (tránh
  * logout cũ thổi bay lease phiên mới). Xóa toàn bộ khi reset PIN nằm ở route
  * staff (chủ đích thu hồi hết sau đổi credential).
@@ -974,12 +974,12 @@ export async function requireSessionRole(req: Request, allowed: UserRole[]): Pro
 }
 
 /**
- * Ràng buộc kho được gán — CHỐT CHẶN Ở SERVER cho mọi route ghi tồn/tiền.
+ * Ràng buộc kho được gán - CHỐT CHẶN Ở SERVER cho mọi route ghi tồn/tiền.
  *
  * NGUYÊN NHÂN GỐC (auditB 2026-09-30): ràng buộc này trước đây được copy-paste
  * riêng trong `orders` và `cashbox`, còn `inventory/movement`, `transfers`,
  * `delivery-orders` thì KHÔNG có. Kết quả: thủ kho được gán kho Âu Cơ vẫn bút
- * toán / xuất phiếu ở kho Quỳnh Mai — chứng minh bằng gọi thật route
+ * toán / xuất phiếu ở kho Quỳnh Mai - chứng minh bằng gọi thật route
  * (scripts/test-rbac-audit.ts, case F2 trước khi vá trả 200).
  *
  * Nay đặt ở đây để mọi route gọi chung một chỗ. Kho `null` = tự do (giữ nguyên
@@ -995,7 +995,7 @@ export function assertAssignedWarehouse(
   const target = `${warehouseId || ''}`.trim();
   if (target && target === assigned) return;
   // Một số route nhận nhiều kho (chuyển kho: gửi + nhận). `allowRead` là danh
-  // sách kho hợp lệ khác — chỉ dùng khi nghiệp vụ thật sự cần.
+  // sách kho hợp lệ khác - chỉ dùng khi nghiệp vụ thật sự cần.
   if (opts.allowRead?.some((w) => `${w || ''}`.trim() === target)) return;
   throw new AuthError(403, 'Bạn được phân công phụ trách một kho khác. Không thể thao tác kho này.');
 }
@@ -1004,11 +1004,11 @@ export function assertAssignedWarehouse(
  * Kho mà người gọi được phép XEM, hoặc `null` = được xem tất cả.
  *
  * `assertAssignedWarehouse` chặn phía GHI. Phía ĐỌC cần hàm riêng vì không thể
- * "chặn" — phải LỌC kết quả, nếu không thủ kho kho Âu Cơ vẫn đọc được danh sách
+ * "chặn" - phải LỌC kết quả, nếu không thủ kho kho Âu Cơ vẫn đọc được danh sách
  * chuyển hàng / phiếu xuất của kho Quỳnh Mai.
  *
  * Quy tắc: một bản ghi mà người gọi "dính" vào (gửi đi, hoặc nhận vào) thì được
- * xem — đúng nghĩa vận chuyển: thủ kho kho gửi cần thấy hàng đang trên đường đi
+ * xem - đúng nghĩa vận chuyển: thủ kho kho gửi cần thấy hàng đang trên đường đi
  * từ kho mình, và cũng cần thấy hàng đang trả về kho mình.
  */
 export function assertReadWarehouse(

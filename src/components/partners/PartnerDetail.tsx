@@ -208,10 +208,10 @@ export function PartnerDetail({ partner, onClose, onUpdated, currentRole = 'ROLE
             ) : (
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-slate-700">
               <div><dt className="inline text-slate-500">Người nhận: </dt><dd className="inline font-semibold">{partner.receiverName || partner.name}</dd></div>
-              <div><dt className="inline text-slate-500">Điện thoại: </dt><dd className="inline font-semibold">{partner.phone || '—'}</dd></div>
-              <div className="sm:col-span-2"><dt className="inline text-slate-500">Địa chỉ gửi sách: </dt><dd className="inline font-semibold">{partner.address || '—'}</dd></div>
-              <div><dt className="inline text-slate-500">MST: </dt><dd className="inline font-mono">{partner.taxCode || '—'}</dd></div>
-              <div><dt className="inline text-slate-500">Email: </dt><dd className="inline">{partner.email || '—'}</dd></div>
+              <div><dt className="inline text-slate-500">Điện thoại: </dt><dd className="inline font-semibold">{partner.phone || '-'}</dd></div>
+              <div className="sm:col-span-2"><dt className="inline text-slate-500">Địa chỉ gửi sách: </dt><dd className="inline font-semibold">{partner.address || '-'}</dd></div>
+              <div><dt className="inline text-slate-500">MST: </dt><dd className="inline font-mono">{partner.taxCode || '-'}</dd></div>
+              <div><dt className="inline text-slate-500">Email: </dt><dd className="inline">{partner.email || '-'}</dd></div>
               <div><dt className="inline text-slate-500">Hạn mức nợ: </dt><dd className="inline font-semibold">{vnd(partner.creditLimit || 0)}</dd></div>
               <div><dt className="inline text-slate-500">Hạn trả: </dt><dd className="inline font-semibold">{partner.paymentDueDays ?? 30} ngày</dd></div>
               {partner.shipNote && <div className="sm:col-span-2"><dt className="inline text-slate-500">Ghi chú giao: </dt><dd className="inline">{partner.shipNote}</dd></div>}

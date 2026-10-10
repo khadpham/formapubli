@@ -1,7 +1,7 @@
 /**
  * UUID v7 GENERATOR (RFC 9562)
  * Mã định danh độc bản toàn cầu với 48-bit đầu là Unix timestamp mili-giây,
- * giúp các đơn hàng bán ngoại tuyến tự động sắp xếp theo đúng trình tự thời gian
+ * giúp các đơn sách bán ngoại tuyến tự động sắp xếp theo đúng trình tự thời gian
  * khi được gửi từ nhiều thiết bị nhân viên khác nhau về máy chủ.
  */
 

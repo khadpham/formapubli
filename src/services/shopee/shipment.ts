@@ -34,7 +34,7 @@ async function signedGet(cfg: ShopeeSyncConfig, apiPath: string, query: Record<s
   });
   const res = await fetchFn(`${cfg.baseUrl}${apiPath}?${qs.toString()}`, { method: 'GET' });
   const data = (await res.json()) as any;
-  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} — ${data.message || ''}`);
+  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   return data.response;
 }
 
@@ -64,13 +64,13 @@ async function signedPost(cfg: ShopeeSyncConfig, apiPath: string, body: Record<s
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  // Vận đơn trả binary PDF — nhận diện bằng content-type thật.
+  // Vận đơn trả binary PDF - nhận diện bằng content-type thật.
   const contentType = res.headers?.get?.('content-type') || '';
   if (contentType.includes('pdf') || contentType.includes('octet-stream')) {
     return Buffer.from(await (res as any).arrayBuffer());
   }
   const data = (await res.json()) as any;
-  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} — ${data.message || ''}`);
+  if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   return data.response;
 }
 

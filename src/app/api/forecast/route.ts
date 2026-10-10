@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 // GET /api/forecast?windowDays=30&warehouseId=&level=RED_ALERT&limit=200
 export async function GET(req: NextRequest) {
   try {
-    // P1b: Default-Deny — CASHIER/TAX không có trong allowlist nên bị chặn 403 tại requireSessionRole.
+    // P1b: Default-Deny - CASHIER/TAX không có trong allowlist nên bị chặn 403 tại requireSessionRole.
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_WAREHOUSE']);
 
     const { searchParams } = new URL(req.url);

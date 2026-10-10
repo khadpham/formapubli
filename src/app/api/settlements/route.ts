@@ -7,8 +7,8 @@ import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/settlements?statementId=CS-... — dư nợ + lịch sử thu 1 kỳ
-// GET /api/settlements?partnerId=... — lịch sử thu theo đại lý
+// GET /api/settlements?statementId=CS-... - dư nợ + lịch sử thu 1 kỳ
+// GET /api/settlements?partnerId=... - lịch sử thu theo đại lý
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(

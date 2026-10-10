@@ -17,10 +17,10 @@ interface StatusData {
 }
 
 /**
- * Mục Shopee trong Cài Đặt — ẨN khi cờ server SHOPEE_UI_ENABLED tắt.
+ * Mục Shopee trong Cài Đặt - ẨN khi cờ server SHOPEE_UI_ENABLED tắt.
  * - Chủ: kết nối, kho xuất, cờ COD.
  * - Chủ/Quản lý: gán phạm vi kho cho nhân viên Shopee (multi-select,
- *   hiệu lực ngay — server đọc DB mỗi request).
+ *   hiệu lực ngay - server đọc DB mỗi request).
  * Vận hành hàng ngày (đơn cần gói, giao/in, đơn lỗi) ở tab Shopee riêng.
  */
 export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
@@ -150,7 +150,7 @@ export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
               onChange={(e) => saveConfig({ warehouseId: e.target.value })}
               className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-xs min-h-[44px]"
             >
-              <option value="">— Chọn kho —</option>
+              <option value="">- Chọn kho -</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
@@ -177,7 +177,7 @@ export function ShopeePanel({ sessionRole }: ShopeePanelProps) {
           </h3>
           <p className="text-[11px] text-slate-500">
             Chọn nhiều kho (giữ Ctrl/Cmd khi bấm). Nhân viên Shopee chỉ thấy đơn
-            trong các kho được cấp — hiệu lực ngay.
+            trong các kho được cấp - hiệu lực ngay.
           </p>
           <select
             multiple

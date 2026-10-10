@@ -10,7 +10,7 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/auth/heartbeat — gia hạn lease cashier (client gọi mỗi 5 phút).
+ * POST /api/auth/heartbeat - gia hạn lease cashier (client gọi mỗi 5 phút).
  * Cookie-only, không nhận actor/session từ client. Chỉ UPDATE row còn sống
  * khớp staff+session (không UPSERT hồi sinh). Role không bị lease: noop.
  */

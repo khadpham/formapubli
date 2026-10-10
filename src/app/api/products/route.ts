@@ -11,10 +11,10 @@ export const dynamic = 'force-dynamic';
  * GET  /api/products?search=&includeInactive=&limit=
  * POST /api/products { code, name, sellingPrice, costPrice?, barcode?, description?, isGiftItem? }
  *
- * Chỉ Chủ sở hữu / Quản lý được nhập — thu ngân KHÔNG tạo được hàng hóa.
+ * Chỉ Chủ sở hữu / Quản lý được nhập - thu ngân KHÔNG tạo được hàng hóa.
  *
  * `costPrice` KHÔNG còn được nhận: giá vốn đã chốt là chưa lộ ra lúc này.
- * Nếu gửi lên, `ProductService.create` BỎ QUA — không lưu, không trả lại.
+ * Nếu gửi lên, `ProductService.create` BỎ QUA - không lưu, không trả lại.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -52,14 +52,14 @@ export async function POST(req: NextRequest) {
 
     await recordAuditLog({
       // `ADJUST_STOCK` là action gần nhất đúng nghĩa: thêm/sửa mặt hàng trong
-      // kho. KHÔNG tự thêm action mới vào union `AuditLogParams` — phải kiểm tra
+      // kho. KHÔNG tự thêm action mới vào union `AuditLogParams` - phải kiểm tra
       // CHECK constraint trên `audit_logs.action` trước, nếu không sẽ ghi log
       // hỏng ngay lúc nhập hàng hóa.
       action: 'ADJUST_STOCK',
       actorRole: session.role,
       actorId: session.actorId,
       resource: '/api/products',
-      details: `Tạo hàng hóa ${created.code} — ${created.name}.`,
+      details: `Tạo hàng hóa ${created.code} - ${created.name}.`,
     });
 
     return NextResponse.json({ success: true, product: created }, { status: 201 });

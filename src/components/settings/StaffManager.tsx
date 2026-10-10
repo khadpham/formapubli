@@ -167,7 +167,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
           {canManagePrivileged
             ? 'Owner: toàn quyền thêm / khóa / reset PIN mọi tài khoản (không tự khóa chính mình).'
             : 'Manager: chỉ quản lý Thu ngân / Thủ kho / Kế toán thuế.'}{' '}
-          Không xóa cứng nhân viên — dùng nút Khóa (vô hiệu hóa), giữ nguyên két ca & lịch sử bán.
+          Không xóa cứng nhân viên - dùng nút Khóa (vô hiệu hóa), giữ nguyên két ca & lịch sử bán.
         </p>
       </div>
 
@@ -283,7 +283,7 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
                       className="px-2 py-1.5 bg-white border border-indigo-300 rounded-lg text-[11px] font-semibold outline-none max-w-[190px] mb-1"
                       title="Gán nhân viên phụ trách kho nào (quản lý trở lên)"
                     >
-                      <option value="">— Chưa gán —</option>
+                      <option value="">- Chưa gán -</option>
                       {warehouses.map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.name}{w.warehouseType === 'FAIR_EVENT' ? ' (hội chợ)' : ''}

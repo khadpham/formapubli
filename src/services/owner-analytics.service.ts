@@ -26,7 +26,7 @@ function assertOwner(role: UserRole) {
 const num = (v: unknown) => Number(v ?? 0);
 
 /**
- * Giá vốn hàng bán trong kỳ cho 1 sản phẩm — phát lại sổ cái qua FIFO.
+ * Giá vốn hàng bán trong kỳ cho 1 sản phẩm - phát lại sổ cái qua FIFO.
  * (Wrapper DB của allocateFifoCogs thuần logic.)
  */
 export async function computeCogsForPeriod(params: {
@@ -70,8 +70,8 @@ export interface MarginRow {
  * Pivot biên lợi nhuận theo kênh × đầu sách trong tháng VN.
  * Doanh thu từ dòng hàng bán trong kỳ; giá vốn FIFO tính theo sản phẩm rồi
  * phân bổ về từng dòng theo tỷ lệ số lượng (FIFO không tách được lô theo kênh
- * nếu không ghi lúc xuất — phân bổ là đáp án thực tế chuẩn).
- * Đại lý tính theo phiếu xuất (phải thu) — tiến độ thực thu xem riêng.
+ * nếu không ghi lúc xuất - phân bổ là đáp án thực tế chuẩn).
+ * Đại lý tính theo phiếu xuất (phải thu) - tiến độ thực thu xem riêng.
  */
 export async function getMarginPivot(month: string, actorRole: UserRole): Promise<MarginRow[]> {
   assertOwner(actorRole);
@@ -145,7 +145,7 @@ export async function getMarginPivot(month: string, actorRole: UserRole): Promis
     .where(and(gte(shopeeOrderFinance.syncedAt, start), lt(shopeeOrderFinance.syncedAt, end)));
 
   // Nạp tên sản phẩm + sổ cái kho trong MỘT lượt (tránh N+1: mỗi sản phẩm 1
-  // truy vấn làm vượt trần subrequest của Workers — lỗi "Too many subrequests").
+  // truy vấn làm vượt trần subrequest của Workers - lỗi "Too many subrequests").
   const nameOf = new Map<string, string>();
   const fifoCache = new Map<string, { cogs: number; unknownCostQty: number }>();
   const productIds = [...new Set(raw.map((r) => r.productId).filter((x): x is string => !!x))];
@@ -346,7 +346,7 @@ export async function getCashByAccount(month: string, actorRole: UserRole): Prom
     .where(and(gte(shopeeOrderFinance.syncedAt, start), lt(shopeeOrderFinance.syncedAt, end)));
   add('sh:escrow', 'Shopee (chờ rút)', null, num(sh?.escrow), 'Shopee');
 
-  // Vốn vay giải ngân trong tháng — dòng tiền vào.
+  // Vốn vay giải ngân trong tháng - dòng tiền vào.
   const loanRows = await db
     .select({
       lender: loans.lender,
@@ -361,7 +361,7 @@ export async function getCashByAccount(month: string, actorRole: UserRole): Prom
     )
     .groupBy(loans.lender);
   for (const r of loanRows) {
-    add(`acct:vay:${r.lender}`, `Vốn vay — ${r.lender}`, null, num(r.amount), 'Vốn vay');
+    add(`acct:vay:${r.lender}`, `Vốn vay - ${r.lender}`, null, num(r.amount), 'Vốn vay');
   }
 
   return [...buckets.values()].sort((a, b) => b.amount - a.amount);
@@ -377,7 +377,7 @@ export interface AgencyPaymentRow {
   overdueCount: number;
 }
 
-/** Tiến độ thanh toán đại lý — công nợ còn lại + cảnh báo quá hạn (lũy kế). */
+/** Tiến độ thanh toán đại lý - công nợ còn lại + cảnh báo quá hạn (lũy kế). */
 export async function getAgencyPaymentProgress(actorRole: UserRole): Promise<AgencyPaymentRow[]> {
   assertOwner(actorRole);
   const partnerRows = await db

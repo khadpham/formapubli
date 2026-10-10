@@ -59,10 +59,10 @@ export function MasterAppShell({
   const [showLoginModal, setShowLoginModal] = useState(requiresAuth || !initialSession);
   // KHÔNG được default 'ROLE_OWNER'. Không có phiên = KHÔNG có quyền nào cả.
   // Trước đây default OWNER khiến dashboard Bảng Quản Trị render trước khi
-  // biết thu ngân đăng nhập, rồi mới giới hạn lại — thu ngân thấy số liệu
+  // biết thu ngân đăng nhập, rồi mới giới hạn lại - thu ngân thấy số liệu
   // kinh doanh trong khoảng thời gian đó.
   // GIỮ vai trò cuối khi phiên rớt (heartbeat 401) để POS không bị unmount và
-  // làm mất sạch giỏ hàng — đó là lý do code cũ tách currentRole khỏi session.
+  // làm mất sạch giỏ hàng - đó là lý do code cũ tách currentRole khỏi session.
   const [role, setRole] = useState<UserRole | null>(initialSession?.role ?? null);
   const currentRole: UserRole | null = isKnownRole(role) ? role : null;
   const [currentTab, setCurrentTab] = useState<string | null>(
@@ -71,11 +71,11 @@ export function MasterAppShell({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isPosCheckoutBusy, setIsPosCheckoutBusy] = useState(false);
-  // Thanh giỏ nổi mobile của POS có hiển thị không — quyết định khoảng chừa đáy.
+  // Thanh giỏ nổi mobile của POS có hiển thị không - quyết định khoảng chừa đáy.
   const [posMobileBar, setPosMobileBar] = useState(false);
   // Copilot 3 trang thai: closed (bong bong) • mini (chat nho goc phai) • full (drawer phai).
   const [copilotView, setCopilotView] = useState<'closed' | 'mini' | 'full'>('closed');
-  // Modal chiến dịch (chỉ quản lý) — nút gọn thay panel chiếm chỗ trong tab.
+  // Modal chiến dịch (chỉ quản lý) - nút gọn thay panel chiếm chỗ trong tab.
   const [campaignOpen, setCampaignOpen] = useState(false);
   // Don nhap tu Copilot (prepare_sale_draft) → op vao gio POS khi qua tab POS.
   const [posDraft, setPosDraft] = useState<{
@@ -127,7 +127,7 @@ export function MasterAppShell({
 
   // S-01: heartbeat giữ lease cashier (5 phút/lần). 401 → mở lại login
   // (giữ nguyên giỏ/queue). Lỗi mạng/503 → im lặng thử lại kỳ sau.
-  // Dọn timer khi unmount/đổi phiên. iPhone ngủ nền không đảm bảo timer —
+  // Dọn timer khi unmount/đổi phiên. iPhone ngủ nền không đảm bảo timer -
   // mở app lại thì guard server từ chối thao tác ghi cho tới khi login mới.
   // S-OFFLINE: heartbeat thành công đóng dấu thời gian để POS biết lease
   // còn sống khi rớt mạng (client đối chiếu TTL 10 phút trước khi cho tạo
@@ -157,7 +157,7 @@ export function MasterAppShell({
     void beat(); // Stamp ngay khi vào ca để offline gate có mốc, không chờ 5 phút.
 
     // S-01/iOS: WebKit và Chrome đóng băng setInterval khi khoá máy / chuyển app.
-    // Lắng nghe visibilitychange và focus để gia hạn ngay khi mở lại màn hình —
+    // Lắng nghe visibilitychange và focus để gia hạn ngay khi mở lại màn hình -
     // không có nó thì iOS đóng băng timer và thu ngân bị đuổi dù không máy nào
     // tranh chấp (S-01b, xem docs/superpowers/plans/2026-09-24-pos-hardening-abc-master-plan.md §4.2).
     //
@@ -184,7 +184,7 @@ export function MasterAppShell({
     };
   }, [session?.role, session?.actorId]);
 
-  // Nguồn thông báo thứ hai (POS) — trước đây là một chuông riêng chỉ mở màn POS,
+  // Nguồn thông báo thứ hai (POS) - trước đây là một chuông riêng chỉ mở màn POS,
   // nay gộp vào chuông duy nhất để header không còn hai nút giống nhau.
   const posMountedAt = React.useRef(new Date().toISOString());
   const posNotifyItems = React.useMemo<NotifyItem[]>(() => {
@@ -260,7 +260,7 @@ export function MasterAppShell({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
-      {/* Vertical Sidebar Navigation — chưa có vai trò thì không render: trước
+      {/* Vertical Sidebar Navigation - chưa có vai trò thì không render: trước
           đây truyền 'ROLE_CASHIER' giả khiến hiện 2 nút bấm được nhưng bấm
           không làm gì (effectiveTab null). Nút chết là dấu hiệu bấm rõ bị sai. */}
       {currentRole && (
@@ -345,7 +345,7 @@ export function MasterAppShell({
               </div>
             )}
 
-            {/* MỘT chuông duy nhất — gộp nguồn POS + nguồn nghiệp vụ, có nhãn khu vực, xóa được. */}
+            {/* MỘT chuông duy nhất - gộp nguồn POS + nguồn nghiệp vụ, có nhãn khu vực, xóa được. */}
             {session && (
               <NotificationBell onNavigate={setCurrentTab} extraItems={posNotifyItems} />
             )}
@@ -359,7 +359,7 @@ export function MasterAppShell({
         </header>
 
 
-        {/* Dynamic View Body — currentRole là cổng chặn DUY NHẤT. Không có phiên
+        {/* Dynamic View Body - currentRole là cổng chặn DUY NHẤT. Không có phiên
             thì không render bất kỳ màn nghiệp vụ nào, kể cả 1 khung hình.
             POS desktop full-viewport: nới max-w, giảm padding, khoá scroll trang
             để 2 cột tự scroll trong 100vh. Tab khác nới nhẹ lên 1600px. */}
@@ -391,7 +391,7 @@ export function MasterAppShell({
 
           {currentRole && effectiveTab === 'inventory' && (
             <div className="space-y-6">
-              {/* Chiến dịch bán ngắn hạn — nút mở modal riêng, chỉ quản lý trở lên. */}
+              {/* Chiến dịch bán ngắn hạn - nút mở modal riêng, chỉ quản lý trở lên. */}
               {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
                 <>
                   <div>
@@ -416,7 +416,7 @@ export function MasterAppShell({
                   )}
                 </>
               )}
-              {/* Tên kho đã có ở pill top bar — ẩn cả card trên mobile */}
+              {/* Tên kho đã có ở pill top bar - ẩn cả card trên mobile */}
               <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -486,7 +486,7 @@ export function MasterAppShell({
         />
       )}
 
-      {/* Nút AI Copilot đã đưa lên thanh header (cạnh chuông) — KHÔNG còn nút nổi,
+      {/* Nút AI Copilot đã đưa lên thanh header (cạnh chuông) - KHÔNG còn nút nổi,
           nên không còn dải trống ở đáy mọi tab (yêu cầu 03/10/2026). */}
 
       {/* Executive AI Copilot: mini chat + full drawer */}

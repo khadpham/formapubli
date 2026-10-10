@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       partnerId,
     });
 
-    // Thủ kho chỉ thấy phiếu của kho mình (trước đây chỉ chặn phía GHI — xem
+    // Thủ kho chỉ thấy phiếu của kho mình (trước đây chỉ chặn phía GHI - xem
     // `assertAssignedWarehouse`; phía ĐỌC bị bỏ sót nên đọc được phiếu kho khác).
     return NextResponse.json({
       success: true,

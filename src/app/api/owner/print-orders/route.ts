@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER'] as UserRole[];
 
-/** GET /api/owner/print-orders — danh sách lệnh in (chỉ chủ). */
+/** GET /api/owner/print-orders - danh sách lệnh in (chỉ chủ). */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -18,14 +18,14 @@ export async function GET(req: NextRequest) {
       status: searchParams.get('status') || undefined,
       actorRole: session.role,
     });
-    // Không bao giờ trả giá vốn cho non-owner — route này đã chặn ROLE_OWNER ở trên.
+    // Không bao giờ trả giá vốn cho non-owner - route này đã chặn ROLE_OWNER ở trên.
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return handleApiError(error);
   }
 }
 
-/** POST /api/owner/print-orders — tạo lệnh in kèm giá vốn thỏa thuận (chỉ chủ). */
+/** POST /api/owner/print-orders - tạo lệnh in kèm giá vốn thỏa thuận (chỉ chủ). */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

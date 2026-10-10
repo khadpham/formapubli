@@ -18,7 +18,7 @@ function vnDatePlus(days: number): string {
   return new Date(Date.now() + 7 * 3600 * 1000 + days * 86400 * 1000).toISOString().slice(0, 10);
 }
 
-/** GET /api/ai/contracts/suggest — cột mốc quá hạn + sắp tới hạn (14 ngày) chưa có HĐ. */
+/** GET /api/ai/contracts/suggest - cột mốc quá hạn + sắp tới hạn (14 ngày) chưa có HĐ. */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);

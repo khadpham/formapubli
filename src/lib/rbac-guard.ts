@@ -49,7 +49,7 @@ export interface AuditLogParams {
 }
 
 /**
- * @deprecated CHỈ dùng cho test/dev — KHÔNG dùng để phân quyền. Mặc định trả
+ * @deprecated CHỈ dùng cho test/dev - KHÔNG dùng để phân quyền. Mặc định trả
  * ROLE_OWNER khi thiếu header (fail-open) nên là footgun leo quyền; mọi route
  * thật phải dùng `requireSessionRole`/`resolveRequestIdentity` (session cookie).
  * Đã gỡ hết import ở routes (2026-10-03). `test-rbac-audit` A1 khoá hành vi này.
@@ -85,7 +85,7 @@ export function enforceFiscalScope(
     return 'OFFICIAL_TAX';
   }
 
-  // 2. Thu ngân / Thủ kho: LUÔN bị ép về INTERNAL_MANAGEMENT — kể cả khi xin
+  // 2. Thu ngân / Thủ kho: LUÔN bị ép về INTERNAL_MANAGEMENT - kể cả khi xin
   // thẳng `OFFICIAL_TAX`. Trước đây nhánh này chỉ chặn ALL/INTERNAL nên xin
   // thẳng OFFICIAL_TAX là lọt sổ thuế. Cùng luật với `SalesLedgerView`.
   if (userRole === 'ROLE_CASHIER' || userRole === 'ROLE_WAREHOUSE') {

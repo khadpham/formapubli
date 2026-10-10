@@ -16,9 +16,9 @@ function toQty(v: unknown): number {
   return 0;
 }
 
-// GET /api/consignments?id=CS-... — chi tiết kỳ (kèm lines)
-// GET /api/consignments?partnerId=...&status=DRAFT — danh sách kỳ
-// GET /api/consignments?partnerStock=<partnerId> — tồn hiện tại tại quầy
+// GET /api/consignments?id=CS-... - chi tiết kỳ (kèm lines)
+// GET /api/consignments?partnerId=...&status=DRAFT - danh sách kỳ
+// GET /api/consignments?partnerStock=<partnerId> - tồn hiện tại tại quầy
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSessionRole(

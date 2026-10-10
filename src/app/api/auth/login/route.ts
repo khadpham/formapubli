@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 0. Ranh giới tin cậy proxy (#6): production bắt buộc khai báo TRUST_PROXY
-    // (cloudflare | direct) — nếu không mọi client đổ về 127.0.0.1, khóa 1
+    // (cloudflare | direct) - nếu không mọi client đổ về 127.0.0.1, khóa 1
     // người là khóa cả quầy + audit ghi sai IP. Fail-closed ngay khi boot logic.
     const trustProxy = `${process.env.TRUST_PROXY || ''}`.trim().toLowerCase();
     if (process.env.NODE_ENV === 'production' && trustProxy !== 'cloudflare' && trustProxy !== 'direct') {
@@ -56,12 +56,12 @@ export async function POST(req: NextRequest) {
       );
     }
     if (isAuthStrict() && !trustProxy) {
-      console.warn('[auth/login] AUTH_STRICT nhưng thiếu TRUST_PROXY — rate-limit IP gộp chung, audit IP có thể sai.');
+      console.warn('[auth/login] AUTH_STRICT nhưng thiếu TRUST_PROXY - rate-limit IP gộp chung, audit IP có thể sai.');
     }
 
     // 1. Kiểm tra Rate Limiting đa tầng (IP: 10 lần, Account: 5 lần -> khóa 15 phút)
     // Tầng in-memory (nhanh, theo instance) + tầng DB bền vững (sống qua
-    // restart/đa instance) — chặn nếu MỘT trong hai từ chối.
+    // restart/đa instance) - chặn nếu MỘT trong hai từ chối.
     const limitCheck = checkDualRateLimit(ip, staffIdInput);
     if (!limitCheck.allowed) {
       await recordAuditLog({
@@ -310,7 +310,7 @@ export async function POST(req: NextRequest) {
     // S-01: sessionId random mạnh (WebCrypto) để đối chiếu lease server.
     // Bấm lại (submit lặp, Enter 2 lần, mạng chậm) trên CÙNG máy đã có cookie
     // phiên hợp lệ → tái dùng sessionId cũ, KHÔNG sinh id mới (id mới bị
-    // claimCashierLease coi là "máy khác" và tự chặn 403 — bug #2).
+    // claimCashierLease coi là "máy khác" và tự chặn 403 - bug #2).
     let sessionId = crypto.randomUUID();
     const rawCookieHeader = req.headers.get('cookie') || '';
     const currentCookie = rawCookieHeader
@@ -366,7 +366,7 @@ export async function POST(req: NextRequest) {
       sessionId,
       issuedAt: now,
       expiresAt,
-      // M2: gắn version hiện tại — đổi passcode sau này làm token này hết hiệu lực.
+      // M2: gắn version hiện tại - đổi passcode sau này làm token này hết hiệu lực.
       ...(staffRow ? { sessionVersion: staffRow.sessionVersion ?? 1 } : {}),
       // Kho được gán: POS mở đúng kho này và không cho đổi (ràng buộc tại server).
       ...(staffRow ? { assignedWarehouseId: (staffRow as any).assignedWarehouseId ?? null } : {}),

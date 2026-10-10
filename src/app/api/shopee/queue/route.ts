@@ -9,7 +9,7 @@ import { getShopeeOpsWarehouses } from '@/services/shopee/shop-config';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/shopee/queue — đơn chờ gói (CREATED) + đơn lỗi chờ xử lý.
+ * GET /api/shopee/queue - đơn chờ gói (CREATED) + đơn lỗi chờ xử lý.
  * Chủ/quản lý thấy hết; nhân viên Shopee chỉ thấy kho được cấp.
  */
 export async function GET(req: NextRequest) {

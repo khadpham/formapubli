@@ -5,7 +5,7 @@ import { WarehouseService } from './warehouse.service';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 
-// Bước 4 — Quỹ Tài trợ: tiền cọc INTERNAL (SPONSORSHIP_DEPOSIT), không VAT lúc nhận.
+// Bước 4 - Quỹ Tài trợ: tiền cọc INTERNAL (SPONSORSHIP_DEPOSIT), không VAT lúc nhận.
 // Rút sách trừ kho thật bằng event SPONSORSHIP_DRAWDOWN + đơn SPONSORSHIP final 0đ.
 
 export type QuotaType = 'CAPPED' | 'OPEN';
@@ -88,7 +88,7 @@ export class SponsorshipService {
     const cover = edRows[0].coverPrice || 0;
     const drawnValue = quantity * cover;
 
-    // Báo sớm cho thu ngân (nhanh, thân thiện) — nhưng KHÔNG phải chốt chặn.
+    // Báo sớm cho thu ngân (nhanh, thân thiện) - nhưng KHÔNG phải chốt chặn.
     // Chốt chặn thật nằm trong transaction (UPDATE có điều kiện bên dưới).
     if (fund.quotaType === 'CAPPED' && drawnValue > (fund.balanceRemaining || 0)) {
       throw AppError.atp(`Vượt hạn mức quỹ: còn ${(fund.balanceRemaining || 0).toLocaleString('vi-VN')}đ, cần ${drawnValue.toLocaleString('vi-VN')}đ.`);
@@ -112,7 +112,7 @@ export class SponsorshipService {
 
     await withDbRetry(async () => {
       await db.transaction(async (tx) => {
-        // ĐỌC LẠI QUỸ BẰNG CHÍNH `tx` — bản đọc ở ngoài (getFund) là ảnh chụp cũ.
+        // ĐỌC LẠI QUỸ BẰNG CHÍNH `tx` - bản đọc ở ngoài (getFund) là ảnh chụp cũ.
         // Trước đây phép trừ số dư tính từ ảnh chụp đó nên hai lần rút chạy song
         // song (bấm hai tay, F5, hoặc API lặp) đều vượt hạn mức rồi CÙNG ghi đè
         // nhau: sách đã ra kho 2 lần, sổ quỹ chỉ giảm 1 lần. Đo được trước khi
@@ -183,7 +183,7 @@ export class SponsorshipService {
         });
         // Trừ quỹ NGAY TRONG `tx` bằng UPDATE CÓ ĐIỀU KIỆN: số dư phải còn
         // ≥ giá trị rút, và hai tổng phải CỘNG DỒN bằng SQL chứ không gán từ
-        // ảnh chụp — gán từ ảnh chụp là mất tiền của mỗi đợt rút chạy song song.
+        // ảnh chụp - gán từ ảnh chụp là mất tiền của mỗi đợt rút chạy song song.
         const capped = fundTx.quotaType === 'CAPPED';
         const res: any = await tx
           .update(sponsorshipFunds)

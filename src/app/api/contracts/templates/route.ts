@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 const CATEGORIES = ['TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
 
-/** GET /api/contracts/templates — danh sách mẫu (?activeOnly=0 để lấy cả ngưng dùng). */
+/** GET /api/contracts/templates - danh sách mẫu (?activeOnly=0 để lấy cả ngưng dùng). */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/contracts/templates — tạo mẫu: validate + sinh schema_fields từ placeholder. */
+/** POST /api/contracts/templates - tạo mẫu: validate + sinh schema_fields từ placeholder. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

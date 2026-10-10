@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     // A1.7: cashier chỉ thấy yêu cầu PENDING của chính mình; manager/owner
     // thấy toàn bộ (hoặc theo kho khi truyền warehouseId). Lọc ở tầng service
-    // (SQL) chứ không lọc sau khi đã lấy hết — client không lách được.
+    // (SQL) chứ không lọc sau khi đã lấy hết - client không lách được.
     const data = await DiscountApprovalService.listPending(
       warehouseId,
       session.role === 'ROLE_CASHIER' ? session.actorId : undefined

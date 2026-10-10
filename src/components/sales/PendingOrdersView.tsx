@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 
-// 1.2: TTL giữ chỗ ATP (giờ) — đồng bộ với PENDING_TTL_HOURS trong order.service.ts
+// 1.2: TTL giữ chỗ ATP (giờ) - đồng bộ với PENDING_TTL_HOURS trong order.service.ts
 const PENDING_TTL_HOURS = 48;
 
 // Mặc định chỉ hiện 5 đơn mới nhất; bấm "Xem hết" mới bung toàn bộ đơn trong ngày.
@@ -61,9 +61,9 @@ interface OrderDetailItem {
 }
 
 function ageInfo(createdAt: string | null) {
-  if (!createdAt) return { ageH: 0, leftH: PENDING_TTL_HOURS, expired: false, label: '—' };
+  if (!createdAt) return { ageH: 0, leftH: PENDING_TTL_HOURS, expired: false, label: '-' };
   const t = new Date(createdAt).getTime();
-  if (Number.isNaN(t)) return { ageH: 0, leftH: PENDING_TTL_HOURS, expired: false, label: '—' };
+  if (Number.isNaN(t)) return { ageH: 0, leftH: PENDING_TTL_HOURS, expired: false, label: '-' };
   const ageH = (Date.now() - t) / 3600000;
   const leftH = PENDING_TTL_HOURS - ageH;
   const expired = leftH <= 0;
@@ -117,7 +117,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
     fetchPending();
   }, [fetchPending]);
 
-  // Tên kho thật (không map cứng 3 kho cũ — kho hội chợ tạo theo từng sự kiện).
+  // Tên kho thật (không map cứng 3 kho cũ - kho hội chợ tạo theo từng sự kiện).
   useEffect(() => {
     let alive = true;
     fetch('/api/warehouses?all=true', { cache: 'no-store' })
@@ -170,7 +170,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
   }, []);
   void now;
 
-  // Lọc và sắp xếp đơn hàng theo tiêu chí
+  // Lọc và sắp xếp đơn sách theo tiêu chí
   const filteredOrders = useMemo(() => {
     return orders
       .filter((o) => {
@@ -224,7 +224,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || `Lỗi ${action}`);
-      flash(action === 'CONFIRM' ? 'Đã duyệt — kho vật lý đã trừ.' : 'Đã hủy — giữ chỗ ATP đã nhả.');
+      flash(action === 'CONFIRM' ? 'Đã duyệt - kho vật lý đã trừ.' : 'Đã hủy - giữ chỗ ATP đã nhả.');
       setCancelId(null);
       setCancelReason('');
       await fetchPending();
@@ -265,7 +265,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
             Đơn Online Chờ Xác Nhận & Giữ Chỗ ATP ({orders.length})
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Cơ chế giữ chỗ ATP tự động trong {PENDING_TTL_HOURS}h — Chỉ trừ kho vật lý khi Quản lý duyệt, quá hạn tự nhả chỗ.
+            Cơ chế giữ chỗ ATP tự động trong {PENDING_TTL_HOURS}h - Chỉ trừ kho vật lý khi Quản lý duyệt, quá hạn tự nhả chỗ.
           </p>
         </div>
 
@@ -491,11 +491,11 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
           onClick={() => setShowAll((v) => !v)}
           className="w-full px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-700 text-white transition cursor-pointer"
         >
-          {showAll ? 'Thu gọn — chỉ hiện 5 đơn mới nhất' : `Xem hết ${filteredOrders.length} đơn`}
+          {showAll ? 'Thu gọn - chỉ hiện 5 đơn mới nhất' : `Xem hết ${filteredOrders.length} đơn`}
         </button>
       )}
 
-      {/* Popup chi tiết đơn — đủ để đối soát mà không cần hỏi ai */}
+      {/* Popup chi tiết đơn - đủ để đối soát mà không cần hỏi ai */}
       {detailOrderId && (
         <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3 animate-in fade-in">
           <div className="flex items-center justify-between gap-2">
@@ -523,7 +523,7 @@ export function PendingOrdersView({ currentRole }: { currentRole: UserRole }) {
                 <p><span className="text-slate-500">Kho:</span> <span className="font-bold">{detailOrder.warehouseName || detailOrder.warehouseId}</span></p>
                 <p><span className="text-slate-500">Kênh:</span> <span className="font-bold">{channelLabel(detailOrder.channel)}</span></p>
                 <p><span className="text-slate-500">Thanh toán:</span> <span className="font-bold">{detailOrder.paymentMethod}</span></p>
-                <p><span className="text-slate-500">Tạo lúc:</span> <span className="font-bold">{detailOrder.createdAt ? new Date(detailOrder.createdAt).toLocaleString('vi-VN') : '—'}</span></p>
+                <p><span className="text-slate-500">Tạo lúc:</span> <span className="font-bold">{detailOrder.createdAt ? new Date(detailOrder.createdAt).toLocaleString('vi-VN') : '-'}</span></p>
                 <p><span className="text-slate-500">Tiền hàng:</span> <span className="font-bold">{Number(detailOrder.subtotal || 0).toLocaleString('vi-VN')} đ</span></p>
                 <p><span className="text-slate-500">Thực thu:</span> <span className="font-black text-emerald-700">{Number(detailOrder.finalAmount || 0).toLocaleString('vi-VN')} đ</span></p>
               </div>

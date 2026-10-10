@@ -48,7 +48,7 @@ interface DeliveryReceiptPrintProps {
   order: DeliveryOrderData;
   isOpen: boolean;
   onClose: () => void;
-  /** Callback xóa phiếu nháp — chỉ dùng khi order.status === 'DRAFT'. */
+  /** Callback xóa phiếu nháp - chỉ dùng khi order.status === 'DRAFT'. */
   onDeleteDraft?: (orderId: string) => Promise<void>;
 }
 
@@ -74,7 +74,7 @@ export function numberToVietnameseWords(n: number): string {
     let res = '';
 
     if (h > 0 || t > 0 || u > 0) {
-      // Chỉ đọc "trăm"/"lẻ" khi có hàng trăm — nhóm cao nhất (vd: 1 triệu)
+      // Chỉ đọc "trăm"/"lẻ" khi có hàng trăm - nhóm cao nhất (vd: 1 triệu)
       // không được đọc thành "không trăm lẻ một triệu".
       if (h > 0) {
         res += digits[h] + ' trăm ';
@@ -201,7 +201,7 @@ function ReceiptContent({
             <span className="text-slate-800">
               {[order.partnerAddress, order.partnerPhone && `SĐT: ${order.partnerPhone}`]
                 .filter(Boolean)
-                .join(' — ')}
+                .join(' - ')}
             </span>
           </div>
         )}
@@ -292,7 +292,7 @@ function ReceiptContent({
               <tr className="font-bold bg-slate-50">
                 <td colSpan={6} className="border border-slate-900 p-2 text-center uppercase">
                   Cộng số lượng ký gửi: {totalQuantity.toLocaleString('vi-VN')} cuốn
-                  (giá bìa tham khảo — hàng chưa bán, chưa thu tiền)
+                  (giá bìa tham khảo - hàng chưa bán, chưa thu tiền)
                 </td>
               </tr>
             ) : (

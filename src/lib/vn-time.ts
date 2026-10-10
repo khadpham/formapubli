@@ -1,7 +1,7 @@
 import { parseDbTimestamp } from '@/lib/db-timestamp';
 
 /**
- * MỐC THỜI GIAN THEO GIỜ VIỆT NAM — nguồn chân lý DÙNG CHUNG.
+ * MỐC THỜI GIAN THEO GIỜ VIỆT NAM - nguồn chân lý DÙNG CHUNG.
  *
  * VÌ SAO cần file này: cột thời gian trong DB là UTC (xem `parseDbTimestamp`),
  * còn ngày/giờ người đọc là giờ Việt Nam (UTC+7, không DST). Trước đây mỗi màn
@@ -10,7 +10,7 @@ import { parseDbTimestamp } from '@/lib/db-timestamp';
  */
 export const VN_TZ = 'Asia/Ho_Chi_Minh';
 
-/** Định dạng ngày 'YYYY-MM-DD' theo giờ VN — dùng để làm khoá nhóm. */
+/** Định dạng ngày 'YYYY-MM-DD' theo giờ VN - dùng để làm khoá nhóm. */
 export const vnDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ });
 
 /** Định dạng 'HH:MM' theo giờ VN. */
@@ -27,7 +27,7 @@ const VN_OFFSET_MS = 7 * 3600 * 1000;
 /**
  * Ngày nghiệp vụ VN (YYYY-MM-DD) của một mốc thời gian, null nếu dữ liệu hỏng.
  *
- * Cố ý KHÔNG dùng `toISOString().slice(0,10)` — cái đó ra NGÀY UTC, lệch 7 tiếng
+ * Cố ý KHÔNG dùng `toISOString().slice(0,10)` - cái đó ra NGÀY UTC, lệch 7 tiếng
  * với ngày mà con người đọc.
  */
 export function vnBusinessDay(value: string | Date | null | undefined): string | null {

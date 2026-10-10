@@ -84,7 +84,7 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
 
   // API trả summary theo ĐÚNG key RunoutLevel: RED_ALERT / YELLOW_WARNING /
   // HEALTHY_NORMAL, và summary được tính TRÊN TOÀN DANH MỤC (trước khi lọc mức
-  // và trước khi cắt limit). Trước đây đọc summary.total/.red/.yellow — cả ba
+  // và trước khi cắt limit). Trước đây đọc summary.total/.red/.yellow - cả ba
   // đều undefined ⇒ dòng chân bảng rơi về items.length (số dòng ĐÃ LỌC) và
   // in sai "Tổng N ấn bản • RED 0 • YELLOW 0" mỗi khi bật bộ lọc mức.
   const summaryTotal = summary
@@ -188,15 +188,15 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
       <div className="grid grid-cols-3 gap-3">
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-center">
           <p className="text-2xl font-black text-rose-700 font-mono">{counts.red}</p>
-          <p className="text-[11px] font-bold text-rose-600">🔴 RED — in gấp</p>
+          <p className="text-[11px] font-bold text-rose-600">🔴 RED - in gấp</p>
         </div>
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-center">
           <p className="text-2xl font-black text-amber-700 font-mono">{counts.yellow}</p>
-          <p className="text-[11px] font-bold text-amber-600">🟡 YELLOW — chuẩn bị HĐ in</p>
+          <p className="text-[11px] font-bold text-amber-600">🟡 YELLOW - chuẩn bị HĐ in</p>
         </div>
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
           <p className="text-2xl font-black text-emerald-700 font-mono">{counts.healthy}</p>
-          <p className="text-[11px] font-bold text-emerald-600">🟢 HEALTHY — an toàn</p>
+          <p className="text-[11px] font-bold text-emerald-600">🟢 HEALTHY - an toàn</p>
         </div>
       </div>
 

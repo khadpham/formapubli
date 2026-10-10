@@ -383,7 +383,7 @@ export class DeliveryOrderService {
 
     // Fingerprint bắt buộc cho replay: cùng key + PHIẾU KHÁC là xung đột,
     // không phải replay. Trước đây nhánh replay trả thẳng JSON đã lưu nên
-    // dùng lại key cho phiếu B trả về mã PXK + trạng thái của phiếu A —
+    // dùng lại key cho phiếu B trả về mã PXK + trạng thái của phiếu A -
     // client hiểu là B đã xuất trong khi B vẫn là DRAFT.
     const fingerprint = canonicalHash({ op: 'DISPATCH', deliveryOrderId, actorId: actorContext.staffId });
 

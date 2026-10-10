@@ -34,7 +34,7 @@ export interface RecordMovementParams {
   actorContext?: ActorContext; // M1 §1: thắng actorId client gửi
   /**
    * B3 (quà hết tồn): ghi CHỈ bút toán ledger, KHÔNG đụng `stock_balances`.
-   * Tồn thực tế đang âm về vật lý — trừ sổ theo dữ liệu tệ sẽ âm giả.
+   * Tồn thực tế đang âm về vật lý - trừ sổ theo dữ liệu tệ sẽ âm giả.
    */
   skipStockUpdate?: boolean;
 }
@@ -49,7 +49,7 @@ export interface TransferBatchParams {
   toWarehouseId: string;
   items: TransferBatchItemInput[];
   note?: string;
-  // Chống replay — bắt buộc từ caller (route đã 400 khi thiếu).
+  // Chống replay - bắt buộc từ caller (route đã 400 khi thiếu).
   idempotencyKey: string;
   actorContext: ActorContext; // Bắt buộc: chỉ OWNER/MANAGER.
 }
@@ -68,7 +68,7 @@ export interface TransferParams {
   condition?: 'NEW' | 'MINOR_DAMAGE' | 'DEFECTIVE' | 'QUARANTINE';
   documentRef: string;
   note?: string;
-  // CP3-B1.1: khóa chống replay — bắt buộc từ caller (route đã 400 khi thiếu).
+  // CP3-B1.1: khóa chống replay - bắt buộc từ caller (route đã 400 khi thiếu).
   idempotencyKey: string;
   actorContext: ActorContext; // Bắt buộc: chỉ OWNER/MANAGER; ledger actor lấy duy nhất từ đây (mục 4).
 }
@@ -99,7 +99,7 @@ export class InventoryService {
   /**
    * Chốt chặn cặp kho điều chuyển TRỰC TIẾP (1-cuốn lẫn hàng loạt).
    * Thay allowlist tĩnh (mặc định rỗng ⇒ 403 mọi tuyến, kho hội chợ tạo động
-   * không bao giờ kịp cấu hình — sự cố 04/10/2026): cặp được phép khi 2 kho
+   * không bao giờ kịp cấu hình - sự cố 04/10/2026): cặp được phép khi 2 kho
    * tồn tại + active + không thuộc họ ảo. Role/idempotency/audit giữ nguyên
    * ở từng endpoint nên tư thế bảo mật thực tế không đổi (batch vốn đã mở).
    */
@@ -152,7 +152,7 @@ export class InventoryService {
   }
 
   /**
-   * Tồn vật lý của N ấn bản trong 1 câu — anh/chị em của `getBalance`.
+   * Tồn vật lý của N ấn bản trong 1 câu - anh/chị em của `getBalance`.
    *
    * 30/09: POS chốt đơn cần tra ATP cho cả giỏ. Trước đây gọi `/api/atp` MỘT
    * LẦN cho TỪNG cuốn nối tiếp ⇒ đơn 12 cuốn = 12 vòng mạng, mỗi vòng lại vài
@@ -221,7 +221,7 @@ export class InventoryService {
     }
     // Sổ cái kho là bằng SỐ CUỐN: số thập phân làm physical_quantity lẻ
     // (10 -> 11.5) và mọi phép so sánh tồn/ATP về sau lệch. Chặn ở đây (hàm
-    // dùng chung) thay vì ở từng caller — NaN cũng bị chặn vì NaN không phải
+    // dùng chung) thay vì ở từng caller - NaN cũng bị chặn vì NaN không phải
     // số nguyên.
     if (!Number.isInteger(quantityDelta)) {
       throw AppError.invalid(`Độ biến động tồn kho phải là số nguyên (nhận ${quantityDelta}).`);
@@ -232,7 +232,7 @@ export class InventoryService {
       // ⇒ báo INVALID rõ ràng thay vì để FK editions(id) ném cryptic.
       // Caller đã tự tra danh mục và truyền isBook explicit (createOrder B5 lấy
       // từ map products đã validate INVALID ở trên) thì TIN caller, bỏ 2 câu
-      // tra/DÒNG — đường này sát trần 50 subrequest của Worker (auditC N7).
+      // tra/DÒNG - đường này sát trần 50 subrequest của Worker (auditC N7).
       // Caller không truyền (chuyển kho lẻ) vẫn tra DB như cũ.
       let kind = params.isBook === undefined
         ? (await InventoryService.resolveItemKinds([editionId], tx)).get(`${editionId || ''}`.trim())
@@ -247,7 +247,7 @@ export class InventoryService {
       await tx.insert(inventoryLedger).values({
         id: ledgerId,
         // 0033: `edition_id` nullable. Hàng hóa KHÔNG có dòng `editions` nên bút
-        // toán phải để NULL — nếu ghi id hàng hóa vào đây thì FK `editions(id)`
+        // toán phải để NULL - nếu ghi id hàng hóa vào đây thì FK `editions(id)`
         // vi phạm và cả đơn rollback.
         editionId: effIsBook ? editionId : null,
         // 0033: `product_id` NOT NULL + FK `products(id)`. Sách có
@@ -269,7 +269,7 @@ export class InventoryService {
         effectiveAt: effectiveAt || new Date().toISOString(),
       });
 
-      // B3: bút toán sổ kho nhưng không trừ bảng cân đối — tồn đang cạn,
+      // B3: bút toán sổ kho nhưng không trừ bảng cân đối - tồn đang cạn,
       // hàng vật lý vẫn phải ghi nhận đã ra khỏi kho.
       if (params.skipStockUpdate === true) {
         return {
@@ -290,7 +290,7 @@ export class InventoryService {
           id: bucketId,
           // 0033: hàng hóa (GOODS) không có dòng `editions` ⇒ `edition_id` phải
           // NULL, nếu không FK `editions(id)` chặn. (Chỉ thấy khi bucket chưa
-          // tồn tại — bucket đã có thì ON CONFLICT DO NOTHING bỏ qua.)
+          // tồn tại - bucket đã có thì ON CONFLICT DO NOTHING bỏ qua.)
           editionId: effIsBook ? editionId : null,
           // 0032: `product_id` NOT NULL + FK `products(id)`. Sách có
           // `products.id === editions.id`, nên đặt bằng `editionId`.
@@ -376,12 +376,12 @@ export class InventoryService {
   }
 
   /**
-   * Ghi N bút toán kho trong MỘT lần gọi — dùng cho `confirmOrder` (30/09).
+   * Ghi N bút toán kho trong MỘT lần gọi - dùng cho `confirmOrder` (30/09).
    *
    * VÌ SAO CẦN: `recordMovement` gọi lặp tốn 4 câu SQL mỗi dòng. Trên DB từ xa
    * (Turso) mỗi câu là một subrequest HTTPS từ Cloudflare Worker, mà Worker chỉ
    * chịu 50 subrequest/lần gọi. Đo thật trên production: đơn 1–4 dòng xác nhận
-   * được, đơn 5 dòng trở lên thì hỏng — đúng ngưỡng đó, và lỗi bị
+   * được, đơn 5 dòng trở lên thì hỏng - đúng ngưỡng đó, và lỗi bị
    * `handleApiError` che thành "Lỗi hệ thống". Cục bộ (file DB) 20 dòng vẫn chạy
    * vì không có chặn subrequest, nên lỗi chỉ lộ trên production.
    *
@@ -438,7 +438,7 @@ export class InventoryService {
         // 0033: hàng hóa không có dòng `editions` ⇒ `edition_id = NULL`, nếu
         // không FK `editions(id)` vi phạm và cả đơn bị rollback.
         editionId: (it as any).isBook === false ? null : it.editionId,
-        // 0033: `product_id` NOT NULL — sách `products.id === editions.id`.
+        // 0033: `product_id` NOT NULL - sách `products.id === editions.id`.
         productId: it.editionId,
         warehouseId: common.warehouseId,
         ownerId: it.ownerId,
@@ -487,7 +487,7 @@ export class InventoryService {
           // 0032 đổi UNIQUE `uq_stock_bucket` sang (product_id,…). Phải khớp
           // index đúng, không thì SQLite ném "ON CONFLICT clause does not match
           // any PRIMARY KEY or UNIQUE constraint". Còn 3 chỗ trong file này
-          // dùng mẫu này — đã quét hết bằng grep.
+          // dùng mẫu này - đã quét hết bằng grep.
           target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition],
         });
     }
@@ -499,7 +499,7 @@ export class InventoryService {
     //    cho -47 cuốn thay vì -49.) Sổ cái vẫn giữ MỘT DÒNG MỖI DÒNG đơn.
     //    Bản lặp dùng mệnh đề `AND (physical_quantity + delta >= 0)`; bản gộp
     //    không diễn đạt được điều kiện riêng từng dòng trong một câu, nên chuyển
-    //    sang kiểm âm ở bước 4 — tương đương vì cùng transaction, lỗi ⇒ rollback
+    //    sang kiểm âm ở bước 4 - tương đương vì cùng transaction, lỗi ⇒ rollback
     //    cả đơn. Trigger mức DB (migration 0027/0029) vẫn chạy và vẫn chặn âm.
     const deltaByKey = new Map<string, number>();
     for (const it of items) {
@@ -507,7 +507,7 @@ export class InventoryService {
       deltaByKey.set(key, (deltaByKey.get(key) ?? 0) + it.quantityDelta);
     }
     const agg = Array.from(deltaByKey.entries());
-    // `product_id` là khóa UNIQUE — `edition_id` của hàng hóa là NULL nên
+    // `product_id` là khóa UNIQUE - `edition_id` của hàng hóa là NULL nên
     // khớp theo đó không bao giờ trúng. Sách có product_id === edition_id.
     const branches = agg
       .map(([key, delta]) => {
@@ -591,7 +591,7 @@ export class InventoryService {
     }
     const effTransferActor = params.actorContext.staffId.trim();
 
-    // CP3-B1.1 (mục 1): idempotencyKey BẮT BUỘC từ caller — không suy từ
+    // CP3-B1.1 (mục 1): idempotencyKey BẮT BUỘC từ caller - không suy từ
     // documentRef, không tự sinh.
     const transferBatchId = params.idempotencyKey?.trim() || '';
     if (!transferBatchId) {
@@ -601,7 +601,7 @@ export class InventoryService {
     // CP3-B1.1 (mục 1): allowlist tĩnh + cấm virtual NGAY TẠI SERVICE.
     // 04/10/2026: allowlist tĩnh mặc định rỗng ⇒ 403 MỌI tuyến, kho hội chợ
     // tạo động không bao giờ kịp cấu hình. Chuyển sang chốt chặn động
-    // (2 kho tồn tại + active + không họ ảo) — đúng chuẩn đường batch đã áp
+    // (2 kho tồn tại + active + không họ ảo) - đúng chuẩn đường batch đã áp
     // cho hội chợ. Role/idempotency/audit giữ nguyên.
     // (Kiểm tra cặp kho chạy trong tx ở dưới.)
 
@@ -656,7 +656,7 @@ export class InventoryService {
           if (!matchesFingerprint(outLeg, inLeg)) {
             if (!inLeg) {
               throw AppError.conflict(
-                `STATE_CONFLICT: Chuyến chuyển kho [${transferBatchId}] dở dang (thiếu chân IN) — từ chối replay, cần đối soát thủ công.`
+                `STATE_CONFLICT: Chuyến chuyển kho [${transferBatchId}] dở dang (thiếu chân IN) - từ chối replay, cần đối soát thủ công.`
               );
             }
             throw AppError.idempotency(
@@ -741,7 +741,7 @@ export class InventoryService {
         }
         if (legs.outLeg && !legs.inLeg) {
           throw AppError.conflict(
-            `STATE_CONFLICT: Chuyến chuyển kho [${transferBatchId}] dở dang (thiếu chân IN) — từ chối, cần đối soát thủ công.`
+            `STATE_CONFLICT: Chuyến chuyển kho [${transferBatchId}] dở dang (thiếu chân IN) - từ chối, cần đối soát thủ công.`
           );
         }
         throw AppError.idempotency(
@@ -766,7 +766,7 @@ export class InventoryService {
   }
 
   /**
-   * V4.1 S1.3 — Điều chuyển hàng loạt nhiều đầu sách trong 1 phiếu (chuẩn bị hội chợ).
+   * V4.1 S1.3 - Điều chuyển hàng loạt nhiều đầu sách trong 1 phiếu (chuẩn bị hội chợ).
    * Khác transfer() 1-cuốn: không cần pair-allowlist tĩnh (kho hội chợ tạo động),
    * bù lại bắt buộc role OWNER/MANAGER + 2 kho active + số PCK do server cấp trong cùng tx.
    */
@@ -809,7 +809,7 @@ export class InventoryService {
           throw AppError.idempotency(`IDEMPOTENCY_CONFLICT: Key "${batchKey}" đã được sử dụng cho một phiếu chuyển kho khác.`);
         }
 
-        // Re-validate ATP trong tx (TOCTOU) — stale → 409 kèm số thực để UI re-cap 1 chạm.
+        // Re-validate ATP trong tx (TOCTOU) - stale → 409 kèm số thực để UI re-cap 1 chạm.
         const check = await this.checkBatchAvailability(
           { fromWarehouseId, toWarehouseId, items: merged },
           tx
@@ -844,7 +844,7 @@ export class InventoryService {
               { id: `sb-${it.editionId}-${toId}-NEW`, editionId: edOf(it.editionId), productId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
             ])
           )
-          // 0032: unique index đã sang product_id — xem giải thích ở recordMovement.
+          // 0032: unique index đã sang product_id - xem giải thích ở recordMovement.
           .onConflictDoNothing({ target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition] });
 
         // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
@@ -943,7 +943,7 @@ export class InventoryService {
   }
 
   /**
-   * V4.1 S1.3 — Kiểm tra tồn trước (pre-validation, không ghi gì).
+   * V4.1 S1.3 - Kiểm tra tồn trước (pre-validation, không ghi gì).
    * Nút "Kiểm tra tồn kho" gọi hàm này (200 + ok:false để UI highlight đỏ, không toast lỗi);
    * commit gọi lại trong tx, stale lúc đó mới ném 409.
    */
@@ -1052,7 +1052,7 @@ export class InventoryService {
       .where(eq(stockBalances.condition, 'NEW'));
 
     // Map số dư theo format: Map<editionId, Map<warehouseCode, quantity>>
-    // Lấy thông tin kho để map warehouseId sang code — loại kho ký gửi
+    // Lấy thông tin kho để map warehouseId sang code - loại kho ký gửi
     // (CONSIGNMENT không phải kho thật, chỉ là shortcut theo dõi).
     const allWarehouses = await db
       .select()
@@ -1068,12 +1068,12 @@ export class InventoryService {
       whIdToCode.set(wh.id, wh.code);
     }
 
-    // Tồn theo TẤT CẢ kho (kể cả kho hội chợ), khóa theo warehouseId — trước đây
+    // Tồn theo TẤT CẢ kho (kể cả kho hội chợ), khóa theo warehouseId - trước đây
     // chỉ đếm 3 mã kho cứng nên kho hội chợ không bao giờ hiện trong ma trận.
     const balanceMap = new Map<string, Record<string, number>>();
     for (const bal of allBalances) {
       // 0032: `edition_id` nullable cho hàng hóa nên không dùng làm khóa Map.
-      // `product_id` NOT NULL, và với sách thì BẰNG `edition_id` — nên khoá và
+      // `product_id` NOT NULL, và với sách thì BẰNG `edition_id` - nên khoá và
       // giá trị trả về y hệt trước đây. Tới C2b (ATP chuyển sang product) thì
       // khoá này đã sẵn đúng chiều.
       const key = bal.productId;

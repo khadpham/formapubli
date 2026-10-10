@@ -30,14 +30,14 @@ export interface ChannelRevenue {
   agency: AgencyChannel;
   online: SimpleChannel;
   retail: RetailChannel;
-  /** Bán sỉ tại quầy (WHOLESALE_PARTNER) — bán đứt thu tiền ngay, tách khỏi đại lý công nợ. */
+  /** Bán sỉ tại quầy (WHOLESALE_PARTNER) - bán đứt thu tiền ngay, tách khỏi đại lý công nợ. */
   wholesale: WholesaleChannel;
 }
 
 /**
  * Khoảng UTC [start, end) của tháng nghiệp vụ VN 'YYYY-MM'.
  * createdAt/dispatchedAt lưu UTC ('YYYY-MM-DD HH:MM:SS') nên phải trừ 7 tiếng
- * để biên tháng khớp giờ VN — dùng LIKE 'YYYY-MM%' trực tiếp sẽ lệch ở rìa tháng.
+ * để biên tháng khớp giờ VN - dùng LIKE 'YYYY-MM%' trực tiếp sẽ lệch ở rìa tháng.
  */
 export function vnMonthRangeUtc(month: string): [string, string] {
   const [y, m] = month.split('-').map(Number);
@@ -50,7 +50,7 @@ export function vnMonthRangeUtc(month: string): [string, string] {
 const num = (v: unknown) => Number(v ?? 0);
 
 /**
- * Tổng hợp doanh thu theo kênh cho tab Chủ (GĐ3-P1). Chưa có giá vốn/biên —
+ * Tổng hợp doanh thu theo kênh cho tab Chủ (GĐ3-P1). Chưa có giá vốn/biên -
  * chỉ doanh thu ghi nhận + tiền thực thu. Mọi con số đều theo tháng VN.
  */
 export async function getChannelRevenue(month: string): Promise<ChannelRevenue> {
@@ -120,7 +120,7 @@ export async function getChannelRevenue(month: string): Promise<ChannelRevenue> 
     .filter((r) => r.paymentMethod === 'CASH')
     .reduce((s, r) => s + num(r.revenue), 0);
 
-  // Bán sỉ tại quầy — kênh riêng, không gộp vào bán lẻ hay đại lý công nợ.
+  // Bán sỉ tại quầy - kênh riêng, không gộp vào bán lẻ hay đại lý công nợ.
   const [wholesale] = await db
     .select({
       orders: sql<number>`count(*)`,
@@ -287,10 +287,10 @@ export interface FifoCogsResult {
 }
 
 /**
- * Tính giá vốn hàng bán trong kỳ theo FIFO — phát lại sổ cái theo thứ tự thời gian.
+ * Tính giá vốn hàng bán trong kỳ theo FIFO - phát lại sổ cái theo thứ tự thời gian.
  * Lô về trước xuất trước; lô chưa có giá vốn thì đếm vào unknownQty chứ không
  * gán 0 (gán 0 sẽ làm biên lợi nhuận ảo cao).
- * Thuần logic — test trực tiếp không cần DB.
+ * Thuần logic - test trực tiếp không cần DB.
  */
 export function allocateFifoCogs(
   movements: LotMovement[],
@@ -298,7 +298,7 @@ export function allocateFifoCogs(
   endIso: string
 ): FifoCogsResult {
   // Chuẩn hóa 'YYYY-MM-DDTHH:MM:SS.sssZ' và 'YYYY-MM-DD HH:MM:SS' về cùng dạng
-  // trước khi so sánh chuỗi — 'T' (0x54) > ' ' (0x20) nên so trực tiếp sẽ xếp
+  // trước khi so sánh chuỗi - 'T' (0x54) > ' ' (0x20) nên so trực tiếp sẽ xếp
   // sai thứ tự và lọt kỳ (bug biên tháng).
   const norm = (s: string) => `${s || ''}`.replace('T', ' ').slice(0, 19);
   const start = norm(startIso);

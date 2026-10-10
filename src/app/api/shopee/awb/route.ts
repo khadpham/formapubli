@@ -8,7 +8,7 @@ import { getShopeeConfig, isShopeeOrderInScope } from '@/services/shopee/shop-co
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/shopee/awb?orderSn=... — PDF vận đơn A6.
+ * GET /api/shopee/awb?orderSn=... - PDF vận đơn A6.
  * Cùng allowlist + chặn phạm vi kho như /api/shopee/ship.
  */
 export async function GET(req: NextRequest) {

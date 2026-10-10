@@ -47,7 +47,7 @@ interface DailyFairSettlementModalProps {
 
 // Mọi cột thời gian trong DB là UTC; giờ người đọc là giờ Việt Nam (UTC+7, không
 // DST). `parseDbTimestamp` đọc được CẢ HAI họ timestamp đang cùng tồn tại (ISO
-// 'T' do app ghi và ' ' do SQLite CURRENT_TIMESTAMP ghi) — `new Date('… 09:00:00')`
+// 'T' do app ghi và ' ' do SQLite CURRENT_TIMESTAMP ghi) - `new Date('… 09:00:00')`
 // không có múi giờ nên đọc thẳng là sẽ lệch 7 tiếng.
 const vnHmFmt = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Ho_Chi_Minh',
@@ -82,19 +82,19 @@ function vnDayOf(value: string | Date | number | null | undefined): string | nul
 
 /** Giờ mở ca mặc định khi ngày đó không có dữ liệu hoạt động nào. */
 const HOUR_DEFAULT_START = 8;
-/** Giờ chốt ca quy ước khi in ngày đã qua — không cắt trước giờ này. */
+/** Giờ chốt ca quy ước khi in ngày đã qua - không cắt trước giờ này. */
 const HOUR_PAST_END = 21;
 
 /**
  * KHUNG GIỜ ĐỘNG của dải giờ: `[start, end]` là khoảng giờ có việc thật, tính từ
  * ca mở/đóng và giờ có đơn. In cứng 24 cột thì một quầy mở 9h đóng 18h ra 15 cột
- * rỗng — cột rỗng mà lại không vẽ được (xem chú thích dải giờ SVG trong bản in).
+ * rỗng - cột rỗng mà lại không vẽ được (xem chú thích dải giờ SVG trong bản in).
  *
  * Mọi mốc thời gian đi qua `parseDbTimestamp` + 7h, KHÔNG cắt chuỗi và KHÔNG dùng
  * giờ máy: DB có HAI họ timestamp cùng tồn tại, cắt chuỗi là ra giờ UTC ⇒ lệch 7
  * tiếng ⇒ dải in lệch hẳn khung giờ làm việc.
  *
- * - Hôm nay: kết thúc ở max(giờ hiện tại, giờ có việc cuối) — giờ hiện tại là mốc
+ * - Hôm nay: kết thúc ở max(giờ hiện tại, giờ có việc cuối) - giờ hiện tại là mốc
  *   dưới, nên dải không bao giờ cắt mất giờ đang bán.
  * - Ngày đã qua: kéo tới 21h, giờ đóng ca không phải mốc chặn (quầy đóng ca sớm
  *   vẫn phải in tới giờ chốt quy ước).
@@ -119,7 +119,7 @@ export function hourWindow(input: {
 
   const firstActivity = [...opened, ...busy].length ? Math.min(...opened, ...busy) : null;
   const lastActivity = [...closed, ...busy].length ? Math.max(...closed, ...busy) : null;
-  // Không có hoạt động nào thì lùi về 8h — nhưng KHÔNG cắt mất hoạt động sớm hơn 8h.
+  // Không có hoạt động nào thì lùi về 8h - nhưng KHÔNG cắt mất hoạt động sớm hơn 8h.
   const start = firstActivity ?? HOUR_DEFAULT_START;
 
   const nowHour = vnHourOf(nowValue) ?? HOUR_DEFAULT_START;
@@ -132,7 +132,7 @@ export function hourWindow(input: {
   return { start, end };
 }
 
-// Hình học dải giờ trên bản in: viewBox 720×46 — 720 là bề rộng vùng in A4 sau
+// Hình học dải giờ trên bản in: viewBox 720×46 - 720 là bề rộng vùng in A4 sau
 // lề (190mm @ 96dpi ≈ 718px), nên khi `w-full` co giãn tỉ lệ gần 1:1 và CHỮ
 // giữ đúng kích thước thật. Trước đây viewBox chỉ 240×46 bị giãn 3 lần: cột
 // thấp vẹo, nhãn giờ nằm cách xa nhau, dải giờ chiếm 137px chiều cao.
@@ -143,7 +143,7 @@ const BAND_BASE_Y = 48;
 const BAND_PLOT_H = 30;
 
 /**
- * Dải cột theo NGÀY cho bản in kỳ (SVG thuần rect/text — in không mất hình).
+ * Dải cột theo NGÀY cho bản in kỳ (SVG thuần rect/text - in không mất hình).
  * Tái dùng hình học BAND của dải giờ; trục X là ngày DD/MM, đông ngày thì
  * thưa nhãn và chỉ ghi số ở cột đỉnh.
  */
@@ -239,7 +239,7 @@ function DayBand({
   );
 }
 
-/** Nhãn tiếng Việt của hình thức thanh toán — cùng cách chia 3 nhóm với service. */
+/** Nhãn tiếng Việt của hình thức thanh toán - cùng cách chia 3 nhóm với service. */
 function paymentMethodLabel(method: string | null | undefined): string {
   const key = (method || 'CASH').toUpperCase();
   if (key === 'CASH') return 'Tiền mặt';
@@ -248,7 +248,7 @@ function paymentMethodLabel(method: string | null | undefined): string {
 }
 
 /**
- * ĐẦU TAB "TIỀN & KÉT" — số chủ đạo + 4 ô phụ + 2 dòng trạng thái.
+ * ĐẦU TAB "TIỀN & KÉT" - số chủ đạo + 4 ô phụ + 2 dòng trạng thái.
  *
  * VÌ SAO ĐỨNG ĐẦU: câu hỏi đầu tiên của người mở báo cáo lúc cuối ngày là
  * "hôm nay thu được bao nhiêu, két có khớp không". Trước đây con số này nằm
@@ -257,7 +257,7 @@ function paymentMethodLabel(method: string | null | undefined): string {
  * `pendingQr` TÁCH RIÊNG và ghi rõ "chưa ghi nhận": đó là tiền chuyển khoản
  * còn chờ xác nhận, KHÔNG phải doanh thu. Ai cộng tay vào Thực thu sẽ báo
  * cáo sai. Số này là ảnh chụp lúc mở báo cáo; lát nữa đơn thành COMPLETED
- * sẽ nằm trong Thực thu của lần mở sau — đó là chuyện đúng.
+ * sẽ nằm trong Thực thu của lần mở sau - đó là chuyện đúng.
  */
 function MoneyHeader({ data, periodLabel }: { data: any; periodLabel?: string }) {
   const f = data?.financials || {};
@@ -337,14 +337,14 @@ function MoneyHeader({ data, periodLabel }: { data: any; periodLabel?: string })
         {!rec.cashVariancePending && (
           <span className="font-mono text-slate-600">
             {' '}
-            — {(rec.expectedCashTotal || 0).toLocaleString('vi-VN')} đ
+            - {(rec.expectedCashTotal || 0).toLocaleString('vi-VN')} đ
           </span>
         )}
       </p>
 
       {pending.ordersCount > 0 && (
         <p className="text-xs font-bold text-amber-700">
-          ⏳ {pending.ordersCount} đơn chuyển khoản chờ xác nhận —{' '}
+          ⏳ {pending.ordersCount} đơn chuyển khoản chờ xác nhận -{' '}
           {(pending.total || 0).toLocaleString('vi-VN')} đ (chưa ghi nhận vào Thực thu)
         </p>
       )}
@@ -365,7 +365,7 @@ export function DailyFairSettlementModal({
   // hiện tại) bị bỏ. Trước đây không có: đổi ngày 29 → 28, nếu response 29 về
   // sau nó setData ghi đè ⇒ biên bản mang số liệu ngày 29 nhưng đóng dấu ngày 28.
   const requestSeqRef = useRef(0);
-  /** Khóa lần fetch cuối (chế độ+kho+ngày/kỳ): effect bỏ qua khi khóa trùng —
+  /** Khóa lần fetch cuối (chế độ+kho+ngày/kỳ): effect bỏ qua khi khóa trùng -
       chống fetch trùng sau "Cả chiến dịch" đã nạp sẵn (thay cờ boolean dễ kẹt). */
   const lastFetchKeyRef = useRef('');
   const [isLoading, setIsLoading] = useState(false);
@@ -374,7 +374,7 @@ export function DailyFairSettlementModal({
   // Ngày mặc định phải là NGÀY NGHIỆP VỤ VIỆT NAM. Trước đây dùng
   // `toISOString().slice(0,10)` là ngày UTC ⇒ từ 00:00 đến 07:00 giờ VN, modal mở
   // báo cáo của HÔM QUA, lệch hẳn với cron chốt ngày theo giờ VN.
-  // Tính tại chỗ (không import từ order.service) vì đó là module server nặng —
+  // Tính tại chỗ (không import từ order.service) vì đó là module server nặng -
   // import vào client component sẽ kéo cả tầng db vào bundle. Cùng cách với
   // `vnToday()` ở GET /api/pos/live-monitor.
   const [selectedDate, setSelectedDate] = useState(
@@ -383,7 +383,7 @@ export function DailyFairSettlementModal({
   // Chế độ kỳ: 'day' = báo cáo 1 ngày (cũ), 'range' = gom kỳ (mới). Kỳ có thể
   // nhập tay hoặc bấm preset; "Cả chiến dịch" suy từ đơn đầu→cuối của kho.
   // PHÂN QUYỀN (mở 06/10 theo yêu cầu chủ): Kỳ cho Chủ + Quản lý.
-  // Thu ngân/Kho/Thuế giữ sự kiện đang diễn ra — nút Kỳ ẩn hẳn như không tồn tại.
+  // Thu ngân/Kho/Thuế giữ sự kiện đang diễn ra - nút Kỳ ẩn hẳn như không tồn tại.
   const canViewRange = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const [rangeMode, setRangeMode] = useState<'day' | 'range'>('day');
   const [rangeStart, setRangeStart] = useState('');
@@ -404,17 +404,17 @@ export function DailyFairSettlementModal({
 
   // Số đếm thực tế KHÔNG được lưu ở đâu: chỉ nằm trong useState này, không có
   // lệnh nào gửi đi. Chủ sở hữu đã quyết định (2026-09-29): cuối ngày không đếm
-  // sách thật, tồn tính bằng "tồn trong kho − số bán" — đúng bằng cột
+  // sách thật, tồn tính bằng "tồn trong kho − số bán" - đúng bằng cột
   // theoreticalStock mà API đã trả sẵn. Nên bỏ ô nhập, chỉ hiện tồn lý thuyết và
   // nói rõ chưa kiểm kê, để không ai tưởng đã đếm.
   const [stocktakeNote, setStocktakeNote] = useState('');
   // Sắp xếp bảng kiểm kê theo tồn lý thuyết. MẶC ĐỊNH 'ASC' (Bé → Lớn):
   // người dùng luôn bấm nút này để xem sách sắp hết trước, nên thà mặc định
-  // luôn — bản in cũng xếp theo đúng thứ tự này. Chỉ còn 2 trạng thái vì
+  // luôn - bản in cũng xếp theo đúng thứ tự này. Chỉ còn 2 trạng thái vì
   // thứ tự thô không mang ý nghĩa gì khi đối chiếu.
   const [stocktakeSortMode, setStocktakeSortMode] = useState<'ASC' | 'DESC'>('ASC');
   // Cột sắp xếp kiểm kê: 'stock' (tồn lý thuyết) hoặc 'sold' (đã bán). Cuối kỳ
-  // người ta cần xem đã bán được gì hơn là sắp hết — vào chế độ Kỳ tự chuyển
+  // người ta cần xem đã bán được gì hơn là sắp hết - vào chế độ Kỳ tự chuyển
   // sang xếp theo đã bán (người dùng vẫn bấm lại được).
   const [stocktakeSortKey, setStocktakeSortKey] = useState<'stock' | 'sold'>('stock');
   const [stocktakeSoldDir, setStocktakeSoldDir] = useState<'DESC' | 'ASC'>('DESC');
@@ -443,7 +443,7 @@ export function DailyFairSettlementModal({
 
   // Lý do chặn in, hiện ra màn hình. Trước đây handlePrint gọi window.print()
   // vô điều kiện nên bấm lúc chưa tải xong (hoặc tải lỗi) ra đúng MỘT TRANG
-  // TRẮNG — người dùng tưởng máy in hỏng. Giữ thông báo ở state để nói rõ
+  // TRẮNG - người dùng tưởng máy in hỏng. Giữ thông báo ở state để nói rõ
   // vì sao không in, thay vì im lặng cho ra trang trắng.
   const [printNotice, setPrintNotice] = useState<string | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
@@ -454,7 +454,7 @@ export function DailyFairSettlementModal({
   const [isExportingCsv, setIsExportingCsv] = useState(false);
   // Nhịp Bán 1 món trong kỳ đang xem (day mode = kỳ 1 ngày). Biến đặt tên
   // riêng (không dùng selectedDate trực tiếp ở JSX cuối) để khối biên bản in
-  // phía trên không dính chữ selectedDate — test ngày-khớp-số-liệu quét text.
+  // phía trên không dính chữ selectedDate - test ngày-khớp-số-liệu quét text.
   const flowStart = rangeMode === 'range' && rangeStart ? rangeStart : selectedDate;
   const flowEnd = rangeMode === 'range' && rangeEnd ? rangeEnd : selectedDate;
   const [flowOpen, setFlowOpen] = useState(false);
@@ -497,7 +497,7 @@ export function DailyFairSettlementModal({
     setIsLoading(true);
     setLoadError(null);
     // Chế độ Kỳ mà chưa đủ ngày thì KHÔNG được rơi về báo cáo ngày âm thầm
-    // (người dùng tưởng đang xem kỳ mà số là của 1 ngày — dễ in nhầm).
+    // (người dùng tưởng đang xem kỳ mà số là của 1 ngày - dễ in nhầm).
     if (rangeMode === 'range' && (!rangeStart || !rangeEnd)) {
       setData(null);
       setLoadError('Chọn đủ từ ngày đến ngày (hoặc bấm preset) để xem báo cáo kỳ.');
@@ -506,7 +506,7 @@ export function DailyFairSettlementModal({
     }
     try {
       const base = `/api/pos/daily-settlement?warehouseId=${encodeURIComponent(currentWarehouseId)}`;
-      // Không đủ quyền Kỳ thì luôn xem ngày (dù state có lệch) — server cũng chặn Kỳ.
+      // Không đủ quyền Kỳ thì luôn xem ngày (dù state có lệch) - server cũng chặn Kỳ.
       const useRange = rangeMode === 'range' && canViewRange;
       const url =
         useRange && rangeStart && rangeEnd
@@ -520,7 +520,7 @@ export function DailyFairSettlementModal({
       if (seq !== requestSeqRef.current) return; // response cũ → bỏ, không ghi đè
       // Phải kiểm cả res.ok lẫn json.success. Trước đây chỉ có
       // `if (json.success)` không có else: lỗi 403/500 rơi vào nhánh `!data` và
-      // hiện thành "Không có dữ liệu" — thông báo sai, và `data` cũ của ngày
+      // hiện thành "Không có dữ liệu" - thông báo sai, và `data` cũ của ngày
       // trước vẫn còn trong state nên màn hình hiện số ngày khác dưới nhãn
       // ngày mới. Xoá `data` khi lỗi để không bao giờ in nhầm.
       if (!res.ok || !json?.success) {
@@ -562,7 +562,7 @@ export function DailyFairSettlementModal({
     setRangeEnd(today);
   };
 
-  /** Bấm sang Kỳ mà chưa có ngày thì tự lấy 1 tuần gần nhất — không để khung
+  /** Bấm sang Kỳ mà chưa có ngày thì tự lấy 1 tuần gần nhất - không để khung
       trống hiện số ngày cũ gây hiểu nhầm. */
   const switchMode = (m: 'day' | 'range') => {
     setRangeMode(m);
@@ -609,11 +609,11 @@ export function DailyFairSettlementModal({
         setData(null);
         // Effect tự fetch theo kỳ mới và xoá lỗi này khi tải xong.
         setLoadError(
-          `Chiến dịch dài ${json.spanDays} ngày (tối đa 92 ngày/kỳ). Đang tải 90 ngày gần nhất — muốn xem đoạn khác thì thu hẹp kỳ.`
+          `Chiến dịch dài ${json.spanDays} ngày (tối đa 92 ngày/kỳ). Đang tải 90 ngày gần nhất - muốn xem đoạn khác thì thu hẹp kỳ.`
         );
         return;
       }
-      // Dữ liệu đã có sẵn — đồng bộ khóa fetch để effect không tải lại trùng lặp.
+      // Dữ liệu đã có sẵn - đồng bộ khóa fetch để effect không tải lại trùng lặp.
       lastFetchKeyRef.current = `r|${currentWarehouseId}|${json.data.reportStartDate}|${json.data.reportEndDate}`;
       setRangeMode('range');
       setRangeStart(json.data.reportStartDate);
@@ -703,7 +703,7 @@ export function DailyFairSettlementModal({
       const vnNow = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }).format(new Date());
       // ===== MỘT file duy nhất, nhiều bảng xếp chồng (cách nhau dòng trống). =====
       const rows: Array<Array<string | number | null>> = [
-        ['FORMApubli', `BẢNG TỔNG HỢP BÁN HÀNG — ${whName}`],
+        ['FORMApubli', `BẢNG TỔNG HỢP BÁN HÀNG - ${whName}`],
         [`Kỳ: ${s.range.start} → ${s.range.end}`, `Xuất lúc: ${vnNow} (giờ VN)`],
         [s.stockNote || 'Tồn hiện tại lúc mở báo cáo'],
         [],
@@ -712,9 +712,9 @@ export function DailyFairSettlementModal({
       const t = s.totals || {};
       const p = s.payment || {};
       const hi = s.highlight;
-      // BẢNG 1 — Tóm tắt kỳ (tiền + kênh thanh toán + đỉnh kỳ + đơn lớn nhất).
+      // BẢNG 1 - Tóm tắt kỳ (tiền + kênh thanh toán + đỉnh kỳ + đơn lớn nhất).
       rows.push(
-        ['BẢNG 1 — TÓM TẮT KỲ'],
+        ['BẢNG 1 - TÓM TẮT KỲ'],
         ['Số đơn', t.orders],
         ['Doanh thu gộp', t.gross],
         ['Chiết khấu', t.discount],
@@ -724,21 +724,21 @@ export function DailyFairSettlementModal({
         ['Tiền mặt', `${p.cash?.sales ?? 0} (${p.cash?.ordersCount ?? 0} đơn)`],
         ['Chuyển khoản/QR', `${p.qrTransfer?.sales ?? 0} (${p.qrTransfer?.ordersCount ?? 0} đơn)`],
         ['Thẻ', `${p.card?.sales ?? 0} (${p.card?.ordersCount ?? 0} đơn)`],
-        ['Ngày đỉnh kỳ', s.peakDay ? `${s.peakDay.date} (${s.peakDay.orders} đơn, ${s.peakDay.sales} đ)` : '—'],
-        ['Đơn lớn nhất kỳ', hi ? `${hi.orderCode} — ${hi.finalAmount} đ (${hi.itemCount} SP, ${hi.paymentMethod})` : '—'],
+        ['Ngày đỉnh kỳ', s.peakDay ? `${s.peakDay.date} (${s.peakDay.orders} đơn, ${s.peakDay.sales} đ)` : '-'],
+        ['Đơn lớn nhất kỳ', hi ? `${hi.orderCode} - ${hi.finalAmount} đ (${hi.itemCount} SP, ${hi.paymentMethod})` : '-'],
       );
       blank();
-      // BẢNG 2 — Toàn bộ đầu sách (đã bán + chưa bán trong kỳ, có hạng + nhóm).
+      // BẢNG 2 - Toàn bộ đầu sách (đã bán + chưa bán trong kỳ, có hạng + nhóm).
       const lines: any[] = s.lines || [];
       rows.push(
-        ['BẢNG 2 — TỔNG HỢP ĐẦU SÁCH'],
+        ['BẢNG 2 - TỔNG HỢP ĐẦU SÁCH'],
         ['STT', 'Mã', 'Tên sách', 'Giá bìa', 'SL bán (có thu tiền)', 'Doanh thu', 'SL tặng (kèm)', 'Tổng xuất (bán+tặng)', 'Tồn hiện tại', 'Hạng theo SL', 'Hạng theo doanh thu', 'Nhóm'],
       );
       lines.forEach((l: any, i: number) =>
         rows.push([i + 1, l.code, l.title, l.coverPrice, l.soldQty, l.soldRevenue, l.giftQty, l.totalOut, l.stockNow, l.rankQty, l.rankRevenue, l.group])
       );
       blank();
-      // BẢNG 3 — Doanh thu theo ngày, thêm cột "SL bán" lấy từ ma trận phía dưới.
+      // BẢNG 3 - Doanh thu theo ngày, thêm cột "SL bán" lấy từ ma trận phía dưới.
       const days: any[] = s.days || [];
       const m = s.dailyMatrix || { dates: [], rows: [] };
       const qtyByDate = new Map<string, number>();
@@ -747,25 +747,25 @@ export function DailyFairSettlementModal({
           qtyByDate.set(d, (qtyByDate.get(d) || 0) + (r.qty?.[i] || 0))
         );
       }
-      rows.push(['BẢNG 3 — DOANH THU THEO NGÀY'], ['Ngày', 'Số đơn', 'SL bán', 'Doanh thu (thuần)']);
+      rows.push(['BẢNG 3 - DOANH THU THEO NGÀY'], ['Ngày', 'Số đơn', 'SL bán', 'Doanh thu (thuần)']);
       for (const d of days) rows.push([d.date, d.orders, qtyByDate.get(d.date) || 0, d.sales]);
       rows.push(['TỔNG', t.orders, t.itemsSold, t.net]);
       blank();
-      // BẢNG 4 — Số lượng bán sản phẩm theo từng ngày (ma trận: dòng = đầu sách,
-      // cột = ngày VN trong kỳ; chỉ bán CÓ THU TIỀN — quà không tính).
-      rows.push(['BẢNG 4 — SỐ LƯỢNG BÁN THEO SẢN PHẨM THEO NGÀY'], ['Mã', 'Tên sách', ...(m.dates || []), 'TỔNG']);
+      // BẢNG 4 - Số lượng bán sản phẩm theo từng ngày (ma trận: dòng = đầu sách,
+      // cột = ngày VN trong kỳ; chỉ bán CÓ THU TIỀN - quà không tính).
+      rows.push(['BẢNG 4 - SỐ LƯỢNG BÁN THEO SẢN PHẨM THEO NGÀY'], ['Mã', 'Tên sách', ...(m.dates || []), 'TỔNG']);
       for (const r of m.rows || []) rows.push([r.code, r.title, ...(r.qty || []), r.total]);
       const colTotals = (m.dates || []).map((_: string, i: number) =>
         (m.rows || []).reduce((sum: number, r: any) => sum + (r.qty?.[i] || 0), 0)
       );
       rows.push(['', '', ...colTotals, t.itemsSold]);
       blank();
-      // BẢNG 5 — Quà tặng trong kỳ (theo kho).
+      // BẢNG 5 - Quà tặng trong kỳ (theo kho).
       const gifts: any[] = s.giftsInScope?.items || [];
-      rows.push(['BẢNG 5 — QUÀ TẶNG TRONG KỲ (theo kho)'], ['Mã quà', 'Tên quà', 'Số lượng đã phát']);
+      rows.push(['BẢNG 5 - QUÀ TẶNG TRONG KỲ (theo kho)'], ['Mã quà', 'Tên quà', 'Số lượng đã phát']);
       for (const g of gifts) rows.push([g.code, g.title, g.copies]);
       rows.push(['TỔNG', '', s.giftsInScope?.total || 0]);
-      // MỘT file duy nhất cho cả 5 bảng — không còn tải dồn 3 file liên tiếp.
+      // MỘT file duy nhất cho cả 5 bảng - không còn tải dồn 3 file liên tiếp.
       downloadCsv(`ho-guom-${whId}-${s.range.start}_${s.range.end}.csv`, toCsv(rows));
       setCsvNotice(`Đã xuất 1 file CSV (5 bảng, ${lines.length} đầu sách, kỳ ${s.range.start}→${s.range.end}).`);
     } catch {
@@ -789,7 +789,7 @@ export function DailyFairSettlementModal({
   // ngày không bán được gì vẫn ra cột xám thay vì chia 0 = NaN.
   const hourly: any[] = data?.ordersByHour || [];
 
-  // KHUNG GIỜ ĐỘNG — dải giờ chỉ in khoảng có việc thật. `slice(start, end + 1)`
+  // KHUNG GIỜ ĐỘNG - dải giờ chỉ in khoảng có việc thật. `slice(start, end + 1)`
   // vì `end` là giờ CUỐI CÙNG có việc (hoặc giờ hiện tại của hôm nay) nên nó phải
   // nằm trong dải. Cùng hàm này dùng cho cả màn hình lẫn bản in.
   const hourWin = hourWindow({
@@ -799,7 +799,7 @@ export function DailyFairSettlementModal({
   });
   const hourlyInWindow = hourly.slice(hourWin.start, hourWin.end + 1);
   // `end` có thể ra 24 khi khung chỉ gồm giờ 23 (đảm bảo `end > start`). 24 KHÔNG
-  // phải mốc giờ có thật — nhãn cuối của dải SVG vẫn là "23h" — nên hiển thị 23h
+  // phải mốc giờ có thật - nhãn cuối của dải SVG vẫn là "23h" - nên hiển thị 23h
   // cho khớp, tránh in ra mốc giờ không tồn tại.
   const hourEndShown = Math.min(23, hourWin.end);
   const maxHourOrders = Math.max(1, ...hourlyInWindow.map((h: any) => Number(h.orders || 0)));
@@ -817,7 +817,7 @@ export function DailyFairSettlementModal({
     0
   );
   const bandBarHMoney = (n: number) => (n > 0 ? Math.max(6, Math.round((n / maxHourSales) * BAND_PLOT_H)) : 2);
-  /** Nhãn tiền gọn trên cột in (Tr/nghìn) — in đầy đủ tràn cột. */
+  /** Nhãn tiền gọn trên cột in (Tr/nghìn) - in đầy đủ tràn cột. */
   const bandMoneyShort = (n: number) =>
     n >= 1000000
       ? `${(Math.round((n / 1000000) * 10) / 10).toLocaleString('vi-VN')}Tr`
@@ -827,7 +827,7 @@ export function DailyFairSettlementModal({
 
   // Bảng tồn gọn trên bản in: chỉ ấn phẩm ĐÃ BÁN trong ngày, không cap dòng.
   // Ngày: xếp theo "Tồn còn" bé → lớn. Kỳ (cuối chiến dịch): xếp theo "Đã bán"
-  // lớn → bé — cuối kỳ người ta cần xem bán được gì hơn là sắp hết. Dùng CHUNG
+  // lớn → bé - cuối kỳ người ta cần xem bán được gì hơn là sắp hết. Dùng CHUNG
   // hàm với màn hình kiểm kê để giấy khớp đúng thứ tự đang đọc.
   const soldOnlyRows: any[] = isRangeData
     ? [...(data?.inventoryReconciliation || []).filter((it: any) => Number(it.soldToday || 0) > 0)].sort(
@@ -885,7 +885,7 @@ export function DailyFairSettlementModal({
              Nếu chỉ dùng "visibility: hidden" thì nội dung ẩn VẪN CHIẾM CHỖ ⇒
              trình duyệt in ra hàng chục trang TRẮNG nối sau biên bản.
              :has() loại đúng nhánh chứa biên bản (portal của nó nằm thẳng con
-             của body). :not(#id) phía sau là bắt buộc: riêng :has() không đủ —
+             của body). :not(#id) phía sau là bắt buộc: riêng :has() không đủ -
              độ đặc hiệu (1,0,1) của nó thắng rule #id { display:block !important }
              (1,0,0), cả hai đều !important nên biên bản vẫn bị ẩn ⇒ in trắng. */
           body > *:not(:has(#printable-settlement-report)):not(#printable-settlement-report) {
@@ -970,7 +970,7 @@ export function DailyFairSettlementModal({
       `}</style>
 
       <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl overflow-hidden border border-slate-200 my-auto flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
-        {/* Header Modal — xuống dòng trên mobile để tiêu đề không bị ép từng chữ */}
+        {/* Header Modal - xuống dòng trên mobile để tiêu đề không bị ép từng chữ */}
         <div className="no-print bg-slate-900 text-white px-3 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-9 h-9 shrink-0 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
@@ -1122,7 +1122,7 @@ export function DailyFairSettlementModal({
 
         {/* Tab Navigation (ẩn khi in).
             Dán đầu (sticky) + 3 ô luôn hiện: trước đây là 3 tab chữ dài trong
-            thanh cuộn ngang — trên điện thoại không có cách nào biết còn mục
+            thanh cuộn ngang - trên điện thoại không có cách nào biết còn mục
             nào ngoài màn hình, và dải nhãn dài làm nút trông như chữ. */}
         <div className="no-print sticky top-0 z-10 px-3 sm:px-6 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
           <div role="tablist" aria-label="Mục báo cáo" className="fit-bar grid grid-cols-3 gap-1 bg-slate-200/60 p-1 rounded-xl">
@@ -1185,7 +1185,7 @@ export function DailyFairSettlementModal({
                   />
 
                   {data?.mode === 'range' ? (
-                    /* Doanh thu theo ngày trong kỳ — cùng shape với dải giờ bản in */
+                    /* Doanh thu theo ngày trong kỳ - cùng shape với dải giờ bản in */
                     <div className="bg-white rounded-2xl border border-slate-200 p-4">
                       <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
                         Doanh thu theo ngày ({(data?.days || []).length} ngày)
@@ -1218,7 +1218,7 @@ export function DailyFairSettlementModal({
                     </div>
                   ) : (
                   <>
-                  {/* Số đơn theo giờ — dùng CHUNG `hourlyInWindow`/`hourWin` với dải
+                  {/* Số đơn theo giờ - dùng CHUNG `hourlyInWindow`/`hourWin` với dải
                       giờ trên bản in, nên màn hình và giấy luôn nói cùng một câu.
                       Không query thêm: `ordersByHour` đã gom sẵn 24 bucket. */}
                   <HourlyOrdersChart
@@ -1227,7 +1227,7 @@ export function DailyFairSettlementModal({
                     endHour={hourEndShown}
                   />
 
-                  {/* Doanh thu theo giờ — cùng dữ liệu/khung giờ với biểu đồ đơn
+                  {/* Doanh thu theo giờ - cùng dữ liệu/khung giờ với biểu đồ đơn
                       ở trên, chỉ đổi chế độ vẽ sang tiền. */}
                   <HourlyOrdersChart
                     rows={hourlyInWindow}
@@ -1311,7 +1311,7 @@ export function DailyFairSettlementModal({
                         </div>
                       )}
 
-                      {/* Trước đây dòng chênh lệch BỊ ẨN im lặng khi còn ca mở — đúng dòng
+                      {/* Trước đây dòng chênh lệch BỊ ẨN im lặng khi còn ca mở - đúng dòng
                           cần kiểm nhất lại biến mất. Giờ nói rõ vì sao chưa đối soát được.
                           Phải dùng `cashVariancePending` chứ không đoán qua
                           `cashVariance === null`: null còn xảy ra khi KHÔNG có ca nào
@@ -1322,7 +1322,7 @@ export function DailyFairSettlementModal({
                             Kết quả đối soát chênh lệch két:
                           </span>
                           <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold">
-                            Chưa thể đối soát — {(() => {
+                            Chưa thể đối soát - {(() => {
                               const open = Number(data.cashboxReconciliation?.openSessionCount || 0);
                               const unrec = Number(data.cashboxReconciliation?.unreconcilableSessionCount || 0);
                               const parts: string[] = [];
@@ -1409,7 +1409,7 @@ export function DailyFairSettlementModal({
                                       <span className="font-mono font-bold text-slate-800">
                                         {s.closingCashActual !== null && s.closingCashActual !== undefined
                                           ? `${s.closingCashActual.toLocaleString('vi-VN')} đ`
-                                          : '—'}
+                                          : '-'}
                                       </span>
                                     </p>
                                   </div>
@@ -1445,12 +1445,12 @@ export function DailyFairSettlementModal({
                           KHÔNG phải mảng. Đo `Array.isArray(...)` ⇒ luôn false ⇒ cả khối
                           cảnh báo này chết mà test nguồn vẫn xanh. Phải đọc `.shifts`.
                           Mỗi phần tử có `id/warehouseId/cashierId/openedAt/cutoff/...`
-                          — không có `warehouseName`/`cashierName`, nên dùng id làm dự phòng. */}
+                          - không có `warehouseName`/`cashierName`, nên dùng id làm dự phòng. */}
                       {Array.isArray(data.openShiftAlerts?.shifts) && data.openShiftAlerts.shifts.length > 0 && (
                         <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-1.5">
                           <p className="text-xs font-extrabold text-rose-800 flex items-center gap-1.5">
                             <AlertTriangle className="w-4 h-4" />
-                            Ca chưa đóng — ngày chưa thể chốt
+                            Ca chưa đóng - ngày chưa thể chốt
                           </p>
                           {data.openShiftAlerts.shifts.map((s: any, i: number) => (
                             <p key={i} className="text-[11px] text-rose-700 font-mono">
@@ -1485,7 +1485,7 @@ export function DailyFairSettlementModal({
                       <span className="text-[11px] text-slate-500 block">Kiểm kê thực tế:</span>
                       {/* KHÔNG in "0 cuốn / Khớp 100%" ở đây. Không có số đếm thật
                           (hệ thống chưa lưu, quy trình không đếm cuối ngày) nên
-                          0 là HẸN SỐ BỊA, và bản in này đưa cho kế toán — in số 0
+                          0 là HẸN SỐ BỊA, và bản in này đưa cho kế toán - in số 0
                           tạo ra một biên bản "khớp tuyệt đối" rỗng. Nói thẳng là
                           chưa kiểm kê. */}
                       <span className="font-mono font-black text-sm text-slate-400">
@@ -1769,7 +1769,7 @@ export function DailyFairSettlementModal({
 
         {/* Chân modal dính đáy: nút In và Đóng luôn ở tầm tay.
             Trước đây chúng nằm trên cùng, giữa báo cáo dài vài trăm dòng thì
-            phải cuộn hết lên mới bấm được — đúng lúc người dùng cần nhất. */}
+            phải cuộn hết lên mới bấm được - đúng lúc người dùng cần nhất. */}
         <div className="no-print sticky bottom-0 z-10 shrink-0 px-3 sm:px-6 py-2 bg-slate-900 text-white flex items-center justify-between gap-2 border-t border-slate-700">
           <button
             onClick={fetchSettlement}
@@ -1821,7 +1821,7 @@ export function DailyFairSettlementModal({
           <div id="printable-settlement-report" className="hidden print:block bg-white text-slate-800 text-[12px] font-sans leading-normal">
             {/* Khối in PHẢI createPortal riêng xuống `document.body`. Nằm trong
                 khung modal `overflow-hidden max-h-[92vh]` thì lúc in khung cha
-                cắt mất toàn bộ biên bản, window.print() ra trang trắng — đúng
+                cắt mất toàn bộ biên bản, window.print() ra trang trắng - đúng
                 triệu chứng "bấm In không hiện gì". Ở đây nó là ANH EM của
                 backdrop, không nằm trong khung cắt nào. */}
             {/* Header doanh nghiệp */}
@@ -1961,7 +1961,7 @@ export function DailyFairSettlementModal({
                 </div>
               </div>
 
-              {/* Tiền mặt theo từng ca — kỳ dài cắt 20 ca đầu + ghi rõ còn lại để
+              {/* Tiền mặt theo từng ca - kỳ dài cắt 20 ca đầu + ghi rõ còn lại để
                   không tràn A4 (số tổng đã có ở trên, không mất thông tin). */}
               <div className="mt-3">
                 <p className="font-bold uppercase text-slate-800 text-[12px] mb-1.5">- Tiền mặt bán theo từng ca:</p>
@@ -1984,9 +1984,9 @@ export function DailyFairSettlementModal({
                       {(data.cashboxReconciliation?.sessions || []).slice(0, isRangeData ? 20 : undefined).map((s: any) => (
                         <tr key={s.id} className="hover:bg-slate-50">
                           <td className="border border-slate-300 py-1.5 px-2 font-mono text-slate-900">{s.cashierId}</td>
-                          <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-700">{vnHm(s.openedAt) || '—'}</td>
+                          <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-700">{vnHm(s.openedAt) || '-'}</td>
                           <td className="border border-slate-300 py-1.5 px-2 text-center font-mono text-slate-700">
-                            {s.closedAt ? vnHm(s.closedAt) : '—'}
+                            {s.closedAt ? vnHm(s.closedAt) : '-'}
                           </td>
                           <td className="border border-slate-300 py-1.5 px-2 text-right font-mono font-semibold text-slate-900">
                             {(Number(s.expectedCashLive || 0) - Number(s.openingCash || 0)).toLocaleString('vi-VN')} đ
@@ -2012,7 +2012,7 @@ export function DailyFairSettlementModal({
             {/* III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU */}
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) — {overCapCount} ĐƠN
+                III. ĐƠN VƯỢT TRẦN CHIẾT KHẤU (≥ 20%) - {overCapCount} ĐƠN
               </h3>
               <table className="w-full border-collapse border border-slate-300 text-[12px]">
                 <thead>
@@ -2125,13 +2125,13 @@ export function DailyFairSettlementModal({
               )}
             </div>
 
-            {/* V. SẮP HẾT — nhóm phải đếm lúc đóng thùng. Chỉ ở chế độ ngày:
+            {/* V. SẮP HẾT - nhóm phải đếm lúc đóng thùng. Chỉ ở chế độ ngày:
                 cuối kỳ gộp vào MỘT bảng IV xếp theo đã bán (tồn còn nằm ngay
                 cạnh), không in riêng bảng sắp hết nữa. */}
             {!isRangeData && (
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
-                V. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) — CẦN ĐẾM CUỐI NGÀY
+                V. SẮP HẾT (TỒN ≤ {STOCK_THRESHOLD_WARNING}) - CẦN ĐẾM CUỐI NGÀY
               </h3>
               <table className="w-full border-collapse border border-slate-300 text-[11.5px]">
                 <thead>
@@ -2159,7 +2159,7 @@ export function DailyFairSettlementModal({
                         <td className="border border-slate-300 py-1 px-2 text-right font-mono font-bold text-slate-900">
                           {it.theoreticalStock}
                         </td>
-                        {/* Hệ thống KHÔNG lưu số đếm — để trống cho nhân viên điền tay. */}
+                        {/* Hệ thống KHÔNG lưu số đếm - để trống cho nhân viên điền tay. */}
                         <td className="border border-slate-300 py-1 px-2" />
                       </tr>
                     ))
@@ -2167,13 +2167,13 @@ export function DailyFairSettlementModal({
                 </tbody>
               </table>
               <p className="text-[11.5px] italic mt-1 text-slate-600">
-                Xếp theo tồn {sortLabel('ASC').toLowerCase()}. Số đếm thực tế do nhân viên điền tay — hệ thống chưa lưu số đếm.
+                Xếp theo tồn {sortLabel('ASC').toLowerCase()}. Số đếm thực tế do nhân viên điền tay - hệ thống chưa lưu số đếm.
               </p>
             </div>
             )}
 
             {/* VI. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
-                (mục V là bảng Sắp hết ở trên — đánh số theo thứ tự thật trên giấy) */}
+                (mục V là bảng Sắp hết ở trên - đánh số theo thứ tự thật trên giấy) */}
             <div className="print-block mb-4 font-sans">
               <h3 className="font-bold text-slate-900 uppercase border-b border-slate-300 pb-1 mb-2.5 tracking-wide text-[13px]">
                 VI. PHÂN TÍCH NHỊP ĐỘ BÁN HÀNG & ẤN PHẨM NỔI BẬT
@@ -2211,7 +2211,7 @@ export function DailyFairSettlementModal({
               </div>
 
               {/* Dải giờ VN vẽ bằng SVG: viewBox 720x68 với BASE_Y=48 và PLOT_H=30 chống lẹm số.
-                  Chỉ ở chế độ ngày — chế độ kỳ dùng dải theo ngày bên dưới. */}
+                  Chỉ ở chế độ ngày - chế độ kỳ dùng dải theo ngày bên dưới. */}
               {!isRangeData && (
               <>
               <div className="mt-2.5">
@@ -2298,7 +2298,7 @@ export function DailyFairSettlementModal({
                 </svg>
               </div>
 
-              {/* Dải doanh thu theo giờ — cùng khung giờ với dải đơn ở trên,
+              {/* Dải doanh thu theo giờ - cùng khung giờ với dải đơn ở trên,
                   thang riêng theo đồng (không chung thang đếm đơn). In SVG thuần
                   rect/text nên không mất hình khi tắt "Background graphics". */}
               <div className="mt-2.5">
@@ -2448,7 +2448,7 @@ export function DailyFairSettlementModal({
                 </table>
                 {data.giftSummary?.totalGiftCopies > 0 && (
                   <p className="mt-1.5 text-[11px] text-slate-600 italic">
-                    * Đã phát {data.giftSummary.totalGiftCopies} phần quà tặng kèm ({data.giftSummary.items?.map((g: any) => `${g.title}: ${g.copies}`).join(', ')}) — không tính vào doanh số bán chạy.
+                    * Đã phát {data.giftSummary.totalGiftCopies} phần quà tặng kèm ({data.giftSummary.items?.map((g: any) => `${g.title}: ${g.copies}`).join(', ')}) - không tính vào doanh số bán chạy.
                   </p>
                 )}
               </div>

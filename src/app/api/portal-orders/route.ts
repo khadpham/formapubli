@@ -7,7 +7,7 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/portal-orders — Nhận đơn từ Customer Order Portal.
+ * POST /api/portal-orders - Nhận đơn từ Customer Order Portal.
  *
  * Xác thực: Bearer token trong header Authorization (env PORTAL_API_KEY).
  *
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     if (!madon || !email || !name || !items?.length) {
       return NextResponse.json(
-        { success: false, error: 'Thiếu thông tin đơn hàng (madon, email, name, items).' },
+        { success: false, error: 'Thiếu thông tin đơn sách (madon, email, name, items).' },
         { status: 400 },
       );
     }
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
       }
       orderItems.push({ editionId: edition.id, quantity: qty });
     }
-    // Quà tri ân: túi tote SP-004 (hàng hóa, KHÔNG phải ấn bản) — tra products
+    // Quà tri ân: túi tote SP-004 (hàng hóa, KHÔNG phải ấn bản) - tra products
     // trực tiếp. Bản deploy cũ chỉ tra editions ⇒ giftId null ⇒ dòng quà mất.
     let giftId: string | null = null;
     if (hasGift) {
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
       idempotencyKey: `portal-${madon}`,
       note: `Đơn từ Customer Portal. Mã portal: ${madon}. SĐT: ${phone}. Địa chỉ: ${address}. Phí ship: ${shippingFee || 0}đ.`,
       items: orderItems,
-      // Quà SP-004 do route tự xác minh — server tin mà không cần promotion.
+      // Quà SP-004 do route tự xác minh - server tin mà không cần promotion.
       ...(giftId ? { trustedGiftIds: new Set([giftId]) } : {}),
     });
 
@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // createOrder trả `orderId` (KHÔNG phải `id`) — đọc sai = undefined ⇒
+    // createOrder trả `orderId` (KHÔNG phải `id`) - đọc sai = undefined ⇒
     // libsql ném "Unsupported type of value" và portal nhận orderId: undefined.
     const ord = order as unknown as { orderId: string; orderCode: string };
     console.log(

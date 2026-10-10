@@ -8,7 +8,7 @@ import { UserRole } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/portal-settings — Lấy cấu hình portal (kho mặc định).
+ * GET /api/portal-settings - Lấy cấu hình portal (kho mặc định).
  * Quyền: Owner, Manager.
  */
 export async function GET(req: NextRequest) {
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/portal-settings — Cập nhật cấu hình portal.
+ * POST /api/portal-settings - Cập nhật cấu hình portal.
  * Body: { PORTAL_WAREHOUSE_ID: string }
  * Quyền: Owner, Manager.
  */
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    // Đại lý ký gửi không phải kho vận hành — không thể làm kho fulfill đơn portal.
+    // Đại lý ký gửi không phải kho vận hành - không thể làm kho fulfill đơn portal.
     if (wh.warehouseType === 'CONSIGNMENT') {
       return NextResponse.json(
         { success: false, error: 'Đây là đại lý ký gửi, không thể chọn làm kho fulfill đơn portal.' },

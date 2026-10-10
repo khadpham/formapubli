@@ -30,11 +30,11 @@ import { withDbRetry } from '../lib/db-retry';
  *
  * KHÔNG dùng `LIKE 'YYYY-MM-DD%'` cho việc này: tiền tố 10 ký tự chỉ cho biết
  * NGÀY UTC, không cho biết giờ. Lọc một mốc thì mất 7 tiếng đầu; lọc hai mốc
- * (D-1 và D) thì lấy THỪA 7 tiếng cuối — cả hai đều sai tiền.
+ * (D-1 và D) thì lấy THỪA 7 tiếng cuối - cả hai đều sai tiền.
  *
  * Cách đúng: đổi sang ngày VN ngay trong SQL rồi so bằng. `datetime()` của SQLite
- * nhận CẢ HAI họ timestamp đang cùng tồn tại trong DB — 'YYYY-MM-DD HH:MM:SS'
- * (CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' (app) — nên một biểu thức
+ * nhận CẢ HAI họ timestamp đang cùng tồn tại trong DB - 'YYYY-MM-DD HH:MM:SS'
+ * (CURRENT_TIMESTAMP) và ISO 'YYYY-MM-DDTHH:MM:SSZ' (app) - nên một biểu thức
  * này phủ cả hai. Việt Nam cố định UTC+7, không DST nên `+7 hours` là hằng số.
  *
  * Đánh đổi: không dùng được index trên cột timestamp. Cách `LIKE` cũng vậy (tiền
@@ -83,7 +83,7 @@ export interface RangeMoney {
 
 /**
  * Cộng tiền theo đúng MỘT định nghĩa cho báo cáo ngày lẫn kỳ (SSOT).
- * Phân loại method y hệt khối §3 báo cáo ngày — sửa ở đây là cả hai cùng đổi.
+ * Phân loại method y hệt khối §3 báo cáo ngày - sửa ở đây là cả hai cùng đổi.
  */
 export function sumMoneyOrders(ords: Array<any>): RangeMoney {
   const out: RangeMoney = {
@@ -112,7 +112,7 @@ export function sumMoneyOrders(ords: Array<any>): RangeMoney {
 }
 
 /**
- * Gom đơn COMPLETED theo ngày VN trong [startDate, endDate] — lõi thuần túy
+ * Gom đơn COMPLETED theo ngày VN trong [startDate, endDate] - lõi thuần túy
  * của báo cáo kỳ (test được không cần DB).
  */
 export function aggregateRangeOrders(
@@ -156,7 +156,7 @@ export function sumPendingQr(pendingRows: Array<any>): { total: number; ordersCo
   for (const r of pendingRows) {
     const method = (r.paymentMethod || '').toUpperCase();
     // DANH SÁCH METHOD PHẢI KHỚP với `sumMoneyOrders` (dòng ~143).
-    // Lần đầu viết sai (`QR_TRANSFER`/`COUNTER_TRANSFER` — không hề tồn tại
+    // Lần đầu viết sai (`QR_TRANSFER`/`COUNTER_TRANSFER` - không hề tồn tại
     // trong hệ thống) làm `pendingQr` LUÔN = 0 mà test vẫn xanh vì test
     // dùng cùng giá trị sai. Giá trị thật: CASH | BANK_TRANSFER | QR_CODE.
     if (method !== 'BANK_TRANSFER' && method !== 'QR_CODE' && method !== 'TRANSFER') continue;
@@ -169,7 +169,7 @@ export function sumPendingQr(pendingRows: Array<any>): { total: number; ordersCo
 
 /**
  * Gom dòng hàng thành top bán chạy + quà + tồn đã bán (MỘT định nghĩa cho ngày
- * lẫn kỳ). Khóa theo `product_id` (NOT NULL) — `edition_id` NULL với hàng hóa,
+ * lẫn kỳ). Khóa theo `product_id` (NOT NULL) - `edition_id` NULL với hàng hóa,
  * gom nhầm mọi món hàng hóa thành một dòng.
  */
 export function aggregateSellerLines(lineItems: Array<any>): {
@@ -223,7 +223,7 @@ export function aggregateSellerLines(lineItems: Array<any>): {
     record.soldRevenue += item.totalAmount;
   }
 
-  // Lượng bán theo ấn bản TRÊN TOÀN BỘ đơn — KHÔNG slice ở đây: caller tự slice
+  // Lượng bán theo ấn bản TRÊN TOÀN BỘ đơn - KHÔNG slice ở đây: caller tự slice
   // khi hiển thị. Trước đây `soldMap` dựng lại từ `topSellers` đã `.slice(0,10)`
   // ⇒ mọi ấn bản ngoài top 10 hiện `soldToday = 0` trong bảng đối soát tồn.
   return {
@@ -389,7 +389,7 @@ export class DailySettlementService {
     }
     const warehouse = whRows[0];
 
-    // 2. Tra cứu các đơn hàng hợp lệ trong ngày tại kho
+    // 2. Tra cứu các đơn sách hợp lệ trong ngày tại kho
     const orderConditions = [
       eq(orders.warehouseId, warehouseId),
       eq(orders.status, 'COMPLETED'),
@@ -408,7 +408,7 @@ export class DailySettlementService {
 
     // 2b. Đơn CHUYỂN KHOẢN đang chờ xác nhận trong ngày.
     //
-    // BÁO CÁO KHÔNG ĐƯỢC CỘNG khoản này vào Thực thu — nó chưa ghi nhận.
+    // BÁO CÁO KHÔNG ĐƯỢC CỘNG khoản này vào Thực thu - nó chưa ghi nhận.
     // Bắt buộc loại đơn quá hạn: TTL là 48h (`order.service.ts` PENDING_TTL_HOURS)
     // và đơn hết hạn VẪN CÒN trong DB với status PENDING_CONFIRMATION (chỉ đổi
     // sang CANCELLED khi ai đó bấm xác nhận), trong khi ATP đã nhả giữ chỗ từ
@@ -435,7 +435,7 @@ export class DailySettlementService {
 
     const { total: pendingQrTotal, ordersCount: pendingQrCount } = sumPendingQr(pendingRows);
 
-    // 3. Tính toán số liệu tài chính & cơ cấu thanh toán — qua `sumMoneyOrders`
+    // 3. Tính toán số liệu tài chính & cơ cấu thanh toán - qua `sumMoneyOrders`
     // (MỘT định nghĩa cho cả báo cáo ngày lẫn kỳ).
     const money = sumMoneyOrders(dayOrders as any[]);
     let grossSales = money.gross;
@@ -454,7 +454,7 @@ export class DailySettlementService {
     const averageDiscountRate = grossSales > 0 ? totalDiscount / grossSales : 0;
     const isDiscountRateWarning = averageDiscountRate > 0.20; // Cảnh báo nếu CK bình quân > 20%
 
-    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%) — qua helper
+    // 4. Tra cứu danh sách đơn duyệt chiết khấu đặc biệt (>= 20%) - qua helper
     // dùng chung với báo cáo kỳ.
     const enrichedOverCapOrders = await enrichOverCapOrders(
       txOrDb,
@@ -555,7 +555,7 @@ export class DailySettlementService {
     // 6. Top ấn phẩm bán chạy trong ngày tại kho
     const orderIds = dayOrders.map((o: any) => o.id);
     let topSellers: any[] = [];
-    // Lượng bán theo ấn bản TRÊN TOÀN BỘ đơn trong ngày — KHÔNG phải trên 10 dòng
+    // Lượng bán theo ấn bản TRÊN TOÀN BỘ đơn trong ngày - KHÔNG phải trên 10 dòng
     // `topSellers`. Trước đây `soldMap` dựng lại từ `topSellers` đã `.slice(0,10)`
     // ⇒ mọi ấn bản ngoài top 10 hiện `soldToday = 0` trong bảng đối soát tồn, dù
     // nó có bán thật. Đây là cột "Đã bán POS" trong biên bản kiểm kê bàn giao cho
@@ -577,7 +577,7 @@ export class DailySettlementService {
           editionTitle: editions.title,
           workTitle: works.title,
           coverPrice: editions.coverPrice,
-          // Hàng hóa không có dòng `editions` (edition_id NULL) — đọc hiển
+          // Hàng hóa không có dòng `editions` (edition_id NULL) - đọc hiển
           // thị từ `products` (tầng gốc). Sách ưu tiên `editions` để giữ
           // nguyên hiển thị cũ.
           productCode: products.code,
@@ -597,7 +597,7 @@ export class DailySettlementService {
       agg.soldQtyAll.forEach((v, k) => soldQtyAll.set(k, v));
     }
 
-    // 6b. Đơn giá trị cao nhất trong ngày — thẻ "Đơn Giá Trị Cao Nhất" trên màn
+    // 6b. Đơn giá trị cao nhất trong ngày - thẻ "Đơn Giá Trị Cao Nhất" trên màn
     // hình + mục I-bis của bản in. Số sản phẩm gom MỘT query cho cả ngày (không
     // N+1): đơn POS có nhiều dòng `order_items`, phải CỘNG `quantity` chứ không
     // đếm số dòng.
@@ -620,7 +620,7 @@ export class DailySettlementService {
     // lần chạy, không phụ thuộc thứ tự hàng SQLite trả về. Phụ theo giờ tạo (đơn
     // ra trước thắng), rồi theo id cho tuyệt đối.
     //
-    // KHÔNG so `created_at` bằng chuỗi: DB đang có HAI họ timestamp —
+    // KHÔNG so `created_at` bằng chuỗi: DB đang có HAI họ timestamp -
     // 'YYYY-MM-DDTHH:MM:SSZ' (app ghi `toISOString()`) và 'YYYY-MM-DD HH:MM:SS'
     // (`CURRENT_TIMESTAMP` của SQLite, cũng UTC). Dấu cách < chữ 'T' nên so
     // chuỗi coi đơn họ SQLite là LUÔN sớm hơn ⇒ chọn nhầm đơn. `createdMs`
@@ -644,11 +644,11 @@ export class DailySettlementService {
         }
       : null;
 
-    // 6c. Dải 24 giờ bán hàng trong ngày, theo GIỜ VIỆT NAM — dải cột cao điểm
+    // 6c. Dải 24 giờ bán hàng trong ngày, theo GIỜ VIỆT NAM - dải cột cao điểm
     // trên bản in. Gom từ `dayOrders` đã có sẵn, KHÔNG thêm query nào.
     //
     // KHÔNG cắt chuỗi `created_at` (`slice(11,13)`) và KHÔNG so chuỗi timestamp:
-    // DB đang có HAI họ — 'YYYY-MM-DDTHH:MM:SSZ' (app ghi `toISOString()`) và
+    // DB đang có HAI họ - 'YYYY-MM-DDTHH:MM:SSZ' (app ghi `toISOString()`) và
     // 'YYYY-MM-DD HH:MM:SS' (`CURRENT_TIMESTAMP` của SQLite, cũng UTC). Cắt
     // chuỗi ra giờ UTC ⇒ dải cao điểm lệch 7 tiếng so với giờ người đọc thấy
     // trên mọi mốc giờ khác của biên bản. `parseDbTimestamp` chuẩn hoá cả hai
@@ -674,7 +674,7 @@ export class DailySettlementService {
       { hour: 0, orders: 0, sales: 0 }
     );
 
-    // 7. Đối soát tồn sách hội chợ (Stock Reconciliation) — qua helper dùng
+    // 7. Đối soát tồn sách hội chợ (Stock Reconciliation) - qua helper dùng
     // chung với báo cáo kỳ (tồn HIỆN TẠI + số đã bán trong kỳ).
     const soldMap = soldQtyAll;
 
@@ -713,7 +713,7 @@ export class DailySettlementService {
           ordersCount: qrTransferOrdersCount,
           percentage: netSales > 0 ? Math.round((qrTransferSales / netSales) * 100) : 0,
         },
-        // CHƯA GHI NHẬN — tách riêng, không cộng vào `netSales`. Là ảnh chụp lúc
+        // CHƯA GHI NHẬN - tách riêng, không cộng vào `netSales`. Là ảnh chụp lúc
         // mở báo cáo: đơn này sau này thành COMPLETED sẽ nằm trong Thực thu của
         // lần mở sau (đó là đúng), nên UI phải ghi rõ "chưa ghi nhận".
         pendingQr: {
@@ -733,7 +733,7 @@ export class DailySettlementService {
         cashVariance,
         // Ca còn mở, hoặc ca chưa ai đếm két ⇒ chưa thể đối soát tiền két. UI dùng
         // các trường này để hiện "Còn N ca chưa đóng / M ca chưa có tiền thực đếm
-        // — chưa thể đối soát" thay vì ẩn dòng chênh lệch hoặc bịa ra con số.
+        // - chưa thể đối soát" thay vì ẩn dòng chênh lệch hoặc bịa ra con số.
         cashVariancePending: !canReconcile,
         openSessionCount,
         unreconcilableSessionCount: unreconcilableCount,
@@ -747,7 +747,7 @@ export class DailySettlementService {
           // Ca còn MỞ thì `expectedCash` trong DB là NULL (chỉ ghi lúc chốt ca), nên
           // không hiển thị được. `expectedCashLive` là con số đúng ngay lúc này và
           // theo đúng MỘT định nghĩa cho mọi ca (bàn giao đầu ca + tiền mặt bán
-          // trong ngày) — đây cũng là con số mà tổng `expectedCashTotal` cộng lên.
+          // trong ngày) - đây cũng là con số mà tổng `expectedCashTotal` cộng lên.
           expectedCashLive: dayExpected,
           // false = chưa đủ căn cứ đối chiếu ca này (chưa đếm tiền, hoặc số đếm
           // và số kỳ vọng không cùng phạm vi ngày).
@@ -783,7 +783,7 @@ export class DailySettlementService {
 
   /**
    * Suy kỳ chiến dịch của kho hội chợ: ngày VN của đơn COMPLETED đầu→cuối.
-   * Không lưu kỳ ở DB (không migration) — suy từ dữ liệu thật mỗi lần mở.
+   * Không lưu kỳ ở DB (không migration) - suy từ dữ liệu thật mỗi lần mở.
    * null khi kho chưa có đơn nào.
    */
   static async inferCampaignRange(
@@ -856,7 +856,7 @@ export class DailySettlementService {
     const netSales = agg.totals.net;
     const averageDiscountRate = grossSales > 0 ? totalDiscount / grossSales : 0;
 
-    // 2. Đơn chờ trong kỳ (ảnh cuối kỳ — không cộng dồn qua ngày).
+    // 2. Đơn chờ trong kỳ (ảnh cuối kỳ - không cộng dồn qua ngày).
     const pendingRows = await txOrDb
       .select({
         finalAmount: orders.finalAmount,
@@ -927,7 +927,7 @@ export class DailySettlementService {
     const cashVariancePending = !(canReconcile && openSessionCount === 0 && countedCount === sessions.length);
     const cashVariance = cashVariancePending ? null : closingCashActualTotal - expectedCashTotal;
 
-    // 4. Top + quà + tồn đã bán trong kỳ (items gom lô 500 id/lô — trần biến SQLite).
+    // 4. Top + quà + tồn đã bán trong kỳ (items gom lô 500 id/lô - trần biến SQLite).
     const rangeOrderIds = rangeOrders.map((o: any) => o.id).filter(Boolean);
     let topSellers: any[] = [];
     let giftSummary = { totalGiftCopies: 0, items: [] as Array<{ productId: string; code: string; title: string; copies: number }> };
@@ -960,7 +960,7 @@ export class DailySettlementService {
       if (topSellers.length === 0) topSellers = part.topSellers;
       else {
         // Gộp nhiều lô: cộng dồn rồi xếp lại (topSellers helper đã slice 10/lô
-        // nên gộp thô sẽ thiếu — gom lại từ map gốc của từng lô thì phức tạp;
+        // nên gộp thô sẽ thiếu - gom lại từ map gốc của từng lô thì phức tạp;
         // kỳ 500+ đơn là hiếm, gộp đơn giản: hợp nhất rồi xếp lại top 10).
         const merged = new Map<string, any>();
         for (const r of [...topSellers, ...part.topSellers]) {
@@ -1132,7 +1132,7 @@ export class DailySettlementService {
   }
 
   /**
-   * CHỐT NGÀY — đánh dấu ngày nghiệp vụ đã quyết toán, đúng 1 lần / ngày / kho.
+   * CHỐT NGÀY - đánh dấu ngày nghiệp vụ đã quyết toán, đúng 1 lần / ngày / kho.
    *
    * - Idempotent: gọi lại y hệt trả về đúng bản ghi cũ (isDuplicate), không
    *   ghi thêm bản ghi/audit. Gọi lại với nội dung khác → từ chối, vì một ngày
@@ -1196,7 +1196,7 @@ export class DailySettlementService {
         //
         // KHÔNG dùng `parseDbTimestamp(...)!`: hàm trả null khi timestamp hỏng (dữ
         // liệu cũ / sửa tay), và non-null assertion ở đây biến null thành TypeError
-        // giữa transaction — lỗi khó hiểu, có thể làm hỏng cả lần chốt ngày. Ca có
+        // giữa transaction - lỗi khó hiểu, có thể làm hỏng cả lần chốt ngày. Ca có
         // opened_at hỏng thì bỏ qua, y như các guard khác trong codebase.
         const relevant: any[] = openSessions.filter((s: any) => {
           if (!s.openedAt) return false;
@@ -1256,7 +1256,7 @@ export class DailySettlementService {
             eq(orders.warehouseId, warehouseId),
             eq(orders.status, 'PENDING_CONFIRMATION'),
             // Ngày VIỆT NAM, dùng đúng helper của chính file này. Trước đây là
-            // `like(createdAt, date%)` — tức so NGÀY UTC, lệch 7 tiếng.
+            // `like(createdAt, date%)` - tức so NGÀY UTC, lệch 7 tiếng.
             // Hậu quả: đơn chuyển khoản 00:00–07:00 giờ VN của ngày đang chốt
             // rơi vào ngày UTC HÔM TRƯỚC nên VÔ HÌNH ở đây, và ca có thể bị
             // chốt trong khi vẫn còn đơn chờ thanh toán chưa xong.
@@ -1326,7 +1326,7 @@ export class DailySettlementService {
               `Chốt ngày ${date} tại kho ${warehouseId}: doanh thu thuần ${record.netSales} đ, ` +
               `${record.totalOrdersCount} đơn. Kiểm kê tiền mặt: ${cashVerification}` +
               (unverifiedSessions.length > 0
-                ? ` — các ca ${unverifiedSessions.join(', ')} KHÔNG có số tiền thực đếm nên chênh lệch KHÔNG xác minh.`
+                ? ` - các ca ${unverifiedSessions.join(', ')} KHÔNG có số tiền thực đếm nên chênh lệch KHÔNG xác minh.`
                 : '.') +
               (record.unsettledOrders.length > 0
                 ? ` Đơn chưa quyết toán (không bị bỏ rơi): ${record.unsettledOrders.map((o: any) => o.orderCode).join(', ')}.`

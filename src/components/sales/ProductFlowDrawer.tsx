@@ -242,7 +242,7 @@ export function ProductFlowDrawer({
                   >
                     <span className="min-w-0">
                       <span className="block text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
-                        {it.title || '—'} <span className="font-mono font-normal text-slate-400">[{it.code || '—'}]</span>
+                        {it.title || '-'} <span className="font-mono font-normal text-slate-400">[{it.code || '-'}]</span>
                       </span>
                       <span className="block text-[11px] text-slate-500 font-mono">
                         {Number(it.qty || 0).toLocaleString('vi-VN')} cuốn · {Number(it.revenue || 0).toLocaleString('vi-VN')} đ
@@ -264,7 +264,7 @@ export function ProductFlowDrawer({
             </div>
           ) : (
             <>
-              {/* 4 số — không cắt chữ: số to thì chữ tự nhỏ lại, luôn hiện đủ */}
+              {/* 4 số - không cắt chữ: số to thì chữ tự nhỏ lại, luôn hiện đủ */}
               <div className="grid grid-cols-4 gap-2 text-center">
                 {[
                   [insights.totalQty.toLocaleString('vi-VN'), 'cuốn'],
@@ -328,7 +328,7 @@ export function ProductFlowDrawer({
                 <p className="font-extrabold text-amber-800 text-[11px] uppercase tracking-wider">Chủ đọc nhanh</p>
                 {insights.peakDay && <p>Đỉnh <b>{insights.peakDay.date}</b> ({insights.peakDay.qty} cuốn).</p>}
                 {insights.peakHour != null && <p>Giờ vàng <b>{insights.peakHour}h</b>.</p>}
-                <p>Bán tại kho đang xem <b>{Math.round(insights.fairShare * 100)}%</b> · kênh mạnh nhất <b>{insights.topChannel || '—'}</b>.</p>
+                <p>Bán tại kho đang xem <b>{Math.round(insights.fairShare * 100)}%</b> · kênh mạnh nhất <b>{insights.topChannel || '-'}</b>.</p>
                 <p>Tốc độ <b>{insights.pacePerDay}</b> cuốn/ngày bán{insights.quietDays > 0 ? ` · ${insights.quietDays} ngày im ắng` : ''}.</p>
               </div>
 
@@ -339,7 +339,7 @@ export function ProductFlowDrawer({
                   {(() => {
                     const groups = new Map<string, any[]>();
                     for (const e of (timeline?.events || []) as any[]) {
-                      const day = vnDayOf(e.createdAt) || '—';
+                      const day = vnDayOf(e.createdAt) || '-';
                       if (!groups.has(day)) groups.set(day, []);
                       groups.get(day)!.push(e);
                     }
@@ -361,7 +361,7 @@ export function ProductFlowDrawer({
                             className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs ${isPeak ? 'border-amber-300 bg-amber-50/70' : 'border-slate-100'}`}
                           >
                             <span className="font-mono text-slate-500 shrink-0">
-                              {e.createdAt ? new Date(e.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                              {e.createdAt ? new Date(e.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '-'}
                               {isPeak && <span className="ml-1 px-1 py-px rounded bg-amber-500 text-white text-[9px] font-bold">giờ vàng</span>}
                             </span>
                             <span className="font-mono font-bold text-slate-800 shrink-0">×{Number(e.qty || 0)}</span>
@@ -372,7 +372,7 @@ export function ProductFlowDrawer({
                               title="Mở chi tiết đơn"
                             >
                               <Receipt className="w-3 h-3 shrink-0" />
-                              <span className="break-all">{e.orderCode || '—'}</span>
+                              <span className="break-all">{e.orderCode || '-'}</span>
                             </button>
                           </div>
                         );

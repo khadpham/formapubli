@@ -93,7 +93,7 @@ export function PortalSettingsPanel() {
           <option value="">-- Chọn kho --</option>
           {warehouses.map((w) => (
             <option key={w.id} value={w.id} disabled={w.isActive === false}>
-              {displayWarehouseName(w)} ({w.code}){w.isActive === false ? ' — đã ngưng' : ''}
+              {displayWarehouseName(w)} ({w.code}){w.isActive === false ? ' - đã ngưng' : ''}
             </option>
           ))}
         </select>

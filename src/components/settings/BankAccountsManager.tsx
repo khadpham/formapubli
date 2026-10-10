@@ -503,7 +503,7 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
                     onChange={(e) => handleSetWarehouseDefault(w.id, e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer disabled:opacity-60"
                   >
-                    <option value="">— Mặc định chung —</option>
+                    <option value="">- Mặc định chung -</option>
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.label} ({b.accountNo})
@@ -586,7 +586,7 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
                   >
                     {POPULAR_BANKS.map((b) => (
                       <option key={b.bin} value={b.bin}>
-                        {b.name} ({b.code}) — BIN: {b.bin}
+                        {b.name} ({b.code}) - BIN: {b.bin}
                       </option>
                     ))}
                     <option value="CUSTOM">Khác (Tự nhập mã BIN 6 số)</option>

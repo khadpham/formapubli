@@ -1,5 +1,5 @@
 /**
- * Lane B — Lỗi nghiệp vụ có cấu trúc (theo docs/PHASE0_CONTRACT.md §2).
+ * Lane B - Lỗi nghiệp vụ có cấu trúc (theo docs/PHASE0_CONTRACT.md §2).
  * Service ném AppError mang `code`; Lane A map code → HTTP + JSON.
  * Message tiếng Việt giữ nguyên để test cũ (match chuỗi) và log không đổi.
  */
@@ -36,7 +36,7 @@ export class AppError extends Error {
     return new AppError('INSUFFICIENT_ATP', message, details);
   }
 
-  // V4.1 S1.3: tồn biến động giữa validate và commit — client re-cap 1 chạm từ details.staleItems.
+  // V4.1 S1.3: tồn biến động giữa validate và commit - client re-cap 1 chạm từ details.staleItems.
   static toctouStale(message: string, details?: unknown): AppError {
     return new AppError('TRANSFER_TOCTOU_ATP_STALE', message, details);
   }

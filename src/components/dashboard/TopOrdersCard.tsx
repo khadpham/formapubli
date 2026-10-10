@@ -6,7 +6,7 @@ import { Receipt } from 'lucide-react';
 /**
  * Nâng cấp thẻ "Top 10 đơn giá trị cao" cũ (ExecutiveDashboard dòng 767-791):
  * thêm số cuốn mỗi đơn để người đọc biết đơn đắt vì nhiều cuốn hay vì một món
- * đắt — trước đó chỉ có mã đơn + tiền, không đủ để hành động.
+ * đắt - trước đó chỉ có mã đơn + tiền, không đủ để hành động.
  */
 export function TopOrdersCard({
   orders,
@@ -82,7 +82,7 @@ export function TopOrdersCard({
                       title={`Bấm để xem chi tiết đơn ${String(o.orderCode || '')}`}
                     >
                       <span className="truncate group-hover:underline">
-                        {String(o.orderCode || '—')}
+                        {String(o.orderCode || '-')}
                       </span>
                       {parts.length > 0 && (
                         <span className="font-sans font-normal text-slate-500 shrink-0">
@@ -93,7 +93,7 @@ export function TopOrdersCard({
                     </button>
                   ) : (
                     <span className="font-mono font-bold text-indigo-700 truncate">
-                      {String(o.orderCode || '—')}
+                      {String(o.orderCode || '-')}
                       {parts.length > 0 && (
                         <span className="font-sans font-normal text-slate-500">
                           {' '}

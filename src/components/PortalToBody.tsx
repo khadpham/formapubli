@@ -12,7 +12,7 @@
  *
  * `createPortal(..., document.body)` is the only reliable escape: the root
  * element's own box is the viewport, so no intermediate ancestor can clip it.
- * Use this instead of calling `createPortal` inline — one pattern, one place to
+ * Use this instead of calling `createPortal` inline - one pattern, one place to
  * fix when the next clipping bug shows up.
  *
  * Usage:
@@ -24,8 +24,8 @@
  *
  * `className`/`style` on the wrapper are forwarded. THE RULE, learned the hard
  * way: the element that carries the measured `top`/`left` MUST also be the
- * positioned element (`fixed`/`absolute`). They used to be split — `fixed
- * z-[80]` on the wrapper, `top`/`left` on a static child — and the tab menu
+ * positioned element (`fixed`/`absolute`). They used to be split - `fixed
+ * z-[80]` on the wrapper, `top`/`left` on a static child - and the tab menu
  * rendered off screen with no error at all. A `position: fixed` wrapper with no
  * `top`/`left` falls back to its STATIC position, which for the last child of
  * `document.body` is far below the viewport; a static child ignores `top`/`left`

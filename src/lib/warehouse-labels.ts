@@ -1,5 +1,5 @@
 /**
- * Nhãn kho dùng chung — MỘT chỗ duy nhất quyết định chữ hiện ra.
+ * Nhãn kho dùng chung - MỘT chỗ duy nhất quyết định chữ hiện ra.
  *
  * Quy ước (chủ chốt, trị dứt điểm việc gọi nhầm "kho" cho đại lý ký gửi):
  * địa chỉ ký gửi đối tác (warehouseType CONSIGNMENT) KHÔNG BAO GIỜ là "kho",

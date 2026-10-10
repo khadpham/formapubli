@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 const CATEGORIES = ['TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
 
-/** GET /api/contracts/documents — danh sách (?status=&partnerId=). */
+/** GET /api/contracts/documents - danh sách (?status=&partnerId=). */
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/contracts/documents — soạn mới: cấp số + snapshot trong 1 tx. */
+/** POST /api/contracts/documents - soạn mới: cấp số + snapshot trong 1 tx. */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);

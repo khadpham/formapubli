@@ -10,7 +10,7 @@ export interface ShopeeAccessToken {
 }
 
 /**
- * Lưu token Shopee vào Turso — KHÔNG giữ trong RAM/file.
+ * Lưu token Shopee vào Turso - KHÔNG giữ trong RAM/file.
  * Workers có thể bị hủy giữa các request nên RAM không phải nơi cất token.
  */
 export class TursoTokenStorage {

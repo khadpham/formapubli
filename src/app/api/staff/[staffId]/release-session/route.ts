@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 const PRIVILEGED_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER'];
 
 /**
- * POST /api/staff/[staffId]/release-session — force-release lease cashier
+ * POST /api/staff/[staffId]/release-session - force-release lease cashier
  * (S-01). Chỉ OWNER/MANAGER, target phải là role bị lease (cashier).
  * Body: { reason, expectedSessionId?, expectedSessionVersion? }.
  * - Row/version khớp (hoặc không gửi expected) → release + bump version.

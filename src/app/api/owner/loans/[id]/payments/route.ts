@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER'] as UserRole[];
 
-/** POST /api/owner/loans/[id]/payments — ghi nhận trả nợ (chỉ chủ). */
+/** POST /api/owner/loans/[id]/payments - ghi nhận trả nợ (chỉ chủ). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ROLES);

@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 // ---------------------------------------------------------------------------
 // Server-side Discount Hard-cap (chặn thu ngân tự ý chiết khấu sâu).
-// Trần thu ngân: 20%. Vượt trần bắt buộc có Quản lý phê duyệt — KHÔNG phải PIN.
+// Trần thu ngân: 20%. Vượt trần bắt buộc có Quản lý phê duyệt - KHÔNG phải PIN.
 // (Nhánh PIN đã gỡ 2026-09-29: không UI nào gửi managerPin nên thu ngân bị kẹt
 //  với lỗi không gỡ được. Xem phần đơn gõ bù > 7 ngày ở dưới.)
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const ALLOWED_VIEW_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX'];
-    // P1b: Default-Deny — bắt buộc session cookie hợp lệ, không fallback header.
+    // P1b: Default-Deny - bắt buộc session cookie hợp lệ, không fallback header.
     const session = await requireSessionRole(req, ALLOWED_VIEW_ROLES);
     const userRole = session.role as UserRole;
     const actorHeader = session.actorId;
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
 
     // SIẾT CHẶT THỦ KHO & THU NGÂN:
     // Thu ngân chỉ được xem các đơn do chính mình tạo (ca của mình).
-    // Thủ kho không được xem dữ liệu doanh thu đơn hàng (trả về danh sách rỗng).
+    // Thủ kho không được xem dữ liệu doanh thu đơn sách (trả về danh sách rỗng).
     let cashierFilter: string | undefined = undefined;
     if (userRole === 'ROLE_CASHIER') {
 
@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
     // CHIA LÔ BATCH: `getOrders` KHÔNG giới hạn số dòng, nên `inArray` có thể sinh
     // hàng chục nghìn tham số ràng buộc. SQLite giới hạn 32766 biến cho MỘT câu
     // lệnh (libSQL kế thừa giới hạn này) ⇒ phạm vi đủ lớn sẽ văng 500 và CÁI
-    // dashboard chính — không phải một màn hăn phụ — chết theo. Chia lô 500 id/lô
+    // dashboard chính - không phải một màn hăn phụ - chết theo. Chia lô 500 id/lô
     // giữ câu lệnh ở mức an toàn với chi phí chỉ là vài vòng await tuần tự.
     const ITEM_BATCH_SIZE = 500;
     const orderIds = orderList.map((o: any) => o.id).filter(Boolean);
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const ALLOWED_POST_ROLES: UserRole[] = ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER'];
-    // P1b: Default-Deny — danh tính lấy từ session (chống mạo danh cashierId,
+    // P1b: Default-Deny - danh tính lấy từ session (chống mạo danh cashierId,
     // PHASE0_CONTRACT §1: cashierId client gửi không còn được dùng làm actor).
     const session = await requireSessionRole(req, ALLOWED_POST_ROLES);
     const userRole = session.role as UserRole;
@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, code: 'INVALID_INPUT', error: reasonError }, { status: 400 });
       }
       // Ghi chú chốt lúc xác nhận: ô Ghi chú trong modal thanh toán mở sau khi
-      // đơn PENDING đã tạo — cho phép gửi kèm để chữ không rớt. Giới hạn độ
+      // đơn PENDING đã tạo - cho phép gửi kèm để chữ không rớt. Giới hạn độ
       // dài như lý do hủy để orders.note không phình vô hạn.
       if (body.note !== undefined && body.note !== null && body.note !== '' &&
           (typeof body.note !== 'string' || body.note.trim().length > CANCEL_REASON_MAX_LEN)) {
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, data: result });
     }
 
-    // 1.2: dọn đơn PENDING quá TTL 48h (Manager/Owner) — nút trên màn Pending
+    // 1.2: dọn đơn PENDING quá TTL 48h (Manager/Owner) - nút trên màn Pending
     if (body.action === 'CLEANUP') {
       if (userRole !== 'ROLE_OWNER' && userRole !== 'ROLE_MANAGER') {
         return NextResponse.json({ success: false, code: 'FORBIDDEN', error: 'Chỉ Manager/Owner được dọn đơn hết hạn.' }, { status: 403 });
@@ -287,7 +287,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ràng buộc gán kho: nhân viên được quản lý gán kho chỉ được bán ĐÚNG kho đó.
-    // Đây là chốt chặn ở SERVER — client có sửa payload cũng không lách được.
+    // Đây là chốt chặn ở SERVER - client có sửa payload cũng không lách được.
     if (session.assignedWarehouseId && `${session.assignedWarehouseId}` !== `${warehouseId}`) {
       const whName = await db
         .select({ name: warehouses.name })
@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Giới hạn kho: tài khoản bị tick kho chỉ được xuất hàng trong các kho đó
-    // (kể cả không mở ca — chốt luôn ở đơn, không chỉ ở két).
+    // (kể cả không mở ca - chốt luôn ở đơn, không chỉ ở két).
     const allowedOrder = parseAllowedWarehouseIds((session as any).allowedWarehouseIds);
     if (allowedOrder.length > 0 && !allowedOrder.includes(`${warehouseId}`)) {
       return NextResponse.json(
@@ -318,7 +318,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // P1b: replay mất response — đơn đã ghi với key này thì đi thẳng tới
+    // P1b: replay mất response - đơn đã ghi với key này thì đi thẳng tới
     // createOrder (B0 trả đơn cũ / ném IDEMPOTENCY_CONFLICT nếu payload khác),
     // BỎ QUA verify approval (approval đã CONSUMED bởi lần ghi đầu nên verify
     // lại sẽ 403 oan). Không có key hoặc chưa có đơn → luồng verify thường.
@@ -339,7 +339,7 @@ export async function POST(req: NextRequest) {
     // vì OrderService cho phép unitDiscountRate kế thừa discountRate tổng.
     // Dòng combo (bundles) do management định giá sẵn nên miễn trần này.
     const safeItems = Array.isArray(items) ? items : [];
-    // FIX-01: strip unitCoverPrice client gửi — service tự tra giá bìa từ DB.
+    // FIX-01: strip unitCoverPrice client gửi - service tự tra giá bìa từ DB.
     const pricedItems = (safeItems as any[]).map((it) => ({
       editionId: it?.editionId,
       quantity: it?.quantity,
@@ -427,7 +427,7 @@ export async function POST(req: NextRequest) {
 
     // A1-H: ID phê duyệt đã verify (khớp giỏ/mức/kho/người) để createOrder
     // tiêu thụ nguyên tử trong transaction. Khai báo ngoài để dùng ở dưới.
-    // P1b: replay (đơn đã tồn tại với key) bỏ qua verify — approval đã bị
+    // P1b: replay (đơn đã tồn tại với key) bỏ qua verify - approval đã bị
     // consume bởi lần ghi đầu, verify lại sẽ 403 oan; createOrder tự trả đơn
     // cũ hoặc ném IDEMPOTENCY_CONFLICT nếu payload khác.
     let verifiedApprovalId: string | undefined;
@@ -441,7 +441,7 @@ export async function POST(req: NextRequest) {
           await DiscountApprovalService.assertValidForCheckout({
             requestId: discountApprovalId,
             // Dòng quà không có trong yêu cầu duyệt (người duyệt không duyệt quà), nên
-            // hash giỏ phải băm trên tập dòng KHÔNG phải quà — khớp với
+            // hash giỏ phải băm trên tập dòng KHÔNG phải quà - khớp với
             // `consumeApproval` ở order.service.ts (cũng đã lọc dòng quà).
             items: pricedItems.filter((it: any) => !it.isGiftLine),
             discountRate: Number.isFinite(parsedOrderDiscount) ? parsedOrderDiscount : 0,
@@ -473,7 +473,7 @@ export async function POST(req: NextRequest) {
 
       if (!verifiedApprovalId) {
         // P1 GỠ 2026-09-29: bỏ nhánh rẽ PIN quản lý. Nhánh đó chưa bao giờ chạy
-        // được — client không có UI nhập PIN nào, `managerPin` luôn undefined nên
+        // được - client không có UI nhập PIN nào, `managerPin` luôn undefined nên
         // verify luon false => thu ngân bi ket, loi khong gỡ duoc
         // gỡ được. Một đường duyệt duy nhất: quyết định của Quản lý.
         await recordAuditLog({
@@ -512,7 +512,7 @@ export async function POST(req: NextRequest) {
     // được. Nên nhánh này chỉ cần một kiểm tra vai trò + thông báo nói rõ phải
     // làm gì, không cần PIN, không cần rate-limit, không cần bảng duyệt.
     // Service (order.service.ts, BACKDATE_LIMIT_DAYS) vẫn chặn lần hai như một
-    // lưới an toàn — cả hai lớp cùng một quy tắc.
+    // lưới an toàn - cả hai lớp cùng một quy tắc.
     if (createdAt) {
       const ts = new Date(createdAt).getTime();
       if (!Number.isNaN(ts) && Date.now() - ts > 7 * 86400000 && !isPrivilegedRole) {
@@ -521,7 +521,7 @@ export async function POST(req: NextRequest) {
           actorRole: userRole,
           actorId: actorHeader,
           resource: '/api/orders',
-          details: `Từ chối đơn gõ bù quá 7 ngày (${createdAt}) — thu ngân không có quyền ghi ngày quá khứ.`,
+          details: `Từ chối đơn gõ bù quá 7 ngày (${createdAt}) - thu ngân không có quyền ghi ngày quá khứ.`,
         });
         return NextResponse.json(
           {
@@ -626,7 +626,7 @@ export async function POST(req: NextRequest) {
       bundles: Array.isArray(bundles)
         ? bundles.map((b: any) => ({
             bundleId: b.bundleId,
-            // KHÔNG parseInt ở biên HTTP — cùng quy tắc CP3-B1.2 đã áp cho
+            // KHÔNG parseInt ở biên HTTP - cùng quy tắc CP3-B1.2 đã áp cho
             // /api/transfers: "1.5" phải tới service NGUYÊN VẸN để bị từ chối.
             // parseInt("1.9") = 1 ⇒ khách đặt 1,9 bộ chỉ bị tính 1 bộ, mất tiền
             // và sai tồn kho. Chuỗi số nguyên vẫn được nhận như trước.

@@ -37,7 +37,7 @@ import { useSortable, SortableTh } from '@/lib/table-ux';
 import { TableExpandOverlay } from './TableExpandOverlay';
 
 // Slicer kenh ban -> nhom nguon (pivot nhanh kieu Excel).
-// Đây là PHÂN NHÓM slicer, KHÔNG phải nhãn hiển thị — nhãn hiển thị lấy từ
+// Đây là PHÂN NHÓM slicer, KHÔNG phải nhãn hiển thị - nhãn hiển thị lấy từ
 // `channelLabel` (src/lib/sales-view.ts) để cả màn Doanh Số chỉ có một từ điển.
 const CHANNEL_GROUP_OF: Record<string, 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'GIFT'> = {
   FAIR_EVENT: 'RETAIL',
@@ -86,20 +86,20 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // 'cashier-pos' ⇒ không lượt xuất nào truy vết được về người đã bấm.
   const [actorId, setActorId] = useState<string>('');
 
-  // Chi tiết đơn hàng
+  // Chi tiết đơn sách
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   // Nhịp Bán: drawer xem timeline 1 món (mở từ dòng bán chạy hoặc nút riêng).
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowProductId, setFlowProductId] = useState<string | null>(null);
 
   const isTaxAccountant = currentRole === 'ROLE_TAX';
-  // Spec §5: thu ngân KHÔNG được thấy nút chọn Sổ Thuế — server ép INTERNAL cho
+  // Spec §5: thu ngân KHÔNG được thấy nút chọn Sổ Thuế - server ép INTERNAL cho
   // thu ngân nên để nút đó là hứa một thứ rồi trả thứ khác (cashier bấm "Sổ Thuế"
   // mà cột toàn "Sổ Quản trị Nội bộ"). Chỉ Owner/Manager được chuyển sổ.
   const canViewTaxScope = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   // Sổ đang xem: kế toán thuế bị ÉP OFFICIAL_TAX (xem useEffect bên dưới), người
   // khác tự chọn. 'ALL' = xem cả hai sổ. MỘT nơi tính, dùng lại cho cả danh sách
-  // lẫn các panel con — không để mỗi panel tự suy luận lại.
+  // lẫn các panel con - không để mỗi panel tự suy luận lại.
   const scopeParam: 'ALL' | 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT' = isTaxAccountant
     ? 'OFFICIAL_TAX'
     : activeScope;
@@ -122,17 +122,17 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   // Tên kho CHỈ lấy từ API. Trước đây kho lạ bị đổ thành 'Kho Quỳnh Mai' ⇒ người
   // dùng thấy trên sổ một tên kho không tồn tại rồi tưởng đang xem sai kho.
-  // Thiếu tên thì hiện '—' thành thật.
+  // Thiếu tên thì hiện '-' thành thật.
   const warehouseNameById = useMemo(
     () => new Map<string, string>((warehouses || []).map((w: any) => [w.id, w.name])),
     [warehouses]
   );
   const warehouseNameOf = useCallback(
-    (id: string | null | undefined) => (id ? warehouseNameById.get(id) || '—' : '—'),
+    (id: string | null | undefined) => (id ? warehouseNameById.get(id) || '-' : '-'),
     [warehouseNameById]
   );
 
-  // Nút "Làm mới" chỉ gọi lại `fetchOrders` — KHÔNG nạp lại `/api/warehouses`
+  // Nút "Làm mới" chỉ gọi lại `fetchOrders` - KHÔNG nạp lại `/api/warehouses`
   // (useEffect kho chạy một lần lúc mount). Nên nhắc người dùng "tải lại
   // trang", đừng hứa "bấm Làm mới" rồi kho vẫn trống.
   // Người đăng nhập thật (đóng watermark CSV). Rỗng thì KHÔNG xuất được: ký
@@ -159,7 +159,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     }
   }, [currentRole, isTaxAccountant]);
 
-  // Xử lý chuyển đổi Preset ngày — dùng helper dùng chung (`sales-view.ts`):
+  // Xử lý chuyển đổi Preset ngày - dùng helper dùng chung (`sales-view.ts`):
   // "Tháng này" = THÁNG LỊCH VN, "7 ngày" = ĐÚNG 7 ngày tính cả hôm nay.
   // Ngày gửi dạng TRẦN 'YYYY-MM-DD' = ngày nghiệp vụ (xem `createdAtBetween`),
   // nên KHÔNG gắn hậu tố 'T23:59:59'.
@@ -259,7 +259,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   });
   const visibleOrders = pageSize === -1 ? sortedOrders : sortedOrders.slice(0, pageSize);
 
-  // Đơn quà 0đ (tặng 100%) vẫn đếm vào totalOrders của server — ghi rõ để người
+  // Đơn quà 0đ (tặng 100%) vẫn đếm vào totalOrders của server - ghi rõ để người
   // đọc không tưởng "N đơn = N đơn có tiền".
   const zeroValueCount = orders.filter((o) => Number(o?.finalAmount) === 0).length;
 
@@ -270,7 +270,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
 
   // Xuất CSV dùng helper dùng chung: header có dấu, kênh/giờ tiếng Việt, watermark
   // ký đúng người đang đăng nhập. Xuất theo đúng thứ tự đang xếp trên màn hình
-  // (file khớp màn hình — xếp Thực thu giảm dần rồi xuất thì file cũng vậy).
+  // (file khớp màn hình - xếp Thực thu giảm dần rồi xuất thì file cũng vậy).
   const exportToCSV = () => {
     if (sortedOrders.length === 0) {
       alert('Không có dữ liệu đơn để xuất CSV.');
@@ -498,13 +498,13 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
               này vẫn hiện 3 kho bịa ⇒ người dùng lọc nhầm kho không tồn tại. */}
           {warehouses.length === 0 && (
             <span className="text-[10px] text-amber-600 font-medium">
-              Chưa tải được danh mục kho — tải lại trang
+              Chưa tải được danh mục kho - tải lại trang
             </span>
           )}
         </div>
       </div>
 
-      {/* Financial Summary Cards — số do SERVER tổng (`GET /api/orders` → `summary`),
+      {/* Financial Summary Cards - số do SERVER tổng (`GET /api/orders` → `summary`),
           KHÔNG cộng lại từ danh sách đang lọc trên màn hình. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -575,7 +575,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         </div>
       )}
 
-      {/* Orders List Table — gioi han chieu cao + cuon, keo xuong la toi panel phan tich */}
+      {/* Orders List Table - gioi han chieu cao + cuon, keo xuong la toi panel phan tich */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -759,7 +759,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         )}
       </div>
 
-      {/* Sach ban chay nhat (OWNER/MANAGER) — dung CHUNG bo loc cua tab (ngay/kho) va
+      {/* Sach ban chay nhat (OWNER/MANAGER) - dung CHUNG bo loc cua tab (ngay/kho) va
           actor that cua So Kep, y het RevenueAnalyticsPanel: panel khong tu dat
           preset ngay rieng nen so cua no luon khop bang so tren bang. */}
       <TopEditionsPanel
@@ -776,7 +776,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
         }}
       />
 
-      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) — Ban le / Dai ly / Online / Tang.
+      {/* Phan tich nguon doanh thu & dong tien (OWNER/MANAGER) - Ban le / Dai ly / Online / Tang.
           Dùng CHUNG bo loc cua tab (kho/ngay/so) va actor that cua Sổ Kép: panel khong
           tu dat filter rieng, nen so cua no luon khop bang so tren bang. */}
       <RevenueAnalyticsPanel

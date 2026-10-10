@@ -11,7 +11,7 @@ function vnDayKey(value: unknown): string | null {
 }
 import { shopeeDeliveredOnly } from './shopee/revenue-guard';
 
-// Bước 5 — OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
+// Bước 5 - OLAP read-only: mọi số liệu băm trực tiếp từ single source of truth
 // (orders/order_items/ledger). Không copy ngày→tuần→tháng, không bảng mới.
 
 export interface DateRange {
@@ -37,21 +37,21 @@ export interface AnalyticsScope {
  * So khớp ngày nghiệp vụ VIỆT NAM cho mọi truy vấn báo cáo ở đây.
  *
  * Nguyên nhân gốc (3 agent review độc lập đều tìm ra ở các file khác nhau):
- * cột thời gian trong CSDL là `text` và đang chứa SONG SONG hai họ timestamp —
+ * cột thời gian trong CSDL là `text` và đang chứa SONG SONG hai họ timestamp -
  * SQLite `CURRENT_TIMESTAMP` sinh `'YYYY-MM-DD HH:mm:ss'`, còn app ghi ISO
  * `'YYYY-MM-DDTHH:mm:ss.sssZ'`. So CHUỖI THÔ giữa hai họ là vô nghĩa, vì
  * byte 0x54 ('T') > 0x20 (' '):
  *   - `lte(created_at, '2026-11-10')` loại mất MỌI đơn sau 00:00 ngày đó,
  *   - `gte(created_at, '2026-11-10')` loại mất 7 tiếng đầu ngày.
  * Đo thật trên một ngày có dữ liệu: báo cáo trả 0 đơn / 0 đ trong khi sổ doanh
- * số cùng ngày trả đúng — hai báo cáo, một dữ liệu, hai con số.
+ * số cùng ngày trả đúng - hai báo cáo, một dữ liệu, hai con số.
  *
  * Dùng lại `createdAtBetween` của `order.service` (helper ĐÃ CÓ sẵn) thay vì
  * viết lần thứ ba. Nó tự phân biệt ngày trần (so ngày nghiệp vụ +7 giờ) với mốc
  * ISO đầy đủ (so mốc UTC).
  *
  * Trả về MẢNG điều kiện (không phải `and(...)`) vì `cashflow` dùng đúng bộ
- * điều kiện này cho truy vấn COD — một chỗ, không hai bản sao.
+ * điều kiện này cho truy vấn COD - một chỗ, không hai bản sao.
  */
 function rangeConds(table: typeof orders, range: DateRange, scope: AnalyticsScope = {}) {
   const conds = [eq(table.status, 'COMPLETED'), shopeeDeliveredOnly()];
@@ -64,7 +64,7 @@ function rangeConds(table: typeof orders, range: DateRange, scope: AnalyticsScop
 /**
  * Thứ 2 đầu tuần hiện tại (giờ VIỆT NAM), ISO string để so sánh `created_at`.
  *
- * Trước đây dùng `getDay`/`setHours`/`setDate` — tức GIỜ CỦA MÁY CHỦ. Máy chủ
+ * Trước đây dùng `getDay`/`setHours`/`setDate` - tức GIỜ CỦA MÁY CHỦ. Máy chủ
  * dev chạy GMT+7 còn Cloudflare Workers chạy UTC, nên cùng một ngày mà "tuần
  * này" lệch nhau 7 tiếng giữa dev và production: cùng dữ liệu, hai kết quả khác
  * nhau, và không ai hiểu vì sao. Dựng thẳng từ ngày nghiệp vụ VN rồi trừ 7 giờ.
@@ -81,22 +81,22 @@ function mondayOf(offsetWeeks = 0): Date {
 
 export class AnalyticsService {
   /**
-   * Tổng quan tồn kho vật lý — thẻ "Tồn Kho" trên bảng quản trị tổng quan.
+   * Tổng quan tồn kho vật lý - thẻ "Tồn Kho" trên bảng quản trị tổng quan.
    *
    * VÌ SAO CÓ HÀM NÀY (30/09): thẻ đó trước đây hiển thị CHỮ VIẾT CỨNG
-   * `81 Đầu Sách`, kèm `(3 Kho)` và tên kho viết thẳng — trong khi production có
+   * `81 Đầu Sách`, kèm `(3 Kho)` và tên kho viết thẳng - trong khi production có
    * 5 kho. Tức bảng quản trị **nói dối người dùng**, và không bao giờ tự cập nhật.
    *
    * Chỉ tính ấn bản `is_active` (ấn bản bị khoá như H85 không hiện ở POS thì cũng
    * không nên được báo là hàng đang bán được), và chỉ kho `is_active`.
    *
-   * `warehouseId` là tham số CỘNG THÊM (Task 2 — dropdown kho trên dashboard):
+   * `warehouseId` là tham số CỘNG THÊM (Task 2 - dropdown kho trên dashboard):
    * không truyền thì y hệt cũ (toàn hệ thống), truyền thì chỉ tính kho đó và
    * `warehouseCount=1`, `warehouseNames=[tên kho đó]`. Không có tham số ⇒ mọi
    * lời gọi cũ (route `/api/analytics?view=stock-summary`) không đổi hành vi.
    *
    * `totalSkus` là quy mô CATALOG (bản quản trị "còn bao nhiêu mã đang bán") nên
-   * CỐ Ý không lọc theo kho — lọc nó sẽ làm KPI "Tổng SKU" nhảy theo dropdown,
+   * CỐ Ý không lọc theo kho - lọc nó sẽ làm KPI "Tổng SKU" nhảy theo dropdown,
    * đúng nghĩa nhưng khác hành vi cũ và gây nhầm lẫn khi so 2 con số.
    */
   static async stockSummary(warehouseId?: string) {
@@ -145,7 +145,7 @@ export class AnalyticsService {
    *  `opts` lọc thêm kho + sổ kế toán (xem `AnalyticsScope`); không truyền thì y hệt cũ. */
   static async byChannel(range: DateRange = {}, opts: AnalyticsScope = {}) {
     // Bán đại lý qua PXK gộp chung 1 truy vấn UNION ALL (giữ cam kết
-    // "số truy vấn cố định" của test-analytics-doanhso 3.11 — không N+1,
+    // "số truy vấn cố định" của test-analytics-doanhso 3.11 - không N+1,
     // không +1 query): phiếu đã khóa COMMERCIAL_WHOLESALE vào kênh
     // WHOLESALE_PARTNER. DRAFT/ký gửi không vào. PXK sống ngoài hai sổ
     // OFFICIAL_TAX/INTERNAL_MANAGEMENT nên khi lọc theo sổ thì chỉ đọc orders.
@@ -298,11 +298,11 @@ export class AnalyticsService {
    * `excludeGifts` (tham số 4, MẶC ĐỊNH true): true ⇒ bảng chỉ còn hàng khách
    * thực mua, quà đã phát nằm ở `totalGiftQty`; false ⇒ giữ cả dòng quà trong
    * bảng (dành cho muốn xem tổng cả quà). Mặc định này đã khóa bằng test
-   * `scripts/test-top-gifts-locked.ts` — đổi nó là làm đỏ suite đó.
+   * `scripts/test-top-gifts-locked.ts` - đổi nó là làm đỏ suite đó.
    */
   /**
    * Nhịp Bán 1 sản phẩm trong kỳ: buckets theo ngày VN + sự kiện bán + tổng.
-   * Chỉ đơn COMPLETED (PENDING chưa phải bán). Không cắt top — món nào có bán
+   * Chỉ đơn COMPLETED (PENDING chưa phải bán). Không cắt top - món nào có bán
    * trong kỳ đều gom được (danh sách toàn kỳ lấy từ top-editions top=100).
    */
   static async productTimeline(
@@ -419,7 +419,7 @@ export class AnalyticsService {
     const items = rows
       .map((r) => ({
         code: r.code || '?',
-        title: r.title || '—',
+        title: r.title || '-',
         qty: Number(r.qty || 0),
         revenue: Number(r.revenue || 0),
         orders: Number(r.orders || 0),
@@ -449,7 +449,7 @@ export class AnalyticsService {
     if (fiscalScope) conds.push(eq(orders.fiscalScope, fiscalScope));
     conds.push(...createdAtBetween(orders.createdAt, range.startDate, range.endDate));
     // VÌ SAO LỌC QUÀ Ở ĐÂY: bảng "Top bán chạy" trả lời "khách MUA gì", mà dòng
-    // quà (`is_gift_line = 1`) không phải do khách chọn — nó do chương trình
+    // quà (`is_gift_line = 1`) không phải do khách chọn - nó do chương trình
     // khuyến mại chèn vào. Tính chung, cuốn quà leo lên top 5 và thành "bán
     // chạy nhất" dù không đem về đồng nào. Nhưng CẦN biết quà đã phát bao
     // nhiêu ⇒ `totalGiftQty` ở dưới, cùng bộ lọc (kho + ngày + COMPLETED) để
@@ -462,7 +462,7 @@ export class AnalyticsService {
       .select({
         editionId: orderItems.editionId,
         productId: orderItems.productId,
-        // Tên/mã rơi về `products` cho dòng hàng hóa — sửa "mọi món gộp thành
+        // Tên/mã rơi về `products` cho dòng hàng hóa - sửa "mọi món gộp thành
         // một nhóm tên '?'" do group theo `edition_id` NULL.
         code: sql<string | null>`COALESCE(${editions.code}, ${products.code})`,
         title: sql<string | null>`COALESCE(${editions.title}, ${products.name})`,
@@ -482,8 +482,8 @@ export class AnalyticsService {
       editionId: r.editionId,
       productId: (r as any).productId || r.editionId,
       code: r.code || '?',
-      // '—' chứ không '?': '?' đọc như mã hỏng, '—' đọc như "chưa có tên".
-      title: r.title || '—',
+      // '-' chứ không '?': '?' đọc như mã hỏng, '-' đọc như "chưa có tên".
+      title: r.title || '-',
       qty: Number(r.qty || 0),
       orders: Number(r.orders || 0),
       revenue: Number(r.revenue || 0),
@@ -491,7 +491,7 @@ export class AnalyticsService {
       revenueShare: totalRevenue > 0 ? Number(r.revenue || 0) / totalRevenue : 0,
     }));
     out.sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
-    // Truy vấn thứ hai, chỉ chạy khi `excludeGifts` (mặc định true) — tức là
+    // Truy vấn thứ hai, chỉ chạy khi `excludeGifts` (mặc định true) - tức là
     // MẶC ĐỊNH LUÔN tốn 2 query, không phải 1. Cần nó vì hai con số phải cùng
     // nói về MỘT tập đơn (bảng đã loại quà thì không ai biết quà đã phát bao
     // nhiêu). Khi false ⇒ `totalGiftQty = 0`, shape ổn định cho UI đọc một
@@ -529,7 +529,7 @@ export class AnalyticsService {
    *   cột kho/sổ, nên join qua `order_id` sang `orders` để lọc theo cùng bộ điều
    *   kiện. Inner join an toàn: `return_orders.order_id` là FK NOT NULL.
    * - Tài trợ (`sponsorshipDrawnValue/Qty`): lọc theo `sponsorship_drawdowns.warehouse_id`
-   *   nhưng CỐ Ý KHÔNG lọc theo `fiscalScope` — quỹ tài trợ nằm ở TẦNG TRƯỚC sổ
+   *   nhưng CỐ Ý KHÔNG lọc theo `fiscalScope` - quỹ tài trợ nằm ở TẦNG TRƯỚC sổ
    *   kế toán (tiền vào quỹ không mang nhãn thuế/nội bộ), nên lọc sổ ở đây sẽ
    *   làm số tiền đã rút biến mất khỏi ma trận. Ghi rõ ở đây để người sau không
    *   "sửa cho khớp" rồi làm sai nghiệp vụ.
@@ -550,7 +550,7 @@ export class AnalyticsService {
       if (r.codStatus === 'PENDING') codPending = Number(r.total || 0);
       if (r.codStatus === 'RECEIVED') codReceived = Number(r.total || 0);
     }
-    // Quỹ tài trợ: lọc kho (rút từ kho nào) + ngày, KHÔNG lọc sổ — xem JSDoc hàm.
+    // Quỹ tài trợ: lọc kho (rút từ kho nào) + ngày, KHÔNG lọc sổ - xem JSDoc hàm.
     const spfConds = [];
     if (opts.warehouseId) spfConds.push(eq(sponsorshipDrawdowns.warehouseId, opts.warehouseId));
     spfConds.push(...createdAtBetween(sponsorshipDrawdowns.createdAt, range.startDate, range.endDate));
@@ -564,7 +564,7 @@ export class AnalyticsService {
     const sponsorshipDrawnValue = Number(spfRows[0]?.value || 0);
     const sponsorshipDrawnQty = Number(spfRows[0]?.qty || 0);
     // Hoàn tiền: lọc phiếu hoàn theo ngày + trạng thái, rồi join sang `orders`
-    // để lọc kho + sổ — cùng bộ điều kiện với doanh thu, nếu không `netRevenue`
+    // để lọc kho + sổ - cùng bộ điều kiện với doanh thu, nếu không `netRevenue`
     // trộn chân tiền của tập đơn khác với doanh thu đang xem.
     const refundConds = [eq(returnOrders.status, 'COMPLETED')];
     refundConds.push(...createdAtBetween(returnOrders.createdAt, range.startDate, range.endDate));

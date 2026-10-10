@@ -14,7 +14,7 @@ interface SmartOrderParserProps {
    *
    * PHẢI NÉM LỖI khi không nạp được giỏ. Hợp đồng này là điều kiện để con xoá
    * form: cha gọi từ `handleParserOrder` (PosCheckoutTerminal) hiện chỉ `return`
-   * ở mọi nhánh hỏng, không throw — nên `await` luôn resolve và con tưởng đã
+   * ở mọi nhánh hỏng, không throw - nên `await` luôn resolve và con tưởng đã
    * tạo đơn xong, xoá sạch chat/số lượng trong khi giỏ không đổi.
    */
   onCreateOrder: (payload: {
@@ -27,7 +27,7 @@ interface SmartOrderParserProps {
 }
 
 /**
- * Bước 1 — Trợ lý Lên đơn Nhanh: paste chat FB → preview → 1 click tạo đơn PENDING.
+ * Bước 1 - Trợ lý Lên đơn Nhanh: paste chat FB → preview → 1 click tạo đơn PENDING.
  * File độc lập, không đụng PosCheckoutTerminal (team gắn vào modal POS khi sẵn sàng).
  */
 export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps) {
@@ -110,27 +110,27 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
         return;
       }
       if (res.status === 429) {
-        setVoiceMsg('Vượt tần suất — đợi một lát rồi thử lại, hoặc nhập tay.');
+        setVoiceMsg('Vượt tần suất - đợi một lát rồi thử lại, hoặc nhập tay.');
         return;
       }
       if (res.status === 413) {
-        setVoiceMsg('Đoạn ghi quá dài — nói ngắn gọn dưới 2 phút rồi thử lại.');
+        setVoiceMsg('Đoạn ghi quá dài - nói ngắn gọn dưới 2 phút rồi thử lại.');
         return;
       }
       if (!res.ok || !json?.success) {
-        setVoiceMsg(json?.message || 'STT lỗi — đã giữ nguyên ô chat, hãy nhập/dán tay.');
+        setVoiceMsg(json?.message || 'STT lỗi - đã giữ nguyên ô chat, hãy nhập/dán tay.');
         return;
       }
       const transcript: string = json.data?.transcript || '';
       if (transcript) {
         setChat((prev) => (prev.trim() ? prev.trim() + '\n' + transcript : transcript));
         const n = json.data?.items?.length ?? 0;
-        setVoiceMsg(`Đã nghe: "${transcript.slice(0, 80)}${transcript.length > 80 ? '…' : ''}" — bóc được ${n} dòng, kiểm tra lại bên dưới.`);
+        setVoiceMsg(`Đã nghe: "${transcript.slice(0, 80)}${transcript.length > 80 ? '…' : ''}" - bóc được ${n} dòng, kiểm tra lại bên dưới.`);
       } else {
-        setVoiceMsg('Không nghe rõ — nói lại gần mic hơn hoặc nhập tay.');
+        setVoiceMsg('Không nghe rõ - nói lại gần mic hơn hoặc nhập tay.');
       }
     } catch {
-      setVoiceMsg('Mất kết nối STT — đã giữ nguyên ô chat, hãy nhập/dán tay.');
+      setVoiceMsg('Mất kết nối STT - đã giữ nguyên ô chat, hãy nhập/dán tay.');
     } finally {
       setVoiceBusy(false);
     }
@@ -147,7 +147,7 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
     setError(null);
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        setVoiceMsg('Thiết bị/trình duyệt không hỗ trợ micro — hãy nhập tay.');
+        setVoiceMsg('Thiết bị/trình duyệt không hỗ trợ micro - hãy nhập tay.');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -178,7 +178,7 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
         });
       }, 1000);
     } catch {
-      setVoiceMsg('Không mở được micro (kiểm tra quyền trình duyệt, cần HTTPS/localhost) — hãy nhập tay.');
+      setVoiceMsg('Không mở được micro (kiểm tra quyền trình duyệt, cần HTTPS/localhost) - hãy nhập tay.');
       stopTracks();
     }
   };
@@ -199,7 +199,7 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
         items: items.map((it) => ({ editionId: it.editionId, quantity: it.quantity })),
         note: buildFbNote(chat),
       });
-      setDoneMsg('Đã tạo đơn PENDING — qua màn "Chờ xác nhận" để duyệt.');
+      setDoneMsg('Đã tạo đơn PENDING - qua màn "Chờ xác nhận" để duyệt.');
       setChat('');
       setDebouncedChat('');
       setQtyOverrides({});
@@ -236,10 +236,10 @@ export function SmartOrderParser({ books, onCreateOrder }: SmartOrderParserProps
           }`}
         >
           {isRecording ? <Square className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-          {isRecording ? `Đang nghe ${recSecs}s — bấm để dừng` : voiceBusy ? 'Đang nghe...' : 'Đọc đơn'}
+          {isRecording ? `Đang nghe ${recSecs}s - bấm để dừng` : voiceBusy ? 'Đang nghe...' : 'Đọc đơn'}
         </button>
         <p className="text-[10px] text-slate-400 leading-tight">
-          Chỉ thu khi bấm nút. Giọng nói đổ thành chữ vào ô bên dưới — kiểm tra lại rồi mới tạo đơn.
+          Chỉ thu khi bấm nút. Giọng nói đổ thành chữ vào ô bên dưới - kiểm tra lại rồi mới tạo đơn.
         </p>
       </div>
 

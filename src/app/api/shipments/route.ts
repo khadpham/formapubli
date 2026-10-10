@@ -7,7 +7,7 @@ import { handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 /**
- * Bước 2 — Contract API Vận chuyển SPX & COD.
+ * Bước 2 - Contract API Vận chuyển SPX & COD.
  * POST /api/shipments { action, ... }:
  * - PUSH: { orderId, carrier:'SPX', trackingCode, shippingFee? }
  * - UPDATE_STATUS: { orderId, shippingStatus }

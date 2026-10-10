@@ -11,7 +11,7 @@
  * Workers chạy UTC còn máy dev là GMT+7, nên CÙNG một đoạn code sẽ trả về ngày
  * khác nhau giữa production và máy dev trong khung 00:00–07:00. Vì vậy mọi ngày
  * ở đây đều đi qua `Intl.DateTimeFormat` với `timeZone: 'Asia/Ho_Chi_Minh'`
- * (giống `businessDateOf` của order.service) — KHÔNG tự cộng tay 7 tiếng, vì
+ * (giống `businessDateOf` của order.service) - KHÔNG tự cộng tay 7 tiếng, vì
  * cộng tay thì múi giờ máy của người đọc file lại lọt vào kết quả.
  *
  * File này KHÔNG import `@/services/*`: panel là client component, mà
@@ -41,7 +41,7 @@ export type DateRange = { startDate: string; endDate: string };
 
 /**
  * Preset "Tháng này": THÁNG LỊCH Việt Nam, từ ngày 1 tới HÔM NAY (không tính
- * tới cuối tháng tương lai — hôm nay mới là "tới nay").
+ * tới cuối tháng tương lai - hôm nay mới là "tới nay").
  *
  * Preset cũ lùi 30 ngày lịch nên báo cáo lấn sang tháng trước; người dùng
  * đối chiếu với két thì lệch mà không có chỗ nào chỉ ra lệch.
@@ -61,7 +61,7 @@ export function lastNDays(n: number, now: Date): DateRange {
   return { startDate: shiftDay(today, -(days - 1)), endDate: today };
 }
 
-/** Hôm nay theo lịch Việt Nam — 'YYYY-MM-DD'. */
+/** Hôm nay theo lịch Việt Nam - 'YYYY-MM-DD'. */
 export function vnToday(now: Date = new Date()): string {
   return vnDay(now);
 }
@@ -71,12 +71,12 @@ export function vnToday(now: Date = new Date()): string {
  * thay cho map rời rạc mỗi file.
  *
  * Kênh lạ (enum mới do server thêm sau này) trả nhãn tiếng Việt chung chứ
- * KHÔNG trả thẳng chuỗi enum — enum là tên kỹ thuật, hiện ra cho khách hàng
+ * KHÔNG trả thẳng chuỗi enum - enum là tên kỹ thuật, hiện ra cho khách hàng
  * đọc sổ thì không ai hiểu.
  */
 export function channelLabel(channel: string | null | undefined): string {
   const key = (channel || '').trim();
-  if (!key) return '—';
+  if (!key) return '-';
   const KNOWN: Record<string, string> = {
     FAIR_EVENT: 'Tại quầy hội chợ',
     RETAIL_OFFICE: 'Tại quầy',
@@ -91,19 +91,19 @@ export function channelLabel(channel: string | null | undefined): string {
 }
 
 /**
- * Giờ Việt Nam dạng 'HH:mm DD/MM' — cột "Thời Gian" của sổ và CSV.
+ * Giờ Việt Nam dạng 'HH:mm DD/MM' - cột "Thời Gian" của sổ và CSV.
  *
  * Preset cũ cắt thẳng chuỗi ISO (`createdAt.slice(0,16)`) tức giờ UTC: đơn
  * 07:30 VN hiện thành 00:30, và đơn sau 17:00 VN hiện sang hôm kế. Người dùng
  * so với giờ thực tế trên hoá đơn thấy lệch 7 tiếng mà không có chỗ nào giải
- * thích. `'—'` khi thiếu dữ liệu, không trả 'Invalid Date'.
+ * thích. `'-'` khi thiếu dữ liệu, không trả 'Invalid Date'.
  *
  * `hourCycle: 'h23'` bắt buộc: `hour12: false` ở ICU cho ra '24' cho nửa đêm.
  */
 export function vnHour(iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return '—';
+  if (Number.isNaN(at.getTime())) return '-';
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: VN_TZ,
     hour: '2-digit',
@@ -129,7 +129,7 @@ export function paymentLabel(method: string | null | undefined): string {
     BANK_TRANSFER: 'Chuyển khoản',
     QR_CODE: 'QR',
   };
-  return KNOWN[(method || '').trim()] || '—';
+  return KNOWN[(method || '').trim()] || '-';
 }
 
 /** Ô CSV: bọc nháy kép mọi field chứa phẩy/nháy kép, và chặn formula injection. */
@@ -153,7 +153,7 @@ const SALES_CSV_HEADERS = [
   'Giờ VN',
 ];
 
-/** Dòng dữ liệu cho `buildSalesCsv` — mỗi panel tự map từ nguồn của nó. */
+/** Dòng dữ liệu cho `buildSalesCsv` - mỗi panel tự map từ nguồn của nó. */
 export interface SalesCsvRow {
   orderCode?: string | null;
   warehouseName?: string | null;
@@ -192,9 +192,9 @@ export function buildSalesCsv(
     const row = r as SalesCsvRow;
     return [
       csvCell(row.orderCode ?? ''),
-      csvCell(row.warehouseName || '—'),
+      csvCell(row.warehouseName || '-'),
       csvCell(channelLabel(row.channel ?? null)),
-      csvCell(row.customerName || '—'),
+      csvCell(row.customerName || '-'),
       csvCell(paymentLabel(row.paymentMethod ?? null)),
       Number(row.subtotal ?? 0),
       Number(row.discountAmount ?? 0),
@@ -208,7 +208,7 @@ export function buildSalesCsv(
   const baseCsv = [SALES_CSV_HEADERS.join(','), ...body].join('\r\n');
   return appendExportWatermark(baseCsv, rows, {
     actorId,
-    actorRole: opts.actorRole || '—',
+    actorRole: opts.actorRole || '-',
     reportName: opts.reportName || 'BÁO CÁO DOANH SỐ BÁN SÁCH (FORMApubli)',
     fiscalScope: opts.fiscalScope,
   });
@@ -244,7 +244,7 @@ export function buildWatermarkedCsv(input: WatermarkedCsvInput): { filename: str
 }
 
 /**
- * Tải file CSV watermark về máy (chặn khi thiếu dữ liệu/actor — đúng mẫu
+ * Tải file CSV watermark về máy (chặn khi thiếu dữ liệu/actor - đúng mẫu
  * 3 bảng cũ: ký bằng mã bịa thì tệ hơn không có dấu vết).
  */
 export function downloadWatermarkedCsv(input: WatermarkedCsvInput): boolean {

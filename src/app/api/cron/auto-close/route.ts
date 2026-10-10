@@ -8,7 +8,7 @@ import { eq, like, sql, ne, notLike, and } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 /**
- * SAFEGUARD — chốt ca + chốt ngày TỰ ĐỘNG, không phụ thuộc thu ngân nhớ.
+ * SAFEGUARD - chốt ca + chốt ngày TỰ ĐỘNG, không phụ thuộc thu ngân nhớ.
  *
  * VÌ SAO CẦN: trước đây cơ chế chốt tự động chỉ chạy khi có người MỞ app
  * (POS tự gọi GET /api/cashbox?check=stale-shifts rồi POST AUTO_CLOSE).
@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic';
  * - Idempotent: chốt lại trả về bản ghi cũ, không ghi thêm. Ca đã chốt tay
  *   thì không ghi đè (autoCloseSession tự chặn).
  * - KHÔNG bịa tiền: ca không ai đếm thì closingCashActual = NULL và bản ghi đánh
- *   dấu cashVerification = 'UNVERIFIED' — đúng nguyên tắc đã chốt trước đây.
+ *   dấu cashVerification = 'UNVERIFIED' - đúng nguyên tắc đã chốt trước đây.
  * - Lỗi của một kho KHÔNG được làm hỏng các kho khác: báo cáo theo từng kho.
  */
 function authorized(req: NextRequest): boolean {
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
 async function handle(req: NextRequest) {
   const url = new URL(req.url);
   // Danh sách kho để bên gọi quét từng kho (xem giải thích giới hạn bên dưới).
-  // Chỉ lấy kho vật lý — loại kho ký gửi (CONSIGNMENT hoặc code KHO_KY_GUI%)
+  // Chỉ lấy kho vật lý - loại kho ký gửi (CONSIGNMENT hoặc code KHO_KY_GUI%)
   // vì kho ký gửi không phải kho thật, không cần chốt ca/ngày.
   if (url.searchParams.get('list') === '1') {
     const all = await db
@@ -114,7 +114,7 @@ function isRealDate(s: string): boolean {
  * Bản chốt được ghi ở `idempotency_keys` với key `day-close:<kho>:<ngày>`.
  *
  * P2 sửa 2026-09-29: đây là chốt chặn chống "xanh giả". Một ngày lỡ trôt sẽ
- * trượt khỏi cửa sổ BACK_DAYS của workflow sau 7 đêm và không còn ai hỏi tới —
+ * trượt khỏi cửa sổ BACK_DAYS của workflow sau 7 đêm và không còn ai hỏi tới -
  * workflow xanh, ngày chưa từng được chốt. Danh sách này độc lập cửa sổ quét.
  *
  * Ngày tính theo giờ VN để khớp `settleDate` mà closeDay dùng. Cố tình không
@@ -153,7 +153,7 @@ async function listUnclosed(days: number) {
 
   // Ngày KHÔNG có phát sinh thì không cần chốt. Trước đây hàm này liệt kê mọi
   // (kho x ngày) nên kho tạo ngày 20 vẫn bị bắt chốt cho ngày 19, và ngày không
-  // ai bán gì vẫn phải "chốt" — tức báo cáo xanh giả rồi lại đỏ.
+  // ai bán gì vẫn phải "chốt" - tức báo cáo xanh giả rồi lại đỏ.
   //
   // "Có phát sinh" = ngày đó kho đó có ít nhất MỘT dòng dữ liệu vận động:
   //  · orders.created_at        (bán, kể cả đơn chuyển khoản đang chờ tiền)
@@ -161,7 +161,7 @@ async function listUnclosed(days: number) {
   //  · ca ĐANG MỞ kéo dài qua ngày này. Rất quan trọng: ca mở 08-00 ngày 27 và
   //    treo tới sáng 28 thì opened_at nằm ở ngày 27, nhưng ngày 28 vẫn có
   //    phát sinh (tiền vẫn trong két). Bỏ qua trường hợp này thì báo cáo báo
-  //    xanh trong lúc két còn mở — đúng "xanh giả" mà endpoint này sinh ra để
+  //    xanh trong lúc két còn mở - đúng "xanh giả" mà endpoint này sinh ra để
   //    chống.
   // Ngày phải là NGÀY NGHIỆP VỤ VIỆT NAM, không phải ngày UTC.
   //
@@ -217,8 +217,8 @@ async function listUnclosed(days: number) {
       if (closed.has(`day-close:${w.id}:${day}`)) continue;
       // Kho chưa tồn tại vào ngày đó thì không thể có phát sinh.
       // `bornDay` đã là ngày VN (tính ở truy vấn kho), nên so thẳng với `day`.
-      // Chỉ ảnh hưởng bộ đếm `skippedNoActivity` — đường `active.has()` bên dưới
-      // vẫn chặn đúng — nhưng để hai mốc trong cùng hàm lệch nhau thì báo cáo ra
+      // Chỉ ảnh hưởng bộ đếm `skippedNoActivity` - đường `active.has()` bên dưới
+      // vẫn chặn đúng - nhưng để hai mốc trong cùng hàm lệch nhau thì báo cáo ra
       // số sai rồi ta lại tin theo số đó.
       if (w.bornDay && w.bornDay > day) { skippedNoActivity++; continue; }
       if (!active.has(`${w.id}::${day}`)) { skippedNoActivity++; continue; }
@@ -235,7 +235,7 @@ async function listUnclosed(days: number) {
       lastDay,
       warehouses: all.length,
       unclosed,
-      // Số (kho x ngày) bị bỏ qua vì không có phát sinh — để nhìn thấy ngay
+      // Số (kho x ngày) bị bỏ qua vì không có phát sinh - để nhìn thấy ngay
       // tại sao con số nhỏ hơn tổng, không phải quét thiếu.
       skippedNoActivity,
     },
@@ -246,12 +246,12 @@ async function listUnclosed(days: number) {
  * GIỚI HẠN CLOUDFLARE (đã gặp thật, không phải phỏng đoán): Worker chỉ được
  * dùng một hạn mức subrequest mỗi lần gọi. Lặp N kho trong một lần gọi
  * thì kho thứ vài trở đi sẽ chết với "Too many subrequests by single Worker
- * invocation" — và Local/Node KHÔNG có giới hạn này nên test ở máy vẫn xanh.
+ * invocation" - và Local/Node KHÔNG có giới hạn này nên test ở máy vẫn xanh.
  *
  * Vì vậy: mỗi lần gọi chỉ xử lý MỘT kho MỘT ngày (`?warehouse=CODE&date=`),
  * còn vòng lặp quét hết kho × hết ngày do workflow đảm nhiệm (mỗi vòng là
  * một lần gọi riêng nên hết hạn mức mỗi vòng). Không có `warehouse` thì vẫn
- * quét hết — chỉ dùng khi chạy local.
+ * quét hết - chỉ dùng khi chạy local.
  */
 async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
   const now = new Date();
@@ -310,7 +310,7 @@ async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
 
   // --- Bước 0: dọn đơn PENDING_CONFIRMATION đã HẾT HẠN (P2 sửa 2026-09-29) ---
   // `cleanupExpiredPending()` quét TOÀN CỤC (không theo kho) nên gọi MỘT lần
-  // ngoài vòng lặp — trước đây gọi trong vòng lặp: N kho = N lần cùng một việc.
+  // ngoài vòng lặp - trước đây gọi trong vòng lặp: N kho = N lần cùng một việc.
   // Không có bước này thì đơn chuyển khoản quầy hết hạn vẫn giữ PENDING ⇒
   // chặn autoCloseSession (bước 1) ⇒ ca vẫn OPEN ⇒ chặn closeDay (bước 2).
   try {
@@ -379,7 +379,7 @@ async function runSafeguard(onlyWarehouse?: string | null, onlyDate?: string) {
       partial: Boolean(onlyWarehouse),
       shiftsClosed,
       daysClosed,
-      // Số đơn PENDING hết hạn đã dọn — có thay đổi dữ liệu thật, báo ra.
+      // Số đơn PENDING hết hạn đã dọn - có thay đổi dữ liệu thật, báo ra.
       pendingCleaned,
       truncated,
       errors,

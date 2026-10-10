@@ -3,7 +3,7 @@ import { AppError } from './app-error';
 import { and, desc, eq, sql, inArray } from 'drizzle-orm';
 
 /**
- * 5.4 — READER PERSONA (nền dữ liệu, read-only, không migration).
+ * 5.4 - READER PERSONA (nền dữ liệu, read-only, không migration).
  * - Hồ sơ 360°: đơn, chi tiêu, tủ sách, tag, thể loại ưa thích (từ lịch sử mua thật).
  * - Gợi ý độc giả cho ấn bản mới: chấm điểm giải thích được
  *   (cùng tác giả +3, cùng thể loại +2 theo số cuốn), loại người đã sở hữu.
@@ -150,7 +150,7 @@ export class ReaderProfileService {
     for (const l of lines) {
       if (!l.customerId || ownedSet.has(l.customerId)) continue;
       const qty = Number(l.qty || 0);
-      // Chỉ gợi ý khi khớp tác giả hoặc thể loại — mua thể loại khác không tính.
+      // Chỉ gợi ý khi khớp tác giả hoặc thể loại - mua thể loại khác không tính.
       const reasons: string[] = [];
       let add = 0;
       if (author && l.author === author) {

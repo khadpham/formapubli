@@ -8,7 +8,7 @@ import { recordAuditLog } from '@/lib/rbac-guard';
 
 export const dynamic = 'force-dynamic';
 
-/** PUT /api/contracts/documents/[id]/final-docx — upload bản cuối sau khi sửa ngoài Word (D9). */
+/** PUT /api/contracts/documents/[id]/final-docx - upload bản cuối sau khi sửa ngoài Word (D9). */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);

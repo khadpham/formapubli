@@ -9,12 +9,12 @@ import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
  * Bọc vùng cuộn của một bảng: nút "Mở rộng" + overlay fullscreen.
  *
  * Một DOM duy nhất: bật/tắt là portal di chuyển nút đi (không render 2 bản).
- * Vị trí cuộn reset về đầu khi chuyển chế độ — chấp nhận được vì trạng thái
+ * Vị trí cuộn reset về đầu khi chuyển chế độ - chấp nhận được vì trạng thái
  * sort/lọc nằm ở panel cha, không mất.
  *
  * Vùng cuộn con PHẢI có class `table-scroll`: khi overlay mở, CSS toàn cục
  * (globals.css `.table-expand-open .table-scroll`) gỡ trần max-h của nó để
- * khung nới theo đúng số dòng — không thì 20/50/100 dòng vẫn kẹt trong khung
+ * khung nới theo đúng số dòng - không thì 20/50/100 dòng vẫn kẹt trong khung
  * 420-480px cũ + 2 thanh cuộn lồng nhau.
  */
 export function TableExpandOverlay({

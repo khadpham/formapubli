@@ -40,7 +40,7 @@ type SettingsTab = 'staff' | 'banks' | 'activity' | 'goods' | 'promotions' | 'ap
 export function SettingsRbacView({ sessionRole }: SettingsRbacViewProps) {
   const { canManageAccounts, canManageBanks, canManagePrinter } = getSettingsAccess(sessionRole);
   const [activeSubTab, setActiveSubTab] = useState<SettingsTab>(canManageAccounts ? 'staff' : 'appearance');
-  // Mục Shopee ẩn theo cờ server (SHOPEE_UI_ENABLED) — tắt thì không ai thấy nút.
+  // Mục Shopee ẩn theo cờ server (SHOPEE_UI_ENABLED) - tắt thì không ai thấy nút.
   const [showShopee, setShowShopee] = useState(false);
   const canSeeShopee =
     sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER' || sessionRole === 'ROLE_WAREHOUSE';

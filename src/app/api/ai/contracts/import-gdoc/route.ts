@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 
-/** POST /api/ai/contracts/import-gdoc — nhập mẫu thật từ link Google Docs, AI cấu trúc hóa. */
+/** POST /api/ai/contracts/import-gdoc - nhập mẫu thật từ link Google Docs, AI cấu trúc hóa. */
 export async function POST(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);

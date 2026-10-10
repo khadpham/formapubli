@@ -22,7 +22,7 @@ export const DEFAULT_CHECKLISTS: Record<string, { version: number; items: Checkl
   DAT_HANG_HOA_SK: {
     version: 1,
     items: [
-      { id: 'mo-ta', label: 'Mô tả hàng hóa/dịch vụ', hint: 'Chủng loại, số lượng, quy cách cụ thể — tránh mô tả chung chung', severity: 'MO_HO' },
+      { id: 'mo-ta', label: 'Mô tả hàng hóa/dịch vụ', hint: 'Chủng loại, số lượng, quy cách cụ thể - tránh mô tả chung chung', severity: 'MO_HO' },
       { id: 'nghiem-thu', label: 'Tiêu chuẩn nghiệm thu', hint: 'Ai nghiệm thu, tiêu chí đạt/không đạt, thời hạn nghiệm thu', severity: 'THIEU' },
       { id: 'tien-do', label: 'Tiến độ giao hàng', hint: 'Mốc giao từng đợt, địa điểm giao, ai chịu phí vận chuyển', severity: 'THIEU' },
       { id: 'thanh-toan', label: 'Thanh toán theo đợt', hint: 'Tỷ lệ từng đợt, điều kiện thanh toán (sau nghiệm thu?)', severity: 'MO_HO' },
@@ -51,7 +51,7 @@ const FALLBACK: ChecklistItem[] = [
   { id: 'tranh-chap', label: 'Giải quyết tranh chấp', hint: 'Thương lượng trước hay ra tòa/trọng tài, cơ quan nào', severity: 'RUI_RO' },
 ];
 
-/** Lấy checklist theo loại — chưa có thì dùng checklist chung tối thiểu. */
+/** Lấy checklist theo loại - chưa có thì dùng checklist chung tối thiểu. */
 export function getChecklist(category: string): ChecklistItem[] {
   return DEFAULT_CHECKLISTS[category]?.items ?? FALLBACK;
 }
