@@ -52,25 +52,58 @@ export async function GET(req: NextRequest) {
       title: string; body: string; at: string; href?: string; area: string;
     }> = [];
 
-    // 1) Yêu cầu duyệt chiết khấu. Tách 2 truy vấn vì `createRequest` liên tục
-    // SUPERSEDE dòng cũ và dòng cũ chuyển EXPIRED: gộp chung `limit(30)` thì sau ~30
-    // lần giao dịch cửa sổ có thể KHÔNG còn dòng PENDING nào dù đang có.
-    const pendingApprovals = await db
-      .select()
-      .from(discountApprovalRequests)
-      .where(eq(discountApprovalRequests.status, 'PENDING'))
-      .orderBy(desc(discountApprovalRequests.createdAt))
-      .limit(30);
-    // Kết quả duyệt chỉ quan tới người tạo yêu cầu (kể cả khi người đó là quản lý).
-    const myResults = await db
-      .select()
-      .from(discountApprovalRequests)
-      .where(and(
-        inArray(discountApprovalRequests.status, ['APPROVED', 'REJECTED']),
-        eq(discountApprovalRequests.cashierId, session.actorId),
-      ))
-      .orderBy(desc(discountApprovalRequests.updatedAt))
-      .limit(15);
+    // 5 truy vấn dưới đây độc lập nhau (chỉ phụ thuộc session) → chạy song song
+    // bằng Promise.all thay vì await nối tiếp. Đo thật trên VPS: mỗi query Turso
+    // ~110ms (kết nối ấm) → nối tiếp ≈ 550ms/poll, song song ≈ 110-150ms/poll.
+    // Client poll endpoint này mỗi 5s nên mỗi ms đều đáng giá.
+    const [
+      pendingApprovals,
+      myResults,
+      sessionRows,
+      newStaff,
+      dismissalRows,
+    ] = await Promise.all([
+      // 1) Yêu cầu duyệt chiết khấu. Tách 2 truy vấn vì `createRequest` liên tục
+      // SUPERSEDE dòng cũ và dòng cũ chuyển EXPIRED: gộp chung `limit(30)` thì sau ~30
+      // lần giao dịch cửa sổ có thể KHÔNG còn dòng PENDING nào dù đang có.
+      db.select()
+        .from(discountApprovalRequests)
+        .where(eq(discountApprovalRequests.status, 'PENDING'))
+        .orderBy(desc(discountApprovalRequests.createdAt))
+        .limit(30),
+      // Kết quả duyệt chỉ quan tới người tạo yêu cầu (kể cả khi người đó là quản lý).
+      db.select()
+        .from(discountApprovalRequests)
+        .where(and(
+          inArray(discountApprovalRequests.status, ['APPROVED', 'REJECTED']),
+          eq(discountApprovalRequests.cashierId, session.actorId),
+        ))
+        .orderBy(desc(discountApprovalRequests.updatedAt))
+        .limit(15),
+      // 3) Ca đang mở.
+      db.select()
+        .from(cashboxSessions)
+        .where(eq(cashboxSessions.status, 'OPEN'))
+        .orderBy(desc(cashboxSessions.openedAt))
+        .limit(20),
+      // 4) Nhân sự mới tạo (chỉ quản lý mới cần; người khác nhận mảng rỗng).
+      isManager
+        ? db.select({ id: staffAccounts.staffId, name: staffAccounts.fullName, at: staffAccounts.createdAt })
+            .from(staffAccounts)
+            .orderBy(desc(staffAccounts.createdAt))
+            .limit(3)
+        : Promise.resolve([]),
+      // 5) Danh sách đã ẩn — bảng phụ: đọc lỗi thì nuốt ngay tại đây, giữ nguyên
+      // hành vi cũ (coi như chưa ẩn gì cả, tuyệt đối không để bảng phụ sập endpoint).
+      Promise.resolve(
+        db.select({ itemId: notificationDismissals.itemId, expiresAt: notificationDismissals.expiresAt })
+          .from(notificationDismissals)
+          .where(eq(notificationDismissals.actorId, session.actorId))
+      ).catch((err: any) => {
+        console.warn('[notifications] Không đọc được notification_dismissals — coi như chưa ẩn mục nào:', err?.message ?? err);
+        return [];
+      }),
+    ]);
 
     const nowMs = Date.now();
     for (const r of pendingApprovals) {
@@ -115,12 +148,6 @@ export async function GET(req: NextRequest) {
     // thu ngân, không phải thông báo.
 
     // 3) Ca của chính người dùng / ca đang mở (quản lý thấy hết).
-    const sessionRows = await db
-      .select()
-      .from(cashboxSessions)
-      .where(eq(cashboxSessions.status, 'OPEN'))
-      .orderBy(desc(cashboxSessions.openedAt))
-      .limit(20);
     for (const s of sessionRows) {
       if (!isManager && s.cashierId !== session.actorId) continue;
       items.push({
@@ -132,46 +159,29 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 4) Nhân sự mới tạo (quản lý cần biết).
-    if (isManager) {
-      const newStaff = await db
-        .select({ id: staffAccounts.staffId, name: staffAccounts.fullName, at: staffAccounts.createdAt })
-        .from(staffAccounts)
-        .orderBy(desc(staffAccounts.createdAt))
-        .limit(3);
-      for (const s of newStaff) {
-        items.push({
-          id: `staff-${s.id}`, kind: 'staff', severity: 'info', area: 'Nhân sự',
-          title: `Tài khoản mới: ${s.name} (${s.id})`, body: 'Đã tạo, nhớ đổi PIN mặc định.',
-          at: `${s.at || ''}`, href: 'settings',
-        });
-      }
+    // 4) Nhân sự mới tạo (quản lý cần biết; non-manager nhận mảng rỗng từ Promise.all).
+    for (const s of newStaff) {
+      items.push({
+        id: `staff-${s.id}`, kind: 'staff', severity: 'info', area: 'Nhân sự',
+        title: `Tài khoản mới: ${s.name} (${s.id})`, body: 'Đã tạo, nhớ đổi PIN mặc định.',
+        at: `${s.at || ''}`, href: 'settings',
+      });
     }
 
     // Sắp xếp theo thời gian thật (epoch ms), không so chuỗi thô.
     items.sort((a, b) => toEpoch(b.at) - toEpoch(a.at));
 
     // Loại các mục người dùng đã ẩn/xóa (bảng dismissal, xem POST bên dưới).
-    // ĐỒNG BỘ: bảng này chỉ là bộ lọc phụ. Nếu đọc lỗi (bảng chưa được migrate trên
-    // DB nào đó) thì coi như CHƯA ẩn gì cả và vẫn trả về đủ thông báo — tuyệt đối
-    // không để một bảng phụ làm sập toàn bộ endpoint.
-    let hidden = new Set<string>();
-    try {
-      const now = Date.now();
-      const dismissals = await db
-        .select({ itemId: notificationDismissals.itemId, expiresAt: notificationDismissals.expiresAt })
-        .from(notificationDismissals)
-        .where(eq(notificationDismissals.actorId, session.actorId));
-        hidden = new Set(
-        dismissals
-          // expires_at NULL = bản ghi ghi từ trước 0026, giữ nguyên nghĩa cũ (đã ẩn).
-          // NULL sẽ tự hết hiệu lực lần ghi đầu tiên sau này (POST luôn set expires_at).
-          .filter((d) => d.expiresAt == null || toEpoch(d.expiresAt) > now)
-          .map((d) => d.itemId),
-      );
-    } catch (err: any) {
-      console.warn('[notifications] Không đọc được notification_dismissals — coi như chưa ẩn mục nào:', err?.message ?? err);
-    }
+    // ĐỒNG BỘ: bảng này chỉ là bộ lọc phụ — đọc lỗi đã được nuốt trong Promise.all
+    // ở trên (coi như CHƯA ẩn gì cả, vẫn trả đủ thông báo). Tuyệt đối không để một
+    // bảng phụ làm sập toàn bộ endpoint.
+    const hidden = new Set<string>(
+      dismissalRows
+        // expires_at NULL = bản ghi ghi từ trước 0026, giữ nguyên nghĩa cũ (đã ẩn).
+        // NULL sẽ tự hết hiệu lực lần ghi đầu tiên sau này (POST luôn set expires_at).
+        .filter((d) => d.expiresAt == null || toEpoch(d.expiresAt) > nowMs)
+        .map((d) => d.itemId),
+    );
     const visible = items.filter((i) => !hidden.has(i.id));
 
     const nowIso = new Date().toISOString();
