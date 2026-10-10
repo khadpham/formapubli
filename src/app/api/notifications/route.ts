@@ -42,10 +42,19 @@ function toEpoch(value: unknown): number {
  * Client hỏi mỗi 5s (ngân sách trễ 5–6s như yêu cầu). Lịch sử đầy đủ: /api/activity-log.
  */
 export async function GET(req: NextRequest) {
+  // DIAG 1101 (tam thoi — go khi tim ra root cause): Issues cho thay 1101 tap
+  // trung o endpoint nay, treo o +0ms (truoc ca subrequest DB dau tien).
+  const diagT = (label: string) => {
+    const s = Date.now();
+    return () => console.log(`[DIAG-1101] notif ${label}: ${Date.now() - s}ms`);
+  };
+  const doneEntry = diagT('entry');
   try {
+    const doneAuth = diagT('requireSessionRole');
     const session = await requireSessionRole(req, [
       'ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER', 'ROLE_WAREHOUSE', 'ROLE_TAX',
     ] as UserRole[]);
+    doneAuth();
     const isManager = session.role === 'ROLE_OWNER' || session.role === 'ROLE_MANAGER';
     const items: Array<{
       id: string; kind: string; severity: 'info' | 'warn' | 'danger';
@@ -62,6 +71,7 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(discountApprovalRequests.createdAt))
       .limit(30);
     // Kết quả duyệt chỉ quan tới người tạo yêu cầu (kể cả khi người đó là quản lý).
+    const doneApvQ = diagT('approval queries');
     const myResults = await db
       .select()
       .from(discountApprovalRequests)
@@ -71,6 +81,7 @@ export async function GET(req: NextRequest) {
       ))
       .orderBy(desc(discountApprovalRequests.updatedAt))
       .limit(15);
+    doneApvQ();
 
     const nowMs = Date.now();
     for (const r of pendingApprovals) {
@@ -115,12 +126,14 @@ export async function GET(req: NextRequest) {
     // thu ngân, không phải thông báo.
 
     // 3) Ca của chính người dùng / ca đang mở (quản lý thấy hết).
+    const doneShiftQ = diagT('cashboxSessions query');
     const sessionRows = await db
       .select()
       .from(cashboxSessions)
       .where(eq(cashboxSessions.status, 'OPEN'))
       .orderBy(desc(cashboxSessions.openedAt))
       .limit(20);
+    doneShiftQ();
     for (const s of sessionRows) {
       if (!isManager && s.cashierId !== session.actorId) continue;
       items.push({
@@ -134,11 +147,13 @@ export async function GET(req: NextRequest) {
 
     // 4) Nhân sự mới tạo (quản lý cần biết).
     if (isManager) {
+      const doneStaffQ = diagT('staffAccounts query');
       const newStaff = await db
         .select({ id: staffAccounts.staffId, name: staffAccounts.fullName, at: staffAccounts.createdAt })
         .from(staffAccounts)
         .orderBy(desc(staffAccounts.createdAt))
         .limit(3);
+      doneStaffQ();
       for (const s of newStaff) {
         items.push({
           id: `staff-${s.id}`, kind: 'staff', severity: 'info', area: 'Nhân sự',
@@ -158,10 +173,12 @@ export async function GET(req: NextRequest) {
     let hidden = new Set<string>();
     try {
       const now = Date.now();
+      const doneDisQ = diagT('dismissals query');
       const dismissals = await db
         .select({ itemId: notificationDismissals.itemId, expiresAt: notificationDismissals.expiresAt })
         .from(notificationDismissals)
         .where(eq(notificationDismissals.actorId, session.actorId));
+      doneDisQ();
         hidden = new Set(
         dismissals
           // expires_at NULL = bản ghi ghi từ trước 0026, giữ nguyên nghĩa cũ (đã ẩn).
@@ -175,6 +192,7 @@ export async function GET(req: NextRequest) {
     const visible = items.filter((i) => !hidden.has(i.id));
 
     const nowIso = new Date().toISOString();
+    doneEntry();
     return NextResponse.json({
       success: true,
       data: { items: visible.slice(0, 40), serverTime: nowIso, count: visible.length },
