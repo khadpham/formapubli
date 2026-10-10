@@ -1,5 +1,5 @@
 import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, products, warehouses, works } from '../db';
-import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, sql , ne, notLike} from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
 import { withDbRetry } from '../lib/db-retry';
@@ -1052,8 +1052,17 @@ export class InventoryService {
       .where(eq(stockBalances.condition, 'NEW'));
 
     // Map số dư theo format: Map<editionId, Map<warehouseCode, quantity>>
-    // Lấy thông tin kho để map warehouseId sang code
-    const allWarehouses = await db.select().from(warehouses);
+    // Lấy thông tin kho để map warehouseId sang code — loại kho ký gửi
+    // (CONSIGNMENT không phải kho thật, chỉ là shortcut theo dõi).
+    const allWarehouses = await db
+      .select()
+      .from(warehouses)
+      .where(
+        and(
+          ne(warehouses.warehouseType, 'CONSIGNMENT'),
+          notLike(warehouses.code, 'KHO_KY_GUI%')
+        )
+      );
     const whIdToCode = new Map<string, string>();
     for (const wh of allWarehouses) {
       whIdToCode.set(wh.id, wh.code);
