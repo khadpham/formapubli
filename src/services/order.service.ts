@@ -801,7 +801,7 @@ return {
     // Toàn bộ kiểm tra idempotency, phiên két, tính ATP và ghi chép nằm trong write transaction.
     // B3: mã hàng hóa có dòng quà hết tồn - ghi ledger, KHÔNG trừ stock_balances.
     const shortfallEditionIds = new Set<string>();
-    return await withDbRetry(async () => {
+    const result = await withDbRetry(async () => {
       return await db.transaction(async (tx) => {
         // B0. Kiểm tra Idempotency bên trong Transaction với idempotencyKey đã chuẩn hóa
         const existing = await tx
@@ -1271,6 +1271,52 @@ return {
         };
       });
     });
+
+    // Webhook bao don moi cho n8n (fire-and-forget): bat moi kenh
+    // (portal, POS, tay, Shopee...). Khong chan luong tao don neu loi.
+    // URL cau hinh qua env N8N_ORDER_WEBHOOK_URL.
+    this.fireOrderWebhook({
+      orderId: result.orderId,
+      orderCode: result.orderCode,
+      channel,
+      customerName: result.customerName,
+      finalAmount: result.finalAmount,
+      paymentMethod,
+      status: result.status,
+      itemsCount: result.itemsCount,
+      totalQuantity: result.totalQuantity,
+    }).catch(() => {});
+
+    return result;
+  }
+
+  /**
+   * Ban webhook don moi ve n8n (bat dong bo, timeout 5s).
+   * That bai thi bo qua - khong duoc lam hong luong tao don.
+   */
+  private static async fireOrderWebhook(payload: {
+    orderId: string;
+    orderCode: string;
+    channel: string;
+    customerName: string;
+    finalAmount: number;
+    paymentMethod: string;
+    status: string;
+    itemsCount: number;
+    totalQuantity: number;
+  }): Promise<void> {
+    const url = process.env.N8N_ORDER_WEBHOOK_URL;
+    if (!url) return;
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      // Bo qua loi webhook
+    }
   }
 
   /**
