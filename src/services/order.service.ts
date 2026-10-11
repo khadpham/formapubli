@@ -4,7 +4,7 @@ import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
 import { isCountedRevenue } from './shopee/revenue-guard';
-import { eq, and, or, isNotNull, desc, sql, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, or, isNotNull, desc, sql, gte, lte, inArray, notExists } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { isLeaseEnforcedRole, isLeaseEnforcementEnabled } from '../lib/auth-session';
 import { AppError } from './app-error';
@@ -1569,7 +1569,20 @@ return {
           inArray(orderItems.productId, ids),
           eq(orders.warehouseId, warehouseId),
           eq(orders.status, 'PENDING_CONFIRMATION'),
-          or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoffDate))
+          or(isNotNull(orders.paymentExpiresAt), gte(orders.createdAt, cutoffDate)),
+          // Đơn đã xuất kho thật (có DISPATCH_SALE) thì tồn vật lý đã trừ -
+          // không còn là "giữ chỗ" nữa. Không loại trừ sẽ trừ 2 lần.
+          notExists(
+            txOrDb
+              .select({ id: inventoryLedger.id })
+              .from(inventoryLedger)
+              .where(
+                and(
+                  eq(inventoryLedger.correlationId, orders.id),
+                  eq(inventoryLedger.eventType, 'DISPATCH_SALE')
+                )
+              )
+          )
         )
       );
     const now = Date.now();
@@ -1883,6 +1896,25 @@ return {
           throw AppError.conflict(`Đơn đang ở trạng thái ${ord.status}, không thể hủy.`);
         }
 
+        // Đơn đã xuất kho thật (có bút toán DISPATCH_SALE) thì KHÔNG được hủy
+        // kiểu này - hủy sẽ làm mất tồn vĩnh viễn vì không có RETURN_INBOUND.
+        // Đơn portal sau "Duyệt đơn" vẫn ở PENDING_CONFIRMATION nên phải chặn ở đây.
+        const dispatched = await tx
+          .select({ id: inventoryLedger.id })
+          .from(inventoryLedger)
+          .where(
+            and(
+              eq(inventoryLedger.correlationId, orderId),
+              eq(inventoryLedger.eventType, 'DISPATCH_SALE')
+            )
+          )
+          .limit(1);
+        if (dispatched.length > 0) {
+          throw AppError.conflict(
+            'Đơn đã xuất kho, không thể hủy. Dùng chức năng hoàn hàng để xử lý.'
+          );
+        }
+
         // Đóng ca = không được xử lý đơn chờ thuộc két (đồng bộ với confirmOrder).
         // Đơn quầy KHÔNG gắn két thì vẫn hủy được: hủy không ghi doanh thu vào
         // két nào mà chỉ nhả chỗ giữ ATP - từ chối hủy sẽ kẹt vĩnh viễn đơn.
@@ -2066,14 +2098,20 @@ return {
 
   /** Owner/Manager xử lý mọi đơn; Cashier chỉ xử lý đơn có cashierId của chính mình. */
   private static assertOrderActor(
-    ord: { cashierId: string | null },
+    ord: { cashierId: string | null; channel?: string | null },
     actorRole: string,
     actorId: string | undefined,
     verb: string
   ): void {
     const isPrivileged = actorRole === 'ROLE_OWNER' || actorRole === 'ROLE_MANAGER';
     const isOwnCashierOrder = actorRole === 'ROLE_CASHIER' && !!actorId && ord.cashierId === actorId;
-    if (!isPrivileged && !isOwnCashierOrder) {
+    // Thủ kho được HỦY đơn ONLINE chưa xuất kho - luồng đóng đơn do chính
+    // thủ kho phụ trách. Chỉ áp dụng cho verb 'hủy': không cho 'xác nhận' để
+    // tránh bấm nhầm màn Đơn chờ cũ gây trừ kho 2 lần (confirmOrder không nhận
+    // diện idempotency prefix của approve portal). Đơn đã xuất do cancelOrder chặn riêng.
+    const isWarehouseCancelOnline =
+      actorRole === 'ROLE_WAREHOUSE' && ord.channel === 'ONLINE' && verb === 'hủy';
+    if (!isPrivileged && !isOwnCashierOrder && !isWarehouseCancelOnline) {
       throw AppError.forbidden(`Cashier chỉ được ${verb} đơn của chính mình.`);
     }
   }
