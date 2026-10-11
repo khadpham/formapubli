@@ -2105,10 +2105,13 @@ return {
   ): void {
     const isPrivileged = actorRole === 'ROLE_OWNER' || actorRole === 'ROLE_MANAGER';
     const isOwnCashierOrder = actorRole === 'ROLE_CASHIER' && !!actorId && ord.cashierId === actorId;
-    // Thủ kho được hủy đơn ONLINE (portal/Shopee) chưa xuất kho - luồng đóng
-    // đơn do chính thủ kho phụ trách. Đơn đã xuất do cancelOrder chặn riêng.
-    const isWarehouseOnlineOrder = actorRole === 'ROLE_WAREHOUSE' && ord.channel === 'ONLINE';
-    if (!isPrivileged && !isOwnCashierOrder && !isWarehouseOnlineOrder) {
+    // Thủ kho được HỦY đơn ONLINE chưa xuất kho - luồng đóng đơn do chính
+    // thủ kho phụ trách. Chỉ áp dụng cho verb 'hủy': không cho 'xác nhận' để
+    // tránh bấm nhầm màn Đơn chờ cũ gây trừ kho 2 lần (confirmOrder không nhận
+    // diện idempotency prefix của approve portal). Đơn đã xuất do cancelOrder chặn riêng.
+    const isWarehouseCancelOnline =
+      actorRole === 'ROLE_WAREHOUSE' && ord.channel === 'ONLINE' && verb === 'hủy';
+    if (!isPrivileged && !isOwnCashierOrder && !isWarehouseCancelOnline) {
       throw AppError.forbidden(`Cashier chỉ được ${verb} đơn của chính mình.`);
     }
   }
