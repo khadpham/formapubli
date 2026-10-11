@@ -1279,7 +1279,7 @@ return {
       orderId: result.orderId,
       orderCode: result.orderCode,
       channel,
-      customerName: result.customerName,
+      customerName: result.customerName ?? 'Khách lẻ',
       finalAmount: result.finalAmount,
       paymentMethod,
       status: result.status,
@@ -1298,7 +1298,7 @@ return {
     orderId: string;
     orderCode: string;
     channel: string;
-    customerName: string;
+    customerName: string | null;
     finalAmount: number;
     paymentMethod: string;
     status: string;
