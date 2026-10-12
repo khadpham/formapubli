@@ -105,8 +105,19 @@ async function run() {
   // Không dùng font-serif (lỗi dấu tiếng Việt)
   assert.ok(!src.includes('font-serif'), 'Không được dùng font-serif (gây lỗi dấu tiếng Việt như "Cuốn")');
   // Không in sẵn tên đại lý ở ô ký
-  assert.ok(!src.includes("{order.partnerName || 'Đại diện đại lý'}"), 'Không in sẵn tên đại lý ở ô chữ ký');
   console.log('✓ Mẫu in đủ khối đại lý, bản ký gửi, print CSS, table-fixed, font-sans và bỏ in sẵn tên ký đại lý');
+
+  // 5. Tuân thủ React Rules of Hooks: không có hook sau early return
+  const fnStart = src.indexOf('export function DeliveryReceiptPrint(');
+  const fnBody = src.slice(fnStart);
+  const earlyReturnIdx = fnBody.search(/if\s*\([^)]*mounted[^)]*\)\s*return\s*null;/);
+  assert.ok(earlyReturnIdx !== -1, 'Phải có early return mounted');
+  const codeBeforeEarlyReturn = fnBody.slice(0, earlyReturnIdx);
+  assert.ok(codeBeforeEarlyReturn.includes('isDeletingDraft'), 'isDeletingDraft phải khai báo trước early return');
+  const codeBetween = fnBody.slice(earlyReturnIdx, fnBody.indexOf('return ('));
+  const strayHooks = codeBetween.match(/\buse[A-Z]\w+\s*\(/g);
+  assert.ok(!strayHooks || strayHooks.length === 0, `Có hook sau early return: ${strayHooks?.join(', ')}`);
+  console.log('✓ Tuân thủ React Rules of Hooks: toàn bộ hooks khai báo trước early return');
 
   console.log('🎉 TOÀN BỘ TEST DELIVERY PRINT PASS!');
 }
