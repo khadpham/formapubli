@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { PortalToBody } from '../PortalToBody';
+import Modal from '../ui/Modal';
 import {
-  X,
   ArrowRightLeft,
   AlertTriangle,
   CheckCircle2,
@@ -18,7 +17,6 @@ import {
   CircleHelp,
   Warehouse,
 } from 'lucide-react';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
 import { stockOfWarehouse } from '@/lib/warehouse-stock';
 import { generateUUIDv7 } from '@/lib/uuidv7';
@@ -104,9 +102,6 @@ export function BatchTransferModal({
     rows: ParsedRow[];
     summary: { matched: number; needsConfirm: number; notFound: number };
   } | null>(null);
-  const pasteModalRef = useModalFocusTrap<HTMLDivElement>(isPasteOpen && mounted, () =>
-    setIsPasteOpen(false)
-  );
   // Gợi ý sách: trước đây là `absolute z-20` nằm trong modal card `overflow-hidden`
   // (và body của modal là `overflow-y-auto`) nên bị CẮT mất phần dưới ở mọi kích
   // thước màn hình. Nay nó nằm trên document.body nên không tổ tiên nào cắt được.
@@ -726,40 +721,59 @@ export function BatchTransferModal({
 
   return (
     <>
-    {createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting && !isValidating) onClose();
-      }}
+    <Modal
+      open={isOpen}
+      onClose={() => { if (isPasteOpen) return; if (!isSubmitting && !isValidating) onClose(); }}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-8 h-8 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+            <ArrowRightLeft className="w-4 h-4" />
+          </span>
+          Phiếu Chuyển Kho Hàng Loạt
+        </span>
+      }
+      subtitle="Xuất nhanh danh sách N đầu sách sang kho hội chợ hoặc kho chi nhánh với 1 chứng từ PCK duy nhất"
+      actions={
+        !successInfo ? (
+          <>
+            <div className="text-xs font-black uppercase text-slate-400">Thao tác</div>
+            <button
+              type="button"
+              onClick={handleValidateBatch}
+              disabled={isValidating || isSubmitting || lines.length === 0}
+              className="w-full px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {isValidating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+              Kiểm tra tồn kho
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmitBatch}
+              disabled={isSubmitting || isValidating || lines.length === 0 || validationSuccess !== true}
+              title={
+                validationSuccess !== true
+                  ? 'Vui lòng bấm "Kiểm tra tồn kho" thành công trước khi chuyển'
+                  : 'Xác nhận chuyển kho'
+              }
+              className="w-full px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+              Xác nhận chuyển kho
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Hủy bỏ
+            </button>
+          </>
+        ) : undefined
+      }
     >
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50/80">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
-              <ArrowRightLeft className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Phiếu Chuyển Kho Hàng Loạt
-              </h2>
-              <p className="text-xs text-slate-500">
-                Xuất nhanh danh sách N đầu sách sang kho hội chợ hoặc kho chi nhánh với 1 chứng từ PCK duy nhất
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+        <div className="space-y-5">
           {successInfo ? (
             <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-3">
               <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
@@ -1225,77 +1239,19 @@ export function BatchTransferModal({
             </>
           )}
         </div>
+    </Modal>
 
-        {/* Modal Footer */}
-        {!successInfo && (
-          <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50/80">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              Hủy bỏ
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleValidateBatch}
-                disabled={isValidating || isSubmitting || lines.length === 0}
-                className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {isValidating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                Kiểm tra tồn kho
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitBatch}
-                disabled={isSubmitting || isValidating || lines.length === 0 || validationSuccess !== true}
-                title={
-                  validationSuccess !== true
-                    ? 'Vui lòng bấm "Kiểm tra tồn kho" thành công trước khi chuyển'
-                    : 'Xác nhận chuyển kho'
-                }
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
-                Xác nhận chuyển kho
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body
-    )}
-
-    {/* Hộp thoại dán danh sách - portal riêng trên document.body để không bị
-        `overflow-hidden` của modal cha cắt. max-h + overflow-y-auto để luôn
-        cuộn tới được trên màn 375px. KHÔNG có nút nào gửi phiếu ở đây. */}
+    {/* Hộp thoại dán danh sách - dùng Modal chung. Render sau modal cha nên
+        nằm trên trong DOM (cùng z-index). ESC chỉ đóng hộp này vì onClose của
+        modal cha đã chặn khi isPasteOpen. KHÔNG có nút nào gửi phiếu ở đây. */}
     {isPasteOpen && (
-      <PortalToBody>
-        <div className="fixed inset-0 z-[90] bg-slate-950/70 flex items-center justify-center p-3">
-          <div
-            ref={pasteModalRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Dán danh sách từ Excel"
-            className="w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-slate-200">
-              <p className="min-w-0 text-xs font-extrabold text-slate-900 truncate">
-                Dán danh sách từ Excel
-              </p>
-              <button
-                type="button"
-                aria-label="Đóng hộp dán danh sách"
-                onClick={closePaste}
-                className="min-h-[38px] min-w-[38px] shrink-0 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-3">
+      <Modal
+        open={isPasteOpen}
+        onClose={closePaste}
+        size="md"
+        title="Dán danh sách từ Excel"
+        subtitle="Dán 2 cột: tên sách · số lượng (cột cách nhau bằng Tab hoặc dấu phẩy)"
+      >
               <p className="text-[11px] leading-relaxed text-slate-600">
                 Dán 2 cột: <span className="font-semibold">tên sách · số lượng</span> (cột cách nhau
                 bằng Tab hoặc dấu phẩy). Tên sách phải khớp <span className="font-semibold">CHÍNH XÁC</span> với danh
@@ -1433,10 +1389,7 @@ export function BatchTransferModal({
                   )}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      </PortalToBody>
+      </Modal>
     )}
     </>
   );

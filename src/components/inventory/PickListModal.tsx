@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Printer, CheckSquare, Square, PackageSearch, Layers, Sparkles } from 'lucide-react';
+import { Printer, CheckSquare, Square, PackageSearch, Layers, Sparkles } from 'lucide-react';
+import Modal from '../ui/Modal';
 
 interface PickListModalProps {
   isOpen: boolean;
@@ -29,15 +29,6 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !loading) onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, loading, onClose]);
 
   if (!isOpen || !mounted) return null;
 
@@ -74,80 +65,68 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
     window.print();
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
-      onClick={(event) => { if (event.target === event.currentTarget && !loading) onClose(); }}
+  return (
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!loading) onClose(); }}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+            <PackageSearch className="w-4 h-4" />
+          </span>
+          Danh Sách Soạn Sách Kệ Kho
+        </span>
+      }
+      subtitle="Gom nhóm sách theo thứ tự vị trí kệ để tối ưu đường đi soạn hàng"
+      actions={
+        pickList ? (
+          <>
+            <div className="text-xs font-black uppercase text-slate-400">Tổng hợp</div>
+            <div className="text-xs text-slate-600 font-medium">
+              Tổng cộng: <strong className="text-slate-900">{pickList.totalSkus}</strong> đầu sách (
+              <strong className="text-indigo-600">{pickList.totalItemsToPick}</strong> cuốn)
+            </div>
+            <button
+              onClick={handlePrint}
+              className="w-full px-3 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <Printer className="w-3.5 h-3.5" /> In Phiếu Soạn
+            </button>
+          </>
+        ) : undefined
+      }
     >
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <PackageSearch className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Danh Sách Soạn Sách Kệ Kho</h3>
-              <p className="text-xs text-slate-500">
-                Gom nhóm sách theo thứ tự vị trí kệ để tối ưu đường đi soạn hàng
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs font-bold text-slate-700">Kho Soạn:</label>
+          <select
+            value={selectedWarehouseId}
+            onChange={(e) => {
+              setSelectedWarehouseId(e.target.value);
+              setPickList(null);
+            }}
+            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-medium outline-none"
           >
-            <X className="w-5 h-5" />
+            {warehouses.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            {loading ? 'Đang tạo...' : 'Tạo Pick List Tự Động'}
           </button>
         </div>
 
-        {/* Filter bar */}
-        <div className="p-4 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-bold text-slate-700">Kho Soạn:</label>
-            <select
-              value={selectedWarehouseId}
-              onChange={(e) => {
-                setSelectedWarehouseId(e.target.value);
-                setPickList(null);
-              }}
-              className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-medium outline-none"
-            >
-              {warehouses.map((wh) => (
-                <option key={wh.id} value={wh.id}>
-                  {wh.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              {loading ? 'Đang tạo...' : 'Tạo Pick List Tự Động'}
-            </button>
-          </div>
-
-          {pickList && (
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 font-medium">
-                Tổng cộng: <strong className="text-slate-900">{pickList.totalSkus}</strong> đầu sách (
-                <strong className="text-indigo-600">{pickList.totalItemsToPick}</strong> cuốn)
-              </span>
-              <button
-                onClick={handlePrint}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
-              >
-                <Printer className="w-3.5 h-3.5" /> In Phiếu Soạn
-              </button>
-            </div>
-          )}
-        </div>
-
         {/* Content Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-6">
+        <div className="space-y-6">
           {!pickList ? (
             <div className="text-center py-12 text-slate-400">
               <Layers className="w-12 h-12 mx-auto mb-3 text-slate-300 stroke-[1.5]" />
@@ -212,8 +191,6 @@ export function PickListModal({ isOpen, onClose, books, warehouses }: PickListMo
             ))
           )}
         </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

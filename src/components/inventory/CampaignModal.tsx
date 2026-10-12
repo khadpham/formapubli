@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Megaphone } from 'lucide-react';
-import { PortalToBody } from '../PortalToBody';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { Megaphone } from 'lucide-react';
+import Modal from '../ui/Modal';
 import { CampaignPanel } from './CampaignPanel';
 import { BatchTransferModal } from './BatchTransferModal';
 import type { UserRole } from '@/lib/roles';
@@ -45,9 +44,6 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
   useEffect(() => {
     setMounted(true);
   }, []);
-  const panelRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, () => {
-    if (!busy) onClose();
-  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -131,37 +127,19 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
   }
 
   return (
-    <PortalToBody
-      className="fixed inset-0 z-[90] bg-slate-950/70 flex items-start sm:items-center justify-center p-3 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!busy) onClose(); }}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2">
+          <Megaphone className="w-4 h-4 text-indigo-600" />
+          Chiến Dịch Bán Ngắn Hạn
+        </span>
+      }
     >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Chiến dịch bán ngắn hạn"
-        className="w-full max-w-[min(44rem,calc(100vw-1.5rem))] min-w-0 my-auto rounded-2xl bg-white shadow-2xl overflow-hidden"
-      >
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200">
-          <p className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-indigo-600" />
-            Chiến Dịch Bán Ngắn Hạn
-          </p>
-          <button
-            type="button"
-            aria-label="Đóng chiến dịch"
-            onClick={onClose}
-            disabled={busy}
-            className="shrink-0 min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
         {(
-          <div className="p-4 space-y-4 max-h-[min(40rem,80vh)] overflow-y-auto">
+          <div className="space-y-4">
             {msg && (
               <p role="status" className="text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-100 text-slate-700 break-words">
                 {msg}
@@ -330,7 +308,6 @@ export function CampaignModal({ isOpen, onClose, books, warehouses, currentRole 
             )}
           </div>
         )}
-      </div>
-    </PortalToBody>
+    </Modal>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import {
   FileText,
   Printer,
@@ -18,6 +17,7 @@ import {
   Edit3,
   Trash2,
 } from 'lucide-react';
+import Modal from '../ui/Modal';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint';
 
@@ -53,17 +53,6 @@ export function DeliveryOrdersLedger({
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!reversalTargetOrder) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isReversing) {
-        setReversalTargetOrder(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [reversalTargetOrder, isReversing]);
 
   const fetchOrders = async () => {
     try {
@@ -450,25 +439,19 @@ export function DeliveryOrdersLedger({
       </div>
 
       {/* Modal xác nhận Đảo bút toán hủy (Reversal) */}
-      {reversalTargetOrder && mounted && createPortal(
-        <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
-          onClick={(e) => { if (e.target === e.currentTarget && !isReversing) setReversalTargetOrder(null); }}
-        >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-rose-700">
-                <RotateCcw className="w-5 h-5" />
-                <h3 className="font-extrabold text-base text-slate-900">Đảo Bút Toán Hủy Phiếu</h3>
-              </div>
-              <button
-                onClick={() => setReversalTargetOrder(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                ✕
-              </button>
-            </div>
-
+      <Modal
+        open={!!reversalTargetOrder && mounted}
+        onClose={() => { if (!isReversing) setReversalTargetOrder(null); }}
+        size="sm"
+        title={
+          <span className="flex items-center gap-2 text-rose-700">
+            <RotateCcw className="w-5 h-5" />
+            <span className="text-slate-900">Đảo Bút Toán Hủy Phiếu</span>
+          </span>
+        }
+      >
+        {reversalTargetOrder && (
+          <>
             <div className="space-y-3 text-xs">
               <p className="text-slate-600 leading-relaxed">
                 Hệ thống sẽ giữ nguyên phiếu gốc{' '}
@@ -517,10 +500,9 @@ export function DeliveryOrdersLedger({
                 {isReversing ? 'Đang đảo sổ...' : 'Xác Nhận Đảo Hủy'}
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </>
+        )}
+      </Modal>
 
       {/* Modal In Phiếu Xuất Kho A4 */}
       {selectedOrderForPrint && (

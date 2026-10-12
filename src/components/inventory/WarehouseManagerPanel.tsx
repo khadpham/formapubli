@@ -10,9 +10,8 @@
  * - Không tràn ngang ở màn hình 320px-426px, vùng bấm >= 38px.
  */
 import { useEffect, useState } from 'react';
-import { X, Store, Power, PowerOff, Trash2, RefreshCw, AlertTriangle, Edit3, ArrowUp, ArrowDown, Check } from 'lucide-react';
-import { PortalToBody } from '../PortalToBody';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { Store, Power, PowerOff, Trash2, RefreshCw, AlertTriangle, Edit3, ArrowUp, ArrowDown, Check } from 'lucide-react';
+import Modal from '../ui/Modal';
 
 type Warehouse = {
   id: string;
@@ -136,11 +135,6 @@ export function WarehouseManagerPanel({
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  // Focus trap + phím thoát + khoá nền: dùng lại hook chung, không tự viết.
-  const panelRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, () => {
-    if (!busyId) onClose();
-  });
 
   const load = async () => {
     const j = await fetch('/api/warehouses?all=true&includeInactive=true', { cache: 'no-store' }).then((r) => r.json());
@@ -320,60 +314,35 @@ export function WarehouseManagerPanel({
   if (!isOpen) return null;
 
   return (
-    <PortalToBody
-      className="fixed inset-0 z-[90] bg-slate-950/70 flex items-start sm:items-center justify-center p-3 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busyId) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Danh sách kho"
-        className="w-full max-w-[min(34rem,calc(100vw-1.5rem))] min-w-0 my-auto rounded-2xl bg-white shadow-2xl overflow-hidden"
-      >
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200">
-          <div className="min-w-0">
-            <p className="text-xs font-extrabold text-slate-900 truncate">Quản Lý Kho Hàng</p>
-            <p className="text-[10px] text-slate-500 font-mono truncate">
-              {warehouses.length} kho ·{' '}
-              {warehouses.reduce((s, w) => s + Number(w.stockQuantity || 0), 0).toLocaleString('vi-VN')} cuốn
-            </p>
-          </div>
-          {(
-            <button
-              type="button"
-              onClick={toggleCreate}
-              aria-expanded={showCreate}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold transition-colors"
-            >
-              <Store className="w-3.5 h-3.5" /> Mở kho mới
-            </button>
-          )}
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!busyId) onClose(); }}
+      size="md"
+      title={
+        <span className="flex items-center gap-2">
+          Quản Lý Kho Hàng
           <button
             type="button"
-            aria-label="Đóng panel kho"
-            onClick={onClose}
-            disabled={Boolean(busyId)}
-            className="shrink-0 min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition disabled:opacity-50 cursor-pointer"
+            onClick={toggleCreate}
+            aria-expanded={showCreate}
+            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 rounded-lg text-xs font-bold transition-colors"
           >
-            <X className="w-4 h-4" />
+            <Store className="w-3.5 h-3.5" /> Mở kho mới
           </button>
-        </div>
-
+        </span>
+      }
+      subtitle={`${warehouses.length} kho · ${warehouses.reduce((s, w) => s + Number(w.stockQuantity || 0), 0).toLocaleString('vi-VN')} cuốn`}
+    >
         {notice && (
-          <p className="px-4 py-2 text-[11px] font-bold text-emerald-700 bg-emerald-50 break-words">
+          <p className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg break-words">
             {notice}
           </p>
         )}
         {error && (
-          <p className="px-4 py-2 text-[11px] font-bold text-rose-700 bg-rose-50 break-words">{error}</p>
+          <p className="text-[11px] font-bold text-rose-700 bg-rose-50 px-3 py-2 rounded-lg break-words">{error}</p>
         )}
 
-        <div className="p-3 space-y-2 max-h-[min(30rem,65vh)] overflow-y-auto">
+        <div className="space-y-2">
           {showCreate && (
             <form
               onSubmit={submitCreate}
@@ -685,7 +654,6 @@ export function WarehouseManagerPanel({
             </span>
           </div>
         </div>
-      </div>
-    </PortalToBody>
+    </Modal>
   );
 }

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { X, ShieldAlert, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react';
+import Modal from '../ui/Modal';
 
 interface RmaTicketModalProps {
   isOpen: boolean;
@@ -38,15 +38,6 @@ export function RmaTicketModal({
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, submitting, onClose]);
 
   if (!isOpen || !mounted) return null;
 
@@ -89,35 +80,23 @@ export function RmaTicketModal({
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
-      onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}
+  return (
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!submitting) onClose(); }}
+      size="md"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+            <ShieldAlert className="w-4 h-4" />
+          </span>
+          Cách Ly Sách Lỗi & Đổi Trả
+        </span>
+      }
+      subtitle="Chuyển sách hỏng vào kho cách ly, tuyệt đối không lẫn vào tồn NEW"
     >
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-rose-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Cách Ly Sách Lỗi & Đổi Trả</h3>
-              <p className="text-xs text-slate-500">
-                Chuyển sách hỏng vào kho cách ly, tuyệt đối không lẫn vào tồn NEW
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {errorMsg && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -237,8 +216,6 @@ export function RmaTicketModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
