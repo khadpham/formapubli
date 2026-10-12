@@ -52,15 +52,19 @@ export default function ActionBar({ actions, className, maxVisible }: ActionBarP
     if (!container || !measure) return;
 
     const containerWidth = container.clientWidth;
+    const isMobile = window.innerWidth < 640;
+    // Mobile: ưu tiên gọn - chỉ hiện tối đa 2 nút quan trọng nhất, còn lại vào dropdown
+    // vì màn hình hẹp và ngón tay cần nút lớn dễ bấm
+    const mobileMax = 2;
     const buttons = measure.children;
-    // Trừ chỗ cho nút "Thêm" (khoảng 48px) nếu cần dropdown
     const moreBtnWidth = 48;
     let used = 0;
     let count = 0;
+    const limit = isMobile ? Math.min(mobileMax, buttons.length) : buttons.length;
 
-    for (let i = 0; i < buttons.length; i++) {
-      const w = (buttons[i] as HTMLElement).offsetWidth + 8; // + gap
-      const needMore = i < buttons.length - 1; // còn nút phía sau?
+    for (let i = 0; i < limit; i++) {
+      const w = (buttons[i] as HTMLElement).offsetWidth + 8;
+      const needMore = i < buttons.length - 1;
       if (used + w + (needMore ? moreBtnWidth : 0) <= containerWidth) {
         used += w;
         count++;
@@ -69,8 +73,6 @@ export default function ActionBar({ actions, className, maxVisible }: ActionBarP
       }
     }
 
-    // Đảm bảo ít nhất 1 nút hiện (không để trống trơn)
-    // Nếu chỉ vừa đúng 1 nút + dropdown thì hiện 1 nút đó
     setVisibleCount(Math.max(1, count));
   }, [sorted.length, maxVisible]);
 
