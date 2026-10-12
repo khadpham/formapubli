@@ -390,6 +390,7 @@ function ReceiptContent({
 export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: DeliveryReceiptPrintProps) {
   const [mounted, setMounted] = useState(false);
   const [qrSvgXml, setQrSvgXml] = useState<string>('');
+  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileState>({
     tenCongTy: 'FORMApubli',
     diaChi: '177 Phố Huế, P. Phố Huế, Q. Hai Bà Trưng, Hà Nội',
@@ -456,8 +457,6 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
   const handlePrint = () => {
     window.print();
   };
-
-  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
 
   const handleDeleteDraft = async () => {
     if (!onDeleteDraft || order.status !== 'DRAFT' || isDeletingDraft) return;
