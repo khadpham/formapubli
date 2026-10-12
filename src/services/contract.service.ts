@@ -18,6 +18,7 @@ import { withDbRetry } from '../lib/db-retry';
 import { ContractEngineService } from './contract-engine.service';
 import { readVietnameseNumber } from '../lib/vietnamese-number-reader';
 import { vnDayOf } from '../lib/vn-time';
+import { COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EMAIL, COMPANY_HOTLINE } from '../lib/companyInfo';
 
 const PREFIX_MAP: Record<string, string> = {
   TAC_QUYEN: 'HĐXB',
@@ -75,12 +76,13 @@ export class ContractService {
   static async getAutoFillData(params: { partnerId?: string; workId?: string; editionId?: string }) {
     const out: Record<string, any> = {};
     const [profile] = await db.select().from(contractCompanyProfile).where(eq(contractCompanyProfile.id, 'main')).limit(1);
-    out.ben_a_ten = profile?.tenCongTy ?? 'FORMApubli';
+    out.ben_a_ten = profile?.tenCongTy || COMPANY_NAME;
     out.ben_a_dai_dien = profile?.daiDien ?? '';
     out.ben_a_chuc_vu = profile?.chucVu ?? '';
-    out.ben_a_dia_chi = profile?.diaChi ?? '';
+    out.ben_a_dia_chi = profile?.diaChi || COMPANY_ADDRESS;
     out.ben_a_mst = profile?.mst ?? '';
-    out.ben_a_sdt = profile?.sdt ?? '';
+    out.ben_a_sdt = profile?.sdt || COMPANY_HOTLINE;
+    out.ben_a_email = profile?.email || COMPANY_EMAIL;
     const [bank] = await db.select().from(bankAccounts).where(eq(bankAccounts.isActive, true as any)).limit(1);
     out.ben_a_tk_ngan_hang = (bank as any)?.accountNo ?? '';
     out.ben_a_ngan_hang = (bank as any)?.label ?? '';
@@ -291,15 +293,39 @@ export class ContractService {
 
   static async getCompanyProfile() {
     const [row] = await db.select().from(contractCompanyProfile).where(eq(contractCompanyProfile.id, 'main')).limit(1);
-    return row ?? null;
+    if (!row) {
+      return {
+        id: 'main',
+        tenCongTy: COMPANY_NAME,
+        daiDien: 'Phạm Đam Ca',
+        chucVu: 'Giám đốc',
+        diaChi: COMPANY_ADDRESS,
+        mst: null,
+        sdt: COMPANY_HOTLINE,
+        email: COMPANY_EMAIL,
+        updatedAt: null,
+      };
+    }
+    return {
+      ...row,
+      tenCongTy: row.tenCongTy || COMPANY_NAME,
+      diaChi: row.diaChi || COMPANY_ADDRESS,
+      email: row.email || COMPANY_EMAIL,
+      sdt: row.sdt || COMPANY_HOTLINE,
+    };
   }
 
   static async updateCompanyProfile(patch: {
     tenCongTy?: string; daiDien?: string | null; chucVu?: string | null;
     diaChi?: string | null; mst?: string | null; sdt?: string | null; email?: string | null;
   }) {
-    await db.insert(contractCompanyProfile).values({ id: 'main', tenCongTy: 'FORMApubli' })
-      .onConflictDoNothing({ target: contractCompanyProfile.id });
+    await db.insert(contractCompanyProfile).values({
+      id: 'main',
+      tenCongTy: COMPANY_NAME,
+      diaChi: COMPANY_ADDRESS,
+      email: COMPANY_EMAIL,
+      sdt: COMPANY_HOTLINE,
+    }).onConflictDoNothing({ target: contractCompanyProfile.id });
     const clean: Record<string, any> = {};
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined) continue;

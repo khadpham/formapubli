@@ -111,12 +111,38 @@ async function main() {
   );
 
   ok(
-    /import \{ COMPANY_HOTLINE \} from '@\/lib\/companyInfo'/.test(deliverySrc),
+    /import \{[^}]*COMPANY_HOTLINE[^}]*\} from '@\/lib\/companyInfo'/.test(deliverySrc),
     'DeliveryReceiptPrint phải import COMPANY_HOTLINE từ @/lib/companyInfo'
   );
   ok(
     /Hotline: \{(?:companyProfile\.sdt \|\| )?COMPANY_HOTLINE\}/.test(deliverySrc),
     'phiếu A4 giao hàng phải in số hotline lấy từ hằng dùng chung'
+  );
+
+  // ---------- 3. ĐỊA CHỈ & EMAIL DÙNG CHUNG ----------
+  ok(
+    companyInfo.COMPANY_ADDRESS === 'Số 57A, ngõ 77, đường 8-3, Phường Bạch Mai, Thành phố Hà Nội, Việt Nam',
+    'src/lib/companyInfo.ts phải export COMPANY_ADDRESS = "Số 57A, ngõ 77, đường 8-3, Phường Bạch Mai, Thành phố Hà Nội, Việt Nam"'
+  );
+  ok(
+    companyInfo.COMPANY_EMAIL === 'xinchao@formapubli.vn',
+    'src/lib/companyInfo.ts phải export COMPANY_EMAIL = "xinchao@formapubli.vn"'
+  );
+  ok(
+    /import \{[^}]*COMPANY_ADDRESS[^}]*\} from '@\/lib\/companyInfo'/.test(deliverySrc),
+    'DeliveryReceiptPrint phải import COMPANY_ADDRESS từ @/lib/companyInfo'
+  );
+  ok(
+    /import \{[^}]*COMPANY_EMAIL[^}]*\} from '@\/lib\/companyInfo'/.test(deliverySrc),
+    'DeliveryReceiptPrint phải import COMPANY_EMAIL từ @/lib/companyInfo'
+  );
+  ok(
+    /import \{[^}]*COMPANY_ADDRESS[^}]*\} from '\.\/companyInfo'/.test(thermalSrc),
+    'thermalReceipt phải import COMPANY_ADDRESS từ companyInfo'
+  );
+  ok(
+    /import \{[^}]*COMPANY_EMAIL[^}]*\} from '\.\/companyInfo'/.test(thermalSrc),
+    'thermalReceipt phải import COMPANY_EMAIL từ companyInfo'
   );
 
   // Quét toàn repo (trừ CSV dữ liệu khách, node_modules, .next, scripts): không

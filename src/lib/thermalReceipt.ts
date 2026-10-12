@@ -8,7 +8,7 @@
  * 3. Native support for K80 (80mm continuous roll) and K57 (57mm mini roll) paper widths.
  */
 
-import { COMPANY_HOTLINE } from './companyInfo';
+import { COMPANY_HOTLINE, COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EMAIL } from './companyInfo';
 
 export type PaperPreset = 'K80' | 'K57';
 
@@ -196,9 +196,10 @@ export function printThermalReceipt(
     <body>
       <div class="container">
         <div class="text-center">
-          <div style="font-size: ${headerFontSize}; font-weight: 900; letter-spacing: 0.5px;">FORMApubli</div>
+          <div style="font-size: ${headerFontSize}; font-weight: 900; letter-spacing: 0.5px;">${COMPANY_NAME}</div>
           <div style="font-size: 9px; font-weight: 500;">HỆ THỐNG XUẤT BẢN & PHÁT HÀNH SÁCH</div>
-          <div style="font-size: 9px;">Hotline: ${COMPANY_HOTLINE} | Hà Nội</div>
+          <div style="font-size: 8px; line-height: 1.3; margin: 2px 0;">${COMPANY_ADDRESS}</div>
+          <div style="font-size: 8.5px;">Hotline: ${COMPANY_HOTLINE} | Email: ${COMPANY_EMAIL}</div>
           <div class="divider-solid"></div>
           <div style="font-size: ${baseFontSize}; font-weight: 800; text-transform: uppercase;">PHIẾU BÁN HÀNG & GIAO KHO</div>
           <div style="font-size: 9px; font-style: italic;">

@@ -2,17 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EMAIL, COMPANY_HOTLINE } from '@/lib/companyInfo';
 
 /** Sửa thông tin công ty Bên A (8 trường, seed sẵn Phạm Đam Ca / Giám đốc). */
 export function CompanyProfileForm({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState({
-    tenCongTy: 'FORMApubli',
+    tenCongTy: COMPANY_NAME,
     daiDien: '',
     chucVu: 'Giám đốc',
-    diaChi: '',
+    diaChi: COMPANY_ADDRESS,
     mst: '',
-    sdt: '',
-    email: '',
+    sdt: COMPANY_HOTLINE,
+    email: COMPANY_EMAIL,
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -26,13 +27,13 @@ export function CompanyProfileForm({ onClose }: { onClose: () => void }) {
         if (!json.success) throw new Error(json.error);
         if (json.data) {
           setForm({
-            tenCongTy: json.data.tenCongTy || 'FORMApubli',
+            tenCongTy: json.data.tenCongTy || COMPANY_NAME,
             daiDien: json.data.daiDien || '',
             chucVu: json.data.chucVu || 'Giám đốc',
-            diaChi: json.data.diaChi || '',
+            diaChi: json.data.diaChi || COMPANY_ADDRESS,
             mst: json.data.mst || '',
-            sdt: json.data.sdt || '',
-            email: json.data.email || '',
+            sdt: json.data.sdt || COMPANY_HOTLINE,
+            email: json.data.email || COMPANY_EMAIL,
           });
         }
       } catch (e: any) {
