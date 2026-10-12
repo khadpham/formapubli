@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Package,
   Plus,
   Pencil,
   Save,
-  X,
   Search,
   Ban,
   PlayCircle,
   AlertTriangle,
   Gift,
 } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 
 const GOODS_CODE_PREFIX = 'SP-';
 
@@ -132,7 +131,6 @@ function GoodsFormModal({ isOpen, row, onClose, onSaved }: GoodsFormModalProps) 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const isEditing = !!row;
 
   useEffect(() => {
@@ -156,16 +154,10 @@ function GoodsFormModal({ isOpen, row, onClose, onSaved }: GoodsFormModalProps) 
     );
   }, [isOpen, row]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSubmitting, onClose]);
-
-  if (!isOpen || !mounted) return null;
+  // Đóng modal bị chặn khi đang submit. ESC do Modal wrapper xử lý.
+  const guardedClose = () => {
+    if (!isSubmitting) onClose();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,33 +235,20 @@ function GoodsFormModal({ isOpen, row, onClose, onSaved }: GoodsFormModalProps) 
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting) onClose();
-      }}
+  return (
+    <Modal
+      open={isOpen}
+      onClose={guardedClose}
+      size="sm"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <Package className="w-5 h-5" />
+          </span>
+          <span>{isEditing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}</span>
+        </span>
+      }
     >
-      <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 my-8">
-        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <Package className="w-5 h-5" />
-            </div>
-            <h3 className="font-extrabold text-base text-slate-900">
-              {isEditing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            aria-label="Đóng"
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
         {error && (
           <div
@@ -423,7 +402,7 @@ function GoodsFormModal({ isOpen, row, onClose, onSaved }: GoodsFormModalProps) 
           <div className="flex gap-2 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={guardedClose}
               disabled={isSubmitting}
               className="flex-1 min-h-11 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition disabled:opacity-50"
             >
@@ -440,9 +419,7 @@ function GoodsFormModal({ isOpen, row, onClose, onSaved }: GoodsFormModalProps) 
             </button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 

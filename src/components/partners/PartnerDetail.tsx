@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Pencil } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
+import Modal from '@/components/ui/Modal';
 
 export interface PartnerDetailInfo {
   id: string;
@@ -119,40 +120,31 @@ export function PartnerDetail({ partner, onClose, onUpdated, currentRole = 'ROLE
   const stockTotal = stock.reduce((s, r) => s + Number(r.quantity || 0), 0);
 
   return (
-    <div
-      className="fixed inset-0 z-[70] bg-slate-900/70 flex items-center justify-center p-4 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-          <div>
-            <h3 className="font-extrabold text-sm text-slate-900">
-              [{partner.code}] {partner.name}
-            </h3>
-            <p className="text-[11px] text-slate-500">
-              {partner.type} • CK cố định {Math.round((partner.discountRate || 0) * 100)}%
-            </p>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {canEdit(currentRole) && !isEditing && (
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                title="Sửa toàn bộ hồ sơ đại lý"
-                aria-label="Sửa toàn bộ hồ sơ đại lý"
-                className="p-1.5 text-slate-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-            )}
-            <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Đóng hồ sơ đại lý">
-              <X className="w-5 h-5" />
+    <Modal
+      open={true}
+      onClose={onClose}
+      size="md"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="truncate">
+            [{partner.code}] {partner.name}
+          </span>
+          {canEdit(currentRole) && !isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              title="Sửa toàn bộ hồ sơ đại lý"
+              aria-label="Sửa toàn bộ hồ sơ đại lý"
+              className="p-1.5 text-slate-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg shrink-0"
+            >
+              <Pencil className="w-4 h-4" />
             </button>
-          </div>
-        </div>
-        <div className="p-5 space-y-5 overflow-y-auto text-xs">
+          )}
+        </span>
+      }
+      subtitle={`${partner.type} • CK cố định ${Math.round((partner.discountRate || 0) * 100)}%`}
+    >
+      <div className="text-xs">
           {errorMessage && (
             <p className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-semibold">{errorMessage}</p>
           )}
@@ -271,8 +263,7 @@ export function PartnerDetail({ partner, onClose, onUpdated, currentRole = 'ROLE
               </ul>
             )}
           </section>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, ArrowUp, ArrowDown, Plus, Trash2 } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
+import { ArrowUp, ArrowDown, Plus, Trash2 } from 'lucide-react';
 
 /** Quản lý preset lựa chọn nhanh (D11): CRUD + sắp xếp + bật/tắt. */
 export function PresetManagerModal({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
@@ -98,63 +99,61 @@ export function PresetManagerModal({ onClose, onChanged }: { onClose: () => void
   };
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-900/70 flex items-center justify-center p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="px-5 py-3 border-b flex items-center justify-between shrink-0">
-          <h3 className="font-extrabold text-sm">Quản lý preset lựa chọn nhanh</h3>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Đóng quản lý preset">
-            <X className="w-5 h-5" />
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title="Quản lý preset lựa chọn nhanh"
+      actions={
+        <>
+          <div className="text-xs font-black uppercase text-slate-400 mb-1">Thao tác</div>
+          <button type="button" onClick={save} className="w-full px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold text-xs">
+            <Plus className="w-3.5 h-3.5 inline mr-1" />{editingId ? 'Lưu sửa' : 'Thêm preset'}
           </button>
-        </div>
-        <div className="p-5 space-y-3 overflow-y-auto text-xs">
-          {errorMessage && <p className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-semibold">{errorMessage}</p>}
-          <div className="grid grid-cols-1 gap-2 bg-slate-50 border rounded-2xl p-3">
-            <label className="block">Nhãn preset
-              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="VD: Giám đốc - Phạm Đam Ca" className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white" />
-            </label>
-            <label className="block">Giá trị (JSON: tên biến → nội dung)
-              <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} rows={3} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none font-mono bg-white" />
-            </label>
-            <div className="flex gap-2">
-              <button type="button" onClick={save} className="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold">
-                <Plus className="w-3.5 h-3.5 inline mr-1" />{editingId ? 'Lưu sửa' : 'Thêm preset'}
-              </button>
-              {editingId && (
-                <button type="button" onClick={() => { setEditingId(null); setLabel(''); setValuesText('{}'); }} className="px-3 py-1.5 text-slate-500 font-bold">Hủy</button>
-              )}
-            </div>
-          </div>
-          <ul className="space-y-1.5">
-            {presets.map((p: any) => (
-              <li key={p.id} className={`flex items-center gap-2 border rounded-xl px-3 py-2 ${p.isActive ? 'bg-white' : 'bg-slate-100 opacity-70'}`}>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold truncate">{p.label}</p>
-                  <p className="font-mono text-[10px] text-slate-500 truncate">{p.valuesJson}</p>
-                </div>
-                <button type="button" onClick={() => move(p.id, -1)} className="p-1 text-slate-400 hover:text-slate-700" aria-label={`Đưa ${p.label} lên trên`}><ArrowUp className="w-3.5 h-3.5" /></button>
-                <button type="button" onClick={() => move(p.id, 1)} className="p-1 text-slate-400 hover:text-slate-700" aria-label={`Đưa ${p.label} xuống dưới`}><ArrowDown className="w-3.5 h-3.5" /></button>
-                <button
-                  type="button"
-                  onClick={() => { setEditingId(p.id); setLabel(p.label); setValuesText(p.valuesJson); }}
-                  className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg font-bold"
-                >
-                  Sửa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleActive(p)}
-                  className="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded-lg font-bold"
-                >
-                  {p.isActive ? 'Tắt' : 'Bật'}
-                </button>
-                <button type="button" onClick={() => remove(p.id, p.label)} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg" aria-label={`Xóa preset ${p.label}`}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+          {editingId && (
+            <button type="button" onClick={() => { setEditingId(null); setLabel(''); setValuesText('{}'); }} className="w-full px-3 py-2 text-slate-500 font-bold text-xs">Hủy sửa</button>
+          )}
+        </>
+      }
+    >
+      {errorMessage && <p className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-semibold text-xs">{errorMessage}</p>}
+      <div className="grid grid-cols-1 gap-2 bg-slate-50 border rounded-2xl p-3 text-xs">
+        <label className="block">Nhãn preset
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="VD: Giám đốc - Phạm Đam Ca" className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white" />
+        </label>
+        <label className="block">Giá trị (JSON: tên biến → nội dung)
+          <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} rows={3} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none font-mono bg-white" />
+        </label>
       </div>
-    </div>
+      <ul className="space-y-1.5 text-xs">
+        {presets.map((p: any) => (
+          <li key={p.id} className={`flex items-center gap-2 border rounded-xl px-3 py-2 ${p.isActive ? 'bg-white' : 'bg-slate-100 opacity-70'}`}>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold truncate">{p.label}</p>
+              <p className="font-mono text-[10px] text-slate-500 truncate">{p.valuesJson}</p>
+            </div>
+            <button type="button" onClick={() => move(p.id, -1)} className="p-1 text-slate-400 hover:text-slate-700" aria-label={`Đưa ${p.label} lên trên`}><ArrowUp className="w-3.5 h-3.5" /></button>
+            <button type="button" onClick={() => move(p.id, 1)} className="p-1 text-slate-400 hover:text-slate-700" aria-label={`Đưa ${p.label} xuống dưới`}><ArrowDown className="w-3.5 h-3.5" /></button>
+            <button
+              type="button"
+              onClick={() => { setEditingId(p.id); setLabel(p.label); setValuesText(p.valuesJson); }}
+              className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg font-bold"
+            >
+              Sửa
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleActive(p)}
+              className="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded-lg font-bold"
+            >
+              {p.isActive ? 'Tắt' : 'Bật'}
+            </button>
+            <button type="button" onClick={() => remove(p.id, p.label)} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg" aria-label={`Xóa preset ${p.label}`}>
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Modal>
   );
 }

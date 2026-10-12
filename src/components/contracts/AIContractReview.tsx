@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { ScanSearch, X, Loader2, Upload, ClipboardPaste } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
+import { ScanSearch, Loader2, Upload, ClipboardPaste } from 'lucide-react';
 
 const CATEGORIES = [
   { value: 'THUE_DIA_DIEM_SK', label: 'Thuê địa điểm sự kiện' },
@@ -96,18 +97,38 @@ export function AIContractReview({ onClose }: { onClose: () => void }) {
   const canRun = mode === 'file' ? !!fileBase64 : text.trim().length > 20;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-label="AI đọc và phản biện hợp đồng">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <ScanSearch className="w-5 h-5 text-violet-600" />AI Đọc & Phản Biện
-          </h2>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" aria-label="Đóng">
-            <X className="w-5 h-5" />
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={<span className="flex items-center gap-2"><ScanSearch className="w-5 h-5 text-violet-600" />AI Đọc & Phản Biện</span>}
+      actions={
+        <>
+          <div className="text-xs font-black uppercase text-slate-400 mb-1">Thao tác</div>
+          <button type="button" disabled={loading || !canRun} onClick={doAnalyze}
+            className="w-full px-4 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+            aria-label="AI tóm tắt hợp đồng">
+            {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'Tóm Tắt'}
           </button>
-        </div>
-
-        <div className="flex gap-2 mb-4">
+          {analysis && (
+            <>
+              <label className="block text-xs font-bold">Loại hợp đồng để phản biện
+                <select value={category} onChange={(e) => setCategory(e.target.value)}
+                  className="mt-1 w-full border rounded-xl px-3 py-2 text-sm bg-white" aria-label="Loại hợp đồng">
+                  {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </label>
+              <button type="button" disabled={loading} onClick={doReview}
+                className="w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+                aria-label="AI phản biện hợp đồng">
+                {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'Phản Biện'}
+              </button>
+            </>
+          )}
+        </>
+      }
+    >
+        <div className="flex gap-2">
           <button type="button" onClick={() => setMode('file')}
             className={`px-4 py-2 rounded-xl text-xs font-bold ${mode === 'file' ? 'bg-violet-600 text-white' : 'bg-slate-100'}`}
             aria-label="Tải file lên">
@@ -131,18 +152,10 @@ export function AIContractReview({ onClose }: { onClose: () => void }) {
             className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Văn bản hợp đồng" />
         )}
 
-        <div className="flex gap-2 mt-3">
-          <button type="button" disabled={loading || !canRun} onClick={doAnalyze}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-            aria-label="AI tóm tắt hợp đồng">
-            {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'Tóm Tắt'}
-          </button>
-        </div>
-
-        {error && <p className="text-rose-600 text-xs mt-3 font-bold">{error}</p>}
+        {error && <p className="text-rose-600 text-xs font-bold">{error}</p>}
 
         {analysis && (
-          <div className="mt-4 border rounded-xl p-4 bg-slate-50">
+          <div className="border rounded-xl p-4 bg-slate-50">
             <p className="font-bold text-sm mb-2">📋 {analysis.contractType}</p>
             <p className="text-xs mb-1"><b>Các bên:</b> {analysis.parties.join(' - ')}</p>
             {analysis.valueText && <p className="text-xs mb-1"><b>Giá trị:</b> {analysis.valueText}</p>}
@@ -153,26 +166,11 @@ export function AIContractReview({ onClose }: { onClose: () => void }) {
               </div>
             )}
             <p className="text-xs mt-2">{analysis.summary}</p>
-
-            <div className="mt-3 pt-3 border-t">
-              <label className="block text-xs font-bold mb-1">Loại hợp đồng để phản biện</label>
-              <div className="flex gap-2">
-                <select value={category} onChange={(e) => setCategory(e.target.value)}
-                  className="flex-1 border rounded-xl px-3 py-2 text-sm" aria-label="Loại hợp đồng">
-                  {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-                <button type="button" disabled={loading} onClick={doReview}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-                  aria-label="AI phản biện hợp đồng">
-                  {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'Phản Biện'}
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
         {issues && (
-          <div className="mt-4">
+          <div>
             <p className="text-xs text-amber-700 font-bold mb-2">⚠️ {disclaimer}</p>
             {issues.map((issue, i) => (
               <div key={i} className="border rounded-xl p-3 mb-2">
@@ -185,7 +183,6 @@ export function AIContractReview({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

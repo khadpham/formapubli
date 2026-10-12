@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Zap } from 'lucide-react';
+import { Zap } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 import { UserRole } from '@/lib/roles';
 import { readVietnameseNumber } from '@/lib/vietnamese-number-reader';
 import { ContractPrintPreview } from './ContractPrintPreview';
@@ -192,21 +193,19 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
   );
 
   return (
-    <div className="fixed inset-0 z-[70] bg-slate-900/70 flex items-center justify-center p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl max-w-6xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
-        <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
-          <h3 className="font-extrabold text-sm">
-            {initialDoc ? `Sửa hợp đồng ${initialDoc.contractNumber}` : 'Soạn hợp đồng mới'}
-          </h3>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Đóng soạn hợp đồng">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        size="xl"
+        title={initialDoc ? `Sửa hợp đồng ${initialDoc.contractNumber}` : 'Soạn hợp đồng mới'}
+        subtitle="Soạn 2 cột: form biến + xem trước trực tiếp"
+      >
         {errorMessage && (
-          <p className="mx-5 mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold">{errorMessage}</p>
+          <p className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold">{errorMessage}</p>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 flex-1 overflow-hidden">
-          <div className="p-5 space-y-3 overflow-y-auto text-xs border-r border-slate-200">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-3 text-xs lg:max-h-[62vh] lg:overflow-y-auto lg:pr-2">
             <div className="grid grid-cols-2 gap-2">
               <label className="block">Mẫu
                 <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white">
@@ -291,18 +290,18 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
               {isSaving ? 'Đang lưu...' : initialDoc ? 'Lưu thay đổi' : 'Lưu nháp'}
             </button>
           </div>
-          <div className="p-5 overflow-y-auto bg-slate-100">
+          <div className="bg-slate-100 rounded-xl p-4 lg:max-h-[62vh] lg:overflow-y-auto">
             <p className="text-[11px] text-slate-500 mb-2">Xem trước trực tiếp (xấp xỉ - bản in chuẩn là file Word tải về)</p>
             {previewError && <p className="text-[11px] text-rose-600 font-semibold mb-2">{previewError}</p>}
             <ContractPrintPreview previewRef={previewBox} />
           </div>
         </div>
-      </div>
+      </Modal>
       {presetOpen && <PresetManagerModal onClose={() => setPresetOpen(false)} onChanged={async () => {
         const res = await fetch('/api/contracts/presets');
         const json = await res.json();
         if (json.success) setPresets(json.data.active || []);
       }} />}
-    </div>
+    </>
   );
 }

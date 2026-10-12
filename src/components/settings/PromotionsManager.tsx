@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Plus, Pencil, Save, X, AlertTriangle, ToggleRight, ToggleLeft, Gift } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
+import { Plus, Pencil, Save, AlertTriangle, ToggleRight, ToggleLeft, Gift } from 'lucide-react';
 import { giftValueWarning } from '@/lib/promotion-engine';
 import { normalizePrice, formatPriceInput } from '@/components/products/GoodsCatalogManager';
 
@@ -89,9 +89,11 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
   const [tiers, setTiers] = useState<TierForm[]>(EMPTY_TIERS);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  // Đóng modal bị chặn khi đang submit. ESC do Modal wrapper xử lý.
+  const guardedClose = () => {
+    if (!isSubmitting) onClose();
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,17 +120,6 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
       setTiers(EMPTY_TIERS);
     }
   }, [isOpen, row]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, isSubmitting, onClose]);
-
-  if (!isOpen || !mounted) return null;
 
   const updateTier = (ti: number, patch: Partial<TierForm>) =>
     setTiers(tiers.map((t, idx) => (idx === ti ? { ...t, ...patch } : t)));
@@ -243,28 +234,13 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting) onClose();
-      }}
+  return (
+    <Modal
+      open={isOpen}
+      onClose={guardedClose}
+      size="sm"
+      title={row ? 'Sửa chương trình' : 'Thêm chương trình khuyến mại'}
     >
-      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 my-8">
-        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
-          <h3 className="font-extrabold text-base text-slate-900">
-            {row ? 'Sửa chương trình' : 'Thêm chương trình khuyến mại'}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            aria-label="Đóng"
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
         {error && (
           <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs font-semibold">
@@ -433,7 +409,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
           <div className="flex gap-2 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={guardedClose}
               disabled={isSubmitting}
               className="flex-1 min-h-11 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition disabled:opacity-50"
             >
@@ -450,9 +426,7 @@ function PromoFormModal({ isOpen, row, products, warehouses, onClose, onSaved }:
             </button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Wand2, X, Loader2, Check, Ban } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
+import { Wand2, Loader2, Check, Ban } from 'lucide-react';
 
 interface Template {
   id: string;
@@ -99,17 +100,40 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-label="Soạn hợp đồng thông minh bằng AI">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <Wand2 className="w-5 h-5 text-violet-600" />Soạn Thông Minh
-          </h2>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" aria-label="Đóng">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={<span className="flex items-center gap-2"><Wand2 className="w-5 h-5 text-violet-600" />Soạn Thông Minh</span>}
+      subtitle={step === 1 ? 'Bước 1/3: Nhập thông tin' : step === 2 ? 'Bước 2/3: Duyệt đề xuất AI' : 'Bước 3/3: Hoàn tất'}
+      actions={
+        <>
+          <div className="text-xs font-black uppercase text-slate-400 mb-1">Thao tác</div>
+          {step === 1 && (
+            <button type="button" disabled={loading || !templateId} onClick={doDraft}
+              className="w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+              aria-label="AI soạn thảo">
+              {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'AI Soạn Thảo'}
+            </button>
+          )}
+          {step === 2 && (
+            <>
+              <button type="button" disabled={loading} onClick={doFinalize}
+                className="w-full px-4 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+                aria-label="Chốt thành hợp đồng">
+                {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'Chốt Thành Hợp Đồng'}
+              </button>
+              <button type="button" onClick={() => setStep(1)}
+                className="w-full px-4 py-2 bg-slate-100 rounded-xl text-xs font-bold" aria-label="Quay lại">Quay Lại</button>
+            </>
+          )}
+          {step === 3 && (
+            <button type="button" onClick={onClose}
+              className="w-full px-4 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-bold" aria-label="Xong">Xong</button>
+          )}
+        </>
+      }
+    >
         {step === 1 && (
           <>
             <label className="block text-xs font-bold mb-1">Chọn mẫu</label>
@@ -129,12 +153,7 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
             ))}
             <label className="block text-xs font-bold mb-1 mt-3">Ghi chú tình huống (VD: chiết khấu 10%, giao 2 đợt…)</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
-              className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Ghi chú tình huống" />
-            <button type="button" disabled={loading || !templateId} onClick={doDraft}
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-              aria-label="AI soạn thảo">
-              {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'AI Soạn Thảo'}
-            </button>
+              className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Ghi chú tình huống" />
           </>
         )}
 
@@ -159,16 +178,7 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
             )) : <p className="text-xs text-slate-500 mb-3">AI không đề xuất điều chỉnh nào.</p>}
             <label className="block text-xs font-bold mb-1">Tiêu đề hợp đồng</label>
             <input value={title} onChange={(e) => setTitle(e.target.value)}
-              className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Tiêu đề hợp đồng" />
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setStep(1)}
-                className="px-4 py-2 bg-slate-100 rounded-xl text-xs font-bold" aria-label="Quay lại">Quay Lại</button>
-              <button type="button" disabled={loading} onClick={doFinalize}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-                aria-label="Chốt thành hợp đồng">
-                {loading ? <Loader2 className="w-4 h-4 inline animate-spin" /> : 'Chốt Thành Hợp Đồng'}
-              </button>
-            </div>
+              className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Tiêu đề hợp đồng" />
           </>
         )}
 
@@ -176,13 +186,10 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
           <div className="text-center py-8">
             <p className="text-lg font-bold text-teal-700">Đã tạo hợp đồng {contractNumber}</p>
             <p className="text-xs text-slate-500 mt-2">Xem và ký trong danh sách hợp đồng.</p>
-            <button type="button" onClick={onClose}
-              className="mt-4 px-4 py-2 bg-violet-600 text-white rounded-xl text-xs font-bold" aria-label="Xong">Xong</button>
           </div>
         )}
 
         {error && <p className="text-rose-600 text-xs mt-3 font-bold">{error}</p>}
-      </div>
-    </div>
+    </Modal>
   );
 }
