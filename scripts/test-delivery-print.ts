@@ -119,6 +119,11 @@ async function run() {
   assert.ok(!strayHooks || strayHooks.length === 0, `Có hook sau early return: ${strayHooks?.join(', ')}`);
   console.log('✓ Tuân thủ React Rules of Hooks: toàn bộ hooks khai báo trước early return');
 
+  // 6. Thông tin công ty: dùng hằng số dùng chung COMPANY_ADDRESS & COMPANY_EMAIL
+  assert.ok(src.includes('COMPANY_ADDRESS'), 'Mẫu in phải dùng COMPANY_ADDRESS');
+  assert.ok(src.includes('COMPANY_EMAIL'), 'Mẫu in phải dùng COMPANY_EMAIL');
+  console.log('✓ Thông tin công ty chuẩn hoá: dùng COMPANY_ADDRESS và COMPANY_EMAIL từ @/lib/companyInfo');
+
   console.log('🎉 TOÀN BỘ TEST DELIVERY PRINT PASS!');
 }
 

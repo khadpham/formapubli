@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, Trash2, X } from 'lucide-react';
 import { BrowserQRCodeSvgWriter } from '@zxing/library';
-import { COMPANY_HOTLINE } from '@/lib/companyInfo';
+import { COMPANY_HOTLINE, COMPANY_NAME, COMPANY_ADDRESS, COMPANY_EMAIL } from '@/lib/companyInfo';
 
 export interface DeliveryOrderItemDetail {
   id: string;
@@ -132,13 +132,13 @@ function ReceiptContent({
       <div className="flex justify-between items-start border-b border-slate-300 pb-4 mb-4">
         <div className="space-y-0.5">
           <h4 className="font-black text-sm tracking-wider uppercase text-slate-900">
-            {companyProfile.tenCongTy || 'FORMApubli'}
+            {companyProfile.tenCongTy || COMPANY_NAME}
           </h4>
           <p className="text-[11px] text-slate-600">
-            Địa chỉ: {companyProfile.diaChi || '177 Phố Huế, P. Phố Huế, Q. Hai Bà Trưng, Hà Nội'}
+            Địa chỉ: {companyProfile.diaChi || COMPANY_ADDRESS}
           </p>
           <p className="text-[11px] text-slate-600">
-            Hotline: {companyProfile.sdt || COMPANY_HOTLINE} | Email: {companyProfile.email || 'contact@formapubli.vn'}
+            Hotline: {companyProfile.sdt || COMPANY_HOTLINE} | Email: {companyProfile.email || COMPANY_EMAIL}
           </p>
           <p className="text-[11px] text-slate-600">
             Kho xuất:{' '}
@@ -381,7 +381,7 @@ function ReceiptContent({
 
       {/* Chú thích pháp lý cuối trang */}
       <div className="mt-8 pt-4 border-t border-dashed border-slate-300 text-center text-[10px] text-slate-400 print-avoid-break">
-        Chứng từ được tạo tự động bởi {companyProfile.tenCongTy || 'FORMApubli'} | Bản quyền lưu hành nội bộ và giao dịch thương mại.
+        Chứng từ được tạo tự động bởi {companyProfile.tenCongTy || COMPANY_NAME} | Bản quyền lưu hành nội bộ và giao dịch thương mại.
       </div>
     </div>
   );
@@ -392,10 +392,10 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
   const [qrSvgXml, setQrSvgXml] = useState<string>('');
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileState>({
-    tenCongTy: 'FORMApubli',
-    diaChi: '177 Phố Huế, P. Phố Huế, Q. Hai Bà Trưng, Hà Nội',
+    tenCongTy: COMPANY_NAME,
+    diaChi: COMPANY_ADDRESS,
     sdt: COMPANY_HOTLINE,
-    email: 'contact@formapubli.vn',
+    email: COMPANY_EMAIL,
   });
 
   useEffect(() => {
