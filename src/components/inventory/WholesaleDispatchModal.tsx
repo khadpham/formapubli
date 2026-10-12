@@ -122,7 +122,7 @@ export function WholesaleDispatchModal({
   const [mounted, setMounted] = useState(false);
 
   // Dán danh sách 2 cột (Tên + Số lượng) từ Excel
-  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [isPasteOpen, setIsPasteOpen] = useState(true);
   const [pasteText, setPasteText] = useState('');
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
@@ -704,7 +704,7 @@ export function WholesaleDispatchModal({
           if (e.target === e.currentTarget && !isSubmitting) onClose();
         }}
       >
-        <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
+        <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in duration-200">
           {/* Header Modal */}
           <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-2">
             <div className="flex items-center gap-2.5">
@@ -735,7 +735,8 @@ export function WholesaleDispatchModal({
           </div>
 
           {/* Body Form */}
-          <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+          <div className="flex-1 min-w-0 p-6 space-y-4 overflow-y-auto">
             {/* Thanh quản lý các bản nháp đang lưu */}
             {(draftsList.length > 0 || editingDraftCode) && (
               <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -1121,22 +1122,23 @@ export function WholesaleDispatchModal({
           </div>
 
           {/* Footer nút hành động */}
-          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+          </div>
+          <div className="shrink-0 lg:w-72 border-t lg:border-t-0 lg:border-l border-slate-200 p-5 bg-slate-50/70 space-y-2.5 overflow-y-auto">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+              className="w-full px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition whitespace-nowrap"
             >
               Hủy Bỏ
             </button>
-            <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+            <div className="flex flex-col gap-2 w-full">
               {/* Kiểm tra tồn kho */}
               <button
                 type="button"
                 onClick={handleCheckAtp}
                 disabled={isSubmitting || isCheckingAtp || selectedItems.length === 0}
-                className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
                 title="Kiểm tra tồn kho khả dụng tại nguồn"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isCheckingAtp ? 'animate-spin' : ''}`} />
@@ -1148,7 +1150,7 @@ export function WholesaleDispatchModal({
                 type="button"
                 onClick={() => handleSubmit(false)}
                 disabled={isSubmitting || selectedItems.length === 0}
-                className="px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                className="w-full px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
                 title="Lưu lại bản nháp để soạn tiếp sau"
               >
                 <Clock className="w-3.5 h-3.5 text-amber-700" />
@@ -1160,7 +1162,7 @@ export function WholesaleDispatchModal({
                 type="button"
                 onClick={handlePreviewPrint}
                 disabled={selectedItems.length === 0 || !partnerId}
-                className="px-3.5 py-2.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-1.5"
+                className="w-full px-3.5 py-2.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 rounded-xl text-xs font-bold transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
                 title="Xem trước mẫu in A4 gửi đối tác duyệt trước khi ký"
               >
                 <Eye className="w-3.5 h-3.5 text-indigo-600" />
@@ -1172,7 +1174,7 @@ export function WholesaleDispatchModal({
                 type="button"
                 onClick={() => handleSubmit(true)}
                 disabled={isSubmitting || selectedItems.length === 0}
-                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-extrabold shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+                className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-extrabold shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
                 title="Khóa sổ xuất kho & in phiếu A4 chính thức"
               >
                 <Printer className="w-4 h-4" />
