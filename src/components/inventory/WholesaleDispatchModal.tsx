@@ -699,7 +699,7 @@ export function WholesaleDispatchModal({
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+        className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
         onClick={(e) => {
           if (e.target === e.currentTarget && !isSubmitting) onClose();
         }}

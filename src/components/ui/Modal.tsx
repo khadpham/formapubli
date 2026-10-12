@@ -6,11 +6,11 @@ import { X } from 'lucide-react';
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
 const SIZE_CLASS: Record<ModalSize, string> = {
-  sm: 'max-w-md',
-  md: 'max-w-2xl',
-  lg: 'max-w-4xl',
-  xl: 'max-w-6xl',
-  full: 'max-w-7xl',
+  sm: 'max-w-lg',
+  md: 'max-w-[92vw]',
+  lg: 'max-w-[92vw]',
+  xl: 'max-w-[92vw]',
+  full: 'max-w-[96vw]',
 };
 
 interface ModalProps {
@@ -41,7 +41,7 @@ export default function Modal({
   subtitle,
   children,
   actions,
-  size = 'lg',
+  size = 'xl',
   hideClose = false,
 }: ModalProps) {
   useEffect(() => {
@@ -64,7 +64,7 @@ export default function Modal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
+      className="fixed inset-0 bg-slate-900/70 backdrop-blur-md flex items-center justify-center z-[100] p-4"
       onClick={onClose}
     >
       <div
