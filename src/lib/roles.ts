@@ -29,7 +29,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-purple-700 border-purple-300',
     badgeBg: 'bg-purple-50',
     description: 'Toàn quyền điều hành, xem Báo cáo Quản trị Thực tế Toàn cảnh và Sổ Kép',
-    allowedNavItems: ['chu', 'dashboard', 'pos', 'inventory', 'sales', 'shopee', 'partners', 'customers', 'contracts', 'settings', 'studio'],
+    allowedNavItems: ['chu', 'dashboard', 'projects', 'contracts', 'inventory', 'pos', 'shopee', 'sales', 'einvoice', 'customers', 'partners', 'hr', 'documents', 'studio', 'settings'],
   },
   ROLE_MANAGER: {
     id: 'ROLE_MANAGER',
@@ -37,7 +37,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-blue-700 border-blue-300',
     badgeBg: 'bg-blue-50',
     description: 'Điều phối bán hàng, duyệt chuyển kho, áp chiết khấu cho phép',
-    allowedNavItems: ['dashboard', 'pos', 'inventory', 'sales', 'shopee', 'partners', 'customers', 'contracts', 'settings', 'studio'],
+    allowedNavItems: ['dashboard', 'projects', 'contracts', 'inventory', 'pos', 'shopee', 'sales', 'customers', 'partners', 'hr', 'documents', 'studio', 'settings'],
   },
   ROLE_CASHIER: {
     id: 'ROLE_CASHIER',
@@ -45,7 +45,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-emerald-700 border-emerald-300',
     badgeBg: 'bg-emerald-50',
     description: 'Bán hàng quầy siêu tốc, không thấy doanh thu tổng',
-    allowedNavItems: ['pos', 'settings'],
+    allowedNavItems: ['pos', 'einvoice', 'inventory', 'settings'],
   },
   ROLE_WAREHOUSE: {
     id: 'ROLE_WAREHOUSE',
@@ -53,7 +53,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-amber-700 border-amber-300',
     badgeBg: 'bg-amber-50',
     description: 'Quản lý kho, đơn online (portal) và đơn Shopee: nhận đơn, đóng gói, gửi hàng. Thấy tổng tiền đơn, không thấy doanh thu/lợi nhuận.',
-    allowedNavItems: ['inventory', 'shopee', 'settings'],
+    allowedNavItems: ['inventory', 'shopee', 'einvoice', 'documents', 'settings'],
   },
   ROLE_TAX: {
     id: 'ROLE_TAX',

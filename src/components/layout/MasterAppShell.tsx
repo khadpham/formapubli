@@ -14,6 +14,10 @@ import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
 import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { ShopeeTab } from '@/components/shopee/ShopeeTab';
 import { OwnerTab } from '@/components/owner/OwnerTab';
+import ProjectsView from '@/components/projects/ProjectsView';
+import EinvoiceView from '@/components/einvoice/EinvoiceView';
+import HrView from '@/components/hr/HrView';
+import DocumentsView from '@/components/documents/DocumentsView';
 import { Menu, Shield, Sparkles, Megaphone } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { NotificationBell, type NotifyItem } from '@/components/notifications/NotificationBell';
@@ -302,16 +306,21 @@ export function MasterAppShell({
                   Khung Vận Hành:
                 </span>
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5 truncate">
-                  {effectiveTab === 'dashboard' && 'Bảng Quản Trị'}
-                  {effectiveTab === 'pos' && 'Quầy Bán Hàng POS'}
-                  {effectiveTab === 'inventory' && 'Kho Hàng & Thẻ Kho'}
-                  {effectiveTab === 'sales' && 'Doanh Số & Sổ Kép'}
-                  {effectiveTab === 'partners' && 'Đối Tác & Đại Lý'}
-                  {effectiveTab === 'contracts' && 'Hợp Đồng'}                  {effectiveTab === 'customers' && 'Độc Giả CRM'}
-                  {effectiveTab === 'studio' && 'Phân Tích & Dự Báo'}
+                  {effectiveTab === 'dashboard' && 'Dashboard'}
+                  {effectiveTab === 'projects' && 'Dự án xuất bản'}
+                  {effectiveTab === 'contracts' && 'Hợp đồng'}
+                  {effectiveTab === 'inventory' && 'Kho hàng'}
+                  {effectiveTab === 'pos' && 'Bán lẻ POS'}
                   {effectiveTab === 'shopee' && 'Shopee'}
+                  {effectiveTab === 'sales' && 'Tài chính'}
+                  {effectiveTab === 'einvoice' && 'Hóa đơn điện tử'}
+                  {effectiveTab === 'customers' && 'Portal / CRM'}
+                  {effectiveTab === 'partners' && 'Đối tác & Đại lý'}
+                  {effectiveTab === 'hr' && 'Nhân sự'}
+                  {effectiveTab === 'documents' && 'Tài liệu'}
+                  {effectiveTab === 'studio' && 'Báo cáo'}
                   {effectiveTab === 'chu' && 'Chủ'}
-                  {effectiveTab === 'settings' && 'Cài Đặt'}
+                  {effectiveTab === 'settings' && 'Cài đặt'}
                 </span>
               </div>
             </div>
@@ -464,6 +473,22 @@ export function MasterAppShell({
           )}
 
           {currentRole && effectiveTab === 'chu' && <OwnerTab />}
+
+          {currentRole && effectiveTab === 'projects' && (
+            <ProjectsView />
+          )}
+
+          {currentRole && effectiveTab === 'einvoice' && (
+            <EinvoiceView />
+          )}
+
+          {currentRole && effectiveTab === 'hr' && (
+            <HrView />
+          )}
+
+          {currentRole && effectiveTab === 'documents' && (
+            <DocumentsView />
+          )}
         </main>
       </div>
 
