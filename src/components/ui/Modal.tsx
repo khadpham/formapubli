@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
 const SIZE_CLASS: Record<ModalSize, string> = {
   sm: 'max-w-lg',
-  md: 'max-w-[92vw]',
-  lg: 'max-w-[92vw]',
+  md: 'max-w-2xl',
+  lg: 'max-w-4xl',
   xl: 'max-w-[92vw]',
   full: 'max-w-[96vw]',
 };
@@ -19,21 +20,11 @@ interface ModalProps {
   title?: React.ReactNode;
   subtitle?: React.ReactNode;
   children: React.ReactNode;
-  /** Cột thao tác bên phải trên desktop. Tự xếp dọc, không cuộn chung với nội dung. */
   actions?: React.ReactNode;
   size?: ModalSize;
-  /** Ẩn nút X (dùng khi cần xác nhận bắt buộc) */
   hideClose?: boolean;
 }
 
-/**
- * Modal wrapper dùng chung cho toàn bộ ERP.
- *
- * Nguyên tắc desktop: khi màn hình đủ rộng, modal mở rộng theo chiều ngang
- * để nội dung + nút thao tác vừa trong 1 màn hình, KHÔNG cuộn dọc.
- * Nút thao tác xếp sang cột bên phải (prop `actions`).
- * Trên mobile: về 1 cột, cho phép cuộn dọc bình thường.
- */
 export default function Modal({
   open,
   onClose,
@@ -44,6 +35,12 @@ export default function Modal({
   size = 'xl',
   hideClose = false,
 }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -58,9 +55,9 @@ export default function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -71,7 +68,6 @@ export default function Modal({
         className={`bg-white rounded-2xl ${SIZE_CLASS[size]} w-full max-h-[94vh] flex flex-col shadow-[0_25px_60px_-15px_rgba(30,27,75,0.3)] border border-slate-200/60 overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header - sang trọng với điểm nhấn gold */}
         {(title || !hideClose) && (
           <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4 shrink-0 bg-gradient-to-r from-slate-50/80 to-white">
             <div className="min-w-0">
@@ -82,7 +78,7 @@ export default function Modal({
               <button
                 type="button"
                 onClick={onClose}
-                aria-label="Đóng"
+                aria-label="Dong"
                 className="p-2 rounded-xl text-slate-400 hover:text-navy-900 hover:bg-slate-100 transition shrink-0 ml-4"
               >
                 <X className="w-5 h-5" />
@@ -90,8 +86,6 @@ export default function Modal({
             )}
           </div>
         )}
-
-        {/* Body: desktop 2 cột (nội dung + thao tác), mobile 1 cột */}
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
           <div className="flex-1 min-w-0 p-6 overflow-y-auto lg:overflow-visible space-y-5">
             {children}
@@ -103,6 +97,7 @@ export default function Modal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
