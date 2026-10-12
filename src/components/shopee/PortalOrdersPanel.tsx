@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Search,
   RefreshCw,
-  X,
   FileCheck,
   MapPin,
   Phone,
@@ -19,6 +18,7 @@ import {
   Hash,
 } from 'lucide-react';
 import type { UserRole } from '@/lib/roles';
+import Modal from '@/components/ui/Modal';
 
 interface PickingItem {
   editionId?: string;
@@ -677,46 +677,99 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
         </div>
       )}
 
-      {/* Modal chi tiết đơn sách */}
-      {selected && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl border border-slate-100 space-y-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Tiêu đề modal */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-black text-slate-900">{displayCode(selected).main}</h3>
-                  {displayCode(selected).sub && (
-                    <span className="text-xs font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                      Mã đơn: {displayCode(selected).sub}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Đặt lúc: {new Date(selected.createdAt).toLocaleString('vi-VN')} ·{' '}
-                  <span className="font-bold text-slate-700">
-                    {selected.paymentMethod === 'COD' ? 'Thu tiền khi giao (COD)' : 'Chuyển khoản'}
-                  </span>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                aria-label="Đóng"
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* Modal chi tiết đơn sách - layout 2 cột trên desktop: nội dung trái, thao tác phải */}
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        size="xl"
+        title={
+          selected ? (
+            <span className="flex items-center gap-2">
+              {displayCode(selected).main}
+              {displayCode(selected).sub && (
+                <span className="text-xs font-mono font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                  Mã đơn: {displayCode(selected).sub}
+                </span>
+              )}
+            </span>
+          ) : null
+        }
+        subtitle={
+          selected ? (
+            <>
+              Đặt lúc: {new Date(selected.createdAt).toLocaleString('vi-VN')} ·{' '}
+              <span className="font-bold text-slate-700">
+                {selected.paymentMethod === 'COD' ? 'Thu tiền khi giao (COD)' : 'Chuyển khoản'}
+              </span>
+            </>
+          ) : null
+        }
+        actions={
+          selected ? (
+            <>
+              <div className="text-xs font-black uppercase text-slate-400 mb-1">Thao tác</div>
+              {/* Nút Xuất kho nếu chưa xuất */}
+              {!selected.isDispatched && (
+                <button
+                  type="button"
+                  onClick={() => handleApproveDispatch(selected.id, displayCode(selected).main)}
+                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
+                >
+                  <FileCheck className="w-4 h-4" />
+                  Xác nhận xuất kho (Trừ tồn kho ngay)
+                </button>
+              )}
 
+              {/* Luồng cập nhật vận chuyển */}
+              {NEXT_STATUS[selected.shippingStatus] === 'IN_TRANSIT' ? (
+                <div className="space-y-2 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Nhập mã vận đơn bưu cục / đơn vị vận chuyển:
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={trackingInputModal}
+                      onChange={(e) => setTrackingInputModal(e.target.value)}
+                      placeholder="VD: SPX123456789, VNPOST..."
+                      className="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!trackingInputModal.trim()) {
+                          showToast('Vui lòng nhập mã vận đơn.', 'error');
+                          return;
+                        }
+                        handleUpdateShipping(selected.id, 'IN_TRANSIT', trackingInputModal);
+                      }}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shrink-0"
+                    >
+                      Xác nhận gửi hàng
+                    </button>
+                  </div>
+                </div>
+              ) : NEXT_STATUS[selected.shippingStatus] ? (
+                <button
+                  type="button"
+                  onClick={() => handleUpdateShipping(selected.id, NEXT_STATUS[selected.shippingStatus]!)}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-sm transition active:scale-95 flex items-center justify-center gap-2"
+                >
+                  {NEXT_STATUS[selected.shippingStatus] === 'CREATED' && <PackageCheck className="w-4 h-4" />}
+                  {NEXT_STATUS[selected.shippingStatus] === 'DELIVERED' && <CheckCircle2 className="w-4 h-4" />}
+                  Chuyển trạng thái: {NEXT_LABEL[selected.shippingStatus]} →
+                </button>
+              ) : (
+                <div className="text-center py-2 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200">
+                  Đơn sách đã được giao hoàn tất
+                </div>
+              )}
+            </>
+          ) : null
+        }
+      >
+        {selected && (
+          <>
             {/* Thông tin người nhận & Địa chỉ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
               <div>
@@ -786,69 +839,9 @@ export function PortalOrdersPanel({ currentRole }: { currentRole?: UserRole }) {
                 ))}
               </div>
             </div>
-
-            {/* Thao tác trong Modal */}
-            <div className="border-t border-slate-100 pt-4 space-y-3">
-              {/* Nút Xuất kho nếu chưa xuất */}
-              {!selected.isDispatched && (
-                <button
-                  type="button"
-                  onClick={() => handleApproveDispatch(selected.id, displayCode(selected).main)}
-                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
-                >
-                  <FileCheck className="w-4 h-4" />
-                  Xác nhận xuất kho (Trừ tồn kho ngay)
-                </button>
-              )}
-
-              {/* Luồng cập nhật vận chuyển */}
-              {NEXT_STATUS[selected.shippingStatus] === 'IN_TRANSIT' ? (
-                <div className="space-y-2 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
-                  <label className="text-xs font-bold text-slate-700 block">
-                    Nhập mã vận đơn bưu cục / đơn vị vận chuyển:
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={trackingInputModal}
-                      onChange={(e) => setTrackingInputModal(e.target.value)}
-                      placeholder="VD: SPX123456789, VNPOST..."
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!trackingInputModal.trim()) {
-                          showToast('Vui lòng nhập mã vận đơn.', 'error');
-                          return;
-                        }
-                        handleUpdateShipping(selected.id, 'IN_TRANSIT', trackingInputModal);
-                      }}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs"
-                    >
-                      Xác nhận gửi hàng
-                    </button>
-                  </div>
-                </div>
-              ) : NEXT_STATUS[selected.shippingStatus] ? (
-                <button
-                  type="button"
-                  onClick={() => handleUpdateShipping(selected.id, NEXT_STATUS[selected.shippingStatus]!)}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-sm transition active:scale-95 flex items-center justify-center gap-2"
-                >
-                  {NEXT_STATUS[selected.shippingStatus] === 'CREATED' && <PackageCheck className="w-4 h-4" />}
-                  {NEXT_STATUS[selected.shippingStatus] === 'DELIVERED' && <CheckCircle2 className="w-4 h-4" />}
-                  Chuyển trạng thái: {NEXT_LABEL[selected.shippingStatus]} →
-                </button>
-              ) : (
-                <div className="text-center py-2 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200">
-                  Đơn sách đã được giao hoàn tất
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   );
 }
