@@ -10,7 +10,7 @@
  * - Không tràn ngang ở màn hình 320px-426px, vùng bấm >= 38px.
  */
 import { useEffect, useState } from 'react';
-import { Store, Power, PowerOff, Trash2, RefreshCw, AlertTriangle, Edit3, ArrowUp, ArrowDown, Check } from 'lucide-react';
+import { Store, Power, PowerOff, Trash2, RefreshCw, AlertTriangle, Edit3, ArrowUp, ArrowDown, Check, X } from 'lucide-react';
 import Modal from '../ui/Modal';
 
 type Warehouse = {

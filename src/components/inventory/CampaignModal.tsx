@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Megaphone } from 'lucide-react';
+import { Megaphone, X } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { CampaignPanel } from './CampaignPanel';
 import { BatchTransferModal } from './BatchTransferModal';

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '@/components/ui/Modal';
-import { Plus, Pencil, Save, AlertTriangle, ToggleRight, ToggleLeft, Gift } from 'lucide-react';
+import { Plus, Pencil, Save, AlertTriangle, ToggleRight, ToggleLeft, Gift, X } from 'lucide-react';
 import { giftValueWarning } from '@/lib/promotion-engine';
 import { normalizePrice, formatPriceInput } from '@/components/products/GoodsCatalogManager';
 

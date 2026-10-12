@@ -134,10 +134,6 @@ function GoodsFormModal({ isOpen, row, onClose, onSaved }: GoodsFormModalProps) 
   const isEditing = !!row;
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!isOpen) return;
     setError(null);
     setForm(
