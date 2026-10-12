@@ -252,22 +252,22 @@ export function AppSidebar({
         aria-modal={isMobileViewport && isMobileOpen ? true : undefined}
         aria-label="Menu điều hướng"
          aria-hidden={isMobileViewport === null || (isMobileViewport && !isMobileOpen) ? true : undefined}
-        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-slate-900 text-slate-100 border-r border-slate-800 transition-all duration-300 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-navy-950 text-slate-100 border-r border-white/10 transition-all duration-300 ease-in-out ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${isCollapsed ? 'w-20' : 'w-72'} pt-[env(safe-area-inset-top)]`}
       >
-        {/* Header Branding */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800">
+        {/* Header Branding - luxury gold accent */}
+        <div className="flex items-center justify-between h-16 px-4 border-b border-white/10">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-500/30 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-gold-dark via-gold to-gold-light flex items-center justify-center text-navy-950 font-black text-xl shadow-lg shadow-gold/30 shrink-0">
               f
             </div>
             {!isCollapsed && (
               <div className="flex flex-col truncate">
-                <span className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-                  formapubli <span className="text-indigo-400 font-mono text-xs">OS</span>
+                <span className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
+                  formapubli <span className="text-gold font-mono text-xs">OS</span>
                 </span>
-                <span className="text-[10px] text-slate-400 truncate">Hệ Điều Hành Xuất Bản 3-in-1</span>
+                <span className="text-[10px] text-slate-400 truncate">Hệ Điều Hành Xuất Bản</span>
               </div>
             )}
           </div>

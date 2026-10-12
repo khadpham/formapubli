@@ -68,22 +68,22 @@ export default function Modal({
       onClick={onClose}
     >
       <div
-        className={`bg-white rounded-2xl ${SIZE_CLASS[size]} w-full max-h-[94vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden`}
+        className={`bg-white rounded-2xl ${SIZE_CLASS[size]} w-full max-h-[94vh] flex flex-col shadow-[0_25px_60px_-15px_rgba(30,27,75,0.3)] border border-slate-200/60 overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header - sang trọng với điểm nhấn gold */}
         {(title || !hideClose) && (
-          <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4 shrink-0">
+          <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4 shrink-0 bg-gradient-to-r from-slate-50/80 to-white">
             <div className="min-w-0">
-              {title && <h3 className="text-xl font-black text-slate-900 truncate">{title}</h3>}
-              {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
+              {title && <h3 className="text-xl font-bold text-navy-900 truncate tracking-tight">{title}</h3>}
+              {subtitle && <div className="text-xs text-slate-500 mt-1 vn-text">{subtitle}</div>}
             </div>
             {!hideClose && (
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Đóng"
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0 ml-4"
+                className="p-2 rounded-xl text-slate-400 hover:text-navy-900 hover:bg-slate-100 transition shrink-0 ml-4"
               >
                 <X className="w-5 h-5" />
               </button>

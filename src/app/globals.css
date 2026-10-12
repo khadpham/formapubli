@@ -1,6 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ==========================================================================
+   FORMApubli Design System - "Midnight Gold"
+   Palette sang trọng cho nhà xuất bản: xanh navy sâu + điểm vàng ấm.
+   Font Be Vietnam Pro - tối ưu cho tiếng Việt (dấu thanh rõ, không vỡ).
+   ========================================================================== */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    /* Primary: Midnight Navy - sang trọng, tin cậy */
+    --primary: 230 45% 28%;
+    --primary-foreground: 0 0% 98%;
+    /* Secondary: Warm slate */
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    /* Accent: Royal Gold - điểm nhấn sang trọng */
+    --accent: 38 92% 50%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 230 45% 28%;
+    --radius: 0.75rem;
+    /* Gold luxury */
+    --gold: 38 92% 50%;
+    --gold-light: 43 96% 64%;
+    --gold-dark: 32 95% 38%;
+    /* Navy depths */
+    --navy-950: 230 50% 12%;
+    --navy-900: 230 45% 18%;
+    --navy-800: 230 45% 28%;
+  }
+  .dark {
+    --background: 230 50% 8%;
+    --foreground: 0 0% 98%;
+    --card: 230 45% 12%;
+    --card-foreground: 0 0% 98%;
+    --popover: 230 45% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 38 92% 55%;
+    --primary-foreground: 230 50% 8%;
+    --secondary: 230 40% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 230 40% 16%;
+    --muted-foreground: 220 15% 65%;
+    --accent: 38 92% 55%;
+    --accent-foreground: 230 50% 8%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 230 35% 20%;
+    --input: 230 35% 20%;
+    --ring: 38 92% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
+    /* Tối ưu render tiếng Việt */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+  /* Headings: đậm, sang trọng */
+  h1, h2, h3, h4 {
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+  }
+}
+
+@layer utilities {
+  /* Nút bấm: KHÔNG BAO GIỜ tràn chữ xuống dòng - quy tắc tuyệt đối */
+  .btn-nowrap {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+  }
+  /* Text tiếng Việt: đảm bảo dấu không bị cắt */
+  .vn-text {
+    line-height: 1.65;
+    overflow-wrap: break-word;
+  }
+  /* Luxury gradient text */
+  .text-luxury {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--gold-dark)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  /* Luxury card: viền vàng mờ, shadow sâu */
+  .card-luxury {
+    @apply bg-card rounded-2xl border border-slate-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.06)];
+  }
+}
 
 :root {
   --foreground-rgb: 30, 41, 59;
