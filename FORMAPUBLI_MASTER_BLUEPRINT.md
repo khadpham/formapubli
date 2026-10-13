@@ -1420,3 +1420,18 @@ Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn
 2. Quản lý dự án mới với timeline 5 giai đoạn và rule engine.
 3. Dashboard theo dõi: trạng thái dự án, giấy tờ thiếu, deadline sắp tới, cảnh báo rule.
 4. Chạy song song với Drive 1 tháng rồi chuyển hẳn.
+
+### 23.6. Vấn đề 2 mã đơn hàng (ghi nhận 2026-10-13, phải xử lý triệt để)
+
+**Hiện trạng:** Một đơn online hiện có 2 mã khác nhau:
+- Portal (datsach.formapubli.vn) tự sinh mã riêng: `DH-20261011-J3OT` (format DH-ngày-random)
+- ERP (app.formapubli.vn) sinh mã riêng khi nhận đơn từ portal: `ORD261011000M` (format ORD-ngày-số)
+- Bảng `orders` lưu cả 2: cột `order_code` (mã ERP) và cột `portal_ref` (mã portal)
+
+**Hậu quả:**
+- Khách chuyển khoản không biết ghi mã nào vào nội dung CK
+- Đối soát sao kê ngân hàng phải tra chéo 2 mã thủ công
+- Ảnh biên lai trên sheet gắn mã portal, đơn trong ERP mang mã ERP - khó đối chiếu
+- Đây là rào cản trực tiếp cho nghiệp vụ đối soát tự động (xem mục 24)
+
+**Giải pháp cho hệ thống mới:** Chỉ dùng MỘT mã duy nhất xuyên suốt. Portal không tự sinh mã nữa. Khi khách bấm đặt hàng, portal gọi API sang ERP để lấy mã `ORD...` ngay, dùng mã đó hiển thị cho khách, ghi vào sheet, làm mã thanh toán bắt buộc trong nội dung chuyển khoản. Một mã từ đặt hàng đến đối soát đến giao hàng.
