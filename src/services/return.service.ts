@@ -714,6 +714,17 @@ export class ReturnService {
             0
           );
 
+          // FIX 2026-10-13: So sánh giá bìa với giá bìa, không phải giá thực thu vs giá bìa.
+          // Lỗi cũ: unitRefund đã chiết khấu so với coverPrice chưa CK gây sai khi đơn có CK.
+          let returnCoverValue = 0;
+          for (const it of items) {
+            const retEdRow: any = (
+              await tx.select().from(editions).where(eq(editions.id, it.editionId)).limit(1)
+            )[0];
+            const retCover = Math.round(Number(retEdRow?.coverPrice || it.unitRefund || 0));
+            returnCoverValue += Math.round(Number(it.quantity)) * retCover;
+          }
+
           let replacementValue = 0;
           for (const [editionId, quantity] of Array.from(exchangeMap.entries())) {
             const edRow: any = (
@@ -725,9 +736,9 @@ export class ReturnService {
             replacementDetails.push({ editionId, quantity, coverPrice });
           }
 
-          if (oldRefundableValue !== replacementValue) {
+          if (returnCoverValue !== replacementValue) {
             throw AppError.invalid(
-              `Giá trị sách đổi (${replacementValue.toLocaleString('vi-VN')} đ) không bằng giá trị sách trả (${oldRefundableValue.toLocaleString('vi-VN')} đ). Chênh lệch: ${(replacementValue - oldRefundableValue).toLocaleString('vi-VN')} đ.`
+              `Giá bìa sách đổi (${replacementValue.toLocaleString('vi-VN')} đ) không bằng giá bìa sách trả (${returnCoverValue.toLocaleString('vi-VN')} đ). Chênh lệch: ${(replacementValue - returnCoverValue).toLocaleString('vi-VN')} đ.`
             );
           }
 

@@ -1191,3 +1191,52 @@ export const periodLocks = sqliteTable('period_locks', {
   lockedAt: text('locked_at').default(sql`CURRENT_TIMESTAMP`),
   note: text('note'),
 });
+
+// 56. E-Invoices - Hóa đơn điện tử MS-Invoice (migration 0056).
+export const einvoices = sqliteTable('einvoices', {
+  id: text('id').primaryKey(),
+  orderId: text('order_id').references(() => orders.id),
+  invoiceNumber: text('invoice_number'),
+  invoiceSerial: text('invoice_serial'),
+  invoiceForm: integer('invoice_form').default(1),
+  msinvoiceId: text('msinvoice_id'),
+  isSigned: text('is_signed').default('N'),
+  certSn: text('cert_sn'),
+  subtotal: real('subtotal').notNull().default(0),
+  vatRate: real('vat_rate').notNull().default(0),
+  vatAmount: real('vat_amount').notNull().default(0),
+  totalAmount: real('total_amount').notNull().default(0),
+  status: text('status').notNull().default('DRAFT'),
+  issuedAt: text('issued_at'),
+  pdfUrl: text('pdf_url'),
+  adjustedForId: text('adjusted_for_id'),
+  adjustmentType: text('adjustment_type'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  orderIdx: index('idx_einvoices_order').on(table.orderId),
+  statusIdx: index('idx_einvoices_status').on(table.status),
+}));
+
+// 57. Documents - Quản lý tài liệu trên R2 (migration 0057).
+export const documents = sqliteTable('documents', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  originalName: text('original_name'),
+  mimeType: text('mime_type'),
+  fileSize: integer('file_size'),
+  r2Key: text('r2_key').notNull().unique(),
+  r2Bucket: text('r2_bucket').notNull().default('formapubli-docs'),
+  category: text('category').notNull().default('OTHER'),
+  relatedType: text('related_type'),
+  relatedId: text('related_id'),
+  description: text('description'),
+  tags: text('tags'),
+  uploadedBy: text('uploaded_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  categoryIdx: index('idx_documents_category').on(table.category),
+  relatedIdx: index('idx_documents_related').on(table.relatedType, table.relatedId),
+}));
