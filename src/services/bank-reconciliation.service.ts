@@ -53,7 +53,8 @@ export function parseMbStatement(buf: Buffer): ParsedStatementRow[] {
   const grid = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: true, defval: '' }) as unknown[][];
 
   // Tim dong header chua "BUT TOAN" (dau bang that, bo dong tieu de file).
-  const norm = (s: unknown) => `${s ?? ''}`.toUpperCase().replace(/\s+/g, ' ').trim();
+  const norm = (s: unknown) =>
+    `${s ?? ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toUpperCase().replace(/\s+/g, ' ').trim();
   const hi = grid.findIndex((r) => r.some((c) => norm(c).includes('BUT TOAN')));
   if (hi < 0) throw new Error('Khong tim thay dong tieu de (thieu cot BUT TOAN).');
   const heads = grid[hi].map(norm);

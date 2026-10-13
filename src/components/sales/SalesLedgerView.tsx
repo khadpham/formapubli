@@ -30,6 +30,7 @@ import {
   vnToday,
 } from '@/lib/sales-view';
 import { BankReconciliationPanel } from './BankReconciliationPanel';
+import { SpxReconciliationPanel } from './SpxReconciliationPanel';
 import { RevenueAnalyticsPanel } from './RevenueAnalyticsPanel';
 import { TopEditionsPanel } from './TopEditionsPanel';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
@@ -324,6 +325,7 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
     <div className="space-y-6">
       <GiftReportPanel currentRole={currentRole} from={startDate} to={endDate} actorId={actorId} />
       <BankReconciliationPanel currentRole={currentRole} />
+      <SpxReconciliationPanel currentRole={currentRole} />
       {/* Header Controls */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="hidden md:block">

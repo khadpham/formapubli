@@ -971,8 +971,7 @@ export const bankStatements = sqliteTable('bank_statements', {
   ngayIdx: index('idx_bank_statements_ngay').on(table.ngayGiaoDich),
 }));
 
-export const bankStatementMatches = sqliteTable('bank_statement_matches', {
-  id: text('id').primaryKey(),
+export const bankStatementMatches = sqliteTable('bank_statement_matches', {  id: text('id').primaryKey(),
   statementId: text('statement_id').notNull().references(() => bankStatements.id),
   orderId: text('order_id').notNull().references(() => orders.id),
   matchType: text('match_type').notNull().default('AUTO'),
@@ -983,6 +982,40 @@ export const bankStatementMatches = sqliteTable('bank_statement_matches', {
 }, (table) => ({
   statementUq: uniqueIndex('uq_bank_match_statement').on(table.statementId),
   orderIdx: index('idx_bank_match_order').on(table.orderId),
+}));
+
+// 0062: doi soat bao cao tai chinh SPX - 1 dong = 1 van don.
+export const spxSettlements = sqliteTable('spx_settlements', {
+  id: text('id').primaryKey(),
+  maVanDon: text('ma_van_don').notNull().unique(),
+  trangThai: text('trang_thai'),
+  tienThuHo: real('tien_thu_ho').notNull().default(0),
+  tongPhi: real('tong_phi').notNull().default(0),
+  phiGiaoHang: real('phi_giao_hang').notNull().default(0),
+  phiBaoHiem: real('phi_bao_hiem').notNull().default(0),
+  phiHoanHang: real('phi_hoan_hang').notNull().default(0),
+  soTienDieuChinh: real('so_tien_dieu_chinh').notNull().default(0),
+  lyDoDieuChinh: text('ly_do_dieu_chinh'),
+  tongTienVe: real('tong_tien_ve').notNull().default(0),
+  ngayImport: text('ngay_import').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  ngayIdx: index('idx_spx_settlements_ngay').on(table.ngayImport),
+}));
+
+export const spxSettlementMatches = sqliteTable('spx_settlement_matches', {
+  id: text('id').primaryKey(),
+  settlementId: text('settlement_id').notNull().references(() => spxSettlements.id),
+  orderId: text('order_id').notNull().references(() => orders.id),
+  codKhop: integer('cod_khop', { mode: 'boolean' }).notNull().default(false),
+  phiBatThuong: integer('phi_bat_thuong', { mode: 'boolean' }).notNull().default(false),
+  matchType: text('match_type').notNull().default('AUTO'),
+  matchedAt: text('matched_at').default(sql`CURRENT_TIMESTAMP`),
+  matchedBy: text('matched_by'),
+  note: text('note'),
+}, (table) => ({
+  settlementUq: uniqueIndex('uq_spx_match_settlement').on(table.settlementId),
+  orderIdx: index('idx_spx_match_order').on(table.orderId),
 }));
 
 // 0054: campaigns - chiến dịch bán ngắn hạn gắn kho FAIR_EVENT.
