@@ -1375,11 +1375,34 @@ Vi phạm R1-R3, R5: chặn lưu, yêu cầu xác nhận của manager. Vi phạ
 
 **Nguyên tắc:** Không sửa hay rà soát lại hợp đồng quá khứ trong ERP. Team tự soạn lại cho đúng, tích hợp sau.
 
+**Bộ mẫu chuẩn từ hồ sơ thực tế (T_KHO.zip, 2026-10-13):** Phân tích bộ hồ sơ đầy đủ của đầu sách "Đốt kho" cho thấy 1 bộ hồ sơ chuẩn gồm 8 loại tài liệu:
+
+| # | Loại tài liệu | Mã mẫu | Ghi chú |
+|---|---|---|---|
+| 1 | HĐ thiết kế bìa | HD_THIET_KE_BIA | Giai đoạn 1 |
+| 2 | HĐ biên dịch | HD_BIEN_DICH_CHUAN | Giai đoạn 2, số HĐ dạng {n}.{tháng}.{năm}/HĐBD |
+| 3 | HĐ biên tập | HD_BIEN_TAP | Giai đoạn 3, số HĐ dạng {n}.{tháng}.{năm}/HĐBT |
+| 4 | HĐ dàn trang | HD_DAN_TRANG | Giai đoạn 4, số HĐ dạng {n}.{tháng}.{năm}/HĐDT |
+| 5 | HĐ đọc morat | HD_DOC_MORAT | Giai đoạn 5, số HĐ dạng {n}/HĐMR |
+| 6 | Biên bản nghiệm thu | BB_NGHIEM_THU | Mỗi giai đoạn 1 biên bản riêng, viện dẫn đúng số HĐ |
+| 7 | Phiếu chi | PHIEU_CHI | Chỉ dùng cho chi tiền mặt, mẫu 02-TT theo TT 133/2016/TT-BTC |
+| 8 | Ủy nhiệm chi | UY_NHIEM_CHI | Chỉ dùng cho chuyển khoản ngân hàng |
+
+Ngoài ra phát hiện loại tài liệu thứ 9: **Quyết định xuất bản** (QD_XUAT_BAN) của NXB, thuộc luồng giấy phép song song.
+
+**Quy tắc định dạng rút ra từ mẫu thực tế:**
+- Số tiền bằng chữ phải tự sinh từ số, không gõ tay (mẫu thực tế có lỗi chữ/số không khớp).
+- Tên tác phẩm trong HĐ dàn trang phải validate trùng với tên sách của dự án (mẫu thực tế bị copy-paste sai tên sách khác).
+- Biên bản nghiệm thu chọn hợp đồng từ DB, không gõ tay số HĐ (mẫu thực tế viện dẫn sai số HĐ).
+- Trường định danh bên B hỗ trợ CCCD/CMND/Hộ chiếu/MST (mẫu thực tế có trường hợp dùng hộ chiếu + bút danh).
+- Thuế TNCN 10% khấu trừ tại nguồn, hiển thị cả giá trị gross và thực nhận.
+- Sửa lỗi chính tả "nghìn đống" thành "nghìn đồng" trong mẫu mới.
+
 ERP xây dựng cho tương lai:
-- 5 mẫu chuẩn tương ứng 5 giai đoạn, đã có sẵn điều khoản chuẩn và logic ngày tháng mẫu.
+- 8 mẫu chuẩn theo bảng trên, đã có sẵn điều khoản chuẩn và logic ngày tháng mẫu.
 - Dự án mới: chọn mẫu, điền thông tin, hệ thống sinh hợp đồng đúng chuẩn.
 - File lưu R2, metadata trong bảng `documents`, gắn đúng dự án và giai đoạn.
-- AI đọc nội dung file upload, tự trích loại giấy tờ, ngày tháng, số tiền, các bên.
+- AI đọc nội dung file upload, tự trích loại giấy tờ, ngày tháng, số tiền, các bên (phân loại đọc từ nội dung, không đọc từ tên file).
 
 ### 23.4. Mã hóa đơn tận dụng được (không cần hỏi thêm)
 
