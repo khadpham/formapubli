@@ -1343,3 +1343,57 @@ Nâng cấp phân hệ báo cáo doanh thu: sổ đơn cuộn mượt theo bộ 
 - Mọi con số trong §37 đọc từ cùng sổ đơn đã lọc, không dùng nguồn phụ.
 
 ---
+## 23. Cập nhật quy trình dự án xuất bản (2026-10-13, anh Kha chốt)
+
+### 23.1. Thứ tự giai đoạn đúng
+
+Chuỗi công ty **chủ động được**, phải theo đúng thứ tự thời gian:
+
+| Thứ tự | Giai đoạn | Hợp đồng | Ghi chú |
+|---|---|---|---|
+| 1 | Thiết kế bìa | HĐ thiết kế bìa | Làm trước để có bìa chào hàng |
+| 2 | Biên dịch | HĐ biên dịch | Dịch toàn bộ tác phẩm |
+| 3 | Biên tập | HĐ biên tập | Hiệu đính sau dịch |
+| 4 | Dàn trang | HĐ dàn trang | Dàn trang ruột sau biên tập |
+| 5 | Đọc morat | HĐ đọc morat | Rà soát cuối trước in |
+
+Luồng xin bản quyền, giấy phép xuất bản, giấy phép phát hành là **luồng riêng, song song**, không chặn chuỗi sản xuất nội bộ. (Sửa quyết định cũ ở mục 6 từng yêu cầu bản quyền có hiệu lực trước khi ký HĐ dịch.)
+
+### 23.2. Rule engine kiểm tra logic thời gian
+
+Hệ thống tự động kiểm tra khi nhập ngày tháng, ngăn team phải ký lùi ngày để hợp thức hóa:
+
+- **R1:** Ngày ký HĐ giai đoạn sau không sớm hơn ngày ký HĐ giai đoạn trước.
+- **R2:** Ngày nghiệm thu không sớm hơn ngày ký cùng giai đoạn.
+- **R3:** Ngày nghiệm thu giai đoạn sau không sớm hơn ngày nghiệm thu giai đoạn trước.
+- **R4:** Cảnh báo khi ngày thực tế lệch quá 7 ngày so với dự kiến.
+- **R5:** Phát hiện dấu hiệu ký lùi ngày (ngày ký sau ngày nghiệm thu).
+
+Vi phạm R1-R3, R5: chặn lưu, yêu cầu xác nhận của manager. Vi phạm R4: cảnh báo vàng.
+
+### 23.3. Thư viện mẫu hợp đồng (ưu tiên cho tương lai)
+
+**Nguyên tắc:** Không sửa hay rà soát lại hợp đồng quá khứ trong ERP. Team tự soạn lại cho đúng, tích hợp sau.
+
+ERP xây dựng cho tương lai:
+- 5 mẫu chuẩn tương ứng 5 giai đoạn, đã có sẵn điều khoản chuẩn và logic ngày tháng mẫu.
+- Dự án mới: chọn mẫu, điền thông tin, hệ thống sinh hợp đồng đúng chuẩn.
+- File lưu R2, metadata trong bảng `documents`, gắn đúng dự án và giai đoạn.
+- AI đọc nội dung file upload, tự trích loại giấy tờ, ngày tháng, số tiền, các bên.
+
+### 23.4. Mã hóa đơn tận dụng được (không cần hỏi thêm)
+
+Từ hóa đơn mẫu MS-Invoice 1C26TVN số 00000272:
+- **Ký hiệu 1C26TVN:** định danh mẫu hóa đơn, ERP lưu sẵn.
+- **Số hóa đơn:** tăng dần, ERP theo dõi số cuối đã dùng.
+- **Mã tra cứu:** lưu kèm link tracuu.myinvoice.vn cho khách.
+- **Mã CQT:** mã xác thực của Cơ quan Thuế, lưu làm bằng chứng (không tự sinh).
+
+Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn ngoài 1C26TVN?
+
+### 23.5. Lộ trình thực hiện
+
+1. Thư viện 5 mẫu hợp đồng chuẩn.
+2. Quản lý dự án mới với timeline 5 giai đoạn và rule engine.
+3. Dashboard theo dõi: trạng thái dự án, giấy tờ thiếu, deadline sắp tới, cảnh báo rule.
+4. Chạy song song với Drive 1 tháng rồi chuyển hẳn.
