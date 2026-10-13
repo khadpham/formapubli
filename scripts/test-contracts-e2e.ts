@@ -55,8 +55,16 @@ async function run() {
     code: r.code ?? r[1],
     template_data: r.template_data ?? r[2],
   }));
-  if (tpls.length !== 3) throw new Error(`Kỳ vọng 3 mẫu, thực ${tpls.length}`);
+  // Seed 3 mau cu phai ton tai. Tong so mau co the lon hon 3 vi migration
+  // (0058: 5 mau chuoi san xuat, 0060: 3 mau T_KHO) cung insert vao bang nay.
+  const codes = new Set(tpls.map((t) => t.code));
+  for (const c of ['HD_XUAT_BAN_SEED', 'HD_DAI_LY_SEED', 'HD_DICH_THUAT_SEED']) {
+    if (!codes.has(c)) throw new Error(`Thieu mau seed ${c} (tong ${tpls.length} mau)`);
+  }
   for (const t of tpls) {
+    // Mau tu migration (0058/0060) chua co file DOCX that (template_data rong,
+    // upload sau) - bo qua validate file, chi validate seed co du lieu that.
+    if (!t.template_data) continue;
     const v = ContractEngineService.validateTemplate(t.template_data);
     if (!v.isValid) throw new Error(`Mẫu ${t.code} không hợp lệ: ${(v.errors || []).join(';')}`);
   }
@@ -88,8 +96,12 @@ async function run() {
   console.log('✓ Preset seed áp vào payload');
 
   // 4. Tạo HĐ đầu → số 01/2026 → export → MỌI placeholder đã thay.
+  // Chon mau seed theo ma (khong dung vi tri): migration 0058/0060 chen them
+  // mau chua co file DOCX that vao cung bang.
+  const seedXB = tpls.find((t) => t.code === 'HD_XUAT_BAN_SEED');
+  if (!seedXB) throw new Error('thieu mau seed HD_XUAT_BAN_SEED');
   const doc1: any = await ContractService.createDocument({
-    templateId: tpls[0].id,
+    templateId: seedXB.id,
     title: 'HĐ xuất bản E2E 1',
     category: 'TAC_QUYEN',
     payloadData: payload,
@@ -131,8 +143,10 @@ async function run() {
   console.log('✓ Upload bản cuối thắng khi export');
 
   // 6. HĐ thứ 2 → số 02/2026 (counter tuần tự).
+  const seedDL = tpls.find((t) => t.code === 'HD_DAI_LY_SEED');
+  if (!seedDL) throw new Error('thieu mau seed HD_DAI_LY_SEED');
   const doc2: any = await ContractService.createDocument({
-    templateId: (tpls[1] as any).id ?? (tpls[1] as any)[0],
+    templateId: seedDL.id,
     title: 'HĐ đại lý E2E 2',
     category: 'DAI_LY',
     payloadData: payload,
