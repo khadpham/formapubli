@@ -427,6 +427,13 @@
       "when": 1791595000000,
       "tag": "0060_contract_templates_tkho",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": 7,
+      "when": 1791596000000,
+      "tag": "0061_bank_reconciliation",
+      "breakpoints": true
     }
   ],
   "version": "7"

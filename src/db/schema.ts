@@ -955,6 +955,36 @@ export const portalSettings = sqliteTable('portal_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+// 0061: doi soat sao ke ngan hang - 1 dong = 1 dong sao ke file xlsx MB Bank.
+export const bankStatements = sqliteTable('bank_statements', {
+  id: text('id').primaryKey(),
+  ngayGiaoDich: text('ngay_giao_dich').notNull(),
+  ngayHachToan: text('ngay_hach_toan'),
+  phatSinhNo: real('phat_sinh_no').notNull().default(0),
+  phatSinhCo: real('phat_sinh_co').notNull().default(0),
+  soDu: real('so_du'),
+  donVi: text('don_vi'),
+  noiDung: text('noi_dung'),
+  butToan: text('but_toan').notNull().unique(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  ngayIdx: index('idx_bank_statements_ngay').on(table.ngayGiaoDich),
+}));
+
+export const bankStatementMatches = sqliteTable('bank_statement_matches', {
+  id: text('id').primaryKey(),
+  statementId: text('statement_id').notNull().references(() => bankStatements.id),
+  orderId: text('order_id').notNull().references(() => orders.id),
+  matchType: text('match_type').notNull().default('AUTO'),
+  confidence: text('confidence').notNull().default('LOW'),
+  matchedAt: text('matched_at').default(sql`CURRENT_TIMESTAMP`),
+  matchedBy: text('matched_by'),
+  note: text('note'),
+}, (table) => ({
+  statementUq: uniqueIndex('uq_bank_match_statement').on(table.statementId),
+  orderIdx: index('idx_bank_match_order').on(table.orderId),
+}));
+
 // 0054: campaigns - chiến dịch bán ngắn hạn gắn kho FAIR_EVENT.
 // Máy trạng thái: DRAFT → ACTIVE → ENDED (ép ở CampaignService).
 export const campaigns = sqliteTable('campaigns', {

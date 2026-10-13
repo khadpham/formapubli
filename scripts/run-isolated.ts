@@ -131,6 +131,7 @@ const ALL_SUITES = [
     'scripts/test-pos-cash-integrity.ts',
     'scripts/test-order-code-13.ts',
     'scripts/test-reserve-code.ts',
+    'scripts/test-bank-reconciliation.ts',
   'scripts/test-forecast.ts',
   'scripts/test-royalties.ts',
   'scripts/test-royalty-basis.ts',
