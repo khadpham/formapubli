@@ -1240,3 +1240,49 @@ export const documents = sqliteTable('documents', {
   categoryIdx: index('idx_documents_category').on(table.category),
   relatedIdx: index('idx_documents_related').on(table.relatedType, table.relatedId),
 }));
+
+// 59. Publishing Projects - Du an xuat ban (migration 0059).
+export const publishingProjects = sqliteTable('publishing_projects', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  bookTitle: text('book_title').notNull(),
+  originalTitle: text('original_title'),
+  author: text('author'),
+  translator: text('translator'),
+  bookSize: text('book_size'),
+  pageCount: integer('page_count'),
+  coverPrice: real('cover_price'),
+  status: text('status').notNull().default('DRAFT'),
+  currentStage: text('current_stage'),
+  plannedPrintDate: text('planned_print_date'),
+  notes: text('notes'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  statusIdx: index('idx_pub_projects_status').on(table.status),
+  codeIdx: index('idx_pub_projects_code').on(table.code),
+}));
+
+export const publishingStages = sqliteTable('publishing_stages', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => publishingProjects.id),
+  stage: text('stage').notNull(),
+  stageOrder: integer('stage_order').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  contractId: text('contract_id'),
+  contractDate: text('contract_date'),
+  acceptanceDate: text('acceptance_date'),
+  acceptanceDocId: text('acceptance_doc_id'),
+  plannedStart: text('planned_start'),
+  plannedEnd: text('planned_end'),
+  contractAmount: real('contract_amount').default(0),
+  taxAmount: real('tax_amount').default(0),
+  netAmount: real('net_amount').default(0),
+  assigneeName: text('assignee_name'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  projectIdx: index('idx_pub_stages_project').on(table.projectId),
+  statusIdx: index('idx_pub_stages_status').on(table.status),
+}));
