@@ -1435,3 +1435,31 @@ Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn
 - Đây là rào cản trực tiếp cho nghiệp vụ đối soát tự động (xem mục 24)
 
 **Giải pháp cho hệ thống mới:** Chỉ dùng MỘT mã duy nhất xuyên suốt. Portal không tự sinh mã nữa. Khi khách bấm đặt hàng, portal gọi API sang ERP để lấy mã `ORD...` ngay, dùng mã đó hiển thị cho khách, ghi vào sheet, làm mã thanh toán bắt buộc trong nội dung chuyển khoản. Một mã từ đặt hàng đến đối soát đến giao hàng.
+
+### 23.7. Đối soát ngân hàng và SPX tự động (anh Kha duyệt 2026-10-13)
+
+**Bối cảnh:** Kế toán đang đối chiếu thủ công từng dòng sao kê ngân hàng và báo cáo tài chính SPX. Việc máy móc, dễ sai, không scale được.
+
+**Nguyên tắc bắt buộc:** Một mã đơn `ORD...` duy nhất xuyên suốt (xem 23.6). Mã này là chìa khóa để auto-match: khách ghi mã vào nội dung chuyển khoản (VietQR nhúng sẵn mã), SPX gắn mã vận đơn với đơn ERP.
+
+**Thứ tự triển khai (đã duyệt):**
+1. Chuẩn hóa một mã đơn (API `POST /api/orders/reserve-code` - portal lấy mã trước khi khách thanh toán)
+2. Đối soát ngân hàng
+3. Đối soát SPX
+
+**Đối soát ngân hàng:**
+- Import file sao kê MB Bank (xlsx). Bảng `bank_statements`: ngay_giao_dich, phat_sinh_no, phat_sinh_co, don_vi, noi_dung, but_toan (UNIQUE chống import trùng).
+- Auto-match: parse cột NỘI DUNG tìm mã đơn (regex `ORD\d+`), so với `order_code`, so sánh số tiền (sai số < 1000đ).
+  - Mã khớp + tiền khớp: tự động, confidence HIGH, cập nhật đơn thành ĐÃ THU.
+  - Mã khớp + tiền lệch: confidence MEDIUM, hàng đợi review.
+  - Không tìm thấy mã: thử match tên + SĐT, confidence LOW.
+- Bảng `bank_statement_matches`: statement_id, order_id, match_type (AUTO/MANUAL), confidence, matched_by.
+- UI trang "Đối soát ngân hàng" trong module Tài chính: import xlsx, bảng 3 trạng thái ĐÃ KHỚP / CHỜ REVIEW / CHƯA XỬ LÝ, nút Xác nhận / Bỏ qua / Gán tay.
+
+**Đối soát SPX:**
+- Import báo cáo tài chính SPX (xlsx). Bảng `spx_settlements`: ma_van_don (UNIQUE), trang_thai, tien_thu_ho (COD), tong_phi, so_tien_dieu_chinh, ly_do_dieu_chinh.
+- Auto-match `ma_van_don` với `tracking_code` của đơn. Kiểm tra 3 điểm: COD thu hộ vs cod_amount, phí vận chuyển có bất thường không, có số tiền điều chỉnh không.
+- Bảng `spx_settlement_matches`: settlement_id, order_id, cod_khop, phi_bat_thuong, note.
+- UI trang "Đối soát SPX" tương tự đối soát ngân hàng.
+
+**Trạng thái implement (dev, 2026-10-14):** Đã code xong trên nhánh dev - migration 0061 (bank) + 0062 (SPX), service + UI panel, API reserve-code (commit 49d9d77, 9b0d857, ffa6388). Đang test trên dev.formapubli.vn, chưa PR vào main.
