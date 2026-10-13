@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
+import { isPosOrderCode } from '@/services/order-code';
 import { db, customers, editions, portalSettings, orders } from '@/db';
 import { eq } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
@@ -20,6 +21,7 @@ export const dynamic = 'force-dynamic';
  * Body:
  * {
  *   madon: string,           // Mã đơn portal (dùng làm idempotency key)
+ *   order_code?: string,     // Mã ORD lấy trước từ POST /api/orders/reserve-code
  *   email: string,
  *   name: string,
  *   phone: string,
@@ -51,6 +53,15 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const { madon, email, name, phone, address, items, paymentMethod, shippingFee, hasGift } = body;
+    // Ma ORD do portal lay truoc tu POST /api/orders/reserve-code. Co thi dung,
+    // khong co (don cu) thi tu sinh nhu hien tai. Sai dinh dang thi 400.
+    const reservedCode = `${body.order_code || ''}`.trim();
+    if (reservedCode && !isPosOrderCode(reservedCode)) {
+      return NextResponse.json(
+        { success: false, error: 'order_code sai dinh dang (can ORD + YYMMDD + base36).' },
+        { status: 400 },
+      );
+    }
     madonForLog = `${madon || ''}`.slice(0, 32);
     // Nhật ký chẩn đoán (không log key/PIN/SĐT): soi live bằng `wrangler tail`
     // khi khách đặt test mà đơn không về.
@@ -197,6 +208,10 @@ export async function POST(req: NextRequest) {
       paymentMethod: paymentMethod as 'COD' | 'BANK_TRANSFER',
       confirmImmediately: false, // PENDING_CONFIRMATION
       idempotencyKey: `portal-${madon}`,
+      // Portal gui ma da lay truoc tu /api/orders/reserve-code thi giu nguyen
+      // de 1 ma chay xuyen suot (hien khach, Sheet, VietQR). Don cu khong gui
+      // thi bo trong, createOrder tu sinh.
+      ...(reservedCode ? { orderCode: reservedCode } : {}),
       note: `Đơn từ Customer Portal. Mã portal: ${madon}. SĐT: ${phone}. Địa chỉ: ${address}. Phí ship: ${shippingFee || 0}đ.`,
       items: orderItems,
       // Quà SP-004 do route tự xác minh - server tin mà không cần promotion.
