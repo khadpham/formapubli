@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { portalProducts, orders, orderItems, customers, promotions, promotionGifts, products } from '@/db/schema';
+import { portalProducts, portalSettings, orders, orderItems, customers, promotions, promotionGifts, products } from '@/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
 import { randomUUID } from 'crypto';
@@ -191,7 +191,12 @@ export async function POST(req: NextRequest) {
     const idempotencyKey = `portal-${orderCode}`;
 
     // Lay warehouse mac dinh tu portal_settings
-    const warehouseId = 'PHYSICAL_MAIN'; // TODO: doc tu portal_settings
+    const whRows = await db
+      .select()
+      .from(portalSettings)
+      .where(eq(portalSettings.key, 'PORTAL_WAREHOUSE_ID'))
+      .limit(1);
+    const warehouseId = whRows[0]?.value || 'wh-au-co';
 
     await db.insert(orders).values({
       id: orderId,
