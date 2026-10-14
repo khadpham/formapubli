@@ -20,6 +20,7 @@ CREATE TABLE portal_products (
   sort_order INTEGER NOT NULL DEFAULT 0, -- thu tu sap xep (so nho len truoc)
   -- Thong tin sach chi tiet (JSON)
   details_json TEXT, -- {pages, size, publisher, publishYear, coverType, language}
+  erp_product_id TEXT, -- lien ket toi bang products cua ERP (de tao don, tru kho)
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

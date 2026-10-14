@@ -1369,6 +1369,7 @@ export const portalProducts = sqliteTable('portal_products', {
   isFeatured: integer('is_featured', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
   detailsJson: text('details_json'),
+  erpProductId: text('erp_product_id'), // lien ket toi bang products cua ERP
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
