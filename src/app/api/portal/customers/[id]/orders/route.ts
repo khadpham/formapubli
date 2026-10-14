@@ -54,7 +54,7 @@ export async function GET(
           .select({
             productName: products.name,
             quantity: orderItems.quantity,
-            price: orderItems.unitPrice,
+            price: orderItems.unitSellingPrice,
           })
           .from(orderItems)
           .innerJoin(products, eq(orderItems.productId, products.id))
