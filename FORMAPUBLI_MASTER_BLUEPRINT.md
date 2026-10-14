@@ -1490,18 +1490,22 @@ Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn
    "Xuất hóa đơn": tick thì `fiscal_scope = 'OFFICIAL_TAX'` và sinh hóa đơn,
    không tick thì `fiscal_scope = 'INTERNAL_MANAGEMENT'` và chỉ ghi nhận nội bộ.
 
-**Mô hình làm việc với kế toán (bối cảnh xác nhận 2026-10-14):**
+**Mô hình làm việc với kế toán (bối cảnh xác nhận 2026-10-14, đơn giản hóa):**
 
 Kế toán là đơn vị dịch vụ BÊN NGOÀI, không phải nhân viên công ty. Họ làm việc
-HOÀN TOÀN trên phần mềm MS-Invoice, đã quen, không thể ép sang ERP. Module hóa đơn
-tuân thủ mô hình sau:
+HOÀN TOÀN trên phần mềm MS-Invoice, đã quen cắm USB token để ký. KHÔNG ép họ dùng
+ERP. KHÔNG cần remote signing.
 
-1. ERP chuẩn bị dữ liệu hóa đơn (từ đơn hàng / phiếu xuất kho) và ĐẨY sang
-   MS-Invoice qua API (dạng nháp hoặc chờ ký).
-2. Kế toán xem, kiểm tra, duyệt và KÝ ngay trên MS-Invoice - công cụ họ đã quen.
-3. ERP ĐỒNG BỘ NGƯỢC trạng thái, số hóa đơn, mã CQT, link tra cứu về để đối soát.
+Luồng chuẩn:
+1. ERP chuẩn bị dữ liệu hóa đơn (từ đơn hàng / phiếu xuất kho).
+2. ERP gọi API MS-Invoice tạo HÓA ĐƠN NHÁP (isSigned=N, chưa ký) trên MS-Invoice.
+3. Kế toán mở MS-Invoice, thấy nháp do ERP đẩy lên, kiểm tra, cắm USB token ký
+   như họ vẫn làm từ trước đến nay.
+4. ERP ĐỒNG BỘ NGƯỢC: định kỳ gọi API lấy trạng thái, số hóa đơn, mã CQT,
+   link tra cứu về lưu vào DB ERP để đối soát và báo cáo.
 
-ERP không bao giờ là nơi duy nhất tạo hóa đơn mà kế toán không nhìn thấy.
+ERP không bao giờ tự ký hóa đơn. ERP chỉ chuẩn bị nháp. Remote signing chưa cần
+thiết ở giai đoạn này.
 
 **Kỹ thuật MS-Invoice (đã verify qua POC 2026-10-14):**
 
@@ -1509,8 +1513,9 @@ ERP không bao giờ là nơi duy nhất tạo hóa đơn mà kế toán không 
 - Luồng: login lấy LoginKey -> POST `/erp/rest/s1/iam-invoice/invoices/create-from-3rd`
   (kèm certSn + isSigned=Y) -> remote signing qua IntrustCA (requirePinCode=N).
 - Ký hiệu: `1C26TVN`. Payload dùng `productItems` (không phải `items`).
-- Remote signing production: hỏi MS-INVOICE (bên phần mềm), không hỏi kế toán.
-  Hiện tại công ty khả năng cao chưa có remote signing production.
+- Tạo NHÁP: gửi `isSigned = "N"` (POC đã test `isSigned = "Y"` để ký luôn).
+- Remote signing KHÔNG cần thiết ở giai đoạn này (quyết định 2026-10-14).
+  Kế toán tiếp tục cắm USB token ký trên MS-Invoice như cũ. ERP chỉ đẩy nháp.
 
 ### 23.9. Chiến lược portal dev (anh Kha chốt 2026-10-14)
 
