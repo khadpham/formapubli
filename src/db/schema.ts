@@ -1426,3 +1426,33 @@ export const portalReviews = sqliteTable('portal_reviews', {
   productIdx: index('idx_portal_reviews_product').on(table.productId, table.status),
   customerIdx: index('idx_portal_reviews_customer').on(table.customerId),
 }));
+
+// 0064: Kiem ke kho
+export const inventoryCounts = sqliteTable('inventory_counts', {
+  id: text('id').primaryKey(),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  status: text('status').notNull().default('DRAFT'),
+  note: text('note'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  submittedAt: text('submitted_at'),
+  approvedBy: text('approved_by'),
+  approvedAt: text('approved_at'),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  warehouseIdx: index('idx_inventory_counts_warehouse').on(table.warehouseId),
+  statusIdx: index('idx_inventory_counts_status').on(table.status),
+}));
+
+export const inventoryCountItems = sqliteTable('inventory_count_items', {
+  id: text('id').primaryKey(),
+  countId: text('count_id').notNull().references(() => inventoryCounts.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').references(() => editions.id),
+  productId: text('product_id').notNull().references(() => products.id),
+  systemQty: integer('system_qty').notNull().default(0),
+  countedQty: integer('counted_qty'),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  countIdx: index('idx_count_items_count').on(table.countId),
+}));
