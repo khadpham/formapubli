@@ -974,7 +974,13 @@ graph LR
 Trong một nhà xuất bản hoặc đơn vị phát hành sách độc lập, sự rò rỉ dữ liệu tài chính hoặc số liệu kho có thể dẫn đến rủi ro pháp lý và quản trị nghiêm trọng:
 - **Nhân viên bán hàng hội chợ (Cashier/Staff):** Thường là cộng tác viên, sinh viên hoặc nhân viên bán thời gian. Họ cần thao tác bán hàng cực nhanh nhưng **tuyệt đối không được xem doanh thu tổng của công ty, không thấy giá vốn, không thấy lợi nhuận, và không biết thông tin về sổ sách thuế**.
 - **Thủ kho (Warehouse Keeper):** Cần tập trung 100% vào sự chính xác của số lượng sách trên giá kệ vật lý. Họ quản lý thẻ kho, nhập/xuất/chuyển kho nhưng không cần và không được can thiệp vào các con số doanh thu tài chính.
-- **Kế toán thuế (Tax Accountant):** Chịu trách nhiệm làm việc với hóa đơn điện tử và Chi cục Thuế. **Hệ thống bắt buộc phải tự động cách ly, chỉ cung cấp cho Kế toán thuế duy nhất các số liệu chính thức (`OFFICIAL_TAX`)**, tuyệt đối không để lộ các đơn bán đầu nậu hay dòng tiền nội bộ (`INTERNAL_MANAGEMENT`).
+- **Kế toán thuế (Tax Accountant):** Là đơn vị dịch vụ BÊN NGOÀI (xác nhận 2026-10-14),
+  không phải nhân viên công ty. Họ làm việc HOÀN TOÀN trên phần mềm MS-Invoice,
+  không dùng ERP. ERP chỉ có trách nhiệm: (1) đẩy dữ liệu hóa đơn sang MS-Invoice
+  để họ duyệt/ký, (2) đồng bộ ngược trạng thái về, (3) xuất báo cáo thuế chỉ gồm
+  dữ liệu `OFFICIAL_TAX` khi họ cần. **Hệ thống bắt buộc phải tự động cách ly,
+  chỉ cung cấp cho Kế toán thuế duy nhất các số liệu chính thức (`OFFICIAL_TAX`)**,
+  tuyệt đối không để lộ các đơn bán đầu nậu hay dòng tiền nội bộ (`INTERNAL_MANAGEMENT`).
 - **Quản lý vận hành (Manager):** Điều phối quầy bán và kho vận hàng ngày, duyệt chuyển kho, áp chiết khấu theo khung cho phép.
 - **Chủ doanh nghiệp (Owner / Super Admin):** Nắm giữ quyền lực tối cao, nhìn thấy toàn cảnh bức tranh thực tế (Total Reality View).
 
@@ -1463,3 +1469,69 @@ Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn
 - UI trang "Đối soát SPX" tương tự đối soát ngân hàng.
 
 **Trạng thái implement (dev, 2026-10-14):** Đã code xong trên nhánh dev - migration 0061 (bank) + 0062 (SPX), service + UI panel, API reserve-code (commit 49d9d77, 9b0d857, ffa6388). Đang test trên dev.formapubli.vn, chưa PR vào main.
+
+### 23.8. Hóa đơn điện tử MS-Invoice (anh Kha chốt 2026-10-14)
+
+**Nguyên tắc tối cao:** MỌI sản phẩm bán ra đều phải có hóa đơn. Không có ngoại lệ.
+
+**Ba luồng hóa đơn:**
+
+1. **Khách lấy hóa đơn VAT:** Đơn gắn `fiscal_scope = 'OFFICIAL_TAX'`. Xuất HĐĐT
+   ngay cho đơn đó qua MS-Invoice. Thủ kho được xuất hóa đơn khi khách yêu cầu.
+
+2. **Khách KHÔNG lấy hóa đơn (bán lẻ):** Vẫn ghi nhận đầy đủ. Đơn gắn
+   `fiscal_scope = 'INTERNAL_MANAGEMENT'`, xuất kho bình thường. Cuối ngày
+   (cron 21h30), hệ thống GOM TẤT CẢ đơn bán lẻ không lấy hóa đơn trong ngày
+   thành MỘT hóa đơn tổng hợp duy nhất (đúng Nghị định 123/2020/NĐ-CP cho bán lẻ).
+   Kế toán chỉ ký MỘT lần cho hóa đơn tổng hợp này.
+
+3. **Bán đầu nậu chiết khấu sâu không hóa đơn:** Luồng RIÊNG, không gộp vào hóa đơn
+   tổng hợp cuối ngày. Khi lập phiếu xuất kho cho đơn đầu nậu, có tickbox rõ ràng
+   "Xuất hóa đơn": tick thì `fiscal_scope = 'OFFICIAL_TAX'` và sinh hóa đơn,
+   không tick thì `fiscal_scope = 'INTERNAL_MANAGEMENT'` và chỉ ghi nhận nội bộ.
+
+**Mô hình làm việc với kế toán (bối cảnh xác nhận 2026-10-14):**
+
+Kế toán là đơn vị dịch vụ BÊN NGOÀI, không phải nhân viên công ty. Họ làm việc
+HOÀN TOÀN trên phần mềm MS-Invoice, đã quen, không thể ép sang ERP. Module hóa đơn
+tuân thủ mô hình sau:
+
+1. ERP chuẩn bị dữ liệu hóa đơn (từ đơn hàng / phiếu xuất kho) và ĐẨY sang
+   MS-Invoice qua API (dạng nháp hoặc chờ ký).
+2. Kế toán xem, kiểm tra, duyệt và KÝ ngay trên MS-Invoice - công cụ họ đã quen.
+3. ERP ĐỒNG BỘ NGƯỢC trạng thái, số hóa đơn, mã CQT, link tra cứu về để đối soát.
+
+ERP không bao giờ là nơi duy nhất tạo hóa đơn mà kế toán không nhìn thấy.
+
+**Kỹ thuật MS-Invoice (đã verify qua POC 2026-10-14):**
+
+- Demo API: `https://docker-myinvoice.iamsoftware.com.vn`
+- Luồng: login lấy LoginKey -> POST `/erp/rest/s1/iam-invoice/invoices/create-from-3rd`
+  (kèm certSn + isSigned=Y) -> remote signing qua IntrustCA (requirePinCode=N).
+- Ký hiệu: `1C26TVN`. Payload dùng `productItems` (không phải `items`).
+- Remote signing production: hỏi MS-INVOICE (bên phần mềm), không hỏi kế toán.
+  Hiện tại công ty khả năng cao chưa có remote signing production.
+
+### 23.9. Chiến lược portal dev (anh Kha chốt 2026-10-14)
+
+Portal đặt sách (`khadpham/customer-order-portal`, production `datsach.formapubli.vn`)
+là repo riêng, deploy trên Vercel. Để phát triển tính năng mới không ảnh hưởng
+production:
+
+- Tạo nhánh `dev` trong repo portal. Vercel tự động deploy preview cho nhánh dev
+  mỗi lần push.
+- Biến môi trường trên preview dev: `FORMAPUBLI_API_URL=https://dev.formapubli.vn`
+  (trỏ sang ERP dev, TUYỆT ĐỐI không trỏ production).
+- Production giữ nguyên: nhánh `main`, `FORMAPUBLI_API_URL=https://app.formapubli.vn`.
+- Hosting: tiếp tục dùng Vercel cho cả dev và production (đã nghiên cứu so sánh
+  với Cloudflare Pages và VPS - Vercel thắng vì preview tự động, zero config,
+  phù hợp team nhỏ).
+- Mọi thay đổi khách hàng nhìn thấy: preview trên dev trước, anh Kha duyệt mới
+  merge vào main để deploy production.
+
+**Thiết kế portal mới (đã chốt):**
+1. Trang chủ hiển thị TOÀN BỘ sản phẩm ngay khi vào link (bỏ màn hình login chặn đầu).
+2. Bấm đặt hàng -> bắt buộc có tài khoản (đăng nhập nếu có, đăng ký nếu chưa).
+3. Lưu toàn bộ thông tin khách hàng.
+4. Một mã đơn duy nhất: portal gọi `POST /api/orders/reserve-code` lấy mã `ORD...`
+   trước khi khách thanh toán (xem 23.6).
