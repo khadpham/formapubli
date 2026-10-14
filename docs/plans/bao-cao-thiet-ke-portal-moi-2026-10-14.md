@@ -203,11 +203,21 @@ Portal gọi sang ERP qua các API riêng (prefix `/api/portal/`), xác thực b
 ## 7. KHUYẾN MẠI ĐA KÊNH (tích hợp khăng khít)
 
 Hiện tại đã có chương trình tặng quà cho đơn trên 500.000đ / 1.000.000đ.
-Yêu cầu của anh Kha: nghiêm túc hóa, tích hợp đa kênh, API khăng khít.
+Yêu cầu của anh Kha: nghiêm túc hóa, tích hợp các kênh CHỦ ĐỘNG ĐƯỢC.
+
+**Phạm vi áp dụng (anh Kha chốt 2026-10-14):** Chỉ các kênh chúng ta chủ động được:
+- Bán tại hội chợ (fair).
+- Bán trên portal online.
+- Bán vật lý tại cửa hàng offline.
+
+KHÔNG áp dụng cho Shopee và các sàn thương mại điện tử khác, vì không thể
+cài đặt khuyến mại trên hệ thống của họ. Các sàn có cơ chế khuyến mại riêng,
+không liên quan đến engine này.
 
 **Nguyên tắc:**
 - Quy tắc khuyến mại định nghĩa MỘT lần trong ERP (`portal_promotions`).
-- Mọi kênh bán (portal, POS, Shopee) gọi cùng một API kiểm tra khuyến mại.
+- Các kênh chủ động được (portal, POS, bán offline) gọi cùng một API kiểm tra
+  khuyến mại.
 - Logic áp dụng nhất quán: cùng một đơn, cùng điều kiện, cùng quà tặng,
   không phụ thuộc kênh.
 
