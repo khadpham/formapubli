@@ -71,6 +71,7 @@ interface MatrixBookItem {
   /** Tồn theo warehouseId - động, gồm mọi kho kể cả kho hội chợ. */
   stockByWarehouse?: Record<string, number>;
   totalStock: number;
+  lowStockThreshold?: number;
 }
 
 interface WarehouseItem {
@@ -1283,8 +1284,15 @@ export function StockOverviewMatrix({
                           </span>
                         ) : (
                           b.totalStock > 0 ? (
-                            <span className="text-slate-700 font-bold">
-                              {b.totalStock.toLocaleString('vi-VN')}
+                            <span className="inline-flex items-center gap-1">
+                              <span className={`font-bold ${(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'text-rose-600' : 'text-slate-700'}`}>
+                                {b.totalStock.toLocaleString('vi-VN')}
+                              </span>
+                              {(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) && (
+                                <span title={`Tồn thấp: dưới ngưỡng ${(b.lowStockThreshold || 0).toLocaleString('vi-VN')}`} className="inline-flex items-center px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-full text-[10px] font-bold">
+                                  Thấp
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <span className="text-slate-400 font-normal">0</span>

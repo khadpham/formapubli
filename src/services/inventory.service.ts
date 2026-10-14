@@ -1038,6 +1038,7 @@ export class InventoryService {
         translator: works.translator,
         shortCode: works.shortCode,
         publicationYear: editions.publicationYear,
+        lowStockThreshold: products.lowStockThreshold,
       })
       .from(products)
       .leftJoin(editions, eq(editions.id, products.id))
@@ -1108,6 +1109,7 @@ export class InventoryService {
         stockDuPhong: bal['wh-du-phong'] || 0,
         stockByWarehouse: bal,
         totalStock,
+        lowStockThreshold: p.lowStockThreshold || 0,
       };
     });
   }
