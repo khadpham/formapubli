@@ -26,14 +26,14 @@ const STATUS_LABELS: Record<string, string> = {
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     if (!checkAuth(req)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id: customerId } = params;
+    const { id: customerId } = await params;
 
     const orderRows = await db
       .select({

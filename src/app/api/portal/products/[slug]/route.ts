@@ -17,14 +17,14 @@ function checkAuth(req: NextRequest) {
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     if (!checkAuth(req)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { slug } = params;
+    const { slug } = await params;
     const rows = await db
       .select()
       .from(portalProducts)
