@@ -1541,6 +1541,16 @@ production:
 4. Một mã đơn duy nhất: portal gọi `POST /api/orders/reserve-code` lấy mã `ORD...`
    trước khi khách thanh toán (xem 23.6).
 
+**Tiến độ 2026-10-14:**
+- ERP dev: 9 API portal hoàn thành (products, customers, reviews, promotions, orders),
+  import 88 sản phẩm thật từ sheet, API tạo đơn test end-to-end OK.
+- Portal dev: UI catalog hoàn chỉnh, 7/7 lỗi visual đã sửa. Bước 3 nối API thật
+  hoàn thành (products 88 món, detail, lookup, reserve-code, tạo đơn COD).
+  Đang chờ: cấu hình 2 biến môi trường Vercel preview
+  (`NEXT_PUBLIC_FORMAPUBLI_API_URL`, `NEXT_PUBLIC_PORTAL_API_KEY`) rồi test đơn thật.
+- Lưu ý kỹ thuật: portal gọi API từ trình duyệt nên key phải có prefix NEXT_PUBLIC_.
+  Đây là chấp nhận được cho storefront công khai, API ERP đã có rate limit cơ bản.
+
 ### 23.10. Quyết định hạ tầng dữ liệu (anh Kha duyệt 2026-10-14)
 
 **Lưu trữ ảnh sản phẩm:** Giữ iili.io (dịch vụ hiện tại, đã kiểm chứng ổn định).
