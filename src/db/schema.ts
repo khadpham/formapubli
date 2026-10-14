@@ -24,6 +24,7 @@ export const products = sqliteTable('products', {
   description: text('description'),
   isGiftItem: integer('is_gift_item', { mode: 'boolean' }).notNull().default(false), // GỢI Ý quà, KHÔNG phải rào chặn (chốt #22)
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lowStockThreshold: integer('low_stock_threshold').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   codeIdx: uniqueIndex('products_code_unique').on(table.code),
@@ -1090,6 +1091,7 @@ export const contractReviewChecklists = sqliteTable('contract_review_checklists'
   version: integer('version').notNull().default(1),
   items: text('items').notNull(),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lowStockThreshold: integer('low_stock_threshold').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   categoryIdx: index('idx_review_checklists_category').on(table.category),
@@ -1188,6 +1190,7 @@ export const contractPresets = sqliteTable('contract_presets', {
   valuesJson: text('values_json').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lowStockThreshold: integer('low_stock_threshold').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
