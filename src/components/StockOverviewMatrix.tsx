@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   PlusCircle,
   ClipboardList,
+  Clock,
   MinusCircle,
   History,
   ShieldCheck,
@@ -40,6 +41,7 @@ import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
 import { WarehouseBankManager } from './inventory/WarehouseBankManager';
 import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
 import { InventoryCountModal } from './inventory/InventoryCountModal';
+import { InventoryCountListModal } from './inventory/InventoryCountListModal';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -131,6 +133,7 @@ export function StockOverviewMatrix({
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
   const [countModalOpen, setCountModalOpen] = useState(false);
+  const [countListOpen, setCountListOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
@@ -859,6 +862,15 @@ export function StockOverviewMatrix({
 
           <button
             type="button"
+            onClick={() => setCountListOpen(true)}
+            title="Xem và duyệt các đợt kiểm kê"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-white border border-amber-300 hover:bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <Clock className="w-3.5 h-3.5" /> Đợt kiểm kê
+          </button>
+
+          <button
+            type="button"
             onClick={() => setRmaModalOpen(true)}
             title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly"
             className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
@@ -1454,6 +1466,11 @@ export function StockOverviewMatrix({
         isOpen={countModalOpen}
         onClose={() => setCountModalOpen(false)}
         warehouses={warehouses}
+        onSuccess={handleRefresh}
+      />
+      <InventoryCountListModal
+        open={countListOpen}
+        onClose={() => setCountListOpen(false)}
         onSuccess={handleRefresh}
       />
 
