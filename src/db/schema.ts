@@ -1349,3 +1349,65 @@ export const publishingStages = sqliteTable('publishing_stages', {
   projectIdx: index('idx_pub_stages_project').on(table.projectId),
   statusIdx: index('idx_pub_stages_status').on(table.status),
 }));
+
+// 0063: Portal products - quan tri noi dung san pham cho portal ban sach.
+export const portalProducts = sqliteTable('portal_products', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  sku: text('sku'),
+  name: text('name').notNull(),
+  author: text('author'),
+  translator: text('translator'),
+  description: text('description'),
+  coverPrice: real('cover_price').notNull().default(0),
+  salePrice: real('sale_price'),
+  productType: text('product_type').notNull().default('SINGLE'), // SINGLE | COMBO | GIFT
+  category: text('category'),
+  isbn: text('isbn'),
+  coverImage: text('cover_image'),
+  isVisible: integer('is_visible', { mode: 'boolean' }).notNull().default(true),
+  isFeatured: integer('is_featured', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  detailsJson: text('details_json'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  visibleIdx: index('idx_portal_products_visible').on(table.isVisible, table.sortOrder),
+  slugIdx: index('idx_portal_products_slug').on(table.slug),
+  typeIdx: index('idx_portal_products_type').on(table.productType),
+}));
+
+export const portalProductImages = sqliteTable('portal_product_images', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => portalProducts.id),
+  imageUrl: text('image_url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  productIdx: index('idx_portal_images_product').on(table.productId, table.sortOrder),
+}));
+
+export const portalComboItems = sqliteTable('portal_combo_items', {
+  id: text('id').primaryKey(),
+  comboProductId: text('combo_product_id').notNull().references(() => portalProducts.id),
+  itemProductId: text('item_product_id').notNull().references(() => portalProducts.id),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  comboIdx: index('idx_combo_items_combo').on(table.comboProductId),
+}));
+
+export const portalReviews = sqliteTable('portal_reviews', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => portalProducts.id),
+  customerId: text('customer_id').notNull(),
+  rating: integer('rating').notNull(),
+  content: text('content').notNull(),
+  status: text('status').notNull().default('PENDING'), // PENDING | APPROVED | REJECTED
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  reviewedAt: text('reviewed_at'),
+}, (table) => ({
+  productIdx: index('idx_portal_reviews_product').on(table.productId, table.status),
+  customerIdx: index('idx_portal_reviews_customer').on(table.customerId),
+}));
