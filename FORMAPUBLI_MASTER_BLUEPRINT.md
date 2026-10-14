@@ -1540,3 +1540,35 @@ production:
 3. Lưu toàn bộ thông tin khách hàng.
 4. Một mã đơn duy nhất: portal gọi `POST /api/orders/reserve-code` lấy mã `ORD...`
    trước khi khách thanh toán (xem 23.6).
+
+### 23.10. Quyết định hạ tầng dữ liệu (anh Kha duyệt 2026-10-14)
+
+**Lưu trữ ảnh sản phẩm:** Giữ iili.io (dịch vụ hiện tại, đã kiểm chứng ổn định).
+URL ảnh lưu dạng text trong DB. Nếu sau này cần chuyển sang R2 thì chỉ cần
+UPDATE URL, không sửa code. R2 dành cho tài liệu pháp lý quan trọng
+(hợp đồng, hóa đơn, biên lai) nơi mất file là mất pháp lý.
+
+**Kiến trúc database:** MỘT database duy nhất (Turso/SQLite), KHÔNG tách thành
+nhiều database vật lý. Lý do: nghiệp vụ bán hàng cần transaction xuyên suốt
+(trừ kho + tạo đơn + ghi doanh thu trong một lần), tách DB sẽ mất tính toàn vẹn.
+
+Thay vào đó, tách biệt bằng MODULE LOGIC trong cùng database:
+- Bảng kho vận: tiền tố `inv_` hoặc nhóm inventory.
+- Bảng bán portal: tiền tố `portal_`.
+- Bảng tài chính: tiền tố `fin_`.
+- Mỗi module có ranh giới rõ trong code, nhưng vẫn join và transaction được
+  khi cần.
+
+**Giữ Turso:** Database hiện tại 6.1MB, 75 bảng (đo ngày 2026-10-14).
+Gói miễn phí cho 9GB dung lượng và khoảng 25 triệu lượt đọc/tháng.
+Quy mô hiện tại dùng chưa tới 0.1% dung lượng. Đủ cho nhiều năm tới.
+
+**Nguyên tắc file vs dữ liệu:**
+- Turso chỉ chứa chữ và số (text, số, ngày tháng).
+- File (PDF, DOCX, ảnh) lưu trên kho file riêng (R2 cho tài liệu, iili.io cho
+  ảnh sản phẩm). Turso chỉ lưu URL trỏ đến file.
+- Khi truy xuất: đọc URL từ Turso, tải file từ kho chứa, file nguyên vẹn
+  đúng định dạng gốc.
+
+**Migration:** Không tốn phí, không giới hạn số lượng. Thêm bảng/cột mới
+không ảnh hưởng dữ liệu cũ. Tuyệt đối không xóa bảng/cột đang dùng.
