@@ -5,6 +5,7 @@ import {
   Search,
   ArrowRightLeft,
   PlusCircle,
+  ClipboardList,
   MinusCircle,
   History,
   ShieldCheck,
@@ -38,6 +39,7 @@ import { TransitPanel } from './inventory/TransitPanel';
 import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
 import { WarehouseBankManager } from './inventory/WarehouseBankManager';
 import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
+import { InventoryCountModal } from './inventory/InventoryCountModal';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -127,6 +129,7 @@ export function StockOverviewMatrix({
   const [modalOpen, setModalOpen] = useState(false);
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
+  const [countModalOpen, setCountModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
@@ -829,6 +832,15 @@ export function StockOverviewMatrix({
 
           <button
             type="button"
+            onClick={() => setCountModalOpen(true)}
+            title="Kiểm kê kho định kỳ"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <ClipboardList className="w-3.5 h-3.5" /> Kiểm kê
+          </button>
+
+          <button
+            type="button"
             onClick={() => setRmaModalOpen(true)}
             title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly"
             className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
@@ -1408,6 +1420,12 @@ export function StockOverviewMatrix({
         warehouses={warehouses}
         defaultAction={modalAction}
         selectedBook={selectedBookForAction}
+        onSuccess={handleRefresh}
+      />
+      <InventoryCountModal
+        isOpen={countModalOpen}
+        onClose={() => setCountModalOpen(false)}
+        warehouses={warehouses}
         onSuccess={handleRefresh}
       />
 
