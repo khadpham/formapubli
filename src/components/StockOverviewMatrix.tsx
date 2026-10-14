@@ -500,6 +500,23 @@ export function StockOverviewMatrix({
   // giới hạn CPU Worker (lỗi 1102). Muốn nạp lại toàn bộ số liệu thì F5.
   // `isRefreshing` bật TỪ LÚC BẤM và tắt khi fetch xong (finally) hoặc sau
   // 15s (chốt an toàn chống kẹt spinner).
+  const handleUpdateThreshold = async (productId: string, current: number) => {
+    const val = window.prompt('Nhập ngưỡng tồn thấp (0 = tắt cảnh báo):', String(current || 0));
+    if (val === null) return;
+    const num = Math.max(0, Math.round(Number(val) || 0));
+    try {
+      const res = await fetch(`/api/products/${productId}/threshold`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold: num }),
+      });
+      const data = await res.json();
+      if (data.ok) handleRefresh();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleRefresh = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
@@ -1288,11 +1305,14 @@ export function StockOverviewMatrix({
                               <span className={`font-bold ${(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'text-rose-600' : 'text-slate-700'}`}>
                                 {b.totalStock.toLocaleString('vi-VN')}
                               </span>
-                              {(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) && (
-                                <span title={`Tồn thấp: dưới ngưỡng ${(b.lowStockThreshold || 0).toLocaleString('vi-VN')}`} className="inline-flex items-center px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-full text-[10px] font-bold">
-                                  Thấp
-                                </span>
-                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleUpdateThreshold(b.id, b.lowStockThreshold || 0); }}
+                                title={`Ngưỡng hiện tại: ${(b.lowStockThreshold || 0).toLocaleString('vi-VN')}. Bấm để sửa.`}
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                              >
+                                {(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'Thấp' : 'Ngưỡng'}
+                              </button>
                             </span>
                           ) : (
                             <span className="text-slate-400 font-normal">0</span>
