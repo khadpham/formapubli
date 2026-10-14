@@ -19,13 +19,34 @@ MỌI sản phẩm bán ra đều phải có hóa đơn. Không có ngoại lệ
   xuất kho bình thường. Cuối ngày, hệ thống GOM TẤT CẢ đơn bán lẻ không lấy hóa đơn
   trong ngày thành MỘT hóa đơn tổng hợp duy nhất (đúng Nghị định 123/2020/NĐ-CP cho
   bán lẻ). Kế toán chỉ ký MỘT lần cho hóa đơn tổng hợp này.
+- **Bán đầu nậu chiết khấu sâu không hóa đơn:** Giữ luồng RIÊNG, không gộp vào hóa đơn
+  tổng hợp cuối ngày. Khi lập phiếu xuất kho cho đơn đầu nậu, có một tickbox rõ ràng
+  "Xuất hóa đơn": tick thì `fiscal_scope = 'OFFICIAL_TAX'` và sinh hóa đơn, không tick
+  thì `fiscal_scope = 'INTERNAL_MANAGEMENT'` và chỉ ghi nhận nội bộ. Một tick duy nhất
+  quyết định luồng, không được để mập mờ.
 - **Nguyên tắc sổ cái:** Mọi cuốn sách rời kho (bán có VAT, bán lẻ gộp cuối ngày,
-  biếu tặng, lưu chiểu) đều phải có một dòng trong `inventory_ledger`.
-  Sách trên phần mềm = Sách trên kệ 100%.
+  biếu tặng, lưu chiểu, bán đầu nậu không hóa đơn) đều phải có một dòng trong
+  `inventory_ledger`. Sách trên phần mềm = Sách trên kệ 100%.
 - **Tích hợp kho - hóa đơn:** Mọi nghiệp vụ xuất kho (bán lẻ, bán sỉ, đơn online,
-  hội chợ) đều phải có khả năng sinh hóa đơn. Luồng xuất kho và luồng hóa đơn
+  hội chợ, đầu nậu) đều phải có khả năng sinh hóa đơn. Luồng xuất kho và luồng hóa đơn
   phối hợp qua Outbox Pattern bất đồng bộ: xuất kho KHÔNG bị chặn bởi hóa đơn,
   hóa đơn được đẩy vào hàng đợi và xử lý riêng.
+
+### 1.1b. Mô hình làm việc với kế toán (bối cảnh anh Kha xác nhận 2026-10-14)
+
+Kế toán là đơn vị dịch vụ BÊN NGOÀI, không phải nhân viên công ty. Họ đã quen làm
+việc hoàn toàn trên phần mềm MS-Invoice và không thể bắt họ chuyển sang ERP.
+Vì vậy module hóa đơn tuân thủ mô hình sau, KHÔNG được thiết kế theo hướng ép
+kế toán dùng ERP:
+
+1. ERP chuẩn bị dữ liệu hóa đơn (từ đơn hàng / phiếu xuất kho) và ĐẨY sang
+   MS-Invoice qua API (dạng nháp hoặc chờ ký, tùy cấu hình).
+2. Kế toán xem, kiểm tra, duyệt và KÝ ngay trên MS-Invoice - công cụ họ đã quen.
+3. ERP ĐỒNG BỘ NGƯỢC trạng thái, số hóa đơn, mã CQT, link tra cứu về để đối soát
+   và báo cáo nội bộ.
+
+ERP không bao giờ là nơi duy nhất tạo hóa đơn mà kế toán không nhìn thấy.
+Mọi hóa đơn ERP sinh ra đều phải xuất hiện được trên MS-Invoice để kế toán kiểm soát.
 
 ### 1.2. Thông số kỹ thuật MS-Invoice (đã có từ POC)
 
@@ -73,7 +94,18 @@ metadata trong bảng `documents` (migration 0057 đã có).
 Portal hiện tại: trang chủ là màn hình đăng nhập (email/SDT), sau đó vào `/dat-mua`
 chốt đơn 1 trang, 6 sản phẩm hardcode. Deploy Vercel, production datsach.formapubli.vn.
 
-### 3.2. Thiết kế mới (anh Kha chốt)
+### 3.2. Chiến lược dev/staging (anh Kha chốt 2026-10-14)
+- Tạo nhánh `dev` trong repo `khadpham/customer-order-portal`. Vercel tự động
+  deploy preview cho nhánh dev mỗi lần push - đây là môi trường dev của portal.
+- Biến môi trường trên preview dev: `FORMAPUBLI_API_URL=https://dev.formapubli.vn`
+  (trỏ sang ERP dev, TUYỆT ĐỐI không trỏ production).
+- Production giữ nguyên: nhánh `main`, `FORMAPUBLI_API_URL=https://app.formapubli.vn`.
+- Hosting: tiếp tục dùng Vercel cho cả dev và production (khuyến nghị sau nghiên cứu,
+  xem chi tiết ở PHỤ LỤC B). Không dựng portal dev trên VPS.
+- Mọi thay đổi khách hàng nhìn thấy: preview trên dev trước, anh Kha duyệt mới
+  merge vào main để deploy production.
+
+### 3.3. Thiết kế mới (anh Kha chốt)
 1. **Trang chủ hiển thị TOÀN BỘ sản phẩm ngay khi vào link.** Không còn màn hình
    đăng nhập chặn đầu. Khách xem, chọn sách, bấm đặt.
 2. **Bắt buộc có tài khoản mới được xác nhận đơn.** Khi bấm đặt hàng:
@@ -85,12 +117,13 @@ chốt đơn 1 trang, 6 sản phẩm hardcode. Deploy Vercel, production datsach
    đã audit an toàn) lấy mã `ORD...` trước khi khách thanh toán. Không tự sinh
    `DH-...` nữa. Mã này dùng xuyên suốt: hiển thị khách, VietQR, sheet, đối soát.
 
-### 3.3. Việc cần làm
-1. Viết lại trang chủ thành catalog sản phẩm (lấy từ ERP API, không hardcode).
-2. Luồng đặt hàng: chọn sách -> bấm đặt -> kiểm tra đăng nhập -> đăng nhập/đăng ký
+### 3.4. Việc cần làm
+1. Tạo nhánh `dev`, cấu hình biến môi trường preview trỏ ERP dev.
+2. Viết lại trang chủ thành catalog sản phẩm (lấy từ ERP API, không hardcode).
+3. Luồng đặt hàng: chọn sách -> bấm đặt -> kiểm tra đăng nhập -> đăng nhập/đăng ký
    -> xác nhận đơn (đã có mã ORD từ reserve-code).
-3. Trang này khách hàng nhìn thấy: MỌI thay đổi phải preview, anh Kha duyệt
-   mới deploy production.
+4. Trang này khách hàng nhìn thấy: MỌI thay đổi phải preview trên dev, anh Kha duyệt
+   mới merge main deploy production.
 
 ---
 
