@@ -12,7 +12,7 @@ Cả hai bên code dựa trên tài liệu này, không tự ý thay đổi form
 
 **Xác thực:** Mọi request từ portal sang ERP gửi header:
 ```
-X-Portal-Api-Key: <PORTAL_API_KEY>
+Authorization: Bearer <PORTAL_API_KEY>
 ```
 Thiếu hoặc sai key: trả về `401 Unauthorized`.
 
@@ -307,7 +307,10 @@ Body: `{}` (không cần tham số).
 
 Response `200`:
 ```json
-{ "orderCode": "ORD2610140001" }
+{
+  "success": true,
+  "data": { "orderCode": "ORD2610140001" }
+}
 ```
 
 Portal PHẢI gọi API này TRƯỚC khi hiện VietQR cho khách chuyển khoản.
@@ -381,19 +384,20 @@ Response `200`:
   "promotions": [
     {
       "id": "uuid",
-      "name": "Tặng bookmark cho đơn từ 500k",
+      "name": "Khuyến mại hội chợ tháng 10",
       "type": "GIFT_THRESHOLD",
-      "threshold": 500000,
-      "giftName": "Bookmark FORMApubli",
-      "giftImage": "https://...r2.../bookmark.jpg"
-    },
-    {
-      "id": "uuid",
-      "name": "Tặng túi vải cho đơn từ 1 triệu",
-      "type": "GIFT_THRESHOLD",
-      "threshold": 1000000,
-      "giftName": "Túi vải FORMApubli",
-      "giftImage": "https://...r2.../tote.jpg"
+      "tiers": [
+        {
+          "threshold": 500000,
+          "giftName": "Bookmark FORMApubli",
+          "giftImage": "https://.../bookmark.jpg"
+        },
+        {
+          "threshold": 1000000,
+          "giftName": "Túi vải FORMApubli",
+          "giftImage": "https://.../tote.jpg"
+        }
+      ]
     },
     {
       "id": "uuid",
@@ -405,6 +409,9 @@ Response `200`:
   ]
 }
 ```
+
+Lưu ý (cập nhật 2026-10-14 theo thực tế triển khai): API trả `tiers[]` theo từng
+chương trình, không phải danh sách phẳng. Portal chuẩn hóa ở client.
 
 Portal dùng để hiển thị "Thêm Xđ nữa để nhận [quà]". Khi tạo đơn, ERP tính
 lại chính xác và chốt quà vào đơn.
