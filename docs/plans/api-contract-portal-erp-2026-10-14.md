@@ -72,6 +72,27 @@ Ghi chú:
 - Chỉ trả sản phẩm có `isVisible = true`.
 - `salePrice = null` nghĩa là bán đúng giá bìa, không khuyến mại.
 - `inStock`: true/false. KHÔNG trả số lượng tồn kho cụ thể.
+- `productType`: `SINGLE` (sách lẻ), `COMBO` (bộ nhiều cuốn), `GIFT` (quà tặng).
+  Loại `GIFT` không hiện để bán, chỉ dùng trong engine khuyến mại.
+- Với `COMBO`, response thêm trường `comboItems`: danh sách sách trong combo.
+
+### 2.1b. Ví dụ sản phẩm combo
+```json
+{
+  "id": "uuid",
+  "slug": "combo-bo-walser",
+  "name": "[Combo] Bộ Walser - Jakob von Gunten & Anh em Tanner",
+  "productType": "COMBO",
+  "coverPrice": 435000,
+  "salePrice": null,
+  "coverImage": "https://iili.io/...",
+  "inStock": true,
+  "comboItems": [
+    { "productId": "uuid", "productName": "Jakob von Gunten", "quantity": 1 },
+    { "productId": "uuid", "productName": "Anh em Tanner", "quantity": 1 }
+  ]
+}
+```
 
 ### 2.2. Chi tiết một sản phẩm
 ```
