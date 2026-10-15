@@ -33,14 +33,22 @@ export async function getComboMap(
   const out = new Map<string, Array<{ componentProductId: string; quantity: number }>>();
   const ids = Array.from(new Set(comboIds.filter(Boolean)));
   if (ids.length === 0) return out;
-  const rows = (await txOrDb
-    .select({
-      comboProductId: comboComponents.comboProductId,
-      componentProductId: comboComponents.componentProductId,
-      quantity: comboComponents.quantity,
-    })
-    .from(comboComponents)
-    .where(inArray(comboComponents.comboProductId, ids))) as Row[];
+  let rows: Row[];
+  try {
+    rows = (await txOrDb
+      .select({
+        comboProductId: comboComponents.comboProductId,
+        componentProductId: comboComponents.componentProductId,
+        quantity: comboComponents.quantity,
+      })
+      .from(comboComponents)
+      .where(inArray(comboComponents.comboProductId, ids))) as Row[];
+  } catch (e) {
+    // DB chua ap migration 0064 (deploy code truoc, migration sau): coi nhu
+    // khong co combo, giu hanh vi cu thay vi lam hong moi don hang.
+    if (String((e as Error)?.message || e).includes('no such table')) return out;
+    throw e;
+  }
   for (const r of rows) {
     const list = out.get(str(r.comboProductId)) || [];
     list.push({ componentProductId: str(r.componentProductId), quantity: num(r.quantity) });

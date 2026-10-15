@@ -1582,3 +1582,44 @@ Quy mô hiện tại dùng chưa tới 0.1% dung lượng. Đủ cho nhiều nă
 
 **Migration:** Không tốn phí, không giới hạn số lượng. Thêm bảng/cột mới
 không ảnh hưởng dữ liệu cũ. Tuyệt đối không xóa bảng/cột đang dùng.
+
+---
+## 38. Quan ly Combo / Box Set (2026-10-15, nhanh dev)
+
+Hien trang: 9 combo COMBO01-09 nam trong bang products. Quan ly trong tab Kho hang.
+
+### 38.1. Quyet dinh (ruling) khac brief goc
+- Migration 0064 thay vi 0066 (0064/0065 dang trong, 0063 la cuoi).
+- Khong them cot moi vao products: phat hien combo = co dong trong combo_components.
+- Khong dung bundle.service (engine theo editions/seasonalBundles) - combo_components theo products la thuc the khac, khong dung cham.
+- Khong co muc 38 truoc day (file ket thuc o 37 + phu luc 23.x) nen them moi o cuoi.
+- Journal thieu entry 0063 tu truoc (lo cua team portal, khong thuoc pham vi) - chi them entry 0064.
+- Thanh phan combo bat buoc productKind BOOK (bao ve FK editions o ledger).
+- Dong combo trong don giu nguyen (gia combo, edition_id NULL); chi ton va but toan moi no thanh component.
+- Qua combo mo rong nhu dong thuong (truong hop bien, uu tien dung).
+- Batch combo dung prefix idempotency rieng idem-confirm-<orderId>-combo (tranh dung key index 0); nhan dien "da duyet" van khop vi LIKE idem-confirm-<orderId>-%.
+- getComboMap chiu duoc DB chua co bang (tra map rong) de deploy code truoc migration khong lam hong moi don hang.
+
+### 38.2. File
+- src/db/migrations/0064_combo_components.sql + src/db/schema.ts (bang comboComponents) + journal idx 63.
+- scripts/apply-0064-combo-local.ts (va dev.db cuc bo), scripts/seed-combo-components.ts (idempotent, lookup theo code/name luc chay).
+- src/services/combo.service.ts (getComboMap/getComboStocks/getComboStock/isCombo/expandComboNeeds/validateComponents).
+- src/app/api/combos/route.ts (GET list + POST tao), src/app/api/combos/[id]/components/route.ts (PUT thay the),
+  src/app/api/combos/books/route.ts (tim sach + ton theo kho), src/app/api/inventory/combo-stock/[comboId]/route.ts.
+- Moc vao OrderService: createOrder (ATP mo rong B2, edition_id NULL B4, but toan component B5) + confirmOrder (ownNeed mo rong, batch tach prefix).
+- UI: src/components/inventory/ComboManagerPanel.tsx + tab Combo trong StockOverviewMatrix (badge tim, tao/sua/xem ton dong).
+
+### 38.3. Test (moi test deu doc tren may dev 2026-10-15)
+- scripts/test-combo-seed.ts: 5/5 (idempotent, skip thieu du lieu).
+- scripts/test-combo-service.ts: 7/7 (no line, min logic, isCombo, combo rong).
+- scripts/test-combo-api.ts: 11/11 (401/403/400, CRUD, thay the, tim sach kem ton).
+- scripts/test-combo-sell-e2e.ts: 9/9 (ban that, tru dung component, khong but toan combo, chan ban vuot ton).
+- Hoi quy: test-goods-sell-e2e 33/33, test-inventory 7/7, test-transfer-payment-flow PASS, test-gift-subtotal 20/20.
+- npx tsc --noEmit sach, npm run build thanh cong.
+
+### 38.4. Viec can lam tren server (operator, ngoai tam voi cua agent local)
+1. Ap migration 0064 vao dev.db (DB server, khong phai file cuc bo).
+2. Chay seed: 9 combo COMBO01-09 (INSERT OR IGNORE, thieu ten thi warn).
+3. pm2 restart formapubli-dev, kiem tra https://dev.formapubli.vn tra 200.
+4. Curl: GET /api/combos, GET /api/inventory/combo-stock/COMBO01?warehouseId=..., POST tao thu + xoa.
+5. Migration production de dot sau (rieng, co backup).
