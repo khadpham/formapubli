@@ -1399,6 +1399,20 @@ export const portalComboItems = sqliteTable('portal_combo_items', {
   comboIdx: index('idx_combo_items_combo').on(table.comboProductId),
 }));
 
+// 0064: Combo components - sach thanh phan cua combo/box set (bang products ERP).
+// Khac portalComboItems (combo cua portal theo portal_products). Phat hien combo
+// = co dong trong bang nay, khong them cot moi vao products.
+export const comboComponents = sqliteTable('combo_components', {
+  id: text('id').primaryKey(),
+  comboProductId: text('combo_product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  componentProductId: text('component_product_id').notNull().references(() => products.id),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  uniqueIdx: uniqueIndex('idx_combo_components_unique').on(table.comboProductId, table.componentProductId),
+  comboIdx: index('idx_combo_components_combo').on(table.comboProductId),
+}));
+
 export const portalReviews = sqliteTable('portal_reviews', {
   id: text('id').primaryKey(),
   productId: text('product_id').notNull().references(() => portalProducts.id),
