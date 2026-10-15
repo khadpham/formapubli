@@ -96,21 +96,6 @@ const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string; isActiv
   w.isActive !== false &&
   w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
 
-interface LedgerEntry {
-  id: string;
-  eventType: string;
-  quantityDelta: number;
-  condition: string | null;
-  documentRef: string;
-  note: string | null;
-  actorId: string;
-  recordedAt: string | null;
-  bookCode: string;
-  bookTitle: string | null;
-  isbnLast4: string;
-  warehouseCode: string;
-  warehouseName: string;
-}
 
 type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS' | 'COMBO';
 
