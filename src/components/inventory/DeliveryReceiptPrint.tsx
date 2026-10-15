@@ -550,7 +550,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
       {/* ============================================================== */}
       {createPortal(
         <div
-          className="no-print fixed inset-0 z-[70] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
+          className="no-print fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}

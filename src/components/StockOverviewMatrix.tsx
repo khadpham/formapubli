@@ -120,6 +120,7 @@ export function StockOverviewMatrix({
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
   const [countModalOpen, setCountModalOpen] = useState(false);
+  const [viewCountId, setViewCountId] = useState<string | null>(null);
   const [thresholdOverrides, setThresholdOverrides] = useState<Record<string, number>>({});
   const [countListOpen, setCountListOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
@@ -1390,14 +1391,20 @@ export function StockOverviewMatrix({
       />
       <InventoryCountModal
         isOpen={countModalOpen}
-        onClose={() => setCountModalOpen(false)}
+        onClose={() => { setCountModalOpen(false); setViewCountId(null); }}
         warehouses={warehouses}
         onSuccess={handleRefresh}
+        existingCountId={viewCountId}
       />
       <InventoryCountListModal
         open={countListOpen}
         onClose={() => setCountListOpen(false)}
         onSuccess={handleRefresh}
+        onView={(cid) => {
+          setCountListOpen(false);
+          setViewCountId(cid);
+          setCountModalOpen(true);
+        }}
       />
 
       {/* Batch Transfer Modal */}

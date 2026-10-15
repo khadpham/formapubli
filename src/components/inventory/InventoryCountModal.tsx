@@ -3,12 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { ClipboardList, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import Modal from '../ui/Modal';
+import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 
 interface InventoryCountModalProps {
   isOpen: boolean;
   onClose: () => void;
   warehouses: { id: string; code: string; name: string }[];
   onSuccess?: () => void;
+  existingCountId?: string | null;
 }
 
 interface CountItem {
@@ -20,7 +22,7 @@ interface CountItem {
   note?: string;
 }
 
-export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess }: InventoryCountModalProps) {
+export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, existingCountId }: InventoryCountModalProps) {
   const [step, setStep] = useState<'select' | 'count' | 'review'>('select');
   const [warehouseId, setWarehouseId] = useState('');
   const [note, setNote] = useState('');
@@ -32,14 +34,45 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess }: 
 
   useEffect(() => {
     if (isOpen) {
-      setStep('select');
-      setWarehouseId(warehouses[0]?.id || '');
-      setCountId(null);
-      setItems([]);
       setError(null);
       setSearch('');
+      if (existingCountId) {
+        loadExistingCount(existingCountId);
+      } else {
+        setStep('select');
+        setWarehouseId(warehouses[0]?.id || '');
+        setCountId(null);
+        setItems([]);
+      }
     }
-  }, [isOpen, warehouses]);
+  }, [isOpen, warehouses, existingCountId]);
+
+  const loadExistingCount = async (cid: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/inventory/counts/${cid}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Không tải được');
+      const c = data.data;
+      setCountId(c.id);
+      setWarehouseId(c.warehouseId);
+      setNote(c.note || '');
+      setItems((c.items || []).map((it: any) => ({
+        id: it.id,
+        productId: it.productId,
+        productName: it.productName || it.productId,
+        systemQty: it.systemQty,
+        countedQty: it.countedQty,
+        note: it.note,
+      })));
+      setStep('count');
+    } catch (e: any) {
+      setError(e.message);
+      setStep('select');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!warehouseId) { setError('Chọn kho'); return; }
@@ -119,7 +152,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess }: 
   };
 
   const filtered = items.filter(it =>
-    !search || (it.productName || '').toLowerCase().includes(search.toLowerCase())
+    !search || matchesAnyVietnameseField(search, [it.productName])
   );
   const counted = items.filter(it => it.countedQty != null).length;
   const diffs = items.filter(it => it.countedQty != null && it.countedQty !== it.systemQty).length;

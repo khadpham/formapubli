@@ -8,6 +8,7 @@ interface InventoryCountListModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  onView?: (countId: string) => void;
 }
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -18,7 +19,7 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   CANCELLED: { label: 'Đã hủy', color: 'bg-rose-100 text-rose-700' },
 };
 
-export function InventoryCountListModal({ open, onClose, onSuccess }: InventoryCountListModalProps) {
+export function InventoryCountListModal({ open, onClose, onSuccess, onView }: InventoryCountListModalProps) {
   const [counts, setCounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +106,15 @@ export function InventoryCountListModal({ open, onClose, onSuccess }: InventoryC
                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
                     >
                       Duyệt
+                    </button>
+                  )}
+                  {(c.status === 'DRAFT' || c.status === 'COUNTING') && onView && (
+                    <button
+                      onClick={() => onView(c.id)}
+                      disabled={loading}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                    >
+                      {c.status === 'COUNTING' ? 'Tiếp tục' : 'Xem'}
                     </button>
                   )}
                   {(c.status === 'DRAFT' || c.status === 'COUNTING') && (
