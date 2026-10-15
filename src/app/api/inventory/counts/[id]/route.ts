@@ -117,3 +117,26 @@ export async function PUT(
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/inventory/counts/[id] - Huy dot kiem ke (chi khi chua duyet)
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const count = await db.select().from(inventoryCounts).where(eq(inventoryCounts.id, id)).limit(1);
+    if (count.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Khong tim thay' }, { status: 404 });
+    }
+    if (count[0].status === 'APPROVED') {
+      return NextResponse.json({ ok: false, error: 'Dot da duyet, khong the huy' }, { status: 400 });
+    }
+    await db.update(inventoryCounts).set({ status: 'CANCELLED' }).where(eq(inventoryCounts.id, id));
+    return NextResponse.json({ ok: true, message: 'Da huy dot kiem ke' });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+  }
+}
