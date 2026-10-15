@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { inventoryCounts, inventoryCountItems, products, inventoryLedger } from '@/db/schema';
+import { inventoryCounts, inventoryCountItems, products, inventoryLedger, comboComponents } from '@/db/schema';
 import { eq, and, isNull, sum, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
@@ -67,8 +67,13 @@ export async function POST(
 
     const stockMap = new Map(stockRows.map(r => [r.productId, Math.max(0, Math.round(Number(r.qty) || 0))]));
 
-    // Lấy tất cả sản phẩm để snapshot (kể cả tồn 0)
-    const allProducts = await db.select({ id: products.id }).from(products).limit(500);
+    // Lấy tất cả sản phẩm để snapshot (kể cả tồn 0), LOẠI COMBO
+    // Combo không có tồn riêng, tồn tính động từ thành phần.
+    // Kiểm kê combo gây mâu thuẫn: combo lệch nhưng thành phần không lệch.
+    const comboIdRows = await db.select({ id: comboComponents.comboProductId }).from(comboComponents);
+    const comboIdSet = new Set(comboIdRows.map(r => r.id));
+    const allProductsRaw = await db.select({ id: products.id }).from(products).limit(500);
+    const allProducts = allProductsRaw.filter(p => !comboIdSet.has(p.id));
 
     let inserted = 0;
     for (const p of allProducts) {

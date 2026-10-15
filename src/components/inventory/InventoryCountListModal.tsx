@@ -58,6 +58,23 @@ export function InventoryCountListModal({ open, onClose, onSuccess }: InventoryC
     }
   };
 
+  const handleCancel = async (id: string) => {
+    if (!confirm('Hủy đợt kiểm kê này? Thao tác không thể hoàn tác.')) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/inventory/counts/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      alert(data.message);
+      await load();
+      onSuccess?.();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Modal open={open} onClose={onClose} title="Đợt kiểm kê" subtitle="Danh sách và phê duyệt" size="lg">
       <div className="space-y-2">
@@ -88,6 +105,15 @@ export function InventoryCountListModal({ open, onClose, onSuccess }: InventoryC
                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
                     >
                       Duyệt
+                    </button>
+                  )}
+                  {(c.status === 'DRAFT' || c.status === 'COUNTING') && (
+                    <button
+                      onClick={() => handleCancel(c.id)}
+                      disabled={loading}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                    >
+                      Hủy
                     </button>
                   )}
                 </div>
