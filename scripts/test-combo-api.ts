@@ -195,6 +195,13 @@ async function main() {
       'GET combos/books tra sach BOOK',
       booksStatus === 200 && Array.isArray(booksBody?.books) && booksBody.books.some((b: any) => b.id === BOOK_A)
     );
+    const booksStock = await call(
+      async (r: any) => (await import('../src/app/api/combos/books/route')).GET(r),
+      `http://x/api/combos/books?search=Sach&warehouseId=${warehouseId}`,
+      { headers: managerCk }
+    );
+    const stockA = (booksStock.body?.books || []).find((b: any) => b.id === BOOK_A);
+    ok('GET combos/books kem ton theo kho (A=4)', booksStock.status === 200 && stockA?.stock === 4);
 
     await raw.execute({ sql: 'DELETE FROM combo_components WHERE combo_product_id = ?', args: [newId] });
     await raw.execute({ sql: 'DELETE FROM products WHERE id = ?', args: [newId] });
