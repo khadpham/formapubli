@@ -118,9 +118,18 @@ async function setup(): Promise<string> {
 }
 
 async function cleanup() {
-  await raw.execute({ sql: 'DELETE FROM combo_components WHERE combo_product_id LIKE ?', args: ['cb-test-api%'] });
+  // Xoa components truoc (FK) - quet theo pattern de ca du lieu sot tu run loi cung sach.
+  await raw.execute({
+    sql: `DELETE FROM combo_components WHERE combo_product_id LIKE ?
+          OR combo_product_id IN (SELECT id FROM products WHERE code LIKE 'COMBO-TEST%' OR code LIKE 'COMBO-E2E%')`,
+    args: ['cb-test-api%'],
+  });
   await raw.execute({ sql: "DELETE FROM stock_balances WHERE id LIKE 'sb-test-api%'", args: [] });
-  await raw.execute({ sql: 'DELETE FROM products WHERE id LIKE ? OR id LIKE ?', args: ['cb-test-api%', 'ed-test-api%'] });
+  await raw.execute({
+    sql: `DELETE FROM products WHERE id LIKE ? OR id LIKE ?
+          OR code LIKE 'COMBO-TEST%' OR code LIKE 'COMBO-E2E%'`,
+    args: ['cb-test-api%', 'ed-test-api%'],
+  });
 }
 
 async function main() {
@@ -170,6 +179,22 @@ async function main() {
     ok('PUT thay the components -> 200', replaced.status === 200);
     const st2 = await call(comboStock, `http://x/api/inventory/combo-stock/${newId}?warehouseId=${warehouseId}`, { headers: managerCk }, { comboId: newId });
     ok('sau PUT chi con B x3 (7/3=2)', st2.body?.stock === 2 && st2.body?.components?.length === 1);
+
+    // 5. Tim sach lam component
+    let booksStatus = 0;
+    let booksBody: any = null;
+    try {
+      const { GET } = await import('../src/app/api/combos/books/route');
+      const r = await call(GET, 'http://x/api/combos/books?search=Sach', { headers: managerCk });
+      booksStatus = r.status;
+      booksBody = r.body;
+    } catch {
+      booksStatus = 0;
+    }
+    ok(
+      'GET combos/books tra sach BOOK',
+      booksStatus === 200 && Array.isArray(booksBody?.books) && booksBody.books.some((b: any) => b.id === BOOK_A)
+    );
 
     await raw.execute({ sql: 'DELETE FROM combo_components WHERE combo_product_id = ?', args: [newId] });
     await raw.execute({ sql: 'DELETE FROM products WHERE id = ?', args: [newId] });
