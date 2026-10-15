@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
 import { stockOfWarehouse } from '@/lib/warehouse-stock';
+import { WarehouseDocPrint, type DocPrintData } from './WarehouseDocPrint';
+import { Printer } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 
@@ -86,6 +88,8 @@ export function BatchTransferModal({
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
+  const [printData, setPrintData] = useState<DocPrintData | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
   // Thông báo sau thao tác thêm dòng. `kind` quyết định màu + icon: 'success' là
@@ -790,7 +794,32 @@ export function BatchTransferModal({
                 Kho nguồn đã về 0: vào Quản Lý Kho bấm <span className="font-bold">Ngưng hoạt động</span> - đừng bấm
                 &quot;Xoá&quot;, kho đã có sổ kho nên xoá luôn bị từ chối.
               </p>
-              <div className="pt-2">
+              <div className="pt-2 flex gap-2 justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Chuẩn bị dữ liệu in phiếu chuyển kho
+                    const fromWh = warehouses.find(w => w.id === fromWarehouseId);
+                    const toWh = warehouses.find(w => w.id === toWarehouseId);
+                    setPrintData({
+                      docType: 'TRANSFER',
+                      docNumber: successInfo.pckCode,
+                      docDate: new Date().toISOString(),
+                      warehouseName: fromWh?.name || fromWarehouseId,
+                      toWarehouseName: toWh?.name || toWarehouseId,
+                      items: lines.map(l => ({
+                        productCode: l.code || '',
+                        productName: l.title || '',
+                        quantity: l.quantity,
+                      })),
+                      totalQuantity: successInfo.totalItems,
+                    });
+                    setPrintOpen(true);
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all flex items-center gap-2"
+                >
+                  <Printer className="w-4 h-4" /> In phiếu chuyển kho
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -1389,7 +1418,14 @@ export function BatchTransferModal({
                   )}
                 </div>
               )}
-      </Modal>
+        {printData && (
+        <WarehouseDocPrint
+          data={printData}
+          isOpen={printOpen}
+          onClose={() => { setPrintOpen(false); setPrintData(null); }}
+        />
+      )}
+    </Modal>
     )}
     </>
   );
