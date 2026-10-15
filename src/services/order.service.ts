@@ -1237,6 +1237,9 @@ return {
             if (comboComps && comboComps.length > 0 && !shortfall) {
               const comboName = editionMap.get(item.productId)?.name || item.productId;
               for (const c of comboComps) {
+                // Qua combo het ton tung phan: ghi so xuat nhung KHONG tru bang
+                // can doi (giong shortfall dong thuong) thay vi de check am no.
+                const compShortfall = Boolean(item.isGiftLine) && shortfallEditionIds.has(c.componentProductId);
                 await InventoryService.recordMovement({
                   editionId: c.componentProductId,
                   isBook: true,
@@ -1244,8 +1247,11 @@ return {
                   eventType: 'DISPATCH_SALE',
                   quantityDelta: -(item.quantity * c.quantity),
                   condition: 'NEW',
+                  skipStockUpdate: compShortfall,
                   documentRef: orderCode,
-                  note: `Bán combo ${comboName} x${item.quantity} trong đơn ${orderCode}`,
+                  note: compShortfall
+                    ? `Quà combo hết tồn - ghi sổ xuất, KHÔNG trừ bảng cân đối trong đơn ${orderCode}`
+                    : `Bán combo ${comboName} x${item.quantity} trong đơn ${orderCode}`,
                   actorId: effCashierId,
                   correlationId: orderId,
                   idempotencyKey: `idem-stock-${orderId}-${lineIdx}-combo-${c.componentProductId}`,
