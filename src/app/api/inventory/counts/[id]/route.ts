@@ -72,7 +72,11 @@ export async function POST(
     // Kiểm kê combo gây mâu thuẫn: combo lệch nhưng thành phần không lệch.
     const comboIdRows = await db.select({ id: comboComponents.comboProductId }).from(comboComponents);
     const comboIdSet = new Set(comboIdRows.map(r => r.id));
-    const allProductsRaw = await db.select({ id: products.id }).from(products).limit(500);
+    // Hỗ trợ kiểm kê 1 sản phẩm: chỉ snapshot productIds được chỉ định
+    const filterIds: string[] | undefined = Array.isArray(body.productIds) && body.productIds.length > 0 ? body.productIds : undefined;
+    const allProductsRaw = filterIds
+      ? filterIds.map((pid: string) => ({ id: pid }))
+      : await db.select({ id: products.id }).from(products).limit(500);
     const allProducts = allProductsRaw.filter(p => !comboIdSet.has(p.id));
 
     let inserted = 0;

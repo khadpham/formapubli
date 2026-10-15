@@ -226,6 +226,22 @@ export function WholesaleDispatchModal({
     }
   }, [isOpen, initialDraft, loadDraftIntoForm]);
 
+  const handleDeleteDraft = async () => {
+    if (!editingDraftId) return;
+    if (!confirm('Xóa bản nháp này? Hành động không thể hoàn tác.')) return;
+    try {
+      const res = await fetch('/api/delivery-orders/' + editingDraftId, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Xóa thất bại');
+      setEditingDraftId(null);
+      setEditingDraftCode(null);
+      await fetchDrafts();
+      handleResetNew();
+    } catch (e: any) {
+      alert('Lỗi: ' + (e.message || e));
+    }
+  };
+
   // Làm mới form để soạn phiếu mới hoàn toàn
   const handleResetNew = () => {
     setEditingDraftId(null);
@@ -775,14 +791,24 @@ export function WholesaleDispatchModal({
                     </select>
                   )}
                   {editingDraftId && (
-                    <button
-                      type="button"
-                      onClick={handleResetNew}
-                      className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Lập mới
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleResetNew}
+                        className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Lập mới
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteDraft}
+                        className="px-2.5 py-1 bg-rose-50 border border-rose-300 hover:bg-rose-100 rounded-lg text-xs font-bold text-rose-700 transition flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Xóa nháp
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

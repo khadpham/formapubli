@@ -31,6 +31,10 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [countMode, setCountMode] = useState<'full' | 'single'>('full');
+  const [singleProductId, setSingleProductId] = useState('');
+  const [singleProductSearch, setSingleProductSearch] = useState('');
+  const [productList, setProductList] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -46,6 +50,18 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
       }
     }
   }, [isOpen, warehouses, existingCountId]);
+
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('/api/products?limit=1000');
+      const data = await res.json();
+      if (data.ok) setProductList((data.data || []).map((p: any) => ({ id: p.id, name: p.name })));
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (isOpen && !existingCountId) fetchProducts();
+  }, [isOpen, existingCountId]);
 
   const loadExistingCount = async (cid: string) => {
     setLoading(true);
@@ -76,6 +92,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
 
   const handleCreate = async () => {
     if (!warehouseId) { setError('Chọn kho'); return; }
+    if (countMode === 'single' && !singleProductId) { setError('Chọn sản phẩm cần điều chỉnh'); return; }
     setLoading(true); setError(null);
     try {
       const res = await fetch('/api/inventory/counts', {
@@ -90,7 +107,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
       const snapRes = await fetch(`/api/inventory/counts/${data.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'snapshot' }),
+        body: JSON.stringify({ action: 'snapshot', ...(countMode === 'single' && singleProductId ? { productIds: [singleProductId] } : {}) }),
       });
       const snapData = await snapRes.json();
       if (!snapData.ok) throw new Error(snapData.error);
@@ -167,6 +184,50 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
     >
       {step === 'select' && (
         <div className="space-y-4 p-1">
+          <div>
+            <label className="text-xs font-bold text-slate-600 block mb-2">Phạm vi kiểm kê</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCountMode('full')}
+                className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold border-2 transition ${countMode === 'full' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+              >
+                Toàn kho
+              </button>
+              <button
+                type="button"
+                onClick={() => setCountMode('single')}
+                className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold border-2 transition ${countMode === 'single' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+              >
+                1 sản phẩm
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              {countMode === 'full' ? 'Đếm toàn bộ sản phẩm trong kho' : 'Chỉ điều chỉnh số lượng 1 sản phẩm cụ thể'}
+            </p>
+          </div>
+          {countMode === 'single' && (
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Sản phẩm</label>
+              <input
+                value={singleProductSearch}
+                onChange={e => setSingleProductSearch(e.target.value)}
+                placeholder="Tìm tên sách (không dấu / viết tắt)..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm mb-1"
+              />
+              <select
+                value={singleProductId}
+                onChange={e => setSingleProductId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
+                size={Math.min(6, Math.max(3, productList.filter(p => !singleProductSearch || matchesAnyVietnameseField(singleProductSearch, [p.name])).length))}
+              >
+                <option value="">-- Chọn sản phẩm --</option>
+                {productList.filter(p => !singleProductSearch || matchesAnyVietnameseField(singleProductSearch, [p.name])).slice(0, 100).map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-xs font-bold text-slate-600 block mb-1">Kho kiểm kê</label>
             <select

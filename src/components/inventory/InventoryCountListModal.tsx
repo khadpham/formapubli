@@ -77,7 +77,7 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Đợt kiểm kê" subtitle="Danh sách và phê duyệt" size="lg">
+    <Modal open={open} onClose={onClose} title="Đợt kiểm kê" subtitle="Danh sách và phê duyệt" size="md">
       <div className="space-y-2">
         {error && <p className="text-xs text-rose-600">{error}</p>}
         {loading && counts.length === 0 ? (
