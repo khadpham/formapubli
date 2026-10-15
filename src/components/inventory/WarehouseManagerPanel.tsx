@@ -431,7 +431,9 @@ export function WarehouseManagerPanel({
           )}
           {warehouses.length === 0 && <p className="text-[11px] text-slate-500">Chưa có kho nào.</p>}
 
-          {warehouses.map((w, idx) => {
+          {warehouses
+            .filter(w => !['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'].includes(w.code))
+            .map((w, idx) => {
             const busy = busyId === w.id;
             const confirming = confirmDelete?.id === w.id;
             const isEditing = editingId === w.id;

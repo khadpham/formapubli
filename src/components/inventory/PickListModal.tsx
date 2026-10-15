@@ -12,7 +12,7 @@ interface PickListModalProps {
     code: string;
     title: string;
     author: string;
-    stockDuPhong: number;
+    stockNuiTruc: number;
     stockAuCo: number;
     stockQuynhMai: number;
   }>;

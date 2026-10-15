@@ -36,7 +36,7 @@ interface BookItem {
   coverPrice: number;
   stockAuCo: number;
   stockQuynhMai: number;
-  stockDuPhong: number;
+  stockNuiTruc: number;
   stockByWarehouse?: Record<string, number>;
 }
 

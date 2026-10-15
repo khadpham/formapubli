@@ -1149,7 +1149,7 @@ export class InventoryService {
         isActive: p.isActive,
         stockAuCo: bal['wh-au-co'] || 0,
         stockQuynhMai: bal['wh-quynh-mai'] || 0,
-        stockDuPhong: bal['wh-du-phong'] || 0,
+        stockNuiTruc: bal['wh-kho-nui-truc'] || 0,
         stockByWarehouse: bal,
         totalStock,
         lowStockThreshold: p.lowStockThreshold || 0,

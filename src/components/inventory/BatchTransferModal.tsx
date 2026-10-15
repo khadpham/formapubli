@@ -32,7 +32,7 @@ interface BookItem {
   isbnLast4?: string;
   stockAuCo?: number;
   stockQuynhMai?: number;
-  stockDuPhong?: number;
+  stockNuiTruc?: number;
   stockByWarehouse?: Record<string, number>;
   totalStock?: number;
 }

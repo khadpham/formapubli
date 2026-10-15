@@ -71,7 +71,7 @@ interface MatrixBookItem {
   status: string;
   stockAuCo: number;
   stockQuynhMai: number;
-  stockDuPhong: number;
+  stockNuiTruc: number;
   /** Tồn theo warehouseId - động, gồm mọi kho kể cả kho hội chợ. */
   stockByWarehouse?: Record<string, number>;
   totalStock: number;
@@ -1188,7 +1188,7 @@ export function StockOverviewMatrix({
                         <span className="block font-normal text-[10px] text-emerald-500">Kiện lưu sỉ</span>
                       </th>
                       <th className="px-3 py-3 text-right bg-amber-50/50 font-bold text-amber-900 w-28">
-                        Kho Dự phòng
+                        Kho Núi Trúc
                         <span className="block font-normal text-[10px] text-amber-500">Hội chợ</span>
                       </th>
                     </>
@@ -1286,12 +1286,12 @@ export function StockOverviewMatrix({
                             )}
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono font-bold bg-amber-50/20 text-amber-800">
-                            {b.stockDuPhong <= 3 && b.stockDuPhong > 0 ? (
-                              <span className="text-rose-700 font-extrabold">{b.stockDuPhong}</span>
-                            ) : b.stockDuPhong === 0 ? (
+                            {b.stockNuiTruc <= 3 && b.stockNuiTruc > 0 ? (
+                              <span className="text-rose-700 font-extrabold">{b.stockNuiTruc}</span>
+                            ) : b.stockNuiTruc === 0 ? (
                               <span className="text-slate-300 font-normal">0</span>
                             ) : (
-                              b.stockDuPhong.toLocaleString('vi-VN')
+                              b.stockNuiTruc.toLocaleString('vi-VN')
                             )}
                           </td>
                         </>

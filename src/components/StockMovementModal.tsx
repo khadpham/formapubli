@@ -12,7 +12,7 @@ interface BookItem {
   shortCode: string | null;
   stockAuCo: number;
   stockQuynhMai: number;
-  stockDuPhong: number;
+  stockNuiTruc: number;
   totalStock: number;
 }
 
@@ -225,8 +225,8 @@ export function StockMovementModal({
               <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockQuynhMai}</span>
             </div>
             <div className="text-center">
-              <span className="text-slate-400 block">Kho Dự phòng</span>
-              <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockDuPhong}</span>
+              <span className="text-slate-400 block">Kho Núi Trúc</span>
+              <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockNuiTruc}</span>
             </div>
           </div>
         )}
