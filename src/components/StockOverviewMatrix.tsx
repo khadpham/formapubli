@@ -199,7 +199,8 @@ export function StockOverviewMatrix({
       [
         { id: 'MATRIX' as MainTabId, label: 'Ma trận 3 Kho', short: 'Ma trận', Icon: Warehouse, title: 'Bảng tồn kho theo 3 kho' },
         { id: 'LEDGER' as MainTabId, label: `Sổ Cái Bất Biến (${initialLedger.length})`, short: 'Sổ cái', Icon: History, title: 'Sổ cái append-only, nghiêm cấm sửa/xóa' },
-        { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
+        // 2026-10-15: An tab Di Duong (khong dung)
+        // { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
         { id: 'DELIVERY_ORDERS' as MainTabId, label: 'Sổ Phiếu Xuất', short: 'Sổ PX', Icon: FileText, title: 'Sổ phiếu xuất kho bán buôn đại lý' },
         { id: 'COMBO' as MainTabId, label: 'Combo / Box Set', short: 'Combo', Icon: Package, title: 'Quản lý combo: tồn động theo kho, tạo/sửa thành phần' },
       ] as const,
