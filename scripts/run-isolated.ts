@@ -22,6 +22,7 @@ const ALL_SUITES = [
   'scripts/test-p0-verification.ts',
   'scripts/test-inventory.ts',
   'scripts/test-combo-service.ts',
+  'scripts/test-combo-api.ts',
   'scripts/test-combo-seed.ts',
   'scripts/test-products.ts',
   'scripts/test-goods-in-pos-catalog.ts',

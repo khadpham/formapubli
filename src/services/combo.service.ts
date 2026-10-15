@@ -121,6 +121,33 @@ export interface ExpandedNeed {
   fromComboId: string | null;
 }
 
+/**
+ * Kiem tra danh sach component hop le: ton tai trong products VA la BOOK.
+ * Tra ve chuoi loi, null neu hop le. Dung chung cho POST va PUT.
+ */
+export async function validateComponents(
+  items: Array<{ productId?: unknown; quantity?: unknown }>,
+  txOrDb: any = db
+): Promise<string | null> {
+  if (!Array.isArray(items) || items.length === 0) return 'Combo phai co it nhat 1 sach thanh phan.';
+  const seen = new Set<string>();
+  for (const c of items) {
+    const pid = String((c as any)?.productId || '');
+    const qty = Number((c as any)?.quantity);
+    if (!pid) return 'Thanh phan thieu productId.';
+    if (!Number.isInteger(qty) || qty < 1) return `So luong khong hop le cho ${pid}.`;
+    if (seen.has(pid)) return `Trung sach thanh phan: ${pid}.`;
+    seen.add(pid);
+  }
+  const compRows = (await txOrDb
+    .select({ id: products.id, productKind: products.productKind })
+    .from(products)
+    .where(inArray(products.id, Array.from(seen)))) as Array<{ id: string; productKind: string }>;
+  if (compRows.length !== seen.size) return 'Co sach thanh phan khong ton tai.';
+  if (compRows.some((r) => r.productKind !== 'BOOK')) return 'Thanh phan combo phai la sach (BOOK).';
+  return null;
+}
+
 export async function expandComboNeeds(
   items: Array<{ productId: string; quantity: number }>,
   txOrDb: any = db
