@@ -134,6 +134,7 @@ export function StockOverviewMatrix({
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
   const [countModalOpen, setCountModalOpen] = useState(false);
+  const [thresholdOverrides, setThresholdOverrides] = useState<Record<string, number>>({});
   const [countListOpen, setCountListOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
@@ -515,10 +516,19 @@ export function StockOverviewMatrix({
         body: JSON.stringify({ threshold: num }),
       });
       const data = await res.json();
-      if (data.ok) handleRefresh();
+      if (data.ok) {
+        // Cập nhật local state ngay (nhẹ, không reload nặng)
+        setThresholdOverrides(prev => ({ ...prev, [productId]: num }));
+      }
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // Helper lấy ngưỡng hiệu dụng (ưu tiên override local)
+  const getEffectiveThreshold = (book: MatrixBookItem): number => {
+    if (book.id in thresholdOverrides) return thresholdOverrides[book.id];
+    return book.lowStockThreshold || 0;
   };
 
   const handleRefresh = () => {
@@ -1315,16 +1325,16 @@ export function StockOverviewMatrix({
                         ) : (
                           b.totalStock > 0 ? (
                             <span className="inline-flex items-center gap-1">
-                              <span className={`font-bold ${(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'text-rose-600' : 'text-slate-700'}`}>
+                              <span className={`font-bold ${getEffectiveThreshold(b) > 0 && b.totalStock < getEffectiveThreshold(b) ? 'text-rose-600' : 'text-slate-700'}`}>
                                 {b.totalStock.toLocaleString('vi-VN')}
                               </span>
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); handleUpdateThreshold(b.id, b.lowStockThreshold || 0); }}
-                                title={`Ngưỡng hiện tại: ${(b.lowStockThreshold || 0).toLocaleString('vi-VN')}. Bấm để sửa.`}
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                onClick={(e) => { e.stopPropagation(); handleUpdateThreshold(b.id, getEffectiveThreshold(b)); }}
+                                title={`Ngưỡng hiện tại: ${getEffectiveThreshold(b).toLocaleString('vi-VN')}. Bấm để sửa.`}
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${getEffectiveThreshold(b) > 0 && b.totalStock < getEffectiveThreshold(b) ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                               >
-                                {(b.lowStockThreshold || 0) > 0 && b.totalStock < (b.lowStockThreshold || 0) ? 'Thấp' : 'Ngưỡng'}
+                                {getEffectiveThreshold(b) > 0 && b.totalStock < getEffectiveThreshold(b) ? 'Thấp' : 'Ngưỡng'}
                               </button>
                             </span>
                           ) : (
