@@ -67,6 +67,7 @@ async function main() {
   );
 
   db.close();
+  db.close();
   await new Promise((r) => setTimeout(r, 100));
   try {
     fs.unlinkSync('formapubli_test_combo_seed.db');

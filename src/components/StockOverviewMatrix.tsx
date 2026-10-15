@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Mic,
   MicOff,
+  Package,
   X,
   Keyboard,
   ShieldAlert,
@@ -30,6 +31,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
+import { ComboManagerPanel } from './inventory/ComboManagerPanel';
 import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
@@ -104,7 +106,7 @@ interface LedgerEntry {
   warehouseName: string;
 }
 
-type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS';
+type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS' | 'COMBO';
 
 interface StockOverviewMatrixProps {
   initialBooks: MatrixBookItem[];
@@ -199,6 +201,7 @@ export function StockOverviewMatrix({
         { id: 'LEDGER' as MainTabId, label: `Sổ Cái Bất Biến (${initialLedger.length})`, short: 'Sổ cái', Icon: History, title: 'Sổ cái append-only, nghiêm cấm sửa/xóa' },
         { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
         { id: 'DELIVERY_ORDERS' as MainTabId, label: 'Sổ Phiếu Xuất', short: 'Sổ PX', Icon: FileText, title: 'Sổ phiếu xuất kho bán buôn đại lý' },
+        { id: 'COMBO' as MainTabId, label: 'Combo / Box Set', short: 'Combo', Icon: Package, title: 'Quản lý combo: tồn động theo kho, tạo/sửa thành phần' },
       ] as const,
     [initialLedger.length]
   );
@@ -1389,6 +1392,11 @@ export function StockOverviewMatrix({
             setWholesaleModalOpen(true);
           }}
         />
+      )}
+
+      {/* 6. TAB COMBO / BOX SET (0064) */}
+      {activeTab === 'COMBO' && (
+        <ComboManagerPanel warehouses={warehouses} currentRole={currentRole} />
       )}
 
       {/* Modal */}
