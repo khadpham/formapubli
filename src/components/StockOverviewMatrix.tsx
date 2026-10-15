@@ -824,7 +824,7 @@ export function StockOverviewMatrix({
             title="Nhập kho nhà in"
             className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
-            <PlusCircle className="w-3.5 h-3.5" /> Nhập in
+            <PlusCircle className="w-3.5 h-3.5" /> Nhập kho
           </button>
 
           <button
