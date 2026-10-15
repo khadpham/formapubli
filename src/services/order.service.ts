@@ -1275,17 +1275,41 @@ return {
     // Webhook bao don moi cho n8n (fire-and-forget): bat moi kenh
     // (portal, POS, tay, Shopee...). Khong chan luong tao don neu loi.
     // URL cau hinh qua env N8N_ORDER_WEBHOOK_URL.
-    this.fireOrderWebhook({
-      orderId: result.orderId,
-      orderCode: result.orderCode,
-      channel,
-      customerName: result.customerName ?? 'Khách lẻ',
-      finalAmount: result.finalAmount,
-      paymentMethod,
-      status: result.status,
-      itemsCount: result.itemsCount,
-      totalQuantity: result.totalQuantity,
-    }).catch(() => {});
+    // 2026-10-15: Thêm chi tiết dòng hàng để tin nhắn Telegram rõ ràng hơn.
+    // Query nhanh order_items kèm tên sản phẩm.
+    (async () => {
+      let lines: Array<{ name: string; quantity: number; unitPrice: number; isGift: boolean }> = [];
+      try {
+        const rows = await db
+          .select({
+            quantity: orderItems.quantity,
+            unitSellingPrice: orderItems.unitSellingPrice,
+            isGiftLine: orderItems.isGiftLine,
+            productName: products.name,
+          })
+          .from(orderItems)
+          .leftJoin(products, eq(products.id, orderItems.productId))
+          .where(eq(orderItems.orderId, result.orderId));
+        lines = rows.map(r => ({
+          name: r.productName || 'Sản phẩm',
+          quantity: r.quantity,
+          unitPrice: r.unitSellingPrice || 0,
+          isGift: Boolean(r.isGiftLine),
+        }));
+      } catch {}
+      this.fireOrderWebhook({
+        orderId: result.orderId,
+        orderCode: result.orderCode,
+        channel,
+        customerName: result.customerName ?? 'Khách lẻ',
+        finalAmount: result.finalAmount,
+        paymentMethod,
+        status: result.status,
+        itemsCount: result.itemsCount,
+        totalQuantity: result.totalQuantity,
+        lines,
+      }).catch(() => {});
+    })();
 
     return result;
   }
@@ -1304,6 +1328,7 @@ return {
     status: string;
     itemsCount: number;
     totalQuantity: number;
+    lines?: Array<{ name: string; quantity: number; unitPrice: number; isGift: boolean }>;
   }): Promise<void> {
     const url = process.env.N8N_ORDER_WEBHOOK_URL;
     if (!url) return;
