@@ -1,13 +1,17 @@
 /**
  * POST /api/inventory/counts/[id]/submit - Gửi duyệt
  * POST /api/inventory/counts/[id]/approve - Duyệt và tạo bút toán ADJUSTMENT
+ *
+ * 2026-10-15: Viết lại approve dùng InventoryService.recordMovement()
+ * để đảm bảo đúng schema (quantityDelta, actorId, idempotencyKey),
+ * cập nhật stockBalances, và chống xuất âm.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { inventoryCounts, inventoryCountItems, inventoryLedger } from '@/db/schema';
+import { inventoryCounts, inventoryCountItems, products, comboComponents } from '@/db/schema';
 import { eq, and, isNull, count } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
+import { InventoryService } from '@/services/inventory.service';
 
 export async function POST(
   req: NextRequest,
@@ -25,6 +29,7 @@ export async function POST(
     const c = cnt[0];
 
     if (!isApprove) {
+      // SUBMIT: gửi duyệt
       if (!['DRAFT', 'COUNTING'].includes(c.status)) {
         return NextResponse.json({ ok: false, error: 'Trạng thái không hợp lệ' }, { status: 400 });
       }
@@ -42,28 +47,52 @@ export async function POST(
       return NextResponse.json({ ok: true, message: 'Đã gửi duyệt' });
     }
 
-    // APPROVE
+    // APPROVE: duyệt và tạo bút toán điều chỉnh
     if (c.status !== 'PENDING_APPROVAL') {
       return NextResponse.json({ ok: false, error: 'Chưa gửi duyệt' }, { status: 400 });
     }
+
     const items = await db.select().from(inventoryCountItems).where(eq(inventoryCountItems.countId, id));
-    let created = 0;
+
+    // Lấy danh sách combo để bỏ qua (phòng thủ đợt snapshot cũ có combo)
+    const comboRows = await db.select({ id: comboComponents.comboProductId }).from(comboComponents);
+    const comboSet = new Set(comboRows.map(r => r.id));
+
+    // Lấy productKind để set isBook đúng
+    const productIds = items.map(it => it.productId);
+    const prodRows = productIds.length > 0
+      ? await db.select({ id: products.id, productKind: products.productKind }).from(products)
+      : [];
+    const kindMap = new Map(prodRows.map(p => [p.id, p.productKind]));
+
     const docRef = 'KK-' + id.substring(0, 8).toUpperCase();
+    let created = 0;
+    let skipped = 0;
 
     for (const it of items) {
+      // Bỏ qua combo (không có tồn vật lý riêng)
+      if (comboSet.has(it.productId)) {
+        skipped++;
+        continue;
+      }
       const diff = (it.countedQty ?? 0) - it.systemQty;
       if (diff === 0) continue;
-      await db.insert(inventoryLedger).values({
-        id: randomUUID(),
+
+      const kind = kindMap.get(it.productId);
+      const isBook = kind !== 'GOODS';
+
+      await InventoryService.recordMovement({
+        editionId: it.productId,
+        isBook,
         warehouseId: c.warehouseId,
-        productId: it.productId,
-        editionId: it.editionId,
         eventType: 'ADJUSTMENT',
-        delta: diff,
+        quantityDelta: diff,
+        condition: 'NEW',
         documentRef: docRef,
         note: 'Điều chỉnh kiểm kê' + (it.note ? ': ' + it.note : ''),
-        createdAt: new Date().toISOString(),
-      } as any);
+        actorId: 'system',
+        idempotencyKey: `count-adjust-${id}-${it.id}`,
+      });
       created++;
     }
 
@@ -73,8 +102,9 @@ export async function POST(
 
     return NextResponse.json({
       ok: true,
-      message: `Đã duyệt. Tạo ${created} bút toán điều chỉnh.`,
+      message: `Đã duyệt. Tạo ${created} bút toán điều chỉnh.` + (skipped > 0 ? ` Bỏ qua ${skipped} combo.` : ''),
       adjustments: created,
+      skippedCombos: skipped,
     });
   } catch (e: any) {
     console.error('[counts/action] lỗi:', e.message);
