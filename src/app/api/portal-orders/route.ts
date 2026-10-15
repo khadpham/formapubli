@@ -154,7 +154,48 @@ export async function POST(req: NextRequest) {
       // Route đã tự xác minh SP-004 → server tin (trustedGiftIds), không cần
       // chương trình khuyến mại. Dòng quà 0đ, không tính doanh thu.
       // SP-004 là HÀNG HÓA: ghi productId, editionId để tra giá (sẽ không xuống DB).
-      orderItems.push({ editionId: giftId, productId: giftId, quantity: 1, isGiftLine: true });
+      // 2026-10-16: Logic 1 bộ = 1 quà. Tính số bộ hoàn chỉnh từ combo components:
+      // với mỗi combo, số bộ = min(floor(số lượng mua / số lượng yêu cầu)) theo từng thành phần.
+      // Tổng quà = tổng số bộ của tất cả combo. Sách lẻ không thuộc combo nào không tính.
+      let giftQty = 1;
+      try {
+        const { comboComponents } = await import('@/db');
+        // products.id của sách = editions.id (vd ed-h01), nên dùng editionId trực tiếp
+        let productQtyMap = new Map<string, number>();
+        for (const it of orderItems) {
+          if (it.isGiftLine) continue;
+          const pid = it.productId || it.editionId;
+          if (pid) productQtyMap.set(pid, (productQtyMap.get(pid) || 0) + it.quantity);
+        }
+        // Lấy tất cả combo components
+        const compRows = await db.select().from(comboComponents);
+        // Nhóm theo combo
+        const comboMap = new Map<string, Array<{ productId: string; qty: number }>>();
+        for (const c of compRows) {
+          if (!comboMap.has(c.comboProductId)) comboMap.set(c.comboProductId, []);
+          comboMap.get(c.comboProductId)!.push({ productId: c.componentProductId, qty: c.quantity || 1 });
+        }
+        // Tính số bộ cho từng combo
+        let totalSets = 0;
+        for (const [, components] of comboMap) {
+          let setsForCombo = Infinity;
+          let hasAll = true;
+          for (const comp of components) {
+            const bought = productQtyMap.get(comp.productId) || 0;
+            if (bought < comp.qty) { hasAll = false; break; }
+            setsForCombo = Math.min(setsForCombo, Math.floor(bought / comp.qty));
+          }
+          if (hasAll && setsForCombo !== Infinity && setsForCombo > 0) {
+            totalSets += setsForCombo;
+          }
+        }
+        // Nếu không có combo nào khớp (vd chỉ mua sách lẻ), fallback về 1 quà như cũ
+        giftQty = totalSets > 0 ? totalSets : 1;
+      } catch (e) {
+        console.warn('[portal-orders] Lỗi tính số bộ, dùng mặc định 1:', e);
+        giftQty = 1;
+      }
+      orderItems.push({ editionId: giftId, productId: giftId, quantity: giftQty, isGiftLine: true });
     }
 
     // 2. Tìm hoặc tạo customer
