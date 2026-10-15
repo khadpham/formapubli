@@ -12,6 +12,7 @@ import { db } from '@/db';
 import { inventoryCounts, inventoryCountItems, products, comboComponents } from '@/db/schema';
 import { eq, and, isNull, count } from 'drizzle-orm';
 import { InventoryService } from '@/services/inventory.service';
+import { createDocument } from '@/services/warehouse-document.service';
 
 export async function POST(
   req: NextRequest,
@@ -99,6 +100,32 @@ export async function POST(
     await db.update(inventoryCounts)
       .set({ status: 'APPROVED', approvedAt: new Date().toISOString() })
       .where(eq(inventoryCounts.id, id));
+
+    // Tự động tạo Biên bản kiểm kê
+    try {
+      const docItems = items
+        .filter(it => !comboSet.has(it.productId))
+        .map(it => {
+          const diff = (it.countedQty ?? 0) - it.systemQty;
+          return {
+            productId: it.productId,
+            quantity: it.countedQty ?? 0,
+            note: diff !== 0 ? `Lệch ${diff > 0 ? '+' : ''}${diff} (hệ thống: ${it.systemQty})` : undefined,
+          };
+        });
+      const bbkk = await createDocument({
+        docType: 'COUNT_MINUTES',
+        warehouseId: c.warehouseId,
+        items: docItems,
+        note: `Biên bản kiểm kê từ đợt ${docRef}`,
+        ledgerRefs: [docRef],
+        createdBy: 'system',
+      });
+      console.log('[counts/approve] Đã tạo biên bản:', bbkk.docNumber);
+    } catch (docErr: any) {
+      console.error('[counts/approve] Lỗi tạo biên bản:', docErr.message);
+      // Không fail cả approve vì lỗi tạo biên bản
+    }
 
     return NextResponse.json({
       ok: true,

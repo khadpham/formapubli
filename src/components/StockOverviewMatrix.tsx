@@ -34,6 +34,7 @@ import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
 import { ComboManagerPanel } from './inventory/ComboManagerPanel';
+import { WarehouseDocList } from './inventory/WarehouseDocList';
 import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
@@ -97,7 +98,7 @@ const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string; isActiv
   w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
 
 
-type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS' | 'COMBO';
+type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS' | 'COMBO' | 'DOCS';
 
 interface StockOverviewMatrixProps {
   initialBooks: MatrixBookItem[];
@@ -197,6 +198,7 @@ export function StockOverviewMatrix({
         // { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
         { id: 'DELIVERY_ORDERS' as MainTabId, label: 'Sổ Phiếu Xuất', short: 'Sổ PX', Icon: FileText, title: 'Sổ phiếu xuất kho bán buôn đại lý' },
         { id: 'COMBO' as MainTabId, label: 'Combo / Box Set', short: 'Combo', Icon: Package, title: 'Quản lý combo: tồn động theo kho, tạo/sửa thành phần' },
+        { id: 'DOCS' as MainTabId, label: 'Chứng từ kho', short: 'Chứng từ', Icon: FileText, title: 'Phiếu nhập/xuất/chuyển, biên bản kiểm kê - lưu trữ R2' },
       ] as const,
     [initialLedger.length]
   );
@@ -1369,6 +1371,11 @@ export function StockOverviewMatrix({
       {/* 6. TAB COMBO / BOX SET (0064) */}
       {activeTab === 'COMBO' && (
         <ComboManagerPanel warehouses={warehouses} currentRole={currentRole} />
+      )}
+
+      {/* 7. TAB CHỨNG TỪ KHO (0068) */}
+      {activeTab === 'DOCS' && (
+        <WarehouseDocList />
       )}
 
       {/* Modal */}
