@@ -1459,3 +1459,57 @@ export const inventoryCountItems = sqliteTable('inventory_count_items', {
 }, (table) => ({
   countIdx: index('idx_count_items_count').on(table.countId),
 }));
+
+// 0068: Warehouse documents - chứng từ kho
+export const warehouseDocuments = sqliteTable('warehouse_documents', {
+  id: text('id').primaryKey(),
+  docType: text('doc_type').notNull(),
+  docNumber: text('doc_number').notNull(),
+  docDate: text('doc_date').notNull(),
+  warehouseId: text('warehouse_id'),
+  toWarehouseId: text('to_warehouse_id'),
+  partnerId: text('partner_id'),
+  partnerName: text('partner_name'),
+  totalQuantity: integer('total_quantity').default(0),
+  totalAmount: real('total_amount').default(0),
+  status: text('status').notNull().default('DRAFT'),
+  r2Key: text('r2_key'),
+  r2Url: text('r2_url'),
+  ledgerRefs: text('ledger_refs'),
+  createdBy: text('created_by'),
+  issuedBy: text('issued_by'),
+  issuedAt: text('issued_at'),
+  voidedBy: text('voided_by'),
+  voidedAt: text('voided_at'),
+  voidReason: text('void_reason'),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  numberIdx: uniqueIndex('idx_warehouse_documents_number').on(table.docNumber),
+  typeIdx: index('idx_warehouse_documents_type').on(table.docType),
+  statusIdx: index('idx_warehouse_documents_status').on(table.status),
+  warehouseIdx: index('idx_warehouse_documents_warehouse').on(table.warehouseId),
+}));
+
+export const warehouseDocumentItems = sqliteTable('warehouse_document_items', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull().references(() => warehouseDocuments.id, { onDelete: 'cascade' }),
+  productId: text('product_id').notNull(),
+  productCode: text('product_code'),
+  productName: text('product_name'),
+  quantity: integer('quantity').notNull(),
+  unitPrice: real('unit_price').default(0),
+  amount: real('amount').default(0),
+  note: text('note'),
+  sortOrder: integer('sort_order').default(0),
+}, (table) => ({
+  docIdx: index('idx_warehouse_document_items_doc').on(table.documentId),
+}));
+
+export const warehouseDocCounters = sqliteTable('warehouse_doc_counters', {
+  docType: text('doc_type').notNull(),
+  year: integer('year').notNull(),
+  lastNumber: integer('last_number').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.docType, table.year] }),
+}));
