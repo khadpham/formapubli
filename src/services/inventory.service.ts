@@ -1,4 +1,4 @@
-import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, products, warehouses, works } from '../db';
+import { db, idempotencyKeys, inventoryLedger, stockBalances, editions, products, warehouses, works, comboComponents } from '../db';
 import { eq, and, or, desc, inArray, sql , ne, notLike} from 'drizzle-orm';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
@@ -1083,8 +1083,51 @@ export class InventoryService {
       record[bal.warehouseId] = (record[bal.warehouseId] || 0) + Number(bal.physicalQuantity || 0);
     }
 
+    // 0064: Tinh ton dong cho combo - combo khong co ton rieng trong stockBalances.
+    // Ton combo = min(ton tung thanh phan / so luong yeu cau) theo tung kho.
+    let comboStockMap = new Map<string, Record<string, number>>();
+    try {
+      const comboRows = await db
+        .select({
+          comboProductId: comboComponents.comboProductId,
+          componentProductId: comboComponents.componentProductId,
+          quantity: comboComponents.quantity,
+        })
+        .from(comboComponents);
+      if (comboRows.length > 0) {
+        // Nhom theo combo
+        const byCombo = new Map<string, Array<{ componentProductId: string; quantity: number }>>();
+        for (const r of comboRows) {
+          const list = byCombo.get(r.comboProductId) || [];
+          list.push({ componentProductId: r.componentProductId, quantity: r.quantity });
+          byCombo.set(r.comboProductId, list);
+        }
+        // Tinh ton cho tung combo, tung kho
+        for (const [comboId, comps] of byCombo) {
+          const whStock: Record<string, number> = {};
+          // Lay danh sach kho tu balanceMap keys
+          const allWhIds = new Set<string>();
+          for (const bal of balanceMap.values()) {
+            for (const whId of Object.keys(bal)) allWhIds.add(whId);
+          }
+          for (const whId of allWhIds) {
+            let minStock = Infinity;
+            for (const c of comps) {
+              const compBal = balanceMap.get(c.componentProductId);
+              const compStock = compBal ? (compBal[whId] || 0) : 0;
+              minStock = Math.min(minStock, Math.floor(compStock / Math.max(1, c.quantity)));
+            }
+            whStock[whId] = minStock === Infinity ? 0 : minStock;
+          }
+          comboStockMap.set(comboId, whStock);
+        }
+      }
+    } catch (e) {
+      // DB chua co bang combo_components: bo qua, combo hien 0 nhu cu
+    }
+
     return allProducts.map((p) => {
-      const bal = balanceMap.get(p.id) || {};
+      const comboBal = comboStockMap.get(p.id); const bal = comboBal || balanceMap.get(p.id) || {};
       const totalStock = Object.values(bal).reduce((s, n) => s + n, 0);
       return {
         id: p.id,
@@ -1110,6 +1153,7 @@ export class InventoryService {
         stockByWarehouse: bal,
         totalStock,
         lowStockThreshold: p.lowStockThreshold || 0,
+        isCombo: !!comboBal,
       };
     });
   }
