@@ -128,8 +128,8 @@ export async function GET(req: NextRequest) {
 
       // Parse SĐT + địa chỉ từ note (format: "SĐT: ..., Địa chỉ: ...")
       const note = ord.note || '';
-      const phoneMatch = note.match(/SĐT:\s*([^.]+)/);
-      const addrMatch = note.match(/Địa chỉ:\s*([^.]+)/);
+      const phoneMatch = note.match(/SĐT:\s*([^,]+)/);
+      const addrMatch = note.match(/Địa chỉ:\s*(.+?)(?=\. Phí ship:|$)/);
 
       result.push({
         id: ord.id,

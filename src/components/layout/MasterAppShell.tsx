@@ -314,7 +314,7 @@ export function MasterAppShell({
                   {effectiveTab === 'shopee' && 'Shopee'}
                   {effectiveTab === 'sales' && 'Tài chính'}
                   {effectiveTab === 'einvoice' && 'Hóa đơn điện tử'}
-                  {effectiveTab === 'customers' && 'Portal / CRM'}
+                  {effectiveTab === 'customers' && 'CRM Độc giả'}
                   {effectiveTab === 'partners' && 'Đối tác & Đại lý'}
                   {effectiveTab === 'hr' && 'Nhân sự'}
                   {effectiveTab === 'documents' && 'Tài liệu'}
