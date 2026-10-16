@@ -220,6 +220,61 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
       title="Kiểm kê kho"
       subtitle="Đếm thực tế, so với sổ, tạo điều chỉnh"
       size={step === "count" ? "xl" : "md"}
+      actions={
+        <div className="space-y-3">
+          {step === 'select' && mainTab === 'create' && !existingCountId && (
+            <>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Tạo đợt kiểm kê mới. Hệ thống sẽ chụp tồn kho hiện tại để so sánh với số đếm thực tế.
+              </p>
+              <button
+                onClick={handleCreate}
+                disabled={loading}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Tạo đợt và chụp tồn kho
+              </button>
+            </>
+          )}
+          {step === 'count' && (
+            <>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Nhập số đếm thực tế cho từng sản phẩm. Bấm lưu để xem tổng hợp chênh lệch.
+              </p>
+              <button
+                onClick={handleSaveCounts}
+                disabled={loading}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Lưu và xem tổng hợp
+              </button>
+            </>
+          )}
+          {step === 'review' && (
+            <>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Kiểm tra chênh lệch trước khi gửi duyệt. Sau khi duyệt, tồn kho sẽ được điều chỉnh.
+              </p>
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Gửi duyệt
+              </button>
+              <button
+                onClick={() => setStep('count')}
+                className="w-full py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-bold hover:bg-slate-50"
+              >
+                Quay lại sửa
+              </button>
+            </>
+          )}
+        </div>
+      }
     >
       {step === 'select' && !existingCountId && (
         <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-4">
@@ -410,14 +465,6 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
             />
           </div>
           {error && <p className="text-xs text-rose-600">{error}</p>}
-          <button
-            onClick={handleCreate}
-            disabled={loading}
-            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
-            Tạo đợt và chụp tồn kho
-          </button>
         </div>
       )}
 
@@ -464,14 +511,6 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
             })}
           </div>
           {error && <p className="text-xs text-rose-600">{error}</p>}
-          <button
-            onClick={handleSaveCounts}
-            disabled={loading}
-            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
-            Lưu và xem tổng hợp
-          </button>
         </div>
       )}
 
@@ -484,22 +523,6 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
             </p>
           </div>
           {error && <p className="text-xs text-rose-600">{error}</p>}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setStep('count')}
-              className="flex-1 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-bold"
-            >
-              Quay lại sửa
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
-              Gửi duyệt
-            </button>
-          </div>
         </div>
       )}
     </Modal>
