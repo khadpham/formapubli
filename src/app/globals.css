@@ -195,7 +195,7 @@ body {
   footer,
   .pwa-install-banner,
   .offline-badge,
-  .fixed,
+  .fixed:not(.warehouse-doc-print-modal),
   button,
   dialog {
     display: none !important;
