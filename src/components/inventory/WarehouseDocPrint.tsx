@@ -63,7 +63,7 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
     if (!onArchive) return;
     setArchiving(true);
     try {
-      const el = document.getElementById('warehouse-doc-print-content');
+      const el = document.getElementById('warehouse-doc-print-portal-content');
       const html = el ? el.outerHTML : '';
       await onArchive(html);
       alert('Đã lưu trữ chứng từ lên R2');
@@ -77,7 +77,7 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
 
   // Nội dung phiếu - dùng chung cho preview và bản in
   const docContent = (
-        <div id="warehouse-doc-print-content" className="p-8">
+        <div className="p-8">
           {/* Header công ty */}
           <div className="text-center mb-6">
             <p className="font-bold text-lg">{COMPANY_NAME}</p>
@@ -227,7 +227,7 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
 
   // Bản in riêng (chỉ hiện khi in)
   const printContent = (
-    <div id="warehouse-doc-print-portal" className="hidden print:block bg-white text-black">
+    <div id="warehouse-doc-print-portal-content" className="hidden print:block bg-white text-black">
       {docContent}
     </div>
   );
