@@ -143,7 +143,14 @@ export async function POST(req: NextRequest) {
       // Route đã tự xác minh SP-004 → server tin (trustedGiftIds), không cần
       // chương trình khuyến mại. Dòng quà 0đ, không tính doanh thu.
       // SP-004 là HÀNG HÓA: ghi productId, editionId để tra giá (sẽ không xuống DB).
-      orderItems.push({ editionId: giftId, productId: giftId, quantity: 1, isGiftLine: true });
+      // 2026-10-15: Logic 1 bộ = 1 quà. Số quà = min(số lượng các sách).
+      // Vd: mua 6 cuốn x 2 = 2 bộ → tặng 2 túi.
+      const bookQuantities = orderItems
+        .filter(it => !it.isGiftLine)
+        .map(it => it.quantity)
+        .filter(q => Number.isFinite(q) && q > 0);
+      const giftQty = bookQuantities.length > 0 ? Math.min(...bookQuantities) : 1;
+      orderItems.push({ editionId: giftId, productId: giftId, quantity: giftQty, isGiftLine: true });
     }
 
     // 2. Tìm hoặc tạo customer
