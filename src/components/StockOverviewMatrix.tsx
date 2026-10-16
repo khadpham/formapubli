@@ -1340,9 +1340,9 @@ export function StockOverviewMatrix({
             <div aria-hidden="true" className="h-0 w-20 shrink-0" />
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'LEDGER' ? (
         <StockLedgerTab entries={initialLedger} />
-      )}
+      ) : null}
 
 
       {/* 5. TAB SỔ PHIẾU XUẤT KHO BÁN BUÔN ĐẠI LÝ (DELIVERY ORDERS LEDGER) */}
