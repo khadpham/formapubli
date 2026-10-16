@@ -230,6 +230,8 @@ export function BatchTransferModal({
       .filter(
         (b) =>
           !existingIds.has(b.id) &&
+          // Loại combo khỏi gợi ý chuyển kho (combo không có tồn riêng)
+          !(b.code && b.code.toUpperCase().startsWith('COMBO')) &&
           // Dùng helper tìm tiếng Việt có sẵn thay vì `.toLowerCase().includes()`.
           // Bản cũ chỉ khớp khi gõ ĐÚNG dấu, nên gõ "doramon" không ra "Đờrămôn" -
     // người dùng gõ tiếng Việt không dấu là chịu không tìm được.
@@ -296,6 +298,12 @@ export function BatchTransferModal({
   // sinh ra đúng một hình dạng dòng (và validate/toctou xử lý y hệt nhau).
   // Trùng editionId thì CỘNG dồn số lượng vào dòng đang có, không thêm dòng mới.
   const addBookLine = (book: BookItem, quantity?: number) => {
+    // Combo không có tồn vật lý riêng, không thể chuyển kho trực tiếp.
+    // Muốn chuyển combo thì chuyển từng thành phần.
+    if (book.code && book.code.toUpperCase().startsWith('COMBO')) {
+      setErrorMessage('Không thể chuyển kho combo ' + book.code + '. Combo không có tồn riêng - hãy chuyển từng đầu sách thành phần.');
+      return;
+    }
     const stock = getFromStock(book.id);
     const defaultQty = stock > 0 ? Math.min(20, stock) : 10;
     const qty = Math.max(1, Math.floor(quantity ?? defaultQty) || 1);

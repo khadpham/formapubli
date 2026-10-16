@@ -74,36 +74,10 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
     }
   };
 
-  const content = (
-    <div className="fixed inset-0 z-[150] bg-black/50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static warehouse-doc-print-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto print:max-h-none print:rounded-none print:shadow-none">
-        {/* Toolbar - ẩn khi in */}
-        <div className="flex items-center justify-between p-4 border-b print:hidden">
-          <h3 className="font-bold">{title} - {data.docNumber}</h3>
-          <div className="flex gap-2">
-            {onArchive && (
-              <button
-                onClick={handleArchive}
-                disabled={archiving}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
-              >
-                <Archive className="w-4 h-4" /> {archiving ? 'Đang lưu...' : 'Lưu trữ R2'}
-              </button>
-            )}
-            <button
-              onClick={handlePrint}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-2"
-            >
-              <Printer className="w-4 h-4" /> In
-            </button>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
 
-        {/* Nội dung phiếu in */}
-        <div id="warehouse-doc-print-content" className="p-8 print:p-6">
+  // Nội dung phiếu - dùng chung cho preview và bản in
+  const docContent = (
+        <div id="warehouse-doc-print-content" className="p-8">
           {/* Header công ty */}
           <div className="text-center mb-6">
             <p className="font-bold text-lg">{COMPANY_NAME}</p>
@@ -208,17 +182,60 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
             </div>
           </div>
         </div>
+  );
+
+  // Modal preview (ẩn khi in)
+  const modalContent = (
+    <div className="no-print fixed inset-0 z-[150] bg-black/50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+        {/* Toolbar */}
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-bold">{title} - {data.docNumber}</h3>
+          <div className="flex gap-2">
+            {onArchive && (
+              <button
+                onClick={handleArchive}
+                disabled={archiving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+              >
+                <Archive className="w-4 h-4" /> {archiving ? 'Đang lưu...' : 'Lưu trữ R2'}
+              </button>
+            )}
+            <button
+              onClick={handlePrint}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-2"
+            >
+              <Printer className="w-4 h-4" /> In
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Preview nội dung */}
+        {docContent}
       </div>
 
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          #warehouse-doc-print-content, #warehouse-doc-print-content * { visibility: visible; }
-          #warehouse-doc-print-content { position: absolute; left: 0; top: 0; width: 100%; }
+          .no-print { display: none !important; }
         }
       `}</style>
     </div>
   );
 
-  return createPortal(content, document.body);
+  // Bản in riêng (chỉ hiện khi in)
+  const printContent = (
+    <div id="warehouse-doc-print-portal" className="hidden print:block bg-white text-black">
+      {docContent}
+    </div>
+  );
+
+  return (
+    <>
+      {createPortal(modalContent, document.body)}
+      {createPortal(printContent, document.body)}
+    </>
+  );
 }
