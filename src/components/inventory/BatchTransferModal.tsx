@@ -972,46 +972,38 @@ export function BatchTransferModal({
                   Trước đây nó là `absolute z-20` nằm trong modal card
                   `overflow-hidden` + body `overflow-y-auto`, nên danh sách bị cắt
                   mất phần dưới và không cuộn tới được. */}
-              {isSuggestOpen && filteredBooksToAdd.length > 0 && (
-                <PortalToBody
-                  className="fixed z-[95]"
-                  style={{ top: suggestPos.top, left: suggestPos.left, width: suggestPos.width }}
-                >
-                  <div
-                    ref={suggestRef}
-                    role="listbox"
-                    aria-label="Gợi ý sách có thể thêm vào phiếu"
-                    className="max-h-[min(20rem,calc(100vh-2rem))] overflow-y-auto overscroll-contain bg-white border border-slate-200 rounded-xl shadow-2xl divide-y divide-slate-100"
-                  >
-                    {filteredBooksToAdd.map((book) => {
-                      const stock = getFromStock(book.id);
-                      return (
-                        <button
-                          key={book.id}
-                          type="button"
-                          role="option"
-                          aria-selected={false}
-                          // Giữ focus ở ô tìm kiếm khi bấm để người dùng gõ tiếp
-                          // được ngay, thay vì mất focus về body.
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            handleAddLine(book);
-                            setIsSuggestOpen(false);
-                          }}
-                          className="w-full px-3 py-2 text-left hover:bg-indigo-50/60 flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          <span className="min-w-0 truncate">
-                            <span className="font-mono font-bold text-indigo-600 mr-2">[{book.code}]</span>
-                            <span className="font-medium text-slate-900">{book.title}</span>
-                          </span>
-                          <span className="font-mono text-[11px] text-slate-500 shrink-0 whitespace-nowrap">
-                            Tồn nguồn: <strong className="text-slate-800">{stock}</strong>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PortalToBody>
+              {searchBookTerm.trim() && (
+                <div className="border border-slate-200 rounded-2xl p-2 bg-white shadow-lg space-y-1 max-h-48 overflow-y-auto">
+                  {filteredBooksToAdd.length === 0 ? (
+                    <p className="text-xs text-slate-400 p-2 text-center">Không tìm thấy sách.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {filteredBooksToAdd.map((book) => {
+                        const stock = getFromStock(book.id);
+                        return (
+                          <button
+                            key={book.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              handleAddLine(book);
+                              setSearchBookTerm('');
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-indigo-50 rounded-xl flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer"
+                          >
+                            <span className="min-w-0 truncate">
+                              <span className="font-mono font-bold text-indigo-600 mr-2">[{book.code}]</span>
+                              <span className="font-medium text-slate-900">{book.title}</span>
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-500 shrink-0">
+                              Tồn: <strong className="text-slate-800">{stock}</strong>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* FIX: nút "Dán" phải luôn thấy được, kể cả khi bảng còn TRỐNG.
