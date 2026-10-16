@@ -100,7 +100,7 @@ export function BatchTransferModal({
 
   // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển - không bao giờ gọi
   // validate/submit; người dùng vẫn phải bấm nút Kiểm tra tồn kho rồi Xác nhận.
-  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [isPasteOpen, setIsPasteOpen] = useState(true);
   const [pasteText, setPasteText] = useState('');
   const [pasteResult, setPasteResult] = useState<{
     rows: ParsedRow[];

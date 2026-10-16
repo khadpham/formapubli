@@ -9,6 +9,7 @@ interface InventoryCountModalProps {
   isOpen: boolean;
   onClose: () => void;
   warehouses: { id: string; code: string; name: string }[];
+  books?: { id: string; name: string }[];
   onSuccess?: () => void;
   existingCountId?: string | null;
 }
@@ -22,7 +23,7 @@ interface CountItem {
   note?: string;
 }
 
-export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, existingCountId }: InventoryCountModalProps) {
+export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], onSuccess, existingCountId }: InventoryCountModalProps) {
   const [step, setStep] = useState<'select' | 'count' | 'review'>('select');
   const [warehouseId, setWarehouseId] = useState('');
   const [note, setNote] = useState('');
@@ -31,10 +32,12 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [countMode, setCountMode] = useState<'full' | 'single'>('full');
-  const [singleProductId, setSingleProductId] = useState('');
-  const [singleProductSearch, setSingleProductSearch] = useState('');
-  const [productList, setProductList] = useState<{ id: string; name: string }[]>([]);
+  const [countMode, setCountMode] = useState<'full' | 'partial'>('full');
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [productSearch, setProductSearch] = useState('');
+  const [mainTab, setMainTab] = useState<'create' | 'list'>('create');
+  const [countList, setCountList] = useState<any[]>([]);
+  const [listLoading, setListLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -42,26 +45,62 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
       setSearch('');
       if (existingCountId) {
         loadExistingCount(existingCountId);
+        setMainTab('create');
       } else {
+        setMainTab('create');
         setStep('select');
         setWarehouseId(warehouses[0]?.id || '');
         setCountId(null);
         setItems([]);
+        setSelectedProductIds(new Set());
+        setProductSearch('');
+        setCountMode('full');
       }
     }
   }, [isOpen, warehouses, existingCountId]);
 
-  const fetchProducts = async () => {
+  const loadCountList = async () => {
+    setListLoading(true);
     try {
-      const res = await fetch('/api/products?limit=1000');
+      const res = await fetch('/api/inventory/counts');
       const data = await res.json();
-      if (data.ok) setProductList((data.data || []).map((p: any) => ({ id: p.id, name: p.name })));
-    } catch {}
+      if (data.ok) setCountList(data.data || []);
+    } catch {} finally {
+      setListLoading(false);
+    }
   };
 
-  useEffect(() => {
-    if (isOpen && !existingCountId) fetchProducts();
-  }, [isOpen, existingCountId]);
+  const handleApprove = async (cid: string) => {
+    if (!confirm('Duyệt đợt kiểm kê này? Tồn kho sẽ được điều chỉnh.')) return;
+    setListLoading(true);
+    try {
+      const res = await fetch(`/api/inventory/counts/${cid}/approve`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Duyệt thất bại');
+      await loadCountList();
+      onSuccess?.();
+    } catch (e: any) {
+      alert('Lỗi: ' + e.message);
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  const handleCancelCount = async (cid: string) => {
+    if (!confirm('Hủy đợt kiểm kê này?')) return;
+    setListLoading(true);
+    try {
+      const res = await fetch(`/api/inventory/counts/${cid}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Hủy thất bại');
+      await loadCountList();
+      onSuccess?.();
+    } catch (e: any) {
+      alert('Lỗi: ' + e.message);
+    } finally {
+      setListLoading(false);
+    }
+  };
 
   const loadExistingCount = async (cid: string) => {
     setLoading(true);
@@ -92,7 +131,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
 
   const handleCreate = async () => {
     if (!warehouseId) { setError('Chọn kho'); return; }
-    if (countMode === 'single' && !singleProductId) { setError('Chọn sản phẩm cần điều chỉnh'); return; }
+    if (countMode === 'partial' && selectedProductIds.size === 0) { setError('Chọn ít nhất 1 sản phẩm cần kiểm kê'); return; }
     setLoading(true); setError(null);
     try {
       const res = await fetch('/api/inventory/counts', {
@@ -107,7 +146,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
       const snapRes = await fetch(`/api/inventory/counts/${data.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'snapshot', ...(countMode === 'single' && singleProductId ? { productIds: [singleProductId] } : {}) }),
+        body: JSON.stringify({ action: 'snapshot', ...(countMode === 'partial' && selectedProductIds.size > 0 ? { productIds: Array.from(selectedProductIds) } : {}) }),
       });
       const snapData = await snapRes.json();
       if (!snapData.ok) throw new Error(snapData.error);
@@ -180,9 +219,84 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
       onClose={onClose}
       title="Kiểm kê kho"
       subtitle="Đếm thực tế, so với sổ, tạo điều chỉnh"
-      size="xl"
+      size={step === "count" || mainTab === "list" ? "xl" : "md"}
     >
-      {step === 'select' && (
+      {step === 'select' && !existingCountId && (
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-4">
+          <button
+            type="button"
+            onClick={() => setMainTab('create')}
+            className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition ${mainTab === 'create' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Tạo đợt mới
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMainTab('list'); loadCountList(); }}
+            className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition ${mainTab === 'list' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Đợt kiểm kê {countList.length > 0 && `(${countList.length})`}
+          </button>
+        </div>
+      )}
+      {step === 'select' && mainTab === 'list' && !existingCountId && (
+        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+          {listLoading && <p className="text-sm text-slate-500 text-center py-4">Đang tải...</p>}
+          {!listLoading && countList.length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-8">Chưa có đợt kiểm kê nào</p>
+          )}
+          {countList.map((c: any) => (
+            <div key={c.id} className="flex items-center justify-between gap-2 p-3 bg-white border border-slate-200 rounded-xl">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-800 truncate">{c.note || `Đợt ${c.id.slice(0, 8)}`}</p>
+                <p className="text-xs text-slate-500">
+                  {c.warehouseName || ''} - {new Date(c.createdAt).toLocaleDateString('vi-VN')}
+                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+                    c.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
+                    c.status === 'COUNTING' ? 'bg-blue-100 text-blue-700' :
+                    c.status === 'PENDING_APPROVAL' ? 'bg-amber-100 text-amber-700' :
+                    'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {c.status === 'DRAFT' ? 'Nháp' : c.status === 'COUNTING' ? 'Đang đếm' : c.status === 'PENDING_APPROVAL' ? 'Chờ duyệt' : 'Hoàn tất'}
+                  </span>
+                </p>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                {(c.status === 'DRAFT' || c.status === 'COUNTING') && (
+                  <button
+                    type="button"
+                    onClick={() => loadExistingCount(c.id)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold"
+                  >
+                    {c.status === 'COUNTING' ? 'Tiếp tục' : 'Xem'}
+                  </button>
+                )}
+                {c.status === 'PENDING_APPROVAL' && (
+                  <button
+                    type="button"
+                    onClick={() => handleApprove(c.id)}
+                    disabled={listLoading}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                  >
+                    Duyệt
+                  </button>
+                )}
+                {(c.status === 'DRAFT' || c.status === 'COUNTING') && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancelCount(c.id)}
+                    disabled={listLoading}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {step === 'select' && mainTab === 'create' && (
         <div className="space-y-4 p-1">
           <div>
             <label className="text-xs font-bold text-slate-600 block mb-2">Phạm vi kiểm kê</label>
@@ -196,36 +310,82 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, onSuccess, ex
               </button>
               <button
                 type="button"
-                onClick={() => setCountMode('single')}
-                className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold border-2 transition ${countMode === 'single' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                onClick={() => setCountMode('partial')}
+                className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold border-2 transition ${countMode === 'partial' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
               >
-                1 sản phẩm
+                Chọn sản phẩm {selectedProductIds.size > 0 && `(${selectedProductIds.size})`}
               </button>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              {countMode === 'full' ? 'Đếm toàn bộ sản phẩm trong kho' : 'Chỉ điều chỉnh số lượng 1 sản phẩm cụ thể'}
+              {countMode === 'full' ? 'Đếm toàn bộ sản phẩm trong kho' : 'Chỉ kiểm kê các sản phẩm đã chọn (1 hoặc nhiều)'}
             </p>
           </div>
-          {countMode === 'single' && (
+          {countMode === 'partial' && (
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Sản phẩm</label>
+              <label className="text-xs font-bold text-slate-600 block mb-1">
+                Sản phẩm đã chọn: <span className="text-emerald-600">{selectedProductIds.size}</span>
+              </label>
+              {selectedProductIds.size > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2 max-h-20 overflow-y-auto p-2 bg-emerald-50 rounded-xl border border-emerald-200">
+                  {books.filter(b => selectedProductIds.has(b.id)).map(b => (
+                    <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-emerald-300 rounded-lg text-xs font-medium">
+                      {b.name.length > 30 ? b.name.slice(0, 30) + '...' : b.name}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = new Set(selectedProductIds);
+                          next.delete(b.id);
+                          setSelectedProductIds(next);
+                        }}
+                        className="text-rose-500 hover:text-rose-700 font-bold"
+                      >×</button>
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProductIds(new Set())}
+                    className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2"
+                  >
+                    Xóa hết
+                  </button>
+                </div>
+              )}
               <input
-                value={singleProductSearch}
-                onChange={e => setSingleProductSearch(e.target.value)}
-                placeholder="Tìm tên sách (không dấu / viết tắt)..."
+                value={productSearch}
+                onChange={e => setProductSearch(e.target.value)}
+                placeholder="Tìm tên sách (gõ không dấu hoặc viết tắt đều được)..."
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm mb-1"
               />
-              <select
-                value={singleProductId}
-                onChange={e => setSingleProductId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                size={Math.min(6, Math.max(3, productList.filter(p => !singleProductSearch || matchesAnyVietnameseField(singleProductSearch, [p.name])).length))}
-              >
-                <option value="">-- Chọn sản phẩm --</option>
-                {productList.filter(p => !singleProductSearch || matchesAnyVietnameseField(singleProductSearch, [p.name])).slice(0, 100).map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                {books
+                  .filter(b => !productSearch || matchesAnyVietnameseField(productSearch, [b.name]))
+                  .slice(0, 100)
+                  .map(b => {
+                    const checked = selectedProductIds.has(b.id);
+                    return (
+                      <label
+                        key={b.id}
+                        className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-slate-50 ${checked ? 'bg-emerald-50' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            const next = new Set(selectedProductIds);
+                            if (checked) next.delete(b.id);
+                            else next.add(b.id);
+                            setSelectedProductIds(next);
+                          }}
+                          className="w-4 h-4 accent-emerald-600 shrink-0"
+                        />
+                        <span className={checked ? 'font-semibold text-emerald-800' : 'text-slate-700'}>{b.name}</span>
+                      </label>
+                    );
+                  })}
+                {books.filter(b => !productSearch || matchesAnyVietnameseField(productSearch, [b.name])).length === 0 && (
+                  <p className="px-3 py-4 text-sm text-slate-400 text-center">Không tìm thấy sản phẩm</p>
+                )}
+              </div>
             </div>
           )}
           <div>

@@ -42,7 +42,6 @@ import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
 import { WarehouseBankManager } from './inventory/WarehouseBankManager';
 import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
 import { InventoryCountModal } from './inventory/InventoryCountModal';
-import { InventoryCountListModal } from './inventory/InventoryCountListModal';
 import { StockLedgerTab, type LedgerEntry } from './inventory/StockLedgerTab';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
@@ -122,7 +121,6 @@ export function StockOverviewMatrix({
   const [countModalOpen, setCountModalOpen] = useState(false);
   const [viewCountId, setViewCountId] = useState<string | null>(null);
   const [thresholdOverrides, setThresholdOverrides] = useState<Record<string, number>>({});
-  const [countListOpen, setCountListOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
@@ -861,15 +859,6 @@ export function StockOverviewMatrix({
 
           <button
             type="button"
-            onClick={() => setCountListOpen(true)}
-            title="Xem và duyệt các đợt kiểm kê"
-            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-white border border-amber-300 hover:bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-          >
-            <Clock className="w-3.5 h-3.5" /> Đợt kiểm kê
-          </button>
-
-          <button
-            type="button"
             onClick={() => setRmaModalOpen(true)}
             title="Tiếp nhận sách lỗi & đổi trả vào kho cách ly"
             className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
@@ -1175,6 +1164,7 @@ export function StockOverviewMatrix({
             <table className="w-full min-w-[640px] text-left text-xs text-slate-600">
               <thead className="bg-slate-50 uppercase text-slate-500 font-semibold border-b border-slate-200 tracking-wider">
                 <tr>
+                  <th className="px-2 py-3 w-10 text-center">STT</th>
                   <th className="px-3 py-3 w-14">Mã</th>
                   <th className="px-3 py-3">Tên sách & Tác phẩm</th>
                   <th className="px-3 py-3 w-28">4 số ISBN</th>
@@ -1247,7 +1237,7 @@ export function StockOverviewMatrix({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredBooks.map((b) => {
+                {filteredBooks.map((b, idx) => {
                   const currentStock = getWarehouseStock(b, warehouseTab);
                   const isSortedLow = stockSortMode === 'ASC';
                   const rowHighlightClass = getStockRowHighlightClass(currentStock, isSortedLow);
@@ -1256,6 +1246,7 @@ export function StockOverviewMatrix({
 
                   return (
                     <tr key={b.id} className={`hover:bg-slate-50/80 transition-colors ${rowHighlightClass}`}>
+                      <td className="px-2 py-2.5 text-center text-slate-400 text-xs font-medium">{idx + 1}</td>
                       <td className="px-3 py-2.5 font-mono font-bold text-indigo-600">{b.code}</td>
                       <td className="px-3 py-2.5">
                         <div className="font-semibold text-slate-900">{b.title}</div>
@@ -1393,18 +1384,9 @@ export function StockOverviewMatrix({
         isOpen={countModalOpen}
         onClose={() => { setCountModalOpen(false); setViewCountId(null); }}
         warehouses={warehouses}
+        books={initialBooks.map(b => ({ id: b.id, name: b.title }))}
         onSuccess={handleRefresh}
         existingCountId={viewCountId}
-      />
-      <InventoryCountListModal
-        open={countListOpen}
-        onClose={() => setCountListOpen(false)}
-        onSuccess={handleRefresh}
-        onView={(cid) => {
-          setCountListOpen(false);
-          setViewCountId(cid);
-          setCountModalOpen(true);
-        }}
       />
 
       {/* Batch Transfer Modal */}
