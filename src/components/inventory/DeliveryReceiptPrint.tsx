@@ -34,6 +34,10 @@ export interface DeliveryOrderData {
   discountRate: number;
   finalAmount: number;
   fiscalScope: string;
+  invoiceRequired?: boolean;
+  invoiceTaxCode?: string;
+  invoiceCompanyName?: string;
+  invoiceAddress?: string;
   status: 'DRAFT' | 'DISPATCHED_LOCKED' | 'VOIDED_REVERSED';
   reversalOf?: string | null;
   note?: string | null;

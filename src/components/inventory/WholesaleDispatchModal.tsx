@@ -106,6 +106,10 @@ export function WholesaleDispatchModal({
   const [partnerId, setPartnerId] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(35); // 35% mặc định bán buôn
   const [fiscalScope, setFiscalScope] = useState<'COMMERCIAL_WHOLESALE' | 'CONSIGNMENT_DISPATCH'>('COMMERCIAL_WHOLESALE');
+  const [invoiceRequired, setInvoiceRequired] = useState(false);
+  const [invoiceTaxCode, setInvoiceTaxCode] = useState('');
+  const [invoiceCompany, setInvoiceCompany] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
   const [note, setNote] = useState<string>('');
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 
@@ -690,6 +694,10 @@ export function WholesaleDispatchModal({
       discountRate,
       finalAmount,
       fiscalScope,
+      invoiceRequired,
+      invoiceTaxCode: invoiceRequired ? invoiceTaxCode : undefined,
+      invoiceCompanyName: invoiceRequired ? invoiceCompany : undefined,
+      invoiceAddress: invoiceRequired ? invoiceAddress : undefined,
       status: 'DRAFT',
       note: note.trim() || null,
       createdBy: 'Thủ kho',
@@ -929,6 +937,41 @@ export function WholesaleDispatchModal({
                   <option value="COMMERCIAL_WHOLESALE">Thương mại bán buôn (Ghi nhận doanh số)</option>
                   <option value="CONSIGNMENT_DISPATCH">Ký gửi đại lý (Chưa chuyển giao quyền sở hữu)</option>
                 </select>
+              </div>
+
+              {/* Tickbox xuất hóa đơn */}
+              <div className="md:col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={invoiceRequired}
+                    onChange={(e) => setInvoiceRequired(e.target.checked)}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="text-xs font-bold text-slate-700">Xuất hóa đơn VAT cho đơn này</span>
+                </label>
+                {invoiceRequired && (
+                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <input
+                      value={invoiceTaxCode}
+                      onChange={(e) => setInvoiceTaxCode(e.target.value)}
+                      placeholder="Mã số thuế *"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceCompany}
+                      onChange={(e) => setInvoiceCompany(e.target.value)}
+                      placeholder="Tên công ty / tổ chức *"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceAddress}
+                      onChange={(e) => setInvoiceAddress(e.target.value)}
+                      placeholder="Địa chỉ *"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Ghi chú */}
