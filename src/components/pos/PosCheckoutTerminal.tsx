@@ -353,6 +353,9 @@ export function PosCheckoutTerminal({
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'QR_CODE'>('BANK_TRANSFER');
   const [cashReceived, setCashReceived] = useState<number | ''>('');
   const [fiscalScope, setFiscalScope] = useState<'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX'>('INTERNAL_MANAGEMENT');
+  const [invoiceTaxCode, setInvoiceTaxCode] = useState('');
+  const [invoiceCompany, setInvoiceCompany] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -2089,6 +2092,9 @@ export function PosCheckoutTerminal({
            paymentMethod,
            moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
+           invoiceTaxCode: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+           invoiceCompanyName: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+           invoiceAddress: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
            cashierId,
            cashboxSessionId: activeSession?.id,
            discountApprovalId: approvedDiscountRequestId || undefined,
@@ -2221,6 +2227,9 @@ export function PosCheckoutTerminal({
             paymentMethod,
             moneyReceived: false,
             fiscalScope,
+            invoiceTaxCode: fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+            invoiceCompanyName: fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+            invoiceAddress: fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
             cashierId,
             cashboxSessionId: activeSession?.id,
             discountApprovalId: approvedDiscountRequestId || undefined,
@@ -2351,6 +2360,9 @@ export function PosCheckoutTerminal({
            paymentMethod,
            moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
+           invoiceTaxCode: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+           invoiceCompanyName: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+           invoiceAddress: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
           cashierId,
            cashboxSessionId: activeSession?.id,
           discountApprovalId: approvedDiscountRequestId || undefined,
@@ -2563,6 +2575,9 @@ export function PosCheckoutTerminal({
               : discountAmount,
         warehouseId: session.warehouseId,
         fiscalScope,
+        invoiceTaxCode: fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+        invoiceCompanyName: fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+        invoiceAddress: fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
         customerName,
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
@@ -3963,6 +3978,31 @@ export function PosCheckoutTerminal({
                     <option value="OFFICIAL_TAX">Xuất Hóa đơn VAT</option>
                   </select>
                 </div>
+
+                {/* Form thông tin hóa đơn - chỉ hiện khi chọn Xuất Hóa đơn VAT */}
+                {fiscalScope === 'OFFICIAL_TAX' && !isGift && (
+                  <div className="col-span-2 mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <p className="text-[11px] font-bold text-amber-800">Thông tin xuất hóa đơn VAT:</p>
+                    <input
+                      value={invoiceTaxCode}
+                      onChange={(e) => setInvoiceTaxCode(e.target.value)}
+                      placeholder="Mã số thuế *"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceCompany}
+                      onChange={(e) => setInvoiceCompany(e.target.value)}
+                      placeholder="Tên công ty / tổ chức *"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceAddress}
+                      onChange={(e) => setInvoiceAddress(e.target.value)}
+                      placeholder="Địa chỉ *"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none"
+                    />
+                  </div>
+                )}
 
                 <div className="hidden lg:block">
                   <label className="text-[11px] font-bold text-slate-500 block mb-1">

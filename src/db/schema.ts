@@ -313,6 +313,10 @@ export const orders = sqliteTable('orders', {
   vatRate: real('vat_rate').default(0.0), // 0.05 hoặc 0.0
   vatInvoiceRequired: integer('vat_invoice_required', { mode: 'boolean' }).default(false),
   vatInvoiceCode: text('vat_invoice_code'), // Số hóa đơn điện tử nếu có
+  invoiceTaxCode: text('invoice_tax_code'), // MST khách yêu cầu xuất HĐ
+  invoiceCompanyName: text('invoice_company_name'), // Tên công ty/tổ chức
+  invoiceAddress: text('invoice_address'), // Địa chỉ xuất HĐ
+  invoiceStatus: text('invoice_status').default('NONE'), // NONE | PENDING | PREPARED | SYNCED | SIGNED
   status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
   syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
   cashierId: text('cashier_id').notNull().default('staff-admin'),

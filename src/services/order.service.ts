@@ -76,6 +76,9 @@ export interface CreateOrderParams {
   discountRate?: number;
   paymentMethod?: OrderPaymentMethod;
   fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+  invoiceTaxCode?: string;
+  invoiceCompanyName?: string;
+  invoiceAddress?: string;
   vatRate?: number;
   vatInvoiceRequired?: boolean;
   vatInvoiceCode?: string;
@@ -233,6 +236,9 @@ export class OrderService {
       discountRate = 0.0,
       paymentMethod = 'CASH',
       fiscalScope = 'INTERNAL_MANAGEMENT',
+      invoiceTaxCode,
+      invoiceCompanyName,
+      invoiceAddress,
       vatRate = 0.0,
       vatInvoiceRequired = false,
       vatInvoiceCode,
@@ -1171,8 +1177,12 @@ return {
           finalAmount: calculatedFinalAmount,
           paymentMethod,
           fiscalScope,
+          invoiceTaxCode,
+          invoiceCompanyName,
+          invoiceAddress,
+          invoiceStatus: fiscalScope === 'OFFICIAL_TAX' ? 'PENDING' : 'NONE',
           vatRate,
-          vatInvoiceRequired,
+          vatInvoiceRequired: fiscalScope === 'OFFICIAL_TAX' ? true : vatInvoiceRequired,
           vatInvoiceCode,
           status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
           paymentExpiresAt,
