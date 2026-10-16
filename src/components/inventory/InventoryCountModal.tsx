@@ -212,6 +212,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
   );
   const counted = items.filter(it => it.countedQty != null).length;
   const diffs = items.filter(it => it.countedQty != null && it.countedQty !== it.systemQty).length;
+  const uncounted = items.length - counted;
 
   return (
     <Modal
@@ -478,10 +479,16 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
       {step === 'review' && (
         <div className="space-y-3">
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm">
-            <p className="font-bold text-amber-900">Tổng hợp chênh lệch: {diffs} mặt hàng</p>
-            <p className="text-xs text-amber-700 mt-1">
-              Gửi duyệt sẽ tạo phiếu chờ manager/owner phê duyệt. Sau khi duyệt, hệ thống tự tạo bút toán điều chỉnh.
-            </p>
+            <p className="font-bold text-amber-900">Đã đếm {counted}/{items.length} · Chênh lệch: {diffs} mặt hàng</p>
+            {uncounted > 0 ? (
+              <p className="text-xs text-rose-700 font-bold mt-1">
+                Còn {uncounted} mặt hàng chưa nhập số đếm. Phải đếm hết mới được gửi duyệt.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-700 mt-1">
+                Gửi duyệt sẽ tạo phiếu chờ manager/owner phê duyệt. Sau khi duyệt, hệ thống tự tạo bút toán điều chỉnh.
+              </p>
+            )}
           </div>
           {error && <p className="text-xs text-rose-600">{error}</p>}
           <div className="flex gap-2">
@@ -493,7 +500,8 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
             </button>
             <button
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || uncounted > 0}
+              title={uncounted > 0 ? `Còn ${uncounted} mặt hàng chưa đếm` : 'Gửi duyệt'}
               className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading && <RefreshCw className="w-4 h-4 animate-spin" />}

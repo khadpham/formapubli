@@ -92,9 +92,12 @@ interface WarehouseItem {
  *  Bắt cả warehouseType lẫn code pattern KHO_KY_GUI% (kho cũ chưa có type đúng).
  *  Màn quản trị (WarehouseManagerPanel) nạp list riêng nên vẫn thấy kho ngưng
  *  để mở lại/xem lịch sử. */
+const CLOSED_WAREHOUSE_CODES = ['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'];
 const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string; isActive?: boolean }) =>
   w.isActive !== false &&
-  w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
+  w.warehouseType !== 'CONSIGNMENT' &&
+  !(w.code || '').startsWith('KHO_KY_GUI') &&
+  !CLOSED_WAREHOUSE_CODES.includes(w.code || '');
 
 
 type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS' | 'COMBO' | 'DOCS';
@@ -520,15 +523,9 @@ export function StockOverviewMatrix({
   const handleRefresh = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    // Chốt an toàn: tắt spinner sau 15s nếu có sự cố.
-    refreshFallbackTimer.current = setTimeout(() => setIsRefreshing(false), 15000);
-    // Chỉ nạp lại danh sách kho (nhẹ). KHÔNG dùng router.refresh() vì nó chạy lại
-    // toàn bộ page.tsx (ma trận tồn kho nặng) gây vượt giới hạn CPU Worker (lỗi 1102).
-    // Muốn nạp lại toàn bộ số liệu thì tải lại trang (F5).
-    reloadWarehouseChips().finally(() => {
-      if (refreshFallbackTimer.current !== undefined) clearTimeout(refreshFallbackTimer.current);
-      setIsRefreshing(false);
-    });
+    // Reload toàn bộ trang để lấy số liệu tồn kho mới nhất.
+    // (Trước đây chỉ reload danh sách kho, không reload số liệu nên nút vô dụng.)
+    window.location.reload();
   };
 
   // Props mới đã chảy vào ⇒ tắt trạng thái đang tải.

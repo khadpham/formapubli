@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/services/inventory.service';
+import { createDocument } from '@/services/warehouse-document.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
@@ -43,6 +44,23 @@ export async function POST(req: NextRequest) {
     });
 
     if (!(result as any).isDuplicate) {
+      // Tạo chứng từ chuyển kho (PCK)
+      try {
+        await createDocument({
+          docType: 'TRANSFER',
+          warehouseId: fromWarehouseId,
+          toWarehouseId: toWarehouseId,
+          items: items.map((it: any) => ({
+            productId: it.productId,
+            quantity: it.quantity,
+          })),
+          note: note || `Chuyển kho ${(result as any).pckCode}`,
+          createdBy: session.fullName || 'system',
+        });
+      } catch (docErr) {
+        console.error('[transfer-batch] createDocument failed:', docErr);
+        // Không chặn transfer nếu tạo chứng từ lỗi
+      }
       await recordAuditLog({
         action: 'TRANSFER_DISPATCH', actorRole: userRole, actorId: session.actorId,
         resource: '/api/inventory/transfer-batch',

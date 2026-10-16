@@ -1037,7 +1037,7 @@ export function WholesaleDispatchModal({
 
             {/* Bảng danh sách sách đã chọn */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto overflow-y-auto max-h-[50vh] border border-slate-200 rounded-xl">
                 <table className="w-full text-xs min-w-[520px]">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">
