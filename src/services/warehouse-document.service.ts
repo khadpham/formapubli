@@ -7,7 +7,7 @@
 
 import { db } from '@/db';
 import { warehouseDocuments, warehouseDocumentItems, warehouseDocCounters, products } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { uploadWarehouseDocument } from './r2.service';
 
@@ -89,11 +89,11 @@ export async function createDocument(input: CreateDocInput) {
   const now = new Date().toISOString();
 
   // Lấy thông tin sản phẩm
-  const productIds = input.items.map(i => i.productId);
+  const productIds = [...new Set(input.items.map(i => i.productId).filter(Boolean))];
   const prodRows = productIds.length > 0
-    ? await db.select({ id: products.id, code: products.code, name: products.name }).from(products)
+    ? await db.select({ id: products.id, code: products.code, name: products.name }).from(products).where(inArray(products.id, productIds))
     : [];
-  const prodMap = new Map(prodRows.filter(p => productIds.includes(p.id)).map(p => [p.id, p]));
+  const prodMap = new Map(prodRows.map(p => [p.id, p]));
 
   let totalQty = 0;
   let totalAmt = 0;

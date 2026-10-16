@@ -219,41 +219,60 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
 
       <style>{`
         @media print {
-          @page { size: A4 portrait !important; margin: 12mm !important; }
-          .no-print { display: none !important; }
           body > *:not(:has(#warehouse-doc-print-portal-content)):not(#warehouse-doc-print-portal-content) {
             display: none !important;
           }
-          #warehouse-doc-print-portal-content {
-            display: block !important;
-            position: static !important;
-            width: 100% !important;
-            max-width: none !important;
-            background: #fff !important;
-            color: #000 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            font-size: 11pt !important;
-            line-height: 1.4 !important;
-          }
+          #warehouse-doc-print-portal-content,
           #warehouse-doc-print-portal-content * {
             visibility: visible !important;
-            color: #000 !important;
+          }
+          #warehouse-doc-print-portal-content {
+            display: block !important;
+            width: 100% !important;
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+            color: #0f172a !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .no-print {
+            display: none !important;
           }
           #warehouse-doc-print-portal-content table {
             width: 100% !important;
+            table-layout: fixed !important;
+            break-inside: auto;
+            page-break-inside: auto;
             border-collapse: collapse !important;
-            margin: 12px 0 !important;
           }
-          #warehouse-doc-print-portal-content th,
-          #warehouse-doc-print-portal-content td {
+          #warehouse-doc-print-portal-content thead {
+            display: table-header-group;
+          }
+          #warehouse-doc-print-portal-content tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          #warehouse-doc-print-portal-content td,
+          #warehouse-doc-print-portal-content th {
+            overflow-wrap: anywhere;
+            word-break: break-word;
             border: 1px solid #333 !important;
-            padding: 5px 8px !important;
-            font-size: 10pt !important;
+            padding: 6px 8px !important;
           }
-          #warehouse-doc-print-portal-content h1 {
-            font-size: 18pt !important;
-            margin: 16px 0 8px 0 !important;
+          html:has(#warehouse-doc-print-portal-content),
+          body:has(#warehouse-doc-print-portal-content) {
+            width: auto !important;
+            max-width: 210mm !important;
+            background: white !important;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 12mm 10mm;
           }
         }
       `}</style>
