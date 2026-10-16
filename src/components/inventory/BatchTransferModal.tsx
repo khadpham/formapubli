@@ -100,7 +100,7 @@ export function BatchTransferModal({
 
   // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển - không bao giờ gọi
   // validate/submit; người dùng vẫn phải bấm nút Kiểm tra tồn kho rồi Xác nhận.
-  const [isPasteOpen, setIsPasteOpen] = useState(true);
+  
   const [pasteText, setPasteText] = useState('');
   const [pasteResult, setPasteResult] = useState<{
     rows: ParsedRow[];
@@ -369,13 +369,6 @@ export function BatchTransferModal({
     const picked = row.candidates.find((c) => c.id === bookId);
     addPastedRows([{ editionId: bookId, quantity: row.quantity }]);
     setPastedConfirmed((prev) => ({ ...prev, [row.line]: picked?.title || bookId }));
-  };
-
-  const closePaste = () => {
-    setIsPasteOpen(false);
-    setPasteText('');
-    setPasteResult(null);
-    setPastedConfirmed({});
   };
 
   const handleRemoveLine = (editionId: string) => {
@@ -727,7 +720,7 @@ export function BatchTransferModal({
     <>
     <Modal
       open={isOpen}
-      onClose={() => { if (isPasteOpen) return; if (!isSubmitting && !isValidating) onClose(); }}
+      onClose={() => { if (!isSubmitting && !isValidating) onClose(); }}
       size="lg"
       title={
         <span className="flex items-center gap-2">
@@ -1022,21 +1015,81 @@ export function BatchTransferModal({
               {/* FIX: nút "Dán" phải luôn thấy được, kể cả khi bảng còn TRỐNG.
                   Nó nằm trong khối {lines.length > 0} là nên biến mất đúng lúc
                   người dùng cần nhất - dán danh sách lần đầu. Đưa ra ngoài. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsPasteOpen(true)}
-                  className="min-h-[38px] min-w-[38px] px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
-                  title="Dán danh sách chép từ Excel (tên sách · số lượng)"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Dán</span>
-                </button>
-                <span className="text-[11px] text-slate-500">
-                  {lines.length === 0
-                    ? 'Dán danh sách 2 cột từ Excel: tên sách · số lượng. Thiếu số lượng thì mặc định 5.'
-                    : ''}
-                </span>
+              <div className="border border-indigo-200 bg-indigo-50/50 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    Dán danh sách từ Excel (tên sách · số lượng)
+                  </label>
+                  <span className="text-[10px] text-slate-500">Thiếu SL thì mặc định 5</span>
+                </div>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => {
+                    setPasteText(e.target.value);
+                    setPasteResult(null);
+                  }}
+                  rows={3}
+                  spellCheck={false}
+                  placeholder={'Dán vào đây: Tên sách 1\t5\nTên sách 2\t3'}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCheckPasted}
+                    disabled={!pasteText.trim()}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Kiểm tra
+                  </button>
+                  {pasteResult && (
+                    <span className="text-[11px] font-bold text-slate-600">
+                      {pasteResult.summary.matched} khớp · {pasteResult.summary.needsConfirm} cần xác nhận · {pasteResult.summary.notFound} không tìm thấy
+                    </span>
+                  )}
+                  {pasteResult && pasteResult.summary.matched > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleAddPastedMatches}
+                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
+                    >
+                      Vào bảng ({pasteResult.summary.matched})
+                    </button>
+                  )}
+                </div>
+                {pasteResult && pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {pasteResult.rows
+                      .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
+                      .map((r) => {
+                        const chosen = pastedConfirmed[r.line];
+                        return (
+                          <div key={`c-${r.line}`} className="rounded-lg border border-amber-200 bg-white/70 p-2">
+                            <p className="text-[11px] text-slate-700">
+                              Dán: <span className="font-semibold">{r.line}</span> · SL <span className="font-mono font-bold">{r.quantity}</span>
+                            </p>
+                            {chosen ? (
+                              <p className="mt-1 text-[11px] font-bold text-emerald-700">Đã thêm: {chosen}</p>
+                            ) : (
+                              <div className="mt-1.5 flex flex-col gap-1">
+                                {r.candidates.map((c) => (
+                                  <button
+                                    key={`c-${r.line}-${c.id}`}
+                                    type="button"
+                                    onClick={() => handleAddPastedCandidate(r, c.id)}
+                                    className="w-full text-left px-2 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 text-amber-900 text-[11px] font-bold transition"
+                                  >
+                                    {c.title}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
 
               {/* Thanh thao tác hàng loạt (Bulk Actions Toolbar) */}
@@ -1270,163 +1323,6 @@ export function BatchTransferModal({
         </div>
     </Modal>
 
-    {/* Hộp thoại dán danh sách - dùng Modal chung. Render sau modal cha nên
-        nằm trên trong DOM (cùng z-index). ESC chỉ đóng hộp này vì onClose của
-        modal cha đã chặn khi isPasteOpen. KHÔNG có nút nào gửi phiếu ở đây. */}
-    {isPasteOpen && (
-      <Modal
-        open={isPasteOpen}
-        onClose={closePaste}
-        size="md"
-        title="Dán danh sách từ Excel"
-        subtitle="Dán 2 cột: tên sách · số lượng (cột cách nhau bằng Tab hoặc dấu phẩy)"
-      >
-              <p className="text-[11px] leading-relaxed text-slate-600">
-                Dán 2 cột: <span className="font-semibold">tên sách · số lượng</span> (cột cách nhau
-                bằng Tab hoặc dấu phẩy). Tên sách phải khớp <span className="font-semibold">CHÍNH XÁC</span> với danh
-                mục - hệ thống không tự đoán. Dòng nào không có số lượng thì lấy mặc định{' '}
-                <span className="font-mono font-bold">5</span>. Dán chỉ thêm vào bảng chuyển, vẫn
-                phải bấm &quot;Kiểm tra tồn kho&quot; rồi &quot;Xác nhận chuyển kho&quot;.
-              </p>
-
-              <textarea
-                value={pasteText}
-                onChange={(e) => {
-                  setPasteText(e.target.value);
-                  setPasteResult(null);
-                }}
-                rows={6}
-                spellCheck={false}
-                placeholder={'Tên sách 1\t5\nTên sách 2\t3'}
-                className="w-full min-h-[38px] px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCheckPasted}
-                  disabled={!pasteText.trim()}
-                  className="min-h-[38px] min-w-[38px] px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Kiểm tra
-                </button>
-                {pasteResult && (
-                  <span className="text-[11px] font-bold text-slate-600 break-words">
-                    {pasteResult.summary.matched} dòng vào bảng · {pasteResult.summary.needsConfirm} cần
-                    xác nhận · {pasteResult.summary.notFound} không tìm thấy
-                  </span>
-                )}
-              </div>
-              {pasteResult && (
-                <div className="space-y-3">
-                  {/* 1. Khớp tuyệt đối */}
-                  <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <h3 className="text-[11px] font-extrabold text-emerald-900 mb-2 flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 shrink-0" />
-                      Khớp tuyệt đối ({pasteResult.summary.matched})
-                    </h3>
-                    <ul className="space-y-1 mb-2">
-                      {pasteResult.rows
-                        .filter((r): r is Extract<ParsedRow, { status: 'matched' }> => r.status === 'matched')
-                        .map((r) => (
-                          <li key={`m-${r.line}`} className="text-[11px] text-slate-700 break-words">
-                            {r.title} - <span className="font-mono font-bold">{r.quantity}</span>
-                          </li>
-                        ))}
-                    </ul>
-                    <button
-                      type="button"
-                      onClick={handleAddPastedMatches}
-                      disabled={pasteResult.summary.matched === 0}
-                      className="min-h-[38px] min-w-[38px] w-full px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Vào bảng ({pasteResult.summary.matched})
-                    </button>
-                  </section>
-
-                  {/* 2. Cần xác nhận - bấm vào đầu sách đúng để thêm vào phiếu. */}
-                  {pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
-                    <section className="rounded-xl border border-amber-300 bg-amber-50/70 p-3">
-                      <h3 className="text-[11px] font-extrabold text-amber-900 mb-1 flex items-center gap-1">
-                        <CircleHelp className="w-3.5 h-3.5 shrink-0" />
-                        Cần xác nhận ({pasteResult.summary.needsConfirm})
-                      </h3>
-                      <p className="text-[10px] font-semibold text-amber-800 mb-2 leading-relaxed">
-                        Tên trong danh sách không khớp tuyệt đối với danh mục. Bấm vào đầu sách đúng
-                        bên dưới để thêm vào phiếu.
-                      </p>
-                      <ul className="space-y-2">
-                        {pasteResult.rows
-                          .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
-                          .map((r) => {
-                            const chosen = pastedConfirmed[r.line];
-                            return (
-                              <li
-                                key={`c-${r.line}`}
-                                className="min-w-0 rounded-lg border border-amber-200 bg-white/70 p-2"
-                              >
-                                <p className="text-[11px] text-slate-700 break-words">
-                                  Dán: <span className="font-semibold">{r.line}</span> · SL{' '}
-                                  <span className="font-mono font-bold">{r.quantity}</span>
-                                </p>
-                                {chosen ? (
-                                  <p className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-emerald-700 break-words">
-                                    <Check className="w-3.5 h-3.5 shrink-0" />
-                                    Đã thêm: {chosen}
-                                  </p>
-                                ) : (
-                                  <div className="mt-1.5 flex flex-col gap-1.5">
-                                    {r.candidates.map((c) => (
-                                      <button
-                                        key={`c-${r.line}-${c.id}`}
-                                        type="button"
-                                        onClick={() => handleAddPastedCandidate(r, c.id)}
-                                        aria-label={`Thêm đầu sách ${c.title}`}
-                                        className="flex w-full items-center gap-1.5 min-h-[38px] px-2.5 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 active:bg-amber-200 text-amber-900 text-[11px] font-bold transition text-left"
-                                      >
-                                        <Plus className="w-3.5 h-3.5 shrink-0" />
-                                        <span className="min-w-0 break-words">{c.title}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </li>
-                            );
-                          })}
-                      </ul>
-                    </section>
-                  )}
-                  {/* 3. Không tìm thấy - chỉ hiển thị, KHÔNG có nút thêm. */}
-                  {pasteResult.rows.some((r) => r.status === 'not_found') && (
-                    <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <h3 className="text-[11px] font-extrabold text-slate-700 mb-1">
-                        Không tìm thấy ({pasteResult.summary.notFound})
-                      </h3>
-                      <p className="text-[10px] text-slate-500 mb-2">
-                        Danh mục không có dữ liệu khớp. Hãy tìm và thêm tay từng cuốn.
-                      </p>
-                      <ul className="space-y-1">
-                        {pasteResult.rows
-                          .filter((r): r is Extract<ParsedRow, { status: 'not_found' }> => r.status === 'not_found')
-                          .map((r) => (
-                            <li key={`n-${r.line}`} className="text-[11px] text-slate-500 line-through break-words">
-                              {r.line} - {r.quantity}
-                            </li>
-                          ))}
-                      </ul>
-                    </section>
-                  )}
-                </div>
-              )}
-        {printData && (
-        <WarehouseDocPrint
-          data={printData}
-          isOpen={printOpen}
-          onClose={() => { setPrintOpen(false); setPrintData(null); }}
-        />
-      )}
-    </Modal>
-    )}
     </>
   );
 }

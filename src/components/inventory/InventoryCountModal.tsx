@@ -219,7 +219,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
       onClose={onClose}
       title="Kiểm kê kho"
       subtitle="Đếm thực tế, so với sổ, tạo điều chỉnh"
-      size={step === "count" || mainTab === "list" ? "xl" : "md"}
+      size={step === "count" ? "xl" : "md"}
     >
       {step === 'select' && !existingCountId && (
         <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-4">

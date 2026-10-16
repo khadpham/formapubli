@@ -1434,6 +1434,11 @@ export function StockOverviewMatrix({
         onSuccess={handleRefresh}
       />
 
+      {bankManagerOpen && (
+        <WarehouseBankManager
+          onClose={() => setBankManagerOpen(false)}
+        />
+      )}
       {warehousePanelOpen && (
         <WarehouseManagerPanel
           isOpen={warehousePanelOpen}
