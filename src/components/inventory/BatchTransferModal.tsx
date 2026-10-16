@@ -1325,6 +1325,13 @@ export function BatchTransferModal({
         </div>
     </Modal>
 
+      {printOpen && printData && (
+        <WarehouseDocPrint
+          data={printData}
+          isOpen={printOpen}
+          onClose={() => setPrintOpen(false)}
+        />
+      )}
     </>
   );
 }

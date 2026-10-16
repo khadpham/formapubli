@@ -71,7 +71,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
   };
 
   const handleApprove = async (cid: string) => {
-    if (!confirm('Duyệt đợt kiểm kê này? Tồn kho sẽ được điều chỉnh.')) return;
+    // Duyệt luôn, không hỏi lại bằng confirm của browser
     setListLoading(true);
     try {
       const res = await fetch(`/api/inventory/counts/${cid}/approve`, { method: 'POST' });
@@ -80,14 +80,13 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
       await loadCountList();
       onSuccess?.();
     } catch (e: any) {
-      alert('Lỗi: ' + e.message);
+      setError('Lỗi: ' + e.message);
     } finally {
       setListLoading(false);
     }
   };
 
   const handleCancelCount = async (cid: string) => {
-    if (!confirm('Hủy đợt kiểm kê này?')) return;
     setListLoading(true);
     try {
       const res = await fetch(`/api/inventory/counts/${cid}`, { method: 'DELETE' });

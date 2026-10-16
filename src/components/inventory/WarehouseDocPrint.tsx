@@ -75,7 +75,7 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
   };
 
   const content = (
-    <div className="fixed inset-0 z-[150] bg-black/50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static">
+    <div className="fixed inset-0 z-[150] bg-black/50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto print:max-h-none print:rounded-none print:shadow-none">
         {/* Toolbar - ẩn khi in */}
         <div className="flex items-center justify-between p-4 border-b print:hidden">

@@ -523,9 +523,15 @@ export function StockOverviewMatrix({
   const handleRefresh = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    // Reload toàn bộ trang để lấy số liệu tồn kho mới nhất.
-    // (Trước đây chỉ reload danh sách kho, không reload số liệu nên nút vô dụng.)
-    window.location.reload();
+    // Chốt an toàn: tắt spinner sau 15s nếu có sự cố.
+    refreshFallbackTimer.current = setTimeout(() => setIsRefreshing(false), 15000);
+    // Refresh server components để lấy số liệu mới, giữ nguyên client state
+    // (tab đang mở, ô tìm kiếm, v.v.) - không reload toàn trang.
+    reloadWarehouseChips().finally(() => {
+      router.refresh();
+      // Tắt spinner khi props mới về (useEffect theo dõi initialBooks)
+      // hoặc sau timeout an toàn
+    });
   };
 
   // Props mới đã chảy vào ⇒ tắt trạng thái đang tải.
