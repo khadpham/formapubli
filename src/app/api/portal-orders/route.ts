@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (auth !== `Bearer ${apiKey}`) return unauthorized();
 
     const body = await req.json().catch(() => ({}));
-    const { madon, email, name, phone, address, items, paymentMethod, shippingFee, hasGift } = body;
+    const { madon, email, name, phone, address, items, paymentMethod, shippingFee, hasGift, invoiceRequired, invoiceTaxCode, invoiceCompanyName, invoiceAddress } = body;
     // Ma ORD do portal lay truoc tu POST /api/orders/reserve-code. Co thi dung,
     // khong co (don cu) thi tu sinh nhu hien tai. Sai dinh dang thi 400.
     const reservedCode = `${body.order_code || ''}`.trim();
@@ -255,6 +255,10 @@ export async function POST(req: NextRequest) {
       ...(reservedCode ? { orderCode: reservedCode } : {}),
       note: `Đơn từ Customer Portal. Mã portal: ${madon}. SĐT: ${phone}. Địa chỉ: ${address}. Phí ship: ${shippingFee || 0}đ.`,
       items: orderItems,
+      fiscalScope: invoiceRequired ? 'OFFICIAL_TAX' : 'INTERNAL_MANAGEMENT',
+      invoiceTaxCode: invoiceRequired ? invoiceTaxCode : undefined,
+      invoiceCompanyName: invoiceRequired ? invoiceCompanyName : undefined,
+      invoiceAddress: invoiceRequired ? invoiceAddress : undefined,
       // Quà SP-004 do route tự xác minh - server tin mà không cần promotion.
       ...(giftId ? { trustedGiftIds: new Set([giftId]) } : {}),
     });
