@@ -40,7 +40,7 @@ const TYPE_FILTER = [
   { value: 'COUNT_MINUTES', label: 'Biên bản KK' },
 ];
 
-export function WarehouseDocList() {
+export function WarehouseDocList({ refreshKey }: { refreshKey?: number }) {
   const [docs, setDocs] = useState<DocItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
@@ -60,7 +60,7 @@ export function WarehouseDocList() {
     }
   };
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => { load(); }, [filter, refreshKey]);
 
   const handlePrint = async (doc: DocItem) => {
     try {

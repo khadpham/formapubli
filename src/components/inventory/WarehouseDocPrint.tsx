@@ -228,16 +228,31 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
           #warehouse-doc-print-portal-content * {
             visibility: visible !important;
           }
+          @page {
+            size: A4 portrait !important;
+            margin: 15mm 12mm !important;
+          }
           #warehouse-doc-print-portal-content {
             display: block !important;
             width: 100% !important;
+            max-width: 190mm !important;
             background: white !important;
-            padding: 20px !important;
-            margin: 0 !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
             overflow: visible !important;
             max-height: none !important;
             height: auto !important;
             color: #000 !important;
+            font-size: 12pt !important;
+          }
+          #warehouse-doc-print-portal-content table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          #warehouse-doc-print-portal-content th,
+          #warehouse-doc-print-portal-content td {
+            border: 1px solid #000 !important;
+            padding: 6px 8px !important;
           }
         }
       `}</style>

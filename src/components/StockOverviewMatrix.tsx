@@ -160,6 +160,7 @@ export function StockOverviewMatrix({
   const router = useRouter();
   /** Đang làm mới: bật khi bấm, tắt khi props `initialBooks` mới trả về. */
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [docRefreshKey, setDocRefreshKey] = useState(0);
   const refreshFallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -529,6 +530,7 @@ export function StockOverviewMatrix({
     // (tab đang mở, ô tìm kiếm, v.v.) - không reload toàn trang.
     reloadWarehouseChips().finally(() => {
       router.refresh();
+      setDocRefreshKey(k => k + 1);
       // Tắt spinner khi props mới về (useEffect theo dõi initialBooks)
       // hoặc sau timeout an toàn
     });
@@ -1370,7 +1372,7 @@ export function StockOverviewMatrix({
 
       {/* 7. TAB CHỨNG TỪ KHO (0068) */}
       {activeTab === 'DOCS' && (
-        <WarehouseDocList />
+        <WarehouseDocList refreshKey={docRefreshKey} />
       )}
 
       {/* Modal */}
