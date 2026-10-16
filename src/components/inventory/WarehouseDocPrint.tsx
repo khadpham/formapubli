@@ -220,6 +220,25 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
       <style>{`
         @media print {
           .no-print { display: none !important; }
+          /* An moi thanh phan con truc tiep cua body tru nhanh chua khoi in */
+          body > *:not(:has(#warehouse-doc-print-portal-content)):not(#warehouse-doc-print-portal-content) {
+            display: none !important;
+          }
+          #warehouse-doc-print-portal-content,
+          #warehouse-doc-print-portal-content * {
+            visibility: visible !important;
+          }
+          #warehouse-doc-print-portal-content {
+            display: block !important;
+            width: 100% !important;
+            background: white !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            color: #000 !important;
+          }
         }
       `}</style>
     </div>

@@ -809,6 +809,30 @@ export class InventoryService {
           throw AppError.idempotency(`IDEMPOTENCY_CONFLICT: Key "${batchKey}" đã được sử dụng cho một phiếu chuyển kho khác.`);
         }
 
+        // Nở combo thành phần trước khi thực thi (giống checkBatchAvailability).
+        // Combo không có tồn riêng - chuyển thực tế là chuyển các thành phần.
+        const { getComboMap: getComboMapExec } = await import('./combo.service');
+        const comboMapExec = await getComboMapExec(merged.map((m) => m.editionId), tx);
+        const expandedExec: Array<{ editionId: string; quantity: number }> = [];
+        for (const item of merged) {
+          const comps = comboMapExec.get(item.editionId);
+          if (!comps || comps.length === 0) {
+            expandedExec.push(item);
+          } else {
+            for (const c of comps) {
+              expandedExec.push({
+                editionId: c.componentProductId,
+                quantity: item.quantity * c.quantity,
+              });
+            }
+          }
+        }
+        const mergedExpMap = new Map<string, number>();
+        for (const it of expandedExec) {
+          mergedExpMap.set(it.editionId, (mergedExpMap.get(it.editionId) || 0) + it.quantity);
+        }
+        const mergedForExec = Array.from(mergedExpMap.entries()).map(([editionId, quantity]) => ({ editionId, quantity }));
+
         // Re-validate ATP trong tx (TOCTOU) - stale → 409 kèm số thực để UI re-cap 1 chạm.
         const check = await this.checkBatchAvailability(
           { fromWarehouseId, toWarehouseId, items: merged },
@@ -825,7 +849,7 @@ export class InventoryService {
         // NULL (FK), và mọi WHERE tồn phải theo `product_id` (NULL không bao
         // giờ khớp `IN (...)`). Sách có product_id === edition_id nên dùng
         // product_id cho cả hai loại mà hành vi sách không đổi.
-        const kinds = await InventoryService.resolveItemKinds(merged.map((m) => m.editionId), tx);
+        const kinds = await InventoryService.resolveItemKinds(mergedForExec.map((m) => m.editionId), tx);
         const edOf = (id: string) => (kinds.get(id) === 'GOODS' ? null : id);
 
         // GHI GOM LÔ: 4 query bất kể số dòng.
@@ -839,7 +863,7 @@ export class InventoryService {
         await tx
           .insert(stockBalances)
           .values(
-            merged.flatMap((it) => [
+            mergedForExec.flatMap((it) => [
               { id: `sb-${it.editionId}-${fromId}-NEW`, editionId: edOf(it.editionId), productId: it.editionId, warehouseId: fromId, condition: 'NEW' as const, physicalQuantity: 0 },
               { id: `sb-${it.editionId}-${toId}-NEW`, editionId: edOf(it.editionId), productId: it.editionId, warehouseId: toId, condition: 'NEW' as const, physicalQuantity: 0 },
             ])
@@ -848,7 +872,7 @@ export class InventoryService {
           .onConflictDoNothing({ target: [stockBalances.productId, stockBalances.warehouseId, stockBalances.condition] });
 
         // 2. Bút toán sổ cái: 1 lệnh cho toàn bộ 2N dòng (1 query).
-        const ledgerRows = merged.flatMap((it) => ([
+        const ledgerRows = mergedForExec.flatMap((it) => ([
           {
             id: crypto.randomUUID(), editionId: edOf(it.editionId), productId: it.editionId, warehouseId: fromId, eventType: 'TRANSFER_OUT',
             quantityDelta: -it.quantity, condition: 'NEW', documentRef: pckCode, actorId: effActor,
@@ -869,20 +893,20 @@ export class InventoryService {
         // 3. Trừ tồn nguồn bằng CASE + điều kiện chặn âm, kiểm đủ số dòng (1 query).
         //    rowsAffected < số dòng ⇒ có dòng thiếu tồn ⇒ ném để rollback toàn phiếu.
         const caseSql = (delta: (q: number) => number) =>
-          sql.join(merged.map((it) => sql`WHEN ${it.editionId} THEN ${delta(it.quantity)}`), sql.raw(' '));
+          sql.join(mergedForExec.map((it) => sql`WHEN ${it.editionId} THEN ${delta(it.quantity)}`), sql.raw(' '));
         const outResult: any = await tx.run(sql`
           UPDATE stock_balances
           SET physical_quantity = physical_quantity + CASE product_id ${caseSql((q) => -q)} ELSE 0 END,
               updated_at = CURRENT_TIMESTAMP
           WHERE warehouse_id = ${fromId} AND condition = 'NEW'
-            AND product_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
+            AND product_id IN (${sql.join(mergedForExec.map((it) => sql`${it.editionId}`), sql.raw(', '))})
             AND physical_quantity + CASE product_id ${caseSql((q) => -q)} ELSE 0 END >= 0
         `);
-        if (outResult.rowsAffected !== merged.length) {
+        if (outResult.rowsAffected !== mergedForExec.length) {
           const { OrderService } = await import('./order.service');
-          const atpByEdition = await OrderService.getBatchATP(merged.map((m) => m.editionId), fromId, tx);
+          const atpByEdition = await OrderService.getBatchATP(mergedForExec.map((m) => m.editionId), fromId, tx);
           const staleItems: StaleItem[] = [];
-          for (const it of merged) {
+          for (const it of mergedForExec) {
             const availableNow = atpByEdition.get(it.editionId) ?? 0;
             if (availableNow < it.quantity) {
               staleItems.push({ editionId: it.editionId, requested: it.quantity, availableNow });
@@ -900,7 +924,7 @@ export class InventoryService {
           SET physical_quantity = physical_quantity + CASE product_id ${caseSql((q) => q)} ELSE 0 END,
               updated_at = CURRENT_TIMESTAMP
           WHERE warehouse_id = ${toId} AND condition = 'NEW'
-            AND product_id IN (${sql.join(merged.map((it) => sql`${it.editionId}`), sql.raw(', '))})
+            AND product_id IN (${sql.join(mergedForExec.map((it) => sql`${it.editionId}`), sql.raw(', '))})
         `);
 
         const ledgerByKey = new Map(ledgerRows.map((r: any) => [`${r.warehouseId}|${r.editionId}`, r.id]));

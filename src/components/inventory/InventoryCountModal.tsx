@@ -401,7 +401,9 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
               onChange={e => setWarehouseId(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
             >
-              {warehouses.map(w => (
+              {warehouses
+                .filter(w => !['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'].includes(w.code))
+                .map(w => (
                 <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
               ))}
             </select>

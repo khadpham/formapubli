@@ -23,6 +23,21 @@ interface StockLedgerTabProps {
   entries: LedgerEntry[];
 }
 
+// Format gio VN: YYYY-MM-DD HH:mm:ss
+function formatVNTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  try {
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(iso)) return iso.slice(0, 19);
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const vn = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+    return vn.getUTCFullYear() + '-' + pad(vn.getUTCMonth() + 1) + '-' + pad(vn.getUTCDate()) + ' ' +
+           pad(vn.getUTCHours()) + ':' + pad(vn.getUTCMinutes()) + ':' + pad(vn.getUTCSeconds());
+  } catch {
+    return iso;
+  }
+}
+
 function EventBadge({ type }: { type: string }) {
   if (type === 'RECEIPT') {
     return (
@@ -100,7 +115,7 @@ export function StockLedgerTab({ entries }: StockLedgerTabProps) {
             ) : (
               entries.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="px-3 py-2 text-slate-500 text-[11px]">{item.recordedAt}</td>
+                  <td className="px-3 py-2 text-slate-500 text-[11px]">{formatVNTime(item.recordedAt)}</td>
                   <td className="px-3 py-2 font-bold text-slate-800">{item.documentRef}</td>
                   <td className="px-3 py-2">
                     <EventBadge type={item.eventType} />
