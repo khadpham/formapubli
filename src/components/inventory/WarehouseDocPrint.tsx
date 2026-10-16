@@ -219,40 +219,41 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
 
       <style>{`
         @media print {
+          @page { size: A4 portrait !important; margin: 12mm !important; }
           .no-print { display: none !important; }
-          /* An moi thanh phan con truc tiep cua body tru nhanh chua khoi in */
           body > *:not(:has(#warehouse-doc-print-portal-content)):not(#warehouse-doc-print-portal-content) {
             display: none !important;
           }
-          #warehouse-doc-print-portal-content,
-          #warehouse-doc-print-portal-content * {
-            visibility: visible !important;
-          }
-          @page {
-            size: A4 portrait !important;
-            margin: 15mm 12mm !important;
-          }
           #warehouse-doc-print-portal-content {
             display: block !important;
+            position: static !important;
             width: 100% !important;
-            max-width: 190mm !important;
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 auto !important;
-            overflow: visible !important;
-            max-height: none !important;
-            height: auto !important;
+            max-width: none !important;
+            background: #fff !important;
             color: #000 !important;
-            font-size: 12pt !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            font-size: 11pt !important;
+            line-height: 1.4 !important;
+          }
+          #warehouse-doc-print-portal-content * {
+            visibility: visible !important;
+            color: #000 !important;
           }
           #warehouse-doc-print-portal-content table {
             width: 100% !important;
             border-collapse: collapse !important;
+            margin: 12px 0 !important;
           }
           #warehouse-doc-print-portal-content th,
           #warehouse-doc-print-portal-content td {
-            border: 1px solid #000 !important;
-            padding: 6px 8px !important;
+            border: 1px solid #333 !important;
+            padding: 5px 8px !important;
+            font-size: 10pt !important;
+          }
+          #warehouse-doc-print-portal-content h1 {
+            font-size: 18pt !important;
+            margin: 16px 0 8px 0 !important;
           }
         }
       `}</style>

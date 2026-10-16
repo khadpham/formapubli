@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
           warehouseId: fromWarehouseId,
           toWarehouseId: toWarehouseId,
           items: items.map((it: any) => ({
-            productId: it.productId,
+            productId: it.editionId || it.productId,
             quantity: it.quantity,
           })),
           note: note || `Chuyển kho ${(result as any).pckCode}`,
