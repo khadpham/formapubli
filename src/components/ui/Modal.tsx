@@ -87,7 +87,7 @@ export default function Modal({
           </div>
         )}
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
-          <div className="flex-1 min-w-0 p-6 overflow-y-auto lg:overflow-visible space-y-5">
+          <div className="flex-1 min-w-0 p-6 overflow-y-auto space-y-5">
             {children}
           </div>
           {actions && (

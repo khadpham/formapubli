@@ -850,7 +850,9 @@ export function BatchTransferModal({
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    {warehouses.map((w) => (
+                    {warehouses
+                      .filter((w: any) => !['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'].includes(w.code))
+                      .map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.name} ({w.code})
                       </option>
@@ -870,7 +872,7 @@ export function BatchTransferModal({
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {warehouses
-                      .filter((w) => w.id !== fromWarehouseId)
+                      .filter((w: any) => w.id !== fromWarehouseId && !['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'].includes(w.code))
                       .map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.name} ({w.code})

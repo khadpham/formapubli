@@ -117,7 +117,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
         productId: it.productId,
         productName: it.productName || it.productId,
         systemQty: it.systemQty,
-        countedQty: it.countedQty,
+        countedQty: it.countedQty ?? it.systemQty,
         note: it.note,
       })));
       setStep('count');
@@ -163,7 +163,13 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
   const loadItems = async (id: string) => {
     const res = await fetch(`/api/inventory/counts/${id}`);
     const data = await res.json();
-    if (data.ok) setItems(data.data.items || []);
+    if (data.ok) {
+      // Điền sẵn số đếm = tồn hệ thống. Người dùng chỉ sửa những mặt hàng thực sự chênh lệch.
+      setItems((data.data.items || []).map((it: any) => ({
+        ...it,
+        countedQty: it.countedQty ?? it.systemQty,
+      })));
+    }
   };
 
   const handleSaveCounts = async () => {
