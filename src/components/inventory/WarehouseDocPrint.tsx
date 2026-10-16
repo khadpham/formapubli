@@ -113,7 +113,20 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
           </div>
 
           {/* Bảng hàng hóa */}
-          <table className="w-full border-collapse border border-slate-300 text-sm mb-6">
+          <table className="w-full border-collapse border border-slate-300 text-sm mb-6" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: data.totalAmount !== undefined ? '32%' : '47%' }} />
+              <col style={{ width: '8%' }} />
+              {data.totalAmount !== undefined && (
+                <>
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '14%' }} />
+                </>
+              )}
+              <col style={{ width: data.totalAmount !== undefined ? '16%' : '27%' }} />
+            </colgroup>
             <thead>
               <tr className="bg-slate-100">
                 <th className="border border-slate-300 px-2 py-2">STT</th>
