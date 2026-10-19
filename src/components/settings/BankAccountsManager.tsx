@@ -64,6 +64,8 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
   const [error, setError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -214,34 +216,36 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
       showToast(`Đã ${!acc.isActive ? 'kích hoạt' : 'tạm ngưng'} tài khoản ${acc.label}!`);
       await loadData();
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message);
     }
   };
 
   const handleDeleteAccount = async (acc: BankAccountItem) => {
     const isLinked = warehouses.some((w) => w.defaultBankAccountId === acc.id);
     if (isLinked) {
-      alert(`Tài khoản "${acc.label}" đang được đặt làm mặc định cho một số kho. Vui lòng chuyển kho sang tài khoản khác trước khi xóa.`);
+      setError(`Tài khoản "${acc.label}" đang được đặt làm mặc định cho một số kho. Vui lòng chuyển kho sang tài khoản khác trước khi xóa.`);
       return;
     }
 
-    if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản "${acc.label}" (${acc.accountNo}) không?`)) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/bank-accounts?id=${encodeURIComponent(acc.id)}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Xóa tài khoản thất bại.');
-      }
-      showToast('Đã xóa tài khoản nhận tiền thành công!');
-      await loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    setConfirmDlg({
+      msg: `Bạn có chắc chắn muốn xóa tài khoản "${acc.label}" (${acc.accountNo}) không?`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        try {
+          const res = await fetch(`/api/bank-accounts?id=${encodeURIComponent(acc.id)}`, {
+            method: 'DELETE',
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Xóa tài khoản thất bại.');
+          }
+          showToast('Đã xóa tài khoản nhận tiền thành công!');
+          await loadData();
+        } catch (err: any) {
+          setError(err.message);
+        }
+      },
+    });
   };
 
   const handleSetWarehouseDefault = async (warehouseId: string, bankAccountId: string) => {
@@ -259,7 +263,7 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
       showToast('Đã cập nhật tài khoản nhận tiền mặc định cho kho!');
       await loadData();
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message);
     } finally {
       setSavingWarehouseId(null);
     }
@@ -624,6 +628,34 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
                 </button>
               </div>
             </form>
+      </Modal>
+
+      {/* Dialog xac nhan thay window.confirm */}
+      <Modal
+        open={!!confirmDlg}
+        onClose={() => setConfirmDlg(null)}
+        size="sm"
+        title="Xác nhận"
+      >
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDlg(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDlg.onOk}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   );

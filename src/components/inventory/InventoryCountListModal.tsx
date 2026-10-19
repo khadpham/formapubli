@@ -49,7 +49,7 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
       const res = await fetch(`/api/inventory/counts/${id}/approve`, { method: 'POST' });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
-      alert(data.message);
+      setError(data.message);
       await load();
       onSuccess?.();
     } catch (e: any) {
@@ -66,7 +66,7 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
       const res = await fetch(`/api/inventory/counts/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
-      alert(data.message);
+      setError(data.message);
       await load();
       onSuccess?.();
     } catch (e: any) {

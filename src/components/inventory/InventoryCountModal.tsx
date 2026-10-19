@@ -95,7 +95,7 @@ export function InventoryCountModal({ isOpen, onClose, warehouses, books = [], o
       await loadCountList();
       onSuccess?.();
     } catch (e: any) {
-      alert('Lỗi: ' + e.message);
+      setError('Lỗi: ' + e.message);
     } finally {
       setListLoading(false);
     }

@@ -49,6 +49,12 @@ interface Props {
 
 export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
   const [archiving, setArchiving] = React.useState(false);
+  /** Toast thong bao thay alert(). */
+  const [toast, setToast] = React.useState<{ msg: string; type: 'error' | 'success' } | null>(null);
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   if (!isOpen) return null;
 
@@ -66,9 +72,9 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
       const el = document.getElementById('warehouse-doc-print-portal-content');
       const html = el ? el.outerHTML : '';
       await onArchive(html);
-      alert('Đã lưu trữ chứng từ lên R2');
+      showToast('Đã lưu trữ chứng từ lên R2', 'success');
     } catch (e: any) {
-      alert('Lỗi lưu trữ: ' + e.message);
+      showToast('Lỗi lưu trữ: ' + e.message);
     } finally {
       setArchiving(false);
     }
@@ -200,6 +206,13 @@ export function WarehouseDocPrint({ data, isOpen, onClose, onArchive }: Props) {
   // Modal preview (ẩn khi in)
   const modalContent = (
     <div className="no-print fixed inset-0 z-[150] bg-black/50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {toast && (
+        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-[160] px-4 py-2 rounded-xl text-sm font-medium shadow-lg ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
         {/* Toolbar */}
         <div className="flex items-center justify-between p-4 border-b">

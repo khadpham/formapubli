@@ -242,7 +242,7 @@ export function WholesaleDispatchModal({
       await fetchDrafts();
       handleResetNew();
     } catch (e: any) {
-      alert('Lỗi: ' + (e.message || e));
+      setErrorMessage('Lỗi: ' + (e.message || e));
     }
   };
 

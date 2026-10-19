@@ -64,6 +64,12 @@ export function RevenueAnalyticsPanel({
   const canView = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Toast thong bao thay alert(). */
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  };
   const [cashflow, setCashflow] = useState<Cashflow | null>(null);
   const [consignment, setConsignment] = useState<any[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -151,11 +157,11 @@ export function RevenueAnalyticsPanel({
 
   const exportSourceCsv = () => {
     if (channels.length === 0) {
-      alert('Chưa có dữ liệu nguồn doanh thu để xuất.');
+      showToast('Chưa có dữ liệu nguồn doanh thu để xuất.');
       return;
     }
     if (!actorId) {
-      alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+      showToast('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
       return;
     }
     // Chặn Excel formula injection ở tên nhóm/kênh.
@@ -210,7 +216,12 @@ export function RevenueAnalyticsPanel({
   };
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-5">
+    <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-5 relative">
+      {toast && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg bg-red-600 text-white">
+          {toast}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">

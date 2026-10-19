@@ -48,6 +48,14 @@ export function DeliveryOrdersLedger({
 
   // Ký duyệt phiếu DRAFT
   const [isDispatchingId, setIsDispatchingId] = useState<string | null>(null);
+  /** Toast thong bao thay alert(). */
+  const [toast, setToast] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -88,18 +96,19 @@ export function DeliveryOrdersLedger({
       if (json.success) {
         setSelectedOrderForPrint(json.data);
       } else {
-        alert(json.error || 'Không thể tải chi tiết phiếu');
+        showToast(json.error || 'Không thể tải chi tiết phiếu');
       }
     } catch (err: any) {
-      alert('Lỗi: ' + err.message);
+      showToast('Lỗi: ' + err.message);
     }
   };
 
   // Ký duyệt phiếu DRAFT
   const handleDispatchDraft = async (orderId: string) => {
-    if (!confirm('Bạn có chắc chắn muốn KÝ DUYỆT và KHÓA SỔ phiếu xuất kho này? Sách sẽ được trừ khỏi kho vĩnh viễn.')) {
-      return;
-    }
+    setConfirmDlg({
+      msg: 'Bạn có chắc chắn muốn KÝ DUYỆT và KHÓA SỔ phiếu xuất kho này? Sách sẽ được trừ khỏi kho vĩnh viễn.',
+      onOk: async () => {
+        setConfirmDlg(null);
     try {
       setIsDispatchingId(orderId);
       const res = await fetch(`/api/delivery-orders/${orderId}`, {
@@ -118,20 +127,25 @@ export function DeliveryOrdersLedger({
         fetchOrders();
         handleOpenReceipt(json.data.id);
       } else {
-        alert(json.error || 'Không thể ký xuất kho');
+        showToast(json.error || 'Không thể ký xuất kho');
       }
     } catch (err: any) {
-      alert('Lỗi: ' + err.message);
+      showToast('Lỗi: ' + err.message);
     } finally {
       setIsDispatchingId(null);
     }
+      },
+    });
   };
 
   const [isDeletingDraftId, setIsDeletingDraftId] = useState<string | null>(null);
 
   // Xóa phiếu xuất kho DRAFT
   const handleDeleteDraft = async (id: string, code: string) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa bản nháp [${code}]?`)) return;
+    setConfirmDlg({
+      msg: `Bạn có chắc muốn xóa bản nháp [${code}]?`,
+      onOk: async () => {
+        setConfirmDlg(null);
     try {
       setIsDeletingDraftId(id);
       const res = await fetch(`/api/delivery-orders/${id}`, {
@@ -142,10 +156,12 @@ export function DeliveryOrdersLedger({
       if (!json.success) throw new Error(json.error || 'Không xóa được bản nháp');
       await fetchOrders();
     } catch (err: any) {
-      alert(err.message || 'Lỗi khi xóa bản nháp');
+      showToast(err.message || 'Lỗi khi xóa bản nháp');
     } finally {
       setIsDeletingDraftId(null);
     }
+      },
+    });
   };
 
   // Xác nhận đảo bút toán hủy
@@ -179,7 +195,7 @@ export function DeliveryOrdersLedger({
       setReversalTargetOrder(null);
       setReversalReason('');
       fetchOrders();
-      alert(`Đã đảo bút toán thành công! Sinh phiếu đối ứng: ${json.data.code}`);
+      showToast(`Đã đảo bút toán thành công! Sinh phiếu đối ứng: ${json.data.code}`, 'success');
       handleOpenReceipt(json.data.id);
     } catch (err: any) {
       setReversalError(err.message || 'Lỗi không xác định khi hủy phiếu');
@@ -200,7 +216,40 @@ export function DeliveryOrdersLedger({
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {toast && (
+        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+      <Modal
+        open={!!confirmDlg}
+        onClose={() => setConfirmDlg(null)}
+        size="sm"
+        title="Xác nhận"
+      >
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDlg(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDlg.onOk}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
       {/* Thanh công cụ danh sách */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2 w-full md:w-auto">

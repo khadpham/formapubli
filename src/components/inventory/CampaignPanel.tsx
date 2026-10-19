@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { BatchTransferModal } from './BatchTransferModal';
+import Modal from '../ui/Modal';
 
 interface Campaign {
   id: string;
@@ -34,6 +35,8 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [transferFor, setTransferFor] = useState<Campaign | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [leftover, setLeftover] = useState<{ campaign: Campaign; lines: LeftoverLine[] } | null>(null);
 
   const load = useCallback(async () => {
@@ -67,13 +70,18 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
   };
 
   const doStart = async (c: Campaign) => {
-    if (!window.confirm(`Bắt đầu "${c.name}" (sinh kho hội chợ)?`)) return;
-    setError(null); setNotice(null);
-    try {
-      await call(`/api/campaigns/${encodeURIComponent(c.id)}/start`, 'POST', {});
-      setNotice(`Đã bắt đầu "${c.name}".`);
-      await load();
-    } catch (e: any) { setError(e.message); }
+    setConfirmDlg({
+      msg: `Bắt đầu "${c.name}" (sinh kho hội chợ)?`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        setError(null); setNotice(null);
+        try {
+          await call(`/api/campaigns/${encodeURIComponent(c.id)}/start`, 'POST', {});
+          setNotice(`Đã bắt đầu "${c.name}".`);
+          await load();
+        } catch (e: any) { setError(e.message); }
+      },
+    });
   };
 
   const openEnd = async (c: Campaign) => {
@@ -86,7 +94,11 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
 
   const doEnd = async () => {
     if (!leftover) return;
-    if (!window.confirm(`Kết thúc "${leftover.campaign.name}" (chuyển tồn về + ngưng kho)?`)) return;
+    const lv = leftover;
+    setConfirmDlg({
+      msg: `Kết thúc "${lv.campaign.name}" (chuyển tồn về + ngưng kho)?`,
+      onOk: async () => {
+        setConfirmDlg(null);
     setError(null); setNotice(null);
     try {
       await call(`/api/campaigns/${encodeURIComponent(leftover.campaign.id)}/end`, 'POST', {
@@ -96,12 +108,25 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
       setLeftover(null);
       await load();
     } catch (e: any) { setError(e.message); }
+      },
+    });
   };
 
   const activeSources = warehouses.filter((w) => (w as any).isActive !== false);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <h3 className="text-sm font-extrabold text-slate-900">Chiến dịch bán ngắn hạn</h3>
       {error && <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
       {notice && <p className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{notice}</p>}

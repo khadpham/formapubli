@@ -46,6 +46,12 @@ export function WarehouseDocList({ refreshKey }: { refreshKey?: number }) {
   const [filter, setFilter] = useState('');
   const [printDoc, setPrintDoc] = useState<DocPrintData | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  /** Toast thong bao thay alert(). */
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -92,7 +98,7 @@ export function WarehouseDocList({ refreshKey }: { refreshKey?: number }) {
       });
       setPrintOpen(true);
     } catch (e: any) {
-      alert('Lỗi: ' + e.message);
+      showToast('Lỗi: ' + e.message);
     }
   };
 
@@ -120,12 +126,17 @@ export function WarehouseDocList({ refreshKey }: { refreshKey?: number }) {
       if (!data.ok) throw new Error(data.error);
       await load();
     } catch (e: any) {
-      alert('Lỗi: ' + e.message);
+      showToast('Lỗi: ' + e.message);
     }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {toast && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg bg-red-600 text-white">
+          {toast}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-lg flex items-center gap-2">
           <FileText className="w-5 h-5" /> Chứng từ kho

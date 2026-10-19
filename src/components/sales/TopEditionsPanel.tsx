@@ -62,6 +62,12 @@ export function TopEditionsPanel({
   const [topN, setTopN] = useState(20);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Toast thong bao thay alert(). */
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  };
   const [items, setItems] = useState<TopEditionRow[]>([]);
   const [totals, setTotals] = useState({ totalQty: 0, totalRevenue: 0, totalGiftQty: 0 });
   const abortRef = useRef<AbortController | null>(null);
@@ -148,11 +154,11 @@ export function TopEditionsPanel({
 
   const exportCsv = () => {
     if (sortedItems.length === 0) {
-      alert('Chưa có dữ liệu sách bán chạy để xuất.');
+      showToast('Chưa có dữ liệu sách bán chạy để xuất.');
       return;
     }
     if (!actorId) {
-      alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+      showToast('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
       return;
     }
     // Xuất theo đúng thứ tự đang xếp trên màn hình (Hạng = vị trí đang thấy).
@@ -204,7 +210,12 @@ export function TopEditionsPanel({
   };
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
+    <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4 relative">
+      {toast && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg bg-red-600 text-white">
+          {toast}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
