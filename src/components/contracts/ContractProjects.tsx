@@ -78,6 +78,8 @@ export function ContractProjects({ onSmartDraft }: { onSmartDraft: (category: st
         setEditingDates({});
         setPendingOverride(null);
         await validateTimeline(id);
+      } else {
+        setError(json.error || 'Không mở được dự án.');
       }
     } finally { setLoading(false); }
   }
