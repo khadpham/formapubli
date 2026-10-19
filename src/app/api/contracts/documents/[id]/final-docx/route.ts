@@ -24,7 +24,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     );
     await recordAuditLog({
       action: 'CONTRACT_DOCUMENT' as any, actorRole: session.role, actorId: session.actorId,
-      resource: '/api/contracts/documents', details: `Tải bản cuối HĐ ${id} → FINALIZED.`,
+      resource: '/api/contracts/documents', details: `Tải bản cuối HĐ ${id} → SIGNED.`,
     });
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
