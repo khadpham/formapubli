@@ -428,6 +428,8 @@ export function GoodsCatalogManager() {
   const [search, setSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editing, setEditing] = useState<GoodsRow | null>(null);
   /**
@@ -473,7 +475,13 @@ export function GoodsCatalogManager() {
 
   const setActive = async (row: GoodsRow, isActive: boolean) => {
     const actionLabel = isActive ? 'Kích hoạt' : 'Ngưng hoạt động';
-    if (!window.confirm(`${actionLabel}: ${row.name}?`)) return;
+    setConfirmDlg({
+      msg: `${actionLabel}: ${row.name}?`,
+      onOk: async () => { setConfirmDlg(null); doSetActive(row, isActive); },
+    });
+    return;
+  };
+  const doSetActive = async (row: GoodsRow, isActive: boolean) => {
     setError(null);
     setNotice(null);
     setBusyId(row.id);
@@ -523,7 +531,18 @@ export function GoodsCatalogManager() {
   };
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div>
           <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">

@@ -41,6 +41,7 @@ import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { computeGifts, type PromotionCampaign } from '@/lib/promotion-engine';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
+import Modal from '@/components/ui/Modal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { VietQrPay } from '@/components/pos/VietQrPay';
@@ -359,6 +360,21 @@ export function PosCheckoutTerminal({
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Dialog xac nhan promise-based thay window.confirm. */
+  const [confirmState, setConfirmState] = useState<{ msg: string; resolve: (v: boolean) => void } | null>(null);
+  const confirmAsync = (msg: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({ msg, resolve });
+    });
+  };
+  const handleConfirmOk = () => {
+    confirmState?.resolve(true);
+    setConfirmState(null);
+  };
+  const handleConfirmCancel = () => {
+    confirmState?.resolve(false);
+    setConfirmState(null);
+  };
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
   const [qrSnapshot, setQrSnapshot] = useState<{ dataUrl: string; payload: string; accountNo: string; content: string } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -930,10 +946,10 @@ export function PosCheckoutTerminal({
           setErrorMessage('Ca đang mở không thuộc thu ngân của đơn cũ.');
           return;
         }
-        if (!window.confirm(`Gán đơn ${order.orderCode} vào ca két mới ${activeSession.id}?`)) return;
+        if (!(await confirmAsync(`Gán đơn ${order.orderCode} vào ca két mới ${activeSession.id}?`))) return;
         repaired = await updateOfflineOrderForRetry(order.id, { cashboxSessionId: activeSession.id });
       } else {
-        if (!window.confirm(`Xác nhận đã nhận đủ ${order.finalAmount.toLocaleString('vi-VN')} đ cho đơn ${order.orderCode}?`)) return;
+        if (!(await confirmAsync(`Xác nhận đã nhận đủ ${order.finalAmount.toLocaleString('vi-VN')} đ cho đơn ${order.orderCode}?`))) return;
         repaired = await updateOfflineOrderForRetry(order.id, { moneyReceived: true });
       }
       // Record không tồn tại thì không được báo "đã cập nhật": cashier sẽ tưởng
@@ -957,7 +973,7 @@ export function PosCheckoutTerminal({
       return;
     }
     if (currentRole !== 'ROLE_MANAGER' && currentRole !== 'ROLE_OWNER') return;
-    if (!window.confirm(`Nhận ${legacyOfflineCount} đơn ngoại tuyến cũ chưa có danh tính thu ngân? Thao tác này sẽ ghi chúng vào tài khoản của bạn.`)) return;
+    if (!(await confirmAsync(`Nhận ${legacyOfflineCount} đơn ngoại tuyến cũ chưa có danh tính thu ngân? Thao tác này sẽ ghi chúng vào tài khoản của bạn.`))) return;
     try {
       const claimed = await claimLegacyOfflineOrders(cashierActorId);
       setSyncToast(`Đã nhận ${claimed} đơn ngoại tuyến cũ vào tài khoản của bạn.`);
@@ -3044,7 +3060,18 @@ export function PosCheckoutTerminal({
   );
 
   return (
-    <div className="space-y-3 md:space-y-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
+    <div className="space-y-3 md:space-y-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden relative">
+      <Modal open={!!confirmState} onClose={handleConfirmCancel} size="sm" title="Xác nhận">
+        {confirmState && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmState.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={handleConfirmCancel} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={handleConfirmOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       {/* Mobile: panel chọn kho nằm TRONG luồng, không sticky - chỉ thanh tìm kiếm mới nổi khi cuộn.
           Card "Top Header Controls" là `hidden md:flex`; các controls nằm trong panel này, hiện khi mở. */}
       <div className="md:hidden -mx-3 px-3 pt-2 pb-1">

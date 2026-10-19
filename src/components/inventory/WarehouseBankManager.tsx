@@ -40,6 +40,8 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [newBank, setNewBank] = useState({ label: '', bankBin: '', accountNo: '', accountName: '' });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -86,7 +88,13 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
 
   /** #6: sửa tên/địa chỉ kho, bật/tắt bán trên POS. */
   const patchWarehouse = async (id: string, body: Record<string, unknown>, confirmMsg?: string, savedMsg?: string) => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    if (confirmMsg) {
+      setConfirmDlg({ msg: confirmMsg, onOk: () => { setConfirmDlg(null); doPatchWarehouse(id, body, savedMsg); } });
+      return;
+    }
+    doPatchWarehouse(id, body, savedMsg);
+  };
+  const doPatchWarehouse = async (id: string, body: Record<string, unknown>, savedMsg?: string) => {
     setSavingId(id);
     setError(null);
     setNotice(null);
@@ -110,7 +118,15 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
 
   /** #6: xóa kho rỗng. Kho còn tồn/đơn sẽ bị server chặn kèm lý do cụ thể. */
   const deleteWarehouse = async (w: Warehouse) => {
-    if (!window.confirm(`Xóa kho [${w.code}]?\nChỉ xóa được kho RỖNG và chưa có đơn. Kho đang có tồn sẽ được nhắc dùng "Ngưng hoạt động".`)) return;
+    setConfirmDlg({
+      msg: `Xóa kho [${w.code}]? Chỉ xóa được kho RỖNG và chưa có đơn. Kho đang có tồn sẽ được nhắc dùng "Ngưng hoạt động".`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        doDeleteWarehouse(w);
+      },
+    });
+  };
+  const doDeleteWarehouse = async (w: Warehouse) => {
     setSavingId(w.id);
     setError(null);
     setNotice(null);
@@ -147,6 +163,18 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   if (!mounted) return null;
 
   return (
+    <>
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium whitespace-pre-line">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
     <Modal
       open={true}
       onClose={onClose}
@@ -337,5 +365,6 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
           <button type="submit" className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs">Thêm TK</button>
         </form>
     </Modal>
+    </>
   );
 }

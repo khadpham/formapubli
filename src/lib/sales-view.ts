@@ -249,12 +249,10 @@ export function buildWatermarkedCsv(input: WatermarkedCsvInput): { filename: str
  */
 export function downloadWatermarkedCsv(input: WatermarkedCsvInput): boolean {
   if (input.rows.length === 0) {
-    alert('Không có dữ liệu để xuất CSV.');
-    return false;
+    throw new Error('Không có dữ liệu để xuất CSV.');
   }
   if (!input.meta.actorId) {
-    alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
-    return false;
+    throw new Error('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
   }
   const { filename, content } = buildWatermarkedCsv(input);
   const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });

@@ -438,6 +438,8 @@ export function PromotionsManager() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
   const loadTokenRef = useRef(0);
@@ -486,7 +488,13 @@ export function PromotionsManager() {
 
   const setActive = async (row: Campaign, isActive: boolean) => {
     const label = isActive ? 'Kích hoạt' : 'Ngưng hoạt động';
-    if (!window.confirm(`${label}: ${row.name}?`)) return;
+    setConfirmDlg({
+      msg: `${label}: ${row.name}?`,
+      onOk: async () => { setConfirmDlg(null); doSetActive(row, isActive); },
+    });
+    return;
+  };
+  const doSetActive = async (row: Campaign, isActive: boolean) => {
     setError(null);
     setNotice(null);
     setBusyId(row.id);
@@ -511,7 +519,18 @@ export function PromotionsManager() {
   };
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div>
           <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">

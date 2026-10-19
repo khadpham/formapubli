@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Crown, Wallet, ReceiptText, PiggyBank, Pencil } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 
 interface ExpenseEntry {
   id: string;
@@ -104,6 +105,8 @@ export function OwnerTab() {
   const [recurrence, setRecurrence] = useState('ONE_TIME');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  /** Dialog xac nhan thay confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editNote, setEditNote] = useState('');
@@ -287,7 +290,13 @@ export function OwnerTab() {
   };
 
   const lockPeriod = async () => {
-    if (!confirm(`Khóa sổ kỳ ${month}? Sau khi khóa sẽ không ghi/sửa chi phí trong kỳ này nữa.`)) return;
+    setConfirmDlg({
+      msg: `Khóa sổ kỳ ${month}? Sau khi khóa sẽ không ghi/sửa chi phí trong kỳ này nữa.`,
+      onOk: async () => { setConfirmDlg(null); doLockPeriod(); },
+    });
+    return;
+  };
+  const doLockPeriod = async () => {
     const r = await fetch('/api/owner/period-locks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -295,6 +304,15 @@ export function OwnerTab() {
     }).then((x) => x.json());
     if (r?.success) { showToast(`Đã khóa sổ kỳ ${month}.`); load(month); }
     else showToast(r?.error || 'Khóa sổ thất bại.');
+  };
+  const doUnlockPeriod = async () => {
+    const r = await fetch('/api/owner/period-locks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, action: 'unlock' }),
+    }).then((x) => x.json());
+    if (r?.success) { showToast(`Đã mở khóa kỳ ${month}.`); load(month); }
+    else showToast(r?.error || 'Mở khóa thất bại.');
   };
 
   if (!data) {
@@ -315,7 +333,18 @@ export function OwnerTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       {toast && (
         <div role="status" className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-800 font-bold">
           {toast}
@@ -514,15 +543,11 @@ export function OwnerTab() {
         <div role="status" className="p-3 bg-slate-100 border border-slate-300 rounded-2xl text-xs text-slate-700 font-bold flex items-center justify-between gap-2">
           <span>🔒 Kỳ {month} đã khóa sổ{data.periodLock.info?.lockedBy ? ` bởi ${data.periodLock.info.lockedBy}` : ''} - không ghi/sửa chi phí trong kỳ này nữa.</span>
           <button
-            onClick={async () => {
-              if (!confirm(`Mở khóa sổ kỳ ${month}?`)) return;
-              const r = await fetch('/api/owner/period-locks', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ month, action: 'unlock' }),
-              }).then((x) => x.json());
-              if (r?.success) { showToast(`Đã mở khóa kỳ ${month}.`); load(month); }
-              else showToast(r?.error || 'Mở khóa thất bại.');
+            onClick={() => {
+              setConfirmDlg({
+                msg: `Mở khóa sổ kỳ ${month}?`,
+                onOk: async () => { setConfirmDlg(null); doUnlockPeriod(); },
+              });
             }}
             className="px-3 py-2 rounded-xl bg-slate-700 text-white text-xs font-bold min-h-[40px]"
           >

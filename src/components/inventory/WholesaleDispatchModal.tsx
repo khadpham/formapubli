@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import Modal from '../ui/Modal';
 import { createPortal } from 'react-dom';
 import {
   FileText,
@@ -123,6 +124,8 @@ export function WholesaleDispatchModal({
   const [searchBookTerm, setSearchBookTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Dialog xac nhan thay confirm. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Dán danh sách 2 cột (Tên + Số lượng) từ Excel
@@ -232,7 +235,10 @@ export function WholesaleDispatchModal({
 
   const handleDeleteDraft = async () => {
     if (!editingDraftId) return;
-    if (!confirm('Xóa bản nháp này? Hành động không thể hoàn tác.')) return;
+    setConfirmDelete(true);
+  };
+  const doDeleteDraft = async () => {
+    setConfirmDelete(false);
     try {
       const res = await fetch('/api/delivery-orders/' + editingDraftId, { method: 'DELETE' });
       const json = await res.json();
@@ -722,6 +728,13 @@ export function WholesaleDispatchModal({
 
   return createPortal(
     <>
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} size="sm" title="Xác nhận">
+        <p className="text-slate-900 font-medium">Xóa bản nháp này? Hành động không thể hoàn tác.</p>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={() => setConfirmDelete(false)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+          <button onClick={doDeleteDraft} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+        </div>
+      </Modal>
       <div
         className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
         onClick={(e) => {

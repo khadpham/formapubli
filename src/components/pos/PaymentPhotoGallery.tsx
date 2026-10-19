@@ -34,6 +34,8 @@ export function PaymentPhotoGallery({
   const [query, setQuery] = useState('');
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   /** Bản sao object URL hiện tại để thu hồi được kể cả trong effect dọn dẹp. */
   const previewUrlsRef = useRef<Record<string, string>>({});
@@ -129,7 +131,13 @@ export function PaymentPhotoGallery({
   const removePhoto = async (photo: PaymentProofPhoto) => {
     if (!isPhotoInScope(photo, scope)) return;
     if (photo.syncState === 'NEEDS_RECONCILIATION') return;
-    if (!window.confirm(`Xóa ảnh xác nhận của đơn ${photo.orderCode}?`)) return;
+    setConfirmDlg({
+      msg: `Xóa ảnh xác nhận của đơn ${photo.orderCode}?`,
+      onOk: async () => { setConfirmDlg(null); doRemovePhoto(photo); },
+    });
+    return;
+  };
+  const doRemovePhoto = async (photo: PaymentProofPhoto) => {
     await deletePaymentProofPhoto(photo.id, scope);
     // Thu hồi object URL của ảnh vừa xoá, nếu không blob của nó vẫn bị giữ
     // trong RAM tới khi đóng modal (mỗi lần xoá là một object URL rò rỉ).
@@ -149,6 +157,18 @@ export function PaymentPhotoGallery({
 
 
   return (
+    <>
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
     <Modal
       open={isOpen}
       onClose={onClose}
@@ -236,5 +256,6 @@ export function PaymentPhotoGallery({
           </div>
         ) : null}
     </Modal>
+    </>
   );
 }

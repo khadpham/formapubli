@@ -23,6 +23,8 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
   const [counts, setCounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Dialog xac nhan thay confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -43,7 +45,13 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
   }, [open]);
 
   const handleApprove = async (id: string) => {
-    if (!confirm('Duyệt đợt kiểm kê này? Hệ thống sẽ tạo bút toán điều chỉnh.')) return;
+    setConfirmDlg({
+      msg: 'Duyệt đợt kiểm kê này? Hệ thống sẽ tạo bút toán điều chỉnh.',
+      onOk: async () => { setConfirmDlg(null); doApprove(id); },
+    });
+    return;
+  };
+  const doApprove = async (id: string) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/inventory/counts/${id}/approve`, { method: 'POST' });
@@ -60,7 +68,13 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
   };
 
   const handleCancel = async (id: string) => {
-    if (!confirm('Hủy đợt kiểm kê này? Thao tác không thể hoàn tác.')) return;
+    setConfirmDlg({
+      msg: 'Hủy đợt kiểm kê này? Thao tác không thể hoàn tác.',
+      onOk: async () => { setConfirmDlg(null); doCancel(id); },
+    });
+    return;
+  };
+  const doCancel = async (id: string) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/inventory/counts/${id}`, { method: 'DELETE' });
@@ -78,6 +92,17 @@ export function InventoryCountListModal({ open, onClose, onSuccess, onView }: In
 
   return (
     <Modal open={open} onClose={onClose} title="Đợt kiểm kê" subtitle="Danh sách và phê duyệt" size="md">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <div className="space-y-2">
         {error && <p className="text-xs text-rose-600">{error}</p>}
         {loading && counts.length === 0 ? (
