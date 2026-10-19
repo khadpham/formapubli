@@ -1135,6 +1135,8 @@ export const contractMilestones = sqliteTable('contract_milestones', {
   neededCategory: text('needed_category').notNull(),
   contractId: text('contract_id').references(() => contractDocuments.id, { onDelete: 'set null' }),
   status: text('status').notNull().default('PENDING'),
+  contractDate: text('contract_date'),
+  acceptanceDate: text('acceptance_date'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   projectIdx: index('idx_milestones_project').on(table.projectId),
