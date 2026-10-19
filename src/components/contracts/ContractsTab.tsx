@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2, FolderKanban } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2, FolderKanban, Search, CheckCircle2, XCircle } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
@@ -22,10 +22,29 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: 'Đã hủy',
 };
 
+const PAGE_SIZE = 20;
+
+function formatDate(v: any): string {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '-';
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+function formatMoney(v: any): string {
+  if (v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  return `${n.toLocaleString('vi-VN')} đ`;
+}
+
 /** Tab Hợp Đồng: danh sách + lọc + soạn mới + mẫu + công ty. */
 export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) {
   const [docs, setDocs] = useState<any[]>([]);
+  const [partners, setPartners] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -36,6 +55,16 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const [profileOpen, setProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<any | null>(null);
+
+  const canManage = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
+
+  const partnerMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of partners) m.set(p.id, p.name);
+    return m;
+  }, [partners]);
 
   const loadDocs = useCallback(async () => {
     try {
@@ -50,9 +79,27 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
     }
   }, [statusFilter]);
 
+  const loadPartners = useCallback(async () => {
+    try {
+      const res = await fetch('/api/partners/list');
+      const json = await res.json();
+      if (json.success) setPartners(json.data || []);
+    } catch {
+      // Không chặn load hợp đồng nếu lỗi tải đối tác.
+    }
+  }, []);
+
   useEffect(() => {
     loadDocs();
   }, [loadDocs]);
+
+  useEffect(() => {
+    loadPartners();
+  }, [loadPartners]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, search]);
 
   const downloadDocx = async (doc: any) => {
     try {
@@ -87,7 +134,26 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Tải bản cuối thất bại');
-      setToast(`Đã chốt bản cuối: ${doc.contractNumber}`);
+      setToast(`Đã chốt bản cuối và đánh dấu đã ký: ${doc.contractNumber}`);
+      loadDocs();
+    } catch (e: any) {
+      setErrorMessage(e.message);
+    }
+  };
+
+  /** Đánh dấu đã ký / đã hủy (F2). Hủy cần popup xác nhận hệ thống (F3). */
+  const markStatus = async (doc: any, status: 'SIGNED' | 'CANCELLED') => {
+    try {
+      setErrorMessage(null);
+      const res = await fetch(`/api/contracts/documents/${encodeURIComponent(doc.id)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không cập nhật được trạng thái');
+      setToast(`Đã đánh dấu ${status === 'SIGNED' ? 'đã ký' : 'đã hủy'}: ${doc.contractNumber}`);
+      setConfirmCancel(null);
       loadDocs();
     } catch (e: any) {
       setErrorMessage(e.message);
@@ -95,17 +161,35 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   };
 
   const deleteDoc = async (doc: any) => {
-    if (!window.confirm(`Xóa hợp đồng nháp ${doc.contractNumber}?`)) return;
     try {
+      setErrorMessage(null);
       const res = await fetch(`/api/contracts/documents/${encodeURIComponent(doc.id)}`, { method: 'DELETE' });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Không xóa được');
       setToast(`Đã xóa: ${doc.contractNumber}`);
+      setConfirmDelete(null);
       loadDocs();
     } catch (e: any) {
       setErrorMessage(e.message);
     }
   };
+
+  const filteredDocs = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d: any) => {
+      const partnerName = partnerMap.get(d.partnerId) || '';
+      return (
+        `${d.contractNumber || ''}`.toLowerCase().includes(q) ||
+        `${d.title || ''}`.toLowerCase().includes(q) ||
+        partnerName.toLowerCase().includes(q)
+      );
+    });
+  }, [docs, search, partnerMap]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDocs.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageDocs = filteredDocs.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
@@ -192,7 +276,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
         </div>
       ) : (
       <>
-      <div className="flex gap-2 items-center">
+      <div className="flex flex-wrap gap-2 items-center">
         <label className="text-xs font-bold text-slate-600">Trạng thái:</label>
         <select
           value={statusFilter}
@@ -204,6 +288,16 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm số HĐ, tiêu đề, đối tác..."
+            className="pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs outline-none w-64"
+          />
+        </div>
+        <span className="text-xs text-slate-500">{filteredDocs.length} hợp đồng</span>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -212,24 +306,30 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
             <tr className="bg-slate-100 text-left">
               <th className="p-3">Số HĐ</th>
               <th className="p-3">Tiêu đề</th>
+              <th className="p-3">Đối tác</th>
+              <th className="p-3">Ngày ký</th>
+              <th className="p-3 text-right">Giá trị</th>
               <th className="p-3">Trạng thái</th>
               <th className="p-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {docs.length === 0 ? (
-              <tr><td colSpan={4} className="p-6 text-center text-slate-400 italic">Chưa có hợp đồng nào. Bấm “Soạn Hợp Đồng”.</td></tr>
+            {pageDocs.length === 0 ? (
+              <tr><td colSpan={7} className="p-6 text-center text-slate-400 italic">Chưa có hợp đồng nào. Bấm “Soạn Hợp Đồng”.</td></tr>
             ) : (
-              docs.map((d: any) => (
+              pageDocs.map((d: any) => (
                 <tr key={d.id} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono font-bold">{d.contractNumber}</td>
+                  <td className="p-3 font-mono font-bold whitespace-nowrap">{d.contractNumber}</td>
                   <td className="p-3 font-semibold">{d.title}</td>
+                  <td className="p-3">{partnerMap.get(d.partnerId) || '-'}</td>
+                  <td className="p-3 whitespace-nowrap">{formatDate(d.signedDate)}</td>
+                  <td className="p-3 text-right font-semibold whitespace-nowrap">{formatMoney(d.totalAmount)}</td>
                   <td className="p-3">
-                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[11px] font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[11px] font-bold whitespace-nowrap">
                       {STATUS_LABEL[d.status] || d.status}
                     </span>
                   </td>
-                  <td className="p-3 text-right space-x-1">
+                  <td className="p-3 text-right space-x-1 whitespace-nowrap">
                     {(d.status === 'DRAFT') && (
                       <button type="button" onClick={() => { setEditingDoc(d); setComposerOpen(true); }} className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg text-[11px] font-bold" aria-label={`Sửa ${d.contractNumber}`}>Sửa</button>
                     )}
@@ -249,8 +349,18 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
                       />
                     </label>
                     )}
+                    {canManage && (d.status === 'DRAFT' || d.status === 'FINALIZED') && (
+                      <button type="button" onClick={() => markStatus(d, 'SIGNED')} className="px-2 py-1 text-emerald-700 hover:bg-emerald-50 rounded-lg text-[11px] font-bold" aria-label={`Đánh dấu đã ký ${d.contractNumber}`}>
+                        <CheckCircle2 className="w-3.5 h-3.5 inline mr-0.5" />Đã ký
+                      </button>
+                    )}
+                    {canManage && (d.status === 'DRAFT' || d.status === 'FINALIZED') && (
+                      <button type="button" onClick={() => setConfirmCancel(d)} className="px-2 py-1 text-amber-700 hover:bg-amber-50 rounded-lg text-[11px] font-bold" aria-label={`Đánh dấu đã hủy ${d.contractNumber}`}>
+                        <XCircle className="w-3.5 h-3.5 inline mr-0.5" />Đã hủy
+                      </button>
+                    )}
                     {(d.status === 'DRAFT' || d.status === 'CANCELLED') && (
-                      <button type="button" onClick={() => deleteDoc(d)} className="px-2 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-bold" aria-label={`Xóa ${d.contractNumber}`}>Xóa</button>
+                      <button type="button" onClick={() => setConfirmDelete(d)} className="px-2 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-bold" aria-label={`Xóa ${d.contractNumber}`}>Xóa</button>
                     )}
                   </td>
                 </tr>
@@ -258,6 +368,27 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
             )}
           </tbody>
         </table>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 p-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(1, safePage - 1))}
+              disabled={safePage <= 1}
+              className="px-3 py-1 border border-slate-300 rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-slate-50"
+            >
+              Trước
+            </button>
+            <span className="text-xs font-bold text-slate-600">Trang {safePage} / {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+              disabled={safePage >= totalPages}
+              className="px-3 py-1 border border-slate-300 rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-slate-50"
+            >
+              Sau
+            </button>
+          </div>
+        )}
       </div>
       </>
       )}
@@ -285,6 +416,56 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
       {aiReviewOpen && <AIContractReview onClose={() => setAiReviewOpen(false)} />}
       {aiDraftOpen && <AISmartDraft onClose={() => setAiDraftOpen(false)} />}
       {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-2">Xóa hợp đồng?</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Xóa hợp đồng nháp "{confirmDelete.contractNumber}"? Hành động này không thể hoàn tác.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => deleteDoc(confirmDelete)}
+                className="flex-1 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmCancel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmCancel(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-2">Đánh dấu đã hủy?</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Đánh dấu hợp đồng "{confirmCancel.contractNumber}" là đã hủy? Hợp đồng đã hủy không thể chuyển trạng thái nữa.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmCancel(null)}
+                className="flex-1 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold"
+              >
+                Giữ lại
+              </button>
+              <button
+                onClick={() => markStatus(confirmCancel, 'CANCELLED')}
+                className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-700"
+              >
+                Đánh dấu hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

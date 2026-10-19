@@ -11,6 +11,7 @@ export function PresetManagerModal({ onClose, onChanged }: { onClose: () => void
   const [valuesText, setValuesText] = useState('{}');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
 
   const load = async () => {
     try {
@@ -65,10 +66,11 @@ export function PresetManagerModal({ onClose, onChanged }: { onClose: () => void
     }
   };
 
-  const remove = async (id: string, name: string) => {
-    if (!window.confirm(`Xóa preset "${name}"?`)) return;
-    const res = await fetch(`/api/contracts/presets?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const remove = async () => {
+    if (!confirmRemove) return;
+    const res = await fetch(`/api/contracts/presets?id=${encodeURIComponent(confirmRemove.id)}`, { method: 'DELETE' });
     const json = await res.json();
+    setConfirmRemove(null);
     if (!json.success) setErrorMessage(json.error);
     else await refresh();
   };
@@ -148,12 +150,36 @@ export function PresetManagerModal({ onClose, onChanged }: { onClose: () => void
             >
               {p.isActive ? 'Tắt' : 'Bật'}
             </button>
-            <button type="button" onClick={() => remove(p.id, p.label)} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg" aria-label={`Xóa preset ${p.label}`}>
+            <button type="button" onClick={() => setConfirmRemove({ id: p.id, name: p.label })} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg" aria-label={`Xóa preset ${p.label}`}>
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </li>
         ))}
       </ul>
+      {confirmRemove && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmRemove(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-2">Xóa preset?</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Xóa preset "{confirmRemove.name}"? Hành động này không thể hoàn tác.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmRemove(null)}
+                className="flex-1 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={remove}
+                className="flex-1 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
