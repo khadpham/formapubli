@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
         category: portalProducts.category,
         coverImage: portalProducts.coverImage,
         isFeatured: portalProducts.isFeatured,
+        description: portalProducts.description,
       })
         .from(portalProducts)
         .where(where)
