@@ -456,7 +456,7 @@ export function MasterAppShell({
             <ContractsTab currentRole={currentRole} />
           )}
 
-          {currentRole && effectiveTab === 'customers' && <CustomersListView />}
+          {currentRole && effectiveTab === 'customers' && <CustomersListView sessionRole={currentRole} />}
 
           {currentRole && effectiveTab === 'settings' && (
             <SettingsRbacView sessionRole={session?.role} />
