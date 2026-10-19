@@ -22,7 +22,6 @@ import {
   FolderKanban,
   FileCheck2,
   UsersRound,
-  FolderOpen,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -205,12 +204,6 @@ export function AppSidebar({
       label: 'Nhân sự',
       icon: UsersRound,
       color: 'text-lime-600',
-    },
-    {
-      id: 'documents',
-      label: 'Tài liệu',
-      icon: FolderOpen,
-      color: 'text-yellow-600',
     },
     {
       id: 'studio',

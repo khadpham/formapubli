@@ -17,7 +17,6 @@ import { OwnerTab } from '@/components/owner/OwnerTab';
 import ProjectsView from '@/components/projects/ProjectsView';
 import EinvoiceView from '@/components/einvoice/EinvoiceView';
 import HrView from '@/components/hr/HrView';
-import DocumentsView from '@/components/documents/DocumentsView';
 import { Menu, Shield, Sparkles, Megaphone } from 'lucide-react';
 import { LoginModal } from '@/components/auth/LoginModal';
 import { NotificationBell, type NotifyItem } from '@/components/notifications/NotificationBell';
@@ -317,7 +316,6 @@ export function MasterAppShell({
                   {effectiveTab === 'customers' && 'CRM Độc giả'}
                   {effectiveTab === 'partners' && 'Đối tác & Đại lý'}
                   {effectiveTab === 'hr' && 'Nhân sự'}
-                  {effectiveTab === 'documents' && 'Tài liệu'}
                   {effectiveTab === 'studio' && 'Báo cáo'}
                   {effectiveTab === 'chu' && 'Chủ'}
                   {effectiveTab === 'settings' && 'Cài đặt'}
@@ -486,9 +484,6 @@ export function MasterAppShell({
             <HrView />
           )}
 
-          {currentRole && effectiveTab === 'documents' && (
-            <DocumentsView />
-          )}
         </main>
       </div>
 
