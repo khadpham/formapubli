@@ -173,14 +173,30 @@ export async function shipShopeeOrder(
 
 /**
  * Tải vận đơn A6 (PDF) của đơn. Trả Buffer để route in/trả file.
+ * Kênh tích hợp (SPX) BẮT BUỘC kèm tracking_number trong order_list -
+ * thiếu là Shopee trả "tracking number invalid". Lỗi từng đơn nằm trong
+ * result_list chứ không phải error cấp cao nhất, phải bóc ra mà báo.
  */
 export async function getAwbPdf(cfg: ShopeeSyncConfig, orderSn: string): Promise<Buffer> {
-  await signedPost(cfg, '/api/v2/logistics/create_shipping_document', {
-    order_list: [{ order_sn: orderSn }],
+  const rows = await db
+    .select({ trackingCode: orders.trackingCode })
+    .from(orders)
+    .where(eq(orders.idempotencyKey, `shopee-${orderSn}`))
+    .limit(1);
+  const trackingNumber = rows[0]?.trackingCode || '';
+  if (!trackingNumber) {
+    throw new Error(`Đơn #${orderSn} chưa có mã vận đơn - chưa in được phiếu.`);
+  }
+  const created = await signedPost(cfg, '/api/v2/logistics/create_shipping_document', {
+    order_list: [{ order_sn: orderSn, tracking_number: trackingNumber }],
     shipping_document_type: 'NORMAL_AIR_WAYBILL',
   });
+  const fail = (created?.result_list ?? []).find((x: any) => x.fail_error);
+  if (fail) {
+    throw new Error(`Tạo chứng từ Shopee lỗi: ${fail.fail_error} - ${fail.fail_message || ''}`);
+  }
   const pdf = await signedPost(cfg, '/api/v2/logistics/download_shipping_document', {
-    order_list: [{ order_sn: orderSn }],
+    order_list: [{ order_sn: orderSn, tracking_number: trackingNumber }],
     shipping_document_type: 'NORMAL_AIR_WAYBILL',
   });
   if (!Buffer.isBuffer(pdf) || pdf.byteLength === 0) {
