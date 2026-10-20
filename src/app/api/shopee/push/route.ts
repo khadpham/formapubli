@@ -14,6 +14,15 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get('authorization') || '';
   const partnerKey = `${process.env.SHOPEE_PARTNER_KEY || ''}`;
+  // Gói kiểm tra đăng ký (code 0) của Shopee mang chữ ký MẪU cố định (không
+  // khớp HMAC ở mọi app) và không chứa dữ liệu nghiệp vụ - xác nhận 200 ngay
+  // để Shopee cho phép đăng ký callback. Mọi gói sự kiện khác vẫn bắt buộc
+  // chữ ký hợp lệ mới xử lý.
+  let probePayload: any = null;
+  try { probePayload = JSON.parse(rawBody || '{}'); } catch { probePayload = null; }
+  if (probePayload && probePayload.code === 0) {
+    return NextResponse.json({ status: 'ok' });
+  }
   // Shopee ký trên URL công khai của webhook (địa chỉ đăng ký), không phải
   // host nội bộ sau proxy - dựng lại giống callback route.
   const proto = req.headers.get('x-forwarded-proto') || 'https';
