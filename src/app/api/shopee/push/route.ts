@@ -13,7 +13,13 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get('authorization') || '';
   const partnerKey = `${process.env.SHOPEE_PARTNER_KEY || ''}`;
-  const webhookUrl = req.url;
+  // Shopee ký trên URL công khai của webhook (địa chỉ đăng ký), không phải
+  // host nội bộ sau proxy - dựng lại giống callback route.
+  const proto = req.headers.get('x-forwarded-proto') || 'https';
+  const fwdHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const webhookUrl = fwdHost
+    ? `${proto}://${fwdHost}${req.nextUrl.pathname}${req.nextUrl.search}`
+    : req.url;
   if (!verifyShopeeWebhook(rawBody, signature, webhookUrl, partnerKey)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
