@@ -39,10 +39,12 @@ interface MSInvoiceConfig {
   apiUrl: string;
   username: string;
   password: string;
-  /** Ký hiệu hóa đơn thật của công ty. */
+  /** Ký hiệu hóa đơn đầy đủ để hiển thị (vd 1C26TVN). */
   serial: string;
-  /** Mẫu hóa đơn (invoiceForm). */
+  /** Mẫu hóa đơn (invoiceForm, chữ số đầu của ký hiệu). */
   form: number;
+  /** Phần ký hiệu sau chữ số form (vd C26TVN) - đúng format create-from-3rd yêu cầu. */
+  serialPart: string;
 }
 
 function getConfig(): MSInvoiceConfig | null {
@@ -55,8 +57,22 @@ function getConfig(): MSInvoiceConfig | null {
     username,
     password,
     serial: process.env.MSINVOICE_SERIAL || '1C26TVN',
-    form: Number(process.env.MSINVOICE_FORM || 1),
+    ...splitSerial(process.env.MSINVOICE_SERIAL || '1C26TVN'),
   };
+}
+
+/**
+ * Tách ký hiệu hiển thị thành form + serial cho API create-from-3rd.
+ * VD: '1C26TVN' -> { form: 1, serial: 'C26TVN' } (API sẽ nối thành '1C26TVN').
+ * MSINVOICE_FORM ưu tiên nếu được set riêng.
+ */
+function splitSerial(full: string): { form: number; serialPart: string } {
+  const m = /^([1-9])([A-Z0-9]{4,})$/i.exec(full.trim());
+  if (m) {
+    const form = Number(process.env.MSINVOICE_FORM || m[1]);
+    return { form, serialPart: m[2].toUpperCase() };
+  }
+  return { form: Number(process.env.MSINVOICE_FORM || 1), serialPart: full.toUpperCase() };
 }
 
 export function isMockMode(): boolean {
@@ -101,8 +117,8 @@ async function erpCall(
     return erpCall(config, method, path, body, false);
   }
   const data: any = await res.json().catch(() => ({}));
-  if (!res.ok || data.errorCode) {
-    throw new Error('MS-Invoice API lỗi: ' + (data.errors || data.message || res.status));
+  if (!res.ok || data.errorCode || data.success === 'N' || data.error === true) {
+    throw new Error('MS-Invoice API lỗi: ' + (data.message || data.errors || res.status));
   }
   return data;
 }
@@ -214,7 +230,7 @@ export class MSInvoiceService {
       const payload: any = {
         invoiceDate: null, // null = ngày hiện tại theo MS-Invoice
         invoiceForm: config.form,
-        invoiceSerial: config.serial,
+        invoiceSerial: config.serialPart,
         discountTypeEnumId: null,
         currencyUomId: 'VND',
         paymentInstrumentEnumId: 'PiCashOrWireTransfer',
@@ -240,7 +256,7 @@ export class MSInvoiceService {
       await db.update(einvoices).set({
         status: 'SYNCED',
         msinvoiceId,
-        invoiceSerial: config.serial,
+        invoiceSerial: config.serial, // hiển thị đầy đủ 1C26TVN
         updatedAt: now,
       } as any).where(eq(einvoices.id, invoiceId));
 
