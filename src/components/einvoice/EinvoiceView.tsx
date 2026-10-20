@@ -42,6 +42,24 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   DRAFT: { label: 'Nháp', color: 'bg-slate-100 text-slate-600' },
 };
 
+/** Định dạng ngày giờ VN dd/mm/yyyy. */
+function formatVnDate(v: any): string {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '-';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return dd + '/' + mm + '/' + d.getFullYear();
+}
+
+/** Dịch trạng thái MS-Invoice sang tiếng Việt. */
+const MS_STATUS_LABEL: Record<string, string> = {
+  InvoiceFinalized: 'Đã hoàn thiện (chưa ký)',
+  InvoiceCancelled: 'Đã hủy',
+  InvoicedIssued: 'Đã phát hành',
+  InvoiceReopened: 'Mở lại',
+};
+
 export default function EinvoiceView() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
@@ -279,11 +297,11 @@ export default function EinvoiceView() {
                     <tr key={inv.msinvoiceId || inv.number}>
                       <td className="px-3 py-2 font-mono">{inv.serial || '-'}</td>
                       <td className="px-3 py-2 font-mono">{inv.number || '-'}</td>
-                      <td className="px-3 py-2">{inv.date ? String(inv.date).slice(0, 10) : '-'}</td>
+                      <td className="px-3 py-2">{formatVnDate(inv.date)}</td>
                       <td className="px-3 py-2">{inv.buyerName || '-'}</td>
                       <td className="px-3 py-2 font-mono">{inv.buyerTaxCode || '-'}</td>
                       <td className="px-3 py-2 text-right font-bold">{fmt(Number(inv.totalAmount || 0))}</td>
-                      <td className="px-3 py-2">{inv.status || '-'}</td>
+                      <td className="px-3 py-2">{MS_STATUS_LABEL[inv.status] || inv.status || '-'}</td>
                       <td className="px-3 py-2">
                         {inv.sync?.matched ? (
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-100 text-green-800">
