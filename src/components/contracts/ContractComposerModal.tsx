@@ -15,6 +15,26 @@ interface ComposerProps {
   onSaved: (contractNumber: string) => void;
 }
 
+const COMPOSER_CATEGORIES = ['TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
+
+// So hop dong duoc cap theo loai chon luc tao (PREFIX_MAP ben contract.service)
+// nen suy nguoc duoc loai goc tu tien to so. Tien to chung 'HD' nghia la loai
+// ngoai 4 loai chinh luc tao -> gan nhat la 'KHAC'.
+const PREFIX_TO_CATEGORY: Record<string, string> = {
+  'HĐXB': 'TAC_QUYEN',
+  'HĐĐL': 'DAI_LY',
+  'HĐIN': 'IN_AN',
+  'HĐDT': 'DICH_THUAT',
+};
+
+function categoryFromContractNumber(contractNumber?: string): string | null {
+  if (!contractNumber) return null;
+  const prefix = (contractNumber.split('/').pop() || '').split('-')[0];
+  if (PREFIX_TO_CATEGORY[prefix]) return PREFIX_TO_CATEGORY[prefix];
+  if (prefix === 'HĐ') return 'KHAC';
+  return null;
+}
+
 /** Soạn 2 cột: form biến + Live Preview; chip preset; lưu/tải/in. */
 export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, onClose, onSaved }: ComposerProps) {
   const [templates, setTemplates] = useState<any[]>([]);
@@ -24,7 +44,11 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
     initialDoc ? JSON.parse(initialDoc.payloadData || '{}') : {}
   );
   const [title, setTitle] = useState(initialDoc?.title || '');
-  const [category, setCategory] = useState('TAC_QUYEN');
+  // Ban sua phai nap loai cua hop dong goc, khong reset ve mac dinh:
+  // truoc day mo sua luon hien 'Tac quyen' du hop dong goc thuoc loai khac.
+  const [category, setCategory] = useState(
+    () => categoryFromContractNumber(initialDoc?.contractNumber) || 'TAC_QUYEN'
+  );
   const [partnerId, setPartnerId] = useState(initialDoc?.partnerId || '');
   const [partners, setPartners] = useState<any[]>([]);
   const [signedDate, setSignedDate] = useState(initialDoc?.signedDate || '');
@@ -49,6 +73,12 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
         if (tJson.success) {
           setTemplates((tJson.data || []).filter((t: any) => t.isActive));
           if (!initialDoc && tJson.data?.[0]) setTemplateId(tJson.data[0].id);
+          // Dự phòng khi không suy được loại từ số hợp đồng: lấy loại của mẫu
+          // mà hợp đồng gốc đang dùng (chỉ khi thuộc nhóm loại của ô chọn).
+          if (initialDoc && !categoryFromContractNumber(initialDoc.contractNumber)) {
+            const own = (tJson.data || []).find((t: any) => t.id === initialDoc.templateId);
+            if (own && COMPOSER_CATEGORIES.includes(own.category)) setCategory(own.category);
+          }
         }
         const pJson = await pRes.json().catch(() => ({ success: false }));
         if (pJson.success) setPartners(pJson.data || []);
