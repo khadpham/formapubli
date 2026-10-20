@@ -6,7 +6,7 @@
 
 import { db } from '@/db';
 import { einvoices, orders, orderItems, products } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
 export interface PrepareInvoiceInput {
@@ -113,11 +113,23 @@ export class InvoiceService {
     const toUtcText = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ');
     const windowStart = toUtcText(vnStartUtc);
     const windowEnd = toUtcText(new Date(vnStartUtc.getTime() + 24 * 3600 * 1000));
+    // D1: đơn online chỉ gom vào hóa đơn tổng hợp của ngày XÁC NHẬN NHẬN
+    // HÀNG (không phải ngày tạo đơn) - hàng chưa tới tay khách thì chưa
+    // phát sinh hóa đơn. Đơn tại quầy giữ nguyên theo ngày tạo đơn.
     const dayOrders = await db.select().from(orders).where(
       and(
         eq(orders.fiscalScope, 'INTERNAL_MANAGEMENT'),
         eq(orders.status, 'COMPLETED'),
-        sql`datetime(${orders.createdAt}) >= ${windowStart} AND datetime(${orders.createdAt}) < ${windowEnd}`
+        or(
+          and(
+            sql`${orders.channel} NOT IN ('ONLINE', 'SHOPEE')`,
+            sql`datetime(${orders.createdAt}) >= ${windowStart} AND datetime(${orders.createdAt}) < ${windowEnd}`
+          ),
+          and(
+            sql`${orders.channel} IN ('ONLINE', 'SHOPEE')`,
+            sql`${orders.deliveryConfirmedAt} IS NOT NULL AND datetime(${orders.deliveryConfirmedAt}) >= ${windowStart} AND datetime(${orders.deliveryConfirmedAt}) < ${windowEnd}`
+          )
+        )
       )
     );
 

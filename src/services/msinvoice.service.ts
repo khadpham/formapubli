@@ -31,6 +31,7 @@
 import { db } from '@/db';
 import { einvoices, orders, orderItems, products } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
+import { isOnlineChannel } from '@/lib/order-channels';
 
 const AUTH_PATH = '/api/rest/s1';
 const ERP_PATH = '/erp/rest/s1';
@@ -198,6 +199,17 @@ export class MSInvoiceService {
 
     if (inv.status !== 'PREPARED' && inv.status !== 'SYNC_FAILED') {
       throw new Error(`Hóa đơn ở trạng thái ${inv.status}, cần PREPARED mới đẩy được`);
+    }
+
+    // D1 (anh Kha chốt 2026-10-20): đơn online chỉ phát hành hóa đơn khi
+    // khách ĐÃ NHẬN HÀNG. Chặn ngay tại điểm đẩy duy nhất này thì mọi
+    // đường gọi (UI, script) đều bị chặn như nhau.
+    if (inv.orderId) {
+      const ordRows = await db.select().from(orders).where(eq(orders.id, inv.orderId)).limit(1);
+      const ord: any = ordRows[0];
+      if (ord && isOnlineChannel(ord.channel) && !ord.deliveryConfirmedAt) {
+        throw new Error('Đơn online chưa được xác nhận khách đã nhận hàng - chưa thể phát hành hóa đơn.');
+      }
     }
 
     const config = getConfig();

@@ -33,6 +33,19 @@ interface PendingOrder {
   createdAt: string;
 }
 
+interface OnlineQueueItem {
+  id: string;
+  orderCode: string;
+  channel: string;
+  customerName: string;
+  finalAmount: number;
+  fiscalScope: string;
+  deliveryConfirmedAt: string | null;
+  deliveryConfirmedBy: string | null;
+  einvoiceId: string | null;
+  einvoiceStatus: string | null;
+}
+
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   PREPARED: { label: 'Chờ đẩy', color: 'bg-amber-100 text-amber-800' },
   SYNCED: { label: 'Đã đẩy', color: 'bg-blue-100 text-blue-800' },
@@ -63,6 +76,7 @@ const MS_STATUS_LABEL: Record<string, string> = {
 export default function EinvoiceView() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
+  const [onlineQueue, setOnlineQueue] = useState<{ awaitingDelivery: OnlineQueueItem[]; readyToIssue: OnlineQueueItem[] }>({ awaitingDelivery: [], readyToIssue: [] });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
   const [selected, setSelected] = useState<Invoice | null>(null);
@@ -104,14 +118,17 @@ export default function EinvoiceView() {
     setLoading(true);
     setError(null);
     try {
-      const [invRes, ordRes] = await Promise.all([
+      const [invRes, ordRes, oqRes] = await Promise.all([
         fetch('/api/invoices?limit=100'),
         fetch('/api/invoices/pending-orders'),
+        fetch('/api/invoices/online-queue'),
       ]);
       const invData = await invRes.json();
       if (invData.ok) setInvoices(invData.data);
       const ordData = await ordRes.json();
       if (ordData.ok) setPendingOrders(ordData.data);
+      const oqData = await oqRes.json();
+      if (oqData.ok) setOnlineQueue(oqData.data);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -129,6 +146,20 @@ export default function EinvoiceView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'prepare', orderId }),
       });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleConfirmDelivery = async (orderId: string) => {
+    setActionLoading(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/confirm-delivery`, { method: 'POST' });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
       await load();
@@ -343,6 +374,70 @@ export default function EinvoiceView() {
                 >
                   {actionLoading === o.id ? 'Đang...' : 'Chuẩn bị'}
                 </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Hàng đợi hóa đơn đơn online (D1): chỉ phát hành khi khách đã nhận hàng */}
+      {(onlineQueue.awaitingDelivery.length > 0 || onlineQueue.readyToIssue.length > 0) && (
+        <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5">
+          <h3 className="font-bold text-sky-900 mb-1">
+            Hóa đơn đơn online ({onlineQueue.awaitingDelivery.length + onlineQueue.readyToIssue.length})
+          </h3>
+          <p className="text-xs text-sky-700 mb-3">
+            Đơn online chỉ phát hành hóa đơn sau khi xác nhận khách đã nhận hàng.
+          </p>
+          <div className="space-y-2">
+            {onlineQueue.awaitingDelivery.map((o) => (
+              <div key={o.id} className="flex items-center justify-between bg-white rounded-xl p-3">
+                <div>
+                  <span className="font-mono text-sm font-bold">{o.orderCode}</span>
+                  <span className="text-xs font-bold text-sky-700 bg-sky-100 rounded px-1.5 py-0.5 ml-2">{o.channel === 'SHOPEE' ? 'Shopee' : 'Portal'}</span>
+                  <span className="text-sm text-slate-600 ml-3">{o.customerName}</span>
+                  <span className="text-sm text-slate-500 ml-3">{fmt(o.finalAmount)}</span>
+                  <span className="text-xs text-amber-700 font-bold ml-3">Chờ khách nhận hàng</span>
+                </div>
+                <button
+                  onClick={() => handleConfirmDelivery(o.id)}
+                  disabled={actionLoading === o.id}
+                  className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {actionLoading === o.id ? 'Đang...' : 'Đã nhận hàng'}
+                </button>
+              </div>
+            ))}
+            {onlineQueue.readyToIssue.map((o) => (
+              <div key={o.id} className="flex items-center justify-between bg-white rounded-xl p-3">
+                <div>
+                  <span className="font-mono text-sm font-bold">{o.orderCode}</span>
+                  <span className="text-xs font-bold text-sky-700 bg-sky-100 rounded px-1.5 py-0.5 ml-2">{o.channel === 'SHOPEE' ? 'Shopee' : 'Portal'}</span>
+                  <span className="text-sm text-slate-600 ml-3">{o.customerName}</span>
+                  <span className="text-sm text-slate-500 ml-3">{fmt(o.finalAmount)}</span>
+                  <span className="text-xs text-emerald-700 font-bold ml-3">
+                    Đã nhận hàng{o.deliveryConfirmedBy ? ` - ${o.deliveryConfirmedBy}` : ''}
+                  </span>
+                </div>
+                {o.fiscalScope === 'INTERNAL_MANAGEMENT' ? (
+                  <span className="text-xs text-slate-500">Sẽ gom vào hóa đơn tổng hợp cuối ngày</span>
+                ) : o.einvoiceId ? (
+                  <button
+                    onClick={() => handlePush(o.einvoiceId!)}
+                    disabled={actionLoading === o.einvoiceId}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {actionLoading === o.einvoiceId ? 'Đang...' : 'Phát hành'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handlePrepare(o.id)}
+                    disabled={actionLoading === o.id}
+                    className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {actionLoading === o.id ? 'Đang...' : 'Chuẩn bị'}
+                  </button>
+                )}
               </div>
             ))}
           </div>
