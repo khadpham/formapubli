@@ -424,3 +424,15 @@ App "Vita Nova shopee" (Test Partner_id 1249102) + test shop VN (shop_id 2279897
 - Sản phẩm test đã đăng qua API: MediaSpace upload_image trả image_id; product.add_item cần seller_stock dạng [{location_id, stock}], thuộc tính bắt buộc của ngành Sách Giáo Dục (301568) = Language (200673) và Import/Local (200676).
 - Webhook: set_app_push_config gửi gói kiểm tra code 0 có body {"code":0,"data":{"verify_info":...}} và header Authorization là chữ ký MẪU CỐ ĐỊNH không khớp HMAC ở bất kỳ biến thể chuỗi ký nào đã thử (hơn 245 biến thể). Cách xử lý chuẩn: code 0 trả 200 ngay không kiểm chữ ký; mọi sự kiện khác vẫn bắt buộc chữ ký. Đăng ký callback thành công sau khi áp dụng.
 - Việc chọn/bật từng loại sự kiện push KHÔNG thực hiện qua API (các trường push_config_on_list/event_code_list bị bỏ qua im lặng, danh sách bật vẫn rỗng) - dự kiến cấu hình trên giao diện console ở bước Go-Live.
+
+## PHỤ LỤC 3 - VÒNG ĐỜI ĐƠN SANDBOX TRỌN VẸN QUA ERP (2026-10-20)
+Đơn test 261020555F95DQ (công cụ Test Order của console, SPX 51022) đã chạy trọn vòng qua ERP dev:
+- Tạo đơn: Tools > Test Order > Create Test Order (shop, chọn item, chọn kênh SPX). Đơn sinh ra ở trạng thái READY_TO_SHIP qua API (giao diện console có thể hiện UNPAID thoáng qua). Không có tài khoản người mua test trong Sandbox V2.
+- LỖI NGHIÊM TRỌNG ĐÃ SỬA: get_order_list không trả order_status nếu thiếu response_optional_fields=order_status (chỉ trả order_sn) - code lọc READY_TO_SHIP cũ sẽ bỏ qua MỌI đơn. get_order_detail khi có tham số này cũng chỉ trả đúng các trường được xin - phải xin đủ item_list, payment_method, recipient_address, shipping_carrier... Đã sửa order-sync.ts.
+- Đồng bộ: đơn vào ERP (ORD2610200003), trừ kho đúng 1 cuốn (ed-h01 Âu Cơ 2962 -> 2961), đồng bộ lại không trùng (idempotent theo order_sn).
+- SKU đơn: detail trả item_sku (model_sku rỗng khi không biến thể) - code đọc model_sku || item_sku là đúng.
+- LỖI TIỀN BẠC ĐÃ SỬA: payment_method của Shopee là nhãn "Cash on Delivery", không phải mã "COD" - khớp cứng sẽ ghi nhầm đơn COD thành chuyển khoản. Đã sửa nhận diện theo nhãn.
+- Vận chuyển: ship_order OK (đơn -> PROCESSED). Mã vận đơn ở sandbox chỉ sinh SAU khi mô phỏng Pickup (console) - SPXVN06708754279A; ngoài đời cũng có thể trễ nên ship flow đã gia cố: lỗi xếp lịch theo trạng thái được giữ lại, lấy được mã vận đơn thì coi là thành công; chưa có mã thì trạng thái chờ mã thay vì lỗi hệ thống.
+- In vận đơn: create_shipping_document cho kênh tích hợp BẮT BUỘC kèm tracking_number trong order_list (thiếu bị báo "tracking number invalid"); lỗi từng đơn nằm ở result_list. Đã sửa - tải được PDF thật 68KB qua ERP.
+- Escrow: get_escrow_detail trả order_income đầy đủ cho đơn sandbox (tiền khách trả 79.000đ gồm ship 20.000đ) - nguồn dữ liệu đối soát P3 khả thi.
+- Ghi chú sandbox: trạng thái đơn chỉ tiến khi bấm mô phỏng trên console (Pickup -> SHIPPED, Deliver -> TO_CONFIRM_RECEIVE); get_shipping_parameter cũng bị từ chối sau khi gói đã lấy đi.
