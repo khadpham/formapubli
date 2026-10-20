@@ -417,3 +417,10 @@ App "Vita Nova shopee" (Test Partner_id 1249102) + test shop VN (shop_id 2279897
 - get_category: 2848 ngành; gốc Sách & Tạp Chí = 300643, con Sách = 300777, các ngành lá ví dụ 301568 Sách Giáo Dục, 301566 Sách Hướng Nghiệp & Phát Triển Bản Thân.
 - get_attribute_tree: bắt buộc category LÁ; cấu trúc response.list[].attribute_tree[] với trường name, attribute_id, mandatory, attribute_value_list[{value_id, name}]. Ngành Sách Giáo Dục có thuộc tính bắt buộc Language.
 - get_brand_list: bắt buộc category LÁ; sandbox chỉ có brand_id 0 "No brand". Thương hiệu nhà xuất bản phải đăng ký qua register_brand khi vận hành thật.
+
+## PHỤ LỤC 2 - ĐẤU NỐI QUA ERP DEV + WEBHOOK (2026-10-20)
+- ERP tự đổi mã ủy quyền và lưu token vào bảng shopee_shop_tokens (sau khi sửa lỗi: response của token/get nằm ở GỐC JSON, không lồng trong trường response như API nghiệp vụ). Callback trả JSON lỗi kèm HTTP 200 thay vì 502 để Cloudflare không che lỗi thật.
+- Redirect sau ủy quyền và hàm verify webhook đều phải dùng URL công khai lấy từ header x-forwarded-host/proto (sau proxy Caddy, req.url mang host nội bộ localhost).
+- Sản phẩm test đã đăng qua API: MediaSpace upload_image trả image_id; product.add_item cần seller_stock dạng [{location_id, stock}], thuộc tính bắt buộc của ngành Sách Giáo Dục (301568) = Language (200673) và Import/Local (200676).
+- Webhook: set_app_push_config gửi gói kiểm tra code 0 có body {"code":0,"data":{"verify_info":...}} và header Authorization là chữ ký MẪU CỐ ĐỊNH không khớp HMAC ở bất kỳ biến thể chuỗi ký nào đã thử (hơn 245 biến thể). Cách xử lý chuẩn: code 0 trả 200 ngay không kiểm chữ ký; mọi sự kiện khác vẫn bắt buộc chữ ký. Đăng ký callback thành công sau khi áp dụng.
+- Việc chọn/bật từng loại sự kiện push KHÔNG thực hiện qua API (các trường push_config_on_list/event_code_list bị bỏ qua im lặng, danh sách bật vẫn rỗng) - dự kiến cấu hình trên giao diện console ở bước Go-Live.
