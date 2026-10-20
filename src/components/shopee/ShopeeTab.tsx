@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Truck, Printer, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, Truck, Printer, AlertTriangle, CheckCircle2, RefreshCw, Store } from 'lucide-react';
 import type { UserRole } from '@/lib/roles';
 import { PortalOrdersPanel } from './PortalOrdersPanel';
 
@@ -26,7 +26,16 @@ interface QuarantineItem {
  * Ẩn nút thao tác khi cờ server SHOPEE_UI_ENABLED tắt (giống ShopeePanel).
  * Thẻ doanh thu để link chờ tab Chủ, không gọi escrow ở đây.
  */
+interface ShopeeStatus {
+  connected: boolean;
+  shopId: number | null;
+  warehouseId: string | null;
+  codEnabled: boolean;
+}
+
 export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
+  const [status, setStatus] = useState<ShopeeStatus | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [uiEnabled, setUiEnabled] = useState(false);
   const [queue, setQueue] = useState<QueueOrder[]>([]);
   const [quarantine, setQuarantine] = useState<QuarantineItem[]>([]);
@@ -41,7 +50,15 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
   const loadAll = async () => {
     try {
       const st = await fetch('/api/shopee/status').then((r) => r.json());
-      if (st?.success) setUiEnabled(!!st.data?.uiEnabled);
+      if (st?.success) {
+        setUiEnabled(!!st.data?.uiEnabled);
+        setStatus({
+          connected: !!st.data?.connected,
+          shopId: st.data?.shopId ?? null,
+          warehouseId: st.data?.warehouseId ?? null,
+          codEnabled: !!st.data?.codEnabled,
+        });
+      }
       if (!st?.data?.uiEnabled) return;
       const q = await fetch('/api/shopee/queue').then((r) => r.json());
       if (q?.success) {
@@ -57,6 +74,27 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const syncNow = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const r = await fetch('/api/shopee/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hours: 24 }),
+      }).then((x) => x.json());
+      if (r?.success) {
+        const d = r.data;
+        showToast(`Đồng bộ xong: ${d.pulled} đơn mới, bỏ qua ${d.skipped}${d.quarantined?.length ? `, ${d.quarantined.length} đơn lỗi` : ''}.`);
+        loadAll();
+      } else showToast(r?.error || 'Đồng bộ thất bại.');
+    } catch {
+      showToast('Đồng bộ thất bại.');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const shipOne = async (orderSn: string) => {
     setShippingId(orderSn);
@@ -94,6 +132,29 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
         </div>
       ) : (
         <>
+          <section aria-label="Kết nối Shopee" className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <Store className="w-5 h-5 text-orange-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-slate-800">
+                  {status?.connected ? `Đã kết nối shop Shopee #${status.shopId}` : 'Chưa kết nối shop Shopee'}
+                </p>
+                <p className="text-[11px] text-slate-500 truncate">
+                  Kho xuất: {status?.warehouseId || 'chưa cấu hình'} · COD: {status?.codEnabled ? 'bật' : 'tắt'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={syncNow}
+              aria-label="Đồng bộ đơn Shopee ngay"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-600 text-white text-xs font-bold min-h-[44px] disabled:opacity-50 shrink-0"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}
+            </button>
+          </section>
           <section aria-label="Đơn Shopee chờ xử lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
           <ShoppingBag className="w-5 h-5 text-orange-600" />
