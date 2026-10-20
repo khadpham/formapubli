@@ -240,7 +240,7 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
       )}
 
       {report && (
-        <Modal isOpen={!!report} onClose={() => setReport(null)} title={`Báo cáo kỳ - ${report.campaign.name}`} size="lg">
+        <Modal open={!!report} onClose={() => setReport(null)} title={`Báo cáo kỳ - ${report.campaign.name}`} size="lg">
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-slate-50 rounded-xl p-3">
