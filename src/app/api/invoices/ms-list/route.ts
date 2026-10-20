@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MSInvoiceService } from '@/services/msinvoice.service';
 import { requireSessionRole } from '@/lib/auth-session';
+import { handleApiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,11 @@ export async function GET(req: NextRequest) {
     const result = await MSInvoiceService.listRemote({ fromDate: from, toDate: to });
     return NextResponse.json({ ok: true, data: { ...result, from, to } });
   } catch (e: any) {
+    // Loi xac thuc/phien phai tra dung ma (401/403) qua handleApiError;
+    // chi loi goi MS-Invoice moi la 502.
+    if (e?.name === 'AppError' || typeof e?.status === 'number') {
+      return handleApiError(e);
+    }
     return NextResponse.json({ ok: false, error: e.message }, { status: 502 });
   }
 }
