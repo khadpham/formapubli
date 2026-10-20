@@ -105,7 +105,11 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
         body: JSON.stringify({ orderSn }),
       }).then((x) => x.json());
       if (r?.success) {
-        showToast(`Đã giao đơn ${orderSn} - mã vận đơn ${r.data.trackingCode}.`);
+        showToast(
+          r.data?.trackingPending
+            ? `Đã xếp lịch giao đơn ${orderSn} - mã vận đơn đang chờ Shopee cấp.`
+            : `Đã giao đơn ${orderSn} - mã vận đơn ${r.data.trackingCode}.`
+        );
         loadAll();
       } else showToast(r?.error || 'Giao hàng thất bại.');
     } catch {

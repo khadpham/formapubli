@@ -105,6 +105,8 @@ export interface ShippedOrder {
   orderSn: string;
   trackingCode: string;
   carrier: string;
+  /** true = đã xếp lịch giao nhưng Shopee chưa cấp mã vận đơn. */
+  trackingPending?: boolean;
 }
 
 /**
@@ -134,23 +136,35 @@ export async function shipShopeeOrder(
   }
   const carrier = (ord.carrier || 'SPX').toUpperCase();
   const param = await getShippingParameter(cfg, orderSn);
-  await signedPost(cfg, '/api/v2/logistics/ship_order', {
-    order_sn: orderSn,
-    pickup:
-      param.mode === 'pickup'
-        ? { address_id: param.addressId, pickup_time_id: param.pickupTimeId }
-        : undefined,
-  });
-  const track = await signedGet(cfg, '/api/v2/logistics/get_tracking_number', {
-    order_sn: orderSn,
-  });
-  const trackingCode = String(track?.tracking_number || '');
-  if (!trackingCode) throw new Error('Shopee không trả mã vận đơn.');
+  try {
+    await signedPost(cfg, '/api/v2/logistics/ship_order', {
+      order_sn: orderSn,
+      pickup:
+        param.mode === 'pickup'
+          ? { address_id: param.addressId, pickup_time_id: param.pickupTimeId }
+          : undefined,
+    });
+  } catch (err) {
+    // Bấm lại sau một lần xếp lịch dở dang: Shopee báo đã giao gói này -
+    // coi như đã xếp lịch, chỉ đi lấy mã vận đơn tiếp.
+    if (!(err instanceof Error) || !/already_shipped/i.test(err.message)) throw err;
+  }
+  // Mã vận đơn có thể sinh TRỄ (sandbox: sau khi lấy hàng; thật: vài giây).
+  // Thử lại ngắn vài nhịp; vẫn rỗng thì ghi nhận "chờ mã" thay vì lỗi hệ
+  // thống - webhook tracking (code 2) hoặc lần đồng bộ sau sẽ bổ sung.
+  let trackingCode = '';
+  for (let attempt = 0; attempt < 3 && !trackingCode; attempt += 1) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+    const track = await signedGet(cfg, '/api/v2/logistics/get_tracking_number', {
+      order_sn: orderSn,
+    });
+    trackingCode = String(track?.tracking_number || '');
+  }
   await db
     .update(orders)
-    .set({ shippingStatus: 'PICKED_UP', trackingCode, carrier })
+    .set({ shippingStatus: 'PICKED_UP', trackingCode: trackingCode || null, carrier })
     .where(eq(orders.id, ord.id));
-  return { orderSn, trackingCode, carrier };
+  return { orderSn, trackingCode, carrier, trackingPending: !trackingCode };
 }
 
 /**
