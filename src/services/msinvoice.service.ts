@@ -256,4 +256,78 @@ export class MSInvoiceService {
     }
     return true;
   }
+
+  /**
+   * Lấy chi tiết hóa đơn trên MS-Invoice theo msinvoiceId.
+   */
+  static async getDetail(msinvoiceId: string): Promise<any> {
+    const config = getConfig();
+    if (!config) return null;
+    // GET detail qua apiCall GET riêng (apiCall mặc định POST).
+    if (!sessionToken) await apiLogin(config);
+    const doGet = async (): Promise<any> => {
+      const headers: Record<string, string> = { 'X-CSRF-Token': sessionToken as string };
+      if (sessionCookie) headers['Cookie'] = sessionCookie;
+      return fetch(`${config.apiUrl}${API_PATH}/iam-invoice/invoices/${msinvoiceId}/detail`, { headers });
+    };
+    let res = await doGet();
+    if (res.status === 401) {
+      sessionToken = null;
+      await apiLogin(config);
+      res = await doGet();
+    }
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error('MS-Invoice detail lỗi: ' + (data.errors || res.status));
+    return data;
+  }
+
+  /**
+   * Mirror: lấy danh sách hóa đơn TỪ MS-Invoice (search) trong khoảng ngày,
+   * kèm trạng thái đồng bộ so với DB local (khớp theo msinvoice_id).
+   * Dữ liệu giữ nguyên field của MS-Invoice ở "raw", chỉ chuẩn hoá vài field chính.
+   */
+  static async listRemote(params: { fromDate: string; toDate: string; pageSize?: number }): Promise<{
+    mock: boolean;
+    invoices: any[];
+  }> {
+    const config = getConfig();
+    if (!config) return { mock: true, invoices: [] };
+
+    const data = await apiCall(config, '/iam-invoice/invoices/search', {
+      fromDate: params.fromDate,
+      toDate: params.toDate,
+      pageSize: params.pageSize || 100,
+    });
+
+    const list: any[] = Array.isArray(data) ? data : data.invoices || data.items || data.results || [];
+
+    // Khớp với local để biết hóa đơn nào đã đồng bộ, hóa đơn nào chỉ có trên MS-Invoice.
+    const locals = await db.select().from(einvoices);
+    const byMsId = new Map<string, any>();
+    for (const l of locals as any[]) {
+      if (l.msinvoiceId) byMsId.set(String(l.msinvoiceId), l);
+    }
+
+    const invoices = list.map((r: any) => {
+      const msId = String(r.invoiceId ?? r.id ?? '');
+      const local = byMsId.get(msId) || null;
+      return {
+        msinvoiceId: msId,
+        serial: r.invoiceSerial || r.serial || r.pattern || '',
+        number: r.invoiceNumber || r.number || '',
+        date: r.invoiceDate || r.issuedDate || r.createdDate || '',
+        buyerName: r.toPartyName || r.buyerName || '',
+        buyerTaxCode: r.toTaxId || r.taxId || '',
+        totalAmount: Number(r.grandTotal ?? r.totalAmount ?? r.amountTotal ?? 0),
+        status: r.status || r.invoiceStatus || '',
+        thirdPartyCode: r.thirdPartyCode || '',
+        lookupCode: r.lookupCode || '',
+        sync: local
+          ? { matched: true, localId: local.id, localStatus: local.status }
+          : { matched: false },
+        raw: r,
+      };
+    });
+    return { mock: false, invoices };
+  }
 }

@@ -54,6 +54,33 @@ export default function EinvoiceView() {
   const [consolidateDate, setConsolidateDate] = useState(
     new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
   );
+  // Mirror MS-Invoice
+  const [view, setView] = useState<'erp' | 'ms'>('erp');
+  const [msInvoices, setMsInvoices] = useState<any[]>([]);
+  const [msLoading, setMsLoading] = useState(false);
+  const [msError, setMsError] = useState<string | null>(null);
+  const [msMock, setMsMock] = useState(false);
+  const [msFrom, setMsFrom] = useState(() => {
+    const d = new Date(Date.now() + 7 * 3600 * 1000 - 30 * 24 * 3600 * 1000);
+    return d.toISOString().slice(0, 10);
+  });
+  const [msTo, setMsTo] = useState(() => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10));
+
+  const loadMs = async () => {
+    setMsLoading(true);
+    setMsError(null);
+    try {
+      const res = await fetch(`/api/invoices/ms-list?from=${msFrom}&to=${msTo}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Không tải được danh sách MS-Invoice');
+      setMsMock(!!data.data.mock);
+      setMsInvoices(data.data.invoices || []);
+    } catch (e: any) {
+      setMsError(e.message);
+    } finally {
+      setMsLoading(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -187,6 +214,96 @@ export default function EinvoiceView() {
         </div>
       )}
 
+      {/* Chuyển view: ERP / Mirror MS-Invoice */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setView('erp')}
+          className={`px-4 py-2 rounded-xl text-sm font-bold ${view === 'erp' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300'}`}
+        >
+          Hóa đơn ERP
+        </button>
+        <button
+          onClick={() => { setView('ms'); if (msInvoices.length === 0) void loadMs(); }}
+          className={`px-4 py-2 rounded-xl text-sm font-bold ${view === 'ms' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300'}`}
+        >
+          Trên MS-Invoice
+        </button>
+      </div>
+
+      {view === 'ms' ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1">Từ ngày</label>
+              <input type="date" value={msFrom} onChange={(e) => setMsFrom(e.target.value)} className="px-2 py-1.5 border border-slate-300 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1">Đến ngày</label>
+              <input type="date" value={msTo} onChange={(e) => setMsTo(e.target.value)} className="px-2 py-1.5 border border-slate-300 rounded-lg text-sm" />
+            </div>
+            <button onClick={() => void loadMs()} disabled={msLoading}
+              className="px-4 py-2 bg-slate-700 text-white rounded-xl text-sm font-bold hover:bg-slate-800 disabled:opacity-50">
+              {msLoading ? 'Đang tải...' : 'Tải từ MS-Invoice'}
+            </button>
+          </div>
+          {msError && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-700">
+              Không kết nối được MS-Invoice: {msError}. Kiểm tra lại sau ít phút.
+            </div>
+          )}
+          {msMock && !msError && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+              Chưa cấu hình MSINVOICE_* nên chưa có dữ liệu thật từ MS-Invoice.
+            </div>
+          )}
+          {!msLoading && !msError && msInvoices.length === 0 && (
+            <p className="text-sm text-slate-400">Không có hóa đơn nào trong khoảng ngày này trên MS-Invoice.</p>
+          )}
+          {msInvoices.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left">
+                  <tr>
+                    <th className="px-3 py-2 font-bold text-slate-600">Ký hiệu</th>
+                    <th className="px-3 py-2 font-bold text-slate-600">Số HĐ</th>
+                    <th className="px-3 py-2 font-bold text-slate-600">Ngày</th>
+                    <th className="px-3 py-2 font-bold text-slate-600">Người mua</th>
+                    <th className="px-3 py-2 font-bold text-slate-600">MST</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">Tổng tiền</th>
+                    <th className="px-3 py-2 font-bold text-slate-600">Trạng thái MS</th>
+                    <th className="px-3 py-2 font-bold text-slate-600">Đồng bộ ERP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {msInvoices.map((inv: any) => (
+                    <tr key={inv.msinvoiceId || inv.number}>
+                      <td className="px-3 py-2 font-mono">{inv.serial || '-'}</td>
+                      <td className="px-3 py-2 font-mono">{inv.number || '-'}</td>
+                      <td className="px-3 py-2">{inv.date ? String(inv.date).slice(0, 10) : '-'}</td>
+                      <td className="px-3 py-2">{inv.buyerName || '-'}</td>
+                      <td className="px-3 py-2 font-mono">{inv.buyerTaxCode || '-'}</td>
+                      <td className="px-3 py-2 text-right font-bold">{fmt(Number(inv.totalAmount || 0))}</td>
+                      <td className="px-3 py-2">{inv.status || '-'}</td>
+                      <td className="px-3 py-2">
+                        {inv.sync?.matched ? (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-100 text-green-800">
+                            Đã có trên ERP ({STATUS_LABEL[inv.sync.localStatus]?.label || inv.sync.localStatus})
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                            Chưa có trên ERP
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
       {/* Đơn chờ chuẩn bị hóa đơn */}
       {pendingOrders.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
@@ -377,6 +494,8 @@ export default function EinvoiceView() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
