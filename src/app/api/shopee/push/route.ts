@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac } from 'node:crypto';
 import { handleShopeePush, verifyShopeeWebhook } from '@/services/shopee/webhook';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     : req.url;
   if (!verifyShopeeWebhook(rawBody, signature, webhookUrl, partnerKey)) {
     // LOG TAM (debug dang ky webhook): chi ghi metadata, khong ghi secret.
-    const expectUrlBody = crypto.createHmac('sha256', partnerKey).update(`${webhookUrl}|${rawBody}`).digest('hex');
+    const expectUrlBody = createHmac('sha256', partnerKey).update(`${webhookUrl}|${rawBody}`).digest('hex');
     console.warn('[shopee-push][debug] verify that bai - url:', webhookUrl,
       '| auth:', signature,
       '| expect_url_body:', expectUrlBody,
