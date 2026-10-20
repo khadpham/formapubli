@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Search, TrendingUp, ArrowLeft, Receipt } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { Search, TrendingUp, ArrowLeft, Receipt } from 'lucide-react';
 import { buildFlowInsights, vnHourOf, vnDayOf, moneyShort } from '@/lib/product-flow';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
+import Drawer from '@/components/ui/Drawer';
 import { UserRole } from '@/lib/roles';
 
 interface ProductFlowDrawerProps {
@@ -73,14 +73,11 @@ export function ProductFlowDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !selectedOrderId) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, selectedOrderId]);
+  // Đóng drawer: không đóng khi đang mở chi tiết đơn (OrderDetailModal) bên trên.
+  // (Drawer wrapper đã xử lý phím Escape và click backdrop, gọi handleClose này.)
+  const handleClose = useCallback(() => {
+    if (!selectedOrderId) onClose();
+  }, [selectedOrderId, onClose]);
 
   const fetchList = useCallback(async () => {
     abortRef.current?.abort();
@@ -159,22 +156,14 @@ export function ProductFlowDrawer({
 
   if (!open || !mounted) return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[80] bg-slate-900/60 backdrop-blur-sm flex justify-end"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Nhịp bán sản phẩm"
-        className="bg-white w-full max-w-lg h-full shadow-2xl flex flex-col"
-      >
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
+  return (
+    <>
+      <Drawer
+        open={open}
+        onClose={handleClose}
+        size="lg"
+        title={
+          <span className="flex items-center gap-2">
             {view === 'detail' && (
               <button
                 type="button"
@@ -185,28 +174,18 @@ export function ProductFlowDrawer({
                 <ArrowLeft className="w-4 h-4" />
               </button>
             )}
-            <div className="min-w-0">
-              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-indigo-600" />
-                Nhịp Bán
-              </h3>
-              <p className="text-[11px] text-slate-500 leading-snug">
-                {view === 'list' ? 'Chọn 1 món để xem từng thời điểm bán ra' : timeline?.product?.name || timeline?.product?.code || '…'}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng nhịp bán"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+            <TrendingUp className="w-4 h-4 text-indigo-600" />
+            Nhịp Bán
+          </span>
+        }
+        subtitle={
+          view === 'list'
+            ? 'Chọn 1 món để xem từng thời điểm bán ra'
+            : timeline?.product?.name || timeline?.product?.code || '…'
+        }
+      >
         {/* Kỳ đang xem */}
-        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-1.5 text-[11px] shrink-0">
+        <div className="flex items-center gap-1.5 text-[11px]">
           <input type="date" aria-label="Từ ngày" value={from} onChange={(e) => setFrom(e.target.value)}
             className="px-2 py-1 border border-slate-200 rounded-lg font-mono outline-none focus:ring-2 focus:ring-indigo-500" />
           <span className="text-slate-400">→</span>
@@ -214,7 +193,7 @@ export function ProductFlowDrawer({
             className="px-2 py-1 border border-slate-200 rounded-lg font-mono outline-none focus:ring-2 focus:ring-indigo-500" />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="space-y-4">
           {view === 'list' ? (
             <>
               <div className="relative">
@@ -385,7 +364,7 @@ export function ProductFlowDrawer({
             </>
           )}
         </div>
-      </div>
+      </Drawer>
 
       <OrderDetailModal
         orderId={selectedOrderId}
@@ -393,7 +372,6 @@ export function ProductFlowDrawer({
         onClose={() => setSelectedOrderId(null)}
         currentRole={currentRole}
       />
-    </div>,
-    document.body
+    </>
   );
 }

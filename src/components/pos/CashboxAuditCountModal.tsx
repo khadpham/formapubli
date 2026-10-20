@@ -1,18 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect } from 'react';
 import {
   Coins,
   CheckCircle2,
   AlertCircle,
-  X,
   Loader2,
   Clock,
   User,
-  ArrowRight,
 } from 'lucide-react';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import Modal from '@/components/ui/Modal';
 
 export interface CashboxSessionItem {
   id: string;
@@ -42,7 +39,6 @@ export function CashboxAuditCountModal({
   sessions,
   initialSessionId,
 }: CashboxAuditCountModalProps) {
-  const [mounted, setMounted] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [cashInput, setCashInput] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -50,11 +46,10 @@ export function CashboxAuditCountModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const containerRef = useModalFocusTrap<HTMLDivElement>(isOpen, onClose);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Đóng modal bị chặn khi đang submit: bọc onClose để giữ hành vi cũ.
+  const guardedClose = () => {
+    if (!isSubmitting) onClose();
+  };
 
   // Xác định ca cần chọn khi mở modal hoặc thay đổi sessions/initialSessionId
   useEffect(() => {
@@ -169,55 +164,22 @@ export function CashboxAuditCountModal({
     }
   };
 
-  if (!isOpen || !mounted) return null;
-
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="audit-count-modal-title"
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting) {
-          onClose();
-        }
-      }}
+  return (
+    <Modal
+      open={isOpen}
+      onClose={guardedClose}
+      size="sm"
+      title={
+        <span className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shadow-sm shrink-0">
+            <Coins className="w-5 h-5" />
+          </span>
+          <span>Nhập Tiền Thực Đếm Ca Két</span>
+        </span>
+      }
+      subtitle="Bổ sung tiền thực tế để hoàn tất đối soát két cuối ngày"
     >
-      <div
-        ref={containerRef}
-        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shadow-sm">
-              <Coins className="w-5 h-5" />
-            </div>
-            <div>
-              <h3
-                id="audit-count-modal-title"
-                className="text-base font-extrabold text-slate-900 leading-tight"
-              >
-                Nhập Tiền Thực Đếm Ca Két
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Bổ sung tiền thực tế để hoàn tất đối soát két cuối ngày
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            aria-label="Đóng cửa sổ"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
           {errorMessage && (
             <div
               role="alert"
@@ -372,7 +334,7 @@ export function CashboxAuditCountModal({
           <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
             <button
               type="button"
-              onClick={onClose}
+              onClick={guardedClose}
               disabled={isSubmitting}
               className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
             >
@@ -396,9 +358,7 @@ export function CashboxAuditCountModal({
               )}
             </button>
           </div>
-        </form>
-      </div>
-    </div>,
-    document.body
+      </form>
+    </Modal>
   );
 }

@@ -232,11 +232,13 @@ export class ContractService {
     });
   }
 
-  /** Upload bản cuối sau khi sửa ngoài Word (D9): validate mở được rồi mới lưu. */
+  /** Upload bản cuối sau khi sửa ngoài Word (D9): validate mở được rồi mới lưu.
+   * Quyết định F2 (2026-10-19): upload bản cuối đã ký thành công thì tự
+   * chuyển trạng thái sang SIGNED (đã ký), không dừng ở FINALIZED. */
   static async uploadFinalDocx(id: string, base64: string, filename: string) {
     const [doc] = await db.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
     if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);
-    // Không cho hạ cấp hợp đồng đã ký/hủy về FINALIZED bằng một file upload.
+    // Không cho hạ cấp hợp đồng đã ký/hủy bằng một file upload.
     if (doc.status !== 'DRAFT' && doc.status !== 'FINALIZED') {
       throw AppError.conflict(`Không thể tải bản cuối cho hợp đồng ở trạng thái ${doc.status} (chỉ DRAFT/FINALIZED).`);
     }
@@ -254,9 +256,29 @@ export class ContractService {
     await db.update(contractDocuments).set({
       finalDocx: base64,
       finalFilename: `${filename || 'final'}`.slice(0, 200),
-      status: 'FINALIZED',
+      status: 'SIGNED',
     }).where(eq(contractDocuments.id, id));
-    return { id, status: 'FINALIZED' as const };
+    return { id, status: 'SIGNED' as const };
+  }
+
+  /** Đánh dấu đã ký / đã hủy (F2). Chỉ cho chuyển từ DRAFT hoặc FINALIZED.
+   * Không cho sửa nội dung ở đây, chỉ đổi trạng thái. */
+  static async transitionStatus(id: string, status: 'SIGNED' | 'CANCELLED') {
+    return await withDbRetry(async () =>
+      db.transaction(async (tx) => {
+        const [doc] = await tx.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
+        if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);
+        if (doc.status === 'SIGNED' || doc.status === 'CANCELLED') {
+          throw AppError.conflict(`Hợp đồng đã ở trạng thái ${doc.status}, không thể chuyển nữa.`);
+        }
+        if (doc.status !== 'DRAFT' && doc.status !== 'FINALIZED') {
+          throw AppError.conflict(`Không thể chuyển trạng thái từ ${doc.status}.`);
+        }
+        await tx.update(contractDocuments).set({ status }).where(eq(contractDocuments.id, id));
+        const [after] = await tx.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
+        return after;
+      })
+    );
   }
 
   static async listTemplates() {

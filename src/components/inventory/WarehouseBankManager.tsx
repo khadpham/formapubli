@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Landmark, Plus, Pencil, Trash2, Power, PowerOff, AlertTriangle } from 'lucide-react';
+import { Landmark, Plus, Pencil, Trash2, Power, PowerOff, AlertTriangle } from 'lucide-react';
+import Modal from '../ui/Modal';
 import { hasTransferTemplate, resolveTransferContent, DEFAULT_TRANSFER_TEMPLATE, VIETQR_CONTENT_MAX } from '@/lib/transfer-content';
 import { normalizeVietqrContent } from '@/lib/vietqr';
 
@@ -40,6 +40,8 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [newBank, setNewBank] = useState({ label: '', bankBin: '', accountNo: '', accountName: '' });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -51,12 +53,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     setMounted(true);
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, []);
 
   const reload = async () => {
     const [w, b] = await Promise.all([
@@ -91,7 +88,13 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
 
   /** #6: sửa tên/địa chỉ kho, bật/tắt bán trên POS. */
   const patchWarehouse = async (id: string, body: Record<string, unknown>, confirmMsg?: string, savedMsg?: string) => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    if (confirmMsg) {
+      setConfirmDlg({ msg: confirmMsg, onOk: () => { setConfirmDlg(null); doPatchWarehouse(id, body, savedMsg); } });
+      return;
+    }
+    doPatchWarehouse(id, body, savedMsg);
+  };
+  const doPatchWarehouse = async (id: string, body: Record<string, unknown>, savedMsg?: string) => {
     setSavingId(id);
     setError(null);
     setNotice(null);
@@ -115,7 +118,15 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
 
   /** #6: xóa kho rỗng. Kho còn tồn/đơn sẽ bị server chặn kèm lý do cụ thể. */
   const deleteWarehouse = async (w: Warehouse) => {
-    if (!window.confirm(`Xóa kho [${w.code}]?\nChỉ xóa được kho RỖNG và chưa có đơn. Kho đang có tồn sẽ được nhắc dùng "Ngưng hoạt động".`)) return;
+    setConfirmDlg({
+      msg: `Xóa kho [${w.code}]? Chỉ xóa được kho RỖNG và chưa có đơn. Kho đang có tồn sẽ được nhắc dùng "Ngưng hoạt động".`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        doDeleteWarehouse(w);
+      },
+    });
+  };
+  const doDeleteWarehouse = async (w: Warehouse) => {
     setSavingId(w.id);
     setError(null);
     setNotice(null);
@@ -151,21 +162,33 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
 
   if (!mounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
-              <Landmark className="w-5 h-5" />
+  return (
+    <>
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium whitespace-pre-line">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
             </div>
-            <div>
-              <h3 className="font-extrabold text-base text-slate-900">Quản Lý Kho & TK Nhận Tiền</h3>
-              <p className="text-[11px] text-slate-400">Sửa tên/kho · Ngưng hoạt động · Xóa kho rỗng · Gán TK nhận tiền</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg"><X className="w-5 h-5" /></button>
-        </div>
+          </>
+        )}
+      </Modal>
+    <Modal
+      open={true}
+      onClose={onClose}
+      size="md"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+            <Landmark className="w-4 h-4" />
+          </span>
+          Quản Lý Kho & TK Nhận Tiền
+        </span>
+      }
+      subtitle="Sửa tên/kho · Ngưng hoạt động · Xóa kho rỗng · Gán TK nhận tiền"
+    >
 
         {error && <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">{error}</div>}
         {notice && <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold">{notice}</div>}
@@ -341,8 +364,7 @@ export function WarehouseBankManager({ onClose }: { onClose: () => void }) {
           </div>
           <button type="submit" className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs">Thêm TK</button>
         </form>
-      </div>
-    </div>,
-    document.body
+    </Modal>
+    </>
   );
 }

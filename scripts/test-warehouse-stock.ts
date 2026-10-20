@@ -47,7 +47,7 @@ const BOOK = {
   stockByWarehouse: FIXED,
   stockAuCo: 10,
   stockQuynhMai: 20,
-  stockDuPhong: 5,
+  stockNuiTruc: 5,
   totalStock: 88,
 };
 
@@ -72,9 +72,9 @@ expect(
 // ---------------------------------------------------------------------------
 expect(stockOfWarehouse(BOOK, 'wh-au-co') === 10, 'kho Âu Cố đọc stockAuCo');
 expect(stockOfWarehouse(BOOK, 'wh-quynh-mai') === 20, 'kho Quỳnh Mai đọc stockQuynhMai');
-expect(stockOfWarehouse(BOOK, 'wh-du-phong') === 5, 'kho Dự Phòng đọc stockDuPhong');
+expect(stockOfWarehouse(BOOK, 'wh-du-phong') === 5, 'kho Dự Phòng đọc stockNuiTruc');
 expect(
-  stockOfWarehouse({ stockDuPhong: 7 }, 'wh-du-phong') === 7,
+  stockOfWarehouse({ stockNuiTruc: 7 }, 'wh-du-phong') === 7,
   'sách KHÔNG có stockByWarehouse vẫn đọc được 3 trường kho cũ'
 );
 expect(
@@ -101,7 +101,7 @@ expect(
 // ---------------------------------------------------------------------------
 // 4. No stockByWarehouse at all -> 0 for any non-legacy warehouse.
 // ---------------------------------------------------------------------------
-const NO_MAP: Bookish = { stockAuCo: 10, stockQuynhMai: 20, stockDuPhong: 5, totalStock: 88 };
+const NO_MAP: Bookish = { stockAuCo: 10, stockQuynhMai: 20, stockNuiTruc: 5, totalStock: 88 };
 expect(
   stockOfWarehouse(NO_MAP, FAIR) === 0,
   'sách không có stockByWarehouse + kho hội chợ -> 0, TUYỆT ĐỐI không phải totalStock 88'
@@ -161,7 +161,7 @@ for (const legacyId of ['wh-au-co', 'wh-quynh-mai', 'wh-du-phong']) {
     `getFromStock KHÔNG còn mã kho cứng "${legacyId}" bên trong`
   );
 }
-for (const leak of ['totalStock', 'stockAuCo', 'stockQuynhMai', 'stockDuPhong']) {
+for (const leak of ['totalStock', 'stockAuCo', 'stockQuynhMai', 'stockNuiTruc']) {
   expect(
     !getFromStockBlock.includes(leak),
     `getFromStock KHÔNG đọc "${leak}" nữa (đó chính là chỗ rò tổng mọi kho)`

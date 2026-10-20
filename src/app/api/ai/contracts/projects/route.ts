@@ -6,6 +6,7 @@ import { AppError } from '@/services/app-error';
 import { db, contractProjects, contractMilestones } from '@/db';
 import { eq, desc, count, and } from 'drizzle-orm';
 import { generateUUIDv7 } from '@/lib/uuidv7';
+import { STAGE_ORDER, STAGE_LABELS } from '@/services/publishing-rules.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +29,8 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/ai/contracts/projects - tạo dự án/sự kiện. */
+/** POST /api/ai/contracts/projects - tạo dự án. F5: tự tạo 5 cột mốc
+ * theo 5 giai đoạn chuẩn (Thiết kế bìa -> Biên dịch -> Biên tập -> Dàn trang -> Đọc morat). */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSessionRole(req, ROLES);
@@ -47,6 +49,19 @@ export async function POST(req: NextRequest) {
       status: 'ACTIVE',
       createdBy: session.actorId,
     }).returning();
+    // F5a: tự sinh 5 cột mốc giai đoạn chuẩn theo thứ tự.
+    const baseDue = endDate || startDate;
+    for (let i = 0; i < STAGE_ORDER.length; i++) {
+      const stage = STAGE_ORDER[i];
+      await db.insert(contractMilestones).values({
+        id: `cms-${generateUUIDv7()}`,
+        projectId: row.id,
+        title: `${STAGE_LABELS[stage]} - ${name.slice(0, 100)}`,
+        dueDate: baseDue || new Date().toISOString().slice(0, 10),
+        neededCategory: stage,
+        status: 'PENDING',
+      });
+    }
     return NextResponse.json({ success: true, data: row }, { status: 201 });
   } catch (error: any) {
     return handleApiError(error);

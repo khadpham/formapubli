@@ -4,8 +4,10 @@ import React from 'react';
 import { BookOpenCheck } from 'lucide-react';
 import { CustomersDirectory } from './CustomersDirectory';
 import { ReaderMatchPanel } from './ReaderMatchPanel';
+import { PortalProductsManager } from './PortalProductsManager';
+import type { UserRole } from '@/lib/roles';
 
-export function CustomersListView() {
+export function CustomersListView({ sessionRole }: { sessionRole?: UserRole }) {
   return (
     <div className="space-y-6">
       <div className="hidden md:flex bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -23,6 +25,10 @@ export function CustomersListView() {
       <CustomersDirectory />
 
       <ReaderMatchPanel />
+
+      {(sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER') && (
+        <PortalProductsManager sessionRole={sessionRole} />
+      )}
 
       <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-center">
         <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-white text-amber-800 border border-amber-200">

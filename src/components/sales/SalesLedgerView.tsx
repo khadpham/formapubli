@@ -13,9 +13,6 @@ import {
   FileSpreadsheet,
   Percent,
   Eye,
-  X,
-  AlertTriangle,
-  Trash2,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
@@ -29,6 +26,8 @@ import {
   vnHour,
   vnToday,
 } from '@/lib/sales-view';
+import { BankReconciliationPanel } from './BankReconciliationPanel';
+import { SpxReconciliationPanel } from './SpxReconciliationPanel';
 import { RevenueAnalyticsPanel } from './RevenueAnalyticsPanel';
 import { TopEditionsPanel } from './TopEditionsPanel';
 import { OrderDetailModal } from '@/components/orders/OrderDetailModal';
@@ -271,13 +270,16 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   // Xuất CSV dùng helper dùng chung: header có dấu, kênh/giờ tiếng Việt, watermark
   // ký đúng người đang đăng nhập. Xuất theo đúng thứ tự đang xếp trên màn hình
   // (file khớp màn hình - xếp Thực thu giảm dần rồi xuất thì file cũng vậy).
+  const [exportError, setExportError] = useState<string | null>(null);
+
   const exportToCSV = () => {
+    setExportError(null);
     if (sortedOrders.length === 0) {
-      alert('Không có dữ liệu đơn để xuất CSV.');
+      setExportError('Không có dữ liệu đơn để xuất CSV.');
       return;
     }
     if (!actorId) {
-      alert('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
+      setExportError('Chưa đọc được người đăng nhập nên chưa xuất được. Tải lại trang rồi thử lại.');
       return;
     }
 
@@ -322,6 +324,8 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
   return (
     <div className="space-y-6">
       <GiftReportPanel currentRole={currentRole} from={startDate} to={endDate} actorId={actorId} />
+      <BankReconciliationPanel currentRole={currentRole} />
+      <SpxReconciliationPanel currentRole={currentRole} />
       {/* Header Controls */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="hidden md:block">
@@ -369,6 +373,9 @@ export function SalesLedgerView({ currentRole }: SalesLedgerViewProps) {
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Xuất Excel/CSV</span>
           </button>
+          {exportError && (
+            <span className="text-xs text-rose-600 font-semibold">{exportError}</span>
+          )}
           {/* Nút "In Phiếu" ĐÃ GỠ (2026-10-02): nó gọi `window.print()` trên
               cả trang app ⇒ ra giấy trắng vì không có CSS in riêng cho sổ.
               Giữ nút là lời hứa sai với người dùng. Nối phiếu nhiệt thật là

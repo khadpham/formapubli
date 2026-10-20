@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Modal from '../ui/Modal';
 
 interface PickingItem {
   editionId: string;
@@ -209,11 +210,16 @@ export function PortalOrdersPanel() {
         </div>
       )}
       {/* Dialog xác nhận */}
-      {confirmDlg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDlg(null)}>
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <p className="text-slate-900 font-medium mb-4">{confirmDlg.msg}</p>
-            <div className="flex justify-end gap-2">
+      <Modal
+        open={!!confirmDlg}
+        onClose={() => setConfirmDlg(null)}
+        size="sm"
+        title="Xác nhận"
+      >
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setConfirmDlg(null)}
                 className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
@@ -227,9 +233,9 @@ export function PortalOrdersPanel() {
                 Xác nhận
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-lg font-extrabold text-slate-900">Đơn Online Cần Soạn</h3>
@@ -388,40 +394,60 @@ export function PortalOrdersPanel() {
       )}
 
       {/* Modal chi tiết */}
-      {selected && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-extrabold">
-                  {displayCode(selected).main}
-                  {displayCode(selected).sub && (
-                    <span className="ml-2 text-sm font-mono font-normal text-slate-400">
-                      {displayCode(selected).sub}
-                    </span>
-                  )}
-                </h3>
-                <p className="text-sm text-slate-500">
-                  {new Date(selected.createdAt).toLocaleString('vi-VN')} •{' '}
-                  {selected.paymentMethod === 'COD' ? 'Thu hộ COD' : 'Chuyển khoản'}
-                  {selected.trackingCode && ` • Vận đơn: ${selected.trackingCode}`}
-                </p>
-              </div>
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        size="xl"
+        title={
+          selected ? (
+            <span className="flex items-center gap-2">
+              {displayCode(selected).main}
+              {displayCode(selected).sub && (
+                <span className="text-xs font-mono font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                  {displayCode(selected).sub}
+                </span>
+              )}
+            </span>
+          ) : null
+        }
+        subtitle={
+          selected ? (
+            <>
+              {new Date(selected.createdAt).toLocaleString('vi-VN')} •{' '}
+              {selected.paymentMethod === 'COD' ? 'Thu hộ COD' : 'Chuyển khoản'}
+              {selected.trackingCode && ` • Vận đơn: ${selected.trackingCode}`}
+            </>
+          ) : null
+        }
+        actions={
+          selected && NEXT_STATUS[selected.shippingStatus] ? (
+            <>
+              <div className="text-xs font-black uppercase text-slate-400">Thao tác</div>
+              {NEXT_STATUS[selected.shippingStatus] === 'IN_TRANSIT' && (
+                <div>
+                  <label className="text-xs text-slate-500 uppercase block mb-1">Mã vận đơn (khi gửi hàng)</label>
+                  <input
+                    type="text"
+                    value={trackingInput}
+                    onChange={(e) => setTrackingInput(e.target.value)}
+                    placeholder="Nhập mã vận đơn..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
+                  />
+                </div>
+              )}
               <button
-                onClick={() => setSelected(null)}
-                className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                onClick={() => updateStatus(selected.id, NEXT_STATUS[selected.shippingStatus]!, trackingInput)}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition"
               >
-                ×
+                {NEXT_LABEL[selected.shippingStatus]}
               </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+            </>
+          ) : undefined
+        }
+      >
+        {selected && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-slate-500 uppercase mb-1">Người nhận</div>
                 <div className="font-medium">{selected.customerName}</div>
@@ -434,13 +460,13 @@ export function PortalOrdersPanel() {
             </div>
 
             {selected.note && (
-              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
                 <div className="text-xs font-bold text-amber-800 uppercase mb-1">⚠️ Ghi chú của khách</div>
                 <div className="text-sm text-amber-900 whitespace-pre-wrap">{selected.note}</div>
               </div>
             )}
 
-            <div className="mb-4">
+            <div>
               <div className="text-xs text-slate-500 uppercase mb-2">Sản phẩm cần đóng ({selected.items.length} loại)</div>
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 {selected.items.map((it, i) => (
@@ -458,32 +484,9 @@ export function PortalOrdersPanel() {
                 ))}
               </div>
             </div>
-
-            {NEXT_STATUS[selected.shippingStatus] && (
-              <div className="border-t border-slate-200 pt-4">
-                {NEXT_STATUS[selected.shippingStatus] === 'IN_TRANSIT' && (
-                  <div className="mb-3">
-                    <label className="text-xs text-slate-500 uppercase block mb-1">Mã vận đơn (khi gửi hàng)</label>
-                    <input
-                      type="text"
-                      value={trackingInput}
-                      onChange={(e) => setTrackingInput(e.target.value)}
-                      placeholder="Nhập mã vận đơn..."
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                    />
-                  </div>
-                )}
-                <button
-                  onClick={() => updateStatus(selected.id, NEXT_STATUS[selected.shippingStatus]!, trackingInput)}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition"
-                >
-                  {NEXT_LABEL[selected.shippingStatus]}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { BatchTransferModal } from './BatchTransferModal';
+import Modal from '../ui/Modal';
 
 interface Campaign {
   id: string;
@@ -34,7 +35,21 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [transferFor, setTransferFor] = useState<Campaign | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [leftover, setLeftover] = useState<{ campaign: Campaign; lines: LeftoverLine[] } | null>(null);
+  const [report, setReport] = useState<{ campaign: Campaign; data: any } | null>(null);
+
+  const openReport = async (c: Campaign) => {
+    try {
+      const res = await fetch(`/api/campaigns/${encodeURIComponent(c.id)}/report`, { cache: 'no-store' });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setError(j.error || 'Chưa có báo cáo kỳ.'); return; }
+      setReport({ campaign: c, data: j.data });
+    } catch {
+      setError('Không tải được báo cáo kỳ.');
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -67,13 +82,18 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
   };
 
   const doStart = async (c: Campaign) => {
-    if (!window.confirm(`Bắt đầu "${c.name}" (sinh kho hội chợ)?`)) return;
-    setError(null); setNotice(null);
-    try {
-      await call(`/api/campaigns/${encodeURIComponent(c.id)}/start`, 'POST', {});
-      setNotice(`Đã bắt đầu "${c.name}".`);
-      await load();
-    } catch (e: any) { setError(e.message); }
+    setConfirmDlg({
+      msg: `Bắt đầu "${c.name}" (sinh kho hội chợ)?`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        setError(null); setNotice(null);
+        try {
+          await call(`/api/campaigns/${encodeURIComponent(c.id)}/start`, 'POST', {});
+          setNotice(`Đã bắt đầu "${c.name}".`);
+          await load();
+        } catch (e: any) { setError(e.message); }
+      },
+    });
   };
 
   const openEnd = async (c: Campaign) => {
@@ -86,7 +106,11 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
 
   const doEnd = async () => {
     if (!leftover) return;
-    if (!window.confirm(`Kết thúc "${leftover.campaign.name}" (chuyển tồn về + ngưng kho)?`)) return;
+    const lv = leftover;
+    setConfirmDlg({
+      msg: `Kết thúc "${lv.campaign.name}" (chuyển tồn về + ngưng kho)?`,
+      onOk: async () => {
+        setConfirmDlg(null);
     setError(null); setNotice(null);
     try {
       await call(`/api/campaigns/${encodeURIComponent(leftover.campaign.id)}/end`, 'POST', {
@@ -96,12 +120,25 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
       setLeftover(null);
       await load();
     } catch (e: any) { setError(e.message); }
+      },
+    });
   };
 
   const activeSources = warehouses.filter((w) => (w as any).isActive !== false);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <h3 className="text-sm font-extrabold text-slate-900">Chiến dịch bán ngắn hạn</h3>
       {error && <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
       {notice && <p className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{notice}</p>}
@@ -152,6 +189,12 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
                   </button>
                 </>
               )}
+              {c.status === 'ENDED' && (
+                <button type="button" onClick={() => openReport(c)}
+                  className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold cursor-pointer">
+                  Báo cáo kỳ
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -194,6 +237,66 @@ export function CampaignPanel({ books, warehouses, onOpenTransfer }: CampaignPan
           onSuccess={() => setTransferFor(null)}
           initialToWarehouseId={transferFor.warehouseId}
         />
+      )}
+
+      {report && (
+        <Modal open={!!report} onClose={() => setReport(null)} title={`Báo cáo kỳ - ${report.campaign.name}`} size="lg">
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[11px] text-slate-500">DOANH THU</p>
+                <p className="text-base font-extrabold text-slate-900">{Number(report.data.revenue || 0).toLocaleString('vi-VN')}đ</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[11px] text-slate-500">SỐ ĐƠN</p>
+                <p className="text-base font-extrabold text-slate-900">{report.data.orderCount}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[11px] text-slate-500">CUỐN ĐÃ BÁN</p>
+                <p className="text-base font-extrabold text-slate-900">{report.data.itemsSold}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[11px] text-slate-500">THỪA CHUYỂN VỀ</p>
+                <p className="text-base font-extrabold text-slate-900">{report.data.leftoverQuantity} cuốn</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Kỳ: {report.campaign.startDate} đến {report.campaign.endDate} · Sinh lúc {report.data.createdAt} · Nguồn: {report.data.generatedBy === 'system-cron' || report.data.generatedBy === 'system-auto' ? 'Tự động' : report.data.generatedBy}
+            </p>
+            {Array.isArray(report.data.soldItems) && report.data.soldItems.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-slate-700 mb-1">Đã bán</p>
+                <div className="divide-y divide-slate-100 max-h-48 overflow-auto">
+                  {report.data.soldItems.map((it: any) => (
+                    <div key={it.editionId} className="py-1 flex justify-between text-[11px]">
+                      <span className="text-slate-700 truncate flex-1">{it.name}</span>
+                      <span className="font-mono font-bold">{it.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {Array.isArray(report.data.leftoverItems) && report.data.leftoverItems.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-slate-700 mb-1">Thừa chuyển về kho nguồn</p>
+                <div className="divide-y divide-slate-100 max-h-48 overflow-auto">
+                  {report.data.leftoverItems.map((it: any) => (
+                    <div key={it.editionId} className="py-1 flex justify-between text-[11px]">
+                      <span className="text-slate-700 truncate flex-1">{it.name || it.editionId}</span>
+                      <span className="font-mono font-bold">{it.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setReport(null)}
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold cursor-pointer">
+                Đóng
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

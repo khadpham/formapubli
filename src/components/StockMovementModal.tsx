@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { X, PlusCircle, AlertCircle, CheckCircle } from 'lucide-react';
+import { PlusCircle, AlertCircle, CheckCircle } from 'lucide-react';
+import Modal from './ui/Modal';
 
 interface BookItem {
   id: string;
@@ -12,7 +12,7 @@ interface BookItem {
   shortCode: string | null;
   stockAuCo: number;
   stockQuynhMai: number;
-  stockDuPhong: number;
+  stockNuiTruc: number;
   totalStock: number;
 }
 
@@ -79,23 +79,15 @@ export function StockMovementModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, selectedBook?.id]);
 
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Lắng nghe phím tắt trong modal: Ctrl+Enter để submit, Escape để đóng.
+  // Lắng nghe phím tắt trong modal: Ctrl+Enter để submit.
+  // (Escape đã được Modal wrapper xử lý.)
   // Đặt trước early-return để tránh lỗi "Rendered fewer hooks than expected"
   // khi isOpen chuyển false -> true (nguyên nhân crash Alt+Shift+T).
   useEffect(() => {
     if (!isOpen) return;
 
     const handleModalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         const form = document.getElementById('stock-movement-form') as HTMLFormElement;
         if (form) {
@@ -106,9 +98,9 @@ export function StockMovementModal({
 
     window.addEventListener('keydown', handleModalKeyDown);
     return () => window.removeEventListener('keydown', handleModalKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
-  if (!isOpen || !mounted) return null;
+  if (!isOpen) return null;
 
   const currentBook = books.find((b) => b.id === selectedEditionId);
 
@@ -149,131 +141,25 @@ export function StockMovementModal({
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto"
-      onClick={(event) => { if (event.target === event.currentTarget && !loading) onClose(); }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-2.5">
-            <PlusCircle className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-base font-bold text-slate-800">
-              Phiếu Nhập Kho Từ Nhà In
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+  // Không cho đóng modal (backdrop/ESC) khi đang ghi sổ cái.
+  const handleClose = () => {
+    if (!loading) onClose();
+  };
 
-
-        <form id="stock-movement-form" onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Book Select */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Chọn Đầu Sách
-            </label>
-            <select
-              value={selectedEditionId}
-              onChange={(e) => setSelectedEditionId(e.target.value)}
-              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
-            >
-              {books.map((b) => (
-                <option key={b.id} value={b.id}>
-                  [{b.code}] {b.title} (Đuôi: {b.isbnLast4} | Tồn: {b.totalStock})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Current Stock Preview */}
-          {currentBook && (
-            <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-              <div className="text-center">
-                <span className="text-slate-400 block">Kho Âu Cơ</span>
-                <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockAuCo}</span>
-              </div>
-              <div className="text-center border-x border-slate-200">
-                <span className="text-slate-400 block">Kho Quỳnh Mai</span>
-                <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockQuynhMai}</span>
-              </div>
-              <div className="text-center">
-                <span className="text-slate-400 block">Kho Dự phòng</span>
-                <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockDuPhong}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Warehouse Selection */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Kho Tiếp Nhận
-              </label>
-              <select
-                value={targetWarehouseId}
-                onChange={(e) => setTargetWarehouseId(e.target.value)}
-                className="w-full text-sm border border-slate-300 rounded-lg p-2.5 font-medium"
-              >
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            </div>
-
-          {/* Quantity & Document Ref */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Số Lượng (Cuốn)</label>
-              <input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value, 10) || 0)}
-                className="w-full text-sm border border-slate-300 rounded-lg p-2 font-mono font-bold text-slate-800"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Mã Chứng Từ / Số Phiếu</label>
-              <input
-                type="text"
-                value={documentRef}
-                onChange={(e) => setDocumentRef(e.target.value)}
-                className="w-full text-sm border border-slate-300 rounded-lg p-2 font-mono text-slate-800"
-                required
-              />
-            </div>
-          </div>
-
-          {/* Note & Actor */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Người Thao Tác</label>
-              <input
-                type="text"
-                value={actorId}
-                onChange={(e) => setActorId(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-lg p-2"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Ghi Chú Nghiệp Vụ</label>
-              <input
-                type="text"
-                placeholder="Lý do, số xe, đợt in..."
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-lg p-2"
-              />
-            </div>
-          </div>
-
+  return (
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2.5">
+          <PlusCircle className="w-5 h-5 text-emerald-600" />
+          Phiếu Nhập Kho Từ Nhà In
+        </span>
+      }
+      actions={
+        <>
+          <div className="text-xs font-black uppercase text-slate-400">Thao tác</div>
           {/* Feedback Messages */}
           {errorMessage && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2 text-xs text-rose-700 font-medium">
@@ -287,27 +173,129 @@ export function StockMovementModal({
               <span>{successMessage}</span>
             </div>
           )}
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-full px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors border border-slate-200"
+          >
+            Hủy
+          </button>
+          <button
+            type="submit"
+            form="stock-movement-form"
+            disabled={loading}
+            className="w-full px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl shadow-sm transition-colors"
+          >
+            {loading ? 'Đang ghi sổ cái...' : 'Ghi Bút Toán Sổ Cái'}
+          </button>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Mẹo: nhấn Ctrl+Enter để ghi nhanh.
+          </p>
+        </>
+      }
+    >
+      <form id="stock-movement-form" onSubmit={handleSubmit} className="space-y-4">
+        {/* Book Select */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Chọn Đầu Sách
+          </label>
+          <select
+            value={selectedEditionId}
+            onChange={(e) => setSelectedEditionId(e.target.value)}
+            className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+          >
+            {books.map((b) => (
+              <option key={b.id} value={b.id}>
+                [{b.code}] {b.title} (Đuôi: {b.isbnLast4} | Tồn: {b.totalStock})
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="pt-2 flex justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors"
-            >
-              {loading ? 'Đang ghi sổ cái...' : 'Ghi Bút Toán Sổ Cái'}
-            </button>
+        {/* Current Stock Preview */}
+        {currentBook && (
+          <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+            <div className="text-center">
+              <span className="text-slate-400 block">Kho Âu Cơ</span>
+              <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockAuCo}</span>
+            </div>
+            <div className="text-center border-x border-slate-200">
+              <span className="text-slate-400 block">Kho Quỳnh Mai</span>
+              <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockQuynhMai}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-slate-400 block">Kho Núi Trúc</span>
+              <span className="font-bold text-slate-800 font-mono text-sm">{currentBook.stockNuiTruc}</span>
+            </div>
           </div>
-        </form>
-      </div>
-    </div>,
-    document.body
+        )}
+
+        {/* Warehouse Selection */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Kho Tiếp Nhận
+          </label>
+          <select
+            value={targetWarehouseId}
+            onChange={(e) => setTargetWarehouseId(e.target.value)}
+            className="w-full text-sm border border-slate-300 rounded-lg p-2.5 font-medium"
+          >
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Quantity & Document Ref */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Số Lượng (Cuốn)</label>
+            <input
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => setQuantity(parseInt(e.target.value, 10) || 0)}
+              className="w-full text-sm border border-slate-300 rounded-lg p-2 font-mono font-bold text-slate-800"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Mã Chứng Từ / Số Phiếu</label>
+            <input
+              type="text"
+              value={documentRef}
+              onChange={(e) => setDocumentRef(e.target.value)}
+              className="w-full text-sm border border-slate-300 rounded-lg p-2 font-mono text-slate-800"
+              required
+            />
+          </div>
+        </div>
+
+        {/* Note & Actor */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Người Thao Tác</label>
+            <input
+              type="text"
+              value={actorId}
+              onChange={(e) => setActorId(e.target.value)}
+              className="w-full text-xs border border-slate-300 rounded-lg p-2"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Ghi Chú Nghiệp Vụ</label>
+            <input
+              type="text"
+              placeholder="Lý do, số xe, đợt in..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full text-xs border border-slate-300 rounded-lg p-2"
+            />
+          </div>
+        </div>
+      </form>
+    </Modal>
   );
 }

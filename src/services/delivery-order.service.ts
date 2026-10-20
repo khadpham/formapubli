@@ -57,6 +57,9 @@ export class DeliveryOrderService {
     fromWarehouseId: string;
     discountRate?: number;
     fiscalScope?: 'COMMERCIAL_WHOLESALE' | 'CONSIGNMENT_DISPATCH';
+    invoiceTaxCode?: string;
+    invoiceCompanyName?: string;
+    invoiceAddress?: string;
     note?: string;
     items: DeliveryItemInput[];
     actorContext: ActorContext;
@@ -67,6 +70,9 @@ export class DeliveryOrderService {
       fromWarehouseId,
       discountRate = 0.0,
       fiscalScope = 'COMMERCIAL_WHOLESALE',
+      invoiceTaxCode,
+      invoiceCompanyName,
+      invoiceAddress,
       note,
       items,
       actorContext,
@@ -143,6 +149,10 @@ export class DeliveryOrderService {
       discountRate,
       finalAmount,
       fiscalScope,
+      invoiceTaxCode: invoiceTaxCode || null,
+      invoiceCompanyName: invoiceCompanyName || null,
+      invoiceAddress: invoiceAddress || null,
+      invoiceStatus: invoiceTaxCode ? 'PENDING' : 'NONE',
       status: 'DRAFT',
       reversalOf: null,
       note: note || null,

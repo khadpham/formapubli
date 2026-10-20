@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderService } from '@/services/order.service';
+import { isPosOrderCode } from '@/services/order-code';
 import { db, customers, editions, portalSettings, orders } from '@/db';
 import { eq } from 'drizzle-orm';
 import { handleApiError } from '@/lib/api-response';
@@ -20,6 +21,7 @@ export const dynamic = 'force-dynamic';
  * Body:
  * {
  *   madon: string,           // Mã đơn portal (dùng làm idempotency key)
+ *   order_code?: string,     // Mã ORD lấy trước từ POST /api/orders/reserve-code
  *   email: string,
  *   name: string,
  *   phone: string,
@@ -50,7 +52,16 @@ export async function POST(req: NextRequest) {
     if (auth !== `Bearer ${apiKey}`) return unauthorized();
 
     const body = await req.json().catch(() => ({}));
-    const { madon, email, name, phone, address, items, paymentMethod, shippingFee, hasGift } = body;
+    const { madon, email, name, phone, address, items, paymentMethod, shippingFee, hasGift, invoiceRequired, invoiceTaxCode, invoiceCompanyName, invoiceAddress } = body;
+    // Ma ORD do portal lay truoc tu POST /api/orders/reserve-code. Co thi dung,
+    // khong co (don cu) thi tu sinh nhu hien tai. Sai dinh dang thi 400.
+    const reservedCode = `${body.order_code || ''}`.trim();
+    if (reservedCode && !isPosOrderCode(reservedCode)) {
+      return NextResponse.json(
+        { success: false, error: 'order_code sai dinh dang (can ORD + YYMMDD + base36).' },
+        { status: 400 },
+      );
+    }
     madonForLog = `${madon || ''}`.slice(0, 32);
     // Nhật ký chẩn đoán (không log key/PIN/SĐT): soi live bằng `wrangler tail`
     // khi khách đặt test mà đơn không về.
@@ -143,13 +154,47 @@ export async function POST(req: NextRequest) {
       // Route đã tự xác minh SP-004 → server tin (trustedGiftIds), không cần
       // chương trình khuyến mại. Dòng quà 0đ, không tính doanh thu.
       // SP-004 là HÀNG HÓA: ghi productId, editionId để tra giá (sẽ không xuống DB).
-      // 2026-10-15: Logic 1 bộ = 1 quà. Số quà = min(số lượng các sách).
-      // Vd: mua 6 cuốn x 2 = 2 bộ → tặng 2 túi.
-      const bookQuantities = orderItems
-        .filter(it => !it.isGiftLine)
-        .map(it => it.quantity)
-        .filter(q => Number.isFinite(q) && q > 0);
-      const giftQty = bookQuantities.length > 0 ? Math.min(...bookQuantities) : 1;
+      // 2026-10-16: Logic 1 bộ = 1 quà. Tính số bộ hoàn chỉnh từ combo components:
+      // với mỗi combo, số bộ = min(floor(số lượng mua / số lượng yêu cầu)) theo từng thành phần.
+      // Tổng quà = tổng số bộ của tất cả combo. Sách lẻ không thuộc combo nào không tính.
+      let giftQty = 1;
+      try {
+        const { comboComponents } = await import('@/db');
+        // products.id của sách = editions.id (vd ed-h01), nên dùng editionId trực tiếp
+        let productQtyMap = new Map<string, number>();
+        for (const it of orderItems) {
+          if (it.isGiftLine) continue;
+          const pid = it.productId || it.editionId;
+          if (pid) productQtyMap.set(pid, (productQtyMap.get(pid) || 0) + it.quantity);
+        }
+        // Lấy tất cả combo components
+        const compRows = await db.select().from(comboComponents);
+        // Nhóm theo combo
+        const comboMap = new Map<string, Array<{ productId: string; qty: number }>>();
+        for (const c of compRows) {
+          if (!comboMap.has(c.comboProductId)) comboMap.set(c.comboProductId, []);
+          comboMap.get(c.comboProductId)!.push({ productId: c.componentProductId, qty: c.quantity || 1 });
+        }
+        // Tính số bộ cho từng combo
+        let totalSets = 0;
+        for (const [, components] of comboMap) {
+          let setsForCombo = Infinity;
+          let hasAll = true;
+          for (const comp of components) {
+            const bought = productQtyMap.get(comp.productId) || 0;
+            if (bought < comp.qty) { hasAll = false; break; }
+            setsForCombo = Math.min(setsForCombo, Math.floor(bought / comp.qty));
+          }
+          if (hasAll && setsForCombo !== Infinity && setsForCombo > 0) {
+            totalSets += setsForCombo;
+          }
+        }
+        // Nếu không có combo nào khớp (vd chỉ mua sách lẻ), fallback về 1 quà như cũ
+        giftQty = totalSets > 0 ? totalSets : 1;
+      } catch (e) {
+        console.warn('[portal-orders] Lỗi tính số bộ, dùng mặc định 1:', e);
+        giftQty = 1;
+      }
       orderItems.push({ editionId: giftId, productId: giftId, quantity: giftQty, isGiftLine: true });
     }
 
@@ -204,8 +249,16 @@ export async function POST(req: NextRequest) {
       paymentMethod: paymentMethod as 'COD' | 'BANK_TRANSFER',
       confirmImmediately: false, // PENDING_CONFIRMATION
       idempotencyKey: `portal-${madon}`,
+      // Portal gui ma da lay truoc tu /api/orders/reserve-code thi giu nguyen
+      // de 1 ma chay xuyen suot (hien khach, Sheet, VietQR). Don cu khong gui
+      // thi bo trong, createOrder tu sinh.
+      ...(reservedCode ? { orderCode: reservedCode } : {}),
       note: `Đơn từ Customer Portal. Mã portal: ${madon}. SĐT: ${phone}. Địa chỉ: ${address}. Phí ship: ${shippingFee || 0}đ.`,
       items: orderItems,
+      fiscalScope: invoiceRequired ? 'OFFICIAL_TAX' : 'INTERNAL_MANAGEMENT',
+      invoiceTaxCode: invoiceRequired ? invoiceTaxCode : undefined,
+      invoiceCompanyName: invoiceRequired ? invoiceCompanyName : undefined,
+      invoiceAddress: invoiceRequired ? invoiceAddress : undefined,
       // Quà SP-004 do route tự xác minh - server tin mà không cần promotion.
       ...(giftId ? { trustedGiftIds: new Set([giftId]) } : {}),
     });

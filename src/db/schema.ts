@@ -24,6 +24,7 @@ export const products = sqliteTable('products', {
   description: text('description'),
   isGiftItem: integer('is_gift_item', { mode: 'boolean' }).notNull().default(false), // GỢI Ý quà, KHÔNG phải rào chặn (chốt #22)
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lowStockThreshold: integer('low_stock_threshold').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   codeIdx: uniqueIndex('products_code_unique').on(table.code),
@@ -312,6 +313,10 @@ export const orders = sqliteTable('orders', {
   vatRate: real('vat_rate').default(0.0), // 0.05 hoặc 0.0
   vatInvoiceRequired: integer('vat_invoice_required', { mode: 'boolean' }).default(false),
   vatInvoiceCode: text('vat_invoice_code'), // Số hóa đơn điện tử nếu có
+  invoiceTaxCode: text('invoice_tax_code'), // MST khách yêu cầu xuất HĐ
+  invoiceCompanyName: text('invoice_company_name'), // Tên công ty/tổ chức
+  invoiceAddress: text('invoice_address'), // Địa chỉ xuất HĐ
+  invoiceStatus: text('invoice_status').default('NONE'), // NONE | PENDING | PREPARED | SYNCED | SIGNED
   status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
   syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
   cashierId: text('cashier_id').notNull().default('staff-admin'),
@@ -854,6 +859,10 @@ export const deliveryOrders = sqliteTable('delivery_orders', {
   discountRate: real('discount_rate').default(0.0).notNull(),
   finalAmount: real('final_amount').notNull(),
   fiscalScope: text('fiscal_scope').default('COMMERCIAL_WHOLESALE').notNull(), // COMMERCIAL_WHOLESALE | CONSIGNMENT_DISPATCH
+  invoiceTaxCode: text('invoice_tax_code'),
+  invoiceCompanyName: text('invoice_company_name'),
+  invoiceAddress: text('invoice_address'),
+  invoiceStatus: text('invoice_status').default('NONE'),
   status: text('status').default('DRAFT').notNull(), // DRAFT | DISPATCHED_LOCKED | VOIDED_REVERSED
   reversalOf: text('reversal_of'),
   note: text('note'),
@@ -955,6 +964,69 @@ export const portalSettings = sqliteTable('portal_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+// 0061: doi soat sao ke ngan hang - 1 dong = 1 dong sao ke file xlsx MB Bank.
+export const bankStatements = sqliteTable('bank_statements', {
+  id: text('id').primaryKey(),
+  ngayGiaoDich: text('ngay_giao_dich').notNull(),
+  ngayHachToan: text('ngay_hach_toan'),
+  phatSinhNo: real('phat_sinh_no').notNull().default(0),
+  phatSinhCo: real('phat_sinh_co').notNull().default(0),
+  soDu: real('so_du'),
+  donVi: text('don_vi'),
+  noiDung: text('noi_dung'),
+  butToan: text('but_toan').notNull().unique(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  ngayIdx: index('idx_bank_statements_ngay').on(table.ngayGiaoDich),
+}));
+
+export const bankStatementMatches = sqliteTable('bank_statement_matches', {  id: text('id').primaryKey(),
+  statementId: text('statement_id').notNull().references(() => bankStatements.id),
+  orderId: text('order_id').notNull().references(() => orders.id),
+  matchType: text('match_type').notNull().default('AUTO'),
+  confidence: text('confidence').notNull().default('LOW'),
+  matchedAt: text('matched_at').default(sql`CURRENT_TIMESTAMP`),
+  matchedBy: text('matched_by'),
+  note: text('note'),
+}, (table) => ({
+  statementUq: uniqueIndex('uq_bank_match_statement').on(table.statementId),
+  orderIdx: index('idx_bank_match_order').on(table.orderId),
+}));
+
+// 0062: doi soat bao cao tai chinh SPX - 1 dong = 1 van don.
+export const spxSettlements = sqliteTable('spx_settlements', {
+  id: text('id').primaryKey(),
+  maVanDon: text('ma_van_don').notNull().unique(),
+  trangThai: text('trang_thai'),
+  tienThuHo: real('tien_thu_ho').notNull().default(0),
+  tongPhi: real('tong_phi').notNull().default(0),
+  phiGiaoHang: real('phi_giao_hang').notNull().default(0),
+  phiBaoHiem: real('phi_bao_hiem').notNull().default(0),
+  phiHoanHang: real('phi_hoan_hang').notNull().default(0),
+  soTienDieuChinh: real('so_tien_dieu_chinh').notNull().default(0),
+  lyDoDieuChinh: text('ly_do_dieu_chinh'),
+  tongTienVe: real('tong_tien_ve').notNull().default(0),
+  ngayImport: text('ngay_import').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  ngayIdx: index('idx_spx_settlements_ngay').on(table.ngayImport),
+}));
+
+export const spxSettlementMatches = sqliteTable('spx_settlement_matches', {
+  id: text('id').primaryKey(),
+  settlementId: text('settlement_id').notNull().references(() => spxSettlements.id),
+  orderId: text('order_id').notNull().references(() => orders.id),
+  codKhop: integer('cod_khop', { mode: 'boolean' }).notNull().default(false),
+  phiBatThuong: integer('phi_bat_thuong', { mode: 'boolean' }).notNull().default(false),
+  matchType: text('match_type').notNull().default('AUTO'),
+  matchedAt: text('matched_at').default(sql`CURRENT_TIMESTAMP`),
+  matchedBy: text('matched_by'),
+  note: text('note'),
+}, (table) => ({
+  settlementUq: uniqueIndex('uq_spx_match_settlement').on(table.settlementId),
+  orderIdx: index('idx_spx_match_order').on(table.orderId),
+}));
+
 // 0054: campaigns - chiến dịch bán ngắn hạn gắn kho FAIR_EVENT.
 // Máy trạng thái: DRAFT → ACTIVE → ENDED (ép ở CampaignService).
 export const campaigns = sqliteTable('campaigns', {
@@ -969,6 +1041,24 @@ export const campaigns = sqliteTable('campaigns', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   endedAt: text('ended_at'),
 });
+
+// 0073: Báo cáo kỳ tự sinh khi chiến dịch kết thúc (tay hoặc tự động).
+export const campaignReports = sqliteTable('campaign_reports', {
+  id: text('id').primaryKey(),
+  campaignId: text('campaign_id').notNull().references(() => campaigns.id),
+  generatedBy: text('generated_by').notNull().default('system-auto'),
+  periodStart: text('period_start').notNull(),
+  periodEnd: text('period_end').notNull(),
+  revenue: real('revenue').notNull().default(0),
+  orderCount: integer('order_count').notNull().default(0),
+  itemsSold: integer('items_sold').notNull().default(0),
+  leftoverQuantity: integer('leftover_quantity').notNull().default(0),
+  leftoverItems: text('leftover_items').notNull().default('[]'),
+  soldItems: text('sold_items').notNull().default('[]'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  campaignIdx: index('idx_campaign_reports_campaign').on(table.campaignId),
+}));
 
 // 0042: chi phí công ty cho tab Chủ - GĐ1 ghi tay, GĐ2 lương theo tháng.
 // 0043: GĐ2 - lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
@@ -1027,6 +1117,7 @@ export const contractReviewChecklists = sqliteTable('contract_review_checklists'
   version: integer('version').notNull().default(1),
   items: text('items').notNull(),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lowStockThreshold: integer('low_stock_threshold').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   categoryIdx: index('idx_review_checklists_category').on(table.category),
@@ -1066,6 +1157,8 @@ export const contractMilestones = sqliteTable('contract_milestones', {
   neededCategory: text('needed_category').notNull(),
   contractId: text('contract_id').references(() => contractDocuments.id, { onDelete: 'set null' }),
   status: text('status').notNull().default('PENDING'),
+  contractDate: text('contract_date'),
+  acceptanceDate: text('acceptance_date'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   projectIdx: index('idx_milestones_project').on(table.projectId),
@@ -1125,6 +1218,7 @@ export const contractPresets = sqliteTable('contract_presets', {
   valuesJson: text('values_json').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  lowStockThreshold: integer('low_stock_threshold').default(0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
@@ -1191,3 +1285,267 @@ export const periodLocks = sqliteTable('period_locks', {
   lockedAt: text('locked_at').default(sql`CURRENT_TIMESTAMP`),
   note: text('note'),
 });
+
+// 56. E-Invoices - Hóa đơn điện tử MS-Invoice (migration 0056).
+export const einvoices = sqliteTable('einvoices', {
+  id: text('id').primaryKey(),
+  orderId: text('order_id').references(() => orders.id),
+  invoiceNumber: text('invoice_number'),
+  invoiceSerial: text('invoice_serial'),
+  invoiceForm: integer('invoice_form').default(1),
+  msinvoiceId: text('msinvoice_id'),
+  isSigned: text('is_signed').default('N'),
+  certSn: text('cert_sn'),
+  subtotal: real('subtotal').notNull().default(0),
+  vatRate: real('vat_rate').notNull().default(0),
+  vatAmount: real('vat_amount').notNull().default(0),
+  totalAmount: real('total_amount').notNull().default(0),
+  status: text('status').notNull().default('DRAFT'),
+  issuedAt: text('issued_at'),
+  pdfUrl: text('pdf_url'),
+  adjustedForId: text('adjusted_for_id'),
+  adjustmentType: text('adjustment_type'),
+  buyerTaxCode: text('buyer_tax_code'),
+  buyerName: text('buyer_name'),
+  buyerAddress: text('buyer_address'),
+  invoiceKind: text('invoice_kind').default('SINGLE'),
+  consolidatedDate: text('consolidated_date'),
+  sourceOrderIds: text('source_order_ids'),
+  lookupCode: text('lookup_code'),
+  lookupUrl: text('lookup_url'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  orderIdx: index('idx_einvoices_order').on(table.orderId),
+  statusIdx: index('idx_einvoices_status').on(table.status),
+}));
+
+// 57. Documents - Quản lý tài liệu trên R2 (migration 0057).
+export const documents = sqliteTable('documents', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  originalName: text('original_name'),
+  mimeType: text('mime_type'),
+  fileSize: integer('file_size'),
+  r2Key: text('r2_key').notNull().unique(),
+  r2Bucket: text('r2_bucket').notNull().default('formapubli-docs'),
+  category: text('category').notNull().default('OTHER'),
+  relatedType: text('related_type'),
+  relatedId: text('related_id'),
+  description: text('description'),
+  tags: text('tags'),
+  uploadedBy: text('uploaded_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  categoryIdx: index('idx_documents_category').on(table.category),
+  relatedIdx: index('idx_documents_related').on(table.relatedType, table.relatedId),
+}));
+
+// 59. Publishing Projects - Du an xuat ban (migration 0059).
+export const publishingProjects = sqliteTable('publishing_projects', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  bookTitle: text('book_title').notNull(),
+  originalTitle: text('original_title'),
+  author: text('author'),
+  translator: text('translator'),
+  bookSize: text('book_size'),
+  pageCount: integer('page_count'),
+  coverPrice: real('cover_price'),
+  status: text('status').notNull().default('DRAFT'),
+  currentStage: text('current_stage'),
+  plannedPrintDate: text('planned_print_date'),
+  notes: text('notes'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  statusIdx: index('idx_pub_projects_status').on(table.status),
+  codeIdx: index('idx_pub_projects_code').on(table.code),
+}));
+
+export const publishingStages = sqliteTable('publishing_stages', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => publishingProjects.id),
+  stage: text('stage').notNull(),
+  stageOrder: integer('stage_order').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  contractId: text('contract_id'),
+  contractDate: text('contract_date'),
+  acceptanceDate: text('acceptance_date'),
+  acceptanceDocId: text('acceptance_doc_id'),
+  plannedStart: text('planned_start'),
+  plannedEnd: text('planned_end'),
+  contractAmount: real('contract_amount').default(0),
+  taxAmount: real('tax_amount').default(0),
+  netAmount: real('net_amount').default(0),
+  assigneeName: text('assignee_name'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  projectIdx: index('idx_pub_stages_project').on(table.projectId),
+  statusIdx: index('idx_pub_stages_status').on(table.status),
+}));
+
+// 0063: Portal products - quan tri noi dung san pham cho portal ban sach.
+export const portalProducts = sqliteTable('portal_products', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  sku: text('sku'),
+  name: text('name').notNull(),
+  author: text('author'),
+  translator: text('translator'),
+  description: text('description'),
+  coverPrice: real('cover_price').notNull().default(0),
+  salePrice: real('sale_price'),
+  productType: text('product_type').notNull().default('SINGLE'), // SINGLE | COMBO | GIFT
+  category: text('category'),
+  isbn: text('isbn'),
+  coverImage: text('cover_image'),
+  isVisible: integer('is_visible', { mode: 'boolean' }).notNull().default(true),
+  isFeatured: integer('is_featured', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  detailsJson: text('details_json'),
+  erpProductId: text('erp_product_id'), // lien ket toi bang products cua ERP
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  visibleIdx: index('idx_portal_products_visible').on(table.isVisible, table.sortOrder),
+  slugIdx: index('idx_portal_products_slug').on(table.slug),
+  typeIdx: index('idx_portal_products_type').on(table.productType),
+}));
+
+export const portalProductImages = sqliteTable('portal_product_images', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => portalProducts.id),
+  imageUrl: text('image_url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  productIdx: index('idx_portal_images_product').on(table.productId, table.sortOrder),
+}));
+
+export const portalComboItems = sqliteTable('portal_combo_items', {
+  id: text('id').primaryKey(),
+  comboProductId: text('combo_product_id').notNull().references(() => portalProducts.id),
+  itemProductId: text('item_product_id').notNull().references(() => portalProducts.id),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  comboIdx: index('idx_combo_items_combo').on(table.comboProductId),
+}));
+
+// 0064: Combo components - sach thanh phan cua combo/box set (bang products ERP).
+// Khac portalComboItems (combo cua portal theo portal_products). Phat hien combo
+// = co dong trong bang nay, khong them cot moi vao products.
+export const comboComponents = sqliteTable('combo_components', {
+  id: text('id').primaryKey(),
+  comboProductId: text('combo_product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  componentProductId: text('component_product_id').notNull().references(() => products.id),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  uniqueIdx: uniqueIndex('idx_combo_components_unique').on(table.comboProductId, table.componentProductId),
+  comboIdx: index('idx_combo_components_combo').on(table.comboProductId),
+}));
+
+export const portalReviews = sqliteTable('portal_reviews', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => portalProducts.id),
+  customerId: text('customer_id').notNull(),
+  rating: integer('rating').notNull(),
+  content: text('content').notNull(),
+  status: text('status').notNull().default('PENDING'), // PENDING | APPROVED | REJECTED
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  reviewedAt: text('reviewed_at'),
+}, (table) => ({
+  productIdx: index('idx_portal_reviews_product').on(table.productId, table.status),
+  customerIdx: index('idx_portal_reviews_customer').on(table.customerId),
+}));
+
+// 0064: Kiem ke kho
+export const inventoryCounts = sqliteTable('inventory_counts', {
+  id: text('id').primaryKey(),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  status: text('status').notNull().default('DRAFT'),
+  note: text('note'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  submittedAt: text('submitted_at'),
+  approvedBy: text('approved_by'),
+  approvedAt: text('approved_at'),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  warehouseIdx: index('idx_inventory_counts_warehouse').on(table.warehouseId),
+  statusIdx: index('idx_inventory_counts_status').on(table.status),
+}));
+
+export const inventoryCountItems = sqliteTable('inventory_count_items', {
+  id: text('id').primaryKey(),
+  countId: text('count_id').notNull().references(() => inventoryCounts.id, { onDelete: 'cascade' }),
+  editionId: text('edition_id').references(() => editions.id),
+  productId: text('product_id').notNull().references(() => products.id),
+  systemQty: integer('system_qty').notNull().default(0),
+  countedQty: integer('counted_qty'),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  countIdx: index('idx_count_items_count').on(table.countId),
+}));
+
+// 0068: Warehouse documents - chứng từ kho
+export const warehouseDocuments = sqliteTable('warehouse_documents', {
+  id: text('id').primaryKey(),
+  docType: text('doc_type').notNull(),
+  docNumber: text('doc_number').notNull(),
+  docDate: text('doc_date').notNull(),
+  warehouseId: text('warehouse_id'),
+  toWarehouseId: text('to_warehouse_id'),
+  partnerId: text('partner_id'),
+  partnerName: text('partner_name'),
+  totalQuantity: integer('total_quantity').default(0),
+  totalAmount: real('total_amount').default(0),
+  status: text('status').notNull().default('DRAFT'),
+  r2Key: text('r2_key'),
+  r2Url: text('r2_url'),
+  ledgerRefs: text('ledger_refs'),
+  createdBy: text('created_by'),
+  issuedBy: text('issued_by'),
+  issuedAt: text('issued_at'),
+  voidedBy: text('voided_by'),
+  voidedAt: text('voided_at'),
+  voidReason: text('void_reason'),
+  note: text('note'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  numberIdx: uniqueIndex('idx_warehouse_documents_number').on(table.docNumber),
+  typeIdx: index('idx_warehouse_documents_type').on(table.docType),
+  statusIdx: index('idx_warehouse_documents_status').on(table.status),
+  warehouseIdx: index('idx_warehouse_documents_warehouse').on(table.warehouseId),
+}));
+
+export const warehouseDocumentItems = sqliteTable('warehouse_document_items', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull().references(() => warehouseDocuments.id, { onDelete: 'cascade' }),
+  productId: text('product_id').notNull(),
+  productCode: text('product_code'),
+  productName: text('product_name'),
+  quantity: integer('quantity').notNull(),
+  unitPrice: real('unit_price').default(0),
+  amount: real('amount').default(0),
+  note: text('note'),
+  sortOrder: integer('sort_order').default(0),
+}, (table) => ({
+  docIdx: index('idx_warehouse_document_items_doc').on(table.documentId),
+}));
+
+export const warehouseDocCounters = sqliteTable('warehouse_doc_counters', {
+  docType: text('doc_type').notNull(),
+  year: integer('year').notNull(),
+  lastNumber: integer('last_number').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.docType, table.year] }),
+}));

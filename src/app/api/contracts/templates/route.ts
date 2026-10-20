@@ -3,6 +3,7 @@ import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { AppError } from '@/services/app-error';
+import { CONTRACT_CATEGORIES } from '@/lib/contract-categories';
 import { db, contractTemplates } from '@/db';
 import { desc, eq } from 'drizzle-orm';
 import { ContractEngineService } from '@/services/contract-engine.service';
@@ -11,7 +12,7 @@ import { generateUUIDv7 } from '@/lib/uuidv7';
 export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
-const CATEGORIES = ['TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
+const CATEGORIES: readonly string[] = CONTRACT_CATEGORIES;
 
 /** GET /api/contracts/templates - danh sách mẫu (?activeOnly=0 để lấy cả ngưng dùng). */
 export async function GET(req: NextRequest) {

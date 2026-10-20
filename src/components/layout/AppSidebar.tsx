@@ -19,6 +19,9 @@ import {
   ShoppingBag,
   Crown,
   FileText,
+  FolderKanban,
+  FileCheck2,
+  UsersRound,
 } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 
@@ -131,31 +134,36 @@ export function AppSidebar({
     },
     {
       id: 'dashboard',
-      label: 'Tổng Quan Toàn Cảnh',
+      label: 'Dashboard',
       icon: LayoutDashboard,
       shortcut: 'Alt+1',
       color: 'text-indigo-600',
     },
     {
-      id: 'pos',
-      label: 'Quầy Bán Hàng POS',
-      icon: ShoppingCart,
-      shortcut: 'Alt+2',
-      color: 'text-emerald-600',
+      id: 'projects',
+      label: 'Dự án xuất bản',
+      icon: FolderKanban,
+      color: 'text-cyan-600',
+    },
+    {
+      id: 'contracts',
+      label: 'Hợp đồng',
+      icon: FileText,
+      color: 'text-teal-600',
     },
     {
       id: 'inventory',
-      label: 'Kho Hàng & Thẻ Kho',
+      label: 'Kho hàng',
       icon: Boxes,
       shortcut: 'Alt+3',
       color: 'text-amber-600',
     },
     {
-      id: 'sales',
-      label: 'Doanh Số & Sổ Kép',
-      icon: Receipt,
-      shortcut: 'Alt+4',
-      color: 'text-sky-600',
+      id: 'pos',
+      label: 'Bán lẻ POS',
+      icon: ShoppingCart,
+      shortcut: 'Alt+2',
+      color: 'text-emerald-600',
     },
     {
       id: 'shopee',
@@ -165,35 +173,48 @@ export function AppSidebar({
       color: 'text-orange-600',
     },
     {
-      id: 'partners',
-      label: 'Đối Tác & Đại Lý',
-      icon: Users,
-      shortcut: 'Alt+5',
-      color: 'text-purple-600',
+      id: 'sales',
+      label: 'Tài chính',
+      icon: Receipt,
+      shortcut: 'Alt+4',
+      color: 'text-sky-600',
+    },
+    {
+      id: 'einvoice',
+      label: 'Hóa đơn điện tử',
+      icon: FileCheck2,
+      color: 'text-blue-600',
     },
     {
       id: 'customers',
-      label: 'Độc Giả & Gói Mùa',
+      label: 'Portal / CRM',
       icon: BookOpenCheck,
       shortcut: 'Alt+6',
       color: 'text-rose-600',
     },
     {
-      id: 'contracts',
-      label: 'Hợp Đồng',
-      icon: FileText,
-      color: 'text-teal-600',
+      id: 'partners',
+      label: 'Đối tác & Đại lý',
+      icon: Users,
+      shortcut: 'Alt+5',
+      color: 'text-purple-600',
+    },
+    {
+      id: 'hr',
+      label: 'Nhân sự',
+      icon: UsersRound,
+      color: 'text-lime-600',
     },
     {
       id: 'studio',
-      label: 'Phân Tích & Dự Báo',
+      label: 'Báo cáo',
       icon: FlaskConical,
       shortcut: 'Alt+7',
       color: 'text-violet-600',
     },
     {
       id: 'settings',
-      label: 'Cài Đặt',
+      label: 'Cài đặt',
       icon: Settings,
       shortcut: 'Alt+8',
       color: 'text-slate-600',
@@ -224,22 +245,22 @@ export function AppSidebar({
         aria-modal={isMobileViewport && isMobileOpen ? true : undefined}
         aria-label="Menu điều hướng"
          aria-hidden={isMobileViewport === null || (isMobileViewport && !isMobileOpen) ? true : undefined}
-        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-slate-900 text-slate-100 border-r border-slate-800 transition-all duration-300 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-navy-950 text-slate-100 border-r border-white/10 transition-all duration-300 ease-in-out ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${isCollapsed ? 'w-20' : 'w-72'} pt-[env(safe-area-inset-top)]`}
       >
-        {/* Header Branding */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800">
+        {/* Header Branding - luxury gold accent */}
+        <div className="flex items-center justify-between h-16 px-4 border-b border-white/10">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-500/30 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-gold-dark via-gold to-gold-light flex items-center justify-center text-navy-950 font-black text-xl shadow-lg shadow-gold/30 shrink-0">
               f
             </div>
             {!isCollapsed && (
               <div className="flex flex-col truncate">
-                <span className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-                  formapubli <span className="text-indigo-400 font-mono text-xs">OS</span>
+                <span className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
+                  formapubli <span className="text-gold font-mono text-xs">OS</span>
                 </span>
-                <span className="text-[10px] text-slate-400 truncate">Hệ Điều Hành Xuất Bản 3-in-1</span>
+                <span className="text-[10px] text-slate-400 truncate">Hệ Điều Hành Xuất Bản</span>
               </div>
             )}
           </div>

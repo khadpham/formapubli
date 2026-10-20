@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import {
   FileText,
   Printer,
@@ -18,6 +17,7 @@ import {
   Edit3,
   Trash2,
 } from 'lucide-react';
+import Modal from '../ui/Modal';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint';
 
@@ -48,22 +48,19 @@ export function DeliveryOrdersLedger({
 
   // Ký duyệt phiếu DRAFT
   const [isDispatchingId, setIsDispatchingId] = useState<string | null>(null);
+  /** Toast thong bao thay alert(). */
+  const [toast, setToast] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!reversalTargetOrder) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isReversing) {
-        setReversalTargetOrder(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [reversalTargetOrder, isReversing]);
 
   const fetchOrders = async () => {
     try {
@@ -99,18 +96,19 @@ export function DeliveryOrdersLedger({
       if (json.success) {
         setSelectedOrderForPrint(json.data);
       } else {
-        alert(json.error || 'Không thể tải chi tiết phiếu');
+        showToast(json.error || 'Không thể tải chi tiết phiếu');
       }
     } catch (err: any) {
-      alert('Lỗi: ' + err.message);
+      showToast('Lỗi: ' + err.message);
     }
   };
 
   // Ký duyệt phiếu DRAFT
   const handleDispatchDraft = async (orderId: string) => {
-    if (!confirm('Bạn có chắc chắn muốn KÝ DUYỆT và KHÓA SỔ phiếu xuất kho này? Sách sẽ được trừ khỏi kho vĩnh viễn.')) {
-      return;
-    }
+    setConfirmDlg({
+      msg: 'Bạn có chắc chắn muốn KÝ DUYỆT và KHÓA SỔ phiếu xuất kho này? Sách sẽ được trừ khỏi kho vĩnh viễn.',
+      onOk: async () => {
+        setConfirmDlg(null);
     try {
       setIsDispatchingId(orderId);
       const res = await fetch(`/api/delivery-orders/${orderId}`, {
@@ -129,20 +127,25 @@ export function DeliveryOrdersLedger({
         fetchOrders();
         handleOpenReceipt(json.data.id);
       } else {
-        alert(json.error || 'Không thể ký xuất kho');
+        showToast(json.error || 'Không thể ký xuất kho');
       }
     } catch (err: any) {
-      alert('Lỗi: ' + err.message);
+      showToast('Lỗi: ' + err.message);
     } finally {
       setIsDispatchingId(null);
     }
+      },
+    });
   };
 
   const [isDeletingDraftId, setIsDeletingDraftId] = useState<string | null>(null);
 
   // Xóa phiếu xuất kho DRAFT
   const handleDeleteDraft = async (id: string, code: string) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa bản nháp [${code}]?`)) return;
+    setConfirmDlg({
+      msg: `Bạn có chắc muốn xóa bản nháp [${code}]?`,
+      onOk: async () => {
+        setConfirmDlg(null);
     try {
       setIsDeletingDraftId(id);
       const res = await fetch(`/api/delivery-orders/${id}`, {
@@ -153,10 +156,12 @@ export function DeliveryOrdersLedger({
       if (!json.success) throw new Error(json.error || 'Không xóa được bản nháp');
       await fetchOrders();
     } catch (err: any) {
-      alert(err.message || 'Lỗi khi xóa bản nháp');
+      showToast(err.message || 'Lỗi khi xóa bản nháp');
     } finally {
       setIsDeletingDraftId(null);
     }
+      },
+    });
   };
 
   // Xác nhận đảo bút toán hủy
@@ -190,7 +195,7 @@ export function DeliveryOrdersLedger({
       setReversalTargetOrder(null);
       setReversalReason('');
       fetchOrders();
-      alert(`Đã đảo bút toán thành công! Sinh phiếu đối ứng: ${json.data.code}`);
+      showToast(`Đã đảo bút toán thành công! Sinh phiếu đối ứng: ${json.data.code}`, 'success');
       handleOpenReceipt(json.data.id);
     } catch (err: any) {
       setReversalError(err.message || 'Lỗi không xác định khi hủy phiếu');
@@ -211,7 +216,40 @@ export function DeliveryOrdersLedger({
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {toast && (
+        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+      <Modal
+        open={!!confirmDlg}
+        onClose={() => setConfirmDlg(null)}
+        size="sm"
+        title="Xác nhận"
+      >
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDlg(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDlg.onOk}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
       {/* Thanh công cụ danh sách */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2 w-full md:w-auto">
@@ -450,25 +488,19 @@ export function DeliveryOrdersLedger({
       </div>
 
       {/* Modal xác nhận Đảo bút toán hủy (Reversal) */}
-      {reversalTargetOrder && mounted && createPortal(
-        <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
-          onClick={(e) => { if (e.target === e.currentTarget && !isReversing) setReversalTargetOrder(null); }}
-        >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-rose-700">
-                <RotateCcw className="w-5 h-5" />
-                <h3 className="font-extrabold text-base text-slate-900">Đảo Bút Toán Hủy Phiếu</h3>
-              </div>
-              <button
-                onClick={() => setReversalTargetOrder(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                ✕
-              </button>
-            </div>
-
+      <Modal
+        open={!!reversalTargetOrder && mounted}
+        onClose={() => { if (!isReversing) setReversalTargetOrder(null); }}
+        size="sm"
+        title={
+          <span className="flex items-center gap-2 text-rose-700">
+            <RotateCcw className="w-5 h-5" />
+            <span className="text-slate-900">Đảo Bút Toán Hủy Phiếu</span>
+          </span>
+        }
+      >
+        {reversalTargetOrder && (
+          <>
             <div className="space-y-3 text-xs">
               <p className="text-slate-600 leading-relaxed">
                 Hệ thống sẽ giữ nguyên phiếu gốc{' '}
@@ -517,10 +549,9 @@ export function DeliveryOrdersLedger({
                 {isReversing ? 'Đang đảo sổ...' : 'Xác Nhận Đảo Hủy'}
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </>
+        )}
+      </Modal>
 
       {/* Modal In Phiếu Xuất Kho A4 */}
       {selectedOrderForPrint && (

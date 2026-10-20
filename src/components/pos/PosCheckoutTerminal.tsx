@@ -41,6 +41,7 @@ import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 import { computeGifts, type PromotionCampaign } from '@/lib/promotion-engine';
 import { SmartOrderParser } from '@/components/pos/SmartOrderParser';
 import { DiscountApprovalModal } from '@/components/pos/DiscountApprovalModal';
+import Modal from '@/components/ui/Modal';
 import { ManagerApprovalDrawer } from '@/components/pos/ManagerApprovalDrawer';
 import { DailyFairSettlementModal } from '@/components/pos/DailyFairSettlementModal';
 import { VietQrPay } from '@/components/pos/VietQrPay';
@@ -353,9 +354,27 @@ export function PosCheckoutTerminal({
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'QR_CODE'>('BANK_TRANSFER');
   const [cashReceived, setCashReceived] = useState<number | ''>('');
   const [fiscalScope, setFiscalScope] = useState<'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX'>('INTERNAL_MANAGEMENT');
+  const [invoiceTaxCode, setInvoiceTaxCode] = useState('');
+  const [invoiceCompany, setInvoiceCompany] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Dialog xac nhan promise-based thay window.confirm. */
+  const [confirmState, setConfirmState] = useState<{ msg: string; resolve: (v: boolean) => void } | null>(null);
+  const confirmAsync = (msg: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({ msg, resolve });
+    });
+  };
+  const handleConfirmOk = () => {
+    confirmState?.resolve(true);
+    setConfirmState(null);
+  };
+  const handleConfirmCancel = () => {
+    confirmState?.resolve(false);
+    setConfirmState(null);
+  };
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
   const [qrSnapshot, setQrSnapshot] = useState<{ dataUrl: string; payload: string; accountNo: string; content: string } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -927,10 +946,10 @@ export function PosCheckoutTerminal({
           setErrorMessage('Ca đang mở không thuộc thu ngân của đơn cũ.');
           return;
         }
-        if (!window.confirm(`Gán đơn ${order.orderCode} vào ca két mới ${activeSession.id}?`)) return;
+        if (!(await confirmAsync(`Gán đơn ${order.orderCode} vào ca két mới ${activeSession.id}?`))) return;
         repaired = await updateOfflineOrderForRetry(order.id, { cashboxSessionId: activeSession.id });
       } else {
-        if (!window.confirm(`Xác nhận đã nhận đủ ${order.finalAmount.toLocaleString('vi-VN')} đ cho đơn ${order.orderCode}?`)) return;
+        if (!(await confirmAsync(`Xác nhận đã nhận đủ ${order.finalAmount.toLocaleString('vi-VN')} đ cho đơn ${order.orderCode}?`))) return;
         repaired = await updateOfflineOrderForRetry(order.id, { moneyReceived: true });
       }
       // Record không tồn tại thì không được báo "đã cập nhật": cashier sẽ tưởng
@@ -954,7 +973,7 @@ export function PosCheckoutTerminal({
       return;
     }
     if (currentRole !== 'ROLE_MANAGER' && currentRole !== 'ROLE_OWNER') return;
-    if (!window.confirm(`Nhận ${legacyOfflineCount} đơn ngoại tuyến cũ chưa có danh tính thu ngân? Thao tác này sẽ ghi chúng vào tài khoản của bạn.`)) return;
+    if (!(await confirmAsync(`Nhận ${legacyOfflineCount} đơn ngoại tuyến cũ chưa có danh tính thu ngân? Thao tác này sẽ ghi chúng vào tài khoản của bạn.`))) return;
     try {
       const claimed = await claimLegacyOfflineOrders(cashierActorId);
       setSyncToast(`Đã nhận ${claimed} đơn ngoại tuyến cũ vào tài khoản của bạn.`);
@@ -2089,6 +2108,9 @@ export function PosCheckoutTerminal({
            paymentMethod,
            moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
+           invoiceTaxCode: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+           invoiceCompanyName: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+           invoiceAddress: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
            cashierId,
            cashboxSessionId: activeSession?.id,
            discountApprovalId: approvedDiscountRequestId || undefined,
@@ -2221,6 +2243,9 @@ export function PosCheckoutTerminal({
             paymentMethod,
             moneyReceived: false,
             fiscalScope,
+            invoiceTaxCode: fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+            invoiceCompanyName: fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+            invoiceAddress: fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
             cashierId,
             cashboxSessionId: activeSession?.id,
             discountApprovalId: approvedDiscountRequestId || undefined,
@@ -2351,6 +2376,9 @@ export function PosCheckoutTerminal({
            paymentMethod,
            moneyReceived: false,
            fiscalScope: isGift ? 'INTERNAL_MANAGEMENT' : fiscalScope,
+           invoiceTaxCode: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+           invoiceCompanyName: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+           invoiceAddress: !isGift && fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
           cashierId,
            cashboxSessionId: activeSession?.id,
           discountApprovalId: approvedDiscountRequestId || undefined,
@@ -2563,6 +2591,9 @@ export function PosCheckoutTerminal({
               : discountAmount,
         warehouseId: session.warehouseId,
         fiscalScope,
+        invoiceTaxCode: fiscalScope === 'OFFICIAL_TAX' ? invoiceTaxCode : undefined,
+        invoiceCompanyName: fiscalScope === 'OFFICIAL_TAX' ? invoiceCompany : undefined,
+        invoiceAddress: fiscalScope === 'OFFICIAL_TAX' ? invoiceAddress : undefined,
         customerName,
         discountRate: isGift ? 1 : discountRate,
         paymentMethod,
@@ -3029,7 +3060,18 @@ export function PosCheckoutTerminal({
   );
 
   return (
-    <div className="space-y-3 md:space-y-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
+    <div className="space-y-3 md:space-y-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden relative">
+      <Modal open={!!confirmState} onClose={handleConfirmCancel} size="sm" title="Xác nhận">
+        {confirmState && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmState.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={handleConfirmCancel} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={handleConfirmOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       {/* Mobile: panel chọn kho nằm TRONG luồng, không sticky - chỉ thanh tìm kiếm mới nổi khi cuộn.
           Card "Top Header Controls" là `hidden md:flex`; các controls nằm trong panel này, hiện khi mở. */}
       <div className="md:hidden -mx-3 px-3 pt-2 pb-1">
@@ -3964,6 +4006,31 @@ export function PosCheckoutTerminal({
                   </select>
                 </div>
 
+                {/* Form thông tin hóa đơn - chỉ hiện khi chọn Xuất Hóa đơn VAT */}
+                {fiscalScope === 'OFFICIAL_TAX' && !isGift && (
+                  <div className="col-span-2 mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <p className="text-[11px] font-bold text-amber-800">Thông tin xuất hóa đơn VAT:</p>
+                    <input
+                      value={invoiceTaxCode}
+                      onChange={(e) => setInvoiceTaxCode(e.target.value)}
+                      placeholder="Mã số thuế *"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceCompany}
+                      onChange={(e) => setInvoiceCompany(e.target.value)}
+                      placeholder="Tên công ty / tổ chức *"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceAddress}
+                      onChange={(e) => setInvoiceAddress(e.target.value)}
+                      placeholder="Địa chỉ *"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none"
+                    />
+                  </div>
+                )}
+
                 <div className="hidden lg:block">
                   <label className="text-[11px] font-bold text-slate-500 block mb-1">
                     Thanh toán:
@@ -4199,10 +4266,10 @@ export function PosCheckoutTerminal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="pos-receipt-dialog-title"
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
+          className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget) setCompletedOrder(null); }}
         >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-base">
                 <CheckCircle2 className="w-6 h-6" />
@@ -4374,10 +4441,10 @@ export function PosCheckoutTerminal({
       {/* Modal Xử Lý Trùng Mã Vạch ISBN (Disambiguation Modal) */}
       {ambiguousMatches && ambiguousMatches.length > 0 && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
+          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget) { setAmbiguousMatches(null); } }}
         >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-slide-up">
+          <div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-slate-200 animate-slide-up">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
                 <Barcode className="w-5 h-5" />
@@ -4473,10 +4540,10 @@ export function PosCheckoutTerminal({
           role="dialog"
           aria-modal="true"
           aria-label="Nạp đơn từ chat khách"
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
+          className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget) handleCloseParser(); }}
         >
-          <div className="max-w-lg w-full max-h-[92vh] overflow-y-auto">
+          <div className="max-w-4xl w-full max-h-[92vh] overflow-y-auto">
             <SmartOrderParser
               books={books.map((b) => ({ id: b.id, code: b.code, title: b.title, author: b.author }))}
               onCreateOrder={handleParserOrder}
@@ -4496,10 +4563,10 @@ export function PosCheckoutTerminal({
       {/* MODAL 1: MỞ CA KÉT TIỀN (Open Cashbox Shift Modal) */}
       {isOpenShiftModalOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
+          className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsOpenShiftModalOpen(false); }}
         >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
+          <div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-indigo-700">
                 <Banknote className="w-5 h-5" />
@@ -4590,10 +4657,10 @@ export function PosCheckoutTerminal({
       {/* MODAL 2: CHỐT CA & ĐỐI SOÁT KÉT TIỀN (Close Shift & Reconciliation Modal) */}
       {isCloseShiftModalOpen && activeSession && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
+          className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
           onClick={(event) => { if (event.target === event.currentTarget && !isSubmittingSession) setIsCloseShiftModalOpen(false); }}
         >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
+          <div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-emerald-700">
                 <Receipt className="w-5 h-5" />

@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Camera, Clock, Eye, X } from 'lucide-react';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import { Camera, Clock, Eye } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 import { createPhotoWriteGate } from '@/lib/photo-write-gate';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import type { PaymentProofPhoto } from '@/lib/offline-db';
@@ -152,7 +151,6 @@ export function TransferPaymentModal({
   onCancel,
   errorMessage,
 }: TransferPaymentModalProps) {
-  const [mounted, setMounted] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -163,10 +161,6 @@ export function TransferPaymentModal({
   const savingRef = useRef(false);
   /** Cổng thứ tự ghi ảnh: lần ghi kẹt không được đè ảnh của lần ghi mới hơn. */
   const writeGateRef = useRef(createPhotoWriteGate());
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   /**
    * Object URL của ảnh đã lưu. Thu hồi mỗi khi blob đổi (chụp lại) và khi
@@ -205,9 +199,15 @@ export function TransferPaymentModal({
     };
   }, [session?.expiresAt]);
 
-  // ESC / focus trap: KHÔNG có đường đóng tạm. Đơn PENDING đang giữ ATP nên
-  // chỉ có hai lối thoát hợp lệ - Xác nhận hoặc Huỷ đơn. ESC = Huỷ đơn.
-  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted && !busy, onCancel);
+  // ESC / đóng modal: KHÔNG có đường đóng tạm. Đơn PENDING đang giữ ATP nên
+  // chỉ có hai lối thoát hợp lệ - Xác nhận hoặc Huỷ đơn. ESC/backdrop/X = Huỷ đơn,
+  // nhưng bị chặn khi đang busy hoặc đang lưu ảnh (giữ nguyên hành vi cũ).
+  // Modal wrapper gọi onClose khi ESC/backdrop/X nên bọc guardedCancel.
+  const guardedCancel = () => {
+    if (!busy && !isSaving) {
+      void onCancel();
+    }
+  };
 
   const handlePickPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
@@ -258,51 +258,27 @@ export function TransferPaymentModal({
     }
   };
 
-  if (!isOpen || !mounted || !session) return null;
+  if (!isOpen || !session) return null;
   const expired = Boolean(session.expiresAt) && remainingMs === 0;
   const shownError = captureError || errorMessage;
   const totalSeconds = Math.floor(remainingMs / 1000);
   const countdown = `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`;
 
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] bg-slate-950/80 flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy && !isSaving) {
-          onCancel();
-        }
-      }}
+  return (
+    <Modal
+      open={isOpen && !!session}
+      onClose={guardedCancel}
+      size="sm"
+      title="Thanh toán chuyển khoản"
+      subtitle={session.orderCode}
     >
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Thanh toán chuyển khoản"
-        className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-          <div className="min-w-0">
-            <p className="text-xs font-extrabold text-slate-900">Thanh toán chuyển khoản</p>
-            <p className="text-[10px] text-slate-500 font-mono truncate">{session.orderCode}</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Huỷ đơn, trả lại tồn kho"
-            title="Huỷ đơn - trả lại tồn kho đang giữ chỗ"
-            onClick={onCancel}
-            disabled={busy}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
         {/* 30/09: thân modal CUỘN ĐƯỢC. Trước đây khối này cao tự do nên ảnh xác
             nhận dài làm nội dung tràn ra ngoài, nút "Xác nhận đã nhận tiền" ở
             dưới bị đẩy khỏi màn hình mà KHÔNG kéo xuống được ⇒ buộc phải ẩn ảnh
             mới bấm được. Nay vùng giữa cuộn, nút Xác nhận luôn ở đáy. */}
-        <div className="p-4 space-y-3 overflow-y-auto flex-1 min-h-0 overscroll-contain">
+      <div className="space-y-3">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium">Số tiền</span>
             <span className="text-base font-black text-emerald-700 font-mono">
@@ -421,15 +397,13 @@ export function TransferPaymentModal({
           </button>
           <button
             type="button"
-            onClick={onCancel}
+            onClick={() => { void guardedCancel(); }}
             disabled={busy}
             className="w-full py-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs transition disabled:opacity-50"
           >
             {busy ? 'Đang huỷ đơn...' : 'Huỷ đơn'}
           </button>
-        </div>
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

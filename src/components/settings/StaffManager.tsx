@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Users, UserPlus, Lock, Unlock, KeyRound, ShieldCheck, Pencil } from 'lucide-react';
 import { UserRole, USER_ROLES } from '@/lib/roles';
+import Modal from '@/components/ui/Modal';
 
 interface StaffRow {
   staffId: string;
@@ -33,6 +34,8 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [form, setForm] = useState({ staffId: '', fullName: '', role: 'ROLE_CASHIER' as UserRole, passcode: '' });
   const [creating, setCreating] = useState(false);
   const [resetId, setResetId] = useState('');
@@ -72,7 +75,13 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   }, [load]);
 
   const mutate = async (staffId: string, body: Record<string, unknown>, confirmMsg: string) => {
-    if (!window.confirm(confirmMsg)) return;
+    setConfirmDlg({
+      msg: confirmMsg,
+      onOk: async () => { setConfirmDlg(null); doMutate(staffId, body); },
+    });
+    return;
+  };
+  const doMutate = async (staffId: string, body: Record<string, unknown>) => {
     setError(null);
     setNotice(null);
     try {
@@ -157,7 +166,18 @@ export function StaffManager({ canManagePrivileged }: StaffManagerProps) {
   const roleOptions = canManagePrivileged ? ALL_ROLES : CREATABLE_BY_MANAGER;
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <div>
         <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
           <Users className="w-4 h-4 text-indigo-600" />

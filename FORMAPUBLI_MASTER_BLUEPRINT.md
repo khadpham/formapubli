@@ -974,7 +974,13 @@ graph LR
 Trong một nhà xuất bản hoặc đơn vị phát hành sách độc lập, sự rò rỉ dữ liệu tài chính hoặc số liệu kho có thể dẫn đến rủi ro pháp lý và quản trị nghiêm trọng:
 - **Nhân viên bán hàng hội chợ (Cashier/Staff):** Thường là cộng tác viên, sinh viên hoặc nhân viên bán thời gian. Họ cần thao tác bán hàng cực nhanh nhưng **tuyệt đối không được xem doanh thu tổng của công ty, không thấy giá vốn, không thấy lợi nhuận, và không biết thông tin về sổ sách thuế**.
 - **Thủ kho (Warehouse Keeper):** Cần tập trung 100% vào sự chính xác của số lượng sách trên giá kệ vật lý. Họ quản lý thẻ kho, nhập/xuất/chuyển kho nhưng không cần và không được can thiệp vào các con số doanh thu tài chính.
-- **Kế toán thuế (Tax Accountant):** Chịu trách nhiệm làm việc với hóa đơn điện tử và Chi cục Thuế. **Hệ thống bắt buộc phải tự động cách ly, chỉ cung cấp cho Kế toán thuế duy nhất các số liệu chính thức (`OFFICIAL_TAX`)**, tuyệt đối không để lộ các đơn bán đầu nậu hay dòng tiền nội bộ (`INTERNAL_MANAGEMENT`).
+- **Kế toán thuế (Tax Accountant):** Là đơn vị dịch vụ BÊN NGOÀI (xác nhận 2026-10-14),
+  không phải nhân viên công ty. Họ làm việc HOÀN TOÀN trên phần mềm MS-Invoice,
+  không dùng ERP. ERP chỉ có trách nhiệm: (1) đẩy dữ liệu hóa đơn sang MS-Invoice
+  để họ duyệt/ký, (2) đồng bộ ngược trạng thái về, (3) xuất báo cáo thuế chỉ gồm
+  dữ liệu `OFFICIAL_TAX` khi họ cần. **Hệ thống bắt buộc phải tự động cách ly,
+  chỉ cung cấp cho Kế toán thuế duy nhất các số liệu chính thức (`OFFICIAL_TAX`)**,
+  tuyệt đối không để lộ các đơn bán đầu nậu hay dòng tiền nội bộ (`INTERNAL_MANAGEMENT`).
 - **Quản lý vận hành (Manager):** Điều phối quầy bán và kho vận hàng ngày, duyệt chuyển kho, áp chiết khấu theo khung cho phép.
 - **Chủ doanh nghiệp (Owner / Super Admin):** Nắm giữ quyền lực tối cao, nhìn thấy toàn cảnh bức tranh thực tế (Total Reality View).
 
@@ -1375,11 +1381,34 @@ Vi phạm R1-R3, R5: chặn lưu, yêu cầu xác nhận của manager. Vi phạ
 
 **Nguyên tắc:** Không sửa hay rà soát lại hợp đồng quá khứ trong ERP. Team tự soạn lại cho đúng, tích hợp sau.
 
+**Bộ mẫu chuẩn từ hồ sơ thực tế (T_KHO.zip, 2026-10-13):** Phân tích bộ hồ sơ đầy đủ của đầu sách "Đốt kho" cho thấy 1 bộ hồ sơ chuẩn gồm 8 loại tài liệu:
+
+| # | Loại tài liệu | Mã mẫu | Ghi chú |
+|---|---|---|---|
+| 1 | HĐ thiết kế bìa | HD_THIET_KE_BIA | Giai đoạn 1 |
+| 2 | HĐ biên dịch | HD_BIEN_DICH_CHUAN | Giai đoạn 2, số HĐ dạng {n}.{tháng}.{năm}/HĐBD |
+| 3 | HĐ biên tập | HD_BIEN_TAP | Giai đoạn 3, số HĐ dạng {n}.{tháng}.{năm}/HĐBT |
+| 4 | HĐ dàn trang | HD_DAN_TRANG | Giai đoạn 4, số HĐ dạng {n}.{tháng}.{năm}/HĐDT |
+| 5 | HĐ đọc morat | HD_DOC_MORAT | Giai đoạn 5, số HĐ dạng {n}/HĐMR |
+| 6 | Biên bản nghiệm thu | BB_NGHIEM_THU | Mỗi giai đoạn 1 biên bản riêng, viện dẫn đúng số HĐ |
+| 7 | Phiếu chi | PHIEU_CHI | Chỉ dùng cho chi tiền mặt, mẫu 02-TT theo TT 133/2016/TT-BTC |
+| 8 | Ủy nhiệm chi | UY_NHIEM_CHI | Chỉ dùng cho chuyển khoản ngân hàng |
+
+Ngoài ra phát hiện loại tài liệu thứ 9: **Quyết định xuất bản** (QD_XUAT_BAN) của NXB, thuộc luồng giấy phép song song.
+
+**Quy tắc định dạng rút ra từ mẫu thực tế:**
+- Số tiền bằng chữ phải tự sinh từ số, không gõ tay (mẫu thực tế có lỗi chữ/số không khớp).
+- Tên tác phẩm trong HĐ dàn trang phải validate trùng với tên sách của dự án (mẫu thực tế bị copy-paste sai tên sách khác).
+- Biên bản nghiệm thu chọn hợp đồng từ DB, không gõ tay số HĐ (mẫu thực tế viện dẫn sai số HĐ).
+- Trường định danh bên B hỗ trợ CCCD/CMND/Hộ chiếu/MST (mẫu thực tế có trường hợp dùng hộ chiếu + bút danh).
+- Thuế TNCN 10% khấu trừ tại nguồn, hiển thị cả giá trị gross và thực nhận.
+- Sửa lỗi chính tả "nghìn đống" thành "nghìn đồng" trong mẫu mới.
+
 ERP xây dựng cho tương lai:
-- 5 mẫu chuẩn tương ứng 5 giai đoạn, đã có sẵn điều khoản chuẩn và logic ngày tháng mẫu.
+- 8 mẫu chuẩn theo bảng trên, đã có sẵn điều khoản chuẩn và logic ngày tháng mẫu.
 - Dự án mới: chọn mẫu, điền thông tin, hệ thống sinh hợp đồng đúng chuẩn.
 - File lưu R2, metadata trong bảng `documents`, gắn đúng dự án và giai đoạn.
-- AI đọc nội dung file upload, tự trích loại giấy tờ, ngày tháng, số tiền, các bên.
+- AI đọc nội dung file upload, tự trích loại giấy tờ, ngày tháng, số tiền, các bên (phân loại đọc từ nội dung, không đọc từ tên file).
 
 ### 23.4. Mã hóa đơn tận dụng được (không cần hỏi thêm)
 
@@ -1397,3 +1426,222 @@ Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn
 2. Quản lý dự án mới với timeline 5 giai đoạn và rule engine.
 3. Dashboard theo dõi: trạng thái dự án, giấy tờ thiếu, deadline sắp tới, cảnh báo rule.
 4. Chạy song song với Drive 1 tháng rồi chuyển hẳn.
+
+### 23.6. Vấn đề 2 mã đơn hàng (ghi nhận 2026-10-13, phải xử lý triệt để)
+
+**Hiện trạng:** Một đơn online hiện có 2 mã khác nhau:
+- Portal (datsach.formapubli.vn) tự sinh mã riêng: `DH-20261011-J3OT` (format DH-ngày-random)
+- ERP (app.formapubli.vn) sinh mã riêng khi nhận đơn từ portal: `ORD261011000M` (format ORD-ngày-số)
+- Bảng `orders` lưu cả 2: cột `order_code` (mã ERP) và cột `portal_ref` (mã portal)
+
+**Hậu quả:**
+- Khách chuyển khoản không biết ghi mã nào vào nội dung CK
+- Đối soát sao kê ngân hàng phải tra chéo 2 mã thủ công
+- Ảnh biên lai trên sheet gắn mã portal, đơn trong ERP mang mã ERP - khó đối chiếu
+- Đây là rào cản trực tiếp cho nghiệp vụ đối soát tự động (xem mục 24)
+
+**Giải pháp cho hệ thống mới:** Chỉ dùng MỘT mã duy nhất xuyên suốt. Portal không tự sinh mã nữa. Khi khách bấm đặt hàng, portal gọi API sang ERP để lấy mã `ORD...` ngay, dùng mã đó hiển thị cho khách, ghi vào sheet, làm mã thanh toán bắt buộc trong nội dung chuyển khoản. Một mã từ đặt hàng đến đối soát đến giao hàng.
+
+### 23.7. Đối soát ngân hàng và SPX tự động (anh Kha duyệt 2026-10-13)
+
+**Bối cảnh:** Kế toán đang đối chiếu thủ công từng dòng sao kê ngân hàng và báo cáo tài chính SPX. Việc máy móc, dễ sai, không scale được.
+
+**Nguyên tắc bắt buộc:** Một mã đơn `ORD...` duy nhất xuyên suốt (xem 23.6). Mã này là chìa khóa để auto-match: khách ghi mã vào nội dung chuyển khoản (VietQR nhúng sẵn mã), SPX gắn mã vận đơn với đơn ERP.
+
+**Thứ tự triển khai (đã duyệt):**
+1. Chuẩn hóa một mã đơn (API `POST /api/orders/reserve-code` - portal lấy mã trước khi khách thanh toán)
+2. Đối soát ngân hàng
+3. Đối soát SPX
+
+**Đối soát ngân hàng:**
+- Import file sao kê MB Bank (xlsx). Bảng `bank_statements`: ngay_giao_dich, phat_sinh_no, phat_sinh_co, don_vi, noi_dung, but_toan (UNIQUE chống import trùng).
+- Auto-match: parse cột NỘI DUNG tìm mã đơn (regex `ORD\d+`), so với `order_code`, so sánh số tiền (sai số < 1000đ).
+  - Mã khớp + tiền khớp: tự động, confidence HIGH, cập nhật đơn thành ĐÃ THU.
+  - Mã khớp + tiền lệch: confidence MEDIUM, hàng đợi review.
+  - Không tìm thấy mã: thử match tên + SĐT, confidence LOW.
+- Bảng `bank_statement_matches`: statement_id, order_id, match_type (AUTO/MANUAL), confidence, matched_by.
+- UI trang "Đối soát ngân hàng" trong module Tài chính: import xlsx, bảng 3 trạng thái ĐÃ KHỚP / CHỜ REVIEW / CHƯA XỬ LÝ, nút Xác nhận / Bỏ qua / Gán tay.
+
+**Đối soát SPX:**
+- Import báo cáo tài chính SPX (xlsx). Bảng `spx_settlements`: ma_van_don (UNIQUE), trang_thai, tien_thu_ho (COD), tong_phi, so_tien_dieu_chinh, ly_do_dieu_chinh.
+- Auto-match `ma_van_don` với `tracking_code` của đơn. Kiểm tra 3 điểm: COD thu hộ vs cod_amount, phí vận chuyển có bất thường không, có số tiền điều chỉnh không.
+- Bảng `spx_settlement_matches`: settlement_id, order_id, cod_khop, phi_bat_thuong, note.
+- UI trang "Đối soát SPX" tương tự đối soát ngân hàng.
+
+**Trạng thái implement (dev, 2026-10-14):** Đã code xong trên nhánh dev - migration 0061 (bank) + 0062 (SPX), service + UI panel, API reserve-code (commit 49d9d77, 9b0d857, ffa6388). Đang test trên dev.formapubli.vn, chưa PR vào main.
+
+### 23.8. Hóa đơn điện tử MS-Invoice (anh Kha chốt 2026-10-14)
+
+**Nguyên tắc tối cao:** MỌI sản phẩm bán ra đều phải có hóa đơn. Không có ngoại lệ.
+
+**Ba luồng hóa đơn:**
+
+1. **Khách lấy hóa đơn VAT:** Đơn gắn `fiscal_scope = 'OFFICIAL_TAX'`. Xuất HĐĐT
+   ngay cho đơn đó qua MS-Invoice. Thủ kho được xuất hóa đơn khi khách yêu cầu.
+
+2. **Khách KHÔNG lấy hóa đơn (bán lẻ):** Vẫn ghi nhận đầy đủ. Đơn gắn
+   `fiscal_scope = 'INTERNAL_MANAGEMENT'`, xuất kho bình thường. Cuối ngày
+   (cron 21h30), hệ thống GOM TẤT CẢ đơn bán lẻ không lấy hóa đơn trong ngày
+   thành MỘT hóa đơn tổng hợp duy nhất (đúng Nghị định 123/2020/NĐ-CP cho bán lẻ).
+   Kế toán chỉ ký MỘT lần cho hóa đơn tổng hợp này.
+
+3. **Bán đầu nậu chiết khấu sâu không hóa đơn:** Luồng RIÊNG, không gộp vào hóa đơn
+   tổng hợp cuối ngày. Khi lập phiếu xuất kho cho đơn đầu nậu, có tickbox rõ ràng
+   "Xuất hóa đơn": tick thì `fiscal_scope = 'OFFICIAL_TAX'` và sinh hóa đơn,
+   không tick thì `fiscal_scope = 'INTERNAL_MANAGEMENT'` và chỉ ghi nhận nội bộ.
+
+**Mô hình làm việc với kế toán (bối cảnh xác nhận 2026-10-14, đơn giản hóa):**
+
+Kế toán là đơn vị dịch vụ BÊN NGOÀI, không phải nhân viên công ty. Họ làm việc
+HOÀN TOÀN trên phần mềm MS-Invoice, đã quen cắm USB token để ký. KHÔNG ép họ dùng
+ERP. KHÔNG cần remote signing.
+
+Luồng chuẩn:
+1. ERP chuẩn bị dữ liệu hóa đơn (từ đơn hàng / phiếu xuất kho).
+2. ERP gọi API MS-Invoice tạo HÓA ĐƠN NHÁP (isSigned=N, chưa ký) trên MS-Invoice.
+3. Kế toán mở MS-Invoice, thấy nháp do ERP đẩy lên, kiểm tra, cắm USB token ký
+   như họ vẫn làm từ trước đến nay.
+4. ERP ĐỒNG BỘ NGƯỢC: định kỳ gọi API lấy trạng thái, số hóa đơn, mã CQT,
+   link tra cứu về lưu vào DB ERP để đối soát và báo cáo.
+
+ERP không bao giờ tự ký hóa đơn. ERP chỉ chuẩn bị nháp. Remote signing chưa cần
+thiết ở giai đoạn này.
+
+**Kỹ thuật MS-Invoice (đã verify qua POC 2026-10-14):**
+
+- Demo API: `https://docker-myinvoice.iamsoftware.com.vn`
+- Luồng: login lấy LoginKey -> POST `/erp/rest/s1/iam-invoice/invoices/create-from-3rd`
+  (kèm certSn + isSigned=Y) -> remote signing qua IntrustCA (requirePinCode=N).
+- Ký hiệu: `1C26TVN`. Payload dùng `productItems` (không phải `items`).
+- Tạo NHÁP: gửi `isSigned = "N"` (POC đã test `isSigned = "Y"` để ký luôn).
+- Remote signing KHÔNG cần thiết ở giai đoạn này (quyết định 2026-10-14).
+  Kế toán tiếp tục cắm USB token ký trên MS-Invoice như cũ. ERP chỉ đẩy nháp.
+
+### 23.9. Chiến lược portal dev (anh Kha chốt 2026-10-14)
+
+Portal đặt sách (`khadpham/customer-order-portal`, production `datsach.formapubli.vn`)
+là repo riêng, deploy trên Vercel. Để phát triển tính năng mới không ảnh hưởng
+production:
+
+- Tạo nhánh `dev` trong repo portal. Vercel tự động deploy preview cho nhánh dev
+  mỗi lần push.
+- Biến môi trường trên preview dev: `FORMAPUBLI_API_URL=https://dev.formapubli.vn`
+  (trỏ sang ERP dev, TUYỆT ĐỐI không trỏ production).
+- Production giữ nguyên: nhánh `main`, `FORMAPUBLI_API_URL=https://app.formapubli.vn`.
+- Hosting: tiếp tục dùng Vercel cho cả dev và production (đã nghiên cứu so sánh
+  với Cloudflare Pages và VPS - Vercel thắng vì preview tự động, zero config,
+  phù hợp team nhỏ).
+- Mọi thay đổi khách hàng nhìn thấy: preview trên dev trước, anh Kha duyệt mới
+  merge vào main để deploy production.
+
+**Thiết kế portal mới (đã chốt):**
+1. Trang chủ hiển thị TOÀN BỘ sản phẩm ngay khi vào link (bỏ màn hình login chặn đầu).
+2. Bấm đặt hàng -> bắt buộc có tài khoản (đăng nhập nếu có, đăng ký nếu chưa).
+3. Lưu toàn bộ thông tin khách hàng.
+4. Một mã đơn duy nhất: portal gọi `POST /api/orders/reserve-code` lấy mã `ORD...`
+   trước khi khách thanh toán (xem 23.6).
+
+**Tiến độ 2026-10-14:**
+- ERP dev: 9 API portal hoàn thành (products, customers, reviews, promotions, orders),
+  import 88 sản phẩm thật từ sheet, API tạo đơn test end-to-end OK.
+- Portal dev: UI catalog hoàn chỉnh, 7/7 lỗi visual đã sửa. Bước 3 nối API thật
+  hoàn thành (products 88 món, detail, lookup, reserve-code, tạo đơn COD).
+  Đang chờ: cấu hình 2 biến môi trường Vercel preview
+  (`NEXT_PUBLIC_FORMAPUBLI_API_URL`, `NEXT_PUBLIC_PORTAL_API_KEY`) rồi test đơn thật.
+- Lưu ý kỹ thuật: portal gọi API từ trình duyệt nên key phải có prefix NEXT_PUBLIC_.
+  Đây là chấp nhận được cho storefront công khai, API ERP đã có rate limit cơ bản.
+
+### 23.10. Quyết định hạ tầng dữ liệu (anh Kha duyệt 2026-10-14)
+
+**Lưu trữ ảnh sản phẩm:** Giữ iili.io (dịch vụ hiện tại, đã kiểm chứng ổn định).
+URL ảnh lưu dạng text trong DB. Nếu sau này cần chuyển sang R2 thì chỉ cần
+UPDATE URL, không sửa code. R2 dành cho tài liệu pháp lý quan trọng
+(hợp đồng, hóa đơn, biên lai) nơi mất file là mất pháp lý.
+
+**Kiến trúc database:** MỘT database duy nhất (Turso/SQLite), KHÔNG tách thành
+nhiều database vật lý. Lý do: nghiệp vụ bán hàng cần transaction xuyên suốt
+(trừ kho + tạo đơn + ghi doanh thu trong một lần), tách DB sẽ mất tính toàn vẹn.
+
+Thay vào đó, tách biệt bằng MODULE LOGIC trong cùng database:
+- Bảng kho vận: tiền tố `inv_` hoặc nhóm inventory.
+- Bảng bán portal: tiền tố `portal_`.
+- Bảng tài chính: tiền tố `fin_`.
+- Mỗi module có ranh giới rõ trong code, nhưng vẫn join và transaction được
+  khi cần.
+
+**Giữ Turso:** Database hiện tại 6.1MB, 75 bảng (đo ngày 2026-10-14).
+Gói miễn phí cho 9GB dung lượng và khoảng 25 triệu lượt đọc/tháng.
+Quy mô hiện tại dùng chưa tới 0.1% dung lượng. Đủ cho nhiều năm tới.
+
+**Nguyên tắc file vs dữ liệu:**
+- Turso chỉ chứa chữ và số (text, số, ngày tháng).
+- File (PDF, DOCX, ảnh) lưu trên kho file riêng (R2 cho tài liệu, iili.io cho
+  ảnh sản phẩm). Turso chỉ lưu URL trỏ đến file.
+- Khi truy xuất: đọc URL từ Turso, tải file từ kho chứa, file nguyên vẹn
+  đúng định dạng gốc.
+
+**Migration:** Không tốn phí, không giới hạn số lượng. Thêm bảng/cột mới
+không ảnh hưởng dữ liệu cũ. Tuyệt đối không xóa bảng/cột đang dùng.
+
+---
+## 38. Quan ly Combo / Box Set (2026-10-15, nhanh dev)
+
+Hien trang: 9 combo COMBO01-09 nam trong bang products. Quan ly trong tab Kho hang.
+
+### 38.1. Quyet dinh (ruling) khac brief goc
+- Migration 0064 thay vi 0066 (0064/0065 dang trong, 0063 la cuoi).
+- Khong them cot moi vao products: phat hien combo = co dong trong combo_components.
+- Khong dung bundle.service (engine theo editions/seasonalBundles) - combo_components theo products la thuc the khac, khong dung cham.
+- Khong co muc 38 truoc day (file ket thuc o 37 + phu luc 23.x) nen them moi o cuoi.
+- Journal thieu entry 0063 tu truoc (lo cua team portal, khong thuoc pham vi) - chi them entry 0064.
+- Thanh phan combo bat buoc productKind BOOK (bao ve FK editions o ledger).
+- Dong combo trong don giu nguyen (gia combo, edition_id NULL); chi ton va but toan moi no thanh component.
+- Qua combo mo rong nhu dong thuong (truong hop bien, uu tien dung).
+- Batch combo dung prefix idempotency rieng idem-confirm-<orderId>-combo (tranh dung key index 0); nhan dien "da duyet" van khop vi LIKE idem-confirm-<orderId>-%.
+- getComboMap chiu duoc DB chua co bang (tra map rong) de deploy code truoc migration khong lam hong moi don hang.
+
+### 38.2. File
+- src/db/migrations/0064_combo_components.sql + src/db/schema.ts (bang comboComponents) + journal idx 63.
+- scripts/apply-0064-combo-local.ts (va dev.db cuc bo), scripts/seed-combo-components.ts (idempotent, lookup theo code/name luc chay).
+- src/services/combo.service.ts (getComboMap/getComboStocks/getComboStock/isCombo/expandComboNeeds/validateComponents).
+- src/app/api/combos/route.ts (GET list + POST tao), src/app/api/combos/[id]/components/route.ts (PUT thay the),
+  src/app/api/combos/books/route.ts (tim sach + ton theo kho), src/app/api/inventory/combo-stock/[comboId]/route.ts.
+- Moc vao OrderService: createOrder (ATP mo rong B2, edition_id NULL B4, but toan component B5) + confirmOrder (ownNeed mo rong, batch tach prefix).
+- UI: src/components/inventory/ComboManagerPanel.tsx + tab Combo trong StockOverviewMatrix (badge tim, tao/sua/xem ton dong).
+
+### 38.3. Test (moi test deu doc tren may dev 2026-10-15)
+- scripts/test-combo-seed.ts: 5/5 (idempotent, skip thieu du lieu).
+- scripts/test-combo-service.ts: 7/7 (no line, min logic, isCombo, combo rong).
+- scripts/test-combo-api.ts: 11/11 (401/403/400, CRUD, thay the, tim sach kem ton).
+- scripts/test-combo-sell-e2e.ts: 9/9 (ban that, tru dung component, khong but toan combo, chan ban vuot ton).
+- Hoi quy: test-goods-sell-e2e 33/33, test-inventory 7/7, test-transfer-payment-flow PASS, test-gift-subtotal 20/20.
+- npx tsc --noEmit sach, npm run build thanh cong.
+
+### 38.4. Viec can lam tren server (operator, ngoai tam voi cua agent local)
+1. Ap migration 0064 vao dev.db (DB server, khong phai file cuc bo).
+2. Chay seed: 9 combo COMBO01-09 (INSERT OR IGNORE, thieu ten thi warn).
+3. pm2 restart formapubli-dev, kiem tra https://dev.formapubli.vn tra 200.
+4. Curl: GET /api/combos, GET /api/inventory/combo-stock/COMBO01?warehouseId=..., POST tao thu + xoa.
+5. Migration production de dot sau (rieng, co backup).
+
+## 39. MS-Invoice PROD da verify + Chien luoc tich hop Shopee API (2026-10-20)
+
+### 39.1. MS-Invoice production - TRANG THAI DA KIEM CHUNG (2026-10-20)
+- Tai khoan prod = MST cong ty 0110626953, URL https://hoadon.msinvoice.vn, ky hieu '1C26TVN'. API login-key dung chung tai khoan web (khong can tai khoan rieng).
+- create-from-3rd PHAI gui tach: invoiceForm 1 + invoiceSerial 'C26TVN' (he thong ghep thanh 1C26TVN); gui nguyen '1C26TVN' se loi "Khong tim thay mau hoa don 11C26TVN".
+- API tra HTTP 200 ngay ca khi loi logic (success 'N' / error true) - client PHAI bat 2 truong nay.
+- Thue: sach 5% (VatTax5), in an 8% (VatTax8). Gia bia da gom VAT nen amount gui di = tach nguoc chua thue.
+- Search endpoint tra du lieu o truong listData; mapping dung: invoiceFormSerial, invoiceNo, invoiceTotal, statusId, toPartyName||toName, toPartyTaxId.
+- Verify E2E: day HD test qua ERP -> SYNCED, msinvoice_id bat dung, chi tiet tren prod khop tung so (tong 36000, chua thue 34286, thue 5% 1714). 2 HD nhap test da xoa khoi prod bang DELETE endpoint - production sach.
+- Endpoint da biet them tu tai lieu vendor: pdf-base64 (lay file PDF), DELETE xoa nhap, PUT gui email. Chua co tai lieu API dieu chinh/thay the (vendor chua tra loi tu 13/10).
+- Chua len production: code o nhanh dev; can PR rieng + dat MSINVOICE_* vao /opt/formapubli/.env + ap migration 0069/0070/0072.
+
+### 39.2. Shopee Open Platform - QUYET DINH CHIEN LUOC (2026-10-20, cho anh Kha duyet masterplan)
+- Cong ty da duoc duyet Open Platform (tai khoan formapubli). Chua tao app - cho anh chot ten app + logo (Partner ID/Key cap theo tung app).
+- Pham vi API v2 da nghien cuu day du (tai lieu: ~/workspace/your_files/nghien-cuu-shopee-api-v2-2026-10-20.md va phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md): 33 module. Diem ky thuat bat buoc: token 4 gio + refresh xoay vong 30 ngay (luu theo shop, cron refresh); ky HMAC-SHA256; webhook timeout 3s, khong dam bao thu tu, co the lap - bat buoc idempotent + get_lost_push_message + poll du phong.
+- HOA DON NGUOI MUA TREN SHOPEE (gioi han VN): get_buyer_invoice_info dung duoc o VN (doc thong tin khach khai); get_pending_buyer_invoice_order_list va upload_invoice_doc CHI mo cho PH/BR - VN khong dung duoc. Hau qua: hang doi hoa don Shopee do ERP tu xay tu trang thai don INVOICE_PENDING; tra hoa don cho khach bang EMAIL kem link tra cuu MS-Invoice (khong upload len Shopee).
+- ESCROW: tien khach bi Shopee giu tai Tai khoan Dam bao, giai ngan khi khach xac nhan/het thoi gian bao dam, tru toan bo phi truoc khi ve nguoi ban. Lai that tinh tren escrow_amount_after_adjustment - khong dung doanh thu danh nghia. Doi soat 3 tang: get_escrow_detail (theo don, co items[] tung dong hang va nhom thue khau tru VN withholding_vat/pit/cit) -> income report (theo ky) -> payout (tien that ve ngan hang). Khong hardcode ty le phi.
+- BusinessInsights cua Shopee gan nhu khong co cho VN (1 endpoint, chi Brazil) -> phan tich kinh doanh do ERP tu xay tu don + escrow. AccountHealth day du (chi so van hanh, diem phat, listing vi pham) - dung cho canh bao van hanh.
+- THU TU TRIEN KHAI (thay the de xuat "hop nhat du lieu truoc" trong ban phan tich hub): Giai doan 0 tao app + kiem chung API that (chi doc, sandbox) SONG SONG giai doan 1 GO-LIVE ERP len production (tach PR: A hoa don, B chien dich tu ket thuc, C CRUD doi tac, D hop dong/migration 0071). Giai doan 2 Shopee P1: ha tang token/webhook + dong bo don + gui SPX + in phieu trong tab Shopee hien tai. Giai doan 3 P2: hoa don nguoi mua + hoan tra + san pham/ton (day len co duyet tay truoc) + chat (scope rieng). Giai doan 4 P3: escrow/tai chinh sau + tai cau truc tab thanh hub "Don online" (Portal + Shopee) SAU KHI du lieu that chay on dinh.
+- Quyet dinh con cho (masterplan-golive-va-shopee-2026-10-20.md): D0 ten app/logo; D1 thoi diem phat hanh HD don online (de xuat: khi da ban giao van chuyen); D2 pham vi go-live; D3 khung gio deploy; D4 shop Shopee chinh thuc de uy quyen; D5 xin scope Chat; D6 don credential prod khoi dev .env sau go-live.
+- TIEN DO THUC TE (cap nhat 2026-10-20 chieu): D0/D1/D2/D4 da chot (xem masterplan muc quyet dinh). App "Vita Nova shopee" da tao (Test Partner_id 1249102); test shop sandbox 227989704 da uy quyen thanh cong VAO ERP DEV - token luu trong bang shopee_shop_tokens, ERP goi API bang token da luu thanh cong. San pham sach test da dang len sandbox qua API (item 803946511). Webhook da dang ky tro ve https://dev.formapubli.vn/api/shopee/push (goi kiem tra code 0 tra 200, su kien that bat buoc chu ky). Cac loi da sua tren dev: token/get tra o goc JSON; callback tra 200 JSON thay 502; redirect + verify webhook dung URL cong khai qua x-forwarded-host. Con lai P1: tao don test de chay dong bo don/SPX, bat loai su kien push tren console, ho so Go-Live lay khoa live.

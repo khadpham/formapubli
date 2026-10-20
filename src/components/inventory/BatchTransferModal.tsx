@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { PortalToBody } from '../PortalToBody';
+import Modal from '../ui/Modal';
 import {
-  X,
   ArrowRightLeft,
   AlertTriangle,
   CheckCircle2,
@@ -18,9 +17,10 @@ import {
   CircleHelp,
   Warehouse,
 } from 'lucide-react';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
 import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
 import { stockOfWarehouse } from '@/lib/warehouse-stock';
+import { WarehouseDocPrint, type DocPrintData } from './WarehouseDocPrint';
+import { Printer } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 
@@ -34,7 +34,7 @@ interface BookItem {
   isbnLast4?: string;
   stockAuCo?: number;
   stockQuynhMai?: number;
-  stockDuPhong?: number;
+  stockNuiTruc?: number;
   stockByWarehouse?: Record<string, number>;
   totalStock?: number;
 }
@@ -88,6 +88,8 @@ export function BatchTransferModal({
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
+  const [printData, setPrintData] = useState<DocPrintData | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ pckCode: string; totalItems: number } | null>(null);
   // Thông báo sau thao tác thêm dòng. `kind` quyết định màu + icon: 'success' là
@@ -98,15 +100,12 @@ export function BatchTransferModal({
 
   // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển - không bao giờ gọi
   // validate/submit; người dùng vẫn phải bấm nút Kiểm tra tồn kho rồi Xác nhận.
-  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  
   const [pasteText, setPasteText] = useState('');
   const [pasteResult, setPasteResult] = useState<{
     rows: ParsedRow[];
     summary: { matched: number; needsConfirm: number; notFound: number };
   } | null>(null);
-  const pasteModalRef = useModalFocusTrap<HTMLDivElement>(isPasteOpen && mounted, () =>
-    setIsPasteOpen(false)
-  );
   // Gợi ý sách: trước đây là `absolute z-20` nằm trong modal card `overflow-hidden`
   // (và body của modal là `overflow-y-auto`) nên bị CẮT mất phần dưới ở mọi kích
   // thước màn hình. Nay nó nằm trên document.body nên không tổ tiên nào cắt được.
@@ -370,13 +369,6 @@ export function BatchTransferModal({
     const picked = row.candidates.find((c) => c.id === bookId);
     addPastedRows([{ editionId: bookId, quantity: row.quantity }]);
     setPastedConfirmed((prev) => ({ ...prev, [row.line]: picked?.title || bookId }));
-  };
-
-  const closePaste = () => {
-    setIsPasteOpen(false);
-    setPasteText('');
-    setPasteResult(null);
-    setPastedConfirmed({});
   };
 
   const handleRemoveLine = (editionId: string) => {
@@ -726,40 +718,59 @@ export function BatchTransferModal({
 
   return (
     <>
-    {createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150 overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting && !isValidating) onClose();
-      }}
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!isSubmitting && !isValidating) onClose(); }}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-8 h-8 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+            <ArrowRightLeft className="w-4 h-4" />
+          </span>
+          Phiếu Chuyển Kho Hàng Loạt
+        </span>
+      }
+      subtitle="Xuất nhanh danh sách N đầu sách sang kho hội chợ hoặc kho chi nhánh với 1 chứng từ PCK duy nhất"
+      actions={
+        !successInfo ? (
+          <>
+            <div className="text-xs font-black uppercase text-slate-400">Thao tác</div>
+            <button
+              type="button"
+              onClick={handleValidateBatch}
+              disabled={isValidating || isSubmitting || lines.length === 0}
+              className="w-full px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {isValidating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+              Kiểm tra tồn kho
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmitBatch}
+              disabled={isSubmitting || isValidating || lines.length === 0 || validationSuccess !== true}
+              title={
+                validationSuccess !== true
+                  ? 'Vui lòng bấm "Kiểm tra tồn kho" thành công trước khi chuyển'
+                  : 'Xác nhận chuyển kho'
+              }
+              className="w-full px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+              Xác nhận chuyển kho
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Hủy bỏ
+            </button>
+          </>
+        ) : undefined
+      }
     >
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50/80">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
-              <ArrowRightLeft className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Phiếu Chuyển Kho Hàng Loạt
-              </h2>
-              <p className="text-xs text-slate-500">
-                Xuất nhanh danh sách N đầu sách sang kho hội chợ hoặc kho chi nhánh với 1 chứng từ PCK duy nhất
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+        <div className="space-y-5">
           {successInfo ? (
             <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-3">
               <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
@@ -776,7 +787,32 @@ export function BatchTransferModal({
                 Kho nguồn đã về 0: vào Quản Lý Kho bấm <span className="font-bold">Ngưng hoạt động</span> - đừng bấm
                 &quot;Xoá&quot;, kho đã có sổ kho nên xoá luôn bị từ chối.
               </p>
-              <div className="pt-2">
+              <div className="pt-2 flex gap-2 justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Chuẩn bị dữ liệu in phiếu chuyển kho
+                    const fromWh = warehouses.find(w => w.id === fromWarehouseId);
+                    const toWh = warehouses.find(w => w.id === toWarehouseId);
+                    setPrintData({
+                      docType: 'TRANSFER',
+                      docNumber: successInfo.pckCode,
+                      docDate: new Date().toISOString(),
+                      warehouseName: fromWh?.name || fromWarehouseId,
+                      toWarehouseName: toWh?.name || toWarehouseId,
+                      items: lines.map(l => ({
+                        productCode: l.code || '',
+                        productName: l.title || '',
+                        quantity: l.quantity,
+                      })),
+                      totalQuantity: successInfo.totalItems,
+                    });
+                    setPrintOpen(true);
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all flex items-center gap-2"
+                >
+                  <Printer className="w-4 h-4" /> In phiếu chuyển kho
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -814,7 +850,9 @@ export function BatchTransferModal({
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    {warehouses.map((w) => (
+                    {warehouses
+                      .filter((w: any) => !['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'].includes(w.code))
+                      .map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.name} ({w.code})
                       </option>
@@ -834,7 +872,7 @@ export function BatchTransferModal({
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {warehouses
-                      .filter((w) => w.id !== fromWarehouseId)
+                      .filter((w: any) => w.id !== fromWarehouseId && !['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'].includes(w.code))
                       .map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.name} ({w.code})
@@ -934,66 +972,118 @@ export function BatchTransferModal({
                   Trước đây nó là `absolute z-20` nằm trong modal card
                   `overflow-hidden` + body `overflow-y-auto`, nên danh sách bị cắt
                   mất phần dưới và không cuộn tới được. */}
-              {isSuggestOpen && filteredBooksToAdd.length > 0 && (
-                <PortalToBody
-                  className="fixed z-[95]"
-                  style={{ top: suggestPos.top, left: suggestPos.left, width: suggestPos.width }}
-                >
-                  <div
-                    ref={suggestRef}
-                    role="listbox"
-                    aria-label="Gợi ý sách có thể thêm vào phiếu"
-                    className="max-h-[min(20rem,calc(100vh-2rem))] overflow-y-auto overscroll-contain bg-white border border-slate-200 rounded-xl shadow-2xl divide-y divide-slate-100"
-                  >
-                    {filteredBooksToAdd.map((book) => {
-                      const stock = getFromStock(book.id);
-                      return (
-                        <button
-                          key={book.id}
-                          type="button"
-                          role="option"
-                          aria-selected={false}
-                          // Giữ focus ở ô tìm kiếm khi bấm để người dùng gõ tiếp
-                          // được ngay, thay vì mất focus về body.
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            handleAddLine(book);
-                            setIsSuggestOpen(false);
-                          }}
-                          className="w-full px-3 py-2 text-left hover:bg-indigo-50/60 flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          <span className="min-w-0 truncate">
-                            <span className="font-mono font-bold text-indigo-600 mr-2">[{book.code}]</span>
-                            <span className="font-medium text-slate-900">{book.title}</span>
-                          </span>
-                          <span className="font-mono text-[11px] text-slate-500 shrink-0 whitespace-nowrap">
-                            Tồn nguồn: <strong className="text-slate-800">{stock}</strong>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PortalToBody>
+              {searchBookTerm.trim() && (
+                <div className="border border-slate-200 rounded-2xl p-2 bg-white shadow-lg space-y-1 max-h-48 overflow-y-auto">
+                  {filteredBooksToAdd.length === 0 ? (
+                    <p className="text-xs text-slate-400 p-2 text-center">Không tìm thấy sách.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {filteredBooksToAdd.map((book) => {
+                        const stock = getFromStock(book.id);
+                        return (
+                          <button
+                            key={book.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              handleAddLine(book);
+                              setSearchBookTerm('');
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-indigo-50 rounded-xl flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer"
+                          >
+                            <span className="min-w-0 truncate">
+                              <span className="font-mono font-bold text-indigo-600 mr-2">[{book.code}]</span>
+                              <span className="font-medium text-slate-900">{book.title}</span>
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-500 shrink-0">
+                              Tồn: <strong className="text-slate-800">{stock}</strong>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* FIX: nút "Dán" phải luôn thấy được, kể cả khi bảng còn TRỐNG.
                   Nó nằm trong khối {lines.length > 0} là nên biến mất đúng lúc
                   người dùng cần nhất - dán danh sách lần đầu. Đưa ra ngoài. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsPasteOpen(true)}
-                  className="min-h-[38px] min-w-[38px] px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap"
-                  title="Dán danh sách chép từ Excel (tên sách · số lượng)"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Dán</span>
-                </button>
-                <span className="text-[11px] text-slate-500">
-                  {lines.length === 0
-                    ? 'Dán danh sách 2 cột từ Excel: tên sách · số lượng. Thiếu số lượng thì mặc định 5.'
-                    : ''}
-                </span>
+              <div className="border border-indigo-200 bg-indigo-50/50 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    Dán danh sách từ Excel (tên sách · số lượng)
+                  </label>
+                  <span className="text-[10px] text-slate-500">Thiếu SL thì mặc định 5</span>
+                </div>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => {
+                    setPasteText(e.target.value);
+                    setPasteResult(null);
+                  }}
+                  rows={3}
+                  spellCheck={false}
+                  placeholder={'Dán vào đây: Tên sách 1\t5\nTên sách 2\t3'}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCheckPasted}
+                    disabled={!pasteText.trim()}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Kiểm tra
+                  </button>
+                  {pasteResult && (
+                    <span className="text-[11px] font-bold text-slate-600">
+                      {pasteResult.summary.matched} khớp · {pasteResult.summary.needsConfirm} cần xác nhận · {pasteResult.summary.notFound} không tìm thấy
+                    </span>
+                  )}
+                  {pasteResult && pasteResult.summary.matched > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleAddPastedMatches}
+                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
+                    >
+                      Vào bảng ({pasteResult.summary.matched})
+                    </button>
+                  )}
+                </div>
+                {pasteResult && pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {pasteResult.rows
+                      .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
+                      .map((r) => {
+                        const chosen = pastedConfirmed[r.line];
+                        return (
+                          <div key={`c-${r.line}`} className="rounded-lg border border-amber-200 bg-white/70 p-2">
+                            <p className="text-[11px] text-slate-700">
+                              Dán: <span className="font-semibold">{r.line}</span> · SL <span className="font-mono font-bold">{r.quantity}</span>
+                            </p>
+                            {chosen ? (
+                              <p className="mt-1 text-[11px] font-bold text-emerald-700">Đã thêm: {chosen}</p>
+                            ) : (
+                              <div className="mt-1.5 flex flex-col gap-1">
+                                {r.candidates.map((c) => (
+                                  <button
+                                    key={`c-${r.line}-${c.id}`}
+                                    type="button"
+                                    onClick={() => handleAddPastedCandidate(r, c.id)}
+                                    className="w-full text-left px-2 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 text-amber-900 text-[11px] font-bold transition"
+                                  >
+                                    {c.title}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
 
               {/* Thanh thao tác hàng loạt (Bulk Actions Toolbar) */}
@@ -1093,7 +1183,7 @@ export function BatchTransferModal({
 
               {/* Bảng chi tiết các dòng sách đã chọn */}
               <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="max-h-64 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className="max-h-[50vh] overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
                   <table className="w-full min-w-[560px] text-xs">
                     <thead className="bg-slate-100/80 sticky top-0 border-b border-slate-200 text-slate-600 font-bold">
                       <tr>
@@ -1225,219 +1315,15 @@ export function BatchTransferModal({
             </>
           )}
         </div>
+    </Modal>
 
-        {/* Modal Footer */}
-        {!successInfo && (
-          <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50/80">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              Hủy bỏ
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleValidateBatch}
-                disabled={isValidating || isSubmitting || lines.length === 0}
-                className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {isValidating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                Kiểm tra tồn kho
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitBatch}
-                disabled={isSubmitting || isValidating || lines.length === 0 || validationSuccess !== true}
-                title={
-                  validationSuccess !== true
-                    ? 'Vui lòng bấm "Kiểm tra tồn kho" thành công trước khi chuyển'
-                    : 'Xác nhận chuyển kho'
-                }
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
-                Xác nhận chuyển kho
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body
-    )}
-
-    {/* Hộp thoại dán danh sách - portal riêng trên document.body để không bị
-        `overflow-hidden` của modal cha cắt. max-h + overflow-y-auto để luôn
-        cuộn tới được trên màn 375px. KHÔNG có nút nào gửi phiếu ở đây. */}
-    {isPasteOpen && (
-      <PortalToBody>
-        <div className="fixed inset-0 z-[90] bg-slate-950/70 flex items-center justify-center p-3">
-          <div
-            ref={pasteModalRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Dán danh sách từ Excel"
-            className="w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-slate-200">
-              <p className="min-w-0 text-xs font-extrabold text-slate-900 truncate">
-                Dán danh sách từ Excel
-              </p>
-              <button
-                type="button"
-                aria-label="Đóng hộp dán danh sách"
-                onClick={closePaste}
-                className="min-h-[38px] min-w-[38px] shrink-0 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-3">
-              <p className="text-[11px] leading-relaxed text-slate-600">
-                Dán 2 cột: <span className="font-semibold">tên sách · số lượng</span> (cột cách nhau
-                bằng Tab hoặc dấu phẩy). Tên sách phải khớp <span className="font-semibold">CHÍNH XÁC</span> với danh
-                mục - hệ thống không tự đoán. Dòng nào không có số lượng thì lấy mặc định{' '}
-                <span className="font-mono font-bold">5</span>. Dán chỉ thêm vào bảng chuyển, vẫn
-                phải bấm &quot;Kiểm tra tồn kho&quot; rồi &quot;Xác nhận chuyển kho&quot;.
-              </p>
-
-              <textarea
-                value={pasteText}
-                onChange={(e) => {
-                  setPasteText(e.target.value);
-                  setPasteResult(null);
-                }}
-                rows={6}
-                spellCheck={false}
-                placeholder={'Tên sách 1\t5\nTên sách 2\t3'}
-                className="w-full min-h-[38px] px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCheckPasted}
-                  disabled={!pasteText.trim()}
-                  className="min-h-[38px] min-w-[38px] px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Kiểm tra
-                </button>
-                {pasteResult && (
-                  <span className="text-[11px] font-bold text-slate-600 break-words">
-                    {pasteResult.summary.matched} dòng vào bảng · {pasteResult.summary.needsConfirm} cần
-                    xác nhận · {pasteResult.summary.notFound} không tìm thấy
-                  </span>
-                )}
-              </div>
-              {pasteResult && (
-                <div className="space-y-3">
-                  {/* 1. Khớp tuyệt đối */}
-                  <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <h3 className="text-[11px] font-extrabold text-emerald-900 mb-2 flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 shrink-0" />
-                      Khớp tuyệt đối ({pasteResult.summary.matched})
-                    </h3>
-                    <ul className="space-y-1 mb-2">
-                      {pasteResult.rows
-                        .filter((r): r is Extract<ParsedRow, { status: 'matched' }> => r.status === 'matched')
-                        .map((r) => (
-                          <li key={`m-${r.line}`} className="text-[11px] text-slate-700 break-words">
-                            {r.title} - <span className="font-mono font-bold">{r.quantity}</span>
-                          </li>
-                        ))}
-                    </ul>
-                    <button
-                      type="button"
-                      onClick={handleAddPastedMatches}
-                      disabled={pasteResult.summary.matched === 0}
-                      className="min-h-[38px] min-w-[38px] w-full px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Vào bảng ({pasteResult.summary.matched})
-                    </button>
-                  </section>
-
-                  {/* 2. Cần xác nhận - bấm vào đầu sách đúng để thêm vào phiếu. */}
-                  {pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
-                    <section className="rounded-xl border border-amber-300 bg-amber-50/70 p-3">
-                      <h3 className="text-[11px] font-extrabold text-amber-900 mb-1 flex items-center gap-1">
-                        <CircleHelp className="w-3.5 h-3.5 shrink-0" />
-                        Cần xác nhận ({pasteResult.summary.needsConfirm})
-                      </h3>
-                      <p className="text-[10px] font-semibold text-amber-800 mb-2 leading-relaxed">
-                        Tên trong danh sách không khớp tuyệt đối với danh mục. Bấm vào đầu sách đúng
-                        bên dưới để thêm vào phiếu.
-                      </p>
-                      <ul className="space-y-2">
-                        {pasteResult.rows
-                          .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
-                          .map((r) => {
-                            const chosen = pastedConfirmed[r.line];
-                            return (
-                              <li
-                                key={`c-${r.line}`}
-                                className="min-w-0 rounded-lg border border-amber-200 bg-white/70 p-2"
-                              >
-                                <p className="text-[11px] text-slate-700 break-words">
-                                  Dán: <span className="font-semibold">{r.line}</span> · SL{' '}
-                                  <span className="font-mono font-bold">{r.quantity}</span>
-                                </p>
-                                {chosen ? (
-                                  <p className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-emerald-700 break-words">
-                                    <Check className="w-3.5 h-3.5 shrink-0" />
-                                    Đã thêm: {chosen}
-                                  </p>
-                                ) : (
-                                  <div className="mt-1.5 flex flex-col gap-1.5">
-                                    {r.candidates.map((c) => (
-                                      <button
-                                        key={`c-${r.line}-${c.id}`}
-                                        type="button"
-                                        onClick={() => handleAddPastedCandidate(r, c.id)}
-                                        aria-label={`Thêm đầu sách ${c.title}`}
-                                        className="flex w-full items-center gap-1.5 min-h-[38px] px-2.5 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 active:bg-amber-200 text-amber-900 text-[11px] font-bold transition text-left"
-                                      >
-                                        <Plus className="w-3.5 h-3.5 shrink-0" />
-                                        <span className="min-w-0 break-words">{c.title}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </li>
-                            );
-                          })}
-                      </ul>
-                    </section>
-                  )}
-                  {/* 3. Không tìm thấy - chỉ hiển thị, KHÔNG có nút thêm. */}
-                  {pasteResult.rows.some((r) => r.status === 'not_found') && (
-                    <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <h3 className="text-[11px] font-extrabold text-slate-700 mb-1">
-                        Không tìm thấy ({pasteResult.summary.notFound})
-                      </h3>
-                      <p className="text-[10px] text-slate-500 mb-2">
-                        Danh mục không có dữ liệu khớp. Hãy tìm và thêm tay từng cuốn.
-                      </p>
-                      <ul className="space-y-1">
-                        {pasteResult.rows
-                          .filter((r): r is Extract<ParsedRow, { status: 'not_found' }> => r.status === 'not_found')
-                          .map((r) => (
-                            <li key={`n-${r.line}`} className="text-[11px] text-slate-500 line-through break-words">
-                              {r.line} - {r.quantity}
-                            </li>
-                          ))}
-                      </ul>
-                    </section>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </PortalToBody>
-    )}
+      {printOpen && printData && (
+        <WarehouseDocPrint
+          data={printData}
+          isOpen={printOpen}
+          onClose={() => setPrintOpen(false)}
+        />
+      )}
     </>
   );
 }

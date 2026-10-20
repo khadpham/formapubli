@@ -123,6 +123,9 @@ export async function pullShopeeOrders(
       time_to: String(timeTo),
       page_size: '100',
       cursor,
+      // BẮT BUỘC: không xin tường minh thì Shopee không trả order_status
+      // trong danh sách (chỉ có order_sn) - bộ lọc READY_TO_SHIP sẽ rỗng mãi.
+      response_optional_fields: 'order_status',
     });
     const list: Array<{ order_sn: string; order_status: string }> = page.order_list ?? [];
     const ready = list.filter((o) => o.order_status === 'READY_TO_SHIP');
@@ -156,6 +159,11 @@ export async function ingestShopeeOrderSns(
     const batch = orderSns.slice(i, i + 50);
     const detail = await shopeeGet(cfg, '/api/v2/order/get_order_detail', {
       order_sn_list: batch.join(','),
+      // Khi có response_optional_fields, Shopee CHỈ trả các trường được xin
+      // (+ khóa chính) - phải liệt kê đủ những trường ingest tiêu thụ, thiếu
+      // item_list là đơn vào cách ly "không có dòng hàng".
+      response_optional_fields:
+        'item_list,payment_method,recipient_address,shipping_carrier,total_amount,actual_shipping_fee',
     });
     const details: ShopeeOrderDetail[] = detail.order_list ?? [];
     for (const d of details) {
@@ -240,7 +248,11 @@ async function ingestOne(
     return;
   }
 
-  const isCod = d.payment_method === 'COD';
+  // Shopee trả nhãn đầy đủ "Cash on Delivery" chứ KHÔNG phải mã "COD"
+  // (kiểm chứng sandbox 2026-10-20) - khớp cứng "COD" là bỏ lọt mọi đơn
+  // thu hộ ngoài đời, ghi nhầm thành chuyển khoản.
+  const pmNorm = (d.payment_method || '').trim().toUpperCase();
+  const isCod = pmNorm === 'COD' || pmNorm.includes('CASH ON DELIVERY');
   if (isCod && !cfg.codEnabled) {
     result.quarantined.push(await quarantine(d.order_sn, '', 'COD đang tắt - bật cờ mới xử lý'));
     return;

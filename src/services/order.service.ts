@@ -3,6 +3,7 @@ import { computeGifts, type PromotionCampaign } from '../lib/promotion-engine';
 import { InventoryService } from './inventory.service';
 import { WarehouseService } from './warehouse.service';
 import { BundleService } from './bundle.service';
+import { getComboMap } from './combo.service';
 import { isCountedRevenue } from './shopee/revenue-guard';
 import { eq, and, or, isNotNull, desc, sql, gte, lte, inArray, notExists } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
@@ -75,6 +76,9 @@ export interface CreateOrderParams {
   discountRate?: number;
   paymentMethod?: OrderPaymentMethod;
   fiscalScope?: 'OFFICIAL_TAX' | 'INTERNAL_MANAGEMENT';
+  invoiceTaxCode?: string;
+  invoiceCompanyName?: string;
+  invoiceAddress?: string;
   vatRate?: number;
   vatInvoiceRequired?: boolean;
   vatInvoiceCode?: string;
@@ -232,6 +236,9 @@ export class OrderService {
       discountRate = 0.0,
       paymentMethod = 'CASH',
       fiscalScope = 'INTERNAL_MANAGEMENT',
+      invoiceTaxCode,
+      invoiceCompanyName,
+      invoiceAddress,
       vatRate = 0.0,
       vatInvoiceRequired = false,
       vatInvoiceCode,
@@ -557,12 +564,32 @@ export class OrderService {
 
     // 1. Chuẩn bị danh sách kiểm tra nhu cầu theo edition (lẻ + linh kiện combo)
     const stockCheckItems = [...looseItems, ...bundleLines];
+    // 0064: no dong combo (products) thanh component TRUOC moi kiem tra ton.
+    // Combo khong co ton rieng - hoi ton combo la hoi ton rieng se luon = 0.
+    // 1 query duy nhat; don khong co combo thi map rong, hanh vi cu giu nguyen.
+    const comboCompMap = await getComboMap(stockCheckItems.map((i) => i.editionId));
     const needTotal = new Map<string, number>();
+    // Nhu cau tu dong QUA (combo tang kem): giu rieng de mien B3 dung.
+    const giftNeedTotal = new Map<string, number>();
     for (const item of stockCheckItems) {
       if (item.quantity <= 0) {
         throw AppError.invalid(`Số lượng bán cho ấn bản ${item.editionId} phải lớn hơn 0.`);
       }
-      needTotal.set(item.editionId, (needTotal.get(item.editionId) || 0) + item.quantity);
+      const comps = comboCompMap.get(item.editionId);
+      if (!comps || comps.length === 0) {
+        needTotal.set(item.editionId, (needTotal.get(item.editionId) || 0) + item.quantity);
+        if ((item as any).isGiftLine) {
+          giftNeedTotal.set(item.editionId, (giftNeedTotal.get(item.editionId) || 0) + item.quantity);
+        }
+        continue;
+      }
+      for (const c of comps) {
+        const q = item.quantity * c.quantity;
+        needTotal.set(c.componentProductId, (needTotal.get(c.componentProductId) || 0) + q);
+        if ((item as any).isGiftLine) {
+          giftNeedTotal.set(c.componentProductId, (giftNeedTotal.get(c.componentProductId) || 0) + q);
+        }
+      }
     }
 
     // 2. Tra cứu giá bìa từ cơ sở dữ liệu nếu chưa có (master data).
@@ -1005,9 +1032,10 @@ return {
               // B3: dòng quà hết tồn KHÔNG chặn đơn. Chỉ miễn khi TOÀN BỘ nhu
               // cầu của mã này đều là dòng quà đã xác minh - còn mã vừa bán
               // thường vừa tặng quà thì vẫn chặn nếu tổng vượt tồn.
-              const giftDemand = preparedItems
-                .filter((i) => i.isGiftLine && i.productId === editionId)
-                .reduce((s, i) => s + i.quantity, 0);
+              const giftDemand =
+                preparedItems
+                  .filter((i) => i.isGiftLine && i.productId === editionId)
+                  .reduce((s, i) => s + i.quantity, 0) + (giftNeedTotal.get(editionId) || 0);
               if (giftDemand === qty) {
                 shortfallEditionIds.add(editionId);
                 continue;
@@ -1149,8 +1177,12 @@ return {
           finalAmount: calculatedFinalAmount,
           paymentMethod,
           fiscalScope,
+          invoiceTaxCode,
+          invoiceCompanyName,
+          invoiceAddress,
+          invoiceStatus: fiscalScope === 'OFFICIAL_TAX' ? 'PENDING' : 'NONE',
           vatRate,
-          vatInvoiceRequired,
+          vatInvoiceRequired: fiscalScope === 'OFFICIAL_TAX' ? true : vatInvoiceRequired,
           vatInvoiceCode,
           status: isPending ? 'PENDING_CONFIRMATION' : 'COMPLETED',
           paymentExpiresAt,
@@ -1171,10 +1203,15 @@ return {
             const lineValues: Record<string, unknown> = {
               id: item.id,
               orderId,
-              // 0032/0033: `order_items.edition_id` nullable nhưng VẪN CÒN FK
-              // `editions(id)`. Hàng hóa không có dòng editions nên phải ghi
-              // NULL - ghi id hàng hóa vào đây là FK violation, đơn rollback.
-              editionId: item.isBook ? item.editionId : null,
+              // 0032/0033: FK editions(id) - hang hoa va combo (0064) khong co
+              // dong editions nen phai ghi NULL, neu khong don rollback.
+              // Ton combo nam o component, kho tru o component (buoc B5).
+              // Key theo productId (editionId cua combo da NULL o tren).
+              editionId: comboCompMap.has(item.productId)
+                ? null
+                : item.isBook
+                  ? item.editionId
+                  : null,
               // 0032: NOT NULL + FK `products(id)`. PHẢI dùng `item.productId`
               // chứ không phải `item.editionId` - với hàng hóa `editionId` đã là
               // NULL ở dòng trên, dùng nó sẽ vi phạm NOT NULL.
@@ -1204,6 +1241,36 @@ return {
           for (const item of preparedItems) {
             const shortfall =
               Boolean(item.isGiftLine) && shortfallEditionIds.has(item.productId);
+            // 0064: dong combo khong ghi so cho chinh no (khong co ton rieng).
+            // No thanh N but toan component, moi component 1 but toan rieng.
+            const comboComps = comboCompMap.get(item.productId);
+            if (comboComps && comboComps.length > 0 && !shortfall) {
+              const comboName = editionMap.get(item.productId)?.name || item.productId;
+              for (const c of comboComps) {
+                // Qua combo het ton tung phan: ghi so xuat nhung KHONG tru bang
+                // can doi (giong shortfall dong thuong) thay vi de check am no.
+                const compShortfall = Boolean(item.isGiftLine) && shortfallEditionIds.has(c.componentProductId);
+                await InventoryService.recordMovement({
+                  editionId: c.componentProductId,
+                  isBook: true,
+                  warehouseId,
+                  eventType: 'DISPATCH_SALE',
+                  quantityDelta: -(item.quantity * c.quantity),
+                  condition: 'NEW',
+                  skipStockUpdate: compShortfall,
+                  documentRef: orderCode,
+                  note: compShortfall
+                    ? `Quà combo hết tồn - ghi sổ xuất, KHÔNG trừ bảng cân đối trong đơn ${orderCode}`
+                    : `Bán combo ${comboName} x${item.quantity} trong đơn ${orderCode}`,
+                  actorId: effCashierId,
+                  correlationId: orderId,
+                  idempotencyKey: `idem-stock-${orderId}-${lineIdx}-combo-${c.componentProductId}`,
+                  tx,
+                });
+              }
+              lineIdx++;
+              continue;
+            }
             await InventoryService.recordMovement({
               editionId: item.productId,
               // 0033: hàng hóa ghi `inventory_ledger.edition_id = NULL`.
@@ -1820,13 +1887,29 @@ return {
 
         // 6. Gộp nhu cầu theo edition & kiểm tra tồn trong transaction
         // ATP gom BATCH (2 câu cố định) vì lý do subrequest nêu ở createOrder B2.
+        // 0064: no dong combo thanh component TRUOC khi gop (combo khong co ton
+        // rieng - hoi ton combo la hoi ton rieng se luon = 0). 1 query them.
+        const comboCompMapConfirm = await getComboMap(
+          lines.map((ln) => ln.productId),
+          tx
+        );
         const ownNeed = new Map<string, number>();
         for (const ln of lines) {
           // 0032: `edition_id` nullable nên không làm khóa Map được. Dùng
           // `product_id` (NOT NULL). Với sách `product_id === edition_id` nên giá
           // trị truyền xuống `getBatchATP` y hệt trước đây.
-          const key = ln.productId;
-          ownNeed.set(key, (ownNeed.get(key) || 0) + ln.quantity);
+          const comps = comboCompMapConfirm.get(ln.productId);
+          if (!comps || comps.length === 0) {
+            const key = ln.productId;
+            ownNeed.set(key, (ownNeed.get(key) || 0) + ln.quantity);
+            continue;
+          }
+          for (const c of comps) {
+            ownNeed.set(
+              c.componentProductId,
+              (ownNeed.get(c.componentProductId) || 0) + ln.quantity * c.quantity
+            );
+          }
         }
     const atpMap = await this.getBatchATP(Array.from(ownNeed.keys()), ord.warehouseId, tx);
     // TỒN VẬT LÝ GỘP 1 CÂU (30/09). Trước đây gọi `getBalance` TỪNG DÒNG - mỗi
@@ -1860,23 +1943,45 @@ return {
     // từ 5 dòng trở lên vượt trần và hỏng (lỗi bị che thành "Lỗi hệ thống").
     // Đo thật: production đơn 1–4 dòng được, 5/12/16/17 dòng hỏng với ledger = 0.
     // `recordMovementsBatch` cho KẾT QUẢ Y HỆT, chỉ gom câu lệnh.
+    // 0064: tach dong combo thanh 2 batch - thuong (prefix cu) + component
+    // combo (prefix ...-combo). 2 prefix KHAC nhau de key idempotency khong
+    // dung do (batch danh index lai tu 0). Phat hien "da duyet" van khop vi
+    // LIKE `idem-confirm-<orderId>-%` bao ca 2 (xem tren). Chi goi batch
+    // combo khi don that su co combo (giu nguyen so subrequest don thuong).
+    const normalBatch: Array<{ editionId: string; isBook: boolean; quantityDelta: number; condition: 'NEW' }> = [];
+    const comboBatch: Array<{ editionId: string; isBook: boolean; quantityDelta: number; condition: 'NEW' }> = [];
+    for (const ln of lines) {
+      const comps = comboCompMapConfirm.get(ln.productId);
+      if (!comps || comps.length === 0) {
+        normalBatch.push({
+          // 0032: `order_items.edition_id` nullable nên không truyền thẳng được.
+          // `product_id` NOT NULL và với sách thì BẰNG `edition_id`.
+          //
+          // 0033: `inventory_ledger.edition_id` cũng nullable. Hàng hóa KHÔNG có
+          // dòng `editions` nên phải để NULL - còn sách thì giữ nguyên để báo cáo
+          // và royalty vẫn tra được. Cờ `is_gift_line` không đủ vì quà tặng cũng
+          // có thể là sách; dùng `product_id` có trong `products` (không tốn query
+          // thêm vì đã tra ở bước 2).
+          editionId: ln.productId,
+          // 0033: hàng hóa ghi `edition_id = NULL` vào sổ kho. `order_items` chỉ
+          // giữ `product_id`; quyết định sách/hàng hóa đã có sẵn ở bước 2.
+          isBook: !ln.productId.startsWith('pr-'),
+          quantityDelta: -ln.quantity,
+          condition: 'NEW' as const,
+        });
+        continue;
+      }
+      for (const c of comps) {
+        comboBatch.push({
+          editionId: c.componentProductId,
+          isBook: true,
+          quantityDelta: -(ln.quantity * c.quantity),
+          condition: 'NEW' as const,
+        });
+      }
+    }
     await InventoryService.recordMovementsBatch(
-      lines.map((ln) => ({
-        // 0032: `order_items.edition_id` nullable nên không truyền thẳng được.
-        // `product_id` NOT NULL và với sách thì BẰNG `edition_id`.
-        //
-        // 0033: `inventory_ledger.edition_id` cũng nullable. Hàng hóa KHÔNG có
-        // dòng `editions` nên phải để NULL - còn sách thì giữ nguyên để báo cáo
-        // và royalty vẫn tra được. Cờ `is_gift_line` không đủ vì quà tặng cũng
-        // có thể là sách; dùng `product_id` có trong `products` (không tốn query
-        // thêm vì đã tra ở bước 2).
-        editionId: ln.productId,
-        // 0033: hàng hóa ghi `edition_id = NULL` vào sổ kho. `order_items` chỉ
-        // giữ `product_id`; quyết định sách/hàng hóa đã có sẵn ở bước 2.
-        isBook: !ln.productId.startsWith('pr-'),
-        quantityDelta: -ln.quantity,
-        condition: 'NEW' as const,
-      })),
+      normalBatch,
       {
         warehouseId: ord.warehouseId,
         eventType: 'DISPATCH_SALE',
@@ -1891,6 +1996,23 @@ return {
       },
       tx
     );
+    // 0064: batch rieng cho component combo (chi khi co combo). Prefix rieng
+    // `...-combo` de key khong dung voi batch thuong (index dem lai tu 0).
+    if (comboBatch.length > 0) {
+      await InventoryService.recordMovementsBatch(
+        comboBatch,
+        {
+          warehouseId: ord.warehouseId,
+          eventType: 'DISPATCH_SALE',
+          documentRef: ord.orderCode,
+          note: `Xuất kho combo trong đơn ${ord.orderCode} (${ord.channel})`,
+          actorId: resolvedActorId,
+          correlationId: orderId,
+          idempotencyPrefix: `idem-confirm-${orderId}-combo`,
+        },
+        tx
+      );
+    }
 
         // 8. Chuyển trạng thái có điều kiện: PENDING_CONFIRMATION → COMPLETED.
         // Kèm ghi chú chốt (nếu có): ô Ghi chú ở modal thanh toán mở sau khi

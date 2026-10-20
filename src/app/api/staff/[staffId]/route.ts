@@ -134,7 +134,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ st
         }
         const curAllowed = parseAllowedWarehouseIds((target as any).allowedWarehouseIds);
         if (curAllowed.length > 0 && !curAllowed.includes(whId)) {
-          throw AppError.invalid('Kho được gán phải nằm trong danh sách kho được phép của tài khoản.');
+          // Tự động mở rộng danh sách kho được phép để chứa kho mới gán
+          // (trường hợp gán nhân sự vào kho chiến dịch/hội chợ)
+          const expanded = [...curAllowed, whId];
+          patch.allowedWarehouseIds = JSON.stringify(expanded);
+          notes.push(`mở rộng kho được phép +${wh[0].code}`);
         }
         patch.assignedWarehouseId = whId;
         notes.push(`gán kho [${wh[0].code}]`);

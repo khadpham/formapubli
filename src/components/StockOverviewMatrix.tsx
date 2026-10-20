@@ -5,6 +5,8 @@ import {
   Search,
   ArrowRightLeft,
   PlusCircle,
+  ClipboardList,
+  Clock,
   MinusCircle,
   History,
   ShieldCheck,
@@ -12,6 +14,7 @@ import {
   AlertCircle,
   Mic,
   MicOff,
+  Package,
   X,
   Keyboard,
   ShieldAlert,
@@ -30,12 +33,16 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { PortalToBody } from './PortalToBody';
 import { StockMovementModal } from './StockMovementModal';
 import { BatchTransferModal } from './inventory/BatchTransferModal';
+import { ComboManagerPanel } from './inventory/ComboManagerPanel';
+import { WarehouseDocList } from './inventory/WarehouseDocList';
 import { PickListModal } from './inventory/PickListModal';
 import { RmaTicketModal } from './inventory/RmaTicketModal';
 import { TransitPanel } from './inventory/TransitPanel';
 import { WholesaleDispatchModal } from './inventory/WholesaleDispatchModal';
 import { WarehouseBankManager } from './inventory/WarehouseBankManager';
 import { WarehouseManagerPanel } from './inventory/WarehouseManagerPanel';
+import { InventoryCountModal } from './inventory/InventoryCountModal';
+import { StockLedgerTab, type LedgerEntry } from './inventory/StockLedgerTab';
 import { DeliveryOrdersLedger } from './inventory/DeliveryOrdersLedger';
 import { FileText } from 'lucide-react';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
@@ -63,10 +70,11 @@ interface MatrixBookItem {
   status: string;
   stockAuCo: number;
   stockQuynhMai: number;
-  stockDuPhong: number;
+  stockNuiTruc: number;
   /** Tồn theo warehouseId - động, gồm mọi kho kể cả kho hội chợ. */
   stockByWarehouse?: Record<string, number>;
   totalStock: number;
+  lowStockThreshold?: number;
 }
 
 interface WarehouseItem {
@@ -84,27 +92,15 @@ interface WarehouseItem {
  *  Bắt cả warehouseType lẫn code pattern KHO_KY_GUI% (kho cũ chưa có type đúng).
  *  Màn quản trị (WarehouseManagerPanel) nạp list riêng nên vẫn thấy kho ngưng
  *  để mở lại/xem lịch sử. */
+const CLOSED_WAREHOUSE_CODES = ['KHO_DU_PHONG', 'KHO_HOI_CHO_HO_GUOM', 'KHO_DH_HA_NOI_THANG_10_2026'];
 const isPhysicalWarehouse = (w: { warehouseType?: string; code?: string; isActive?: boolean }) =>
   w.isActive !== false &&
-  w.warehouseType !== 'CONSIGNMENT' && !(w.code || '').startsWith('KHO_KY_GUI');
+  w.warehouseType !== 'CONSIGNMENT' &&
+  !(w.code || '').startsWith('KHO_KY_GUI') &&
+  !CLOSED_WAREHOUSE_CODES.includes(w.code || '');
 
-interface LedgerEntry {
-  id: string;
-  eventType: string;
-  quantityDelta: number;
-  condition: string | null;
-  documentRef: string;
-  note: string | null;
-  actorId: string;
-  recordedAt: string | null;
-  bookCode: string;
-  bookTitle: string | null;
-  isbnLast4: string;
-  warehouseCode: string;
-  warehouseName: string;
-}
 
-type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS';
+type MainTabId = 'MATRIX' | 'LEDGER' | 'TRANSIT' | 'DELIVERY_ORDERS' | 'COMBO' | 'DOCS';
 
 interface StockOverviewMatrixProps {
   initialBooks: MatrixBookItem[];
@@ -125,6 +121,9 @@ export function StockOverviewMatrix({
   const [modalOpen, setModalOpen] = useState(false);
   const [pickListOpen, setPickListOpen] = useState(false);
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
+  const [countModalOpen, setCountModalOpen] = useState(false);
+  const [viewCountId, setViewCountId] = useState<string | null>(null);
+  const [thresholdOverrides, setThresholdOverrides] = useState<Record<string, number>>({});
   const [modalAction, setModalAction] = useState<'RECEIPT'>('RECEIPT');
   const [batchTransferOpen, setBatchTransferOpen] = useState(false);
   const [wholesaleModalOpen, setWholesaleModalOpen] = useState(false);
@@ -161,6 +160,7 @@ export function StockOverviewMatrix({
   const router = useRouter();
   /** Đang làm mới: bật khi bấm, tắt khi props `initialBooks` mới trả về. */
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [docRefreshKey, setDocRefreshKey] = useState(0);
   const refreshFallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -197,8 +197,11 @@ export function StockOverviewMatrix({
       [
         { id: 'MATRIX' as MainTabId, label: 'Ma trận 3 Kho', short: 'Ma trận', Icon: Warehouse, title: 'Bảng tồn kho theo 3 kho' },
         { id: 'LEDGER' as MainTabId, label: `Sổ Cái Bất Biến (${initialLedger.length})`, short: 'Sổ cái', Icon: History, title: 'Sổ cái append-only, nghiêm cấm sửa/xóa' },
-        { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
+        // 2026-10-15: An tab Di Duong (khong dung)
+        // { id: 'TRANSIT' as MainTabId, label: 'Đi Đường', short: 'Đi đường', Icon: Truck, title: 'Xe đang đi đường qua trạm wh-in-transit, kẹt quá 12h sẽ đỏ' },
         { id: 'DELIVERY_ORDERS' as MainTabId, label: 'Sổ Phiếu Xuất', short: 'Sổ PX', Icon: FileText, title: 'Sổ phiếu xuất kho bán buôn đại lý' },
+        { id: 'COMBO' as MainTabId, label: 'Combo / Box Set', short: 'Combo', Icon: Package, title: 'Quản lý combo: tồn động theo kho, tạo/sửa thành phần' },
+        { id: 'DOCS' as MainTabId, label: 'Chứng từ kho', short: 'Chứng từ', Icon: FileText, title: 'Phiếu nhập/xuất/chuyển, biên bản kiểm kê - lưu trữ R2' },
       ] as const,
     [initialLedger.length]
   );
@@ -492,17 +495,44 @@ export function StockOverviewMatrix({
   // giới hạn CPU Worker (lỗi 1102). Muốn nạp lại toàn bộ số liệu thì F5.
   // `isRefreshing` bật TỪ LÚC BẤM và tắt khi fetch xong (finally) hoặc sau
   // 15s (chốt an toàn chống kẹt spinner).
+  const handleUpdateThreshold = async (productId: string, current: number) => {
+    const val = window.prompt('Nhập ngưỡng tồn thấp (0 = tắt cảnh báo):', String(current || 0));
+    if (val === null) return;
+    const num = Math.max(0, Math.round(Number(val) || 0));
+    try {
+      const res = await fetch(`/api/products/${productId}/threshold`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold: num }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Cập nhật local state ngay (nhẹ, không reload nặng)
+        setThresholdOverrides(prev => ({ ...prev, [productId]: num }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Helper lấy ngưỡng hiệu dụng (ưu tiên override local)
+  const getEffectiveThreshold = (book: MatrixBookItem): number => {
+    if (book.id in thresholdOverrides) return thresholdOverrides[book.id];
+    return book.lowStockThreshold || 0;
+  };
+
   const handleRefresh = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
     // Chốt an toàn: tắt spinner sau 15s nếu có sự cố.
     refreshFallbackTimer.current = setTimeout(() => setIsRefreshing(false), 15000);
-    // Chỉ nạp lại danh sách kho (nhẹ). KHÔNG dùng router.refresh() vì nó chạy lại
-    // toàn bộ page.tsx (ma trận tồn kho nặng) gây vượt giới hạn CPU Worker (lỗi 1102).
-    // Muốn nạp lại toàn bộ số liệu thì tải lại trang (F5).
+    // Refresh server components để lấy số liệu mới, giữ nguyên client state
+    // (tab đang mở, ô tìm kiếm, v.v.) - không reload toàn trang.
     reloadWarehouseChips().finally(() => {
-      if (refreshFallbackTimer.current !== undefined) clearTimeout(refreshFallbackTimer.current);
-      setIsRefreshing(false);
+      router.refresh();
+      setDocRefreshKey(k => k + 1);
+      // Tắt spinner khi props mới về (useEffect theo dõi initialBooks)
+      // hoặc sau timeout an toàn
     });
   };
 
@@ -820,7 +850,16 @@ export function StockOverviewMatrix({
             title="Nhập kho nhà in"
             className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
-            <PlusCircle className="w-3.5 h-3.5" /> Nhập in
+            <PlusCircle className="w-3.5 h-3.5" /> Nhập kho
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCountModalOpen(true)}
+            title="Kiểm kê kho định kỳ"
+            className="flex items-center gap-1 whitespace-nowrap shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          >
+            <ClipboardList className="w-3.5 h-3.5" /> Kiểm kê
           </button>
 
           <button
@@ -1130,6 +1169,7 @@ export function StockOverviewMatrix({
             <table className="w-full min-w-[640px] text-left text-xs text-slate-600">
               <thead className="bg-slate-50 uppercase text-slate-500 font-semibold border-b border-slate-200 tracking-wider">
                 <tr>
+                  <th className="px-2 py-3 w-10 text-center">STT</th>
                   <th className="px-3 py-3 w-14">Mã</th>
                   <th className="px-3 py-3">Tên sách & Tác phẩm</th>
                   <th className="px-3 py-3 w-28">4 số ISBN</th>
@@ -1144,7 +1184,7 @@ export function StockOverviewMatrix({
                         <span className="block font-normal text-[10px] text-emerald-500">Kiện lưu sỉ</span>
                       </th>
                       <th className="px-3 py-3 text-right bg-amber-50/50 font-bold text-amber-900 w-28">
-                        Kho Dự phòng
+                        Kho Núi Trúc
                         <span className="block font-normal text-[10px] text-amber-500">Hội chợ</span>
                       </th>
                     </>
@@ -1202,7 +1242,7 @@ export function StockOverviewMatrix({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredBooks.map((b) => {
+                {filteredBooks.map((b, idx) => {
                   const currentStock = getWarehouseStock(b, warehouseTab);
                   const isSortedLow = stockSortMode === 'ASC';
                   const rowHighlightClass = getStockRowHighlightClass(currentStock, isSortedLow);
@@ -1211,6 +1251,7 @@ export function StockOverviewMatrix({
 
                   return (
                     <tr key={b.id} className={`hover:bg-slate-50/80 transition-colors ${rowHighlightClass}`}>
+                      <td className="px-2 py-2.5 text-center text-slate-400 text-xs font-medium">{idx + 1}</td>
                       <td className="px-3 py-2.5 font-mono font-bold text-indigo-600">{b.code}</td>
                       <td className="px-3 py-2.5">
                         <div className="font-semibold text-slate-900">{b.title}</div>
@@ -1242,12 +1283,12 @@ export function StockOverviewMatrix({
                             )}
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono font-bold bg-amber-50/20 text-amber-800">
-                            {b.stockDuPhong <= 3 && b.stockDuPhong > 0 ? (
-                              <span className="text-rose-700 font-extrabold">{b.stockDuPhong}</span>
-                            ) : b.stockDuPhong === 0 ? (
+                            {b.stockNuiTruc <= 3 && b.stockNuiTruc > 0 ? (
+                              <span className="text-rose-700 font-extrabold">{b.stockNuiTruc}</span>
+                            ) : b.stockNuiTruc === 0 ? (
                               <span className="text-slate-300 font-normal">0</span>
                             ) : (
-                              b.stockDuPhong.toLocaleString('vi-VN')
+                              b.stockNuiTruc.toLocaleString('vi-VN')
                             )}
                           </td>
                         </>
@@ -1267,8 +1308,18 @@ export function StockOverviewMatrix({
                           </span>
                         ) : (
                           b.totalStock > 0 ? (
-                            <span className="text-slate-700 font-bold">
-                              {b.totalStock.toLocaleString('vi-VN')}
+                            <span className="inline-flex items-center gap-1">
+                              <span className={`font-bold ${getEffectiveThreshold(b) > 0 && b.totalStock < getEffectiveThreshold(b) ? 'text-rose-600' : 'text-slate-700'}`}>
+                                {b.totalStock.toLocaleString('vi-VN')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleUpdateThreshold(b.id, getEffectiveThreshold(b)); }}
+                                title={`Ngưỡng hiện tại: ${getEffectiveThreshold(b).toLocaleString('vi-VN')}. Bấm để sửa.`}
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${getEffectiveThreshold(b) > 0 && b.totalStock < getEffectiveThreshold(b) ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                              >
+                                {getEffectiveThreshold(b) > 0 && b.totalStock < getEffectiveThreshold(b) ? 'Thấp' : 'Ngưỡng'}
+                              </button>
                             </span>
                           ) : (
                             <span className="text-slate-400 font-normal">0</span>
@@ -1294,87 +1345,10 @@ export function StockOverviewMatrix({
             <div aria-hidden="true" className="h-0 w-20 shrink-0" />
           </div>
         </div>
-      ) : (
-        /* Ledger Audit Trail Tab */
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Sổ Cái Kho Bất Biến - Nghiêm Cấm Sửa/Xóa Lịch Sử
-            </div>
-            <span className="text-xs text-slate-400">Thời gian thực</span>
-          </div>
-          <div className="overflow-x-auto pb-24 lg:pb-2" data-kho-ui="fab-gutter">
-            <table className="w-full min-w-[720px] text-left text-xs text-slate-600">
-              <thead className="bg-slate-100/70 uppercase text-slate-500 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="px-3 py-2.5 w-36">Thời gian</th>
-                  <th className="px-3 py-2.5 w-32">Số Chứng Từ</th>
-                  <th className="px-3 py-2.5 w-32">Nghiệp vụ</th>
-                  <th className="px-3 py-2.5">Tên sách</th>
-                  <th className="px-3 py-2.5 w-28">Kho</th>
-                  <th className="px-3 py-2.5 text-right w-28">Biến động</th>
-                  <th className="px-3 py-2.5 w-36">Người tạo</th>
-                  <th className="px-3 py-2.5">Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-mono">
-                {initialLedger.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-400 font-sans">
-                      Chưa có bút toán nào trong sổ cái.
-                    </td>
-                  </tr>
-                ) : (
-                  initialLedger.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-3 py-2 text-slate-500 text-[11px]">{item.recordedAt}</td>
-                      <td className="px-3 py-2 font-bold text-slate-800">{item.documentRef}</td>
-                      <td className="px-3 py-2">
-                        {item.eventType === 'RECEIPT' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            NHẬP KHO
-                          </span>
-                        )}
-                        {item.eventType === 'TRANSFER_OUT' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
-                            XUẤT CHUYỂN
-                          </span>
-                        )}
-                        {item.eventType === 'TRANSFER_IN' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800">
-                            NHẬP CHUYỂN
-                          </span>
-                        )}
-                        {item.eventType === 'DISPATCH_SALE' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                            XUẤT BÁN
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 font-sans font-medium text-slate-900">
-                        [{item.bookCode}] {item.bookTitle}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{item.warehouseCode}</td>
-                      <td className="px-3 py-2 text-right font-bold">
-                        {item.quantityDelta > 0 ? (
-                          <span className="text-emerald-600">+{item.quantityDelta}</span>
-                        ) : (
-                          <span className="text-rose-600">{item.quantityDelta}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 font-sans text-slate-600 text-[11px]">{item.actorId}</td>
-                      <td className="px-3 py-2 font-sans text-slate-400 text-[11px]">{item.note || '-'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            {/* Gutter cuộn cho sổ cái: cột Ghi chú cuối cùng trượt khỏi nút tím nổi. */}
-            <div aria-hidden="true" className="h-0 w-20 shrink-0" />
-          </div>
-        </div>
-      )}
+      ) : activeTab === 'LEDGER' ? (
+        <StockLedgerTab entries={initialLedger} />
+      ) : null}
+
 
       {/* 5. TAB SỔ PHIẾU XUẤT KHO BÁN BUÔN ĐẠI LÝ (DELIVERY ORDERS LEDGER) */}
       {activeTab === 'DELIVERY_ORDERS' && (
@@ -1391,6 +1365,16 @@ export function StockOverviewMatrix({
         />
       )}
 
+      {/* 6. TAB COMBO / BOX SET (0064) */}
+      {activeTab === 'COMBO' && (
+        <ComboManagerPanel warehouses={warehouses} currentRole={currentRole} />
+      )}
+
+      {/* 7. TAB CHỨNG TỪ KHO (0068) */}
+      {activeTab === 'DOCS' && (
+        <WarehouseDocList refreshKey={docRefreshKey} />
+      )}
+
       {/* Modal */}
       <StockMovementModal
         isOpen={modalOpen}
@@ -1400,6 +1384,14 @@ export function StockOverviewMatrix({
         defaultAction={modalAction}
         selectedBook={selectedBookForAction}
         onSuccess={handleRefresh}
+      />
+      <InventoryCountModal
+        isOpen={countModalOpen}
+        onClose={() => { setCountModalOpen(false); setViewCountId(null); }}
+        warehouses={warehouses}
+        books={initialBooks.map(b => ({ id: b.id, name: b.title }))}
+        onSuccess={handleRefresh}
+        existingCountId={viewCountId}
       />
 
       {/* Batch Transfer Modal */}
@@ -1447,6 +1439,11 @@ export function StockOverviewMatrix({
         onSuccess={handleRefresh}
       />
 
+      {bankManagerOpen && (
+        <WarehouseBankManager
+          onClose={() => setBankManagerOpen(false)}
+        />
+      )}
       {warehousePanelOpen && (
         <WarehouseManagerPanel
           isOpen={warehousePanelOpen}

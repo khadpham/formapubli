@@ -146,7 +146,8 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
         ]);
       }
     }
-    downloadWatermarkedCsv({
+    try {
+      downloadWatermarkedCsv({
       filename: `Qua_Tang_${csvRange}.csv`,
       headers: ['Nhóm', 'Sản phẩm', 'Dòng quà', 'Tổng cuốn', 'Kỳ lọc'],
       rows: csvRows,
@@ -157,7 +158,10 @@ export function GiftReportPanel({ currentRole, from, to, actorId }: GiftReportPa
         reportName: `BÁO CÁO QUÀ TẶNG - ${rangeLabel}`,
         fiscalScope: 'ALL',
       },
-    });
+      });
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
   /**

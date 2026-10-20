@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, RefreshCw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
+import Modal from '../ui/Modal';
 
 interface TransitPanelProps {
   currentRole: UserRole;
@@ -13,6 +14,8 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
   const [staleIds, setStaleIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Dialog xac nhan thay confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
   const [receiveLines, setReceiveLines] = useState<Record<string, { r: string; d: string; l: string }>>({});
   const [acting, setActing] = useState(false);
@@ -100,7 +103,13 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
   };
 
   const submitCancel = async (id: string) => {
-    if (!confirm(`Hủy phiếu ${id} và rút hàng về kho gửi?`)) return;
+    setConfirmDlg({
+      msg: `Hủy phiếu ${id} và rút hàng về kho gửi?`,
+      onOk: async () => { setConfirmDlg(null); doSubmitCancel(id); },
+    });
+    return;
+  };
+  const doSubmitCancel = async (id: string) => {
     try {
       const res = await fetch('/api/transfers', {
         method: 'POST',
@@ -121,7 +130,18 @@ export function TransitPanel({ currentRole }: TransitPanelProps) {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative">
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
       <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
           <Truck className="w-4 h-4 text-indigo-600" />

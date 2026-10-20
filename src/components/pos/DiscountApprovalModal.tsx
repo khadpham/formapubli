@@ -1,18 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import {
   ShieldAlert,
   CheckCircle2,
   XCircle,
   Clock,
-  AlertTriangle,
-  X,
   RefreshCw,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import Modal from '@/components/ui/Modal';
 
 export interface CartItemSnapshot {
   editionId: string;
@@ -99,7 +96,6 @@ export function DiscountApprovalModal({
     if (status === 'LOADING' || status === 'APPROVED') return;
     (onCancelRef.current ?? onCloseRef.current)();
   };
-  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, dismiss);
 
   useEffect(() => {
     onRequestCreatedRef.current = onRequestCreated;
@@ -113,14 +109,8 @@ export function DiscountApprovalModal({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && status !== 'LOADING' && status !== 'APPROVED') dismiss();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, status, dismiss]);
+  // ESC được Modal wrapper xử lý: onClose={dismiss} đã chặn
+  // đóng khi đang LOADING/APPROVED.
 
   // 1. Tạo yêu cầu duyệt khi mở modal
   useEffect(() => {
@@ -312,43 +302,21 @@ export function DiscountApprovalModal({
   // chốt chặn cuối cho lúc chưa có phản hồi nào - tránh hiện `undefined`.
   const displayOrderCode = serverOrderCode || orderCode;
 
-  return createPortal(
-    <div
-      ref={modalRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="discount-approval-title"
-      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
-      onClick={(e) => {
-         if (e.target === e.currentTarget && status !== 'LOADING' && status !== 'APPROVED') (onCancel ?? onClose)();
-      }}
+  return (
+    <Modal
+      open={isOpen && mounted}
+      onClose={dismiss}
+      size="sm"
+      title={
+        <span className="flex items-center gap-2">
+          <span className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+            <ShieldAlert className="w-5 h-5" />
+          </span>
+          <span>{isGift ? 'Duyệt Tặng Sách 100%' : 'Duyệt Chiết Khấu Quản Lý'}</span>
+        </span>
+      }
+      subtitle="Vượt trần thu ngân (≥20%) • Bảo mật State Machine"
     >
-      <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 id="discount-approval-title" className="font-extrabold text-base text-slate-900">
-                {isGift ? 'Duyệt Tặng Sách 100%' : 'Duyệt Chiết Khấu Quản Lý'}
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Vượt trần thu ngân (&ge;20%) • Bảo mật State Machine
-              </p>
-            </div>
-          </div>
-           <button
-              type="button"
-              aria-label="Đóng yêu cầu duyệt"
-               disabled={status === 'LOADING' || status === 'APPROVED'}
-              onClick={dismiss}
-            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
         {/* Thông tin đơn sách & Chiết khấu */}
         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
@@ -464,8 +432,6 @@ export function DiscountApprovalModal({
             </div>
           </div>
         )}
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

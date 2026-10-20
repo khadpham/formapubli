@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { Sparkles, X, Loader2, FileText, Link2 } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
+import { Sparkles, Loader2, FileText, Link2 } from 'lucide-react';
 
 const CATEGORIES = [
   { value: 'THUE_DIA_DIEM_SK', label: 'Thuê địa điểm sự kiện' },
@@ -62,18 +63,44 @@ export function AITemplateBuilder({ onClose, onSaved }: { onClose: () => void; o
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-label="Tạo mẫu hợp đồng bằng AI">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-violet-600" />Tạo Mẫu Bằng AI
-          </h2>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" aria-label="Đóng">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex gap-2 mb-4">
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={<span className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-violet-600" />Tạo Mẫu Bằng AI</span>}
+      actions={
+        <>
+          <div className="text-xs font-black uppercase text-slate-400 mb-1">Thao tác</div>
+          {!draft && tab === 'describe' && (
+            <button type="button" disabled={loading || description.trim().length < 10}
+              onClick={() => callApi('/api/ai/contracts/draft-template', { category, description })}
+              className="w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+              aria-label="Soạn nháp bằng AI">
+              {loading ? <Loader2 className="w-4 h-4 inline animate-spin mr-1" /> : <Sparkles className="w-4 h-4 inline mr-1" />}
+              {loading ? 'Đang soạn…' : 'Soạn Nháp'}
+            </button>
+          )}
+          {!draft && tab === 'gdoc' && (
+            <button type="button" disabled={loading || !gdocUrl.trim()}
+              onClick={() => callApi('/api/ai/contracts/import-gdoc', { gdocUrl })}
+              className="w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+              aria-label="Nhập mẫu từ Google Docs">
+              {loading ? <Loader2 className="w-4 h-4 inline animate-spin mr-1" /> : <Link2 className="w-4 h-4 inline mr-1" />}
+              {loading ? 'Đang nhập…' : 'Nhập Mẫu'}
+            </button>
+          )}
+          {draft && (
+            <button type="button" disabled={loading || !code.trim()}
+              onClick={finalize}
+              className="w-full px-4 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+              aria-label="Chốt thành mẫu chính thức">
+              {loading ? 'Đang lưu…' : 'Chốt Thành Mẫu'}
+            </button>
+          )}
+        </>
+      }
+    >
+        <div className="flex gap-2">
           <button type="button" onClick={() => { setTab('describe'); setDraft(null); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold ${tab === 'describe' ? 'bg-violet-600 text-white' : 'bg-slate-100'}`}
             aria-label="Soạn từ mô tả">
@@ -88,7 +115,7 @@ export function AITemplateBuilder({ onClose, onSaved }: { onClose: () => void; o
 
         <label className="block text-xs font-bold mb-1">Loại hợp đồng</label>
         <select value={category} onChange={(e) => setCategory(e.target.value)}
-          className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Loại hợp đồng">
+          className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Loại hợp đồng">
           {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
 
@@ -97,55 +124,34 @@ export function AITemplateBuilder({ onClose, onSaved }: { onClose: () => void; o
             <label className="block text-xs font-bold mb-1">Mô tả nhu cầu (viết tự nhiên)</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
               placeholder="VD: thuê địa điểm hội chợ sách 3 ngày, đặt cọc 30%, bên thuê tự lo điện nước…"
-              className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Mô tả nhu cầu" />
-            <button type="button" disabled={loading || description.trim().length < 10}
-              onClick={() => callApi('/api/ai/contracts/draft-template', { category, description })}
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-              aria-label="Soạn nháp bằng AI">
-              {loading ? <Loader2 className="w-4 h-4 inline animate-spin mr-1" /> : <Sparkles className="w-4 h-4 inline mr-1" />}
-              {loading ? 'Đang soạn…' : 'Soạn Nháp'}
-            </button>
+              className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Mô tả nhu cầu" />
           </>
         ) : (
           <>
             <label className="block text-xs font-bold mb-1">Link Google Docs (mẫu công ty đang dùng)</label>
             <input value={gdocUrl} onChange={(e) => setGdocUrl(e.target.value)}
               placeholder="https://docs.google.com/document/d/…"
-              className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Link Google Docs" />
-            <button type="button" disabled={loading || !gdocUrl.trim()}
-              onClick={() => callApi('/api/ai/contracts/import-gdoc', { gdocUrl })}
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-              aria-label="Nhập mẫu từ Google Docs">
-              {loading ? <Loader2 className="w-4 h-4 inline animate-spin mr-1" /> : <Link2 className="w-4 h-4 inline mr-1" />}
-              {loading ? 'Đang nhập…' : 'Nhập Mẫu'}
-            </button>
+              className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Link Google Docs" />
           </>
         )}
 
-        {error && <p className="text-rose-600 text-xs mt-3 font-bold">{error}</p>}
+        {error && <p className="text-rose-600 text-xs font-bold">{error}</p>}
 
         {draft && (
-          <div className="mt-4 border-t pt-4">
+          <div className="border-t pt-4">
             <p className="text-xs font-bold text-amber-600 mb-2">⚠️ Bản nháp do AI soạn - CHƯA DUYỆT PHÁP LÝ. Hãy đọc kỹ và sửa trước khi chốt.</p>
             <label className="block text-xs font-bold mb-1">Tiêu đề mẫu</label>
             <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Tiêu đề mẫu" />
             <label className="block text-xs font-bold mb-1">Nội dung (sửa trực tiếp)</label>
             <textarea value={draft.bodyText} onChange={(e) => setDraft({ ...draft, bodyText: e.target.value })} rows={14}
-              className="w-full border rounded-xl px-3 py-2 text-sm font-mono mb-3" aria-label="Nội dung mẫu" />
-            <label className="block text-xs font-bold mb-1">Mã mẫu (viết tắt, không dấu)</label>
+              className="w-full border rounded-xl px-3 py-2 text-sm font-mono" aria-label="Nội dung mẫu" />
+            <label className="block text-xs font-bold mb-1 mt-3">Mã mẫu (viết tắt, không dấu)</label>
             <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
               placeholder="VD: THUE-DD-SK-01"
-              className="w-full border rounded-xl px-3 py-2 text-sm mb-3" aria-label="Mã mẫu" />
-            <button type="button" disabled={loading || !code.trim()}
-              onClick={finalize}
-              className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-              aria-label="Chốt thành mẫu chính thức">
-              {loading ? 'Đang lưu…' : 'Chốt Thành Mẫu'}
-            </button>
+              className="w-full border rounded-xl px-3 py-2 text-sm" aria-label="Mã mẫu" />
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

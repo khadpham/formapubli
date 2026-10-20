@@ -8,7 +8,7 @@ export function stockOfWarehouse(
         stockByWarehouse?: Record<string, number>;
         stockAuCo?: number;
         stockQuynhMai?: number;
-        stockDuPhong?: number;
+        stockNuiTruc?: number;
       }
     | null
     | undefined,
@@ -22,7 +22,7 @@ export function stockOfWarehouse(
       : warehouseId === 'wh-quynh-mai'
       ? book.stockQuynhMai
       : warehouseId === 'wh-du-phong'
-      ? book.stockDuPhong
+      ? book.stockNuiTruc
       : undefined);
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
 }

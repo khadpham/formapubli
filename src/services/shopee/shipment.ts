@@ -105,6 +105,8 @@ export interface ShippedOrder {
   orderSn: string;
   trackingCode: string;
   carrier: string;
+  /** true = đã xếp lịch giao nhưng Shopee chưa cấp mã vận đơn. */
+  trackingPending?: boolean;
 }
 
 /**
@@ -133,36 +135,68 @@ export async function shipShopeeOrder(
     throw AppError.conflict(`Đơn #${orderSn} đang ở trạng thái ${ord.shippingStatus}, không giao lại.`);
   }
   const carrier = (ord.carrier || 'SPX').toUpperCase();
-  const param = await getShippingParameter(cfg, orderSn);
-  await signedPost(cfg, '/api/v2/logistics/ship_order', {
-    order_sn: orderSn,
-    pickup:
-      param.mode === 'pickup'
-        ? { address_id: param.addressId, pickup_time_id: param.pickupTimeId }
-        : undefined,
-  });
-  const track = await signedGet(cfg, '/api/v2/logistics/get_tracking_number', {
-    order_sn: orderSn,
-  });
-  const trackingCode = String(track?.tracking_number || '');
-  if (!trackingCode) throw new Error('Shopee không trả mã vận đơn.');
+  // Cả 2 bước (lấy tham số + xếp lịch) đều bị Shopee từ chối khi gói đã xếp
+  // lịch/lấy đi ở lần bấm trước ("not eligible for rescheduling"...). Không
+  // đuổi theo câu chữ: giữ lỗi lại, cứ đi lấy mã vận đơn - có mã = đã xếp
+  // lịch thật; không có mã mới ném lại lỗi gốc.
+  let flowError: unknown = null;
+  try {
+    const param = await getShippingParameter(cfg, orderSn);
+    await signedPost(cfg, '/api/v2/logistics/ship_order', {
+      order_sn: orderSn,
+      pickup:
+        param.mode === 'pickup'
+          ? { address_id: param.addressId, pickup_time_id: param.pickupTimeId }
+          : undefined,
+    });
+  } catch (err) {
+    flowError = err;
+  }
+  // Mã vận đơn có thể sinh TRỄ (sandbox: sau khi lấy hàng; thật: vài giây).
+  // Thử lại ngắn vài nhịp; vẫn rỗng thì ghi nhận "chờ mã" thay vì lỗi hệ
+  // thống - webhook tracking (code 2) hoặc lần đồng bộ sau sẽ bổ sung.
+  let trackingCode = '';
+  for (let attempt = 0; attempt < 3 && !trackingCode; attempt += 1) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+    const track = await signedGet(cfg, '/api/v2/logistics/get_tracking_number', {
+      order_sn: orderSn,
+    });
+    trackingCode = String(track?.tracking_number || '');
+  }
+  if (!trackingCode && flowError) throw flowError;
   await db
     .update(orders)
-    .set({ shippingStatus: 'PICKED_UP', trackingCode, carrier })
+    .set({ shippingStatus: 'PICKED_UP', trackingCode: trackingCode || null, carrier })
     .where(eq(orders.id, ord.id));
-  return { orderSn, trackingCode, carrier };
+  return { orderSn, trackingCode, carrier, trackingPending: !trackingCode };
 }
 
 /**
  * Tải vận đơn A6 (PDF) của đơn. Trả Buffer để route in/trả file.
+ * Kênh tích hợp (SPX) BẮT BUỘC kèm tracking_number trong order_list -
+ * thiếu là Shopee trả "tracking number invalid". Lỗi từng đơn nằm trong
+ * result_list chứ không phải error cấp cao nhất, phải bóc ra mà báo.
  */
 export async function getAwbPdf(cfg: ShopeeSyncConfig, orderSn: string): Promise<Buffer> {
-  await signedPost(cfg, '/api/v2/logistics/create_shipping_document', {
-    order_list: [{ order_sn: orderSn }],
+  const rows = await db
+    .select({ trackingCode: orders.trackingCode })
+    .from(orders)
+    .where(eq(orders.idempotencyKey, `shopee-${orderSn}`))
+    .limit(1);
+  const trackingNumber = rows[0]?.trackingCode || '';
+  if (!trackingNumber) {
+    throw new Error(`Đơn #${orderSn} chưa có mã vận đơn - chưa in được phiếu.`);
+  }
+  const created = await signedPost(cfg, '/api/v2/logistics/create_shipping_document', {
+    order_list: [{ order_sn: orderSn, tracking_number: trackingNumber }],
     shipping_document_type: 'NORMAL_AIR_WAYBILL',
   });
+  const fail = (created?.result_list ?? []).find((x: any) => x.fail_error);
+  if (fail) {
+    throw new Error(`Tạo chứng từ Shopee lỗi: ${fail.fail_error} - ${fail.fail_message || ''}`);
+  }
   const pdf = await signedPost(cfg, '/api/v2/logistics/download_shipping_document', {
-    order_list: [{ order_sn: orderSn }],
+    order_list: [{ order_sn: orderSn, tracking_number: trackingNumber }],
     shipping_document_type: 'NORMAL_AIR_WAYBILL',
   });
   if (!Buffer.isBuffer(pdf) || pdf.byteLength === 0) {

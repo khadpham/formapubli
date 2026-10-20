@@ -3,13 +3,14 @@ import { requireSessionRole, resolveActorId } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { UserRole } from '@/lib/roles';
 import { AppError } from '@/services/app-error';
+import { CONTRACT_CATEGORIES } from '@/lib/contract-categories';
 import { ContractService } from '@/services/contract.service';
 import { recordAuditLog } from '@/lib/rbac-guard';
 
 export const dynamic = 'force-dynamic';
 
 const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
-const CATEGORIES = ['TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
+const CATEGORIES: readonly string[] = CONTRACT_CATEGORIES;
 
 /** GET /api/contracts/documents - danh sách (?status=&partnerId=). */
 export async function GET(req: NextRequest) {

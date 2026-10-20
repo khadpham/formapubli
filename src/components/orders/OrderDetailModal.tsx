@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Receipt,
-  X,
   RefreshCw,
   ShieldCheck,
   AlertTriangle,
   Trash2,
 } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
+import Modal from '@/components/ui/Modal';
 import {
   channelLabel,
   fiscalScopeLabel,
@@ -139,44 +139,115 @@ export function OrderDetailModal({
     (currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') &&
     orderDetail?.order?.status === 'COMPLETED';
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="order-detail-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-        {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
-              <Receipt className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h3 id="order-detail-title" className="text-[13px] sm:text-base font-extrabold text-slate-900 truncate">
-                Chi Tiết Đơn {orderDetail?.order?.orderCode ? `· ${orderDetail.order.orderCode}` : ''}
-              </h3>
-              <p className="text-[11px] text-slate-500 truncate">
-                Thông tin chứng từ bán hàng, phân loại sổ và danh mục ấn phẩm
+  const voidSection = canVoid ? (
+    <div>
+      <div className="text-xs font-black uppercase text-slate-400 mb-2">Thao tác quản trị</div>
+      {!showVoidConfirm ? (
+        <div className="bg-rose-50/50 border border-rose-200/60 p-3.5 rounded-2xl space-y-2">
+          <p className="text-[11px] text-rose-600">
+            Hủy đơn quét nhầm / sai lệch để hoàn tồn kho và điều chỉnh doanh thu
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setShowVoidConfirm(true);
+              setVoidError(null);
+            }}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Hủy đơn</span>
+          </button>
+        </div>
+      ) : (
+        <div className="bg-rose-50 border border-rose-300 p-4 rounded-2xl space-y-3">
+          <div className="flex items-start gap-2 text-rose-900">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <h5 className="text-xs font-extrabold">Xác nhận Hủy Đơn Hoàn Tất</h5>
+              <p className="text-[11px] text-rose-700 mt-0.5">
+                Hành động này sẽ: (1) Trả 100% sách & quà về kho xuất qua bút toán Thẻ kho RETURN_INBOUND; (2) Trừ khỏi doanh số ca đang mở; (3) Lưu nhật ký kiểm toán.
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200/60 transition cursor-pointer shrink-0"
-            title="Đóng cửa sổ"
-            aria-label="Đóng"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
-        {/* Modal Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
-          {loading ? (
+          {voidError && (
+            <div className="p-2.5 bg-rose-100 border border-rose-300 rounded-xl text-xs text-rose-900 font-bold">
+              {voidError}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Lý do hủy đơn (bắt buộc):
+            </label>
+            <input
+              type="text"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+              placeholder="Ví dụ: Quét nhầm phương thức thanh toán, khách đổi ý..."
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+            />
+          </div>
+
+          {currentRole === 'ROLE_OWNER' && (
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-rose-800">
+              <input
+                type="checkbox"
+                checked={voidForce}
+                onChange={(e) => setVoidForce(e.target.checked)}
+                className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+              />
+              <span>Xác nhận cưỡng chế nếu ca két đã đóng (Chủ doanh nghiệp phê duyệt)</span>
+            </label>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={voidLoading}
+              onClick={() => {
+                setShowVoidConfirm(false);
+                setVoidError(null);
+              }}
+              className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              disabled={voidLoading}
+              onClick={handleVoidOrder}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-sm transition disabled:opacity-50 cursor-pointer"
+            >
+              {voidLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              <span>Xác nhận hủy đơn</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  ) : undefined;
+
+  return (
+    <Modal
+      open={isOpen && !!orderId}
+      onClose={onClose}
+      size="xl"
+      title={
+        <span className="flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+            <Receipt className="w-4 h-4" />
+          </span>
+          <span className="truncate">
+            Chi Tiết Đơn {orderDetail?.order?.orderCode ? `· ${orderDetail.order.orderCode}` : ''}
+          </span>
+        </span>
+      }
+      subtitle="Thông tin chứng từ bán hàng, phân loại sổ và danh mục ấn phẩm"
+      actions={voidSection}
+    >
+      {loading ? (
             <div className="py-12 text-center text-slate-400">
               <RefreshCw className="w-8 h-8 animate-spin mx-auto text-indigo-500 mb-2" />
               <p className="text-sm font-medium">Đang tải chi tiết đơn…</p>
@@ -330,113 +401,8 @@ export function OrderDetailModal({
                 </div>
               </div>
 
-              {/* Section Hủy Đơn Hàng cho Quản lý / Chủ */}
-              {canVoid && (
-                <div className="border-t border-slate-200 pt-4">
-                  {!showVoidConfirm ? (
-                    <div className="flex justify-between items-center bg-rose-50/50 border border-rose-200/60 p-3.5 rounded-2xl">
-                      <div>
-                        <h5 className="text-xs font-bold text-rose-900">Thao tác Quản trị</h5>
-                        <p className="text-[11px] text-rose-600">
-                          Hủy đơn quét nhầm / sai lệch để hoàn tồn kho và điều chỉnh doanh thu
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowVoidConfirm(true);
-                          setVoidError(null);
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hủy đơn</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="bg-rose-50 border border-rose-300 p-4 rounded-2xl space-y-3">
-                      <div className="flex items-start gap-2 text-rose-900">
-                        <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                        <div>
-                          <h5 className="text-xs font-extrabold">Xác nhận Hủy Đơn Hoàn Tất</h5>
-                          <p className="text-[11px] text-rose-700 mt-0.5">
-                            Hành động này sẽ: (1) Trả 100% sách & quà về kho xuất qua bút toán Thẻ kho RETURN_INBOUND; (2) Trừ khỏi doanh số ca đang mở; (3) Lưu nhật ký kiểm toán.
-                          </p>
-                        </div>
-                      </div>
-
-                      {voidError && (
-                        <div className="p-2.5 bg-rose-100 border border-rose-300 rounded-xl text-xs text-rose-900 font-bold">
-                          {voidError}
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Lý do hủy đơn (bắt buộc):
-                        </label>
-                        <input
-                          type="text"
-                          value={voidReason}
-                          onChange={(e) => setVoidReason(e.target.value)}
-                          placeholder="Ví dụ: Quét nhầm phương thức thanh toán, khách đổi ý..."
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-rose-500 font-medium"
-                        />
-                      </div>
-
-                      {currentRole === 'ROLE_OWNER' && (
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-rose-800">
-                          <input
-                            type="checkbox"
-                            checked={voidForce}
-                            onChange={(e) => setVoidForce(e.target.checked)}
-                            className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
-                          />
-                          <span>Xác nhận cưỡng chế nếu ca két đã đóng (Chủ doanh nghiệp phê duyệt)</span>
-                        </label>
-                      )}
-
-                      <div className="flex items-center justify-end gap-2 pt-1">
-                        <button
-                          type="button"
-                          disabled={voidLoading}
-                          onClick={() => {
-                            setShowVoidConfirm(false);
-                            setVoidError(null);
-                          }}
-                          className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition cursor-pointer"
-                        >
-                          Đóng
-                        </button>
-                        <button
-                          type="button"
-                          disabled={voidLoading}
-                          onClick={handleVoidOrder}
-                          className="flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-sm transition disabled:opacity-50 cursor-pointer"
-                        >
-                          {voidLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                          <span>Xác nhận hủy đơn</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </>
           ) : null}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="p-3.5 sm:p-4 border-t border-slate-100 bg-slate-50/80 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
-          >
-            Đóng
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

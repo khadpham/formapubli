@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import Modal from '@/components/ui/Modal';
 import {
   Landmark,
   Plus,
@@ -64,6 +64,8 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
   const [error, setError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -77,20 +79,11 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isModalOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) setIsModalOpen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen, isSubmitting]);
+  // Đóng modal bị chặn khi đang submit. ESC do Modal wrapper xử lý.
+  const guardedCloseModal = () => {
+    if (!isSubmitting) setIsModalOpen(false);
+  };
 
   // Warehouse Default Assign State
   const [savingWarehouseId, setSavingWarehouseId] = useState<string | null>(null);
@@ -223,34 +216,36 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
       showToast(`Đã ${!acc.isActive ? 'kích hoạt' : 'tạm ngưng'} tài khoản ${acc.label}!`);
       await loadData();
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message);
     }
   };
 
   const handleDeleteAccount = async (acc: BankAccountItem) => {
     const isLinked = warehouses.some((w) => w.defaultBankAccountId === acc.id);
     if (isLinked) {
-      alert(`Tài khoản "${acc.label}" đang được đặt làm mặc định cho một số kho. Vui lòng chuyển kho sang tài khoản khác trước khi xóa.`);
+      setError(`Tài khoản "${acc.label}" đang được đặt làm mặc định cho một số kho. Vui lòng chuyển kho sang tài khoản khác trước khi xóa.`);
       return;
     }
 
-    if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản "${acc.label}" (${acc.accountNo}) không?`)) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/bank-accounts?id=${encodeURIComponent(acc.id)}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Xóa tài khoản thất bại.');
-      }
-      showToast('Đã xóa tài khoản nhận tiền thành công!');
-      await loadData();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    setConfirmDlg({
+      msg: `Bạn có chắc chắn muốn xóa tài khoản "${acc.label}" (${acc.accountNo}) không?`,
+      onOk: async () => {
+        setConfirmDlg(null);
+        try {
+          const res = await fetch(`/api/bank-accounts?id=${encodeURIComponent(acc.id)}`, {
+            method: 'DELETE',
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Xóa tài khoản thất bại.');
+          }
+          showToast('Đã xóa tài khoản nhận tiền thành công!');
+          await loadData();
+        } catch (err: any) {
+          setError(err.message);
+        }
+      },
+    });
   };
 
   const handleSetWarehouseDefault = async (warehouseId: string, bankAccountId: string) => {
@@ -268,7 +263,7 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
       showToast('Đã cập nhật tài khoản nhận tiền mặc định cho kho!');
       await loadData();
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message);
     } finally {
       setSavingWarehouseId(null);
     }
@@ -518,36 +513,20 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
       </div>
 
       {/* MODAL THÊM / SỬA TÀI KHOẢN */}
-      {isModalOpen && mounted && createPortal(
-        <div
-          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 overflow-y-auto"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !isSubmitting) setIsModalOpen(false);
-          }}
-        >
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-bold">
-                  <Landmark className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base text-slate-900">
-                    {editingAccount ? 'Chỉnh Sửa Tài Khoản' : 'Thêm Tài Khoản Nhận Tiền'}
-                  </h3>
-                  <p className="text-[11px] text-slate-400">
-                    {editingAccount ? 'Cập nhật thông tin thụ hưởng' : 'Tạo mới tài khoản VietQR'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                disabled={isSubmitting}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Modal
+        open={isModalOpen}
+        onClose={guardedCloseModal}
+        size="sm"
+        title={
+          <span className="flex items-center gap-2">
+            <span className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+              <Landmark className="w-5 h-5" />
+            </span>
+            <span>{editingAccount ? 'Chỉnh Sửa Tài Khoản' : 'Thêm Tài Khoản Nhận Tiền'}</span>
+          </span>
+        }
+        subtitle={editingAccount ? 'Cập nhật thông tin thụ hưởng' : 'Tạo mới tài khoản VietQR'}
+      >
 
             {formError && (
               <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium">
@@ -634,7 +613,7 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={guardedCloseModal}
                   disabled={isSubmitting}
                   className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
                 >
@@ -649,10 +628,35 @@ export function BankAccountsManager({ sessionRole }: BankAccountsManagerProps) {
                 </button>
               </div>
             </form>
-          </div>
-        </div>,
-        document.body
-      )}
+      </Modal>
+
+      {/* Dialog xac nhan thay window.confirm */}
+      <Modal
+        open={!!confirmDlg}
+        onClose={() => setConfirmDlg(null)}
+        size="sm"
+        title="Xác nhận"
+      >
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDlg(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDlg.onOk}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -66,6 +66,9 @@ export interface OfflineOrder {
   paymentMethod: string;
   moneyReceived?: boolean;
   fiscalScope: 'INTERNAL_MANAGEMENT' | 'OFFICIAL_TAX';
+  invoiceTaxCode?: string;
+  invoiceCompanyName?: string;
+  invoiceAddress?: string;
   vatRate?: number;
   vatInvoiceRequired?: boolean;
   vatInvoiceCode?: string;

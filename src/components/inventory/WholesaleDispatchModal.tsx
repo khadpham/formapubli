@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import Modal from '../ui/Modal';
 import { createPortal } from 'react-dom';
 import {
   FileText,
@@ -36,7 +37,7 @@ interface BookItem {
   coverPrice: number;
   stockAuCo: number;
   stockQuynhMai: number;
-  stockDuPhong: number;
+  stockNuiTruc: number;
   stockByWarehouse?: Record<string, number>;
 }
 
@@ -106,6 +107,10 @@ export function WholesaleDispatchModal({
   const [partnerId, setPartnerId] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(35); // 35% mặc định bán buôn
   const [fiscalScope, setFiscalScope] = useState<'COMMERCIAL_WHOLESALE' | 'CONSIGNMENT_DISPATCH'>('COMMERCIAL_WHOLESALE');
+  const [invoiceRequired, setInvoiceRequired] = useState(false);
+  const [invoiceTaxCode, setInvoiceTaxCode] = useState('');
+  const [invoiceCompany, setInvoiceCompany] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
   const [note, setNote] = useState<string>('');
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 
@@ -119,10 +124,12 @@ export function WholesaleDispatchModal({
   const [searchBookTerm, setSearchBookTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Dialog xac nhan thay confirm. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Dán danh sách 2 cột (Tên + Số lượng) từ Excel
-  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [isPasteOpen, setIsPasteOpen] = useState(true);
   const [pasteText, setPasteText] = useState('');
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
@@ -225,6 +232,25 @@ export function WholesaleDispatchModal({
       loadDraftIntoForm(initialDraft);
     }
   }, [isOpen, initialDraft, loadDraftIntoForm]);
+
+  const handleDeleteDraft = async () => {
+    if (!editingDraftId) return;
+    setConfirmDelete(true);
+  };
+  const doDeleteDraft = async () => {
+    setConfirmDelete(false);
+    try {
+      const res = await fetch('/api/delivery-orders/' + editingDraftId, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Xóa thất bại');
+      setEditingDraftId(null);
+      setEditingDraftCode(null);
+      await fetchDrafts();
+      handleResetNew();
+    } catch (e: any) {
+      setErrorMessage('Lỗi: ' + (e.message || e));
+    }
+  };
 
   // Làm mới form để soạn phiếu mới hoàn toàn
   const handleResetNew = () => {
@@ -674,6 +700,10 @@ export function WholesaleDispatchModal({
       discountRate,
       finalAmount,
       fiscalScope,
+      invoiceRequired,
+      invoiceTaxCode: invoiceRequired ? invoiceTaxCode : undefined,
+      invoiceCompanyName: invoiceRequired ? invoiceCompany : undefined,
+      invoiceAddress: invoiceRequired ? invoiceAddress : undefined,
       status: 'DRAFT',
       note: note.trim() || null,
       createdBy: 'Thủ kho',
@@ -698,13 +728,20 @@ export function WholesaleDispatchModal({
 
   return createPortal(
     <>
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} size="sm" title="Xác nhận">
+        <p className="text-slate-900 font-medium">Xóa bản nháp này? Hành động không thể hoàn tác.</p>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={() => setConfirmDelete(false)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+          <button onClick={doDeleteDraft} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+        </div>
+      </Modal>
       <div
-        className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+        className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
         onClick={(e) => {
           if (e.target === e.currentTarget && !isSubmitting) onClose();
         }}
       >
-        <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
+        <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in duration-200">
           {/* Header Modal */}
           <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-2">
             <div className="flex items-center gap-2.5">
@@ -775,14 +812,24 @@ export function WholesaleDispatchModal({
                     </select>
                   )}
                   {editingDraftId && (
-                    <button
-                      type="button"
-                      onClick={handleResetNew}
-                      className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Lập mới
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleResetNew}
+                        className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Lập mới
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteDraft}
+                        className="px-2.5 py-1 bg-rose-50 border border-rose-300 hover:bg-rose-100 rounded-lg text-xs font-bold text-rose-700 transition flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Xóa nháp
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -905,6 +952,41 @@ export function WholesaleDispatchModal({
                 </select>
               </div>
 
+              {/* Tickbox xuất hóa đơn */}
+              <div className="md:col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={invoiceRequired}
+                    onChange={(e) => setInvoiceRequired(e.target.checked)}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="text-xs font-bold text-slate-700">Xuất hóa đơn VAT cho đơn này</span>
+                </label>
+                {invoiceRequired && (
+                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <input
+                      value={invoiceTaxCode}
+                      onChange={(e) => setInvoiceTaxCode(e.target.value)}
+                      placeholder="Mã số thuế *"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceCompany}
+                      onChange={(e) => setInvoiceCompany(e.target.value)}
+                      placeholder="Tên công ty / tổ chức *"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                    <input
+                      value={invoiceAddress}
+                      onChange={(e) => setInvoiceAddress(e.target.value)}
+                      placeholder="Địa chỉ *"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Ghi chú */}
               <div className="md:col-span-2">
                 <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -1011,7 +1093,7 @@ export function WholesaleDispatchModal({
 
             {/* Bảng danh sách sách đã chọn */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto overflow-y-auto max-h-[50vh] border border-slate-200 rounded-xl">
                 <table className="w-full text-xs min-w-[520px]">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-bold text-left border-b border-slate-200">

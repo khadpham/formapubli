@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Download, Search, Share2, Trash2, X } from 'lucide-react';
-import { useModalFocusTrap } from '@/hooks/useModalFocusTrap';
+import Modal from '@/components/ui/Modal';
 import {
   deletePaymentProofPhoto,
   isPhotoInScope,
@@ -31,11 +30,12 @@ export function PaymentPhotoGallery({
   canViewAllCashiers,
   onClose,
 }: PaymentPhotoGalleryProps) {
-  const [mounted, setMounted] = useState(false);
   const [photos, setPhotos] = useState<PaymentProofPhoto[]>([]);
   const [query, setQuery] = useState('');
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** Dialog xac nhan thay window.confirm. */
+  const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   /** Bản sao object URL hiện tại để thu hồi được kể cả trong effect dọn dẹp. */
   const previewUrlsRef = useRef<Record<string, string>>({});
@@ -46,10 +46,6 @@ export function PaymentPhotoGallery({
     () => ({ warehouseId, cashierId, includeAllCashiers: canViewAllCashiers }),
     [warehouseId, cashierId, canViewAllCashiers]
   );
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -88,9 +84,6 @@ export function PaymentPhotoGallery({
   useEffect(() => () => {
     revokePreviews(previewUrlsRef.current);
   }, [revokePreviews]);
-
-  const modalRef = useModalFocusTrap<HTMLDivElement>(isOpen && mounted, onClose);
-  if (!isOpen || !mounted) return null;
 
   const visible = photos
     .filter((photo) => isPhotoInScope(photo, scope))
@@ -138,7 +131,13 @@ export function PaymentPhotoGallery({
   const removePhoto = async (photo: PaymentProofPhoto) => {
     if (!isPhotoInScope(photo, scope)) return;
     if (photo.syncState === 'NEEDS_RECONCILIATION') return;
-    if (!window.confirm(`Xóa ảnh xác nhận của đơn ${photo.orderCode}?`)) return;
+    setConfirmDlg({
+      msg: `Xóa ảnh xác nhận của đơn ${photo.orderCode}?`,
+      onOk: async () => { setConfirmDlg(null); doRemovePhoto(photo); },
+    });
+    return;
+  };
+  const doRemovePhoto = async (photo: PaymentProofPhoto) => {
     await deletePaymentProofPhoto(photo.id, scope);
     // Thu hồi object URL của ảnh vừa xoá, nếu không blob của nó vẫn bị giữ
     // trong RAM tới khi đóng modal (mỗi lần xoá là một object URL rò rỉ).
@@ -157,35 +156,26 @@ export function PaymentPhotoGallery({
   };
 
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[75] bg-slate-950/80 flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+  return (
+    <>
+      <Modal open={!!confirmDlg} onClose={() => setConfirmDlg(null)} size="sm" title="Xác nhận">
+        {confirmDlg && (
+          <>
+            <p className="text-slate-900 font-medium">{confirmDlg.msg}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+              <button onClick={confirmDlg.onOk} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+            </div>
+          </>
+        )}
+      </Modal>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="md"
+      title={`Ảnh thanh toán (${photos.length})`}
     >
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Ảnh thanh toán"
-        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-          <p className="text-xs font-extrabold text-slate-900">Ảnh thanh toán ({photos.length})</p>
-          <button
-            type="button"
-            aria-label="Đóng thư viện ảnh"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-3 border-b border-slate-100">
+      <div className="p-3 border border-slate-100 rounded-xl bg-white">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
             <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <input
@@ -200,12 +190,12 @@ export function PaymentPhotoGallery({
           {errorMessage ? <p className="mt-2 text-[11px] text-rose-600 font-medium">{errorMessage}</p> : null}
         </div>
 
-        <div className="p-3 space-y-2 overflow-y-auto">
+        <div className="space-y-2">
           {visible.length === 0 ? (
             <p className="text-[11px] text-slate-500 text-center py-6">Chưa có ảnh xác nhận nào.</p>
           ) : (
             visible.map((photo) => (
-              <div key={photo.id} className="flex items-center gap-3 p-2 rounded-xl border border-slate-200">
+              <div key={photo.id} className="flex items-center gap-3 p-2 rounded-xl border border-slate-200 bg-white">
                 <button
                   type="button"
                   aria-label={`Xem ảnh đơn ${photo.orderCode}`}
@@ -256,7 +246,7 @@ export function PaymentPhotoGallery({
         </div>
 
         {expandedId ? (
-          <div className="p-3 border-t border-slate-100">
+          <div className="p-3 border border-slate-100 rounded-xl bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={previewUrls[expandedId] || ''}
@@ -265,8 +255,7 @@ export function PaymentPhotoGallery({
             />
           </div>
         ) : null}
-      </div>
-    </div>,
-    document.body
+    </Modal>
+    </>
   );
 }

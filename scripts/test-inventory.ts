@@ -96,13 +96,13 @@ async function runInventoryTests() {
   console.log(`📊 Kết quả tồn kho thực tế của [${bookStock.code}] ${bookStock.title}:`);
   console.log(`   - Kho 1 (Âu Cơ):     ${bookStock.stockAuCo} cuốn (Kỳ vọng: ${baseAuCo + 150})`);
   console.log(`   - Kho 2 (Quỳnh Mai): ${bookStock.stockQuynhMai} cuốn (Kỳ vọng: ${baseQuynhMai + 800})`);
-  console.log(`   - Kho 3 (Dự phòng):  ${bookStock.stockDuPhong} cuốn (Kỳ vọng: ${baseDuPhong})`);
+  console.log(`   - Kho 3 (Dự phòng):  ${bookStock.stockNuiTruc} cuốn (Kỳ vọng: ${baseDuPhong})`);
   console.log(`   - TỔNG TOÀN HỆ THỐNG: ${bookStock.totalStock} cuốn (Kỳ vọng: ${baseAuCo + baseQuynhMai + baseDuPhong + 950})`);
 
   if (
     bookStock.stockAuCo === baseAuCo + 150 &&
     bookStock.stockQuynhMai === baseQuynhMai + 800 &&
-    bookStock.stockDuPhong === baseDuPhong &&
+    bookStock.stockNuiTruc === baseDuPhong &&
     bookStock.totalStock === baseAuCo + baseQuynhMai + baseDuPhong + 950
   ) {
     console.log('🎉 KHỚP SỐ DƯ TUYỆT ĐỐI 100%!');
@@ -165,7 +165,7 @@ async function runInventoryTests() {
     condition: 'QUARANTINE',
     physicalQuantity: 77,
   });
-  const cols = ['stockAuCo', 'stockQuynhMai', 'stockDuPhong', 'totalStock'] as const;
+  const cols = ['stockAuCo', 'stockQuynhMai', 'stockNuiTruc', 'totalStock'] as const;
   try {
     const quarantined = await InventoryService.getBalance(book.id, whAuCo.id, 'QUARANTINE');
     console.log(`🧪 Đã cấm [${book.code}] tại Âu Cơ: 77 cuốn QUARANTINE (đọc lại: ${quarantined} cuốn)`);

@@ -351,7 +351,7 @@ export function LiveFairMonitorModal({
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto"
+        className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
         onClick={(e) => {
           if (e.target === e.currentTarget && !busyOrder) {
             onClose();
@@ -360,9 +360,9 @@ export function LiveFairMonitorModal({
       >
         <div
           ref={panelRef}
-          className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl shadow-2xl border border-slate-200 my-auto flex flex-col max-h-[92vh]"
+          className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl shadow-2xl border border-slate-200 my-auto flex flex-col max-h-[92vh] overflow-hidden"
         >
-          <div className="no-print shrink-0 bg-slate-900 text-white px-4 py-3 flex items-center justify-between gap-3">
+          <div className="no-print shrink-0 bg-slate-900 text-white px-4 py-3 flex items-center justify-between gap-3 rounded-t-2xl sm:rounded-t-3xl">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 shrink-0 rounded-2xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
                 <Activity className="w-5 h-5" />

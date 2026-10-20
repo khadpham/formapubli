@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Modal from '../ui/Modal';
 import { createPortal } from 'react-dom';
 import { Printer, Trash2, X } from 'lucide-react';
 import { BrowserQRCodeSvgWriter } from '@zxing/library';
@@ -34,6 +35,10 @@ export interface DeliveryOrderData {
   discountRate: number;
   finalAmount: number;
   fiscalScope: string;
+  invoiceRequired?: boolean;
+  invoiceTaxCode?: string;
+  invoiceCompanyName?: string;
+  invoiceAddress?: string;
   status: 'DRAFT' | 'DISPATCHED_LOCKED' | 'VOIDED_REVERSED';
   reversalOf?: string | null;
   note?: string | null;
@@ -391,6 +396,9 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
   const [mounted, setMounted] = useState(false);
   const [qrSvgXml, setQrSvgXml] = useState<string>('');
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
+  /** Toast thay alert, dialog thay confirm. */
+  const [toast, setToast] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileState>({
     tenCongTy: COMPANY_NAME,
     diaChi: COMPANY_ADDRESS,
@@ -460,12 +468,16 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
 
   const handleDeleteDraft = async () => {
     if (!onDeleteDraft || order.status !== 'DRAFT' || isDeletingDraft) return;
-    if (!window.confirm(`Xoá bản nháp ${order.code}? Hành động này không thể hoàn tác.`)) return;
+    setConfirmDelete(true);
+  };
+  const doDeleteDraft = async () => {
+    setConfirmDelete(false);
     setIsDeletingDraft(true);
     try {
-      await onDeleteDraft(order.id);
+      await onDeleteDraft?.(order.id);
     } catch (err: any) {
-      alert(err?.message || 'Xoá bản nháp thất bại');
+      setToast(err?.message || 'Xoá bản nháp thất bại');
+      setTimeout(() => setToast(null), 4000);
     } finally {
       setIsDeletingDraft(false);
     }
@@ -473,6 +485,18 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
 
   return (
     <>
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-4 py-2 rounded-xl text-sm font-medium shadow-lg bg-red-600 text-white">
+          {toast}
+        </div>
+      )}
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} size="sm" title="Xác nhận">
+        <p className="text-slate-900 font-medium">Xoá bản nháp {order.code}? Hành động này không thể hoàn tác.</p>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={() => setConfirmDelete(false)} className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">Hủy</button>
+          <button onClick={doDeleteDraft} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Xác nhận</button>
+        </div>
+      </Modal>
       {/* ============================================================== */}
       {/* STYLES KHỔ IN A4: Khắc phục triệt để lỗi trang trắng */}
       {/* ============================================================== */}
@@ -550,7 +574,7 @@ export function DeliveryReceiptPrint({ order, isOpen, onClose, onDeleteDraft }: 
       {/* ============================================================== */}
       {createPortal(
         <div
-          className="no-print fixed inset-0 z-[70] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
+          className="no-print fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
