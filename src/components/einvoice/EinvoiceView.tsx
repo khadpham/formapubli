@@ -278,11 +278,11 @@ export default function EinvoiceView() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {inv.status === 'PREPARED' && (
+                        {(inv.status === 'PREPARED' || inv.status === 'SYNC_FAILED') && (
                           <button
                             onClick={() => handlePush(inv.id)}
                             disabled={actionLoading === inv.id}
-                            title="Đẩy sang MS-Invoice"
+                            title={inv.status === 'SYNC_FAILED' ? 'Thử đẩy lại sang MS-Invoice' : 'Đẩy sang MS-Invoice'}
                             className="p-1.5 hover:bg-blue-100 text-blue-600 rounded disabled:opacity-50"
                           >
                             <Send className="w-4 h-4" />

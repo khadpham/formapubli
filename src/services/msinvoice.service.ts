@@ -159,7 +159,7 @@ export class MSInvoiceService {
     if (rows.length === 0) throw new Error('Không tìm thấy hóa đơn');
     const inv: any = rows[0];
 
-    if (inv.status !== 'PREPARED') {
+    if (inv.status !== 'PREPARED' && inv.status !== 'SYNC_FAILED') {
       throw new Error(`Hóa đơn ở trạng thái ${inv.status}, cần PREPARED mới đẩy được`);
     }
 

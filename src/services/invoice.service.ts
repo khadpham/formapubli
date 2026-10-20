@@ -51,11 +51,12 @@ export class InvoiceService {
     // Lấy items
     const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 
-    // Tính toán: subtotal từ đơn, VAT 8% (sách), total
-    const subtotal = Number(ord.finalAmount || ord.subtotal || 0);
-    const vatRate = 0.08; // Thuế suất sách 8%
-    const vatAmount = Math.round(subtotal * vatRate);
-    const totalAmount = subtotal + vatAmount;
+    // Tính toán: finalAmount đã GỒM VAT (giá bìa gồm thuế) nên phải TÁCH NGƯỢC VAT ra,
+    // không cộng thêm. Tổng hóa đơn phải bằng số tiền đã thu.
+    const totalAmount = Number(ord.finalAmount || ord.subtotal || 0);
+    const vatRate = 0.08; // TODO: thuế suất cần anh Kha chốt, hiện giữ 8%
+    const subtotal = Math.round(totalAmount / (1 + vatRate));
+    const vatAmount = totalAmount - subtotal;
 
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -120,10 +121,10 @@ export class InvoiceService {
       return { invoice: null, orderCount: 0, skipped: true, reason: 'Không có đơn cần gom' };
     }
 
-    const subtotal = unconsolidated.reduce((s: number, o: any) => s + Number(o.finalAmount || 0), 0);
-    const vatRate = 0.08;
-    const vatAmount = Math.round(subtotal * vatRate);
-    const totalAmount = subtotal + vatAmount;
+    const totalAmount = unconsolidated.reduce((s: number, o: any) => s + Number(o.finalAmount || 0), 0);
+    const vatRate = 0.08; // TODO: thuế suất cần anh Kha chốt, hiện giữ 8%
+    const subtotal = Math.round(totalAmount / (1 + vatRate));
+    const vatAmount = totalAmount - subtotal;
     const orderIds = unconsolidated.map((o: any) => o.id);
 
     const id = randomUUID();
