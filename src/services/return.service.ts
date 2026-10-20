@@ -6,6 +6,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { withDbRetry } from '../lib/db-retry';
 import { parseDbTimestamp } from '../lib/db-timestamp';
 import { canonicalHash } from '../lib/transfer-fingerprint';
+import { priceLine } from '../lib/pricing';
 import { ActorContext } from './actor-context';
 import { AppError } from './app-error';
 
@@ -645,7 +646,7 @@ export class ReturnService {
         }
 
         // 4. Xử lý theo từng loại phiếu:
-        const replacementDetails: Array<{ editionId: string; quantity: number; coverPrice: number }> = [];
+        const replacementDetails: Array<{ editionId: string; quantity: number; unitPrice: number }> = [];
 
         if (header.returnType === 'REFUND') {
           if (exchangeItems && exchangeItems.length > 0) {
@@ -709,7 +710,16 @@ export class ReturnService {
             exchangeMap.set(edId, (exchangeMap.get(edId) || 0) + q);
           }
 
-          const oldRefundableValue = items.reduce(
+          // Quyết định 2026-10-19 (anh Kha chốt): đổi trả tính cả 2 đầu theo giá thực trả.
+          // - Hàng trả: tổng số tiền khách đã trả thật (unitRefund snapshot từ order_items).
+          // - Hàng đổi: giá bán thực tế = giá bìa x (1 - discountRate của đơn gốc).
+          // Công ty không bao giờ trả lại giá trị lớn hơn số tiền đã thu.
+          const originOrder: any = (
+            await tx.select().from(orders).where(eq(orders.id, header.orderId)).limit(1)
+          )[0];
+          const orderDiscountRate = Number(originOrder?.discountRate || 0);
+
+          const refundableValue = items.reduce(
             (sum, it) => sum + Math.round(Number(it.quantity) * Number(it.unitRefund || 0)),
             0
           );
@@ -731,14 +741,14 @@ export class ReturnService {
               await tx.select().from(editions).where(eq(editions.id, editionId)).limit(1)
             )[0];
             if (!edRow) throw AppError.invalid(`Ấn bản thay thế ${editionId} không tồn tại.`);
-            const coverPrice = Math.round(Number(edRow.coverPrice || 0));
-            replacementValue += quantity * coverPrice;
-            replacementDetails.push({ editionId, quantity, coverPrice });
+            const priced = priceLine(Number(edRow.coverPrice || 0), orderDiscountRate, quantity);
+            replacementValue += priced.finalAmount;
+            replacementDetails.push({ editionId, quantity, unitPrice: priced.unitSellingPrice });
           }
 
-          if (returnCoverValue !== replacementValue) {
+          if (refundableValue !== replacementValue) {
             throw AppError.invalid(
-              `Giá bìa sách đổi (${replacementValue.toLocaleString('vi-VN')} đ) không bằng giá bìa sách trả (${returnCoverValue.toLocaleString('vi-VN')} đ). Chênh lệch: ${(replacementValue - returnCoverValue).toLocaleString('vi-VN')} đ.`
+              `Giá trị sách đổi (${replacementValue.toLocaleString('vi-VN')} đ) không bằng giá trị thực trả của sách trả (${refundableValue.toLocaleString('vi-VN')} đ). Chênh lệch: ${(replacementValue - refundableValue).toLocaleString('vi-VN')} đ.`
             );
           }
 
@@ -762,11 +772,11 @@ export class ReturnService {
               exchangeMap.set(edId, (exchangeMap.get(edId) || 0) + q);
             }
             for (const [editionId, quantity] of Array.from(exchangeMap.entries())) {
-              replacementDetails.push({ editionId, quantity, coverPrice: 0 });
+              replacementDetails.push({ editionId, quantity, unitPrice: 0 });
             }
           } else {
             for (const it of items) {
-              replacementDetails.push({ editionId: it.editionId, quantity: it.quantity, coverPrice: 0 });
+              replacementDetails.push({ editionId: it.editionId, quantity: it.quantity, unitPrice: 0 });
             }
           }
 
@@ -859,7 +869,7 @@ export class ReturnService {
             returnId,
             editionId: rep.editionId,
             quantity: rep.quantity,
-            unitPrice: rep.coverPrice,
+            unitPrice: rep.unitPrice,
           });
           exIdx++;
         }
