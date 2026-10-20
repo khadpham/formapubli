@@ -21,6 +21,12 @@ export async function POST(req: NextRequest) {
     ? `${proto}://${fwdHost}${req.nextUrl.pathname}${req.nextUrl.search}`
     : req.url;
   if (!verifyShopeeWebhook(rawBody, signature, webhookUrl, partnerKey)) {
+    // LOG TAM (debug dang ky webhook): chi ghi metadata, khong ghi secret.
+    console.warn('[shopee-push][debug] verify that bai - url:', webhookUrl,
+      '| auth_header_len:', signature.length,
+      '| auth_header_head:', signature.slice(0, 12),
+      '| body_len:', rawBody.length,
+      '| body_head:', rawBody.slice(0, 120));
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
   const partnerId = Number(process.env.SHOPEE_PARTNER_ID || '0');
