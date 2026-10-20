@@ -248,7 +248,11 @@ async function ingestOne(
     return;
   }
 
-  const isCod = d.payment_method === 'COD';
+  // Shopee trả nhãn đầy đủ "Cash on Delivery" chứ KHÔNG phải mã "COD"
+  // (kiểm chứng sandbox 2026-10-20) - khớp cứng "COD" là bỏ lọt mọi đơn
+  // thu hộ ngoài đời, ghi nhầm thành chuyển khoản.
+  const pmNorm = (d.payment_method || '').trim().toUpperCase();
+  const isCod = pmNorm === 'COD' || pmNorm.includes('CASH ON DELIVERY');
   if (isCod && !cfg.codEnabled) {
     result.quarantined.push(await quarantine(d.order_sn, '', 'COD đang tắt - bật cờ mới xử lý'));
     return;
