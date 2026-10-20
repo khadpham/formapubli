@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'node:crypto';
 import { handleShopeePush, verifyShopeeWebhook } from '@/services/shopee/webhook';
 
 export const dynamic = 'force-dynamic';
@@ -31,14 +30,6 @@ export async function POST(req: NextRequest) {
     ? `${proto}://${fwdHost}${req.nextUrl.pathname}${req.nextUrl.search}`
     : req.url;
   if (!verifyShopeeWebhook(rawBody, signature, webhookUrl, partnerKey)) {
-    // LOG TAM (debug dang ky webhook): chi ghi metadata, khong ghi secret.
-    const expectUrlBody = createHmac('sha256', partnerKey).update(`${webhookUrl}|${rawBody}`).digest('hex');
-    console.warn('[shopee-push][debug] verify that bai - url:', webhookUrl,
-      '| auth:', signature,
-      '| expect_url_body:', expectUrlBody,
-      '| match:', signature === expectUrlBody,
-      '| headers:', JSON.stringify(Object.fromEntries(req.headers.entries())).slice(0, 700),
-      '| body_full:', rawBody);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
   const partnerId = Number(process.env.SHOPEE_PARTNER_ID || '0');
