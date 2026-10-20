@@ -22,11 +22,12 @@ export async function POST(req: NextRequest) {
     : req.url;
   if (!verifyShopeeWebhook(rawBody, signature, webhookUrl, partnerKey)) {
     // LOG TAM (debug dang ky webhook): chi ghi metadata, khong ghi secret.
+    const expectUrlBody = crypto.createHmac('sha256', partnerKey).update(`${webhookUrl}|${rawBody}`).digest('hex');
     console.warn('[shopee-push][debug] verify that bai - url:', webhookUrl,
-      '| auth_header_len:', signature.length,
-      '| auth_header_head:', signature.slice(0, 12),
-      '| body_len:', rawBody.length,
-      '| body_head:', rawBody.slice(0, 120));
+      '| auth:', signature,
+      '| expect_url_body:', expectUrlBody,
+      '| match:', signature === expectUrlBody,
+      '| body_full:', rawBody);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
   const partnerId = Number(process.env.SHOPEE_PARTNER_ID || '0');
