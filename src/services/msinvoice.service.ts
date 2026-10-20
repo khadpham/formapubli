@@ -326,7 +326,7 @@ export class MSInvoiceService {
       throw new Error('MS-Invoice search lỗi: ' + (data.errors || data.message || res.status));
     }
 
-    const list: any[] = Array.isArray(data) ? data : data.invoices || data.items || data.results || [];
+    const list: any[] = Array.isArray(data) ? data : data.listData || data.invoices || data.items || data.results || [];
 
     const locals = await db.select().from(einvoices);
     const byMsId = new Map<string, any>();
