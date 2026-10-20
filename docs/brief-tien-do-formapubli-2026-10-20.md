@@ -18,7 +18,7 @@ phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md, thư mục docs/shopee/ (
 | Hạng mục | Trạng thái |
 | --- | --- |
 | Nhánh main (git) | Tip `8ab8e58` "Merge pull request #35 from khadpham/dev" (2026-10-20 14:17 +07) |
-| Nhánh dev (git) | Tip `df845be`; hơn main đúng 4 commit, trong đó chỉ 1 commit chứa code |
+| Nhánh dev (git) | Tip `fcbb6b3` (cập nhật cuối ngày 2026-10-20); hơn main 6 commit, trong đó 2 commit chứa code |
 | Production | app.formapubli.vn chạy đúng main `8ab8e58` (hồ sơ go-live + đã kiểm chứng sống 2026-10-20) |
 | Dev | dev.formapubli.vn, /opt/formapubli-dev trên VPS, PM2 `formapubli-dev`, port 3002, DB SQLite local dev.db |
 | Production hạ tầng | VPS 160.187.228.139, /opt/formapubli, PM2 `formapubli` cluster 2 instance port 3000, DB Turso cloud |
@@ -27,12 +27,15 @@ phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md, thư mục docs/shopee/ (
 
 Bằng chứng git (chạy tại clone, 2026-10-20):
 - `git log origin/main -3`: 8ab8e58 (merge PR #35) <- 2c131d9 (fix ms-list) <- 46ff81a (merge PR #34, 2026-10-20 14:09 +07).
-- `git log origin/main..origin/dev`: đúng 4 commit: `3dd8834` (code D1), `4d9d928`, `38e86ed`, `df845be` (cả 3 là tài liệu).
-- `git diff --stat origin/main...origin/dev`: 12 file, +482/-3, toàn bộ thuộc D1 (xem mục 2.1).
+- `git log origin/main..origin/dev`: 6 commit: `3dd8834` (code D1), `3d1d919` (code nút
+  cưỡng chế chốt ca), `4d9d928`, `38e86ed`, `df845be`, `fcbb6b3` (4 commit tài liệu).
+- `git diff --stat origin/main...origin/dev`: 15 file, +927/-6 (D1 + nút cưỡng chế chốt ca +
+  tài liệu; xem mục 2.1 và 2.6).
 - PR #33 (đối trả theo giá thực trả, merge `56641bf` ngày 2026-10-19 13:24 +07) là ancestor của main (git).
 - PR #34 gộp toàn bộ dev vào main: khoảng từ `56641bf` đến `46ff81a` có 153 commit (git), gồm cả commit `f6b3d74` gộp main vào dev trước đó. Chủ dự án đã điều kiện: chỉ lên main khi toàn bộ dev hoàn thiện, kiểm chứng hết, không lỗi (quyết định D2).
 
-Kết luận ngắn: main và dev hiện gần như trùng nhau. Lệch code duy nhất là D1. Production = main.
+Kết luận ngắn: main và dev hiện rất gần nhau. Lệch code chỉ gồm D1 và nút cưỡng chế chốt ca
+(cả hai đã kiểm thử trên dev). Production = main.
 
 ---
 
@@ -61,7 +64,8 @@ ERP KHÔNG đụng ký số/remote signing (chốt 2026-10-19). ERP đồng bộ
   Đã sửa lỗi giờ UTC (commit d120db6, có trong main): chuẩn hoá created_at bằng datetime() của SQLite
   (dữ liệu có 2 định dạng: ISO-Z và "YYYY-MM-DD HH:MM:SS", đều là mốc UTC) rồi so với cửa sổ ngày VN
   quy ra UTC. Cron production chạy 23:30 giờ VN (file cron-consolidate.sh trên VPS, hồ sơ).
-  LƯU Ý MÂU THUẪN TÀI LIỆU: blueprint mục 23.8 còn ghi cron 21h30 - đó là số cũ, thực tế đã đặt 23:30.
+  LƯU Ý TÀI LIỆU: blueprint mục 23.8 từng ghi cron 21h30 - đó là số cũ; đã sửa thành 23:30
+  trong blueprint cuối ngày 2026-10-20.
 - Tab mirror "Trên MS-Invoice": GET /api/invoices/ms-list qua POST search của vendor; kết quả nằm ở
   trường listData; mapping: serial <- invoiceFormSerial, number <- invoiceNo, total <- invoiceTotal,
   status <- statusId, buyerName <- toPartyName || toName, buyerTaxCode <- toPartyTaxId.
@@ -265,9 +269,10 @@ Theo thứ tự ưu tiên của masterplan (giai đoạn 2 -> 4):
    REVIEW-01. Nếu Shopee yêu cầu thêm báo cáo kiểm thử xâm nhập (pentest) cho quyền PII không che
    thì dừng và báo chủ dự án.
 2. **D1 lên production, gộp CÙNG đợt Shopee live** (quyết định của chủ dự án 2026-10-20, không đi
-   riêng): PR dev -> main (hiện chỉ có 1 commit code D1 + 3 commit tài liệu), áp migration 0074
-   lên Turso production, deploy theo quy trình mục 5, kiểm chứng: push bị chặn trước xác nhận,
-   phát hành được sau xác nhận, đơn online chưa xác nhận không bị gom vào hóa đơn tổng hợp.
+   riêng): PR dev -> main (hiện có 2 commit code: D1 và nút cưỡng chế chốt ca, cộng các commit
+   tài liệu), áp migration 0074 lên Turso production, deploy theo quy trình mục 5, kiểm chứng:
+   đẩy hóa đơn bị chặn trước xác nhận, phát hành được sau xác nhận, đơn online chưa xác nhận
+   không bị gom vào hóa đơn tổng hợp.
 3. **Shopee P2** (sau khi P1 live ổn định): hàng đợi hóa đơn người mua nối pipeline MS-Invoice +
    gửi email hóa đơn; hoàn trả qua API; đồng bộ sản phẩm lên sàn có duyệt tay trước khi đẩy
    giá/tồn tự động; job báo lệch tồn ERP - Shopee hằng ngày (P1 chỉ đồng bộ về + cảnh báo,
@@ -290,8 +295,9 @@ Theo thứ tự ưu tiên của masterplan (giai đoạn 2 -> 4):
    đóng thay (bản ghi chốt ngày đánh dấu UNVERIFIED). Đã kiểm thử thật trên dev. Chờ lên
    production ở đợt deploy tiếp theo.
 9. **Việc vận hành treo khác (hồ sơ)**: day-close kho Âu Cơ từng kẹt từ 2026-10-11 do ca chưa
-   chốt (đã gửi cảnh báo); redirect 301 book.formaform.vn -> app.formapubli.vn và xóa nhánh
-   debug diag/worker-hang-1101 là việc của chủ dự án trên Cloudflare/GitHub.
+   chốt (đã gửi cảnh báo); kiểm tra trực tiếp production chiều 2026-10-20: hiện KHÔNG còn ca
+   két nào đang mở trong toàn hệ thống. Redirect 301 book.formaform.vn -> app.formapubli.vn và
+   xóa nhánh debug diag/worker-hang-1101 là việc của chủ dự án trên Cloudflare/GitHub.
 10. **Nợ kỹ thuật ghi nhận**: chưa có test suite tự động (đề xuất xây bộ smoke test đã nêu,
     chưa được chốt); DOCX hợp đồng lưu base64 trong DB chưa chuyển R2; comment cũ trong
     return.service.ts ("FIX 2026-10-13 so giá bìa", biến returnCoverValue không còn dùng trong
@@ -355,12 +361,12 @@ Theo thứ tự ưu tiên của masterplan (giai đoạn 2 -> 4):
 ## PHỤ LỤC: MÂU THUẪN VÀ ĐIỂM CẦN BIẾT KHI ĐỌC TÀI LIỆU GỐC
 
 1. Blueprint mục 39.1 (dòng cuối) và mục 39.2 (đoạn tiến độ cuối) được viết TRƯỚC khi go-live
-   xong nên còn ghi "MS-Invoice chưa lên production" và "Shopee còn lại tạo đơn test, nộp
+   xong nên từng ghi "MS-Invoice chưa lên production" và "Shopee còn lại tạo đơn test, nộp
    Go-Live". Thực tế đến cuối 2026-10-20: MS-Invoice đã live (PR #34/#35), vòng đời đơn sandbox
-   đã kiểm chứng xong, hồ sơ Go-Live đã nộp. Đọc masterplan phần phụ lục tiến độ để lấy trạng
-   thái mới nhất; blueprint chưa được cập nhật hai đoạn này.
-2. Blueprint mục 23.8 ghi cron gom hóa đơn tổng hợp lúc 21h30; cron production thực tế đã đặt
-   23:30 giờ VN. Dùng 23:30.
+   đã kiểm chứng xong, hồ sơ Go-Live đã nộp. HAI ĐOẠN NÀY ĐÃ ĐƯỢC CẬP NHẬT vào blueprint cuối
+   ngày 2026-10-20 (commit fcbb6b3) - nếu đọc bản blueprint cũ hơn thời điểm đó thì lưu ý.
+2. Blueprint mục 23.8 từng ghi cron gom hóa đơn tổng hợp lúc 21h30; thực tế đã đặt 23:30 giờ
+   VN và blueprint đã sửa thành 23:30 cuối ngày 2026-10-20. Dùng 23:30.
 3. Masterplan phần thân (mục 1-7) mô tả kế hoạch buổi sáng 2026-10-20: tách go-live thành các
    PR-A/B/C/D và "5 migration 0069-0073 chưa áp". Thực tế đã làm khác: gộp một PR #34 (toàn bộ
    dev, sau khi merge main vào dev và regression đạt) + PR #35 vá lỗi, áp migrations 0056-0073.
