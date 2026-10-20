@@ -1042,6 +1042,24 @@ export const campaigns = sqliteTable('campaigns', {
   endedAt: text('ended_at'),
 });
 
+// 0073: Báo cáo kỳ tự sinh khi chiến dịch kết thúc (tay hoặc tự động).
+export const campaignReports = sqliteTable('campaign_reports', {
+  id: text('id').primaryKey(),
+  campaignId: text('campaign_id').notNull().references(() => campaigns.id),
+  generatedBy: text('generated_by').notNull().default('system-auto'),
+  periodStart: text('period_start').notNull(),
+  periodEnd: text('period_end').notNull(),
+  revenue: real('revenue').notNull().default(0),
+  orderCount: integer('order_count').notNull().default(0),
+  itemsSold: integer('items_sold').notNull().default(0),
+  leftoverQuantity: integer('leftover_quantity').notNull().default(0),
+  leftoverItems: text('leftover_items').notNull().default('[]'),
+  soldItems: text('sold_items').notNull().default('[]'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  campaignIdx: index('idx_campaign_reports_campaign').on(table.campaignId),
+}));
+
 // 0042: chi phí công ty cho tab Chủ - GĐ1 ghi tay, GĐ2 lương theo tháng.
 // 0043: GĐ2 - lương gắn NV (staff_id), kỳ (recurrence), audit sửa (updated_*).
 export const expenseEntries = sqliteTable('expense_entries', {
