@@ -1623,3 +1623,24 @@ Hien trang: 9 combo COMBO01-09 nam trong bang products. Quan ly trong tab Kho ha
 3. pm2 restart formapubli-dev, kiem tra https://dev.formapubli.vn tra 200.
 4. Curl: GET /api/combos, GET /api/inventory/combo-stock/COMBO01?warehouseId=..., POST tao thu + xoa.
 5. Migration production de dot sau (rieng, co backup).
+
+## 39. MS-Invoice PROD da verify + Chien luoc tich hop Shopee API (2026-10-20)
+
+### 39.1. MS-Invoice production - TRANG THAI DA KIEM CHUNG (2026-10-20)
+- Tai khoan prod = MST cong ty 0110626953, URL https://hoadon.msinvoice.vn, ky hieu '1C26TVN'. API login-key dung chung tai khoan web (khong can tai khoan rieng).
+- create-from-3rd PHAI gui tach: invoiceForm 1 + invoiceSerial 'C26TVN' (he thong ghep thanh 1C26TVN); gui nguyen '1C26TVN' se loi "Khong tim thay mau hoa don 11C26TVN".
+- API tra HTTP 200 ngay ca khi loi logic (success 'N' / error true) - client PHAI bat 2 truong nay.
+- Thue: sach 5% (VatTax5), in an 8% (VatTax8). Gia bia da gom VAT nen amount gui di = tach nguoc chua thue.
+- Search endpoint tra du lieu o truong listData; mapping dung: invoiceFormSerial, invoiceNo, invoiceTotal, statusId, toPartyName||toName, toPartyTaxId.
+- Verify E2E: day HD test qua ERP -> SYNCED, msinvoice_id bat dung, chi tiet tren prod khop tung so (tong 36000, chua thue 34286, thue 5% 1714). 2 HD nhap test da xoa khoi prod bang DELETE endpoint - production sach.
+- Endpoint da biet them tu tai lieu vendor: pdf-base64 (lay file PDF), DELETE xoa nhap, PUT gui email. Chua co tai lieu API dieu chinh/thay the (vendor chua tra loi tu 13/10).
+- Chua len production: code o nhanh dev; can PR rieng + dat MSINVOICE_* vao /opt/formapubli/.env + ap migration 0069/0070/0072.
+
+### 39.2. Shopee Open Platform - QUYET DINH CHIEN LUOC (2026-10-20, cho anh Kha duyet masterplan)
+- Cong ty da duoc duyet Open Platform (tai khoan formapubli). Chua tao app - cho anh chot ten app + logo (Partner ID/Key cap theo tung app).
+- Pham vi API v2 da nghien cuu day du (tai lieu: ~/workspace/your_files/nghien-cuu-shopee-api-v2-2026-10-20.md va phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md): 33 module. Diem ky thuat bat buoc: token 4 gio + refresh xoay vong 30 ngay (luu theo shop, cron refresh); ky HMAC-SHA256; webhook timeout 3s, khong dam bao thu tu, co the lap - bat buoc idempotent + get_lost_push_message + poll du phong.
+- HOA DON NGUOI MUA TREN SHOPEE (gioi han VN): get_buyer_invoice_info dung duoc o VN (doc thong tin khach khai); get_pending_buyer_invoice_order_list va upload_invoice_doc CHI mo cho PH/BR - VN khong dung duoc. Hau qua: hang doi hoa don Shopee do ERP tu xay tu trang thai don INVOICE_PENDING; tra hoa don cho khach bang EMAIL kem link tra cuu MS-Invoice (khong upload len Shopee).
+- ESCROW: tien khach bi Shopee giu tai Tai khoan Dam bao, giai ngan khi khach xac nhan/het thoi gian bao dam, tru toan bo phi truoc khi ve nguoi ban. Lai that tinh tren escrow_amount_after_adjustment - khong dung doanh thu danh nghia. Doi soat 3 tang: get_escrow_detail (theo don, co items[] tung dong hang va nhom thue khau tru VN withholding_vat/pit/cit) -> income report (theo ky) -> payout (tien that ve ngan hang). Khong hardcode ty le phi.
+- BusinessInsights cua Shopee gan nhu khong co cho VN (1 endpoint, chi Brazil) -> phan tich kinh doanh do ERP tu xay tu don + escrow. AccountHealth day du (chi so van hanh, diem phat, listing vi pham) - dung cho canh bao van hanh.
+- THU TU TRIEN KHAI (thay the de xuat "hop nhat du lieu truoc" trong ban phan tich hub): Giai doan 0 tao app + kiem chung API that (chi doc, sandbox) SONG SONG giai doan 1 GO-LIVE ERP len production (tach PR: A hoa don, B chien dich tu ket thuc, C CRUD doi tac, D hop dong/migration 0071). Giai doan 2 Shopee P1: ha tang token/webhook + dong bo don + gui SPX + in phieu trong tab Shopee hien tai. Giai doan 3 P2: hoa don nguoi mua + hoan tra + san pham/ton (day len co duyet tay truoc) + chat (scope rieng). Giai doan 4 P3: escrow/tai chinh sau + tai cau truc tab thanh hub "Don online" (Portal + Shopee) SAU KHI du lieu that chay on dinh.
+- Quyet dinh con cho (masterplan-golive-va-shopee-2026-10-20.md): D0 ten app/logo; D1 thoi diem phat hanh HD don online (de xuat: khi da ban giao van chuyen); D2 pham vi go-live; D3 khung gio deploy; D4 shop Shopee chinh thuc de uy quyen; D5 xin scope Chat; D6 don credential prod khoi dev .env sau go-live.
