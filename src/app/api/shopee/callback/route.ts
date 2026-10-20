@@ -33,5 +33,10 @@ export async function GET(req: NextRequest) {
   }
   // App chỉ có 1 route `/` (tab nội bộ trong MasterAppShell) - không có
   // `/settings`. Trả Anh về trang chính kèm cờ để UI sau này đón.
-  return NextResponse.redirect(new URL('/?shopee=ok', req.url));
+  // Sau proxy Caddy, req.url mang host nội bộ (localhost) nên phải dựng
+  // URL đích từ header x-forwarded-host/proto thì mới đúng domain công khai.
+  const proto = req.headers.get('x-forwarded-proto') || 'https';
+  const fwdHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const publicBase = fwdHost ? `${proto}://${fwdHost}` : req.url;
+  return NextResponse.redirect(new URL('/?shopee=ok', publicBase));
 }
