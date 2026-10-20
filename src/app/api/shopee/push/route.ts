@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       '| auth:', signature,
       '| expect_url_body:', expectUrlBody,
       '| match:', signature === expectUrlBody,
+      '| headers:', JSON.stringify(Object.fromEntries(req.headers.entries())).slice(0, 700),
       '| body_full:', rawBody);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
