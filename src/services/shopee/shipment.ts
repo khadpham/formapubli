@@ -135,14 +135,13 @@ export async function shipShopeeOrder(
     throw AppError.conflict(`Đơn #${orderSn} đang ở trạng thái ${ord.shippingStatus}, không giao lại.`);
   }
   const carrier = (ord.carrier || 'SPX').toUpperCase();
-  const param = await getShippingParameter(cfg, orderSn);
-  // ship_order có thể đã thành công ở một lần bấm trước dở dang (gói đã xếp
-  // lịch/lấy đi): Shopee trả lỗi khác nhau theo trạng thái ("already
-  // shipped", "not eligible for rescheduling"...). Không đuổi theo câu chữ:
-  // giữ lỗi lại, cứ đi lấy mã vận đơn - có mã = đã xếp lịch thật; không có
-  // mã mới ném lại lỗi gốc.
-  let shipError: unknown = null;
+  // Cả 2 bước (lấy tham số + xếp lịch) đều bị Shopee từ chối khi gói đã xếp
+  // lịch/lấy đi ở lần bấm trước ("not eligible for rescheduling"...). Không
+  // đuổi theo câu chữ: giữ lỗi lại, cứ đi lấy mã vận đơn - có mã = đã xếp
+  // lịch thật; không có mã mới ném lại lỗi gốc.
+  let flowError: unknown = null;
   try {
+    const param = await getShippingParameter(cfg, orderSn);
     await signedPost(cfg, '/api/v2/logistics/ship_order', {
       order_sn: orderSn,
       pickup:
@@ -151,7 +150,7 @@ export async function shipShopeeOrder(
           : undefined,
     });
   } catch (err) {
-    shipError = err;
+    flowError = err;
   }
   // Mã vận đơn có thể sinh TRỄ (sandbox: sau khi lấy hàng; thật: vài giây).
   // Thử lại ngắn vài nhịp; vẫn rỗng thì ghi nhận "chờ mã" thay vì lỗi hệ
@@ -164,7 +163,7 @@ export async function shipShopeeOrder(
     });
     trackingCode = String(track?.tracking_number || '');
   }
-  if (!trackingCode && shipError) throw shipError;
+  if (!trackingCode && flowError) throw flowError;
   await db
     .update(orders)
     .set({ shippingStatus: 'PICKED_UP', trackingCode: trackingCode || null, carrier })
