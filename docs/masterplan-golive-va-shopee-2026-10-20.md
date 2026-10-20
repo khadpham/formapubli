@@ -104,7 +104,7 @@ Tiêu chí xong: đơn Shopee về ERP trong vài phút không cần xlsx; thủ
 | --- | --- | --- |
 | D0 | Tên app Shopee + file logo | ĐÃ CHỐT 2026-10-20 (anh Kha): tên app "Vita Nova shopee"; logo = docs/shopee-app/vitanova-logo.png |
 | D1 | Thời điểm phát hành hóa đơn cho đơn online có yêu cầu VAT | ĐÃ CHỐT 2026-10-20 (anh Kha): chỉ phát hành khi KHÁCH ĐÃ NHẬN HÀNG. Tạm thời làm cơ chế xác nhận nhận hàng thủ công; chờ tích hợp API đơn vị vận chuyển (anh đang làm việc với bên vận chuyển) |
-| D2 | Phạm vi go-live giai đoạn 1 | Theo 4 PR (A hóa đơn, B chiến dịch, C đối tác, D hợp đồng) - duyệt A+B trước, C+D nối tiếp |
+| D2 | Phạm vi go-live giai đoạn 1 | ĐÃ CHỐT 2026-10-20 (anh Kha): đợt lên main đi theo từng gói PR nhỏ nối tiếp nhau trong cùng đợt; điều kiện: TOÀN BỘ dev phải hoàn thiện, kiểm chứng hết, không lỗi mới được lên main |
 | D3 | Khung giờ deploy production | Tối sau 21h giờ VN (sau digest), có mặt anh để test khói |
 | D4 | Ủy quyền shop Shopee thật ở giai đoạn 2 | ĐÃ CHỐT 2026-10-20 (anh Kha): shop chính thức là 'formapubli' (Shopee Mall). Lưu ý: Mall áp thời gian đảm bảo escrow 15 ngày và phí cố định cao hơn Non-Mall 3-4% |
 | D5 | Có xin scope Chat ở giai đoạn 3 không | Có - giá trị vận hành cao, chi phí xin thấp |
