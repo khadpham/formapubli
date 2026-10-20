@@ -404,3 +404,16 @@ AMS, Video, Product, GlobalProduct, MediaSpace, Media, Shop, Merchant, Order, Lo
 ## I. Hai module phân tích chuyên biệt (cần đọc sâu ở bước triển khai)
 - AccountHealth: điểm vận hành, vi phạm, phạt của shop (liên quan trực tiếp việc duy trì thứ hạng và quyền lợi bán hàng).
 - BusinessInsights: module phân tích kinh doanh riêng của nền tảng (khác với tự xây từ order/escrow) - cần đối chiếu phạm vi dữ liệu trước khi quyết định ERP tự tính hay lấy từ đây.
+
+## PHỤ LỤC - KẾT QUẢ KIỂM CHỨNG THẬT (2026-10-20, sandbox)
+App "Vita Nova shopee" (Test Partner_id 1249102) + test shop VN (shop_id 227989704) đã chạy thật toàn bộ chuỗi:
+- Host sandbox ĐÚNG: openplatform.sandbox.test-stable.shopee.sg. Host partner.test-stable.shopeemobile.com là môi trường legacy, ký khác bộ khóa và trả error_sign với khóa test của console mới.
+- Đổi code -> access_token + refresh_token OK. Code sống 10 phút. Access token sống ~4 giờ. Ủy quyền test shop sống 365 ngày (auth_time/expire_time trong get_shop_info).
+- Công thức ký verify: Public = partner_id+path+timestamp; Shop = partner_id+path+timestamp+access_token+shop_id; HMAC-SHA256 bằng partner key, hex chữ thường.
+- Refresh token XOAY VÒNG: gọi /api/v2/auth/access_token/get trả về refresh token MỚI, token cũ vô hiệu.
+- get_shop_info OK (region VN, status NORMAL). get_shops_by_partner liệt kê đúng shop đã ủy quyền.
+- get_channel_list (sandbox): 51022 Sandbox SPX Express, 51023 Sandbox Economy Express, 50040 SPF Mart - đều enabled, hỗ trợ COD, fee_type SIZE_INPUT.
+- get_order_list chạy được, shop test chưa có đơn nên rỗng (cần tạo đơn test ở bước sau).
+- get_category: 2848 ngành; gốc Sách & Tạp Chí = 300643, con Sách = 300777, các ngành lá ví dụ 301568 Sách Giáo Dục, 301566 Sách Hướng Nghiệp & Phát Triển Bản Thân.
+- get_attribute_tree: bắt buộc category LÁ; cấu trúc response.list[].attribute_tree[] với trường name, attribute_id, mandatory, attribute_value_list[{value_id, name}]. Ngành Sách Giáo Dục có thuộc tính bắt buộc Language.
+- get_brand_list: bắt buộc category LÁ; sandbox chỉ có brand_id 0 "No brand". Thương hiệu nhà xuất bản phải đăng ký qua register_brand khi vận hành thật.
