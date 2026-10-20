@@ -37,7 +37,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-blue-700 border-blue-300',
     badgeBg: 'bg-blue-50',
     description: 'Điều phối bán hàng, duyệt chuyển kho, áp chiết khấu cho phép',
-    allowedNavItems: ['dashboard', 'projects', 'contracts', 'inventory', 'pos', 'shopee', 'sales', 'customers', 'partners', 'hr', 'studio', 'settings'],
+    allowedNavItems: ['dashboard', 'projects', 'contracts', 'inventory', 'pos', 'shopee', 'sales', 'einvoice', 'customers', 'partners', 'hr', 'studio', 'settings'],
   },
   ROLE_CASHIER: {
     id: 'ROLE_CASHIER',
