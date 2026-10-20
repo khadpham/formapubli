@@ -54,7 +54,7 @@ export class InvoiceService {
     // Tính toán: finalAmount đã GỒM VAT (giá bìa gồm thuế) nên phải TÁCH NGƯỢC VAT ra,
     // không cộng thêm. Tổng hóa đơn phải bằng số tiền đã thu.
     const totalAmount = Number(ord.finalAmount || ord.subtotal || 0);
-    const vatRate = 0.08; // TODO: thuế suất cần anh Kha chốt, hiện giữ 8%
+    const vatRate = 0.05; // GTGT sách 5% (anh Kha chốt 2026-10-20); in ấn 8% chỉ áp cho dịch vụ in
     const subtotal = Math.round(totalAmount / (1 + vatRate));
     const vatAmount = totalAmount - subtotal;
 
@@ -122,7 +122,7 @@ export class InvoiceService {
     }
 
     const totalAmount = unconsolidated.reduce((s: number, o: any) => s + Number(o.finalAmount || 0), 0);
-    const vatRate = 0.08; // TODO: thuế suất cần anh Kha chốt, hiện giữ 8%
+    const vatRate = 0.05; // GTGT sách 5% (anh Kha chốt 2026-10-20); in ấn 8% chỉ áp cho dịch vụ in
     const subtotal = Math.round(totalAmount / (1 + vatRate));
     const vatAmount = totalAmount - subtotal;
     const orderIds = unconsolidated.map((o: any) => o.id);

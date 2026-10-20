@@ -98,7 +98,8 @@ async function apiCall(config: MSInvoiceConfig, path: string, body: any, retry =
 
 function mapVatRate(vatRate: number): string {
   if (vatRate >= 0.095) return 'VatTax10';
-  if (vatRate >= 0.04) return 'VatTax8';
+  if (vatRate >= 0.075) return 'VatTax8'; // in ấn
+  if (vatRate >= 0.04) return 'VatTax5'; // sách
   return 'VatTax0';
 }
 
