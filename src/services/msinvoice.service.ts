@@ -339,13 +339,13 @@ export class MSInvoiceService {
       const local = byMsId.get(msId) || null;
       return {
         msinvoiceId: msId,
-        serial: r.invoiceSerial || r.serial || r.pattern || '',
-        number: r.invoiceNumber || r.number || '',
-        date: r.invoiceDate || r.issuedDate || r.createdDate || '',
-        buyerName: r.toPartyName || r.buyerName || '',
-        buyerTaxCode: r.toTaxId || r.taxId || '',
-        totalAmount: Number(r.grandTotal ?? r.totalAmount ?? r.amountTotal ?? 0),
-        status: r.status || r.invoiceStatus || '',
+        serial: r.invoiceFormSerial || r.invoiceSerial || '',
+        number: r.invoiceNo || '',
+        date: r.invoiceDate ? new Date(Number(r.invoiceDate)).toISOString() : '',
+        buyerName: r.toPartyName || r.toName || '',
+        buyerTaxCode: r.toPartyTaxId || '',
+        totalAmount: Number(r.invoiceTotal ?? 0),
+        status: r.statusId || '',
         thirdPartyCode: r.thirdPartyCode || '',
         lookupCode: r.lookupCode || '',
         sync: local
