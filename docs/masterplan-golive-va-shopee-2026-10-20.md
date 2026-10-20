@@ -102,11 +102,11 @@ Tiêu chí xong: đơn Shopee về ERP trong vài phút không cần xlsx; thủ
 
 | Mã | Quyết định | Đề xuất của Muse |
 | --- | --- | --- |
-| D0 | Tên app Shopee + file logo | Tên: "Vitanova FormaPubli ERP"; logo dùng logo công ty hiện có |
-| D1 | Thời điểm phát hành hóa đơn cho đơn online có yêu cầu VAT | Khi đơn đã bàn giao vận chuyển (hạn chế hóa đơn điều chỉnh) |
+| D0 | Tên app Shopee + file logo | ĐÃ CHỐT 2026-10-20 (anh Kha): tên app "Vita Nova shopee"; logo = docs/shopee-app/vitanova-logo.png |
+| D1 | Thời điểm phát hành hóa đơn cho đơn online có yêu cầu VAT | ĐÃ CHỐT 2026-10-20 (anh Kha): chỉ phát hành khi KHÁCH ĐÃ NHẬN HÀNG. Tạm thời làm cơ chế xác nhận nhận hàng thủ công; chờ tích hợp API đơn vị vận chuyển (anh đang làm việc với bên vận chuyển) |
 | D2 | Phạm vi go-live giai đoạn 1 | Theo 4 PR (A hóa đơn, B chiến dịch, C đối tác, D hợp đồng) - duyệt A+B trước, C+D nối tiếp |
 | D3 | Khung giờ deploy production | Tối sau 21h giờ VN (sau digest), có mặt anh để test khói |
-| D4 | Ủy quyền shop Shopee thật ở giai đoạn 2 | Cần tài khoản Seller Centre của shop chính - anh xác nhận shop nào là shop chính thức |
+| D4 | Ủy quyền shop Shopee thật ở giai đoạn 2 | ĐÃ CHỐT 2026-10-20 (anh Kha): shop chính thức là 'formapubli' (Shopee Mall). Lưu ý: Mall áp thời gian đảm bảo escrow 15 ngày và phí cố định cao hơn Non-Mall 3-4% |
 | D5 | Có xin scope Chat ở giai đoạn 3 không | Có - giá trị vận hành cao, chi phí xin thấp |
 | D6 | Dev .env đang chứa credential prod | Sau go-live, Muse dọn dev về mock/demo và đổi mật khẩu MS-Invoice prod (anh thao tác đổi, Muse cập nhật .env production) |
 
