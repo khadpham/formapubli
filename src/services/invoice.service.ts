@@ -102,13 +102,22 @@ export class InvoiceService {
       return { invoice: existing[0], orderCount: 0, skipped: true };
     }
 
-    // Lấy đơn INTERNAL_MANAGEMENT trong ngày, chưa gom, đã hoàn thành
-    // createdAt lưu ISO, so sánh theo ngày VN: dùng substr
+    // Lấy đơn INTERNAL_MANAGEMENT trong ngày, chưa gom, đã hoàn thành.
+    // created_at là mốc UTC nhưng có 2 định dạng (ISO-Z và "YYYY-MM-DD
+    // HH:MM:SS") nên KHÔNG so chuỗi thô và KHÔNG cắt substr theo ngày UTC
+    // (đơn 0h-7h sáng giờ VN sẽ lọt sang ngày trước). Chuẩn hoá cả hai
+    // dạng bằng datetime() của SQLite rồi so với cửa sổ ngày VN quy ra
+    // UTC: ngày VN `date` = [date 00:00 +07, +24h) = [ hôm trước 17:00Z,
+    // 17:00Z ).
+    const vnStartUtc = new Date(`${date}T00:00:00+07:00`);
+    const toUtcText = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ');
+    const windowStart = toUtcText(vnStartUtc);
+    const windowEnd = toUtcText(new Date(vnStartUtc.getTime() + 24 * 3600 * 1000));
     const dayOrders = await db.select().from(orders).where(
       and(
         eq(orders.fiscalScope, 'INTERNAL_MANAGEMENT'),
         eq(orders.status, 'COMPLETED'),
-        sql`substr(${orders.createdAt}, 1, 10) = ${date}`
+        sql`datetime(${orders.createdAt}) >= ${windowStart} AND datetime(${orders.createdAt}) < ${windowEnd}`
       )
     );
 
