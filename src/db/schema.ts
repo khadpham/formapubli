@@ -859,6 +859,10 @@ export const deliveryOrders = sqliteTable('delivery_orders', {
   discountRate: real('discount_rate').default(0.0).notNull(),
   finalAmount: real('final_amount').notNull(),
   fiscalScope: text('fiscal_scope').default('COMMERCIAL_WHOLESALE').notNull(), // COMMERCIAL_WHOLESALE | CONSIGNMENT_DISPATCH
+  invoiceTaxCode: text('invoice_tax_code'),
+  invoiceCompanyName: text('invoice_company_name'),
+  invoiceAddress: text('invoice_address'),
+  invoiceStatus: text('invoice_status').default('NONE'),
   status: text('status').default('DRAFT').notNull(), // DRAFT | DISPATCHED_LOCKED | VOIDED_REVERSED
   reversalOf: text('reversal_of'),
   note: text('note'),
