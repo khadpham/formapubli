@@ -25,9 +25,10 @@ export async function GET(req: NextRequest) {
     await exchangeCodeForToken({ code, shopId, partnerId, partnerKey, baseUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ủy quyền Shopee thất bại.';
+    // Trả 200 để Cloudflare không thay trang lỗi 502 che mất nội dung JSON.
     return NextResponse.json(
       { success: false, code: 'SHOPEE_AUTH_EXPIRED', error: message },
-      { status: 502 }
+      { status: 200 }
     );
   }
   // App chỉ có 1 route `/` (tab nội bộ trong MasterAppShell) - không có

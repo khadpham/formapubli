@@ -13,12 +13,32 @@ export interface ShopeeApiConfig {
 interface ShopeeTokenResponse {
   error?: string;
   message?: string;
+  /** Endpoint auth tra token NGAY TAI GOC JSON (khong long trong response) - da verify that 2026-10-20. */
+  access_token?: string;
+  refresh_token?: string;
+  expire_in?: number;
+  shop_id?: number;
   response?: {
     access_token: string;
     refresh_token: string;
     expire_in: number;
     shop_id?: number;
   };
+}
+
+function tokenPayload(
+  data: ShopeeTokenResponse
+): NonNullable<ShopeeTokenResponse['response']> | undefined {
+  // Tra loi token o goc JSON neu co, nguoc lai dung long trong response.
+  if (data.access_token && data.refresh_token && data.expire_in) {
+    return {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expire_in: data.expire_in,
+      shop_id: data.shop_id,
+    };
+  }
+  return data.response;
 }
 
 function toToken(
@@ -70,14 +90,15 @@ export async function exchangeCodeForToken(
   cfg: ShopeeApiConfig & { code: string }
 ): Promise<ShopeeAccessToken> {
   const data = await postShopee(cfg, '/api/v2/auth/token/get', { code: cfg.code }, false);
-  if (!data.response?.access_token || data.error) {
+  const payload = tokenPayload(data);
+  if (!payload?.access_token || data.error) {
     throw new AppError(
       'SHOPEE_AUTH_EXPIRED',
       'Đổi mã ủy quyền Shopee thất bại - Anh bấm ủy quyền lại.',
       { error: data.error, message: data.message }
     );
   }
-  const token = toToken(cfg.shopId, data.response);
+  const token = toToken(cfg.shopId, payload);
   await new TursoTokenStorage(cfg.shopId).store(token);
   return token;
 }
@@ -103,13 +124,14 @@ export async function refreshShopeeTokenOnce(
     { refresh_token: stored.refresh_token },
     false
   );
-  if (!data.response?.access_token || data.error) {
+  const refreshPayload = tokenPayload(data);
+  if (!refreshPayload?.access_token || data.error) {
     throw new AppError('SHOPEE_AUTH_EXPIRED', 'Token Shopee hết hạn - Anh bấm ủy quyền lại.', {
       error: data.error,
       message: data.message,
     });
   }
-  const token = toToken(cfg.shopId, data.response);
+  const token = toToken(cfg.shopId, refreshPayload);
   await new TursoTokenStorage(cfg.shopId).store(token);
   return token;
 }
