@@ -979,6 +979,19 @@ export const shopeeSettings = sqliteTable('shopee_settings', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+/** 0081: Yêu cầu trả hàng/hoàn tiền Shopee. */
+export const shopeeReturns = sqliteTable('shopee_returns', {
+  returnSn: text('return_sn').primaryKey(),
+  orderSn: text('order_sn').notNull(),
+  status: text('status').notNull().default('REQUESTED'),
+  reason: text('reason'),
+  refundAmount: real('refund_amount').notNull().default(0),
+  buyerUsername: text('buyer_username'),
+  sellerDueDate: integer('seller_due_date'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 // 0053: portal_settings - cấu hình tích hợp Customer Order Portal
 export const portalSettings = sqliteTable('portal_settings', {
   key: text('key').primaryKey(),
