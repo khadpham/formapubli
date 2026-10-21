@@ -46,6 +46,13 @@ truc tiep truoc khi gan (bang warehouses).
    webhook cua ERP xu ly). Goi y: endpoint push tra 200 ngay cho goi kiem
    tra code 0, cac su kien khac bat buoc chu ky hop le.
 3. Kiem tra bang cach phat sinh 1 don that nho va xem webhook ghi nhan.
+4. Cai cron bu tin push mat (scripts/shopee-catchup.sh) tren VPS, moi 30 phut:
+   */30 * * * * /opt/formapubli/scripts/shopee-catchup.sh >> /var/log/shopee-catchup.log 2>&1
+   - CRON_SECRET trong moi truong cron phai trung voi CRON_SECRET trong .env.
+   - Route POST /api/shopee/catchup goi get_lost_push_message va chay tung tin
+     qua dung handleShopeePush cua webhook (idempotent) roi confirm da nhan.
+   - Neu chua muon cai cron ngay: bu tay bang cach goi POST /api/shopee/catchup
+     tu trinh duyet (dang nhap vai tro Quan ly tro len).
 
 ## Buoc 5 - Dua D1 len production (gop cung dot)
 1. Mo PR dev -> main (chi chua cac commit D1 + tai lieu ke tu dot go-live
