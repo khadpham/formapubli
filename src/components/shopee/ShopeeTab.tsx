@@ -83,6 +83,18 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
 
   useEffect(() => {
     loadAll();
+    // Sau ủy quyền Shopee, callback redirect về /?shopee=ok - đón cờ để báo
+    // thành công rồi xóa khỏi URL cho sạch (tránh F5 hiện lại).
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('shopee') === 'ok') {
+        showToast('Đã kết nối gian hàng Shopee thành công.');
+        sp.delete('shopee');
+        const qs = sp.toString();
+        window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+        loadAll();
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
