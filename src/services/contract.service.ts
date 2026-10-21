@@ -25,6 +25,14 @@ const PREFIX_MAP: Record<string, string> = {
   DAI_LY: 'HĐĐL',
   IN_AN: 'HĐIN',
   DICH_THUAT: 'HĐDT',
+  THIET_KE_BIA: 'HĐTK',
+  BIEN_DICH: 'HĐBD',
+  BIEN_TAP: 'HĐBT',
+  DAN_TRANG: 'HĐTR',
+  DOC_MORAT: 'HĐMR',
+  BB_NGHIEM_THU: 'BBNT',
+  PHIEU_CHI: 'PC',
+  UY_NHIEM_CHI: 'UNC',
 };
 
 function formatContractNumber(seq: number, year: number, category: string): string {
