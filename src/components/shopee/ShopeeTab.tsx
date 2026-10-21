@@ -108,7 +108,8 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
     }
   };
 
-  const syncNow = async () => {    if (syncing) return;
+  const syncNow = async () => {
+    if (syncing) return;
     setSyncing(true);
     try {
       const r = await fetch('/api/shopee/sync', {

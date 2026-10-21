@@ -951,6 +951,11 @@ export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
   shopeeDiscount: real('shopee_discount').notNull().default(0),
   cogs: real('cogs'),
   netProfit: real('net_profit'),
+  // 0075: thuế khấu trừ tại nguồn của VN (chuẩn bị P3) - nullable để đơn cũ
+  // và đơn chưa sync không bị ảnh hưởng.
+  withholdingVatTax: real('withholding_vat_tax'),
+  withholdingPitTax: real('withholding_pit_tax'),
+  withholdingCitTax: real('withholding_cit_tax'),
   syncedAt: text('synced_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
