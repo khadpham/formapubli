@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Crown, Wallet, ReceiptText, PiggyBank, Pencil } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
+import WorkPnlPanel from './WorkPnlPanel';
 
 interface ExpenseEntry {
   id: string;
@@ -868,6 +869,9 @@ export function OwnerTab() {
           </div>
         )}
       </section>
+
+      {/* Lãi/lỗ theo đầu sách - lớp giá vốn (quyết định 2026-10-21) */}
+      <WorkPnlPanel />
     </div>
   );
 }
