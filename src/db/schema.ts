@@ -1590,3 +1590,20 @@ export const collaborators = sqliteTable('collaborators', {
   typeIdx: index('idx_collab_type').on(table.collabType),
   activeIdx: index('idx_collab_active').on(table.isActive),
 }));
+
+// 0078: Lớp giá vốn theo đầu sách (quyết định 2026-10-21, anh Kha duyệt).
+// Chi phí vào giá vốn: 5 HĐ giai đoạn (gross) + tiền in ấn. KHÔNG cộng chi phí chung.
+export const workCosts = sqliteTable('work_costs', {
+  id: text('id').primaryKey(),
+  workId: text('work_id').notNull().references(() => works.id),
+  costType: text('cost_type').notNull(), // CONTRACT | PRINTING
+  sourceType: text('source_type'), // contract_documents | manual
+  sourceId: text('source_id'), // id HĐ khi source_type = contract_documents
+  amount: real('amount').notNull(), // VND, số gross
+  costDate: text('cost_date').notNull(), // YYYY-MM-DD
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  workIdx: index('idx_work_costs_work').on(table.workId),
+  sourceIdx: uniqueIndex('idx_work_costs_source').on(table.sourceType, table.sourceId),
+}));

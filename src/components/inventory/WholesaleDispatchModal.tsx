@@ -24,7 +24,7 @@ import {
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesVietnameseSearch } from '@/lib/vietnamese';
 import { stockOfWarehouse } from '@/lib/warehouse-stock';
-import { parsePastedBookList } from '@/lib/batch-paste-parser';
+import { parsePastedBookList, type ParsedRow } from '@/lib/batch-paste-parser';
 import { DeliveryReceiptPrint, DeliveryOrderData } from './DeliveryReceiptPrint';
 
 interface BookItem {
@@ -128,10 +128,17 @@ export function WholesaleDispatchModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Dán danh sách 2 cột (Tên + Số lượng) từ Excel
+  // Dán danh sách: chi can ten sach (tim sieu toc, fuzzy). So luong lay theo
+  // o "SL mac dinh", sua tay tung dong trong bang sau.
   const [isPasteOpen, setIsPasteOpen] = useState(true);
   const [pasteText, setPasteText] = useState('');
+  const [pasteDefaultQty, setPasteDefaultQty] = useState(1);
+  const [pasteResult, setPasteResult] = useState<{
+    rows: ParsedRow[];
+    summary: { matched: number; needsConfirm: number; notFound: number };
+  } | null>(null);
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
+  const [pastedConfirmed, setPastedConfirmed] = useState<Record<string, string>>({});
 
   // Kiểm tra tồn kho cứng ATP
   const [isCheckingAtp, setIsCheckingAtp] = useState(false);
@@ -281,62 +288,104 @@ export function WholesaleDispatchModal({
     return `${fromWarehouseId}#${discountPercent}#${parts}`;
   }, [selectedItems, fromWarehouseId, discountPercent]);
 
-  const applyPastedList = () => {
+  // Buoc 1: kiem tra - tim sieu toc, hien ket qua inline ben duoi.
+  const handleCheckPasted = () => {
     const lookup = books.map((b) => ({
       id: b.id,
       title: b.title,
       code: b.code,
       isbnLast4: (b.isbn || '').slice(-4) || null,
     }));
-    const { rows, summary } = parsePastedBookList(pasteText, lookup, { defaultQuantity: 5 });
-    let added = 0;
-    const problems: string[] = [];
+    const result = parsePastedBookList(pasteText, lookup, {
+      defaultQuantity: Math.max(1, Math.floor(pasteDefaultQty) || 1),
+    });
+    setPasteResult(result);
+    setPastedConfirmed({});
+    setPasteNotice(null);
+  };
+
+  // Them 1 sach da khop vao danh sach xuat, kep tran theo ton kho nguon.
+  // Tra ve chuoi van de (neu co) de hien trong thong bao.
+  const addWholesalePastedBook = (bookId: string, quantity: number): string | null => {
+    const book = books.find((b) => b.id === bookId);
+    if (!book) return null;
+    const stock = stockOfWarehouse(book, fromWarehouseId);
+    if (stock <= 0) return `Hết tồn: ${book.title}`;
+    const qty = Math.min(quantity, stock);
+    const cover = book.coverPrice || 0;
     setSelectedItems((prev) => {
       const next = [...prev];
-      for (const r of rows) {
-        if (r.status !== 'matched') {
-          problems.push(r.status === 'needs_confirm' ? `Chưa chắc: ${r.line}` : `Không thấy: ${r.line}`);
-          continue;
-        }
-        const book = books.find((b) => b.id === r.editionId);
-        if (!book) continue;
-        const stock = stockOfWarehouse(book, fromWarehouseId);
-        if (stock <= 0) {
-          problems.push(`Hết tồn: ${r.title}`);
-          continue;
-        }
-        const qty = Math.min(r.quantity, stock);
-        if (qty < r.quantity) problems.push(`Chỉ còn ${stock}: ${r.title}`);
-        const existing = next.find((it) => it.editionId === book.id);
-        const cover = book.coverPrice || 0;
-        if (existing) {
-          existing.quantity = Math.min(existing.quantity + qty, stock);
-        } else {
-          next.push({
-            editionId: book.id,
-            code: book.code,
-            title: book.title,
-            isbn: book.isbn,
-            quantity: qty,
-            unitCoverPrice: cover,
-            unitSellingPrice: Math.round(cover * (1 - discountPercent / 100)),
-            stockAvailable: stock,
-          });
-        }
-        added++;
+      const existing = next.find((it) => it.editionId === book.id);
+      if (existing) {
+        existing.quantity = Math.min(existing.quantity + qty, stock);
+      } else {
+        next.push({
+          editionId: book.id,
+          code: book.code,
+          title: book.title,
+          isbn: book.isbn,
+          quantity: qty,
+          unitCoverPrice: cover,
+          unitSellingPrice: Math.round(cover * (1 - discountPercent / 100)),
+          stockAvailable: stock,
+        });
       }
       return next;
     });
+    return qty < quantity ? `Chỉ còn ${stock}: ${book.title}` : null;
+  };
+
+  // Buoc 2: dua cac dong khop chac chan vao bang.
+  const handleAddPastedMatches = () => {
+    if (!pasteResult) return;
+    let added = 0;
+    const problems: string[] = [];
+    for (const r of pasteResult.rows) {
+      if (r.status !== 'matched') continue;
+      const problem = addWholesalePastedBook(r.editionId, r.quantity);
+      if (problem) problems.push(problem);
+      added++;
+    }
     setPasteNotice(
-      `Đã thêm ${added}/${summary.matched} đầu sách` +
+      `Đã thêm ${added} đầu sách` +
         (problems.length > 0 ? ` - cần xem: ${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '…' : ''}` : '')
     );
-    if (added > 0) {
-      setPasteText('');
-      setIsPasteOpen(false);
-    }
     setCheckedFingerprint('');
     setAtpNotice(null);
+  };
+
+  // Dong mo ho: nguoi dung chon 1 ung vien.
+  const handleAddPastedCandidate = (
+    row: Extract<ParsedRow, { status: 'needs_confirm' }>,
+    bookId: string
+  ) => {
+    const picked = row.candidates.find((c) => c.id === bookId);
+    const problem = addWholesalePastedBook(bookId, row.quantity);
+    if (problem) setPasteNotice(problem);
+    setPastedConfirmed((prev) => ({ ...prev, [row.id]: picked?.title || bookId }));
+    setCheckedFingerprint('');
+    setAtpNotice(null);
+  };
+
+  // Dong mo ho nhung khong phai sach nao trong danh sach ung vien.
+  const handleRejectPastedRow = (rowId: string) => {
+    setPasteResult((prev) => {
+      if (!prev) return prev;
+      const rows = prev.rows.filter((r) => r.id !== rowId);
+      return {
+        rows,
+        summary: {
+          matched: rows.filter((r) => r.status === 'matched').length,
+          needsConfirm: rows.filter((r) => r.status === 'needs_confirm').length,
+          notFound: rows.filter((r) => r.status === 'not_found').length,
+        },
+      };
+    });
+    setPastedConfirmed((prev) => {
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
   };
 
   const handleCheckAtp = async () => {
@@ -1023,25 +1072,98 @@ export function WholesaleDispatchModal({
 
               {isPasteOpen && (
                 <div className="border border-amber-200 bg-amber-50/60 rounded-2xl p-3 space-y-2">
-                  <p className="text-[11px] text-slate-600">
-                    Dán 2 cột từ Excel: <b>Tên sách</b> + <b>Số lượng</b> (thiếu số lượng = 5 cuốn).
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-slate-600">
+                      Dán tên sách, hệ tự tìm đúng sách (không cần số lượng).
+                    </p>
+                    <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 shrink-0">
+                      SL mặc định
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={pasteDefaultQty}
+                        onChange={(e) => setPasteDefaultQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                        className="w-14 px-1.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </label>
+                  </div>
                   <textarea
                     value={pasteText}
-                    onChange={(e) => setPasteText(e.target.value)}
+                    onChange={(e) => {
+                      setPasteText(e.target.value);
+                      setPasteResult(null);
+                    }}
                     rows={5}
-                    placeholder={'Bốn tình yêu\t10\nMay\t5'}
+                    placeholder={'Dán vào đây, mỗi dòng 1 tên sách:\nBệnh tưởng\nNgười biển lận'}
+                    spellCheck={false}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-amber-500"
                   />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCheckPasted}
+                      disabled={!pasteText.trim()}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                    >
+                      Kiểm tra
+                    </button>
+                    {pasteResult && (
+                      <span className="text-[11px] font-bold text-slate-600">
+                        {pasteResult.summary.matched} khớp · {pasteResult.summary.needsConfirm} cần xác nhận · {pasteResult.summary.notFound} không tìm thấy
+                      </span>
+                    )}
+                    {pasteResult && pasteResult.summary.matched > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleAddPastedMatches}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition"
+                      >
+                        Vào bảng ({pasteResult.summary.matched})
+                      </button>
+                    )}
+                  </div>
                   {pasteNotice && <p className="text-[11px] font-semibold text-slate-700">{pasteNotice}</p>}
-                  <button
-                    type="button"
-                    onClick={applyPastedList}
-                    disabled={!pasteText.trim()}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
-                  >
-                    Thêm vào danh sách
-                  </button>
+                  {pasteResult && pasteResult.rows.some((r) => r.status === 'needs_confirm') && (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {pasteResult.rows
+                        .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
+                        .map((r) => {
+                          const chosen = pastedConfirmed[r.id];
+                          return (
+                            <div key={`c-${r.id}`} className="rounded-lg border border-amber-300 bg-white/70 p-2">
+                              <p className="text-[11px] text-slate-700">
+                                Dòng <span className="font-semibold">"{r.line}"</span> khớp với:
+                              </p>
+                              {chosen ? (
+                                <p className="mt-1 text-[11px] font-bold text-emerald-700">Đã thêm: {chosen}</p>
+                              ) : (
+                                <div className="mt-1.5 flex flex-col gap-1">
+                                  {r.candidates.map((c) => (
+                                    <button
+                                      key={`c-${r.id}-${c.id}`}
+                                      type="button"
+                                      onClick={() => handleAddPastedCandidate(r, c.id)}
+                                      className="w-full text-left px-2 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 text-amber-900 text-[11px] font-bold transition"
+                                    >
+                                      {c.title}
+                                    </button>
+                                  ))}
+                                  <button
+                                    key={`c-${r.id}-none`}
+                                    type="button"
+                                    onClick={() => handleRejectPastedRow(r.id)}
+                                    className="w-full text-left px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-500 text-[11px] font-semibold transition"
+                                  >
+                                    Không phải cái nào
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               )}
 

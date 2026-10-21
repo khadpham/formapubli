@@ -24,8 +24,6 @@ import { Printer } from 'lucide-react';
 import { generateUUIDv7 } from '@/lib/uuidv7';
 import { matchesAnyVietnameseField } from '@/lib/vietnamese';
 
-/** Số lượng mặc định khi quản lý chỉ copy cột tên sách từ Excel sang. */
-const DEFAULT_PASTE_QUANTITY = 5;
 
 interface BookItem {
   id: string;
@@ -98,10 +96,12 @@ export function BatchTransferModal({
   const [addNotice, setAddNotice] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Dán danh sách 2 cột từ Excel. CHỈ đổ vào bảng chuyển - không bao giờ gọi
-  // validate/submit; người dùng vẫn phải bấm nút Kiểm tra tồn kho rồi Xác nhận.
-  
+  // Dán danh sách: chi can ten sach (tim sieu toc, fuzzy). So luong lay theo
+  // o "SL mac dinh", sua tay tung dong trong bang sau. CHỈ đổ vào bảng
+  // chuyển - không bao giờ gọi validate/submit; người dùng vẫn phải bấm nút
+  // Kiểm tra tồn kho rồi Xác nhận.
   const [pasteText, setPasteText] = useState('');
+  const [pasteDefaultQty, setPasteDefaultQty] = useState(1);
   const [pasteResult, setPasteResult] = useState<{
     rows: ParsedRow[];
     summary: { matched: number; needsConfirm: number; notFound: number };
@@ -340,7 +340,7 @@ export function BatchTransferModal({
     const result = parsePastedBookList(
       pasteText,
       books.map((b) => ({ id: b.id, title: b.title, code: b.code, isbnLast4: b.isbnLast4 })),
-      { defaultQuantity: DEFAULT_PASTE_QUANTITY }
+      { defaultQuantity: Math.max(1, Math.floor(pasteDefaultQty) || 1) }
     );
     setPasteResult(result);
     setPastedConfirmed({});
@@ -368,7 +368,29 @@ export function BatchTransferModal({
   ) => {
     const picked = row.candidates.find((c) => c.id === bookId);
     addPastedRows([{ editionId: bookId, quantity: row.quantity }]);
-    setPastedConfirmed((prev) => ({ ...prev, [row.line]: picked?.title || bookId }));
+    setPastedConfirmed((prev) => ({ ...prev, [row.id]: picked?.title || bookId }));
+  };
+
+  // Dong mo ho nhung khong phai sach nao trong danh sach ung vien -> loai khoi
+  // ket qua kiem tra, khong tinh vao thong ke nua.
+  const handleRejectPastedRow = (rowId: string) => {
+    setPasteResult((prev) => {
+      if (!prev) return prev;
+      const rows = prev.rows.filter((r) => r.id !== rowId);
+      return {
+        rows,
+        summary: {
+          matched: rows.filter((r) => r.status === 'matched').length,
+          needsConfirm: rows.filter((r) => r.status === 'needs_confirm').length,
+          notFound: rows.filter((r) => r.status === 'not_found').length,
+        },
+      };
+    });
+    setPastedConfirmed((prev) => {
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
   };
 
   const handleRemoveLine = (editionId: string) => {
@@ -1010,13 +1032,24 @@ export function BatchTransferModal({
                   Nó nằm trong khối {lines.length > 0} là nên biến mất đúng lúc
                   người dùng cần nhất - dán danh sách lần đầu. Đưa ra ngoài. */}
               <div className="border border-indigo-200 bg-indigo-50/50 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
                     <ClipboardPaste className="w-3.5 h-3.5" />
-                    Dán danh sách từ Excel (tên sách · số lượng)
+                    Dán danh sách tên sách (tìm siêu tốc)
                   </label>
-                  <span className="text-[10px] text-slate-500">Thiếu SL thì mặc định 5</span>
+                  <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                    SL mặc định
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={pasteDefaultQty}
+                      onChange={(e) => setPasteDefaultQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                      className="w-14 px-1.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </label>
                 </div>
+                <p className="text-[11px] text-slate-500">Chỉ cần tên sách, không cần số lượng - hệ tự tìm đúng sách, sửa số lượng tay trong bảng sau.</p>
                 <textarea
                   value={pasteText}
                   onChange={(e) => {
@@ -1025,7 +1058,7 @@ export function BatchTransferModal({
                   }}
                   rows={3}
                   spellCheck={false}
-                  placeholder={'Dán vào đây: Tên sách 1\t5\nTên sách 2\t3'}
+                  placeholder={'Dán vào đây, mỗi dòng 1 tên sách:\nBệnh tưởng\nNgười biển lận'}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex flex-wrap items-center gap-2">
@@ -1057,11 +1090,11 @@ export function BatchTransferModal({
                     {pasteResult.rows
                       .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
                       .map((r) => {
-                        const chosen = pastedConfirmed[r.line];
+                        const chosen = pastedConfirmed[r.id];
                         return (
-                          <div key={`c-${r.line}`} className="rounded-lg border border-amber-200 bg-white/70 p-2">
+                          <div key={`c-${r.id}`} className="rounded-lg border border-amber-200 bg-white/70 p-2">
                             <p className="text-[11px] text-slate-700">
-                              Dán: <span className="font-semibold">{r.line}</span> · SL <span className="font-mono font-bold">{r.quantity}</span>
+                              Dòng <span className="font-semibold">"{r.line}"</span> khớp với:
                             </p>
                             {chosen ? (
                               <p className="mt-1 text-[11px] font-bold text-emerald-700">Đã thêm: {chosen}</p>
@@ -1069,7 +1102,7 @@ export function BatchTransferModal({
                               <div className="mt-1.5 flex flex-col gap-1">
                                 {r.candidates.map((c) => (
                                   <button
-                                    key={`c-${r.line}-${c.id}`}
+                                    key={`c-${r.id}-${c.id}`}
                                     type="button"
                                     onClick={() => handleAddPastedCandidate(r, c.id)}
                                     className="w-full text-left px-2 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 text-amber-900 text-[11px] font-bold transition"
@@ -1077,6 +1110,14 @@ export function BatchTransferModal({
                                     {c.title}
                                   </button>
                                 ))}
+                                <button
+                                  key={`c-${r.id}-none`}
+                                  type="button"
+                                  onClick={() => handleRejectPastedRow(r.id)}
+                                  className="w-full text-left px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-500 text-[11px] font-semibold transition"
+                                >
+                                  Không phải cái nào
+                                </button>
                               </div>
                             )}
                           </div>

@@ -23,7 +23,10 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
-    const redirect = `${new URL(req.url).origin}/api/shopee/callback`;
+    const publicBase =
+      `${process.env.APP_PUBLIC_URL || ''}`.replace(/\/$/, '') ||
+      new URL(req.url).origin;
+    const redirect = `${publicBase}/api/shopee/callback`;
     const apiPath = '/api/v2/shop/auth_partner';
     const { timestamp, sign } = generateShopeeSign({ partnerId, partnerKey, apiPath });
     const url =

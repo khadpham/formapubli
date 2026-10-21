@@ -79,7 +79,7 @@ export function QuickSaleReport({ partners, currentRole = 'ROLE_OWNER' }: QuickS
     const { rows, summary } = parsePastedBookList(
       pasteText,
       stock.map((s) => ({ id: s.editionId, title: s.title, code: s.code })),
-      { defaultQuantity: 1 }
+      { defaultQuantity: 1, parseQuantity: true } // bao ban nhanh: so luong = so da ban
     );
     const lines: string[] = [];
     setIsWorking(true);
