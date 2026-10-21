@@ -21,6 +21,14 @@ export interface TemplateValidationResult {
   errors?: string[];
 }
 
+export interface DocxPackageCheckResult {
+  isValid: boolean;
+  errors?: string[];
+}
+
+/** Các part bắt buộc tối thiểu của một package OOXML (.docx) theo ECMA-376. */
+const REQUIRED_DOCX_PARTS = ['[Content_Types].xml', '_rels/.rels', 'word/document.xml'];
+
 /**
  * Engine merge .docx - 1 nguồn sự thật cho preview lẫn export (D1).
  * Extract/validate placeholder bằng inspect-module (D4): CẤM regex trên XML
@@ -65,5 +73,33 @@ export class ContractEngineService {
         errors: details?.length ? details : [err?.message || 'File Word không hợp lệ'],
       };
     }
+  }
+
+  /**
+   * Kiểm tra cấu trúc package OOXML của file .docx (base64).
+   * Bắt các file zip hợp lệ nhưng thiếu part bắt buộc - VD mẫu seed dựng tay
+   * bằng PizZip thiếu _rels/.rels: unzip vẫn đạt nhưng Word từ chối mở.
+   * Dùng ở: đường upload mẫu hợp đồng, cuối script seed (fail nhanh).
+   */
+  static validateDocxPackage(templateBase64: string): DocxPackageCheckResult {
+    const errors: string[] = [];
+    let zip: PizZip;
+    try {
+      zip = new PizZip(toBinary(templateBase64));
+    } catch {
+      return { isValid: false, errors: ['File không phải định dạng ZIP/.docx hợp lệ.'] };
+    }
+    for (const part of REQUIRED_DOCX_PARTS) {
+      if (!zip.file(part)) errors.push(`Thiếu thành phần bắt buộc: ${part}.`);
+    }
+    // _rels/.rels phải khai báo quan hệ tới word/document.xml
+    const rels = zip.file('_rels/.rels');
+    if (rels) {
+      const xml = rels.asText();
+      if (!/officeDocument/.test(xml) || !/word\/document\.xml/.test(xml)) {
+        errors.push('File _rels/.rels không khai báo quan hệ tới word/document.xml.');
+      }
+    }
+    return errors.length ? { isValid: false, errors } : { isValid: true };
   }
 }
