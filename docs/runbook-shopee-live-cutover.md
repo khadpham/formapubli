@@ -60,6 +60,9 @@ truc tiep truoc khi gan (bang warehouses).
 2. Backup Turso logic nhu dot truoc (/opt/backups/).
 3. Ap migration 0074_delivery_confirmation.sql len Turso production
    (2 cot nullable tren orders - an toan, khong khoa bang lau).
+   Ap migration 0075_shopee_finance_vn_tax.sql len Turso production
+   (3 cot nullable tren shopee_order_finance - an toan, khong khoa bang lau).
+   Kiem tra bang cach doc schema sau khi ap.
 4. Deploy theo dung quy trinh AGENTS.md: bao toan ecosystem.config.js
    production, git pull, npm install neu package.json doi, tsc + build kiem
    exit code truc tiep, chi reload PM2 khi build sach va co BUILD_ID.
