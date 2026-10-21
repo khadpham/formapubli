@@ -67,7 +67,8 @@ export async function GET(req: NextRequest) {
     // Cảnh báo: token sắp hết hạn (dưới 1 giờ)
     let tokenAlert: string | null = null;
     try {
-      const shopId = await resolveShopeeShopId();
+      const resolved = await resolveShopeeShopId();
+      const shopId = typeof resolved === 'number' ? resolved : resolved?.shopId;
       if (shopId) {
         const store = new TursoTokenStorage(shopId);
         const token = await store.get();
