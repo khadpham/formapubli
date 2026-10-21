@@ -18,9 +18,9 @@ export function ContractPrintPreview({ previewRef }: { previewRef: RefObject<HTM
           type="button"
           onClick={() => window.print()}
           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
-          aria-label="In hoặc xuất PDF khung xem trước"
+          aria-label="In hoặc lưu PDF bản hợp đồng để dùng ngay"
         >
-          In / Xuất PDF (xấp xỉ)
+          In / Lưu PDF (dùng ngay)
         </button>
       </div>
       <div id="contract-print-area" ref={previewRef} className="min-h-[400px] bg-white rounded-xl border border-slate-200" />

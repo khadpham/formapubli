@@ -346,7 +346,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
                     {(d.status === 'DRAFT') && (
                       <button type="button" onClick={() => { setEditingDoc(d); setComposerOpen(true); }} className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg text-[11px] font-bold" aria-label={`Sửa ${d.contractNumber}`}>Sửa</button>
                     )}
-                    <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`Tải Word ${d.contractNumber}`}>Tải Word</button>
+                    <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`Tải file Word ${d.contractNumber} để chỉnh sửa`}>Tải file Word (chỉnh sửa được)</button>
                     {(d.status === 'DRAFT' || d.status === 'FINALIZED') && (
                     <label className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold cursor-pointer" aria-label={`Tải bản cuối ${d.contractNumber}`}>
                       Tải bản cuối lên

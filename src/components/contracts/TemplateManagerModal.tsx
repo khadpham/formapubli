@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Modal from '@/components/ui/Modal';
 import { Upload } from 'lucide-react';
 
@@ -14,6 +14,10 @@ export function TemplateManagerModal({ onClose }: { onClose: () => void }) {
   const [labelMap, setLabelMap] = useState<Record<string, string>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
+  // Thay file .docx cho mẫu đã có (đặc biệt mẫu v2 đang trống file):
+  // server tự validate và version + 1.
+  const [replaceFor, setReplaceFor] = useState<any>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     const res = await fetch('/api/contracts/templates?activeOnly=0');
@@ -110,6 +114,27 @@ export function TemplateManagerModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const replaceFile = async (f: File, tpl: any) => {
+    try {
+      setIsWorking(true);
+      setErrorMessage(null);
+      const base64 = await readBase64(f);
+      const res = await fetch(`/api/contracts/templates/${encodeURIComponent(tpl.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateData: base64, templateFilename: f.name }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không thay được file mẫu.');
+      setReplaceFor(null);
+      await load();
+    } catch (e: any) {
+      setErrorMessage(e.message);
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
   return (
     <Modal
       open
@@ -175,9 +200,29 @@ export function TemplateManagerModal({ onClose }: { onClose: () => void }) {
             <button type="button" onClick={() => openLabels(t)} className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg font-bold">
               Nhãn biến
             </button>
+            <button
+              type="button"
+              disabled={isWorking}
+              onClick={() => { setReplaceFor(t); replaceInputRef.current?.click(); }}
+              className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg font-bold disabled:opacity-50"
+              aria-label={`${t.templateData ? 'Đổi file Word của' : 'Tải file Word cho'} mẫu ${t.title}`}
+            >
+              {t.templateData ? 'Đổi file' : 'Tải file'}
+            </button>
           </li>
         ))}
       </ul>
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept=".docx"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f && replaceFor) replaceFile(f, replaceFor);
+        }}
+      />
     </Modal>
   );
 }
