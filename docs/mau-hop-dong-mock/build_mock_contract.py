@@ -10,12 +10,17 @@ Chay: python3 build_mock_contract.py  (ghi de HD_DICH_THUAT_MOCK.docx)
 """
 import os
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
+from docx.shared import Pt, Cm, Mm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HD_DICH_THUAT_MOCK.docx")
 
 d = Document()
+
+# Kho giay A4 (khop @page size A4 khi in tu docx-preview, margin 0)
+sec = d.sections[0]
+sec.page_width = Mm(210)
+sec.page_height = Mm(297)
 
 # Font chu mac dinh
 style = d.styles["Normal"]
