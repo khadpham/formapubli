@@ -105,12 +105,15 @@ export async function GET(req: NextRequest) {
     const products = details.map((d: any) => {
       const sku = String(d.item_sku || '').trim();
       const erp = sku ? byCode.get(sku) : undefined;
+      // price_info là MẢNG (không phải object); stock ở stock_info_v2.
+      const priceArr = Array.isArray(d.price_info) ? d.price_info[0] : d.price_info;
+      const stockInfo = d.stock_info_v2?.summary_info || {};
       return {
         itemId: d.item_id,
         name: d.item_name || '',
         sku,
-        price: Number(d.price_info?.current_price || d.price || 0),
-        stock: Number(d.stock_info?.stock ?? 0),
+        price: Number(priceArr?.current_price ?? d.price ?? 0),
+        stock: Number(stockInfo.total_available_stock ?? d.stock_info?.stock ?? 0),
         status: d.item_status || '',
         image: d.image?.image_url_list?.[0] || '',
         erpMapped: !!erp,
