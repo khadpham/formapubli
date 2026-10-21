@@ -157,7 +157,7 @@ export function AppSidebar({
     },
     {
       id: 'shopee',
-      label: 'Shopee',
+      label: 'Đơn online',
       icon: ShoppingBag,
       shortcut: 'Alt+0',
       color: 'text-orange-600',

@@ -3,6 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { ShoppingBag, Truck, Printer, CheckCircle2, Search, RefreshCw } from 'lucide-react';
 
+/**
+ * Hub Đơn online - MỘT danh sách đơn hợp nhất 2 kênh (portal ONLINE + Shopee).
+ * Theo tài liệu phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md mục 3.2:
+ * - Lọc kênh bằng chip; cột và trạng thái dùng chung.
+ * - Khung trạng thái vòng đời hợp nhất (không dùng tab kiểu Seller Center).
+ * - Hành động đặc thù theo kênh hiện theo ngữ cảnh.
+ */
 interface HubItem {
   name: string;
   quantity: number;
@@ -11,6 +18,7 @@ interface HubItem {
 interface HubOrder {
   id: string;
   orderCode: string;
+  channel: string;
   orderSn: string;
   customerName: string;
   finalAmount: number;
@@ -25,24 +33,36 @@ interface HubOrder {
   items: HubItem[];
 }
 
+// Khung trạng thái vòng đời hợp nhất (mục 3.2.2).
 const TABS = [
   { key: 'all', label: 'Tất cả' },
-  { key: 'to_confirm', label: 'Chờ xác nhận' },
-  { key: 'to_ship', label: 'Chờ lấy hàng' },
-  { key: 'shipping', label: 'Đang giao' },
-  { key: 'delivered', label: 'Đã giao' },
-  { key: 'returns', label: 'Trả hàng/Hủy' },
+  { key: 'moi', label: 'Mới' },
+  { key: 'ban_giao', label: 'Đã bàn giao VC' },
+  { key: 'dang_giao', label: 'Đang giao' },
+  { key: 'hoan_thanh', label: 'Hoàn thành' },
+  { key: 'huy_hoan_tra', label: 'Hủy/Hoàn trả' },
 ] as const;
 
-const SHIP_LABEL: Record<string, string> = {
-  NONE: 'Chưa tạo',
-  CREATED: 'Chờ xác nhận',
-  PICKED_UP: 'Chờ lấy hàng',
+const CHANNELS = [
+  { key: 'all', label: 'Tất cả kênh' },
+  { key: 'ONLINE', label: 'Portal' },
+  { key: 'SHOPEE', label: 'Shopee' },
+] as const;
+
+const CYCLE_LABEL: Record<string, string> = {
+  CREATED: 'Mới',
+  PICKED_UP: 'Đã bàn giao VC',
   IN_TRANSIT: 'Đang giao',
-  DELIVERED: 'Đã giao',
-  RETURNED: 'Đã trả hàng',
+  DELIVERED: 'Hoàn thành',
+  RETURNED: 'Hoàn trả',
   FAILED: 'Giao thất bại',
+  NONE: 'Mới',
 };
+
+function cycleLabel(o: HubOrder): string {
+  if (o.status === 'CANCELLED') return 'Đã hủy';
+  return CYCLE_LABEL[o.shippingStatus] || o.shippingStatus;
+}
 
 function invoiceBadge(o: HubOrder): { text: string; cls: string } | null {
   if (o.deliveryConfirmedAt) return { text: 'Đã phát hành HĐ', cls: 'bg-emerald-100 text-emerald-800' };
@@ -54,6 +74,7 @@ function invoiceBadge(o: HubOrder): { text: string; cls: string } | null {
 
 export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
   const [tab, setTab] = useState<string>('all');
+  const [channel, setChannel] = useState<string>('all');
   const [orders, setOrders] = useState<HubOrder[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [q, setQ] = useState('');
@@ -62,10 +83,10 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
   const [shippingId, setShippingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
-  const load = async (t: string = tab, keyword: string = q) => {
+  const load = async (t: string = tab, ch: string = channel, keyword: string = q) => {
     setLoading(true);
     try {
-      const sp = new URLSearchParams({ tab: t });
+      const sp = new URLSearchParams({ tab: t, channel: ch });
       if (keyword.trim()) sp.set('q', keyword.trim());
       const r = await fetch(`/api/shopee/orders?${sp.toString()}`).then((x) => x.json());
       if (r?.success) {
@@ -80,16 +101,21 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
   };
 
   useEffect(() => {
-    load('all', '');
+    load('all', 'all', '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const switchTab = (t: string) => {
     setTab(t);
-    load(t, q);
+    load(t, channel, q);
   };
 
-  const doSearch = () => load(tab, q);
+  const switchChannel = (ch: string) => {
+    setChannel(ch);
+    load(tab, ch, q);
+  };
+
+  const doSearch = () => load(tab, channel, q);
 
   const syncNow = async () => {
     if (syncing) return;
@@ -103,7 +129,7 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
       if (r?.success) {
         const d = r.data;
         onToast(`Đồng bộ xong: ${d.pulled} đơn mới, bỏ qua ${d.skipped}${d.quarantined?.length ? `, ${d.quarantined.length} đơn lỗi` : ''}.`);
-        load(tab, q);
+        load(tab, channel, q);
       } else onToast(r?.error || 'Đồng bộ thất bại.');
     } catch {
       onToast('Đồng bộ thất bại.');
@@ -126,7 +152,7 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
             ? `Đã xếp lịch giao đơn ${orderSn} - mã vận đơn đang chờ Shopee cấp.`
             : `Đã giao đơn ${orderSn} - mã vận đơn ${r.data.trackingCode}.`
         );
-        load(tab, q);
+        load(tab, channel, q);
       } else onToast(r?.error || 'Giao hàng thất bại.');
     } catch {
       onToast('Giao hàng thất bại.');
@@ -141,7 +167,7 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
       const r = await fetch(`/api/orders/${o.id}/confirm-delivery`, { method: 'POST' }).then((x) => x.json());
       if (r?.ok) {
         onToast(`Đã xác nhận khách nhận hàng - đơn ${o.orderSn}.`);
-        load(tab, q);
+        load(tab, channel, q);
       } else onToast(r?.error || 'Xác nhận thất bại.');
     } catch {
       onToast('Xác nhận thất bại.');
@@ -151,11 +177,11 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
   };
 
   return (
-    <section aria-label="Quản lý đơn Shopee" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
+    <section aria-label="Đơn hàng online" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
           <ShoppingBag className="w-5 h-5 text-orange-600" />
-          Đơn Shopee
+          Đơn hàng
         </h2>
         <button
           type="button"
@@ -169,8 +195,28 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
         </button>
       </div>
 
-      {/* Tabs trạng thái */}
-      <div className="flex gap-1.5 flex-wrap" role="tablist" aria-label="Trạng thái đơn">
+      {/* Chip lọc kênh: một danh sách, hai kênh */}
+      <div className="flex gap-1.5 flex-wrap" role="tablist" aria-label="Kênh bán">
+        {CHANNELS.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            role="tab"
+            aria-selected={channel === c.key}
+            onClick={() => switchChannel(c.key)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold min-h-[40px] ${
+              channel === c.key
+                ? 'bg-slate-800 text-white'
+                : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tabs vòng đời hợp nhất */}
+      <div className="flex gap-1.5 flex-wrap" role="tablist" aria-label="Vòng đời đơn">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -204,7 +250,7 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && doSearch()}
             placeholder="Tìm mã đơn, tên khách…"
-            aria-label="Tìm kiếm đơn Shopee"
+            aria-label="Tìm kiếm đơn online"
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-xs min-h-[44px]"
           />
         </div>
@@ -218,7 +264,7 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
         </button>
       </div>
 
-      {/* Danh sách đơn */}
+      {/* Danh sách đơn hợp nhất */}
       {loading && <p className="text-xs text-slate-400">Đang tải…</p>}
       {!loading && orders.length === 0 && (
         <p className="text-xs text-slate-400">Không có đơn nào trong mục này.</p>
@@ -226,12 +272,16 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
       <div className="space-y-3">
         {orders.map((o) => {
           const badge = invoiceBadge(o);
+          const isShopee = o.channel === 'SHOPEE';
           return (
             <div key={o.id} className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
               <div className="flex items-start justify-between gap-2 flex-wrap">
                 <div className="min-w-0">
                   <p className="text-xs font-extrabold text-slate-800">
-                    #{o.orderSn} <span className="font-normal text-slate-500">- {o.customerName || 'Khách Shopee'}</span>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold mr-1.5 ${isShopee ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {isShopee ? 'Shopee' : 'Portal'}
+                    </span>
+                    #{o.orderSn} <span className="font-normal text-slate-500">- {o.customerName || 'Khách'}</span>
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     {o.items.map((i) => `${i.name} x${i.quantity}`).join(' · ') || '—'}
@@ -243,12 +293,13 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
                   : o.status === 'CANCELLED' ? 'bg-red-100 text-red-800'
                   : 'bg-slate-200 text-slate-700'
                 }`}>
-                  {SHIP_LABEL[o.shippingStatus] || o.shippingStatus}
+                  {cycleLabel(o)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-[11px] text-slate-500">
-                  {Number(o.finalAmount || 0).toLocaleString('vi-VN')}đ · {o.paymentMethod} · {o.carrier || '-'}
+                  {Number(o.finalAmount || 0).toLocaleString('vi-VN')}đ · {o.paymentMethod}
+                  {isShopee && o.carrier ? ` · ${o.carrier}` : ''}
                   {o.trackingCode ? ` · ${o.trackingCode}` : ''}
                 </p>
                 {badge && (
@@ -258,7 +309,8 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
                 )}
               </div>
               <div className="flex gap-2 flex-wrap">
-                {o.shippingStatus === 'CREATED' && o.status !== 'CANCELLED' && (
+                {/* Hành động đặc thù Shopee: in phiếu SPX */}
+                {isShopee && o.shippingStatus === 'CREATED' && o.status !== 'CANCELLED' && (
                   <>
                     <button
                       type="button"
@@ -282,6 +334,7 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
                     </a>
                   </>
                 )}
+                {/* Xác nhận nhận hàng: cả 2 kênh (D1) */}
                 {(o.shippingStatus === 'PICKED_UP' || o.shippingStatus === 'IN_TRANSIT' || o.shippingStatus === 'DELIVERED') && !o.deliveryConfirmedAt && (
                   <button
                     type="button"

@@ -9,24 +9,28 @@ import { getShopeeOpsWarehouses } from '@/services/shopee/shop-config';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/shopee/orders?tab=all|to_confirm|to_ship|shipping|delivered|returns&q=&carrier=
- * Hub đơn Shopee: đọc từ DB (đơn đã sync), phân tab theo shippingStatus.
- * - to_confirm (Chờ xác nhận): CREATED - cần đóng gói
- * - to_ship (Chờ lấy hàng): PICKED_UP - đã giao ĐVVC chờ lấy
- * - shipping (Đang giao): IN_TRANSIT
- * - delivered (Đã giao): DELIVERED
- * - returns (Trả hàng/Hủy): RETURNED, FAILED hoặc status CANCELLED
+ * GET /api/shopee/orders?tab=all|moi|ban_giao|dang_giao|hoan_thanh|huy_hoan_tra&channel=all|ONLINE|SHOPEE&q=
+ *
+ * Hub Đơn online: MỘT danh sách đơn hợp nhất 2 kênh (portal ONLINE + Shopee),
+ * theo khung trạng thái vòng đời hợp nhất (tài liệu phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md mục 3.2):
+ * - moi (Mới): CREATED - vừa về, chờ đóng gói
+ * - ban_giao (Đã bàn giao VC): PICKED_UP - đã giao đơn vị vận chuyển
+ * - dang_giao (Đang giao): IN_TRANSIT
+ * - hoan_thanh (Hoàn thành): DELIVERED
+ * - huy_hoan_tra (Hủy/Hoàn trả): CANCELLED / FAILED / RETURNED
  */
 const TAB_FILTER: Record<string, any> = {
-  to_confirm: eq(orders.shippingStatus, 'CREATED'),
-  to_ship: eq(orders.shippingStatus, 'PICKED_UP'),
-  shipping: eq(orders.shippingStatus, 'IN_TRANSIT'),
-  delivered: eq(orders.shippingStatus, 'DELIVERED'),
-  returns: or(
+  moi: eq(orders.shippingStatus, 'CREATED'),
+  ban_giao: eq(orders.shippingStatus, 'PICKED_UP'),
+  dang_giao: eq(orders.shippingStatus, 'IN_TRANSIT'),
+  hoan_thanh: eq(orders.shippingStatus, 'DELIVERED'),
+  huy_hoan_tra: or(
     inArray(orders.shippingStatus, ['RETURNED', 'FAILED']),
     eq(orders.status, 'CANCELLED')
   ),
 };
+
+const ONLINE_CHANNELS = ['ONLINE', 'SHOPEE'];
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,10 +42,13 @@ export async function GET(req: NextRequest) {
     ] as UserRole[]);
     const sp = req.nextUrl.searchParams;
     const tab = sp.get('tab') || 'all';
+    const channel = sp.get('channel') || 'all';
     const q = (sp.get('q') || '').trim();
-    const carrier = (sp.get('carrier') || '').trim();
 
-    const conds: any[] = [eq(orders.channel, 'SHOPEE')];
+    const conds: any[] = [inArray(orders.channel, ONLINE_CHANNELS)];
+    if (channel === 'ONLINE' || channel === 'SHOPEE') {
+      conds.push(eq(orders.channel, channel));
+    }
     if (session.role === 'ROLE_SHOPEE_OPS') {
       conds.push(inArray(orders.warehouseId, await getShopeeOpsWarehouses()));
     }
@@ -55,13 +62,13 @@ export async function GET(req: NextRequest) {
         )
       );
     }
-    if (carrier) conds.push(eq(orders.carrier, carrier));
 
     const rows = await db
       .select({
         id: orders.id,
         orderCode: orders.orderCode,
-        orderSn: sql<string>`REPLACE(${orders.idempotencyKey}, 'shopee-', '')`,
+        channel: orders.channel,
+        orderSn: sql<string>`CASE WHEN ${orders.channel} = 'SHOPEE' THEN REPLACE(${orders.idempotencyKey}, 'shopee-', '') ELSE ${orders.orderCode} END`,
         customerName: orders.customerName,
         finalAmount: orders.finalAmount,
         paymentMethod: orders.paymentMethod,
@@ -78,10 +85,11 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(orders.createdAt))
       .limit(100);
 
-    // Đếm từng tab để hiện badge số lượng.
+    // Đếm từng tab vòng đời (theo kênh đang lọc).
     const counts: Record<string, number> = {};
     for (const [key, filter] of Object.entries(TAB_FILTER)) {
-      const base = [eq(orders.channel, 'SHOPEE')];
+      const base: any[] = [inArray(orders.channel, ONLINE_CHANNELS)];
+      if (channel === 'ONLINE' || channel === 'SHOPEE') base.push(eq(orders.channel, channel));
       if (session.role === 'ROLE_SHOPEE_OPS') {
         base.push(inArray(orders.warehouseId, await getShopeeOpsWarehouses()));
       }
@@ -91,22 +99,20 @@ export async function GET(req: NextRequest) {
         .where(and(...base, filter as any));
       counts[key] = Number(r[0]?.c || 0);
     }
+    const totalConds: any[] = [inArray(orders.channel, ONLINE_CHANNELS)];
+    if (channel === 'ONLINE' || channel === 'SHOPEE') totalConds.push(eq(orders.channel, channel));
+    if (session.role === 'ROLE_SHOPEE_OPS') {
+      totalConds.push(inArray(orders.warehouseId, await getShopeeOpsWarehouses()));
+    }
     const totalR = await db
       .select({ c: sql<number>`COUNT(*)` })
       .from(orders)
-      .where(
-        session.role === 'ROLE_SHOPEE_OPS'
-          ? and(
-              eq(orders.channel, 'SHOPEE'),
-              inArray(orders.warehouseId, await getShopeeOpsWarehouses())
-            )
-          : eq(orders.channel, 'SHOPEE')
-      );
+      .where(and(...totalConds));
     counts.all = Number(totalR[0]?.c || 0);
 
-    // Lấy dòng hàng cho các đơn trong trang.
+    // Dòng hàng cho các đơn trong trang.
     const orderIds = rows.map((r) => r.id);
-    let itemsByOrder: Record<string, Array<{ name: string; quantity: number }>> = {};
+    const itemsByOrder: Record<string, Array<{ name: string; quantity: number }>> = {};
     if (orderIds.length > 0) {
       const items = await db
         .select({

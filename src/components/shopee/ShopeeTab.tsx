@@ -24,9 +24,10 @@ interface QuarantineItem {
 }
 
 /**
- * Tab Shopee - vận hành đơn trong kho được cấp.
- * Ẩn nút thao tác khi cờ server SHOPEE_UI_ENABLED tắt (giống ShopeePanel).
- * Thẻ doanh thu để link chờ tab Chủ, không gọi escrow ở đây.
+ * Hub Đơn online - quản lý tập trung đơn portal + Shopee.
+ * Theo tài liệu phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md mục 3.3:
+ * 7 mục con dạng tab ngang: Tổng quan | Đơn hàng | Vận chuyển | Sản phẩm kênh |
+ * Hoàn trả | Tài chính | Hóa đơn. Đợt này: Đơn hàng, Sản phẩm kênh, Tài chính.
  */
 interface ShopeeStatus {
   connected: boolean;
@@ -35,9 +36,20 @@ interface ShopeeStatus {
   codEnabled: boolean;
 }
 
+const HUB_TABS = [
+  { key: 'tong_quan', label: 'Tổng quan', done: false },
+  { key: 'don_hang', label: 'Đơn hàng', done: true },
+  { key: 'van_chuyen', label: 'Vận chuyển', done: false },
+  { key: 'san_pham', label: 'Sản phẩm kênh', done: true },
+  { key: 'hoan_tra', label: 'Hoàn trả', done: false },
+  { key: 'tai_chinh', label: 'Tài chính', done: true },
+  { key: 'hoa_don', label: 'Hóa đơn', done: false },
+] as const;
+
 export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
   const [status, setStatus] = useState<ShopeeStatus | null>(null);
   const [uiEnabled, setUiEnabled] = useState(false);
+  const [hubTab, setHubTab] = useState<string>('don_hang');
   const [toConfirm, setToConfirm] = useState<ConfirmOrder[]>([]);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [quarantine, setQuarantine] = useState<QuarantineItem[]>([]);
@@ -155,7 +167,37 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
             )}
           </section>
           {/* Hub đơn hàng đầy đủ: tabs trạng thái, tìm kiếm, thao tác theo trạng thái */}
-          <ShopeeOrdersHub onToast={showToast} />
+          {/* Điều hướng 7 mục con của hub */}
+          <nav aria-label="Mục hub đơn online" className="flex gap-1.5 flex-wrap">
+            {HUB_TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setHubTab(t.key)}
+                aria-current={hubTab === t.key ? 'page' : undefined}
+                className={`px-3 py-2 rounded-xl text-xs font-bold min-h-[40px] ${
+                  hubTab === t.key
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-white border border-slate-200 text-slate-600'
+                }`}
+              >
+                {t.label}
+                {!t.done && (
+                  <span className="ml-1 text-[9px] font-normal opacity-70">sắp có</span>
+                )}
+              </button>
+            ))}
+          </nav>
+
+          {hubTab === 'don_hang' && <ShopeeOrdersHub onToast={showToast} />}
+          {hubTab === 'san_pham' && <ShopeeProductsPanel onToast={showToast} />}
+          {hubTab === 'tai_chinh' && <ShopeeFinancePanel onToast={showToast} />}
+          {!['don_hang', 'san_pham', 'tai_chinh'].includes(hubTab) && (
+            <div className="bg-white rounded-2xl p-8 border border-slate-200/80 shadow-sm text-center">
+              <p className="text-sm font-bold text-slate-600">Mục này đang được phát triển</p>
+              <p className="text-xs text-slate-400 mt-1">Sẽ bổ sung ở đợt tiếp theo theo lộ trình hub.</p>
+            </div>
+          )}
 
       {toConfirm.length > 0 && (
         <section aria-label="Chờ xác nhận khách nhận hàng" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
@@ -203,10 +245,6 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           ))}
         </section>
       )}
-
-      <ShopeeProductsPanel onToast={showToast} />
-
-      <ShopeeFinancePanel onToast={showToast} />
         </>
       )}
     </div>
