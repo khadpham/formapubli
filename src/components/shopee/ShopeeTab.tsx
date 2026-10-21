@@ -98,8 +98,17 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const syncNow = async () => {
-    if (syncing) return;
+  const connectShop = async () => {
+    try {
+      const r = await fetch('/api/shopee/auth-url').then((x) => x.json());
+      if (r?.success && r.data?.url) window.location.href = r.data.url;
+      else showToast(r?.error || 'Chưa cấu hình key Shopee.');
+    } catch {
+      showToast('Không lấy được link ủy quyền.');
+    }
+  };
+
+  const syncNow = async () => {    if (syncing) return;
     setSyncing(true);
     try {
       const r = await fetch('/api/shopee/sync', {
@@ -196,6 +205,17 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}
             </button>
+            {!status?.connected && sessionRole === 'ROLE_OWNER' && (
+              <button
+                type="button"
+                onClick={connectShop}
+                aria-label="Kết nối gian hàng Shopee"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 border-orange-600 text-orange-700 text-xs font-bold min-h-[44px] shrink-0"
+              >
+                <Store className="w-4 h-4" />
+                Kết nối gian hàng
+              </button>
+            )}
           </section>
           <section aria-label="Đơn Shopee chờ xử lý" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
