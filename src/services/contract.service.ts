@@ -160,13 +160,17 @@ export class ContractService {
           totalAmount,
           notes: input.notes ?? null,
         }).returning();
-        const binary = ContractEngineService.generateDocx(tpl.templateData, {
-          ...input.payloadData,
-          so_hop_dong: contractNumber,
-        });
-        await tx.update(contractDocuments)
-          .set({ renderedDocx: bytesToBase64(binary) })
-          .where(eq(contractDocuments.id, doc.id));
+        const binary = tpl.templateData
+          ? ContractEngineService.generateDocx(tpl.templateData, {
+              ...input.payloadData,
+              so_hop_dong: contractNumber,
+            })
+          : null;
+        if (binary) {
+          await tx.update(contractDocuments)
+            .set({ renderedDocx: bytesToBase64(binary) })
+            .where(eq(contractDocuments.id, doc.id));
+        }
         return { ...doc, contractNumber };
       })
     );
