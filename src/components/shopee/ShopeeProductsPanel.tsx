@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Package, RefreshCw, CheckCircle2, AlertTriangle, Upload } from 'lucide-react';
+import { Package, RefreshCw, CheckCircle2, AlertTriangle, Upload, Link2, X, Plus, Search } from 'lucide-react';
 
 interface ShopProduct {
   itemId: number;
@@ -15,11 +15,177 @@ interface ShopProduct {
   erpTitle: string | null;
 }
 
+interface Edition {
+  id: string;
+  code: string;
+  title: string;
+}
+
+interface MapComponent {
+  editionId: string;
+  title: string;
+  quantity: number;
+}
+
+function SkuMapDialog({
+  product,
+  onClose,
+  onSaved,
+  onToast,
+}: {
+  product: ShopProduct;
+  onClose: () => void;
+  onSaved: () => void;
+  onToast: (m: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [editions, setEditions] = useState<Edition[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [components, setComponents] = useState<MapComponent[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const search = async (q: string) => {
+    setQuery(q);
+    if (q.trim().length < 2) {
+      setEditions([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const r = await fetch(`/api/editions/search?q=${encodeURIComponent(q.trim())}&limit=10`).then((x) => x.json());
+      setEditions(r?.data || r?.editions || []);
+    } catch {
+      setEditions([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const addComponent = (e: Edition) => {
+    if (components.some((c) => c.editionId === e.id)) return;
+    setComponents([...components, { editionId: e.id, title: e.title, quantity: 1 }]);
+    setQuery('');
+    setEditions([]);
+  };
+
+  const save = async () => {
+    if (components.length === 0) {
+      onToast('Chưa chọn sản phẩm ERP nào.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch('/api/shopee/sku-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopeeSku: product.sku, components }),
+      }).then((x) => x.json());
+      if (r?.success) {
+        onToast(`Đã đối chiếu "${product.sku}" với ${components.length} sản phẩm ERP.`);
+        onSaved();
+        onClose();
+      } else onToast(r?.error || 'Lưu đối chiếu thất bại.');
+    } catch {
+      onToast('Lưu đối chiếu thất bại.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-label={`Đối chiếu ${product.sku}`}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-xl">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h3 className="text-base font-extrabold text-slate-900">Đối chiếu SKU: {product.sku}</h3>
+          <button type="button" onClick={onClose} aria-label="Đóng" className="p-2 rounded-xl hover:bg-slate-100">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3 overflow-y-auto">
+          <p className="text-xs text-slate-600 truncate">{product.name}</p>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => search(e.target.value)}
+              placeholder="Gõ tên sách hoặc mã để tìm trong ERP…"
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm"
+              aria-label="Tìm sản phẩm ERP"
+            />
+          </div>
+          {searching && <p className="text-xs text-slate-400">Đang tìm…</p>}
+          {editions.length > 0 && (
+            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-48 overflow-y-auto">
+              {editions.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => addComponent(e)}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800 truncate">{e.title}</span>
+                  <span className="text-[11px] text-slate-400 ml-auto shrink-0">{e.code}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {components.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-700">Thành phần đã chọn ({components.length}):</p>
+              {components.map((c) => (
+                <div key={c.editionId} className="flex items-center gap-2 p-2 rounded-xl bg-indigo-50 border border-indigo-100">
+                  <span className="text-xs font-bold text-slate-800 flex-1 truncate">{c.title}</span>
+                  <label className="text-[11px] text-slate-500">SL:
+                    <input
+                      type="number"
+                      min={1}
+                      value={c.quantity}
+                      onChange={(e) =>
+                        setComponents(components.map((x) => x.editionId === c.editionId ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))
+                      }
+                      className="w-14 ml-1 px-1.5 py-1 rounded-lg border border-slate-200 text-xs text-center"
+                      aria-label={`Số lượng ${c.title}`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setComponents(components.filter((x) => x.editionId !== c.editionId))}
+                    aria-label={`Bỏ ${c.title}`}
+                    className="p-1.5 rounded-lg hover:bg-red-100"
+                  >
+                    <X className="w-4 h-4 text-red-500" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm font-bold min-h-[44px]">
+            Hủy
+          </button>
+          <button
+            type="button"
+            disabled={saving || components.length === 0}
+            onClick={save}
+            className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold min-h-[44px] disabled:opacity-50"
+          >
+            {saving ? 'Đang lưu…' : 'Lưu đối chiếu'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void }) {
   const [products, setProducts] = useState<ShopProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pushingId, setPushingId] = useState<number | null>(null);
+  const [mappingProduct, setMappingProduct] = useState<ShopProduct | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -114,10 +280,21 @@ export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void 
                   Đã đối chiếu: {p.erpTitle}
                 </p>
               ) : (
-                <p className="text-[11px] text-amber-700 flex items-center gap-1 mt-0.5">
-                  <AlertTriangle className="w-3 h-3" />
-                  Chưa đối chiếu với ERP
-                </p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-[11px] text-amber-700 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Chưa đối chiếu với ERP
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setMappingProduct(p)}
+                    aria-label={`Đối chiếu ${p.sku} với ERP`}
+                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-amber-100 text-amber-800 text-[11px] font-bold min-h-[32px]"
+                  >
+                    <Link2 className="w-3 h-3" />
+                    Đối chiếu
+                  </button>
+                </div>
               )}
             </div>
             <button
@@ -134,6 +311,14 @@ export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void 
           </div>
         ))}
       </div>
+      {mappingProduct && (
+        <SkuMapDialog
+          product={mappingProduct}
+          onClose={() => setMappingProduct(null)}
+          onSaved={load}
+          onToast={onToast}
+        />
+      )}
     </section>
   );
 }
