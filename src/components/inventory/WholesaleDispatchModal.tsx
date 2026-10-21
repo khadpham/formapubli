@@ -362,16 +362,16 @@ export function WholesaleDispatchModal({
     const picked = row.candidates.find((c) => c.id === bookId);
     const problem = addWholesalePastedBook(bookId, row.quantity);
     if (problem) setPasteNotice(problem);
-    setPastedConfirmed((prev) => ({ ...prev, [row.line]: picked?.title || bookId }));
+    setPastedConfirmed((prev) => ({ ...prev, [row.id]: picked?.title || bookId }));
     setCheckedFingerprint('');
     setAtpNotice(null);
   };
 
   // Dong mo ho nhung khong phai sach nao trong danh sach ung vien.
-  const handleRejectPastedRow = (line: string) => {
+  const handleRejectPastedRow = (rowId: string) => {
     setPasteResult((prev) => {
       if (!prev) return prev;
-      const rows = prev.rows.filter((r) => r.line !== line);
+      const rows = prev.rows.filter((r) => r.id !== rowId);
       return {
         rows,
         summary: {
@@ -383,7 +383,7 @@ export function WholesaleDispatchModal({
     });
     setPastedConfirmed((prev) => {
       const next = { ...prev };
-      delete next[line];
+      delete next[rowId];
       return next;
     });
   };
@@ -1129,9 +1129,9 @@ export function WholesaleDispatchModal({
                       {pasteResult.rows
                         .filter((r): r is Extract<ParsedRow, { status: 'needs_confirm' }> => r.status === 'needs_confirm')
                         .map((r) => {
-                          const chosen = pastedConfirmed[r.line];
+                          const chosen = pastedConfirmed[r.id];
                           return (
-                            <div key={`c-${r.line}`} className="rounded-lg border border-amber-300 bg-white/70 p-2">
+                            <div key={`c-${r.id}`} className="rounded-lg border border-amber-300 bg-white/70 p-2">
                               <p className="text-[11px] text-slate-700">
                                 Dòng <span className="font-semibold">"{r.line}"</span> khớp với:
                               </p>
@@ -1141,7 +1141,7 @@ export function WholesaleDispatchModal({
                                 <div className="mt-1.5 flex flex-col gap-1">
                                   {r.candidates.map((c) => (
                                     <button
-                                      key={`c-${r.line}-${c.id}`}
+                                      key={`c-${r.id}-${c.id}`}
                                       type="button"
                                       onClick={() => handleAddPastedCandidate(r, c.id)}
                                       className="w-full text-left px-2 py-1.5 rounded-lg bg-white border-2 border-amber-400 hover:bg-amber-100 text-amber-900 text-[11px] font-bold transition"
@@ -1150,9 +1150,9 @@ export function WholesaleDispatchModal({
                                     </button>
                                   ))}
                                   <button
-                                    key={`c-${r.line}-none`}
+                                    key={`c-${r.id}-none`}
                                     type="button"
-                                    onClick={() => handleRejectPastedRow(r.line)}
+                                    onClick={() => handleRejectPastedRow(r.id)}
                                     className="w-full text-left px-2 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-500 text-[11px] font-semibold transition"
                                   >
                                     Không phải cái nào
