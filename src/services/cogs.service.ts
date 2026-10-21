@@ -149,14 +149,17 @@ export async function getWorkCostBreakdown(workId: string): Promise<{
 
 /** Tổng số bản đã nhập kho của 1 đầu sách (mọi đợt, mọi kho). */
 export async function getWorkReceivedQty(workId: string): Promise<number> {
-  const r = await db.execute(sql`
-    SELECT COALESCE(SUM(l.quantity_delta), 0) AS qty
-    FROM inventory_ledger l
-    JOIN editions e ON e.id = l.edition_id
-    WHERE e.work_id = ${workId}
-      AND l.event_type IN ('RECEIPT', 'RETURN_INBOUND', 'OPENING_BALANCE')
-  `);
-  return Number((r.rows[0] as { qty: number }).qty || 0);
+  const rows = await db
+    .select({ qty: sql<number>`COALESCE(SUM(${inventoryLedger.quantityDelta}), 0)` })
+    .from(inventoryLedger)
+    .innerJoin(editions, eq(inventoryLedger.editionId, editions.id))
+    .where(
+      and(
+        eq(editions.workId, workId),
+        inArray(inventoryLedger.eventType, ['RECEIPT', 'RETURN_INBOUND', 'OPENING_BALANCE']),
+      ),
+    );
+  return Number(rows[0]?.qty || 0);
 }
 
 /** Giá vốn/bản (bình quân gia quyền) của 1 đầu sách. */
