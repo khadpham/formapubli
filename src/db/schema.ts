@@ -1557,3 +1557,34 @@ export const warehouseDocCounters = sqliteTable('warehouse_doc_counters', {
 }, (table) => ({
   pk: primaryKey({ columns: [table.docType, table.year] }),
 }));
+
+// 29. Collaborators (Cộng tác viên - 0076). Người hợp tác làm việc với công ty
+// (dịch giả, thiết kế bìa, biên tập, đọc morat, hành chính...) nhưng KHÔNG phải
+// nhân viên chấm công nên tách riêng khỏi staff_accounts. Lưu đầy đủ thông tin
+// định danh để làm cơ sở điền hợp đồng và tra cứu.
+export const collaborators = sqliteTable('collaborators', {
+  id: text('id').primaryKey(), // ctv-<slug>
+  fullName: text('full_name').notNull(),
+  penName: text('pen_name'), // Bút danh
+  roleTitle: text('role_title'), // Vai trò/vị trí (text tự do)
+  collabType: text('collab_type').notNull().default('khac'), // thiet_ke_bia | dich_gia | bien_tap | doc_morat | hanh_chinh | dai_dien_ben_a | ben_b | khac
+  dob: text('dob'),
+  idNumber: text('id_number'), // Số CCCD/CMND/Hộ chiếu
+  idIssuedDate: text('id_issued_date'),
+  idIssuedPlace: text('id_issued_place'),
+  taxId: text('tax_id'), // MST cá nhân
+  address: text('address'),
+  phone: text('phone'),
+  email: text('email'),
+  bankAccount: text('bank_account'),
+  bankName: text('bank_name'),
+  bankOwner: text('bank_owner'),
+  notes: text('notes'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  nameIdx: index('idx_collab_name').on(table.fullName),
+  typeIdx: index('idx_collab_type').on(table.collabType),
+  activeIdx: index('idx_collab_active').on(table.isActive),
+}));
