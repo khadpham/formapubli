@@ -51,6 +51,7 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   SYNCED: { label: 'Đã đẩy', color: 'bg-blue-100 text-blue-800' },
   SYNC_FAILED: { label: 'Đẩy lỗi', color: 'bg-rose-100 text-rose-800' },
   SIGNED: { label: 'Đã ký', color: 'bg-green-100 text-green-800' },
+  CANCELLED: { label: 'Đã hủy', color: 'bg-rose-100 text-rose-800' },
   REJECTED: { label: 'Từ chối', color: 'bg-slate-100 text-slate-600' },
   DRAFT: { label: 'Nháp', color: 'bg-slate-100 text-slate-600' },
 };
@@ -446,7 +447,7 @@ export default function EinvoiceView() {
 
       {/* Bộ lọc */}
       <div className="flex gap-2 flex-wrap">
-        {['ALL', 'PREPARED', 'SYNCED', 'SIGNED'].map((s) => (
+        {['ALL', 'PREPARED', 'SYNCED', 'SIGNED', 'CANCELLED'].map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}

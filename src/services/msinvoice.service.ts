@@ -368,4 +368,87 @@ export class MSInvoiceService {
     });
     return { mock: false, invoices };
   }
+
+  /**
+   * Áp trạng thái ký từ MS-Invoice về bảng einvoices (dùng cho cron tự động).
+   *
+   * NGUYÊN TẮC:
+   * - MS-Invoice là nguồn sự thật cho trạng thái ký. Khớp theo msinvoiceId,
+   *   dự phòng theo thirdPartyCode (= id hóa đơn ERP lúc đẩy lên).
+   * - Chỉ chuyển TIẾN, không lùi: SYNCED -> SIGNED, SYNCED/SIGNED -> CANCELLED
+   *   (hủy sau khi ký vẫn là sự thật mới). Đã đúng trạng thái thì bỏ qua.
+   * - Hóa đơn trên MS-Invoice mà ERP không có (tạo tay ngoài ERP) thì chỉ đếm
+   *   vào unmatched, KHÔNG tạo bản ghi mới.
+   * - Idempotent: chạy lại với cùng dữ liệu thì updated = 0.
+   */
+  static async applyRemoteStatuses(remoteInvoices: any[]): Promise<{
+    scanned: number;
+    matched: number;
+    updated: number;
+    skipped: number;
+    unmatched: number;
+    updates: Array<{ localId: string; from: string; to: string; number: string }>;
+  }> {
+    const locals = (await db.select().from(einvoices)) as any[];
+    const byMsId = new Map<string, any>();
+    const byId = new Map<string, any>();
+    for (const l of locals) {
+      if (l.msinvoiceId) byMsId.set(String(l.msinvoiceId), l);
+      byId.set(String(l.id), l);
+    }
+
+    const now = new Date().toISOString();
+    const summary = { scanned: remoteInvoices.length, matched: 0, updated: 0, skipped: 0, unmatched: 0, updates: [] as Array<{ localId: string; from: string; to: string; number: string }> };
+
+    for (const r of remoteInvoices) {
+      const msId = String(r.msinvoiceId ?? r.invoiceId ?? r.id ?? '');
+      const thirdPartyCode = String(r.thirdPartyCode ?? '');
+      const local = (msId && byMsId.get(msId)) || (thirdPartyCode && byId.get(thirdPartyCode)) || null;
+      if (!local) {
+        summary.unmatched++;
+        continue;
+      }
+      summary.matched++;
+
+      const remoteStatus = String(r.status || r.statusId || '');
+      const target =
+        remoteStatus === 'InvoiceFinalized' ? 'SIGNED'
+        : remoteStatus === 'InvoiceCancelled' ? 'CANCELLED'
+        : '';
+      if (!target) {
+        summary.skipped++; // trạng thái khác (nháp...) - ERP không quan tâm
+        continue;
+      }
+      if (local.status === target || (target === 'SIGNED' && local.status === 'CANCELLED')) {
+        summary.skipped++;
+        continue;
+      }
+
+      const number = String(r.number || r.invoiceNo || local.invoiceNumber || '');
+      const update: any = { status: target, updatedAt: now };
+      if (target === 'SIGNED') {
+        update.isSigned = 'Y';
+        const msDate = Number(r.raw?.invoiceDate ?? NaN);
+        update.issuedAt = Number.isFinite(msDate) ? new Date(msDate).toISOString() : now;
+        if (number) update.invoiceNumber = number;
+        const serial = String(r.serial || r.invoiceFormSerial || '');
+        if (serial) update.invoiceSerial = serial;
+        const lookup = String(r.lookupCode || '');
+        if (lookup) update.lookupCode = lookup;
+      }
+      await db.update(einvoices).set(update).where(eq(einvoices.id, local.id));
+
+      if (target === 'SIGNED' && local.orderId) {
+        await db.update(orders).set({
+          invoiceStatus: 'SIGNED',
+          vatInvoiceCode: number || (local as any).invoiceNumber,
+        } as any).where(eq(orders.id, local.orderId));
+      }
+
+      summary.updated++;
+      summary.updates.push({ localId: local.id, from: local.status, to: target, number });
+      local.status = target; // tránh xử lý trùng nếu remote lặp id
+    }
+    return summary;
+  }
 }
