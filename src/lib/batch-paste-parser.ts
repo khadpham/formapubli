@@ -1,3 +1,5 @@
+import { removeAccents } from './vietnamese';
+
 export type ParseLookupBook = { id: string; title: string; code?: string | null; isbnLast4?: string | null };
 export type ParsedRow =
   | { status: "matched"; line: string; editionId: string; title: string; quantity: number }
@@ -31,7 +33,8 @@ export function parsePastedBookList(
     if (!line) continue;
     const whole = normalize(line);
     if (!whole) continue;
-    if (HEADERS.has(whole.toLowerCase())) continue;
+    // So sanh khong dau de bat moi bien the: "Ten sach", "TÊN SÁCH", "ten sach"...
+    if (HEADERS.has(removeAccents(whole))) continue;
 
     // Interpretations in priority order: WHOLE line first, then a quantity
     // split off. The first exact title match wins and carries its quantity.
@@ -109,7 +112,8 @@ export function parsePastedBookList(
   return { rows, summary: { matched: matchedEditions.size, needsConfirm, notFound: notFoundCount } };
 }
 
-/** Header-only lines copied along with the data. */
+/** Dong tieu de copy kem du lieu. Luu dang khong dau; luc so sanh dung
+ *  removeAccents() nen bat duoc moi bien the co/khong dau, hoa/thuong. */
 const HEADERS = new Set([
   'stt',
   'ten',
@@ -118,8 +122,6 @@ const HEADERS = new Set([
   'soluong',
   'title',
   'quantity',
-  'ten sách',
-  'số lượng',
   'ma sach',
   'masach',
   'isbn',
