@@ -25,7 +25,7 @@ async function shopeeGet(
   const store = new TursoTokenStorage(cfg.shopId);
   let token = await store.get();
   if (!token || token.expired_at <= Date.now() + 5 * 60 * 1000) {
-    token = await refreshShopeeTokenOnce(cfg.shopId);
+    token = await refreshShopeeTokenOnce(cfg);
   }
   const { timestamp, sign } = generateShopeeSign({
     partnerId: cfg.partnerId,
