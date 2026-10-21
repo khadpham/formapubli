@@ -13,6 +13,8 @@ import { ContractProjects } from './ContractProjects';
 
 interface ContractsTabProps {
   currentRole?: UserRole;
+  /** Từ khóa tìm kiếm đặt trước (VD: nhảy từ giai đoạn dự án sang xem HĐ). */
+  presetSearch?: string;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -39,11 +41,11 @@ function formatMoney(v: any): string {
 }
 
 /** Tab Hợp Đồng: danh sách + lọc + soạn mới + mẫu + công ty. */
-export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) {
+export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: ContractsTabProps) {
   const [docs, setDocs] = useState<any[]>([]);
   const [partners, setPartners] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(presetSearch || '');
   const [page, setPage] = useState(1);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
@@ -51,6 +53,9 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [aiReviewOpen, setAiReviewOpen] = useState(false);
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
+  // Ngữ cảnh mở Soạn Thông Minh từ một cột mốc dự án: giai đoạn cần chọn sẵn
+  // mẫu + id cột mốc để gắn hợp đồng sau khi chốt. Mở từ nút chung thì null.
+  const [smartDraftInit, setSmartDraftInit] = useState<{ category: string; milestoneId?: string } | null>(null);
   const [view, setView] = useState<'docs' | 'projects'>('docs');
   const [profileOpen, setProfileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -100,6 +105,14 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   useEffect(() => {
     setPage(1);
   }, [statusFilter, search]);
+
+  // Đồng bộ khi tab cha đặt từ khóa mới (nhảy từ dự án sang xem HĐ).
+  useEffect(() => {
+    if (presetSearch) {
+      setSearch(presetSearch);
+      setPage(1);
+    }
+  }, [presetSearch]);
 
   const downloadDocx = async (doc: any) => {
     try {
@@ -236,7 +249,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
           </button>
           <button
             type="button"
-            onClick={() => setAiDraftOpen(true)}
+            onClick={() => { setSmartDraftInit(null); setAiDraftOpen(true); }}
             className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition"
             aria-label="Soạn hợp đồng thông minh bằng AI"
           >
@@ -272,7 +285,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
 
       {view === 'projects' ? (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-          <ContractProjects onSmartDraft={() => { setView('docs'); setAiDraftOpen(true); }} />
+          <ContractProjects onSmartDraft={(category, milestoneId) => { setSmartDraftInit({ category, milestoneId }); setView('docs'); setAiDraftOpen(true); }} />
         </div>
       ) : (
       <>
@@ -333,7 +346,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
                     {(d.status === 'DRAFT') && (
                       <button type="button" onClick={() => { setEditingDoc(d); setComposerOpen(true); }} className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg text-[11px] font-bold" aria-label={`Sửa ${d.contractNumber}`}>Sửa</button>
                     )}
-                    <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`Tải Word ${d.contractNumber}`}>Tải Word</button>
+                    <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`Tải file Word ${d.contractNumber} để chỉnh sửa`}>Tải file Word (chỉnh sửa được)</button>
                     {(d.status === 'DRAFT' || d.status === 'FINALIZED') && (
                     <label className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold cursor-pointer" aria-label={`Tải bản cuối ${d.contractNumber}`}>
                       Tải bản cuối lên
@@ -414,7 +427,13 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
         />
       )}
       {aiReviewOpen && <AIContractReview onClose={() => setAiReviewOpen(false)} />}
-      {aiDraftOpen && <AISmartDraft onClose={() => setAiDraftOpen(false)} />}
+      {aiDraftOpen && (
+        <AISmartDraft
+          initialCategory={smartDraftInit?.category}
+          milestoneId={smartDraftInit?.milestoneId}
+          onClose={() => { setAiDraftOpen(false); setSmartDraftInit(null); }}
+        />
+      )}
       {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
 
       {confirmDelete && (

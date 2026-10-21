@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { FlaskConical, RefreshCw, Download, Search, AlertTriangle } from 'lucide-react';
-import { BundleRoyaltyPanels } from './BundleRoyaltyPanels';
 import { UserRole } from '@/lib/roles';
 
 interface ForecastItem {
@@ -19,13 +18,18 @@ interface ForecastItem {
   suggestedReprintQty: number;
 }
 
-interface AnalyticsStudioProps {
+interface ForecastReprintPanelProps {
   currentRole: UserRole;
 }
 
 const LEVEL_ORDER: Record<string, number> = { RED_ALERT: 0, YELLOW_WARNING: 1, HEALTHY_NORMAL: 2 };
 
-export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
+/**
+ * Hoạch định tồn kho & dự báo tái bản. Trước đây nằm trong tab "Báo cáo"
+ * (AnalyticsStudio) - chuyển về tab Kho hàng vì đây là công cụ của thủ kho /
+ * quản lý kho, không phải báo cáo quản trị.
+ */
+export function ForecastReprintPanel({ currentRole }: ForecastReprintPanelProps) {
   const [items, setItems] = useState<ForecastItem[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -134,7 +138,7 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
     return (
       <div className="p-8 bg-white rounded-2xl border border-slate-200 text-center space-y-2">
         <FlaskConical className="w-8 h-8 mx-auto text-slate-300" />
-        <h3 className="font-extrabold text-slate-900">Không gian phân tích dành cho Chủ / Quản lý</h3>
+        <h3 className="font-extrabold text-slate-900">Hoạch định tồn kho dành cho Chủ / Quản lý</h3>
         <p className="text-xs text-slate-500">Vai trò hiện tại bị chặn 403 bởi <code>/api/forecast</code> để bảo vệ Sổ Thực.</p>
       </div>
     );
@@ -146,7 +150,7 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
         <div className="hidden md:block">
           <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
             <FlaskConical className="w-5 h-5 text-indigo-600" />
-            Không Gian Phân Tích Chuyên Sâu & Dự Báo Tái Bản
+            Hoạch Định Tồn Kho & Dự Báo Tái Bản
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Read-only từ <code>/api/forecast</code> • V_sale từ ledger DISPATCH_SALE + CONSIGNMENT_SOLD • DoI = Tồn / V • EOQ = CEIL(V × 105)
@@ -262,7 +266,6 @@ export function AnalyticsStudio({ currentRole }: AnalyticsStudioProps) {
         )}
       </div>
 
-      <BundleRoyaltyPanels currentRole={currentRole} />
     </div>
   );
 }

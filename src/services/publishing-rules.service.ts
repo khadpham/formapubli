@@ -31,11 +31,11 @@ export const STAGE_ORDER: PublishingStage[] = [
 ];
 
 export const STAGE_LABELS: Record<PublishingStage, string> = {
-  THIET_KE_BIA: 'Thiet ke bia',
-  BIEN_DICH: 'Bien dich',
-  BIEN_TAP: 'Bien tap',
-  DAN_TRANG: 'Dan trang',
-  DOC_MORAT: 'Doc morat',
+  THIET_KE_BIA: 'Thiết kế bìa',
+  BIEN_DICH: 'Biên dịch',
+  BIEN_TAP: 'Biên tập',
+  DAN_TRANG: 'Dàn trang',
+  DOC_MORAT: 'Đọc morat',
 };
 
 export interface StageDates {

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Modal from '@/components/ui/Modal';
 import { Wand2, Loader2, Check, Ban } from 'lucide-react';
 
@@ -20,7 +20,11 @@ interface Adjustment {
   reason: string;
 }
 
-export function AISmartDraft({ onClose }: { onClose: () => void }) {
+export function AISmartDraft({ onClose, initialCategory, milestoneId }: {
+  onClose: () => void;
+  initialCategory?: string;
+  milestoneId?: string;
+}) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState('');
@@ -33,13 +37,24 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
   const [contractNumber, setContractNumber] = useState('');
+  const [linkFailed, setLinkFailed] = useState(false);
   const [error, setError] = useState('');
+  const preselectDone = useRef(false);
 
   useEffect(() => {
     fetch('/api/contracts/templates?activeOnly=1').then((r) => r.json()).then((j) => {
       if (j.success) setTemplates(j.data);
     }).catch(() => {});
   }, []);
+
+  // Mở từ cột mốc dự án: chọn sẵn mẫu đầu tiên thuộc giai đoạn của cột mốc,
+  // chỉ chọn một lần lúc mẫu vừa tải xong - không giành quyền chọn của người dùng.
+  useEffect(() => {
+    if (!initialCategory || preselectDone.current || templates.length === 0) return;
+    preselectDone.current = true;
+    const match = templates.find((t) => t.category === initialCategory);
+    if (match) setTemplateId(match.id);
+  }, [templates, initialCategory]);
 
   useEffect(() => {
     const tpl = templates.find((t) => t.id === templateId);
@@ -95,6 +110,18 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Có lỗi xảy ra');
       setContractNumber(json.data.contractNumber);
+      // Mở từ cột mốc dự án thì gắn luôn hợp đồng vừa tạo vào cột mốc đó:
+      // PATCH milestones với contractId sẽ tự chuyển cột mốc sang DONE.
+      if (milestoneId && json.data.documentId) {
+        try {
+          const linkRes = await fetch('/api/ai/contracts/milestones', {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: milestoneId, contractId: json.data.documentId }),
+          });
+          const linkJson = await linkRes.json().catch(() => null);
+          if (!linkRes.ok || !linkJson?.success) setLinkFailed(true);
+        } catch { setLinkFailed(true); }
+      }
       setStep(3);
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
   }
@@ -186,6 +213,11 @@ export function AISmartDraft({ onClose }: { onClose: () => void }) {
           <div className="text-center py-8">
             <p className="text-lg font-bold text-teal-700">Đã tạo hợp đồng {contractNumber}</p>
             <p className="text-xs text-slate-500 mt-2">Xem và ký trong danh sách hợp đồng.</p>
+            {linkFailed && (
+              <p className="text-xs text-amber-600 mt-2 font-bold">
+                Đã tạo hợp đồng nhưng chưa gắn được vào cột mốc dự án - cột mốc chưa chuyển trạng thái "Đã có HĐ".
+              </p>
+            )}
           </div>
         )}
 

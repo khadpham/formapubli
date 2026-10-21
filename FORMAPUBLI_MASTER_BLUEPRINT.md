@@ -1377,6 +1377,11 @@ Hệ thống tự động kiểm tra khi nhập ngày tháng, ngăn team phải 
 
 Vi phạm R1-R3, R5: chặn lưu, yêu cầu xác nhận của manager. Vi phạm R4: cảnh báo vàng.
 
+### 23.2b. Tham số thuế cho hợp đồng tạo ngược (kế toán dịch vụ xác nhận 2026-10-21, anh Kha báo)
+
+- Thời điểm kê khai và khấu trừ thuế TNCN 10% tính theo NGÀY KÝ GHI TRÊN HỢP ĐỒNG (không phải ngày chi tiền thực tế). Engine tạo ngược đặt mốc thuế = ngày ký đã sinh cho từng hợp đồng.
+- Quy tắc khoảng cách ngày (ký -> nghiệm thu khoảng 30 ngày; nghiệm thu trước -> ký HĐ tiếp theo trong 1 tuần) CHỈ là ước lượng: tính cả cuối tuần/ngày lễ (danh sách ngày lễ cấu hình được), vượt ngưỡng thì hệ thống CẢNH BÁO để nhân viên xử lý, không chặn cứng. Lý do nghiệp vụ: thực tế có việc làm song song được, nhưng công ty CỐ Ý xếp nối tiếp để tránh 1 ngày ký nhiều HĐ dồn lại khiến cơ quan thuế nghi ngờ. Hệ quả: các rule khoảng cách ngày trong engine tạo ngược giữ ở mức warning; kiểm tra "1 ngày ký quá nhiều HĐ" là một rule cảnh báo riêng có ngưỡng cấu hình được.
+
 ### 23.3. Thư viện mẫu hợp đồng (ưu tiên cho tương lai)
 
 **Nguyên tắc:** Không sửa hay rà soát lại hợp đồng quá khứ trong ERP. Team tự soạn lại cho đúng, tích hợp sau.
@@ -1481,7 +1486,7 @@ Câu hỏi duy nhất cho kế toán: công ty dùng mấy ký hiệu hóa đơn
 
 2. **Khách KHÔNG lấy hóa đơn (bán lẻ):** Vẫn ghi nhận đầy đủ. Đơn gắn
    `fiscal_scope = 'INTERNAL_MANAGEMENT'`, xuất kho bình thường. Cuối ngày
-   (cron 21h30), hệ thống GOM TẤT CẢ đơn bán lẻ không lấy hóa đơn trong ngày
+   (cron 23:30 giờ VN - đã đặt trên production 2026-10-20), hệ thống GOM TẤT CẢ đơn bán lẻ không lấy hóa đơn trong ngày
    thành MỘT hóa đơn tổng hợp duy nhất (đúng Nghị định 123/2020/NĐ-CP cho bán lẻ).
    Kế toán chỉ ký MỘT lần cho hóa đơn tổng hợp này.
 
@@ -1634,7 +1639,7 @@ Hien trang: 9 combo COMBO01-09 nam trong bang products. Quan ly trong tab Kho ha
 - Search endpoint tra du lieu o truong listData; mapping dung: invoiceFormSerial, invoiceNo, invoiceTotal, statusId, toPartyName||toName, toPartyTaxId.
 - Verify E2E: day HD test qua ERP -> SYNCED, msinvoice_id bat dung, chi tiet tren prod khop tung so (tong 36000, chua thue 34286, thue 5% 1714). 2 HD nhap test da xoa khoi prod bang DELETE endpoint - production sach.
 - Endpoint da biet them tu tai lieu vendor: pdf-base64 (lay file PDF), DELETE xoa nhap, PUT gui email. Chua co tai lieu API dieu chinh/thay the (vendor chua tra loi tu 13/10).
-- Chua len production: code o nhanh dev; can PR rieng + dat MSINVOICE_* vao /opt/formapubli/.env + ap migration 0069/0070/0072.
+- DA LEN PRODUCTION (2026-10-20, PR #34 + #35): MSINVOICE_* da dat trong /opt/formapubli/.env, migrations da ap toi 0073; cron gom hoa don tong hop chay 23:30 gio VN. Credential prod da don sach khoi dev .env (dev chay mock). Anh Kha quyet 2026-10-20: KHONG doi mat khau MS-Invoice prod (lien quan ke toan ben ngoai).
 
 ### 39.2. Shopee Open Platform - QUYET DINH CHIEN LUOC (2026-10-20, cho anh Kha duyet masterplan)
 - Cong ty da duoc duyet Open Platform (tai khoan formapubli). Chua tao app - cho anh chot ten app + logo (Partner ID/Key cap theo tung app).
@@ -1644,4 +1649,5 @@ Hien trang: 9 combo COMBO01-09 nam trong bang products. Quan ly trong tab Kho ha
 - BusinessInsights cua Shopee gan nhu khong co cho VN (1 endpoint, chi Brazil) -> phan tich kinh doanh do ERP tu xay tu don + escrow. AccountHealth day du (chi so van hanh, diem phat, listing vi pham) - dung cho canh bao van hanh.
 - THU TU TRIEN KHAI (thay the de xuat "hop nhat du lieu truoc" trong ban phan tich hub): Giai doan 0 tao app + kiem chung API that (chi doc, sandbox) SONG SONG giai doan 1 GO-LIVE ERP len production (tach PR: A hoa don, B chien dich tu ket thuc, C CRUD doi tac, D hop dong/migration 0071). Giai doan 2 Shopee P1: ha tang token/webhook + dong bo don + gui SPX + in phieu trong tab Shopee hien tai. Giai doan 3 P2: hoa don nguoi mua + hoan tra + san pham/ton (day len co duyet tay truoc) + chat (scope rieng). Giai doan 4 P3: escrow/tai chinh sau + tai cau truc tab thanh hub "Don online" (Portal + Shopee) SAU KHI du lieu that chay on dinh.
 - Quyet dinh con cho (masterplan-golive-va-shopee-2026-10-20.md): D0 ten app/logo; D1 thoi diem phat hanh HD don online (de xuat: khi da ban giao van chuyen); D2 pham vi go-live; D3 khung gio deploy; D4 shop Shopee chinh thuc de uy quyen; D5 xin scope Chat; D6 don credential prod khoi dev .env sau go-live.
-- TIEN DO THUC TE (cap nhat 2026-10-20 chieu): D0/D1/D2/D4 da chot (xem masterplan muc quyet dinh). App "Vita Nova shopee" da tao (Test Partner_id 1249102); test shop sandbox 227989704 da uy quyen thanh cong VAO ERP DEV - token luu trong bang shopee_shop_tokens, ERP goi API bang token da luu thanh cong. San pham sach test da dang len sandbox qua API (item 803946511). Webhook da dang ky tro ve https://dev.formapubli.vn/api/shopee/push (goi kiem tra code 0 tra 200, su kien that bat buoc chu ky). Cac loi da sua tren dev: token/get tra o goc JSON; callback tra 200 JSON thay 502; redirect + verify webhook dung URL cong khai qua x-forwarded-host. Con lai P1: tao don test de chay dong bo don/SPX, bat loai su kien push tren console, ho so Go-Live lay khoa live.
+- TIEN DO THUC TE (cap nhat 2026-10-20 chieu): D0/D1/D2/D4 da chot (xem masterplan muc quyet dinh). App "Vita Nova shopee" da tao (Test Partner_id 1249102); test shop sandbox 227989704 da uy quyen thanh cong VAO ERP DEV - token luu trong bang shopee_shop_tokens, ERP goi API bang token da luu thanh cong. San pham sach test da dang len sandbox qua API (item 803946511). Webhook da dang ky tro ve https://dev.formapubli.vn/api/shopee/push (goi kiem tra code 0 tra 200, su kien that bat buoc chu ky). Cac loi da sua tren dev: token/get tra o goc JSON; callback tra 200 JSON thay 502; redirect + verify webhook dung URL cong khai qua x-forwarded-host.
+- HOAN TAT (cap nhat 2026-10-20 toi): Vong doi don sandbox TRON VEN: don 261020555F95DQ vao ERP thanh ORD2610200003, tru kho dung 1 cuon, gui SPX lay ma van don SPXVN06708754279A, tai duoc PDF van don, escrow doc duoc order_income. GO-LIVE ERP GIAI DOAN 1 XONG (PR #34/#35, production = main 8ab8e58). HO SO GO-LIVE SHOPEE DA NOP 2026-10-20: cho duyet, ket qua qua email trong 24h; IP whitelist 160.187.228.139; tai khoan duyet REVIEW-01 vai ROLE_SHOPEE_OPS (dac quyen toi thieu). D1 (hoa don chi phat hanh sau xac nhan nhan hang) DA XONG TREN DEV (migration 0074) - cho gop cung dot Shopee live theo docs/runbook-shopee-live-cutover.md. D5 (scope Chat) van chua chot.

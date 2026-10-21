@@ -19,6 +19,10 @@ export interface EscrowBreakdown {
   cogs: number | null;
   /** escrow − COGS. null khi chưa đủ giá vốn. */
   netProfit: number | null;
+  /** Thuế khấu trừ tại nguồn của VN (0075) - null khi API không trả về. */
+  withholdingVatTax: number | null;
+  withholdingPitTax: number | null;
+  withholdingCitTax: number | null;
 }
 
 /**
@@ -68,12 +72,19 @@ export async function syncEscrow(
   if (data?.error) throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   const inc = data.response?.order_income ?? {};
   const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  // Thuế khấu trừ VN: giữ null khi API không trả về (khác với 0 - có khấu trừ
+  // nhưng bằng 0). Kế toán cần thấy riêng, không gộp vào phí sàn.
+  const taxNum = (v: unknown): number | null =>
+    v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
 
   // COGS: giá vốn từng dòng theo products.cost_price.
+  // Dùng leftJoin thay vì innerJoin: nếu dòng hàng không có bản ghi products
+  // tương ứng (dữ liệu lệch), innerJoin sẽ LẶNG LẼ BỎ DÒNG ĐÓ và COGS tính
+  // thiếu mà không ai biết. leftJoin + thiếu giá vốn → null trung thực.
   const lines = await db
     .select({ quantity: orderItems.quantity, costPrice: products.costPrice })
     .from(orderItems)
-    .innerJoin(products, eq(orderItems.productId, products.id))
+    .leftJoin(products, eq(orderItems.productId, products.id))
     .where(eq(orderItems.orderId, ords[0].id));
   let cogs: number | null = 0;
   for (const l of lines) {
@@ -95,6 +106,9 @@ export async function syncEscrow(
     shopeeDiscount: num(inc.shopee_discount) + num(inc.voucher_from_shopee),
     cogs,
     netProfit: cogs === null ? null : num(inc.escrow_amount) - (cogs as number),
+    withholdingVatTax: taxNum(inc.withholding_vat_tax),
+    withholdingPitTax: taxNum(inc.withholding_pit_tax),
+    withholdingCitTax: taxNum(inc.withholding_cit_tax),
   };
   await db
     .insert(shopeeOrderFinance)
@@ -109,6 +123,9 @@ export async function syncEscrow(
       shopeeDiscount: out.shopeeDiscount,
       cogs: out.cogs,
       netProfit: out.netProfit,
+      withholdingVatTax: out.withholdingVatTax,
+      withholdingPitTax: out.withholdingPitTax,
+      withholdingCitTax: out.withholdingCitTax,
     })
     .onConflictDoUpdate({
       target: shopeeOrderFinance.orderSn,
@@ -122,6 +139,9 @@ export async function syncEscrow(
         shopeeDiscount: out.shopeeDiscount,
         cogs: out.cogs,
         netProfit: out.netProfit,
+        withholdingVatTax: out.withholdingVatTax,
+        withholdingPitTax: out.withholdingPitTax,
+        withholdingCitTax: out.withholdingCitTax,
       },
     });
   return out;

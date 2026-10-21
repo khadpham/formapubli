@@ -6,15 +6,14 @@ import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard';
 import { PosCheckoutTerminal } from '@/components/pos/PosCheckoutTerminal';
 import { StockOverviewMatrix } from '@/components/StockOverviewMatrix';
 import { CampaignModal } from '@/components/inventory/CampaignModal';
+import { ForecastReprintPanel } from '@/components/inventory/ForecastReprintPanel';
 import { SalesLedgerView } from '@/components/sales/SalesLedgerView';
 import { PartnersListView } from '@/components/partners/PartnersListView';
-import { ContractsTab } from '@/components/contracts/ContractsTab';
+import { DuAnHopDongTab } from '@/components/duan-hopdong/DuAnHopDongTab';
 import { CustomersListView } from '@/components/customers/CustomersListView';
 import { SettingsRbacView } from '@/components/settings/SettingsRbacView';
-import { AnalyticsStudio } from '@/components/studio/AnalyticsStudio';
 import { ShopeeTab } from '@/components/shopee/ShopeeTab';
 import { OwnerTab } from '@/components/owner/OwnerTab';
-import ProjectsView from '@/components/projects/ProjectsView';
 import EinvoiceView from '@/components/einvoice/EinvoiceView';
 import HrView from '@/components/hr/HrView';
 import { Menu, Shield, Sparkles, Megaphone } from 'lucide-react';
@@ -240,7 +239,6 @@ export function MasterAppShell({
           '4': 'sales',
           '5': 'partners',
           '6': 'customers',
-          '7': 'studio',
           '8': 'settings',
           '9': 'chu',
           '0': 'shopee',
@@ -306,17 +304,15 @@ export function MasterAppShell({
                 </span>
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5 truncate">
                   {effectiveTab === 'dashboard' && 'Dashboard'}
-                  {effectiveTab === 'projects' && 'Dự án xuất bản'}
-                  {effectiveTab === 'contracts' && 'Hợp đồng'}
+                  {effectiveTab === 'duan-hopdong' && 'Dự án & Hợp đồng'}
                   {effectiveTab === 'inventory' && 'Kho hàng'}
                   {effectiveTab === 'pos' && 'Bán lẻ POS'}
                   {effectiveTab === 'shopee' && 'Shopee'}
-                  {effectiveTab === 'sales' && 'Tài chính'}
+                  {effectiveTab === 'sales' && 'Sổ doanh số'}
                   {effectiveTab === 'einvoice' && 'Hóa đơn điện tử'}
                   {effectiveTab === 'customers' && 'CRM Độc giả'}
                   {effectiveTab === 'partners' && 'Đối tác & Đại lý'}
                   {effectiveTab === 'hr' && 'Nhân sự'}
-                  {effectiveTab === 'studio' && 'Báo cáo'}
                   {effectiveTab === 'chu' && 'Chủ'}
                   {effectiveTab === 'settings' && 'Cài đặt'}
                 </span>
@@ -441,6 +437,13 @@ export function MasterAppShell({
                 partners={partnerList}
                 currentRole={currentRole}
               />
+              {/* Hoạch định tồn kho & dự báo tái bản - chuyển từ tab Báo cáo cũ
+                  về đây (công cụ của kho, chỉ Chủ / Quản lý thấy). */}
+              {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
+                <div id="hoach-dinh-ton-kho" className="scroll-mt-4">
+                  <ForecastReprintPanel currentRole={currentRole} />
+                </div>
+              )}
             </div>
           )}
 
@@ -452,8 +455,8 @@ export function MasterAppShell({
             <PartnersListView partners={partnerList} currentRole={currentRole} />
           )}
 
-          {currentRole && effectiveTab === 'contracts' && (
-            <ContractsTab currentRole={currentRole} />
+          {currentRole && effectiveTab === 'duan-hopdong' && (
+            <DuAnHopDongTab currentRole={currentRole} />
           )}
 
           {currentRole && effectiveTab === 'customers' && <CustomersListView sessionRole={currentRole} />}
@@ -462,19 +465,11 @@ export function MasterAppShell({
             <SettingsRbacView sessionRole={session?.role} />
           )}
 
-          {currentRole && effectiveTab === 'studio' && (
-            <AnalyticsStudio currentRole={currentRole} />
-          )}
-
           {currentRole && effectiveTab === 'shopee' && (
             <ShopeeTab sessionRole={currentRole} />
           )}
 
           {currentRole && effectiveTab === 'chu' && <OwnerTab />}
-
-          {currentRole && effectiveTab === 'projects' && (
-            <ProjectsView />
-          )}
 
           {currentRole && effectiveTab === 'einvoice' && (
             <EinvoiceView />

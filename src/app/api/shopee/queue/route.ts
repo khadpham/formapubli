@@ -42,6 +42,32 @@ export async function GET(req: NextRequest) {
       .where(wherePack)
       .orderBy(desc(orders.createdAt))
       .limit(100);
+    // D1: đơn đã giao cho vận chuyển (PICKED_UP) nhưng chưa xác nhận khách
+    // nhận hàng - hóa đơn của các đơn này đang bị giữ lại chờ xác nhận.
+    const whereConfirm =
+      session.role === 'ROLE_SHOPEE_OPS'
+        ? and(
+            eq(orders.channel, 'SHOPEE'),
+            eq(orders.shippingStatus, 'PICKED_UP'),
+            inArray(orders.warehouseId, await getShopeeOpsWarehouses())
+          )
+        : and(eq(orders.channel, 'SHOPEE'), eq(orders.shippingStatus, 'PICKED_UP'));
+    const shipped = await db
+      .select({
+        id: orders.id,
+        idempotencyKey: orders.idempotencyKey,
+        customerName: orders.customerName,
+        finalAmount: orders.finalAmount,
+        paymentMethod: orders.paymentMethod,
+        carrier: orders.carrier,
+        trackingCode: orders.trackingCode,
+        deliveryConfirmedAt: orders.deliveryConfirmedAt,
+        createdAt: orders.createdAt,
+      })
+      .from(orders)
+      .where(whereConfirm)
+      .orderBy(desc(orders.createdAt))
+      .limit(100);
     const bad = await db
       .select()
       .from(shopeeQuarantine)
@@ -60,6 +86,18 @@ export async function GET(req: NextRequest) {
           carrier: o.carrier,
           createdAt: o.createdAt,
         })),
+        toConfirm: shipped
+          .filter((o) => !o.deliveryConfirmedAt)
+          .map((o) => ({
+            id: o.id,
+            orderSn: `${o.idempotencyKey || ''}`.replace(/^shopee-/, ''),
+            customerName: o.customerName,
+            finalAmount: o.finalAmount,
+            paymentMethod: o.paymentMethod,
+            carrier: o.carrier,
+            trackingCode: o.trackingCode,
+            createdAt: o.createdAt,
+          })),
         quarantine: bad,
       },
     });

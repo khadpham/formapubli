@@ -253,6 +253,86 @@ body {
 }
 
 /* ==========================================================================
+   IN HỢP ĐỒNG — KHỔ A4 (khung xem trước docx-preview trong modal soạn thảo)
+   Vì sao cần khối này: khối 80mm ở trên đặt `body > * { display: none
+   !important }` và `.fixed:not(.warehouse-doc-print-modal) { display: none
+   !important }` cho MỌI lần in. Modal soạn hợp đồng render qua portal vào
+   document.body với class `fixed` nên bị ẩn sạch khi bấm In → trang trắng.
+   Khối này chỉ kích hoạt khi #contract-print-area tồn tại trong DOM
+   (`:has()`), nên các luồng in khác (phiếu nhiệt 80mm, chứng từ kho,
+   biên bản chốt ngày) giữ nguyên hành vi.
+   Nguyên tắc in: docx-preview render mỗi trang Word thành section.docx đúng
+   794px (khổ A4 ở 96dpi), lề đã nằm sẵn trong trang Word. Vì vậy @page để
+   margin 0 để bản in khớp 1:1, không cắt mép. Modal là position:fixed sẽ bị
+   trình duyệt LẶP LẠI trên mỗi trang in nên phải gỡ về static để nội dung
+   chảy tự nhiên qua các trang.
+   ========================================================================== */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+@media print {
+  html:has(#contract-print-area),
+  body:has(#contract-print-area) {
+    width: auto !important;
+    overflow: visible !important;
+  }
+  body:has(#contract-print-area) > *:not(:has(#contract-print-area)) {
+    display: none !important;
+  }
+  /* Ẩn toàn bộ UI trong modal soạn HĐ khi in (form nhập, ghi chú xem trước,
+     nút bấm, tiêu đề modal) - chỉ giữ vùng nội dung hợp đồng
+     #contract-print-area, nội dung bên trong nó và các thẻ cha của nó.
+     Bản in ra chỉ có văn bản hợp đồng, giống file Word tải về. */
+  body:has(#contract-print-area) .fixed:has(#contract-print-area)
+    *:not(#contract-print-area):not(#contract-print-area *):not(:has(#contract-print-area)) {
+    display: none !important;
+  }
+  body:has(#contract-print-area) .fixed:has(#contract-print-area),
+  body:has(#contract-print-area) .fixed:has(#contract-print-area) * {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    max-width: none !important;
+  }
+  body:has(#contract-print-area) .fixed:has(#contract-print-area) {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  #contract-print-area,
+  #contract-print-area * {
+    visibility: visible !important;
+  }
+  #contract-print-area {
+    display: block !important;
+    width: 794px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  #contract-print-area .docx-wrapper {
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+  #contract-print-area .docx-wrapper > section.docx {
+    box-shadow: none !important;
+    margin: 0 !important;
+    page-break-after: always;
+  }
+  #contract-print-area .docx-wrapper > section.docx:last-child {
+    page-break-after: auto;
+  }
+}
+
+/* ==========================================================================
    FIT-BAR — thanh nút chia đều, tự thu chữ khi hẹp (dùng chung toàn app)
    Cách dùng: bọc thanh nút bằng `fit-bar`, mỗi nút thêm `fit-btn`,
    nhãn chữ thêm `fit-label`, icon thêm `fit-icon`.

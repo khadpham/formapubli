@@ -14,11 +14,9 @@ import {
   ChevronRight,
   LogOut,
   X,
-  FlaskConical,
   Sparkles,
   ShoppingBag,
   Crown,
-  FileText,
   FolderKanban,
   FileCheck2,
   UsersRound,
@@ -131,6 +129,7 @@ export function AppSidebar({
       icon: Crown,
       shortcut: 'Alt+9',
       color: 'text-purple-600',
+      group: 'QUẢN TRỊ',
     },
     {
       id: 'dashboard',
@@ -138,18 +137,7 @@ export function AppSidebar({
       icon: LayoutDashboard,
       shortcut: 'Alt+1',
       color: 'text-indigo-600',
-    },
-    {
-      id: 'projects',
-      label: 'Dự án xuất bản',
-      icon: FolderKanban,
-      color: 'text-cyan-600',
-    },
-    {
-      id: 'contracts',
-      label: 'Hợp đồng',
-      icon: FileText,
-      color: 'text-teal-600',
+      group: 'VẬN HÀNH',
     },
     {
       id: 'inventory',
@@ -157,6 +145,7 @@ export function AppSidebar({
       icon: Boxes,
       shortcut: 'Alt+3',
       color: 'text-amber-600',
+      group: 'VẬN HÀNH',
     },
     {
       id: 'pos',
@@ -164,6 +153,7 @@ export function AppSidebar({
       icon: ShoppingCart,
       shortcut: 'Alt+2',
       color: 'text-emerald-600',
+      group: 'VẬN HÀNH',
     },
     {
       id: 'shopee',
@@ -171,19 +161,22 @@ export function AppSidebar({
       icon: ShoppingBag,
       shortcut: 'Alt+0',
       color: 'text-orange-600',
+      group: 'VẬN HÀNH',
     },
     {
       id: 'sales',
-      label: 'Tài chính',
+      label: 'Sổ doanh số',
       icon: Receipt,
       shortcut: 'Alt+4',
       color: 'text-sky-600',
+      group: 'TIỀN & CHỨNG TỪ',
     },
     {
       id: 'einvoice',
       label: 'Hóa đơn điện tử',
       icon: FileCheck2,
       color: 'text-blue-600',
+      group: 'TIỀN & CHỨNG TỪ',
     },
     {
       id: 'customers',
@@ -191,6 +184,7 @@ export function AppSidebar({
       icon: BookOpenCheck,
       shortcut: 'Alt+6',
       color: 'text-rose-600',
+      group: 'KINH DOANH',
     },
     {
       id: 'partners',
@@ -198,19 +192,21 @@ export function AppSidebar({
       icon: Users,
       shortcut: 'Alt+5',
       color: 'text-purple-600',
+      group: 'KINH DOANH',
     },
     {
       id: 'hr',
       label: 'Nhân sự',
       icon: UsersRound,
       color: 'text-lime-600',
+      group: 'QUẢN TRỊ',
     },
     {
-      id: 'studio',
-      label: 'Báo cáo',
-      icon: FlaskConical,
-      shortcut: 'Alt+7',
-      color: 'text-violet-600',
+      id: 'duan-hopdong',
+      label: 'Dự án & Hợp đồng',
+      icon: FolderKanban,
+      color: 'text-cyan-600',
+      group: 'QUẢN TRỊ',
     },
     {
       id: 'settings',
@@ -218,6 +214,7 @@ export function AppSidebar({
       icon: Settings,
       shortcut: 'Alt+8',
       color: 'text-slate-600',
+      group: 'QUẢN TRỊ',
     },
   ];
 
@@ -308,24 +305,18 @@ export function AppSidebar({
 
         {/* Navigation Items List */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
-          {visibleNavItems.map((item) => {
+          {visibleNavItems.map((item, index) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
-            const isFirstVisibleItem = item.id === visibleNavItems[0]?.id;
-            const isFirstManagementItem = item.id === 'partners';
-            let mobileGroup: string | null = null;
-            if (isFirstVisibleItem && item.id === 'dashboard') mobileGroup = 'Vận Hành';
-            if (isFirstVisibleItem && item.id === 'pos') mobileGroup = 'POS';
-            if (isFirstVisibleItem && item.id === 'inventory') mobileGroup = 'Kho';
-            if (isFirstVisibleItem && item.id === 'sales') mobileGroup = 'Bán hàng';
-            if (isFirstManagementItem) mobileGroup = 'Quản Trị';
-            if (item.id === 'settings') mobileGroup = 'Chung';
+            // Hiện tiêu đề cụm khi nhóm thay đổi (ẩn khi menu thu gọn).
+            const prevGroup = index > 0 ? visibleNavItems[index - 1].group : null;
+            const showGroupHeader = !isCollapsed && item.group !== prevGroup;
 
             return (
               <React.Fragment key={item.id}>
-                {mobileGroup && (
-                  <p className="lg:hidden px-3 pt-3 pb-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">
-                    {mobileGroup}
+                {showGroupHeader && (
+                  <p className="px-3 pt-3 pb-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-500">
+                    {item.group}
                   </p>
                 )}
                 <button

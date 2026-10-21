@@ -1,6 +1,8 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { createClient, type Client } from '@libsql/client';
 import PizZip from 'pizzip';
+import { ContractEngineService } from '../src/services/contract-engine.service';
 
 const CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?>'
   + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -9,9 +11,17 @@ const CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?>'
   + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
   + '</Types>';
 
+// Part _rels/.rels là BẮT BUỘC theo ECMA-376: thiếu nó thì unzip vẫn đạt
+// nhưng Microsoft Word từ chối mở file. Từng thiếu ở đây (2026-10-21).
+const PACKAGE_RELS = '<?xml version="1.0" encoding="UTF-8"?>'
+  + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+  + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+  + '</Relationships>';
+
 function build(paragraphs: string): string {
   const z = new PizZip();
   z.file('[Content_Types].xml', CONTENT_TYPES);
+  z.file('_rels/.rels', PACKAGE_RELS);
   z.file(
     'word/document.xml',
     '<?xml version="1.0" encoding="UTF-8"?>'
@@ -88,6 +98,13 @@ export async function seedContractTemplates(
     { code: 'HD_DAI_LY_SEED', title: 'Mẫu HĐ Đại Lý Phát Hành (seed)', category: 'DAI_LY', data: T_DL },
     { code: 'HD_DICH_THUAT_SEED', title: 'Mẫu HĐ Dịch Thuật (seed)', category: 'DICH_THUAT', data: T_DT },
   ];
+  // Fail nhanh: mẫu seed hỏng cấu trúc package thì dừng ngay, không ghi vào DB.
+  for (const t of templates) {
+    const pkg = ContractEngineService.validateDocxPackage(t.data);
+    if (!pkg.isValid) {
+      throw new Error(`Mẫu seed ${t.code} hỏng cấu trúc .docx: ${(pkg.errors || []).join(' ')}`);
+    }
+  }
   for (const t of templates) {
     try {
       await client.execute({
@@ -133,6 +150,26 @@ if (invokedAsScript) {
   const targetArg = process.argv.find((a) => a.startsWith('--target='))?.slice('--target='.length);
   const skipRefs = process.argv.includes('--no-refs');
   const authToken = process.env.TURSO_AUTH_TOKEN || undefined;
+  if (process.argv.includes('--export-only')) {
+    // Chỉ regenerate 3 file .docx ra scripts/seed-templates-fixed/ (để nạp tay vào DB).
+    const outDir = path.join(__dirname, 'seed-templates-fixed');
+    fs.mkdirSync(outDir, { recursive: true });
+    const files = [
+      { code: 'HD_XUAT_BAN_SEED', data: T_XB },
+      { code: 'HD_DAI_LY_SEED', data: T_DL },
+      { code: 'HD_DICH_THUAT_SEED', data: T_DT },
+    ];
+    for (const f of files) {
+      const pkg = ContractEngineService.validateDocxPackage(f.data);
+      if (!pkg.isValid) {
+        console.error(`EXPORT FAIL: ${f.code}: ${(pkg.errors || []).join(' ')}`);
+        process.exit(1);
+      }
+      fs.writeFileSync(path.join(outDir, `${f.code}.docx`), Buffer.from(f.data, 'base64'));
+      console.log(`exported ${f.code}.docx`);
+    }
+    process.exit(0);
+  }
   seedContractTemplates(targetArg, { authToken, skipRefs }).then(
     () => process.exit(0),
     (e) => { console.error('SEED FAIL:', e.message); process.exit(1); }

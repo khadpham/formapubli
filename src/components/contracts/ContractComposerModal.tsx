@@ -7,12 +7,33 @@ import { UserRole } from '@/lib/roles';
 import { readVietnameseNumber } from '@/lib/vietnamese-number-reader';
 import { ContractPrintPreview } from './ContractPrintPreview';
 import { PresetManagerModal } from './PresetManagerModal';
+import { TemplateManagerModal } from './TemplateManagerModal';
 
 interface ComposerProps {
   currentRole?: UserRole;
   initialDoc?: any | null;
   onClose: () => void;
   onSaved: (contractNumber: string) => void;
+}
+
+const COMPOSER_CATEGORIES = ['TAC_QUYEN', 'DAI_LY', 'IN_AN', 'DICH_THUAT', 'KHAC'];
+
+// So hop dong duoc cap theo loai chon luc tao (PREFIX_MAP ben contract.service)
+// nen suy nguoc duoc loai goc tu tien to so. Tien to chung 'HD' nghia la loai
+// ngoai 4 loai chinh luc tao -> gan nhat la 'KHAC'.
+const PREFIX_TO_CATEGORY: Record<string, string> = {
+  'HĐXB': 'TAC_QUYEN',
+  'HĐĐL': 'DAI_LY',
+  'HĐIN': 'IN_AN',
+  'HĐDT': 'DICH_THUAT',
+};
+
+function categoryFromContractNumber(contractNumber?: string): string | null {
+  if (!contractNumber) return null;
+  const prefix = (contractNumber.split('/').pop() || '').split('-')[0];
+  if (PREFIX_TO_CATEGORY[prefix]) return PREFIX_TO_CATEGORY[prefix];
+  if (prefix === 'HĐ') return 'KHAC';
+  return null;
 }
 
 /** Soạn 2 cột: form biến + Live Preview; chip preset; lưu/tải/in. */
@@ -24,7 +45,11 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
     initialDoc ? JSON.parse(initialDoc.payloadData || '{}') : {}
   );
   const [title, setTitle] = useState(initialDoc?.title || '');
-  const [category, setCategory] = useState('TAC_QUYEN');
+  // Ban sua phai nap loai cua hop dong goc, khong reset ve mac dinh:
+  // truoc day mo sua luon hien 'Tac quyen' du hop dong goc thuoc loai khac.
+  const [category, setCategory] = useState(
+    () => categoryFromContractNumber(initialDoc?.contractNumber) || 'TAC_QUYEN'
+  );
   const [partnerId, setPartnerId] = useState(initialDoc?.partnerId || '');
   const [partners, setPartners] = useState<any[]>([]);
   const [signedDate, setSignedDate] = useState(initialDoc?.signedDate || '');
@@ -34,6 +59,7 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const previewBox = useRef<HTMLDivElement>(null);
   const debounce = useRef<any>(null);
 
@@ -49,6 +75,12 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
         if (tJson.success) {
           setTemplates((tJson.data || []).filter((t: any) => t.isActive));
           if (!initialDoc && tJson.data?.[0]) setTemplateId(tJson.data[0].id);
+          // Dự phòng khi không suy được loại từ số hợp đồng: lấy loại của mẫu
+          // mà hợp đồng gốc đang dùng (chỉ khi thuộc nhóm loại của ô chọn).
+          if (initialDoc && !categoryFromContractNumber(initialDoc.contractNumber)) {
+            const own = (tJson.data || []).find((t: any) => t.id === initialDoc.templateId);
+            if (own && COMPOSER_CATEGORIES.includes(own.category)) setCategory(own.category);
+          }
         }
         const pJson = await pRes.json().catch(() => ({ success: false }));
         if (pJson.success) setPartners(pJson.data || []);
@@ -99,8 +131,16 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
     : '';
 
   // Live Preview: merge trên server, render bằng docx-preview (xấp xỉ).
+  // Mẫu chưa có file Word thì không gọi API - hiển thị thông báo riêng.
+  const currentTemplate = templates.find((t: any) => t.id === templateId);
+  const templateHasFile = !!(currentTemplate && `${currentTemplate.templateData || ''}`.trim());
   useEffect(() => {
     if (!templateId) return;
+    if (!templateHasFile) {
+      setPreviewError(null);
+      if (previewBox.current) previewBox.current.innerHTML = '';
+      return;
+    }
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(async () => {
       try {
@@ -115,7 +155,10 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ templateId, data: payload }),
         });
-        if (!res.ok) throw new Error('Preview thất bại, kiểm tra lại mẫu và dữ liệu');
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          throw new Error(j?.error || `Xem trước thất bại (mã ${res.status}). Kiểm tra lại mẫu và dữ liệu.`);
+        }
         const buf = await res.arrayBuffer();
         if (previewBox.current) {
           previewBox.current.innerHTML = '';
@@ -129,7 +172,7 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [templateId, form, amountNum, amountWords]);
+  }, [templateId, templateHasFile, form, amountNum, amountWords]);
 
   const save = async () => {
     if (!templateId) {
@@ -291,9 +334,26 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
             </button>
           </div>
           <div className="bg-slate-100 rounded-xl p-4 lg:max-h-[62vh] lg:overflow-y-auto">
-            <p className="text-[11px] text-slate-500 mb-2">Xem trước trực tiếp (xấp xỉ - bản in chuẩn là file Word tải về)</p>
+            <p className="text-[11px] text-slate-500 mb-2">
+              Xem trước trực tiếp (xấp xỉ). Tải file Word để chỉnh sửa thêm, hoặc bấm In / Lưu PDF để dùng ngay.
+            </p>
             {previewError && <p className="text-[11px] text-rose-600 font-semibold mb-2">{previewError}</p>}
-            <ContractPrintPreview previewRef={previewBox} />
+            {templateId && !templateHasFile ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900">
+                <p className="font-bold mb-1">Mẫu &ldquo;{currentTemplate?.title || ''}&rdquo; chưa có file Word.</p>
+                <p className="mb-3">Hãy tải file .docx lên trong Quản lý mẫu, rồi quay lại đây xem trước và in.</p>
+                <button
+                  type="button"
+                  onClick={() => setTemplatesOpen(true)}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold"
+                  aria-label="Mở Quản lý mẫu để tải file Word"
+                >
+                  Mở Quản lý mẫu
+                </button>
+              </div>
+            ) : (
+              <ContractPrintPreview previewRef={previewBox} />
+            )}
           </div>
         </div>
       </Modal>
@@ -301,6 +361,16 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
         const res = await fetch('/api/contracts/presets');
         const json = await res.json();
         if (json.success) setPresets(json.data.active || []);
+      }} />}
+      {templatesOpen && <TemplateManagerModal onClose={async () => {
+        // Người dùng có thể vừa tải file .docx lên - nạp lại danh sách mẫu
+        // để khung xem trước nhận ra ngay, không cần đóng mở modal soạn.
+        setTemplatesOpen(false);
+        try {
+          const res = await fetch('/api/contracts/templates');
+          const json = await res.json();
+          if (json.success) setTemplates((json.data || []).filter((t: any) => t.isActive));
+        } catch { /* giữ danh sách cũ */ }
       }} />}
     </>
   );

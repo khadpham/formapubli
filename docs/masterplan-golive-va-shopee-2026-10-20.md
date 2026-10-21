@@ -128,3 +128,11 @@ Tiêu chí xong: đơn Shopee về ERP trong vài phút không cần xlsx; thủ
 1. Tạo app Shopee (khi có D0) + kiểm chứng thực tế vòng 1.
 2. Mở PR-A go-live hóa đơn.
 3. Cập nhật blueprint mục 39 (đã làm bản ghi kèm masterplan này).
+
+## Tien do thuc te (cap nhat 2026-10-20 14:30)
+- Merge main vao dev (f6b3d745) + regression day du: XONG.
+- GO-LIVE GIAI DOAN 1: XONG - PR #34 (toan bo dev) + PR #35 (va ms-list 401); migrations 0056-0073 da ap len production DB (67 -> 86 bang, backup logic tai /opt/backups/turso-pre-golive-20261020.sql); MSINVOICE_* da cau hinh production; cron gom hoa don 23:30 VN da dat (cron-consolidate.sh) + campaign-auto-end da noi vao cron-auto-close.sh; dev da don credential prod (ve mock).
+- Luu y: portal production dung catalog tinh trong repo portal nen bang portal_products rong tren production KHONG anh huong trang ban hang hien tai; nap du lieu portal_products la viec cua dot dua portal moi len production.
+- Con lai: Shopee khoa live + uy quyen shop that (Giai doan 2), hang doi hoa don D1, escrow P3.
+
+- D1 HOAN THANH TREN DEV (2026-10-20): migration 0074 (orders.delivery_confirmed_at/by); chan day hoa don tai MSInvoiceService.pushInvoice cho don ONLINE/SHOPEE chua xac nhan; consolidateDay gom don online theo NGAY XAC NHAN nhan hang thay vi ngay tao don; API confirm-delivery (kiem tra theo kenh: Shopee can PICKED_UP, portal can COMPLETED, idempotent, ghi nguoi+gio); hang doi /api/invoices/online-queue + khoi UI trong tab Hoa don; muc "Cho xac nhan khach nhan hang" trong tab Shopee. Da test van hanh that tren dev: chan day truoc xac nhan, phat hanh sau xac nhan, gom dung ngay xac nhan, tu choi xac nhan som. CHO: PR len main o dot go-live tiep theo; khi co API van chuyen thi dien tu dong 2 cot nay.

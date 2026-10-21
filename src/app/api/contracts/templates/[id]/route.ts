@@ -46,6 +46,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     if (body.isActive !== undefined) patch.isActive = body.isActive === true;
     if (body.templateData) {
+      const pkg = ContractEngineService.validateDocxPackage(`${body.templateData}`);
+      if (!pkg.isValid) {
+        return NextResponse.json(
+          { success: false, code: 'INVALID_DOCX_PACKAGE', error: 'File .docx mới không hợp lệ: thiếu thành phần bắt buộc của định dạng Word. Vui lòng mở file bằng Microsoft Word, lưu lại rồi tải lên.', details: pkg.errors },
+          { status: 400 }
+        );
+      }
       const check = ContractEngineService.validateTemplate(`${body.templateData}`);
       if (!check.isValid) {
         return NextResponse.json(

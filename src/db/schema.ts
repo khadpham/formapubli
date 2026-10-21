@@ -317,6 +317,9 @@ export const orders = sqliteTable('orders', {
   invoiceCompanyName: text('invoice_company_name'), // Tên công ty/tổ chức
   invoiceAddress: text('invoice_address'), // Địa chỉ xuất HĐ
   invoiceStatus: text('invoice_status').default('NONE'), // NONE | PENDING | PREPARED | SYNCED | SIGNED
+  // 0074 (D1): xac nhan khach da nhan hang (don online) - hoa don chi phat hanh sau moc nay
+  deliveryConfirmedAt: text('delivery_confirmed_at'),
+  deliveryConfirmedBy: text('delivery_confirmed_by'),
   status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
   syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
   cashierId: text('cashier_id').notNull().default('staff-admin'),
@@ -948,6 +951,11 @@ export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
   shopeeDiscount: real('shopee_discount').notNull().default(0),
   cogs: real('cogs'),
   netProfit: real('net_profit'),
+  // 0075: thuế khấu trừ tại nguồn của VN (chuẩn bị P3) - nullable để đơn cũ
+  // và đơn chưa sync không bị ảnh hưởng.
+  withholdingVatTax: real('withholding_vat_tax'),
+  withholdingPitTax: real('withholding_pit_tax'),
+  withholdingCitTax: real('withholding_cit_tax'),
   syncedAt: text('synced_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -1172,6 +1180,7 @@ export const contractDocuments = sqliteTable('contract_documents', {
   templateVersion: integer('template_version').notNull().default(1),
   title: text('title').notNull(),
   partnerId: text('partner_id').references(() => partners.id),
+  collaboratorId: text('collaborator_id').references(() => collaborators.id),
   workId: text('work_id').references(() => works.id),
   status: text('status').notNull().default('DRAFT'),
   payloadData: text('payload_data').notNull(),
@@ -1188,6 +1197,7 @@ export const contractDocuments = sqliteTable('contract_documents', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   partnerIdx: index('idx_contract_documents_partner').on(table.partnerId),
+  collaboratorIdx: index('idx_contract_documents_collaborator').on(table.collaboratorId),
   workIdx: index('idx_contract_documents_work').on(table.workId),
   statusIdx: index('idx_contract_documents_status').on(table.status),
 }));
@@ -1548,4 +1558,35 @@ export const warehouseDocCounters = sqliteTable('warehouse_doc_counters', {
   lastNumber: integer('last_number').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.docType, table.year] }),
+}));
+
+// 29. Collaborators (Cộng tác viên - 0076). Người hợp tác làm việc với công ty
+// (dịch giả, thiết kế bìa, biên tập, đọc morat, hành chính...) nhưng KHÔNG phải
+// nhân viên chấm công nên tách riêng khỏi staff_accounts. Lưu đầy đủ thông tin
+// định danh để làm cơ sở điền hợp đồng và tra cứu.
+export const collaborators = sqliteTable('collaborators', {
+  id: text('id').primaryKey(), // ctv-<slug>
+  fullName: text('full_name').notNull(),
+  penName: text('pen_name'), // Bút danh
+  roleTitle: text('role_title'), // Vai trò/vị trí (text tự do)
+  collabType: text('collab_type').notNull().default('khac'), // thiet_ke_bia | dich_gia | bien_tap | doc_morat | hanh_chinh | dai_dien_ben_a | ben_b | khac
+  dob: text('dob'),
+  idNumber: text('id_number'), // Số CCCD/CMND/Hộ chiếu
+  idIssuedDate: text('id_issued_date'),
+  idIssuedPlace: text('id_issued_place'),
+  taxId: text('tax_id'), // MST cá nhân
+  address: text('address'),
+  phone: text('phone'),
+  email: text('email'),
+  bankAccount: text('bank_account'),
+  bankName: text('bank_name'),
+  bankOwner: text('bank_owner'),
+  notes: text('notes'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  nameIdx: index('idx_collab_name').on(table.fullName),
+  typeIdx: index('idx_collab_type').on(table.collabType),
+  activeIdx: index('idx_collab_active').on(table.isActive),
 }));

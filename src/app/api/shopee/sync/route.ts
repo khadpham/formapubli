@@ -3,7 +3,7 @@ import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
 import { pullShopeeOrders } from '@/services/shopee/order-sync';
-import { getShopeeConfig } from '@/services/shopee/shop-config';
+import { getShopeeConfig, resolveShopeeShopId } from '@/services/shopee/shop-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     const partnerKey = `${process.env.SHOPEE_PARTNER_KEY || ''}`;
     const baseUrl =
       `${process.env.SHOPEE_BASE_URL || 'https://partner.shopeemobile.com'}`.replace(/\/$/, '');
-    const shopId = Number(process.env.SHOPEE_SHOP_ID || '0') || 0;
+    const shopId = (await resolveShopeeShopId()).shopId;
     const shopCfg = await getShopeeConfig();
     if (!partnerId || !partnerKey || !shopId) {
       return NextResponse.json(

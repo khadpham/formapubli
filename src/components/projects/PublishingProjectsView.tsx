@@ -31,9 +31,24 @@ interface Stage {
   contractAmount?: number;
   netAmount?: number;
   assigneeName?: string;
+  contractId?: string;
 }
 
-export default function PublishingProjectsView() {
+interface DocOption {
+  id: string;
+  contractNumber: string;
+  title: string;
+  status: string;
+}
+
+interface PublishingProjectsViewProps {
+  /** Nhảy sang xem hợp đồng đã gắn (do tab gộp cung cấp). */
+  onViewContract?: (contractId: string) => void;
+  /** Có được gắn/gỡ hợp đồng không (API PATCH chỉ cho Owner/Manager). */
+  canLinkContract?: boolean;
+}
+
+export default function PublishingProjectsView({ onViewContract, canLinkContract = false }: PublishingProjectsViewProps = {}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -41,6 +56,12 @@ export default function PublishingProjectsView() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ bookTitle: '', author: '', translator: '' });
+  // Gắn hợp đồng vào giai đoạn
+  const [linkStage, setLinkStage] = useState<string | null>(null);
+  const [docOptions, setDocOptions] = useState<DocOption[]>([]);
+  const [docSearch, setDocSearch] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [docMap, setDocMap] = useState<Record<string, string>>({});
 
   useEffect(() => { loadProjects(); }, []);
 
@@ -63,6 +84,56 @@ export default function PublishingProjectsView() {
       const chk = await fetch(`/api/publishing-projects/${id}/check`);
       const chkJson = await chk.json();
       if (chkJson.success) setViolations(chkJson.data.violations);
+      // Bản đồ id -> số HĐ để hiển thị liên kết
+      const dr = await fetch('/api/contracts/documents');
+      const dj = await dr.json();
+      if (dj.success) {
+        const m: Record<string, string> = {};
+        for (const d of dj.data || []) m[d.id] = d.contractNumber || d.title || d.id;
+        setDocMap(m);
+      }
+    } catch {}
+  }
+
+  async function openLinkModal(stageKey: string) {
+    setLinkStage(stageKey);
+    setDocSearch('');
+    try {
+      const res = await fetch('/api/contracts/documents');
+      const json = await res.json();
+      if (json.success) setDocOptions(json.data || []);
+    } catch {}
+  }
+
+  async function linkContract(docId: string) {
+    if (!selected || !linkStage || linking) return;
+    setLinking(true);
+    try {
+      const res = await fetch(`/api/publishing-projects/${selected}/stages/${linkStage}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractId: docId }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không gắn được hợp đồng');
+      setLinkStage(null);
+      await loadDetail(selected);
+    } catch {
+      // Giữ modal mở để người dùng thử lại; lỗi đã log ở console.
+    }
+    setLinking(false);
+  }
+
+  async function unlinkContract(stageKey: string) {
+    if (!selected) return;
+    try {
+      const res = await fetch(`/api/publishing-projects/${selected}/stages/${stageKey}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractId: null }),
+      });
+      const json = await res.json();
+      if (json.success && selected) await loadDetail(selected);
     } catch {}
   }
 
@@ -199,6 +270,47 @@ export default function PublishingProjectsView() {
                             {!s.contractDate && !s.acceptanceDate && (
                               <p className="text-slate-400">Chưa có thông tin</p>
                             )}
+                            {/* Liên kết hợp đồng của giai đoạn */}
+                            {s.contractId ? (
+                              <p className="pt-1 flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-teal-700">
+                                  HĐ: {docMap[s.contractId] || 'đã gắn'}
+                                </span>
+                                {onViewContract && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onViewContract(s.contractId!)}
+                                    className="px-2 py-1 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-[11px] font-bold min-h-[32px]"
+                                    aria-label="Xem hợp đồng đã gắn"
+                                  >
+                                    Xem HĐ
+                                  </button>
+                                )}
+                                {canLinkContract && (
+                                  <button
+                                    type="button"
+                                    onClick={() => unlinkContract(stageKey)}
+                                    className="px-2 py-1 text-slate-500 hover:bg-slate-100 rounded-lg text-[11px] font-bold min-h-[32px]"
+                                    aria-label="Gỡ liên kết hợp đồng"
+                                  >
+                                    Gỡ
+                                  </button>
+                                )}
+                              </p>
+                            ) : (
+                              canLinkContract && (
+                                <p className="pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openLinkModal(stageKey)}
+                                    className="px-2 py-1 border border-dashed border-slate-300 hover:border-teal-500 hover:text-teal-700 rounded-lg text-[11px] font-bold min-h-[32px]"
+                                    aria-label={`Gắn hợp đồng cho giai đoạn ${STAGE_LABELS[stageKey]}`}
+                                  >
+                                    + Gắn hợp đồng
+                                  </button>
+                                </p>
+                              )
+                            )}
                           </div>
                         )}
                       </div>
@@ -259,6 +371,53 @@ export default function PublishingProjectsView() {
               </button>
             </div>
             <p className="text-xs text-slate-400 mt-3">Hệ thống tự tạo 5 giai đoạn theo đúng thứ tự.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal gắn hợp đồng vào giai đoạn */}
+      {linkStage && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4" onClick={() => setLinkStage(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-extrabold text-lg mb-1">Gắn hợp đồng</h2>
+            <p className="text-xs text-slate-500 mb-3">Giai đoạn: <span className="font-bold">{STAGE_LABELS[linkStage]}</span> - chọn một hợp đồng đã có trong hệ thống.</p>
+            <input
+              value={docSearch}
+              onChange={(e) => setDocSearch(e.target.value)}
+              placeholder="Tìm số HĐ, tiêu đề..."
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm mb-3 min-h-[44px]"
+            />
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {docOptions
+                .filter((d) => {
+                  const q = docSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return `${d.contractNumber} ${d.title}`.toLowerCase().includes(q);
+                })
+                .slice(0, 30)
+                .map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    disabled={linking}
+                    onClick={() => linkContract(d.id)}
+                    className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-teal-500 hover:bg-teal-50 transition disabled:opacity-50 min-h-[44px]"
+                  >
+                    <p className="font-bold text-sm font-mono">{d.contractNumber}</p>
+                    <p className="text-xs text-slate-600">{d.title}</p>
+                  </button>
+                ))}
+              {docOptions.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-6">Chưa có hợp đồng nào trong hệ thống.</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setLinkStage(null)}
+              className="mt-4 px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-bold min-h-[44px]"
+            >
+              Đóng
+            </button>
           </div>
         </div>
       )}

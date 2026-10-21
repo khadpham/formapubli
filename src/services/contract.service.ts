@@ -25,6 +25,14 @@ const PREFIX_MAP: Record<string, string> = {
   DAI_LY: 'HĐĐL',
   IN_AN: 'HĐIN',
   DICH_THUAT: 'HĐDT',
+  THIET_KE_BIA: 'HĐTK',
+  BIEN_DICH: 'HĐBD',
+  BIEN_TAP: 'HĐBT',
+  DAN_TRANG: 'HĐTR',
+  DOC_MORAT: 'HĐMR',
+  BB_NGHIEM_THU: 'BBNT',
+  PHIEU_CHI: 'PC',
+  UY_NHIEM_CHI: 'UNC',
 };
 
 function formatContractNumber(seq: number, year: number, category: string): string {
@@ -126,6 +134,7 @@ export class ContractService {
     category: string;
     payloadData: Record<string, any>;
     partnerId?: string;
+    collaboratorId?: string;
     workId?: string;
     signedDate?: string;
     effectiveDate?: string;
@@ -150,6 +159,7 @@ export class ContractService {
           templateVersion: tpl.version ?? 1,
           title: input.title,
           partnerId: input.partnerId ?? null,
+          collaboratorId: input.collaboratorId ?? null,
           workId: input.workId ?? null,
           status: 'DRAFT',
           payloadData: JSON.stringify(input.payloadData),
@@ -160,13 +170,17 @@ export class ContractService {
           totalAmount,
           notes: input.notes ?? null,
         }).returning();
-        const binary = ContractEngineService.generateDocx(tpl.templateData, {
-          ...input.payloadData,
-          so_hop_dong: contractNumber,
-        });
-        await tx.update(contractDocuments)
-          .set({ renderedDocx: bytesToBase64(binary) })
-          .where(eq(contractDocuments.id, doc.id));
+        const binary = tpl.templateData
+          ? ContractEngineService.generateDocx(tpl.templateData, {
+              ...input.payloadData,
+              so_hop_dong: contractNumber,
+            })
+          : null;
+        if (binary) {
+          await tx.update(contractDocuments)
+            .set({ renderedDocx: bytesToBase64(binary) })
+            .where(eq(contractDocuments.id, doc.id));
+        }
         return { ...doc, contractNumber };
       })
     );
@@ -176,6 +190,7 @@ export class ContractService {
     title?: string;
     payloadData?: Record<string, any>;
     partnerId?: string | null;
+    collaboratorId?: string | null;
     workId?: string | null;
     signedDate?: string | null;
     effectiveDate?: string | null;
@@ -203,6 +218,7 @@ export class ContractService {
           title: patch.title ?? doc.title,
           payloadData: JSON.stringify(nextPayload),
           partnerId: patch.partnerId !== undefined ? patch.partnerId : doc.partnerId,
+          collaboratorId: patch.collaboratorId !== undefined ? patch.collaboratorId : doc.collaboratorId,
           workId: patch.workId !== undefined ? patch.workId : doc.workId,
           signedDate: patch.signedDate !== undefined ? patch.signedDate : doc.signedDate,
           effectiveDate: patch.effectiveDate !== undefined ? patch.effectiveDate : doc.effectiveDate,

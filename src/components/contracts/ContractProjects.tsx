@@ -39,7 +39,7 @@ interface SuggestItem extends Milestone {
   projectName: string;
 }
 
-export function ContractProjects({ onSmartDraft }: { onSmartDraft: (category: string) => void }) {
+export function ContractProjects({ onSmartDraft }: { onSmartDraft: (category: string, milestoneId?: string) => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<(Project & { milestones: Milestone[] }) | null>(null);
   const [suggest, setSuggest] = useState<{ overdue: SuggestItem[]; upcoming: SuggestItem[] } | null>(null);
@@ -232,7 +232,7 @@ export function ContractProjects({ onSmartDraft }: { onSmartDraft: (category: st
                   {m.status === 'DONE'
                     ? <span className="text-xs font-bold text-emerald-700">Đã có HĐ</span>
                     : (
-                      <button type="button" onClick={() => onSmartDraft(m.neededCategory)}
+                      <button type="button" onClick={() => onSmartDraft(m.neededCategory, m.id)}
                         className="px-3 py-1.5 bg-violet-600 text-white rounded-xl text-xs font-bold"
                         aria-label={`Soạn hợp đồng cho ${m.title}`}>
                         <Wand2 className="w-3 h-3 inline mr-1" />Soạn

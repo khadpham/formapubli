@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       category,
       payloadData: body.payloadData,
       partnerId: body.partnerId || undefined,
+      collaboratorId: body.collaboratorId || undefined,
       workId: body.workId || undefined,
       signedDate: body.signedDate || undefined,
       effectiveDate: body.effectiveDate || undefined,

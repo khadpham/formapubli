@@ -446,6 +446,11 @@ export function DailyFairSettlementModal({
   // TRẮNG - người dùng tưởng máy in hỏng. Giữ thông báo ở state để nói rõ
   // vì sao không in, thay vì im lặng cho ra trang trắng.
   const [printNotice, setPrintNotice] = useState<string | null>(null);
+  // Đóng thay ca quá giờ khi chốt ngày (khối cảnh báo ca chưa đóng): lý do
+  // bắt buộc vì đây là hành động quản lý làm thay thu ngân, phải truy được.
+  const [forceReason, setForceReason] = useState('');
+  const [forceBusy, setForceBusy] = useState(false);
+  const [forceNotice, setForceNotice] = useState<string | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditModalSessionId, setAuditModalSessionId] = useState<string | null>(null);
   // Trạng thái Xuất CSV. ĐẶT TRƯỚC mọi early-return (Rules of Hooks): đặt sau
@@ -551,6 +556,42 @@ export function DailyFairSettlementModal({
     lastFetchKeyRef.current = key;
     fetchSettlement();
   }, [isOpen, currentWarehouseId, selectedDate, rangeMode, rangeStart, rangeEnd]);
+
+  // Đóng thay các ca quá giờ rồi chốt ngày đang xem. Lõi ở server
+  // (closeDay + autoCloseOpenShifts) chỉ đóng ca ĐÃ quá giờ chốt, ghi người
+  // thực hiện + lý do; ca bị đóng thay ở trạng thái chưa đếm tiền.
+  const handleForceCloseDay = async () => {
+    const reason = forceReason.trim();
+    if (!reason) {
+      setForceNotice('Hãy ghi rõ lý do đóng thay để còn đối chiếu sau.');
+      return;
+    }
+    setForceBusy(true);
+    setForceNotice(null);
+    try {
+      const res = await fetch('/api/pos/daily-settlement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          warehouseId: currentWarehouseId,
+          date: selectedDate,
+          notes: reason,
+          autoCloseOpenShifts: true,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || `Không chốt được ngày (mã lỗi ${res.status}).`);
+      }
+      setForceNotice('Đã đóng thay các ca quá giờ và chốt ngày xong. Các ca bị đóng thay ở trạng thái chưa đếm tiền - cần đối chiếu lại với thu ngân.');
+      setForceReason('');
+      void fetchSettlement();
+    } catch (e: any) {
+      setForceNotice(e?.message || 'Không chốt được ngày.');
+    } finally {
+      setForceBusy(false);
+    }
+  };
 
   /** Preset kỳ tính từ hôm nay (ngày VN). */
   const applyPreset = (days: number) => {
@@ -1461,6 +1502,34 @@ export function DailyFairSettlementModal({
                           <p className="text-[11px] text-rose-800 font-semibold">
                             Ngày chưa thể chốt cho tới khi đóng hết các ca trên.
                           </p>
+                          {rangeMode === 'day' && (
+                            <div className="pt-2 mt-1 border-t border-rose-200 space-y-2">
+                              <p className="text-[11px] text-rose-800">
+                                Quản lý xử lý thay khi thu ngân vắng: các ca quá giờ ở trên sẽ bị đóng ở trạng thái
+                                <strong> chưa đếm tiền</strong>, hệ thống ghi rõ người đóng thay và lý do để đối chiếu sau.
+                              </p>
+                              <input
+                                type="text"
+                                value={forceReason}
+                                onChange={(e) => setForceReason(e.target.value)}
+                                placeholder="Lý do đóng thay (bắt buộc)"
+                                aria-label="Lý do đóng thay ca"
+                                className="w-full rounded-lg border border-rose-300 bg-white px-2.5 py-2 text-xs text-slate-800 placeholder:text-slate-400"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleForceCloseDay}
+                                disabled={forceBusy || !forceReason.trim()}
+                                aria-label="Đóng thay các ca quá giờ và chốt ngày"
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                              >
+                                {forceBusy ? 'Đang chốt…' : 'Đóng thay các ca trên và chốt ngày'}
+                              </button>
+                              {forceNotice && (
+                                <p className="text-[11px] font-semibold text-rose-900">{forceNotice}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

@@ -1,5 +1,5 @@
-import { db, shopeeSettings, orders } from '@/db';
-import { eq } from 'drizzle-orm';
+import { db, shopeeSettings, shopeeShopTokens, orders } from '@/db';
+import { eq, desc } from 'drizzle-orm';
 import { AppError } from '../app-error';
 import type { UserRole } from '@/lib/roles';
 
@@ -24,6 +24,27 @@ export async function getShopeeConfig(): Promise<ShopeeShopConfig> {
       ? map.get('cod_enabled') === '1'
       : envCod || DEFAULTS.codEnabled,
   };
+}
+
+/**
+ * Lấy shop_id hiệu lực: ENV SHOPEE_SHOP_ID thắng; khi env trống thì đọc
+ * shop_id mới nhất từ shopee_shop_tokens (sau ủy quyền lần đầu env chưa kịp
+ * điền mà token đã nằm trong DB). Trả kèm nguồn để UI/API cho người vận hành
+ * biết shop_id lấy từ đâu. KHÔNG tự ghi env.
+ */
+export async function resolveShopeeShopId(): Promise<{
+  shopId: number;
+  source: 'env' | 'db' | null;
+}> {
+  const envId = Number(process.env.SHOPEE_SHOP_ID || '0') || 0;
+  if (envId) return { shopId: envId, source: 'env' };
+  const rows = await db
+    .select({ shopId: shopeeShopTokens.shopId })
+    .from(shopeeShopTokens)
+    .orderBy(desc(shopeeShopTokens.updatedAt))
+    .limit(1);
+  if (rows.length > 0 && rows[0].shopId) return { shopId: rows[0].shopId, source: 'db' };
+  return { shopId: 0, source: null };
 }
 
 /**
