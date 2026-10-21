@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Truck, Printer, CheckCircle2, Search, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Truck, Printer, CheckCircle2, Search, RefreshCw, Package, Copy, X } from 'lucide-react';
 
 /**
  * Danh sách đơn Shopee - riêng kênh SHOPEE.
@@ -29,6 +29,8 @@ interface HubOrder {
   trackingCode: string | null;
   invoiceStatus: string;
   deliveryConfirmedAt: string | null;
+  packedAt: string | null;
+  awbPrintedAt: string | null;
   createdAt: string;
   items: HubItem[];
 }
@@ -66,6 +68,96 @@ function invoiceBadge(o: HubOrder): { text: string; cls: string } | null {
   return { text: 'Chưa đủ ĐK', cls: 'bg-slate-100 text-slate-500' };
 }
 
+/** Thanh tiến trình 4 bước xử lý đơn Shopee. */
+function FulfillSteps({ o }: { o: HubOrder }) {
+  const steps = [
+    { label: 'Đã đóng gói', done: !!o.packedAt },
+    { label: 'Đã xếp lịch', done: !!o.trackingCode },
+    { label: 'Đã in phiếu', done: !!o.awbPrintedAt },
+    { label: 'Đã bàn giao', done: ['IN_TRANSIT', 'DELIVERED'].includes(o.shippingStatus) },
+  ];
+  return (
+    <div className="flex items-center gap-1" aria-label="Tiến trình xử lý đơn">
+      {steps.map((s, i) => (
+        <React.Fragment key={s.label}>
+          {i > 0 && <div className={`h-0.5 w-4 sm:w-6 rounded ${steps[i - 1].done ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
+          <div className="flex items-center gap-1">
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${s.done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+              {s.done ? '✓' : i + 1}
+            </span>
+            <span className={`text-[10px] font-bold hidden sm:inline ${s.done ? 'text-emerald-700' : 'text-slate-400'}`}>{s.label}</span>
+          </div>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** Dialog chọn hình thức giao hàng: tự mang ra bưu cục hoặc ĐVVC đến lấy. */
+function ShipDialog({
+  orderSn,
+  onClose,
+  onConfirm,
+  confirming,
+}: {
+  orderSn: string;
+  onClose: () => void;
+  onConfirm: (mode: 'pickup' | 'dropoff') => void;
+  confirming: boolean;
+}) {
+  const [mode, setMode] = useState<'pickup' | 'dropoff'>('dropoff');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-label={`Xếp lịch giao đơn ${orderSn}`}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h3 className="text-base font-extrabold text-slate-900">Xếp lịch giao hàng</h3>
+          <button type="button" onClick={onClose} aria-label="Đóng" className="p-2 rounded-xl hover:bg-slate-100">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-xs text-slate-600">Đơn #{orderSn} - chọn hình thức bàn giao cho SPX Express:</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setMode('dropoff')}
+              aria-pressed={mode === 'dropoff'}
+              className={`p-4 rounded-xl border-2 text-left ${mode === 'dropoff' ? 'border-orange-500 bg-orange-50' : 'border-slate-200'}`}
+            >
+              <Package className="w-6 h-6 text-orange-600 mb-2" />
+              <p className="text-xs font-extrabold text-slate-800">Tự mang ra bưu cục</p>
+              <p className="text-[11px] text-slate-500 mt-1">Mang hàng đến điểm SPX gần nhất</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('pickup')}
+              aria-pressed={mode === 'pickup'}
+              className={`p-4 rounded-xl border-2 text-left ${mode === 'pickup' ? 'border-orange-500 bg-orange-50' : 'border-slate-200'}`}
+            >
+              <Truck className="w-6 h-6 text-orange-600 mb-2" />
+              <p className="text-xs font-extrabold text-slate-800">ĐVVC đến lấy hàng</p>
+              <p className="text-[11px] text-slate-500 mt-1">SPX đến kho lấy theo lịch hẹn</p>
+            </button>
+          </div>
+        </div>
+        <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm font-bold min-h-[44px]">
+            Hủy
+          </button>
+          <button
+            type="button"
+            disabled={confirming}
+            onClick={() => onConfirm(mode)}
+            className="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-bold min-h-[44px] disabled:opacity-50"
+          >
+            {confirming ? 'Đang xếp lịch…' : 'Xác nhận xếp lịch'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
   const [tab, setTab] = useState<string>('all');
   const [orders, setOrders] = useState<HubOrder[]>([]);
@@ -75,6 +167,8 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
   const [syncing, setSyncing] = useState(false);
   const [shippingId, setShippingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [packingId, setPackingId] = useState<string | null>(null);
+  const [shipDialogSn, setShipDialogSn] = useState<string | null>(null);
 
   const load = async (t: string = tab, keyword: string = q) => {
     setLoading(true);
@@ -126,27 +220,54 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
     }
   };
 
-  const shipOne = async (orderSn: string) => {
-    setShippingId(orderSn);
+  const packOne = async (orderSn: string) => {
+    setPackingId(orderSn);
     try {
-      const r = await fetch('/api/shopee/ship', {
+      const r = await fetch('/api/shopee/pack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderSn }),
       }).then((x) => x.json());
       if (r?.success) {
+        onToast(`Đã xác nhận đóng gói đơn ${orderSn}.`);
+        load(tab, q);
+      } else onToast(r?.error || 'Xác nhận đóng gói thất bại.');
+    } catch {
+      onToast('Xác nhận đóng gói thất bại.');
+    } finally {
+      setPackingId(null);
+    }
+  };
+
+  const shipOne = async (orderSn: string, mode: 'pickup' | 'dropoff') => {
+    setShippingId(orderSn);
+    try {
+      const r = await fetch('/api/shopee/ship', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderSn, mode }),
+      }).then((x) => x.json());
+      if (r?.success) {
         onToast(
           r.data?.trackingPending
             ? `Đã xếp lịch giao đơn ${orderSn} - mã vận đơn đang chờ Shopee cấp.`
-            : `Đã giao đơn ${orderSn} - mã vận đơn ${r.data.trackingCode}.`
+            : `Đã xếp lịch giao đơn ${orderSn} - mã vận đơn ${r.data.trackingCode}.`
         );
+        setShipDialogSn(null);
         load(tab, q);
-      } else onToast(r?.error || 'Giao hàng thất bại.');
+      } else onToast(r?.error || 'Xếp lịch giao thất bại.');
     } catch {
-      onToast('Giao hàng thất bại.');
+      onToast('Xếp lịch giao thất bại.');
     } finally {
       setShippingId(null);
     }
+  };
+
+  const copyTracking = (code: string) => {
+    navigator.clipboard?.writeText(code).then(
+      () => onToast(`Đã copy mã vận đơn ${code}.`),
+      () => onToast('Không copy được mã vận đơn.')
+    );
   };
 
   const confirmDelivery = async (o: HubOrder) => {
@@ -240,6 +361,9 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
       <div className="space-y-3">
         {orders.map((o) => {
           const badge = invoiceBadge(o);
+          const canPack = !o.packedAt && o.status !== 'CANCELLED' && o.shippingStatus === 'CREATED';
+          const canShip = !!o.packedAt && !o.trackingCode && o.status !== 'CANCELLED';
+          const canPrint = !!o.trackingCode && o.status !== 'CANCELLED';
           return (
             <div key={o.id} className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
               <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -260,11 +384,28 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
                   {cycleLabel(o)}
                 </span>
               </div>
+              {/* Thanh tiến trình 4 bước */}
+              {o.status !== 'CANCELLED' && <FulfillSteps o={o} />}
+              {/* Mã vận đơn nổi bật + nút copy */}
+              {o.trackingCode && (
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-blue-50 border border-blue-200">
+                  <Truck className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="text-sm font-extrabold text-blue-900 tracking-wide">{o.trackingCode}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyTracking(o.trackingCode!)}
+                    aria-label={`Copy mã vận đơn ${o.trackingCode}`}
+                    className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-blue-600 text-white text-[11px] font-bold min-h-[32px]"
+                  >
+                    <Copy className="w-3 h-3" />
+                    Copy
+                  </button>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-[11px] text-slate-500">
                   {Number(o.finalAmount || 0).toLocaleString('vi-VN')}đ · {o.paymentMethod}
                   {o.carrier ? ` · ${o.carrier}` : ''}
-                  {o.trackingCode ? ` · ${o.trackingCode}` : ''}
                 </p>
                 {badge && (
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badge.cls}`}>
@@ -273,32 +414,45 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
                 )}
               </div>
               <div className="flex gap-2 flex-wrap">
-                {/* Chuẩn bị hàng + in phiếu SPX */}
-                {o.shippingStatus === 'CREATED' && o.status !== 'CANCELLED' && (
-                  <>
-                    <button
-                      type="button"
-                      disabled={shippingId === o.orderSn}
-                      onClick={() => shipOne(o.orderSn)}
-                      aria-label={`Chuẩn bị hàng đơn ${o.orderSn}`}
-                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold min-h-[40px] disabled:opacity-50"
-                    >
-                      <Truck className="w-4 h-4" />
-                      {shippingId === o.orderSn ? 'Đang giao…' : 'Chuẩn bị hàng'}
-                    </button>
-                    <a
-                      href={`/api/shopee/awb?orderSn=${encodeURIComponent(o.orderSn)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`In vận đơn ${o.orderSn}`}
-                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold min-h-[40px]"
-                    >
-                      <Printer className="w-4 h-4" />
-                      In vận đơn
-                    </a>
-                  </>
+                {/* Bước 1: Xác nhận đã đóng gói */}
+                {canPack && (
+                  <button
+                    type="button"
+                    disabled={packingId === o.orderSn}
+                    onClick={() => packOne(o.orderSn)}
+                    aria-label={`Xác nhận đã đóng gói đơn ${o.orderSn}`}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-700 text-white text-xs font-bold min-h-[40px] disabled:opacity-50"
+                  >
+                    <Package className="w-4 h-4" />
+                    {packingId === o.orderSn ? 'Đang xác nhận…' : 'Đã đóng gói'}
+                  </button>
                 )}
-                {/* Xác nhận nhận hàng: cả 2 kênh (D1) */}
+                {/* Bước 2: Xếp lịch giao (mở dialog chọn pickup/dropoff) */}
+                {canShip && (
+                  <button
+                    type="button"
+                    onClick={() => setShipDialogSn(o.orderSn)}
+                    aria-label={`Xếp lịch giao đơn ${o.orderSn}`}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold min-h-[40px]"
+                  >
+                    <Truck className="w-4 h-4" />
+                    Xếp lịch giao
+                  </button>
+                )}
+                {/* Bước 3: In vận đơn (chỉ khi đã có mã) */}
+                {canPrint && (
+                  <a
+                    href={`/api/shopee/awb?orderSn=${encodeURIComponent(o.orderSn)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`In vận đơn ${o.orderSn}`}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold min-h-[40px]"
+                  >
+                    <Printer className="w-4 h-4" />
+                    In vận đơn{o.awbPrintedAt ? ' lại' : ''}
+                  </a>
+                )}
+                {/* Xác nhận nhận hàng (D1) */}
                 {(o.shippingStatus === 'PICKED_UP' || o.shippingStatus === 'IN_TRANSIT' || o.shippingStatus === 'DELIVERED') && !o.deliveryConfirmedAt && (
                   <button
                     type="button"
@@ -316,6 +470,14 @@ export function ShopeeOrdersHub({ onToast }: { onToast: (m: string) => void }) {
           );
         })}
       </div>
+      {shipDialogSn && (
+        <ShipDialog
+          orderSn={shipDialogSn}
+          onClose={() => setShipDialogSn(null)}
+          onConfirm={(mode) => shipOne(shipDialogSn, mode)}
+          confirming={shippingId === shipDialogSn}
+        />
+      )}
     </section>
   );
 }

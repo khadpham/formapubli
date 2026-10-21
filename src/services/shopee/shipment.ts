@@ -118,7 +118,8 @@ export async function shipShopeeOrder(
   cfg: ShopeeSyncConfig,
   orderSn: string,
   actorRole: UserRole,
-  actorId: string
+  actorId: string,
+  modeOverride?: 'pickup' | 'dropoff'
 ): Promise<ShippedOrder> {
   if (!SHIP_ROLES.includes(actorRole)) {
     throw AppError.forbidden('Chỉ thủ kho và cấp trên được bấm giao đơn Shopee.');
@@ -142,10 +143,12 @@ export async function shipShopeeOrder(
   let flowError: unknown = null;
   try {
     const param = await getShippingParameter(cfg, orderSn);
+    // Người dùng chọn mode trong dialog thì ưu tiên; không thì dùng tự động.
+    const mode = modeOverride || param.mode;
     await signedPost(cfg, '/api/v2/logistics/ship_order', {
       order_sn: orderSn,
       pickup:
-        param.mode === 'pickup'
+        mode === 'pickup'
           ? { address_id: param.addressId, pickup_time_id: param.pickupTimeId }
           : undefined,
     });

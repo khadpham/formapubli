@@ -78,6 +78,8 @@ export async function GET(req: NextRequest) {
         trackingCode: orders.trackingCode,
         invoiceStatus: orders.invoiceStatus,
         deliveryConfirmedAt: orders.deliveryConfirmedAt,
+        packedAt: orders.packedAt,
+        awbPrintedAt: orders.awbPrintedAt,
         createdAt: orders.createdAt,
       })
       .from(orders)

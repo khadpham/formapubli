@@ -320,6 +320,10 @@ export const orders = sqliteTable('orders', {
   // 0074 (D1): xac nhan khach da nhan hang (don online) - hoa don chi phat hanh sau moc nay
   deliveryConfirmedAt: text('delivery_confirmed_at'),
   deliveryConfirmedBy: text('delivery_confirmed_by'),
+  // 0080: luong 4 buoc xu ly don Shopee - moc dong goi va in phieu van don
+  packedAt: text('packed_at'),
+  packedBy: text('packed_by'),
+  awbPrintedAt: text('awb_printed_at'),
   status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
   syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
   cashierId: text('cashier_id').notNull().default('staff-admin'),
