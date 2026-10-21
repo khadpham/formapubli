@@ -28,28 +28,33 @@ export type PushOutcome = 'order-ingested' | 'order-cancelled' | 'tracking-updat
 
 /**
  * Xử lý 1 gói tin push sau khi đã verify.
- * - code 1 + READY_TO_SHIP → kéo đơn + trừ kho (idempotent: bắn lại không trừ 2 lần).
- * - code 1 + CANCELLED → hủy đơn chưa giao + hoàn kho RETURN_INBOUND.
- * - code 2 → cập nhật tracking.
+ * Mã code theo console Open Platform (khác bản cũ ghi sai):
+ * - code 3 (order_status_push) + READY_TO_SHIP → kéo đơn + trừ kho
+ *   (idempotent: bắn lại không trừ 2 lần).
+ * - code 3 (order_status_push) + CANCELLED → hủy đơn chưa giao + hoàn kho RETURN_INBOUND.
+ * - code 4 (order_trackingno_push) → cập nhật mã vận đơn.
+ * - code 1/2 (shop authorization) → chỉ ghi nhận, không cần hành động.
+ * Shopee push dùng `ordersn` (không gạch dưới), API dùng `order_sn` - nhận cả hai.
  */
 export async function handleShopeePush(
   cfg: ShopeeSyncConfig,
   payload: { code?: number; data?: any }
 ): Promise<PushOutcome> {
   const { code, data } = payload;
-  if (code === 1 && data?.status === 'READY_TO_SHIP' && data?.order_sn) {
-    await ingestShopeeOrderSns(cfg, [String(data.order_sn)]);
+  const orderSn = String(data?.order_sn || data?.ordersn || '');
+  if (code === 3 && data?.status === 'READY_TO_SHIP' && orderSn) {
+    await ingestShopeeOrderSns(cfg, [orderSn]);
     return 'order-ingested';
   }
-  if (code === 1 && data?.status === 'CANCELLED' && data?.order_sn) {
-    await cancelShopeeOrder(String(data.order_sn));
+  if (code === 3 && data?.status === 'CANCELLED' && orderSn) {
+    await cancelShopeeOrder(orderSn);
     return 'order-cancelled';
   }
-  if (code === 2 && data?.order_sn && data?.tracking_number) {
+  if (code === 4 && orderSn && data?.tracking_number) {
     await db
       .update(orders)
       .set({ trackingCode: String(data.tracking_number) })
-      .where(eq(orders.idempotencyKey, `shopee-${data.order_sn}`));
+      .where(eq(orders.idempotencyKey, `shopee-${orderSn}`));
     return 'tracking-updated';
   }
   return 'ignored';
