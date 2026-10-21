@@ -1377,6 +1377,11 @@ Hệ thống tự động kiểm tra khi nhập ngày tháng, ngăn team phải 
 
 Vi phạm R1-R3, R5: chặn lưu, yêu cầu xác nhận của manager. Vi phạm R4: cảnh báo vàng.
 
+### 23.2b. Tham số thuế cho hợp đồng tạo ngược (kế toán dịch vụ xác nhận 2026-10-21, anh Kha báo)
+
+- Thời điểm kê khai và khấu trừ thuế TNCN 10% tính theo NGÀY KÝ GHI TRÊN HỢP ĐỒNG (không phải ngày chi tiền thực tế). Engine tạo ngược đặt mốc thuế = ngày ký đã sinh cho từng hợp đồng.
+- Quy tắc khoảng cách ngày (ký -> nghiệm thu khoảng 30 ngày; nghiệm thu trước -> ký HĐ tiếp theo trong 1 tuần) CHỈ là ước lượng: tính cả cuối tuần/ngày lễ (danh sách ngày lễ cấu hình được), vượt ngưỡng thì hệ thống CẢNH BÁO để nhân viên xử lý, không chặn cứng. Lý do nghiệp vụ: thực tế có việc làm song song được, nhưng công ty CỐ Ý xếp nối tiếp để tránh 1 ngày ký nhiều HĐ dồn lại khiến cơ quan thuế nghi ngờ. Hệ quả: các rule khoảng cách ngày trong engine tạo ngược giữ ở mức warning; kiểm tra "1 ngày ký quá nhiều HĐ" là một rule cảnh báo riêng có ngưỡng cấu hình được.
+
 ### 23.3. Thư viện mẫu hợp đồng (ưu tiên cho tương lai)
 
 **Nguyên tắc:** Không sửa hay rà soát lại hợp đồng quá khứ trong ERP. Team tự soạn lại cho đúng, tích hợp sau.
