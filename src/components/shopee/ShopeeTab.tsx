@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Store } from 'lucide-react';
 import type { UserRole } from '@/lib/roles';
 import { PortalOrdersPanel } from './PortalOrdersPanel';
 import { ShopeeOrdersHub } from './ShopeeOrdersHub';
+import { ShopeeOverviewPanel } from './ShopeeOverviewPanel';
 import { ShopeeProductsPanel } from './ShopeeProductsPanel';
 import { ShopeeFinancePanel } from './ShopeeFinancePanel';
 
@@ -24,10 +25,10 @@ interface QuarantineItem {
 }
 
 /**
- * Hub Đơn online - quản lý tập trung đơn portal + Shopee.
- * Theo tài liệu phan-tich-shopee-hoa-don-escrow-tab-hub-2026-10-20.md mục 3.3:
- * 7 mục con dạng tab ngang: Tổng quan | Đơn hàng | Vận chuyển | Sản phẩm kênh |
- * Hoàn trả | Tài chính | Hóa đơn. Đợt này: Đơn hàng, Sản phẩm kênh, Tài chính.
+ * Hub Đơn online - quản lý tập trung đơn portal + Shopee (TÁCH RIÊNG theo kênh).
+ * Quyết định 2026-10-21 (chủ hệ thống): đơn hàng tách riêng kênh nào ra kênh nấy
+ * do khối lượng tác vụ Shopee lớn, luồng thao tác riêng.
+ * 6 mục con: Tổng quan | Đơn Shopee | Đơn Portal | Sản phẩm kênh | Tài chính | Hóa đơn.
  */
 interface ShopeeStatus {
   connected: boolean;
@@ -37,19 +38,18 @@ interface ShopeeStatus {
 }
 
 const HUB_TABS = [
-  { key: 'tong_quan', label: 'Tổng quan', done: false },
-  { key: 'don_hang', label: 'Đơn hàng', done: true },
-  { key: 'van_chuyen', label: 'Vận chuyển', done: false },
-  { key: 'san_pham', label: 'Sản phẩm kênh', done: true },
-  { key: 'hoan_tra', label: 'Hoàn trả', done: false },
-  { key: 'tai_chinh', label: 'Tài chính', done: true },
-  { key: 'hoa_don', label: 'Hóa đơn', done: false },
+  { key: 'tong_quan', label: 'Tổng quan' },
+  { key: 'don_shopee', label: 'Đơn Shopee' },
+  { key: 'don_portal', label: 'Đơn Portal' },
+  { key: 'san_pham', label: 'Sản phẩm kênh' },
+  { key: 'tai_chinh', label: 'Tài chính' },
+  { key: 'hoa_don', label: 'Hóa đơn' },
 ] as const;
 
 export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
   const [status, setStatus] = useState<ShopeeStatus | null>(null);
   const [uiEnabled, setUiEnabled] = useState(false);
-  const [hubTab, setHubTab] = useState<string>('don_hang');
+  const [hubTab, setHubTab] = useState<string>('tong_quan');
   const [toConfirm, setToConfirm] = useState<ConfirmOrder[]>([]);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [quarantine, setQuarantine] = useState<QuarantineItem[]>([]);
@@ -133,9 +133,6 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
         </div>
       )}
 
-      {/* Đơn online portal cần soạn cho thủ kho */}
-      <PortalOrdersPanel currentRole={sessionRole} />
-
       {!uiEnabled ? (
         <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm text-xs text-slate-500">
           Tính năng đồng bộ sàn Shopee đang tắt (chờ quản lý bật).
@@ -166,8 +163,7 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
               </button>
             )}
           </section>
-          {/* Hub đơn hàng đầy đủ: tabs trạng thái, tìm kiếm, thao tác theo trạng thái */}
-          {/* Điều hướng 7 mục con của hub */}
+          {/* Điều hướng 6 mục con của hub Đơn online */}
           <nav aria-label="Mục hub đơn online" className="flex gap-1.5 flex-wrap">
             {HUB_TABS.map((t) => (
               <button
@@ -182,21 +178,31 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
                 }`}
               >
                 {t.label}
-                {!t.done && (
-                  <span className="ml-1 text-[9px] font-normal opacity-70">sắp có</span>
-                )}
               </button>
             ))}
           </nav>
 
-          {hubTab === 'don_hang' && <ShopeeOrdersHub onToast={showToast} />}
+          {hubTab === 'tong_quan' && <ShopeeOverviewPanel onToast={showToast} />}
+          {hubTab === 'don_shopee' && <ShopeeOrdersHub onToast={showToast} />}
+          {hubTab === 'don_portal' && <PortalOrdersPanel currentRole={sessionRole} />}
           {hubTab === 'san_pham' && <ShopeeProductsPanel onToast={showToast} />}
           {hubTab === 'tai_chinh' && <ShopeeFinancePanel onToast={showToast} />}
-          {!['don_hang', 'san_pham', 'tai_chinh'].includes(hubTab) && (
-            <div className="bg-white rounded-2xl p-8 border border-slate-200/80 shadow-sm text-center">
-              <p className="text-sm font-bold text-slate-600">Mục này đang được phát triển</p>
-              <p className="text-xs text-slate-400 mt-1">Sẽ bổ sung ở đợt tiếp theo theo lộ trình hub.</p>
-            </div>
+          {hubTab === 'hoa_don' && (
+            <section aria-label="Hóa đơn đơn online" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
+              <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                Hóa đơn đơn online
+              </h2>
+              <p className="text-xs text-slate-500">
+                Đơn online chỉ phát hành hóa đơn sau khi xác nhận khách đã nhận hàng (quyết định D1).
+                Xem chi tiết và phát hành tại tab Hóa đơn điện tử.
+              </p>
+              <a
+                href="/?tab=einvoice"
+                className="inline-block px-4 py-2.5 rounded-xl bg-orange-600 text-white text-xs font-bold min-h-[44px]"
+              >
+                Mở tab Hóa đơn điện tử
+              </a>
+            </section>
           )}
 
       {toConfirm.length > 0 && (
