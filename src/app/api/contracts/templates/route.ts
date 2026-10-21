@@ -43,6 +43,13 @@ export async function POST(req: NextRequest) {
     if (templateData.length > 15 * 1024 * 1024) throw AppError.invalid('File mẫu quá lớn (tối đa ~15MB).');
     const category = `${body.category || 'TAC_QUYEN'}`.trim();
     if (!CATEGORIES.includes(category)) throw AppError.invalid(`Loại mẫu không hợp lệ: ${category}.`);
+    const pkg = ContractEngineService.validateDocxPackage(templateData);
+    if (!pkg.isValid) {
+      return NextResponse.json(
+        { success: false, code: 'INVALID_DOCX_PACKAGE', error: 'File .docx không hợp lệ: thiếu thành phần bắt buộc của định dạng Word. Vui lòng mở file bằng Microsoft Word, lưu lại rồi tải lên.', details: pkg.errors },
+        { status: 400 }
+      );
+    }
     const check = ContractEngineService.validateTemplate(templateData);
     if (!check.isValid) {
       return NextResponse.json(
