@@ -280,6 +280,14 @@ body {
   body:has(#contract-print-area) > *:not(:has(#contract-print-area)) {
     display: none !important;
   }
+  /* Ẩn toàn bộ UI trong modal soạn HĐ khi in (form nhập, ghi chú xem trước,
+     nút bấm, tiêu đề modal) - chỉ giữ vùng nội dung hợp đồng
+     #contract-print-area, nội dung bên trong nó và các thẻ cha của nó.
+     Bản in ra chỉ có văn bản hợp đồng, giống file Word tải về. */
+  body:has(#contract-print-area) .fixed:has(#contract-print-area)
+    *:not(#contract-print-area):not(#contract-print-area *):not(:has(#contract-print-area)) {
+    display: none !important;
+  }
   body:has(#contract-print-area) .fixed:has(#contract-print-area),
   body:has(#contract-print-area) .fixed:has(#contract-print-area) * {
     position: static !important;
