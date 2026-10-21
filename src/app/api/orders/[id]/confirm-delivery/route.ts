@@ -9,6 +9,11 @@
  * - SHOPEE: shipping_status phải là PICKED_UP/DELIVERED (đã giao cho SPX).
  * - ONLINE (portal): đơn phải COMPLETED (thủ kho đã bấm "Xác nhận đã giao").
  * Idempotent: xác nhận lại trả về mốc cũ, không ghi đè người/giờ đầu tiên.
+ * Đơn SHOPEE khi xác nhận thành công thì đồng thời chuyển shippingStatus sang
+ * DELIVERED - vì theo thiết kế D1, xác nhận thủ công của nhân viên CHÍNH là
+ * tín hiệu giao hàng cho đến khi có API vận chuyển (không đường code nào khác
+ * đưa đơn Shopee về DELIVERED, nên syncEscrow/doanh thu Shopee không bao giờ
+ * chạy nếu thiếu bước này).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
@@ -70,9 +75,13 @@ export async function POST(
 
     const now = new Date().toISOString();
     const by = session.fullName || session.actorId;
+    // Đơn Shopee: xác nhận nhận hàng đồng thời là mốc DELIVERED (xem chú thích
+    // đầu file). Đơn ONLINE portal không đụng shippingStatus.
+    const patch: Record<string, unknown> = { deliveryConfirmedAt: now, deliveryConfirmedBy: by };
+    if (ord.channel === 'SHOPEE') patch.shippingStatus = 'DELIVERED';
     await db
       .update(orders)
-      .set({ deliveryConfirmedAt: now, deliveryConfirmedBy: by } as any)
+      .set(patch as any)
       .where(eq(orders.id, id));
 
     return NextResponse.json({
