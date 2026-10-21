@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { db, editions, orders, orderItems, shopeeQuarantine } from '@/db';
+import { db, editions, orders, orderItems, shopeeQuarantine, shopeeSkuComponents } from '@/db';
 import { withDbRetry } from '@/lib/db-retry';
 import { vnDayOf } from '@/lib/vn-time';
 import { allocateOrderCode } from '../order-code';
@@ -154,7 +154,7 @@ export async function pullShopeeOrders(
   const result: PullResult = { pulled: 0, skipped: 0, quarantined: [] };
 
   // Danh mục ISBN/code để map SKU - đọc 1 lần cho cả đợt kéo.
-  const editionOf = await buildCatalogResolver();
+  const editionOf = await buildComponentResolver();
 
   let cursor = '';
   for (;;) {
@@ -182,7 +182,7 @@ export async function pullShopeeOrders(
 export async function ingestShopeeOrderSns(
   cfg: ShopeeSyncConfig,
   orderSns: string[],
-  editionOf?: (sku: string) => string | null,
+  editionOf?: (sku: string) => Array<{ editionId: string; qty: number }> | null,
   result?: PullResult
 ): Promise<PullResult> {
   const out = result ?? { pulled: 0, skipped: 0, quarantined: [] };
@@ -193,7 +193,7 @@ export async function ingestShopeeOrderSns(
     codEnabled: cfg.codEnabled ?? shopCfg.codEnabled,
   };
   if (!eff.warehouseId) throw new Error('Thiếu warehouseId: kho xuất Shopee phải cấu hình rõ.');
-  const resolve = editionOf ?? (await buildCatalogResolver());
+  const resolve = editionOf ?? (await buildComponentResolver());
   for (let i = 0; i < orderSns.length; i += 50) {
     const batch = orderSns.slice(i, i + 50);
     const detail = await shopeeGet(cfg, '/api/v2/order/get_order_detail', {
@@ -212,16 +212,39 @@ export async function ingestShopeeOrderSns(
   return out;
 }
 
-async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
+/**
+ * Resolver SKU → thành phần ERP. Ưu tiên mapping combo tay (shopee_sku_components),
+ * fallback về khớp ISBN/code đơn lẻ. Trả về mảng (combo = nhiều dòng).
+ */
+async function buildComponentResolver(): Promise<
+  (sku: string) => Array<{ editionId: string; qty: number }> | null
+> {
+  const comboRows = await withDbRetry(async () => db.select().from(shopeeSkuComponents));
+  const comboBySku = new Map<string, Array<{ editionId: string; qty: number }>>();
+  for (const r of comboRows) {
+    const list = comboBySku.get(r.shopeeSku) || [];
+    list.push({ editionId: r.editionId, qty: r.quantity });
+    comboBySku.set(r.shopeeSku, list);
+  }
   const catalog = await withDbRetry(async () =>
     db.select({ id: editions.id, isbn: editions.isbn, code: editions.code }).from(editions)
   );
   return (sku: string) => {
+    const combo = comboBySku.get(sku);
+    if (combo && combo.length > 0) return combo;
     // ISBN không UNIQUE (tái bản trùng ISBN): lấy id nhỏ nhất, ổn định.
     const hit = catalog
       .filter((e) => e.isbn === sku || e.code === sku)
       .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
-    return hit ? hit.id : null;
+    return hit ? [{ editionId: hit.id, qty: 1 }] : null;
+  };
+}
+
+async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
+  const resolve = await buildComponentResolver();
+  return (sku: string) => {
+    const comps = resolve(sku);
+    return comps && comps.length === 1 && comps[0].qty === 1 ? comps[0].editionId : null;
   };
 }
 
@@ -321,7 +344,7 @@ async function updateExistingStatus(
 
 async function ingestOne(
   cfg: ShopeeSyncConfig,
-  editionOf: (sku: string) => string | null,
+  resolve: (sku: string) => Array<{ editionId: string; qty: number }> | null,
   d: ShopeeOrderDetail,
   result: PullResult
 ): Promise<void> {
@@ -346,17 +369,21 @@ async function ingestOne(
   }> = [];
   for (const it of items) {
     const sku = it.model_sku || it.item_sku || '';
-    const editionId = editionOf(sku);
-    if (!editionId) {
+    const components = resolve(sku);
+    if (!components || components.length === 0) {
       result.quarantined.push(await quarantine(d.order_sn, sku, 'SKU không khớp ISBN/code'));
       return; // Cách ly CẢ đơn - không trừ nửa vời.
     }
-    resolved.push({
-      editionId,
-      qty: it.model_quantity_purchased,
-      original: it.model_original_price,
-      discounted: it.model_discounted_price,
-    });
+    // Combo: tách thành nhiều dòng, giá chia đều theo tổng số lượng thành phần.
+    const totalCompQty = components.reduce((s, c) => s + c.qty, 0) || 1;
+    for (const comp of components) {
+      resolved.push({
+        editionId: comp.editionId,
+        qty: it.model_quantity_purchased * comp.qty,
+        original: it.model_original_price / totalCompQty,
+        discounted: it.model_discounted_price / totalCompQty,
+      });
+    }
   }
   if (resolved.length === 0) {
     result.quarantined.push(await quarantine(d.order_sn, '', 'Đơn không có dòng hàng'));

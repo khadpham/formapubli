@@ -940,6 +940,16 @@ export const shopeeItemMap = sqliteTable('shopee_item_map', {
   pk: primaryKey({ columns: [table.shopId, table.editionId] }),
 }));
 
+/** Mapping SKU Shopee -> thành phần ERP (hỗ trợ combo: 1 SKU = nhiều edition). */
+export const shopeeSkuComponents = sqliteTable('shopee_sku_components', {
+  shopeeSku: text('shopee_sku').notNull(),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.shopeeSku, table.editionId] }),
+}));
+
 export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
   orderSn: text('order_sn').primaryKey(),
   buyerTotal: real('buyer_total').notNull().default(0),
