@@ -70,10 +70,13 @@ export async function syncEscrow(
   const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
   // COGS: giá vốn từng dòng theo products.cost_price.
+  // Dùng leftJoin thay vì innerJoin: nếu dòng hàng không có bản ghi products
+  // tương ứng (dữ liệu lệch), innerJoin sẽ LẶNG LẼ BỎ DÒNG ĐÓ và COGS tính
+  // thiếu mà không ai biết. leftJoin + thiếu giá vốn → null trung thực.
   const lines = await db
     .select({ quantity: orderItems.quantity, costPrice: products.costPrice })
     .from(orderItems)
-    .innerJoin(products, eq(orderItems.productId, products.id))
+    .leftJoin(products, eq(orderItems.productId, products.id))
     .where(eq(orderItems.orderId, ords[0].id));
   let cogs: number | null = 0;
   for (const l of lines) {
