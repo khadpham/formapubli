@@ -134,6 +134,7 @@ export class ContractService {
     category: string;
     payloadData: Record<string, any>;
     partnerId?: string;
+    collaboratorId?: string;
     workId?: string;
     signedDate?: string;
     effectiveDate?: string;
@@ -158,6 +159,7 @@ export class ContractService {
           templateVersion: tpl.version ?? 1,
           title: input.title,
           partnerId: input.partnerId ?? null,
+          collaboratorId: input.collaboratorId ?? null,
           workId: input.workId ?? null,
           status: 'DRAFT',
           payloadData: JSON.stringify(input.payloadData),
@@ -188,6 +190,7 @@ export class ContractService {
     title?: string;
     payloadData?: Record<string, any>;
     partnerId?: string | null;
+    collaboratorId?: string | null;
     workId?: string | null;
     signedDate?: string | null;
     effectiveDate?: string | null;
@@ -215,6 +218,7 @@ export class ContractService {
           title: patch.title ?? doc.title,
           payloadData: JSON.stringify(nextPayload),
           partnerId: patch.partnerId !== undefined ? patch.partnerId : doc.partnerId,
+          collaboratorId: patch.collaboratorId !== undefined ? patch.collaboratorId : doc.collaboratorId,
           workId: patch.workId !== undefined ? patch.workId : doc.workId,
           signedDate: patch.signedDate !== undefined ? patch.signedDate : doc.signedDate,
           effectiveDate: patch.effectiveDate !== undefined ? patch.effectiveDate : doc.effectiveDate,

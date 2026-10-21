@@ -46,6 +46,97 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
   );
 }
 
+function formatVnd(n: number | null | undefined): string {
+  return `${(n || 0).toLocaleString('vi-VN')}đ`;
+}
+
+interface ContractStats {
+  collaborator: { id: string; fullName: string };
+  stats: {
+    contractCount: number;
+    totalAmount: number;
+    byCategory: { category: string; label: string; count: number; amount: number }[];
+  };
+  contracts: {
+    id: string;
+    contractNumber: string;
+    title: string;
+    categoryLabel: string;
+    totalAmount: number;
+    signedDate: string | null;
+    statusLabel: string;
+  }[];
+}
+
+function ContractSummary({ id }: { id: string }) {
+  const [data, setData] = useState<ContractStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/collaborators/${id}/contracts`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) setData(j.data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [id]);
+
+  if (loading) return <div className="text-xs text-slate-400 py-2">Đang tải tổng hợp...</div>;
+  if (!data) return null;
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
+          <div className="text-xs text-slate-400">Số hợp đồng</div>
+          <div className="text-lg font-black text-slate-900">{data.stats.contractCount}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
+          <div className="text-xs text-slate-400">Tổng giá trị</div>
+          <div className="text-lg font-black text-indigo-700">{formatVnd(data.stats.totalAmount)}</div>
+        </div>
+      </div>
+      {data.stats.byCategory.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {data.stats.byCategory.map((c) => (
+            <span key={c.category} className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700">
+              {c.label}: {c.count} - {formatVnd(c.amount)}
+            </span>
+          ))}
+        </div>
+      )}
+      {data.contracts.length > 0 ? (
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-left">
+                <th className="px-2 py-1.5 font-semibold">Số HĐ</th>
+                <th className="px-2 py-1.5 font-semibold">Loại</th>
+                <th className="px-2 py-1.5 font-semibold text-right">Giá trị</th>
+                <th className="px-2 py-1.5 font-semibold">Ngày ký</th>
+                <th className="px-2 py-1.5 font-semibold">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {data.contracts.map((d) => (
+                <tr key={d.id}>
+                  <td className="px-2 py-1.5 font-bold text-slate-800">{d.contractNumber}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{d.categoryLabel}</td>
+                  <td className="px-2 py-1.5 text-right font-semibold text-slate-800">{formatVnd(d.totalAmount)}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{d.signedDate || '-'}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{d.statusLabel}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-xs text-slate-400 py-1">Chưa có hợp đồng nào gắn với người này.</div>
+      )}
+    </div>
+  );
+}
+
 export default function HrView() {
   const [rows, setRows] = useState<Collaborator[]>([]);
   const [q, setQ] = useState('');
@@ -162,6 +253,10 @@ export default function HrView() {
                     <DetailRow label="Ngân hàng" value={c.bankName} />
                     <DetailRow label="Chủ tài khoản" value={c.bankOwner} />
                     <DetailRow label="Ghi chú" value={c.notes} />
+                    <div className="pt-2 mt-1 border-t border-slate-200">
+                      <div className="text-sm font-bold text-slate-900 mb-2">Tổng hợp hợp đồng</div>
+                      <ContractSummary id={c.id} />
+                    </div>
                   </div>
                 )}
               </div>

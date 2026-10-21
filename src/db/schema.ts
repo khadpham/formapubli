@@ -1180,6 +1180,7 @@ export const contractDocuments = sqliteTable('contract_documents', {
   templateVersion: integer('template_version').notNull().default(1),
   title: text('title').notNull(),
   partnerId: text('partner_id').references(() => partners.id),
+  collaboratorId: text('collaborator_id').references(() => collaborators.id),
   workId: text('work_id').references(() => works.id),
   status: text('status').notNull().default('DRAFT'),
   payloadData: text('payload_data').notNull(),
@@ -1196,6 +1197,7 @@ export const contractDocuments = sqliteTable('contract_documents', {
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   partnerIdx: index('idx_contract_documents_partner').on(table.partnerId),
+  collaboratorIdx: index('idx_contract_documents_collaborator').on(table.collaboratorId),
   workIdx: index('idx_contract_documents_work').on(table.workId),
   statusIdx: index('idx_contract_documents_status').on(table.status),
 }));
