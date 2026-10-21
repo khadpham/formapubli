@@ -253,6 +253,47 @@ body {
 }
 
 /* ==========================================================================
+   IN HỢP ĐỒNG — KHỔ A4 (khung xem trước docx-preview trong modal soạn thảo)
+   Vì sao cần khối này: khối 80mm ở trên đặt `body > * { display: none
+   !important }` và `.fixed:not(.warehouse-doc-print-modal) { display: none
+   !important }` cho MỌI lần in. Modal soạn hợp đồng render qua portal vào
+   document.body với class `fixed` nên bị ẩn sạch khi bấm In → trang trắng.
+   Khối này chỉ kích hoạt khi #contract-print-area tồn tại trong DOM
+   (`:has()`), nên các luồng in khác (phiếu nhiệt 80mm, chứng từ kho,
+   biên bản chốt ngày) giữ nguyên hành vi.
+   ========================================================================== */
+@media print {
+  html:has(#contract-print-area),
+  body:has(#contract-print-area) {
+    width: auto !important;
+  }
+  body:has(#contract-print-area) > *:not(:has(#contract-print-area)) {
+    display: none !important;
+  }
+  body:has(#contract-print-area) .fixed:has(#contract-print-area) {
+    display: block !important;
+    background: #ffffff !important;
+  }
+  #contract-print-area,
+  #contract-print-area * {
+    visibility: visible !important;
+  }
+  #contract-print-area {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+}
+
+/* ==========================================================================
    FIT-BAR — thanh nút chia đều, tự thu chữ khi hẹp (dùng chung toàn app)
    Cách dùng: bọc thanh nút bằng `fit-bar`, mỗi nút thêm `fit-btn`,
    nhãn chữ thêm `fit-label`, icon thêm `fit-icon`.
