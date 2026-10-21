@@ -320,6 +320,10 @@ export const orders = sqliteTable('orders', {
   // 0074 (D1): xac nhan khach da nhan hang (don online) - hoa don chi phat hanh sau moc nay
   deliveryConfirmedAt: text('delivery_confirmed_at'),
   deliveryConfirmedBy: text('delivery_confirmed_by'),
+  // 0080: luong 4 buoc xu ly don Shopee - moc dong goi va in phieu van don
+  packedAt: text('packed_at'),
+  packedBy: text('packed_by'),
+  awbPrintedAt: text('awb_printed_at'),
   status: text('status').notNull().default('COMPLETED'), // COMPLETED, CANCELLED
   syncStatus: text('sync_status').notNull().default('SYNCED'), // SYNCED, PENDING_SYNC
   cashierId: text('cashier_id').notNull().default('staff-admin'),
@@ -940,6 +944,16 @@ export const shopeeItemMap = sqliteTable('shopee_item_map', {
   pk: primaryKey({ columns: [table.shopId, table.editionId] }),
 }));
 
+/** Mapping SKU Shopee -> thành phần ERP (hỗ trợ combo: 1 SKU = nhiều edition). */
+export const shopeeSkuComponents = sqliteTable('shopee_sku_components', {
+  shopeeSku: text('shopee_sku').notNull(),
+  editionId: text('edition_id').notNull().references(() => editions.id),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.shopeeSku, table.editionId] }),
+}));
+
 export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
   orderSn: text('order_sn').primaryKey(),
   buyerTotal: real('buyer_total').notNull().default(0),
@@ -962,6 +976,19 @@ export const shopeeOrderFinance = sqliteTable('shopee_order_finance', {
 export const shopeeSettings = sqliteTable('shopee_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+/** 0081: Yêu cầu trả hàng/hoàn tiền Shopee. */
+export const shopeeReturns = sqliteTable('shopee_returns', {
+  returnSn: text('return_sn').primaryKey(),
+  orderSn: text('order_sn').notNull(),
+  status: text('status').notNull().default('REQUESTED'),
+  reason: text('reason'),
+  refundAmount: real('refund_amount').notNull().default(0),
+  buyerUsername: text('buyer_username'),
+  sellerDueDate: integer('seller_due_date'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 

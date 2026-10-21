@@ -19,8 +19,9 @@ export async function POST(req: NextRequest) {
       'ROLE_WAREHOUSE',
       'ROLE_SHOPEE_OPS',
     ] as UserRole[]);
-    const body = (await req.json().catch(() => ({}))) as { orderSn?: string };
+    const body = (await req.json().catch(() => ({}))) as { orderSn?: string; mode?: 'pickup' | 'dropoff' };
     const orderSn = `${body.orderSn || ''}`.trim();
+    const mode = body.mode === 'pickup' ? 'pickup' : body.mode === 'dropoff' ? 'dropoff' : undefined;
     if (!orderSn) {
       return NextResponse.json({ success: false, error: 'Thiếu mã đơn Shopee.' }, { status: 400 });
     }
@@ -44,7 +45,8 @@ export async function POST(req: NextRequest) {
       },
       orderSn,
       session.role,
-      session.actorId
+      session.actorId,
+      mode
     );
     return NextResponse.json({ success: true, data: out });
   } catch (error) {

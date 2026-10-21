@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
 import { getAwbPdf } from '@/services/shopee/shipment';
 import { getShopeeConfig, isShopeeOrderInScope } from '@/services/shopee/shop-config';
+import { db, orders } from '@/db';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/shopee/awb?orderSn=... - PDF vận đơn A6.
  * Cùng allowlist + chặn phạm vi kho như /api/shopee/ship.
+ * Tải thành công thì ghi nhận awbPrintedAt (bước 3/4).
  */
 export async function GET(req: NextRequest) {
   try {
@@ -43,6 +46,15 @@ export async function GET(req: NextRequest) {
       },
       orderSn
     );
+    // Ghi nhận đã in phiếu (bước 3/4) - không chặn việc trả PDF nếu update lỗi.
+    try {
+      await db
+        .update(orders)
+        .set({ awbPrintedAt: new Date().toISOString() })
+        .where(eq(orders.idempotencyKey, `shopee-${orderSn}`));
+    } catch {
+      /* bỏ qua */
+    }
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         'Content-Type': 'application/pdf',

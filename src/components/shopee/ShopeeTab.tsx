@@ -8,6 +8,7 @@ import { ShopeeOrdersHub } from './ShopeeOrdersHub';
 import { ShopeeOverviewPanel } from './ShopeeOverviewPanel';
 import { ShopeeProductsPanel } from './ShopeeProductsPanel';
 import { ShopeeFinancePanel } from './ShopeeFinancePanel';
+import { ShopeeReturnsPanel } from './ShopeeReturnsPanel';
 
 interface ConfirmOrder {
   id: string;
@@ -41,6 +42,7 @@ const HUB_TABS = [
   { key: 'tong_quan', label: 'Tổng quan' },
   { key: 'don_shopee', label: 'Đơn Shopee' },
   { key: 'don_portal', label: 'Đơn Portal' },
+  { key: 'tra_hang', label: 'Trả hàng' },
   { key: 'san_pham', label: 'Sản phẩm kênh' },
   { key: 'tai_chinh', label: 'Tài chính' },
   { key: 'hoa_don', label: 'Hóa đơn' },
@@ -185,6 +187,7 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           {hubTab === 'tong_quan' && <ShopeeOverviewPanel onToast={showToast} />}
           {hubTab === 'don_shopee' && <ShopeeOrdersHub onToast={showToast} />}
           {hubTab === 'don_portal' && <PortalOrdersPanel currentRole={sessionRole} />}
+          {hubTab === 'tra_hang' && <ShopeeReturnsPanel onToast={showToast} />}
           {hubTab === 'san_pham' && <ShopeeProductsPanel onToast={showToast} />}
           {hubTab === 'tai_chinh' && <ShopeeFinancePanel onToast={showToast} />}
           {hubTab === 'hoa_don' && (

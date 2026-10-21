@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
-import { db, editions } from '@/db';
+import { db, editions, shopeeSkuComponents } from '@/db';
 import { generateShopeeSign } from '@/services/shopee/sign';
 import { TursoTokenStorage } from '@/services/shopee/token-store';
 import { refreshShopeeTokenOnce } from '@/services/shopee/auth';
@@ -101,20 +101,27 @@ export async function GET(req: NextRequest) {
     // 3. Đối chiếu với ERP qua item_sku ↔ editions.code.
     const erpEditions = await db.select({ id: editions.id, code: editions.code, title: editions.title }).from(editions);
     const byCode = new Map(erpEditions.map((e) => [String(e.code || '').trim(), e]));
+    // Mapping tay (combo/quà tặng) - ưu tiên hơn khớp ISBN/code tự động.
+    const manualRows = await db.select().from(shopeeSkuComponents);
+    const manualSkus = new Set(manualRows.map((r) => r.shopeeSku));
 
     const products = details.map((d: any) => {
       const sku = String(d.item_sku || '').trim();
       const erp = sku ? byCode.get(sku) : undefined;
+      const manuallyMapped = sku ? manualSkus.has(sku) : false;
+      // price_info là MẢNG (không phải object); stock ở stock_info_v2.
+      const priceArr = Array.isArray(d.price_info) ? d.price_info[0] : d.price_info;
+      const stockInfo = d.stock_info_v2?.summary_info || {};
       return {
         itemId: d.item_id,
         name: d.item_name || '',
         sku,
-        price: Number(d.price_info?.current_price || d.price || 0),
-        stock: Number(d.stock_info?.stock ?? 0),
+        price: Number(priceArr?.current_price ?? d.price ?? 0),
+        stock: Number(stockInfo.total_available_stock ?? d.stock_info?.stock ?? 0),
         status: d.item_status || '',
         image: d.image?.image_url_list?.[0] || '',
-        erpMapped: !!erp,
-        erpTitle: erp?.title || null,
+        erpMapped: !!erp || manuallyMapped,
+        erpTitle: erp?.title || (manuallyMapped ? 'Đã đối chiếu tay (combo/quà tặng)' : null),
       };
     });
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { db, editions, orders, orderItems, shopeeQuarantine } from '@/db';
+import { db, editions, orders, orderItems, shopeeQuarantine, shopeeSkuComponents } from '@/db';
 import { withDbRetry } from '@/lib/db-retry';
 import { vnDayOf } from '@/lib/vn-time';
 import { allocateOrderCode } from '../order-code';
@@ -88,16 +88,57 @@ async function shopeeGet(
 }
 
 /**
+ * Mapping Shopee order_status → trạng thái ERP.
+ * - deductInventory=true: đơn "thật" cần trừ kho (đã thanh toán / đang giao).
+ * - deductInventory=false: chưa thanh toán (UNPAID), đang xin hủy (IN_CANCEL),
+ *   hoặc đã hủy (CANCELLED) - không trừ kho.
+ */
+function mapShopeeStatus(shopeeStatus: string): {
+  orderStatus: 'COMPLETED' | 'CANCELLED';
+  shippingStatus: string;
+  deductInventory: boolean;
+} {
+  switch ((shopeeStatus || '').toUpperCase()) {
+    case 'UNPAID':
+      return { orderStatus: 'COMPLETED', shippingStatus: 'NONE', deductInventory: false };
+    case 'READY_TO_SHIP':
+    case 'PROCESSED':
+      return { orderStatus: 'COMPLETED', shippingStatus: 'CREATED', deductInventory: true };
+    case 'SHIPPED':
+      return { orderStatus: 'COMPLETED', shippingStatus: 'IN_TRANSIT', deductInventory: true };
+    case 'COMPLETED':
+    case 'TO_CONFIRM_RECEIVE':
+      return { orderStatus: 'COMPLETED', shippingStatus: 'DELIVERED', deductInventory: true };
+    case 'CANCELLED':
+      return { orderStatus: 'CANCELLED', shippingStatus: 'FAILED', deductInventory: false };
+    case 'IN_CANCEL':
+      return { orderStatus: 'COMPLETED', shippingStatus: 'NONE', deductInventory: false };
+    default:
+      return { orderStatus: 'COMPLETED', shippingStatus: 'NONE', deductInventory: false };
+  }
+}
+
+/**
+ * Các shippingStatus hàm ý kho ĐÃ bị trừ (trong luồng Shopee sync).
+ * Dùng để suy ra có cần hoàn kho khi đơn bị hủy, hoặc trừ bù khi đơn từ
+ * UNPAID chuyển sang trạng thái phải trừ.
+ */
+const DEDUCTED_SHIPPING = new Set(['CREATED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'RETURNED']);
+
+/**
  * Kéo đơn Shopee về, trừ kho, lưu đơn nội bộ.
- * - Chỉ xử lý READY_TO_SHIP; trạng thái khác bỏ qua (skipped).
+ * - Lấy TẤT CẢ trạng thái (UNPAID → CANCELLED), mapping vào vòng đời ERP.
+ * - Đơn đã có trong DB: cập nhật trạng thái (không tạo trùng), xử lý chuyển
+ *   đổi kho (trừ bù khi từ UNPAID sang, hoàn kho khi bị hủy sau khi đã trừ).
  * - SKU không khớp ISBN/code → cách ly cả đơn, không trừ kho, không crash.
- * - Idempotent theo `shopee-+order_sn`: kéo lại không tạo trùng.
+ * - Idempotent theo `shopee-+order_sn`.
  * - CẤM đi qua OrderService.confirmOrder (bẫy paymentProof).
  */
 export async function pullShopeeOrders(
   cfg: ShopeeSyncConfig,
   timeFrom: number,
-  timeTo: number
+  timeTo: number,
+  timeRangeField: 'create_time' | 'update_time' = 'update_time'
 ): Promise<PullResult> {
   // Cấu hình runtime (DB) làm nền; giá trị truyền tường minh luôn thắng -
   // nhờ vậy test và cron dùng chung một đường mà không hardcode kho.
@@ -113,25 +154,23 @@ export async function pullShopeeOrders(
   const result: PullResult = { pulled: 0, skipped: 0, quarantined: [] };
 
   // Danh mục ISBN/code để map SKU - đọc 1 lần cho cả đợt kéo.
-  const editionOf = await buildCatalogResolver();
+  const editionOf = await buildComponentResolver();
 
   let cursor = '';
   for (;;) {
     const page = await shopeeGet(cfg, '/api/v2/order/get_order_list', {
-      time_range_field: 'create_time',
+      time_range_field: timeRangeField,
       time_from: String(timeFrom),
       time_to: String(timeTo),
       page_size: '100',
       cursor,
       // BẮT BUỘC: không xin tường minh thì Shopee không trả order_status
-      // trong danh sách (chỉ có order_sn) - bộ lọc READY_TO_SHIP sẽ rỗng mãi.
+      // trong danh sách (chỉ có order_sn).
       response_optional_fields: 'order_status',
     });
     const list: Array<{ order_sn: string; order_status: string }> = page.order_list ?? [];
-    const ready = list.filter((o) => o.order_status === 'READY_TO_SHIP');
-    result.skipped += list.length - ready.length;
-    if (ready.length > 0) {
-      await ingestShopeeOrderSns(eff, ready.map((o) => o.order_sn), editionOf, result);
+    if (list.length > 0) {
+      await ingestShopeeOrderSns(eff, list.map((o) => o.order_sn), editionOf, result);
     }
     if (!page.more) break;
     cursor = page.next_cursor || '';
@@ -143,7 +182,7 @@ export async function pullShopeeOrders(
 export async function ingestShopeeOrderSns(
   cfg: ShopeeSyncConfig,
   orderSns: string[],
-  editionOf?: (sku: string) => string | null,
+  editionOf?: (sku: string) => Array<{ editionId: string; qty: number }> | null,
   result?: PullResult
 ): Promise<PullResult> {
   const out = result ?? { pulled: 0, skipped: 0, quarantined: [] };
@@ -154,7 +193,7 @@ export async function ingestShopeeOrderSns(
     codEnabled: cfg.codEnabled ?? shopCfg.codEnabled,
   };
   if (!eff.warehouseId) throw new Error('Thiếu warehouseId: kho xuất Shopee phải cấu hình rõ.');
-  const resolve = editionOf ?? (await buildCatalogResolver());
+  const resolve = editionOf ?? (await buildComponentResolver());
   for (let i = 0; i < orderSns.length; i += 50) {
     const batch = orderSns.slice(i, i + 50);
     const detail = await shopeeGet(cfg, '/api/v2/order/get_order_detail', {
@@ -163,7 +202,7 @@ export async function ingestShopeeOrderSns(
       // (+ khóa chính) - phải liệt kê đủ những trường ingest tiêu thụ, thiếu
       // item_list là đơn vào cách ly "không có dòng hàng".
       response_optional_fields:
-        'item_list,payment_method,recipient_address,shipping_carrier,total_amount,actual_shipping_fee',
+        'order_status,item_list,payment_method,recipient_address,shipping_carrier,total_amount,actual_shipping_fee',
     });
     const details: ShopeeOrderDetail[] = detail.order_list ?? [];
     for (const d of details) {
@@ -173,16 +212,39 @@ export async function ingestShopeeOrderSns(
   return out;
 }
 
-async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
+/**
+ * Resolver SKU → thành phần ERP. Ưu tiên mapping combo tay (shopee_sku_components),
+ * fallback về khớp ISBN/code đơn lẻ. Trả về mảng (combo = nhiều dòng).
+ */
+async function buildComponentResolver(): Promise<
+  (sku: string) => Array<{ editionId: string; qty: number }> | null
+> {
+  const comboRows = await withDbRetry(async () => db.select().from(shopeeSkuComponents));
+  const comboBySku = new Map<string, Array<{ editionId: string; qty: number }>>();
+  for (const r of comboRows) {
+    const list = comboBySku.get(r.shopeeSku) || [];
+    list.push({ editionId: r.editionId, qty: r.quantity });
+    comboBySku.set(r.shopeeSku, list);
+  }
   const catalog = await withDbRetry(async () =>
     db.select({ id: editions.id, isbn: editions.isbn, code: editions.code }).from(editions)
   );
   return (sku: string) => {
+    const combo = comboBySku.get(sku);
+    if (combo && combo.length > 0) return combo;
     // ISBN không UNIQUE (tái bản trùng ISBN): lấy id nhỏ nhất, ổn định.
     const hit = catalog
       .filter((e) => e.isbn === sku || e.code === sku)
       .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
-    return hit ? hit.id : null;
+    return hit ? [{ editionId: hit.id, qty: 1 }] : null;
+  };
+}
+
+async function buildCatalogResolver(): Promise<(sku: string) => string | null> {
+  const resolve = await buildComponentResolver();
+  return (sku: string) => {
+    const comps = resolve(sku);
+    return comps && comps.length === 1 && comps[0].qty === 1 ? comps[0].editionId : null;
   };
 }
 
@@ -210,17 +272,93 @@ async function quarantine(orderSn: string, sku: string, reason: string): Promise
   return q;
 }
 
+/**
+ * Cập nhật trạng thái đơn Shopee đã có trong DB theo Shopee.
+ * Xử lý chuyển đổi kho:
+ * - UNPAID (chưa trừ) → trạng thái phải trừ: trừ bù DISPATCH_SALE.
+ * - Đã trừ (CREATED/PICKED_UP/...) → CANCELLED: hoàn kho RETURN_INBOUND.
+ * - Còn lại: chỉ cập nhật trạng thái, không động kho.
+ */
+async function updateExistingStatus(
+  cfg: ShopeeSyncConfig,
+  existing: { id: string; status: string; shippingStatus: string },
+  shopeeStatus: string,
+  result: PullResult
+): Promise<void> {
+  const mapped = mapShopeeStatus(shopeeStatus);
+  const statusChanged =
+    existing.status !== mapped.orderStatus || existing.shippingStatus !== mapped.shippingStatus;
+  if (!statusChanged) {
+    result.skipped += 1;
+    return;
+  }
+  const wasDeducted = DEDUCTED_SHIPPING.has(existing.shippingStatus);
+  await withDbRetry(async () =>
+    db.transaction(async (tx) => {
+      await tx
+        .update(orders)
+        .set({ status: mapped.orderStatus, shippingStatus: mapped.shippingStatus })
+        .where(eq(orders.id, existing.id));
+      const items = (
+        await tx
+          .select({ editionId: orderItems.editionId, quantity: orderItems.quantity })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existing.id))
+      ).filter((r) => !!r.editionId) as Array<{ editionId: string; quantity: number }>;
+      // Đơn bị hủy sau khi đã trừ kho → hoàn kho.
+      if (mapped.orderStatus === 'CANCELLED' && wasDeducted && items.length > 0) {
+        await InventoryService.recordMovementsBatch(
+          items.map((r) => ({ editionId: r.editionId, quantityDelta: r.quantity })),
+          {
+            warehouseId: cfg.warehouseId,
+            eventType: 'RETURN_INBOUND',
+            documentRef: `SHOPEE_CANCEL_${existing.id}`,
+            note: 'Hoàn kho do đơn Shopee bị hủy',
+            actorId: 'system-shopee-sync',
+            correlationId: existing.id,
+            idempotencyPrefix: `idem-shopee-cancel-${existing.id}`,
+          },
+          tx as any
+        );
+      }
+      // Đơn từ chưa trừ (UNPAID) sang phải trừ → trừ bù.
+      if (!wasDeducted && mapped.deductInventory && items.length > 0) {
+        await InventoryService.recordMovementsBatch(
+          items.map((r) => ({ editionId: r.editionId, quantityDelta: -r.quantity })),
+          {
+            warehouseId: cfg.warehouseId,
+            eventType: 'DISPATCH_SALE',
+            documentRef: `SHOPEE_LATE_${existing.id}`,
+            note: 'Trừ bù kho: đơn Shopee từ UNPAID sang đã thanh toán',
+            actorId: 'system-shopee-sync',
+            correlationId: existing.id,
+            idempotencyPrefix: `idem-shopee-late-${existing.id}`,
+          },
+          tx as any
+        );
+      }
+    })
+  );
+  result.pulled += 1;
+}
+
 async function ingestOne(
   cfg: ShopeeSyncConfig,
-  editionOf: (sku: string) => string | null,
+  resolve: (sku: string) => Array<{ editionId: string; qty: number }> | null,
   d: ShopeeOrderDetail,
   result: PullResult
 ): Promise<void> {
   const idemKey = `shopee-${d.order_sn}`;
   const dup = await withDbRetry(async () =>
-    db.select({ id: orders.id }).from(orders).where(eq(orders.idempotencyKey, idemKey)).limit(1)
+    db.select().from(orders).where(eq(orders.idempotencyKey, idemKey)).limit(1)
   );
-  if (dup.length > 0) return; // Kéo lại: bỏ qua tuyệt đối.
+  // Đơn đã có: cập nhật trạng thái theo Shopee (không tạo trùng).
+  if (dup.length > 0) {
+    await updateExistingStatus(cfg, dup[0] as any, d.order_status, result);
+    return;
+  }
+
+  const mapped = mapShopeeStatus(d.order_status);
 
   const items = d.item_list ?? [];
   const resolved: Array<{
@@ -231,17 +369,21 @@ async function ingestOne(
   }> = [];
   for (const it of items) {
     const sku = it.model_sku || it.item_sku || '';
-    const editionId = editionOf(sku);
-    if (!editionId) {
+    const components = resolve(sku);
+    if (!components || components.length === 0) {
       result.quarantined.push(await quarantine(d.order_sn, sku, 'SKU không khớp ISBN/code'));
       return; // Cách ly CẢ đơn - không trừ nửa vời.
     }
-    resolved.push({
-      editionId,
-      qty: it.model_quantity_purchased,
-      original: it.model_original_price,
-      discounted: it.model_discounted_price,
-    });
+    // Combo: tách thành nhiều dòng, giá chia đều theo tổng số lượng thành phần.
+    const totalCompQty = components.reduce((s, c) => s + c.qty, 0) || 1;
+    for (const comp of components) {
+      resolved.push({
+        editionId: comp.editionId,
+        qty: it.model_quantity_purchased * comp.qty,
+        original: it.model_original_price / totalCompQty,
+        discounted: it.model_discounted_price / totalCompQty,
+      });
+    }
   }
   if (resolved.length === 0) {
     result.quarantined.push(await quarantine(d.order_sn, '', 'Đơn không có dòng hàng'));
@@ -277,14 +419,14 @@ async function ingestOne(
         subtotal,
         finalAmount,
         paymentMethod: isCod ? 'COD' : 'BANK_TRANSFER',
-        status: 'COMPLETED',
-        shippingStatus: 'CREATED',
+        status: mapped.orderStatus,
+        shippingStatus: mapped.shippingStatus,
         carrier,
         codAmount: isCod ? finalAmount : 0,
         codStatus: isCod ? 'PENDING' : 'NONE',
         cashierId: 'system-shopee-sync',
         idempotencyKey: idemKey,
-        note: `Đơn Shopee #${d.order_sn} - ${addr?.full_address || ''} - ${addr?.phone || ''}`,
+        note: `Đơn Shopee #${d.order_sn} (${d.order_status}) - ${addr?.full_address || ''} - ${addr?.phone || ''}`,
       });
       await tx.insert(orderItems).values(
         resolved.map((r) => ({
@@ -299,19 +441,23 @@ async function ingestOne(
           totalAmount: r.qty * r.discounted,
         }))
       );
-      await InventoryService.recordMovementsBatch(
-        resolved.map((r) => ({ editionId: r.editionId, quantityDelta: -r.qty })),
-        {
-          warehouseId: cfg.warehouseId,
-          eventType: 'DISPATCH_SALE',
-          documentRef: `SHOPEE_${d.order_sn}`,
-          note: `Xuất kho giao Shopee đơn #${d.order_sn}`,
-          actorId: 'system-shopee-sync',
-          correlationId: orderId,
-          idempotencyPrefix: `idem-shopee-${orderId}`,
-        },
-        tx as any
-      );
+      // Chỉ trừ kho với đơn "thật" (đã thanh toán/đang giao). UNPAID/CANCELLED
+      // không trừ - tránh âm kho oan.
+      if (mapped.deductInventory) {
+        await InventoryService.recordMovementsBatch(
+          resolved.map((r) => ({ editionId: r.editionId, quantityDelta: -r.qty })),
+          {
+            warehouseId: cfg.warehouseId,
+            eventType: 'DISPATCH_SALE',
+            documentRef: `SHOPEE_${d.order_sn}`,
+            note: `Xuất kho giao Shopee đơn #${d.order_sn}`,
+            actorId: 'system-shopee-sync',
+            correlationId: orderId,
+            idempotencyPrefix: `idem-shopee-${orderId}`,
+          },
+          tx as any
+        );
+      }
     })
   );
   result.pulled += 1;
