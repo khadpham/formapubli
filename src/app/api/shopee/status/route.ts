@@ -3,7 +3,7 @@ import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
 import { TursoTokenStorage } from '@/services/shopee/token-store';
-import { getShopeeConfig } from '@/services/shopee/shop-config';
+import { getShopeeConfig, resolveShopeeShopId } from '@/services/shopee/shop-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       'ROLE_WAREHOUSE',
       'ROLE_SHOPEE_OPS',
     ] as UserRole[]);
-    const shopId = Number(process.env.SHOPEE_SHOP_ID || '0') || 0;
+    const { shopId, source: shopIdSource } = await resolveShopeeShopId();
     const stored = shopId ? await new TursoTokenStorage(shopId).get() : null;
     const cfg = await getShopeeConfig();
     return NextResponse.json({
@@ -28,7 +28,10 @@ export async function GET(req: NextRequest) {
       data: {
         uiEnabled: `${process.env.SHOPEE_UI_ENABLED || ''}`.trim() === '1',
         connected: !!stored?.access_token,
-        shopId: stored?.shop_id ?? null,
+        shopId: stored?.shop_id ?? (shopId || null),
+        // 'env' | 'db' | null - cho người vận hành biết shop_id lấy từ đâu
+        // để điền env sau lần ủy quyền đầu.
+        shopIdSource,
         warehouseId: cfg.warehouseId || null,
         codEnabled: cfg.codEnabled,
       },
