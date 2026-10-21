@@ -22,6 +22,7 @@ import { eq } from 'drizzle-orm';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import { isOnlineChannel } from '@/lib/order-channels';
+import { getShopeeOpsWarehouses } from '@/services/shopee/shop-config';
 import type { UserRole } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
@@ -71,6 +72,14 @@ export async function POST(
         { ok: false, error: 'Đơn portal chưa hoàn tất giao hàng - chưa thể xác nhận khách đã nhận hàng.' },
         { status: 400 }
       );
+    }
+    // Đặc quyền tối thiểu: nhân viên Shopee chỉ xác nhận đơn thuộc kho được cấp
+    // (đồng nhất với ship/awb dùng isShopeeOrderInScope).
+    if (session.role === 'ROLE_SHOPEE_OPS') {
+      const allowed = await getShopeeOpsWarehouses();
+      if (!allowed.includes(ord.warehouseId)) {
+        return NextResponse.json({ ok: false, error: 'Đơn ngoài kho được cấp.' }, { status: 403 });
+      }
     }
 
     const now = new Date().toISOString();
