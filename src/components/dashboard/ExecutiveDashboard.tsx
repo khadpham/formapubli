@@ -479,11 +479,17 @@ export function ExecutiveDashboard({
           </div>
           {(currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER') && (
             <button
-              onClick={() => onNavigateTab('studio')}
+              onClick={() => {
+                onNavigateTab('inventory');
+                // Tab kho render xong thì cuộn tới khối hoạch định tồn kho.
+                setTimeout(() => {
+                  document.getElementById('hoach-dinh-ton-kho')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 400);
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all shrink-0"
-              title="Mở Không Gian Phân Tích Chuyên Sâu & Dự Báo (Alt+7)"
+              title="Mở Hoạch Định Tồn Kho & Dự Báo Tái Bản trong tab Kho hàng"
             >
-              🔬 Phân Tích Chuyên Sâu
+              🔬 Hoạch Định Tồn Kho
             </button>
           )}
         </div>

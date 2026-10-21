@@ -5,6 +5,7 @@ import { BookOpen, FileText } from 'lucide-react';
 import { UserRole } from '@/lib/roles';
 import PublishingProjectsView from '@/components/projects/PublishingProjectsView';
 import { ContractsTab } from '@/components/contracts/ContractsTab';
+import { RoyaltyContractsPanel } from './RoyaltyContractsPanel';
 
 interface DuAnHopDongTabProps {
   currentRole?: UserRole;
@@ -72,7 +73,10 @@ export function DuAnHopDongTab({ currentRole = 'ROLE_OWNER' }: DuAnHopDongTabPro
           canLinkContract={canLinkContract}
         />
       ) : (
-        <ContractsTab currentRole={currentRole} presetSearch={contractsPreset} />
+        <div className="space-y-4">
+          <ContractsTab currentRole={currentRole} presetSearch={contractsPreset} />
+          <RoyaltyContractsPanel currentRole={currentRole} />
+        </div>
       )}
     </div>
   );
