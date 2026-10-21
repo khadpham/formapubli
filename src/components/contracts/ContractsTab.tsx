@@ -13,6 +13,8 @@ import { ContractProjects } from './ContractProjects';
 
 interface ContractsTabProps {
   currentRole?: UserRole;
+  /** Từ khóa tìm kiếm đặt trước (VD: nhảy từ giai đoạn dự án sang xem HĐ). */
+  presetSearch?: string;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -39,11 +41,11 @@ function formatMoney(v: any): string {
 }
 
 /** Tab Hợp Đồng: danh sách + lọc + soạn mới + mẫu + công ty. */
-export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) {
+export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: ContractsTabProps) {
   const [docs, setDocs] = useState<any[]>([]);
   const [partners, setPartners] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(presetSearch || '');
   const [page, setPage] = useState(1);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
@@ -103,6 +105,14 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER' }: ContractsTabProps) 
   useEffect(() => {
     setPage(1);
   }, [statusFilter, search]);
+
+  // Đồng bộ khi tab cha đặt từ khóa mới (nhảy từ dự án sang xem HĐ).
+  useEffect(() => {
+    if (presetSearch) {
+      setSearch(presetSearch);
+      setPage(1);
+    }
+  }, [presetSearch]);
 
   const downloadDocx = async (doc: any) => {
     try {

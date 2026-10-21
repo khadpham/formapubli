@@ -29,7 +29,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-purple-700 border-purple-300',
     badgeBg: 'bg-purple-50',
     description: 'Toàn quyền điều hành, xem Báo cáo Quản trị Thực tế Toàn cảnh và Sổ Kép',
-    allowedNavItems: ['chu', 'dashboard', 'projects', 'contracts', 'inventory', 'pos', 'shopee', 'sales', 'einvoice', 'customers', 'partners', 'hr', 'studio', 'settings'],
+    allowedNavItems: ['chu', 'dashboard', 'inventory', 'pos', 'shopee', 'sales', 'einvoice', 'customers', 'partners', 'hr', 'duan-hopdong', 'studio', 'settings'],
   },
   ROLE_MANAGER: {
     id: 'ROLE_MANAGER',
@@ -37,7 +37,7 @@ export const USER_ROLES: Record<UserRole, RoleConfig> = {
     badgeColor: 'text-blue-700 border-blue-300',
     badgeBg: 'bg-blue-50',
     description: 'Điều phối bán hàng, duyệt chuyển kho, áp chiết khấu cho phép',
-    allowedNavItems: ['dashboard', 'projects', 'contracts', 'inventory', 'pos', 'shopee', 'sales', 'einvoice', 'customers', 'partners', 'hr', 'studio', 'settings'],
+    allowedNavItems: ['dashboard', 'inventory', 'pos', 'shopee', 'sales', 'einvoice', 'customers', 'partners', 'hr', 'duan-hopdong', 'studio', 'settings'],
   },
   ROLE_CASHIER: {
     id: 'ROLE_CASHIER',

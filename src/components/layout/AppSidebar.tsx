@@ -18,7 +18,6 @@ import {
   Sparkles,
   ShoppingBag,
   Crown,
-  FileText,
   FolderKanban,
   FileCheck2,
   UsersRound,
@@ -140,18 +139,6 @@ export function AppSidebar({
       color: 'text-indigo-600',
     },
     {
-      id: 'projects',
-      label: 'Dự án xuất bản',
-      icon: FolderKanban,
-      color: 'text-cyan-600',
-    },
-    {
-      id: 'contracts',
-      label: 'Hợp đồng',
-      icon: FileText,
-      color: 'text-teal-600',
-    },
-    {
       id: 'inventory',
       label: 'Kho hàng',
       icon: Boxes,
@@ -204,6 +191,12 @@ export function AppSidebar({
       label: 'Nhân sự',
       icon: UsersRound,
       color: 'text-lime-600',
+    },
+    {
+      id: 'duan-hopdong',
+      label: 'Dự án & Hợp đồng',
+      icon: FolderKanban,
+      color: 'text-cyan-600',
     },
     {
       id: 'studio',
