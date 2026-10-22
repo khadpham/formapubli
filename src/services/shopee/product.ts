@@ -31,7 +31,20 @@ export interface AddItemParams {
   parcelLength?: number;
   parcelWidth?: number;
   parcelHeight?: number;
+  /** Kênh vận chuyển Shopee (logistic_id). Bắt buộc theo API v2. */
+  logisticId?: number;
+  /**
+   * Attributes bắt buộc của category (mặc định cho sách Adult's Books 301543:
+   * Language=Vietnamese, Import/Local=Local). Ghi đè khi cần.
+   */
+  attributes?: Array<{ attributeId: number; valueId: number }>;
 }
+
+/** Attributes mặc định cho sách tiếng Việt xuất bản nội địa (category 301543). */
+export const DEFAULT_BOOK_ATTRIBUTES = [
+  { attributeId: 200673, valueId: 105471 }, // Language = Vietnamese
+  { attributeId: 200676, valueId: 103518 }, // Import/Local = Local
+];
 
 async function shopeePost(
   cfg: ShopeeSyncConfig,
@@ -120,31 +133,94 @@ export async function getShopeeCategories(
 }
 
 /**
+ * Lấy danh sách kênh vận chuyển của shop.
+ * @returns logistic_id của kênh đang bật đầu tiên (để dùng cho add_item).
+ */
+export async function getShopeeLogisticChannelId(cfg: ShopeeSyncConfig): Promise<number> {
+  const res = await shopeeGet(cfg, '/api/v2/logistics/get_channel_list', {});
+  const list = (res?.logistics_channel_list || []) as Array<{
+    logistics_channel_id: number;
+    enabled: boolean;
+  }>;
+  const enabled = list.find((c) => c.enabled);
+  if (!enabled) {
+    throw new Error('Shop chưa bật kênh vận chuyển nào trên Shopee.');
+  }
+  return enabled.logistics_channel_id;
+}
+
+export interface ShopeeAttributeValue {
+  value_id: number;
+  original_value_name: string;
+  value_unit?: string;
+}
+
+export interface ShopeeAttribute {
+  attribute_id: number;
+  original_attribute_name: string;
+  is_mandatory: boolean;
+  input_type: string;
+  attribute_value_list?: ShopeeAttributeValue[];
+}
+
+/**
+ * Lấy cây attributes của 1 category (để biết field bắt buộc khi tạo sản phẩm).
+ */
+export async function getShopeeAttributes(
+  cfg: ShopeeSyncConfig,
+  categoryId: number
+): Promise<ShopeeAttribute[]> {
+  const res = await shopeeGet(cfg, '/api/v2/product/get_attribute_tree', {
+    category_id_list: String(categoryId),
+    language: 'en',
+  });
+  // Response thật: { list: [{ category_id, attribute_tree: [{attribute_id, mandatory, name, attribute_value_list: [{value_id, name}]}] }] }
+  const cats = (res?.list || []) as Array<{ attribute_tree?: any[] }>;
+  const tree = cats[0]?.attribute_tree || [];
+  return tree.map((a: any) => ({
+    attribute_id: a.attribute_id,
+    original_attribute_name: a.name,
+    is_mandatory: !!a.mandatory,
+    input_type: '',
+    attribute_value_list: (a.attribute_value_list || []).map((v: any) => ({
+      value_id: v.value_id,
+      original_value_name: v.name,
+    })),
+  })) as ShopeeAttribute[];
+}
+
+/**
  * Tạo sản phẩm mới trên Shopee.
+ * Cấu trúc theo SDK @congminh1254/shopee-sdk (đã kiểm chứng trên sandbox):
+ * - seller_stock là field TOP-LEVEL (không phải stock_info_v2)
+ * - logistic_info là BẮT BUỘC
  * @returns item_id của sản phẩm vừa tạo.
  */
 export async function addShopeeItem(
   cfg: ShopeeSyncConfig,
   params: AddItemParams
 ): Promise<number> {
-  // Cấu trúc tối giản cho sản phẩm không có phân loại
+  const logisticId = params.logisticId ?? (await getShopeeLogisticChannelId(cfg));
   const body: Record<string, unknown> = {
     category_id: params.categoryId,
     item_name: params.name,
     description: params.description,
     item_sku: params.itemSku,
-    price_info: [
-      {
-        currency: 'VND',
-        original_price: params.price,
-        current_price: params.price,
-      },
-    ],
+    original_price: params.price,
     image: { image_id_list: params.imageIdList },
     weight: params.weight,
+    // Tồn kho: field top-level, location_id không bắt buộc
+    seller_stock: [{ stock: params.stock }],
+    // Kênh vận chuyển: bắt buộc
+    logistic_info: [{ logistic_id: logisticId, enabled: true, is_free: false }],
     pre_order: { is_pre_order: false },
     condition: 'NEW',
-    brand: { brand_id: 0, original_brand_name: 'No Brand' },
+    brand: { brand_id: 0, original_brand_name: 'NoBrand' },
+    // Attributes bắt buộc của category (VD: Language, Import/Local với sách)
+    attribute_list: (params.attributes ?? DEFAULT_BOOK_ATTRIBUTES).map((a) => ({
+      attribute_id: a.attributeId,
+      attribute_value_list: [{ value_id: a.valueId }],
+    })),
   };
   if (params.parcelLength && params.parcelWidth && params.parcelHeight) {
     body.dimension = {
