@@ -175,27 +175,31 @@ export async function getShopeeCategories(
 
 /**
  * Lấy danh sách kênh vận chuyển của shop.
- * Ưu tiên "Nhanh" (5001, kênh SPX chính theo sản phẩm thật COMBO07),
- * sau đó là "Trong Ngày" (5012), cuối cùng mới lấy kênh đang bật đầu tiên.
- * Lưu ý: SPX Express (50021) là masking channel, không bật trực tiếp qua API được.
- * @returns logistic_id của kênh được chọn (để dùng cho add_item).
+ * Trả về tất cả kênh đang bật (theo COMBO07 thật: Trong Ngày, Hỏa Tốc, Hàng Cồng Kềnh, Nhanh).
+ * @returns mảng logistic_id (để dùng cho add_item).
  */
-export async function getShopeeLogisticChannelId(cfg: ShopeeSyncConfig): Promise<number> {
+export async function getShopeeLogisticChannelIds(cfg: ShopeeSyncConfig): Promise<number[]> {
   const res = await shopeeGet(cfg, '/api/v2/logistics/get_channel_list', {});
   const list = (res?.logistics_channel_list || []) as Array<{
     logistics_channel_id: number;
-    logistics_channel_name?: string;
     enabled: boolean;
   }>;
-  const enabled = list.filter((c) => c.enabled);
+  const enabled = list.filter((c) => c.enabled).map((c) => c.logistics_channel_id);
   if (enabled.length === 0) {
     throw new Error('Shop chưa bật kênh vận chuyển nào trên Shopee.');
   }
-  // Ưu tiên "Nhanh" (5001), rồi "Trong Ngày" (5012) theo COMBO07 thật.
-  const preferred = enabled.find((c) => c.logistics_channel_id === 5001)
-    ?? enabled.find((c) => c.logistics_channel_id === 5012)
-    ?? enabled[0];
-  return preferred.logistics_channel_id;
+  // Ưu tiên 4 kênh của COMBO07, loại bỏ các kênh lạ.
+  const preferred = [5001, 5012, 5000, 5004].filter((id) => enabled.includes(id));
+  return preferred.length > 0 ? preferred : enabled.slice(0, 4);
+}
+
+/**
+ * Lấy 1 kênh vận chuyển ưu tiên (giữ tương thích code cũ).
+ * @returns logistic_id của kênh được chọn.
+ */
+export async function getShopeeLogisticChannelId(cfg: ShopeeSyncConfig): Promise<number> {
+  const ids = await getShopeeLogisticChannelIds(cfg);
+  return ids[0];
 }
 
 export interface ShopeeAttributeValue {
@@ -249,7 +253,7 @@ export async function addShopeeItem(
   cfg: ShopeeSyncConfig,
   params: AddItemParams
 ): Promise<number> {
-  const logisticId = params.logisticId ?? (await getShopeeLogisticChannelId(cfg));
+  const logisticIds = params.logisticId ? [params.logisticId] : await getShopeeLogisticChannelIds(cfg);
   const isSandbox = /sandbox/i.test(cfg.baseUrl || '');
   const brand = getDefaultBrand(cfg.baseUrl || '');
   const attributeList = (params.attributes ?? (isSandbox ? DEFAULT_BOOK_ATTRIBUTES_SANDBOX : DEFAULT_BOOK_ATTRIBUTES_PROD)).map((a) => ({
@@ -273,8 +277,8 @@ export async function addShopeeItem(
     weight: params.weight,
     // Tồn kho: field top-level, location_id không bắt buộc
     seller_stock: [{ stock: params.stock }],
-    // Kênh vận chuyển: bắt buộc
-    logistic_info: [{ logistic_id: logisticId, enabled: true, is_free: false }],
+    // Kênh vận chuyển: bật tất cả kênh phù hợp (theo COMBO07 thật)
+    logistic_info: logisticIds.map((id) => ({ logistic_id: id, enabled: true, is_free: false })),
     pre_order: { is_pre_order: false },
     condition: 'NEW',
     brand: { brand_id: brand.brandId, original_brand_name: brand.brandName },
