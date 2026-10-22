@@ -68,17 +68,49 @@ export async function uploadImageToShopee(
 }
 
 /**
+ * Trích URL ảnh trực tiếp từ trang xem của ibb.co / freeimage.host.
+ * Link trong spreadsheet thường là dạng trang (trả về HTML),
+ * cần bóc URL i.ibb.co/... mới tải được file ảnh.
+ * Ưu tiên thẻ og:image, fallback lấy URL xuất hiện nhiều nhất.
+ */
+async function resolveIbbDirectUrl(pageUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(pageUrl, { redirect: 'follow' });
+    const html = await res.text();
+    const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+    if (og?.[1] && og[1].includes('i.ibb.co/')) return og[1];
+    const matches = [...html.matchAll(/https:\/\/i\.ibb\.co\/[^"'\s<>]+/g)].map((m) => m[0]);
+    if (matches.length === 0) return null;
+    // URL xuất hiện nhiều nhất thường là ảnh chính.
+    const freq = new Map<string, number>();
+    for (const u of matches) freq.set(u, (freq.get(u) || 0) + 1);
+    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Tải ảnh từ URL về Buffer.
  * Xử lý redirect (ví dụ ibb.co trỏ sang ảnh thật).
+ * Tự bóc trang ibb.co / freeimage.host thành link ảnh trực tiếp.
  */
 export async function downloadImage(url: string): Promise<Buffer> {
-  const res = await fetch(url, { redirect: 'follow' });
+  let directUrl = url;
+  if (/https?:\/\/(www\.)?(ibb\.co|freeimage\.host)\//i.test(url) && !url.includes('i.ibb.co/')) {
+    const resolved = await resolveIbbDirectUrl(url);
+    if (!resolved) {
+      throw new Error(`Không bóc được ảnh trực tiếp từ link: ${url}`);
+    }
+    directUrl = resolved;
+  }
+  const res = await fetch(directUrl, { redirect: 'follow' });
   if (!res.ok) {
-    throw new Error(`Tải ảnh thất bại: ${res.status} - ${url}`);
+    throw new Error(`Tải ảnh thất bại: ${res.status} - ${directUrl}`);
   }
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.startsWith('image/')) {
-    throw new Error(`URL không phải ảnh trực tiếp (${contentType}): ${url}`);
+    throw new Error(`URL không phải ảnh trực tiếp (${contentType}): ${directUrl}`);
   }
   return Buffer.from(await res.arrayBuffer());
 }
