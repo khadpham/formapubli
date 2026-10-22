@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Package, RefreshCw, CheckCircle2, AlertTriangle, Upload, Link2, X, Plus, Search } from 'lucide-react';
+import { Package, RefreshCw, CheckCircle2, AlertTriangle, Upload, Link2, X, Plus, Search, Tag } from 'lucide-react';
+import type { UserRole } from '@/lib/roles';
+import { ShopeeProductPublishDialog } from './ShopeeProductPublish';
 
 interface ShopProduct {
   itemId: number;
@@ -180,12 +182,15 @@ function SkuMapDialog({
   );
 }
 
-export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void }) {
+export function ShopeeProductsPanel({ onToast, sessionRole }: { onToast: (m: string) => void; sessionRole: UserRole }) {
   const [products, setProducts] = useState<ShopProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pushingId, setPushingId] = useState<number | null>(null);
+  const [pushingPriceId, setPushingPriceId] = useState<number | null>(null);
   const [mappingProduct, setMappingProduct] = useState<ShopProduct | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const canPublish = sessionRole === 'ROLE_OWNER' || sessionRole === 'ROLE_MANAGER';
 
   const load = async () => {
     setLoading(true);
@@ -228,6 +233,27 @@ export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void 
     }
   };
 
+  const pushPrice = async (p: ShopProduct) => {
+    if (!p.erpMapped) {
+      onToast('Sản phẩm chưa đối chiếu với ERP - không đẩy được giá.');
+      return;
+    }
+    setPushingPriceId(p.itemId);
+    try {
+      const r = await fetch('/api/shopee/price-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: p.itemId, sku: p.sku }),
+      }).then((x) => x.json());
+      if (r?.success) onToast(`Đã đẩy giá ${Number(r.data.price || 0).toLocaleString('vi-VN')}đ cho "${p.name}".`);
+      else onToast(r?.error || 'Đẩy giá thất bại.');
+    } catch {
+      onToast('Đẩy giá thất bại.');
+    } finally {
+      setPushingPriceId(null);
+    }
+  };
+
   const mapped = products.filter((p) => p.erpMapped).length;
 
   return (
@@ -242,19 +268,32 @@ export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void 
             </span>
           )}
         </h2>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={load}
-          aria-label="Tải lại sản phẩm Shopee"
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold min-h-[40px] disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Tải lại
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {canPublish && (
+            <button
+              type="button"
+              onClick={() => setPublishing(true)}
+              aria-label="Đăng sản phẩm mới lên Shopee"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-600 text-white text-xs font-bold min-h-[40px]"
+            >
+              <Plus className="w-4 h-4" />
+              Đăng sản phẩm
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={load}
+            aria-label="Tải lại sản phẩm Shopee"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold min-h-[40px] disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Tải lại
+          </button>
+        </div>
       </div>
       <p className="text-[11px] text-slate-500">
-        Đối chiếu SKU Shopee với mã sách trong ERP. Nền cho tính năng đăng sản phẩm tự động sau này.
+        Đối chiếu SKU Shopee với mã sách trong ERP. Đẩy tồn kho và giá bán ERP lên sàn cho từng sản phẩm đã đối chiếu.
       </p>
 
       {loading && !loaded && <p className="text-xs text-slate-400">Đang tải từ Shopee…</p>}
@@ -297,17 +336,30 @@ export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void 
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              disabled={pushingId === p.itemId}
-              onClick={() => pushStock(p)}
-              aria-label={`Đẩy tồn kho ${p.name}`}
-              title="Đẩy tồn kho ERP lên Shopee"
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold min-h-[40px] disabled:opacity-50"
-            >
-              <Upload className="w-4 h-4" />
-              {pushingId === p.itemId ? 'Đang đẩy…' : 'Đẩy tồn'}
-            </button>
+            <div className="shrink-0 flex flex-col gap-1.5">
+              <button
+                type="button"
+                disabled={pushingId === p.itemId}
+                onClick={() => pushStock(p)}
+                aria-label={`Đẩy tồn kho ${p.name}`}
+                title="Đẩy tồn kho ERP lên Shopee"
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold min-h-[40px] disabled:opacity-50"
+              >
+                <Upload className="w-4 h-4" />
+                {pushingId === p.itemId ? 'Đang đẩy…' : 'Đẩy tồn'}
+              </button>
+              <button
+                type="button"
+                disabled={pushingPriceId === p.itemId}
+                onClick={() => pushPrice(p)}
+                aria-label={`Đẩy giá ERP cho ${p.name}`}
+                title="Đẩy giá bán ERP lên Shopee"
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold min-h-[40px] disabled:opacity-50"
+              >
+                <Tag className="w-4 h-4" />
+                {pushingPriceId === p.itemId ? 'Đang đẩy…' : 'Đẩy giá'}
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -316,6 +368,13 @@ export function ShopeeProductsPanel({ onToast }: { onToast: (m: string) => void 
           product={mappingProduct}
           onClose={() => setMappingProduct(null)}
           onSaved={load}
+          onToast={onToast}
+        />
+      )}
+      {publishing && (
+        <ShopeeProductPublishDialog
+          onClose={() => setPublishing(false)}
+          onPublished={load}
           onToast={onToast}
         />
       )}

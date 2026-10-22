@@ -7,8 +7,8 @@ import { PortalOrdersPanel } from './PortalOrdersPanel';
 import { ShopeeOrdersHub } from './ShopeeOrdersHub';
 import { ShopeeOverviewPanel } from './ShopeeOverviewPanel';
 import { ShopeeProductsPanel } from './ShopeeProductsPanel';
-import { ShopeeFinancePanel } from './ShopeeFinancePanel';
 import { ShopeeReturnsPanel } from './ShopeeReturnsPanel';
+import { ShopeeMarketingPanel } from './ShopeeMarketingPanel';
 
 interface ConfirmOrder {
   id: string;
@@ -29,7 +29,8 @@ interface QuarantineItem {
  * Hub Đơn online - quản lý tập trung đơn portal + Shopee (TÁCH RIÊNG theo kênh).
  * Quyết định 2026-10-21 (chủ hệ thống): đơn hàng tách riêng kênh nào ra kênh nấy
  * do khối lượng tác vụ Shopee lớn, luồng thao tác riêng.
- * 6 mục con: Tổng quan | Đơn Shopee | Đơn Portal | Sản phẩm kênh | Tài chính | Hóa đơn.
+ * 7 mục con: Tổng quan | Đơn Shopee | Đơn Portal | Trả hàng | Sản phẩm kênh | Marketing | Hóa đơn.
+ * GĐ4: đã xóa mục Tài chính khỏi hub - dữ liệu escrow/phí/lãi chuyển sang tab Chủ (OwnerShopeePnl).
  */
 interface ShopeeStatus {
   connected: boolean;
@@ -44,7 +45,7 @@ const HUB_TABS = [
   { key: 'don_portal', label: 'Đơn Portal' },
   { key: 'tra_hang', label: 'Trả hàng' },
   { key: 'san_pham', label: 'Sản phẩm kênh' },
-  { key: 'tai_chinh', label: 'Tài chính' },
+  { key: 'marketing', label: 'Marketing' },
   { key: 'hoa_don', label: 'Hóa đơn' },
 ] as const;
 
@@ -165,7 +166,7 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
               </button>
             )}
           </section>
-          {/* Điều hướng 6 mục con của hub Đơn online */}
+          {/* Điều hướng 8 mục con của hub Đơn online */}
           <nav aria-label="Mục hub đơn online" className="flex gap-1.5 flex-wrap">
             {HUB_TABS.map((t) => (
               <button
@@ -188,8 +189,8 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           {hubTab === 'don_shopee' && <ShopeeOrdersHub onToast={showToast} />}
           {hubTab === 'don_portal' && <PortalOrdersPanel currentRole={sessionRole} />}
           {hubTab === 'tra_hang' && <ShopeeReturnsPanel onToast={showToast} />}
-          {hubTab === 'san_pham' && <ShopeeProductsPanel onToast={showToast} />}
-          {hubTab === 'tai_chinh' && <ShopeeFinancePanel onToast={showToast} />}
+          {hubTab === 'san_pham' && <ShopeeProductsPanel onToast={showToast} sessionRole={sessionRole} />}
+          {hubTab === 'marketing' && <ShopeeMarketingPanel onToast={showToast} />}
           {hubTab === 'hoa_don' && (
             <section aria-label="Hóa đơn đơn online" className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-3">
               <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Crown, Wallet, ReceiptText, PiggyBank, Pencil } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import WorkPnlPanel from './WorkPnlPanel';
+import OwnerShopeePnl from './OwnerShopeePnl';
 
 interface ExpenseEntry {
   id: string;
@@ -579,6 +580,9 @@ export function OwnerTab() {
           </div>
         </div>
       </section>
+
+      {/* P&L Shopee chi tiết + đối soát payout - GĐ4, chỉ Chủ */}
+      <OwnerShopeePnl onToast={showToast} />
 
       {/* Nợ vay - GĐ3-P4 */}
       {data.loans && (

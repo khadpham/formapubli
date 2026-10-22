@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { desc } from 'drizzle-orm';
+import { desc, eq, and } from 'drizzle-orm';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
-import { db, shopeeReturns } from '@/db';
+import { db, shopeeReturns, orders } from '@/db';
 import { pullShopeeReturns } from '@/services/shopee/returns-sync';
 import { getShopeeConfig, resolveShopeeShopId } from '@/services/shopee/shop-config';
 
@@ -18,7 +18,9 @@ const RETURN_LABEL: Record<string, string> = {
 };
 
 /**
- * GET /api/shopee/returns - danh sách trả hàng/hoàn tiền từ DB.
+ * GET /api/shopee/returns?type=RETURN_REFUND|FAILED_DELIVERY|CANCELLATION - danh sách theo luồng.
+ * - RETURN_REFUND / FAILED_DELIVERY: từ bảng shopee_returns
+ * - CANCELLATION: từ bảng orders (đơn SHOPEE bị hủy, không có mã yêu cầu riêng)
  * POST /api/shopee/returns { hours? } - đồng bộ từ Shopee về.
  */
 export async function GET(req: NextRequest) {
@@ -29,7 +31,43 @@ export async function GET(req: NextRequest) {
       'ROLE_WAREHOUSE',
       'ROLE_SHOPEE_OPS',
     ] as UserRole[]);
-    const rows = await db.select().from(shopeeReturns).orderBy(desc(shopeeReturns.createdAt)).limit(100);
+    const type = new URL(req.url).searchParams.get('type') || 'RETURN_REFUND';
+
+    if (type === 'CANCELLATION') {
+      // Hủy đơn: đơn SHOPEE có status CANCELLED, không có mã yêu cầu riêng
+      const rows = await db
+        .select({
+          orderSn: orders.idempotencyKey,
+          orderCode: orders.orderCode,
+          status: orders.status,
+          shippingStatus: orders.shippingStatus,
+          trackingCode: orders.trackingCode,
+          finalAmount: orders.finalAmount,
+          createdAt: orders.createdAt,
+          packedAt: orders.packedAt,
+        })
+        .from(orders)
+        .where(and(eq(orders.channel, 'SHOPEE'), eq(orders.status, 'CANCELLED')))
+        .orderBy(desc(orders.createdAt))
+        .limit(100);
+      return NextResponse.json({
+        success: true,
+        data: rows.map((r) => ({
+          ...r,
+          // Bóc mã đơn Shopee từ idempotency_key (dạng shopee-<order_sn>)
+          orderSn: String(r.orderSn || '').replace(/^shopee-/, ''),
+          // Đã in vận đơn nhưng chưa bàn giao = cần giữ kiện hàng
+          needHold: !!r.trackingCode && r.shippingStatus !== 'DELIVERED',
+        })),
+      });
+    }
+
+    const rows = await db
+      .select()
+      .from(shopeeReturns)
+      .where(eq(shopeeReturns.returnType, type))
+      .orderBy(desc(shopeeReturns.createdAt))
+      .limit(100);
     return NextResponse.json({
       success: true,
       data: rows.map((r) => ({ ...r, statusLabel: RETURN_LABEL[r.status] || r.status })),
