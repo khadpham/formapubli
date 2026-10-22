@@ -43,6 +43,26 @@ export interface ReturnPullResult {
 }
 
 /**
+ * Phân loại yêu cầu trả hàng thành 3 luồng (theo quan sát Seller Center 2026-10-22).
+ * - FAILED_DELIVERY: lý do liên quan giao hàng thất bại (kiện đang hoàn về)
+ * - RETURN_REFUND: các trường hợp còn lại (trả hàng/hoàn tiền sau khi giao)
+ * Lưu ý: Hủy đơn (CANCELLATION) không có mã yêu cầu riêng, theo dõi qua bảng orders.
+ */
+function classifyReturnType(reason: string | undefined | null): 'RETURN_REFUND' | 'FAILED_DELIVERY' {
+  const r = (reason || '').toLowerCase();
+  if (
+    r.includes('giao hàng không thành công') ||
+    r.includes('delivery fail') ||
+    r.includes('failed delivery') ||
+    r.includes('không giao được') ||
+    r.includes('undelivered')
+  ) {
+    return 'FAILED_DELIVERY';
+  }
+  return 'RETURN_REFUND';
+}
+
+/**
  * Kéo danh sách trả hàng/hoàn tiền từ Shopee về DB.
  * Idempotent theo return_sn: đã có thì cập nhật trạng thái.
  */
@@ -91,6 +111,7 @@ export async function pullShopeeReturns(
             refundAmount: Number(r.refund_amount || 0),
             buyerUsername: r.user?.username || null,
             sellerDueDate: r.return_seller_due_date || null,
+            returnType: classifyReturnType(r.reason),
           })
         );
         result.pulled += 1;

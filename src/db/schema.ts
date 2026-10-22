@@ -988,6 +988,8 @@ export const shopeeReturns = sqliteTable('shopee_returns', {
   refundAmount: real('refund_amount').notNull().default(0),
   buyerUsername: text('buyer_username'),
   sellerDueDate: integer('seller_due_date'),
+  // 0082: phân loại 3 luồng - CANCELLATION (hủy trước giao), RETURN_REFUND (trả/hoàn sau giao), FAILED_DELIVERY (giao thất bại)
+  returnType: text('return_type').notNull().default('RETURN_REFUND'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
@@ -1633,4 +1635,23 @@ export const workCosts = sqliteTable('work_costs', {
 }, (table) => ({
   workIdx: index('idx_work_costs_work').on(table.workId),
   sourceIdx: uniqueIndex('idx_work_costs_source').on(table.sourceType, table.sourceId),
+}));
+
+// 0085: Chương trình khuyến mãi Shopee (voucher, discount, bundle, addon, flash sale).
+// Cấu hình = vận hành (tab Shopee). Ngân sách đã chi = tài chính (tab Chủ, từ escrow).
+export const shopeeMarketing = sqliteTable('shopee_marketing', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(), // VOUCHER | DISCOUNT | BUNDLE | ADDON | FLASH_SALE
+  name: text('name').notNull(),
+  configJson: text('config_json').notNull().default('{}'),
+  status: text('status').notNull().default('DRAFT'), // DRAFT | SCHEDULED | ONGOING | EXPIRED | CANCELLED
+  shopeeId: text('shopee_id'), // id trên Shopee khi đã đẩy lên sàn
+  startAt: text('start_at'),
+  endAt: text('end_at'),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  typeIdx: index('idx_shopee_marketing_type').on(table.type),
+  statusIdx: index('idx_shopee_marketing_status').on(table.status),
 }));
