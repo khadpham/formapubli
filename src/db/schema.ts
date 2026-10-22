@@ -944,6 +944,26 @@ export const shopeeItemMap = sqliteTable('shopee_item_map', {
   pk: primaryKey({ columns: [table.shopId, table.editionId] }),
 }));
 
+/**
+ * 0083: Sản phẩm Shopee đồng bộ 2 chiều (Giai đoạn 2 - masterplan 2026-10-22).
+ * Lưu item_id Shopee trả về sau khi đăng từ ERP. Không chứa dữ liệu tài chính.
+ */
+export const shopeeProducts = sqliteTable('shopee_products', {
+  itemId: integer('item_id').primaryKey(),
+  itemSku: text('item_sku'),
+  name: text('name').notNull(),
+  price: real('price').notNull().default(0),
+  stock: integer('stock').notNull().default(0),
+  status: text('status').notNull().default('NORMAL'),
+  categoryId: integer('category_id'),
+  imageUrls: text('image_urls'), // JSON array
+  erpEditionId: text('erp_edition_id'), // edition chính (sách lẻ); combo tra qua shopee_sku_components
+  lastSyncedAt: text('last_synced_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  skuIdx: index('idx_shopee_products_sku').on(table.itemSku),
+  editionIdx: index('idx_shopee_products_edition').on(table.erpEditionId),
+}));
+
 /** Mapping SKU Shopee -> thành phần ERP (hỗ trợ combo: 1 SKU = nhiều edition). */
 export const shopeeSkuComponents = sqliteTable('shopee_sku_components', {
   shopeeSku: text('shopee_sku').notNull(),
@@ -1654,4 +1674,24 @@ export const shopeeMarketing = sqliteTable('shopee_marketing', {
 }, (table) => ({
   typeIdx: index('idx_shopee_marketing_type').on(table.type),
   statusIdx: index('idx_shopee_marketing_status').on(table.status),
+}));
+
+// 0086: Đối soát payout Shopee theo kỳ (Giai đoạn 4 - chỉ tab Chủ).
+// Tầng 2+3 của đối soát 3 tầng: tổng hợp escrow theo kỳ + khớp sao kê ngân hàng nhập tay.
+export const shopeePayouts = sqliteTable('shopee_payouts', {
+  id: text('id').primaryKey(),
+  period: text('period').notNull().unique(), // YYYY-MM
+  totalRevenue: real('total_revenue').notNull().default(0), // tổng escrow
+  totalFees: real('total_fees').notNull().default(0), // phí cố định + DV + giao dịch
+  totalMarketing: real('total_marketing').notNull().default(0), // seller_discount
+  totalWithholding: real('total_withholding').notNull().default(0), // thuế khấu trừ
+  totalCogs: real('total_cogs'), // giá vốn
+  netProfit: real('net_profit'), // lợi nhuận ròng
+  orderCount: integer('order_count').notNull().default(0),
+  bankStatementAmount: real('bank_statement_amount'), // số liệu sao kê nhập tay
+  diff: real('diff'), // chênh lệch = totalRevenue - bankStatementAmount
+  reconciledAt: text('reconciled_at'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  periodIdx: index('idx_shopee_payouts_period').on(table.period),
 }));
