@@ -40,6 +40,8 @@ export interface PullResult {
 interface ShopeeOrderDetail {
   order_sn: string;
   order_status: string;
+  /** Unix timestamp (giây) - giờ đơn thật trên Shopee. */
+  create_time?: number;
   payment_method: 'PREPAID' | 'COD' | string;
   shipping_carrier?: string;
   recipient_address?: { name?: string; phone?: string; full_address?: string };
@@ -85,6 +87,19 @@ async function shopeeGet(
     throw new Error(`Shopee API lỗi: ${data.error} - ${data.message || ''}`);
   }
   return data.response;
+}
+
+/**
+ * Lấy mã vận đơn từ Shopee cho 1 đơn. Trả '' nếu chưa có (Shopee cấp trễ).
+ * Chỉ gọi cho đơn đã xếp lịch giao (PROCESSED/SHIPPED/COMPLETED).
+ */
+async function fetchTrackingNumber(cfg: ShopeeSyncConfig, orderSn: string): Promise<string> {
+  try {
+    const r = await shopeeGet(cfg, '/api/v2/logistics/get_tracking_number', { order_sn: orderSn });
+    return String(r?.tracking_number || '');
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -202,7 +217,7 @@ export async function ingestShopeeOrderSns(
       // (+ khóa chính) - phải liệt kê đủ những trường ingest tiêu thụ, thiếu
       // item_list là đơn vào cách ly "không có dòng hàng".
       response_optional_fields:
-        'order_status,item_list,payment_method,recipient_address,shipping_carrier,total_amount,actual_shipping_fee',
+        'order_status,item_list,payment_method,recipient_address,shipping_carrier,total_amount,actual_shipping_fee,create_time',
     });
     const details: ShopeeOrderDetail[] = detail.order_list ?? [];
     for (const d of details) {
@@ -281,24 +296,31 @@ async function quarantine(orderSn: string, sku: string, reason: string): Promise
  */
 async function updateExistingStatus(
   cfg: ShopeeSyncConfig,
-  existing: { id: string; status: string; shippingStatus: string },
+  existing: { id: string; status: string; shippingStatus: string; trackingCode?: string | null },
   shopeeStatus: string,
-  result: PullResult
+  result: PullResult,
+  opts?: { createTimeIso?: string; trackingCode?: string }
 ): Promise<void> {
   const mapped = mapShopeeStatus(shopeeStatus);
-  const statusChanged =
-    existing.status !== mapped.orderStatus || existing.shippingStatus !== mapped.shippingStatus;
-  if (!statusChanged) {
+  const setPatch: Record<string, unknown> = {};
+  if (existing.status !== mapped.orderStatus) setPatch.status = mapped.orderStatus;
+  if (existing.shippingStatus !== mapped.shippingStatus)
+    setPatch.shippingStatus = mapped.shippingStatus;
+  // Bổ sung ngày tạo thật + mã vận đơn nếu trước đây thiếu.
+  if (opts?.createTimeIso) setPatch.createdAt = opts.createTimeIso;
+  if (opts?.trackingCode && !existing.trackingCode) setPatch.trackingCode = opts.trackingCode;
+  if (Object.keys(setPatch).length === 0) {
     result.skipped += 1;
     return;
   }
   const wasDeducted = DEDUCTED_SHIPPING.has(existing.shippingStatus);
+  // Chỉ động kho khi trạng thái (order/shipping) thật sự đổi - bổ sung
+  // createdAt/trackingCode không được trừ/hoàn kho oan.
+  const inventoryRelevant =
+    setPatch.status !== undefined || setPatch.shippingStatus !== undefined;
   await withDbRetry(async () =>
     db.transaction(async (tx) => {
-      await tx
-        .update(orders)
-        .set({ status: mapped.orderStatus, shippingStatus: mapped.shippingStatus })
-        .where(eq(orders.id, existing.id));
+      await tx.update(orders).set(setPatch).where(eq(orders.id, existing.id));
       const items = (
         await tx
           .select({ editionId: orderItems.editionId, quantity: orderItems.quantity })
@@ -306,7 +328,7 @@ async function updateExistingStatus(
           .where(eq(orderItems.orderId, existing.id))
       ).filter((r) => !!r.editionId) as Array<{ editionId: string; quantity: number }>;
       // Đơn bị hủy sau khi đã trừ kho → hoàn kho.
-      if (mapped.orderStatus === 'CANCELLED' && wasDeducted && items.length > 0) {
+      if (inventoryRelevant && mapped.orderStatus === 'CANCELLED' && wasDeducted && items.length > 0) {
         await InventoryService.recordMovementsBatch(
           items.map((r) => ({ editionId: r.editionId, quantityDelta: r.quantity })),
           {
@@ -322,7 +344,7 @@ async function updateExistingStatus(
         );
       }
       // Đơn từ chưa trừ (UNPAID) sang phải trừ → trừ bù.
-      if (!wasDeducted && mapped.deductInventory && items.length > 0) {
+      if (inventoryRelevant && !wasDeducted && mapped.deductInventory && items.length > 0) {
         await InventoryService.recordMovementsBatch(
           items.map((r) => ({ editionId: r.editionId, quantityDelta: -r.quantity })),
           {
@@ -352,9 +374,23 @@ async function ingestOne(
   const dup = await withDbRetry(async () =>
     db.select().from(orders).where(eq(orders.idempotencyKey, idemKey)).limit(1)
   );
-  // Đơn đã có: cập nhật trạng thái theo Shopee (không tạo trùng).
+  // Ngày tạo thật từ Shopee (Unix giây) → ISO. Không có thì để undefined
+  // để giữ nguyên giá trị hiện tại trong DB.
+  const createTimeIso = d.create_time
+    ? new Date(d.create_time * 1000).toISOString()
+    : undefined;
+  // Đơn đã có: cập nhật trạng thái + bổ sung ngày tạo/tracking (không tạo trùng).
   if (dup.length > 0) {
-    await updateExistingStatus(cfg, dup[0] as any, d.order_status, result);
+    const existing = dup[0] as any;
+    let trackingCode: string | undefined;
+    // Chưa có mã vận đơn và đơn đã xếp lịch → lấy từ Shopee.
+    if (!existing.trackingCode && ['PROCESSED', 'SHIPPED', 'COMPLETED'].includes((d.order_status || '').toUpperCase())) {
+      trackingCode = (await fetchTrackingNumber(cfg, d.order_sn)) || undefined;
+    }
+    await updateExistingStatus(cfg, existing, d.order_status, result, {
+      createTimeIso,
+      trackingCode,
+    });
     return;
   }
 
@@ -404,10 +440,17 @@ async function ingestOne(
   const addr = d.recipient_address;
   // Đơn vị vận chuyển do khách chọn lúc checkout - giữ để lúc ship khỏi đoán.
   const carrier = (d.shipping_carrier || '').trim().toUpperCase().slice(0, 32) || null;
+  // Mã vận đơn: lấy ngay nếu đơn đã xếp lịch giao.
+  let trackingCode: string | null = null;
+  if (['PROCESSED', 'SHIPPED', 'COMPLETED'].includes((d.order_status || '').toUpperCase())) {
+    trackingCode = (await fetchTrackingNumber(cfg, d.order_sn)) || null;
+  }
 
   await withDbRetry(async () =>
     db.transaction(async (tx) => {
-      const day = vnDayOf(new Date()) || new Date().toISOString().slice(0, 10);
+      // Mã đơn dùng ngày tạo thật (nếu có) để phản ánh đúng thời điểm đơn.
+      const orderDate = d.create_time ? new Date(d.create_time * 1000) : new Date();
+      const day = vnDayOf(orderDate) || orderDate.toISOString().slice(0, 10);
       const orderCode = await allocateOrderCode(tx as any, day);
       const orderId = randomUUID();
       await tx.insert(orders).values({
@@ -422,6 +465,9 @@ async function ingestOne(
         status: mapped.orderStatus,
         shippingStatus: mapped.shippingStatus,
         carrier,
+        trackingCode,
+        // Ngày tạo thật từ Shopee, không phải giờ sync.
+        createdAt: createTimeIso,
         codAmount: isCod ? finalAmount : 0,
         codStatus: isCod ? 'PENDING' : 'NONE',
         cashierId: 'system-shopee-sync',
