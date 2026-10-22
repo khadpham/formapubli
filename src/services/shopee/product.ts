@@ -67,9 +67,19 @@ export const DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD = [
 /** Giữ tên cũ cho tương thích: mặc định sandbox. */
 export const DEFAULT_BOOK_ATTRIBUTES = DEFAULT_BOOK_ATTRIBUTES_SANDBOX;
 
-/** Category sách theo môi trường (sandbox 301543, production 101543). */
+/** Category sách theo môi trường.
+ * Sandbox: 301543 (Adult's Books). Production: 101555 (Classic Literature,
+ * khớp với các combo có sẵn như COMBO07). */
 export function getBookCategoryId(baseUrl: string): number {
-  return /sandbox/i.test(baseUrl || '') ? 301543 : 101543;
+  return /sandbox/i.test(baseUrl || '') ? 301543 : 101555;
+}
+
+/** Brand mặc định: sandbox dùng NoBrand; production dùng "Nhiều tác giả" (1139260)
+ * theo sản phẩm thật COMBO07. */
+export function getDefaultBrand(baseUrl: string): { brandId: number; brandName: string } {
+  return /sandbox/i.test(baseUrl || '')
+    ? { brandId: 0, brandName: 'NoBrand' }
+    : { brandId: 1139260, brandName: 'Nhiều tác giả' };
 }
 
 /** Attributes sách theo môi trường. */
@@ -233,6 +243,7 @@ export async function addShopeeItem(
 ): Promise<number> {
   const logisticId = params.logisticId ?? (await getShopeeLogisticChannelId(cfg));
   const isSandbox = /sandbox/i.test(cfg.baseUrl || '');
+  const brand = getDefaultBrand(cfg.baseUrl || '');
   const attributeList = (params.attributes ?? (isSandbox ? DEFAULT_BOOK_ATTRIBUTES_SANDBOX : DEFAULT_BOOK_ATTRIBUTES_PROD)).map((a) => ({
     attribute_id: a.attributeId,
     attribute_value_list: [{ value_id: a.valueId }],
@@ -258,7 +269,7 @@ export async function addShopeeItem(
     logistic_info: [{ logistic_id: logisticId, enabled: true, is_free: false }],
     pre_order: { is_pre_order: false },
     condition: 'NEW',
-    brand: { brand_id: 0, original_brand_name: 'NoBrand' },
+    brand: { brand_id: brand.brandId, original_brand_name: brand.brandName },
     // Attributes bắt buộc của category
     attribute_list: attributeList,
   };
