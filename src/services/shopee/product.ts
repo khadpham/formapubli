@@ -40,11 +40,29 @@ export interface AddItemParams {
   attributes?: Array<{ attributeId: number; valueId: number }>;
 }
 
-/** Attributes mặc định cho sách tiếng Việt xuất bản nội địa (category 301543). */
-export const DEFAULT_BOOK_ATTRIBUTES = [
+/** Attributes mặc định cho sách tiếng Việt xuất bản nội địa.
+ * Sandbox và production dùng ID khác nhau (cây danh mục riêng).
+ * Sandbox: category 301543; Production: category 101543. */
+export const DEFAULT_BOOK_ATTRIBUTES_SANDBOX = [
   { attributeId: 200673, valueId: 105471 }, // Language = Vietnamese
   { attributeId: 200676, valueId: 103518 }, // Import/Local = Local
 ];
+export const DEFAULT_BOOK_ATTRIBUTES_PROD = [
+  { attributeId: 100673, valueId: 5471 }, // Language = Vietnamese
+  { attributeId: 100676, valueId: 3518 }, // Import/Local = Local
+];
+/** Giữ tên cũ cho tương thích: mặc định sandbox. */
+export const DEFAULT_BOOK_ATTRIBUTES = DEFAULT_BOOK_ATTRIBUTES_SANDBOX;
+
+/** Category sách theo môi trường (sandbox 301543, production 101543). */
+export function getBookCategoryId(baseUrl: string): number {
+  return /sandbox/i.test(baseUrl || '') ? 301543 : 101543;
+}
+
+/** Attributes sách theo môi trường. */
+export function getDefaultBookAttributes(baseUrl: string): Array<{ attributeId: number; valueId: number }> {
+  return /sandbox/i.test(baseUrl || '') ? DEFAULT_BOOK_ATTRIBUTES_SANDBOX : DEFAULT_BOOK_ATTRIBUTES_PROD;
+}
 
 async function shopeePost(
   cfg: ShopeeSyncConfig,

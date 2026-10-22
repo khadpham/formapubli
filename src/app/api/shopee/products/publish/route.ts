@@ -5,13 +5,10 @@ import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
 import { db, editions, shopeeProducts, shopeeItemMap } from '@/db';
 import { uploadImageToShopee, downloadImage } from '@/services/shopee/media';
-import { addShopeeItem, DEFAULT_BOOK_ATTRIBUTES } from '@/services/shopee/product';
+import { addShopeeItem, getBookCategoryId, getDefaultBookAttributes } from '@/services/shopee/product';
 import { getShopeeConfig, resolveShopeeShopId } from '@/services/shopee/shop-config';
 
 export const dynamic = 'force-dynamic';
-
-/** Category mặc định cho sách trên Shopee (Adult's Books, leaf node). */
-const BOOK_CATEGORY_ID = 301543;
 
 /**
  * GET /api/shopee/products/publish?ids=id1,id2
@@ -142,6 +139,7 @@ export async function POST(req: NextRequest) {
     const imageId = await uploadImageToShopee(cfg, imageBuffer, `${sku}.png`);
 
     // 3. Tạo sản phẩm trên Shopee.
+    const bookCategoryId = getBookCategoryId(baseUrl);
     const itemId = await addShopeeItem(cfg, {
       name,
       description,
@@ -149,9 +147,9 @@ export async function POST(req: NextRequest) {
       stock: Math.round(stock),
       itemSku: sku,
       imageIdList: [imageId],
-      categoryId: BOOK_CATEGORY_ID,
+      categoryId: bookCategoryId,
       weight,
-      attributes: DEFAULT_BOOK_ATTRIBUTES,
+      attributes: getDefaultBookAttributes(baseUrl),
     });
 
     // 4. Lưu vào DB.
@@ -162,7 +160,7 @@ export async function POST(req: NextRequest) {
       price: Math.round(price),
       stock: Math.round(stock),
       status: 'NORMAL',
-      categoryId: BOOK_CATEGORY_ID,
+      categoryId: bookCategoryId,
       imageUrls: JSON.stringify([imageUrl]),
       erpEditionId: editionIds.length === 1 ? editionIds[0] : null,
     });
