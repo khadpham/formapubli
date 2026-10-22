@@ -34,10 +34,16 @@ export interface AddItemParams {
   /** Kênh vận chuyển Shopee (logistic_id). Bắt buộc theo API v2. */
   logisticId?: number;
   /**
-   * Attributes bắt buộc của category (mặc định cho sách Adult's Books 301543:
+   * Attributes bắt buộc của category (mặc định cho sách Adult's Books:
    * Language=Vietnamese, Import/Local=Local). Ghi đè khi cần.
+   * Sandbox dùng IDs 200673/200676; production dùng 100673/100676.
    */
   attributes?: Array<{ attributeId: number; valueId: number }>;
+  /**
+   * Attributes dạng text tự do (VD: Publishing Company trên production).
+   * Chỉ dùng cho production (sandbox không yêu cầu).
+   */
+  textAttributes?: Array<{ attributeId: number; text: string }>;
 }
 
 /** Attributes mặc định cho sách tiếng Việt xuất bản nội địa.
@@ -50,6 +56,10 @@ export const DEFAULT_BOOK_ATTRIBUTES_SANDBOX = [
 export const DEFAULT_BOOK_ATTRIBUTES_PROD = [
   { attributeId: 100673, valueId: 5471 }, // Language = Vietnamese
   { attributeId: 100676, valueId: 3518 }, // Import/Local = Local
+];
+/** Attributes text bắt buộc trên production (Publishing Company). */
+export const DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD = [
+  { attributeId: 100669, text: 'Vita Nova' }, // Publishing Company
 ];
 /** Giữ tên cũ cho tương thích: mặc định sandbox. */
 export const DEFAULT_BOOK_ATTRIBUTES = DEFAULT_BOOK_ATTRIBUTES_SANDBOX;
@@ -219,6 +229,18 @@ export async function addShopeeItem(
   params: AddItemParams
 ): Promise<number> {
   const logisticId = params.logisticId ?? (await getShopeeLogisticChannelId(cfg));
+  const isSandbox = /sandbox/i.test(cfg.baseUrl || '');
+  const attributeList = (params.attributes ?? (isSandbox ? DEFAULT_BOOK_ATTRIBUTES_SANDBOX : DEFAULT_BOOK_ATTRIBUTES_PROD)).map((a) => ({
+    attribute_id: a.attributeId,
+    attribute_value_list: [{ value_id: a.valueId }],
+  }));
+  // Attributes text tự do (VD: Publishing Company). Format Shopee: value_id 0 + original_value_name.
+  for (const t of params.textAttributes ?? (isSandbox ? [] : DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD)) {
+    attributeList.push({
+      attribute_id: t.attributeId,
+      attribute_value_list: [{ value_id: 0, original_value_name: t.text }] as any,
+    });
+  }
   const body: Record<string, unknown> = {
     category_id: params.categoryId,
     item_name: params.name,
@@ -234,11 +256,8 @@ export async function addShopeeItem(
     pre_order: { is_pre_order: false },
     condition: 'NEW',
     brand: { brand_id: 0, original_brand_name: 'NoBrand' },
-    // Attributes bắt buộc của category (VD: Language, Import/Local với sách)
-    attribute_list: (params.attributes ?? DEFAULT_BOOK_ATTRIBUTES).map((a) => ({
-      attribute_id: a.attributeId,
-      attribute_value_list: [{ value_id: a.valueId }],
-    })),
+    // Attributes bắt buộc của category
+    attribute_list: attributeList,
   };
   if (params.parcelLength && params.parcelWidth && params.parcelHeight) {
     body.dimension = {
