@@ -61,7 +61,7 @@ export const DEFAULT_BOOK_ATTRIBUTES_PROD = [
 export const DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD = [
   { attributeId: 100669, text: 'Vita Nova' }, // Publishing Company
   { attributeId: 101024, text: '2026' }, // Year
-  { attributeId: 101269, text: '500' }, // Total Pages (ghi đè theo sách thực tế khi có)
+  { attributeId: 101269, text: '272 trang, 228 trang' }, // Total Pages (theo COMBO11: Dot kho 272 + La do 228)
   { attributeId: 101294, text: 'NXB Lao động' }, // Book printer/distributor
 ];
 /** Giữ tên cũ cho tương thích: mặc định sandbox. */
@@ -237,11 +237,11 @@ export async function addShopeeItem(
     attribute_id: a.attributeId,
     attribute_value_list: [{ value_id: a.valueId }],
   }));
-  // Attributes text tự do (VD: Publishing Company). Format Shopee: value_id 0 + original_value_name.
+  // Attributes text tự do (VD: Publishing Company). Format Shopee: value_id 0 + original_value_name + value_unit "".
   for (const t of params.textAttributes ?? (isSandbox ? [] : DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD)) {
     attributeList.push({
       attribute_id: t.attributeId,
-      attribute_value_list: [{ value_id: 0, original_value_name: t.text }] as any,
+      attribute_value_list: [{ value_id: 0, original_value_name: t.text, value_unit: '' }] as any,
     });
   }
   const body: Record<string, unknown> = {
