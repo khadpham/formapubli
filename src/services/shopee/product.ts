@@ -57,9 +57,12 @@ export const DEFAULT_BOOK_ATTRIBUTES_PROD = [
   { attributeId: 100673, valueId: 5471 }, // Language = Vietnamese
   { attributeId: 100676, valueId: 3518 }, // Import/Local = Local
 ];
-/** Attributes text bắt buộc trên production (Publishing Company). */
+/** Attributes text bắt buộc trên production. */
 export const DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD = [
   { attributeId: 100669, text: 'Vita Nova' }, // Publishing Company
+  { attributeId: 101024, text: '2026' }, // Year
+  { attributeId: 101269, text: '500' }, // Total Pages (ghi đè theo sách thực tế khi có)
+  { attributeId: 101294, text: 'NXB Lao động' }, // Book printer/distributor
 ];
 /** Giữ tên cũ cho tương thích: mặc định sandbox. */
 export const DEFAULT_BOOK_ATTRIBUTES = DEFAULT_BOOK_ATTRIBUTES_SANDBOX;
