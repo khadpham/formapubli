@@ -236,3 +236,21 @@ export async function addShopeeItem(
   }
   return Number(itemId);
 }
+
+/**
+ * Cập nhật giá bán 1 sản phẩm trên Shopee.
+ * Dùng cùng pattern model_id như update_stock (0 = sản phẩm không có phân loại).
+ */
+export async function updatePriceOnShopee(
+  cfg: ShopeeSyncConfig,
+  itemId: number,
+  modelId: number,
+  price: number
+): Promise<void> {
+  if (!itemId) throw new Error('Thiếu item_id.');
+  if (!Number.isFinite(price) || price <= 0) throw new Error('Giá bán phải lớn hơn 0.');
+  await shopeePost(cfg, '/api/v2/product/update_price', {
+    item_id: itemId,
+    price_list: [{ model_id: modelId, original_price: Math.round(price) }],
+  });
+}

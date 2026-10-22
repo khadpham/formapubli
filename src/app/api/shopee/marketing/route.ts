@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
       status: 'DRAFT',
       startAt: body.startAt || null,
       endAt: body.endAt || null,
-      createdBy: session.staffId || null,
+      createdBy: session.actorId || null,
     });
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
