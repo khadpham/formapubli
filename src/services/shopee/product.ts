@@ -175,8 +175,9 @@ export async function getShopeeCategories(
 
 /**
  * Lấy danh sách kênh vận chuyển của shop.
- * Ưu tiên SPX Express (quyết định của chủ shop), sau đó là "Nhanh",
- * cuối cùng mới lấy kênh đang bật đầu tiên.
+ * Ưu tiên "Nhanh" (5001, kênh SPX chính theo sản phẩm thật COMBO07),
+ * sau đó là "Trong Ngày" (5012), cuối cùng mới lấy kênh đang bật đầu tiên.
+ * Lưu ý: SPX Express (50021) là masking channel, không bật trực tiếp qua API được.
  * @returns logistic_id của kênh được chọn (để dùng cho add_item).
  */
 export async function getShopeeLogisticChannelId(cfg: ShopeeSyncConfig): Promise<number> {
@@ -190,10 +191,9 @@ export async function getShopeeLogisticChannelId(cfg: ShopeeSyncConfig): Promise
   if (enabled.length === 0) {
     throw new Error('Shop chưa bật kênh vận chuyển nào trên Shopee.');
   }
-  // Ưu tiên SPX Express (50021), rồi "Nhanh" (5001).
-  const preferred = enabled.find((c) => c.logistics_channel_id === 50021)
-    ?? enabled.find((c) => c.logistics_channel_id === 5001)
-    ?? enabled.find((c) => /spx express/i.test(c.logistics_channel_name || ''))
+  // Ưu tiên "Nhanh" (5001), rồi "Trong Ngày" (5012) theo COMBO07 thật.
+  const preferred = enabled.find((c) => c.logistics_channel_id === 5001)
+    ?? enabled.find((c) => c.logistics_channel_id === 5012)
     ?? enabled[0];
   return preferred.logistics_channel_id;
 }
