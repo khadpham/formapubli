@@ -61,7 +61,7 @@ export function ShopeeOrdersSellerCenter() {
       if (activeTab === 'to_ship' && (subTab === 'cho_xac_nhan' || subTab === 'da_xu_ly')) {
         apiTab = subTab;
       }
-      const res = await fetch(`/api/shopee/orders?tab=${apiTab}&q=${encodeURIComponent(search)}`);
+      const res = await fetch(`/api/shopee/orders?tab=${apiTab}&channel=SHOPEE&q=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (data?.success) {
         // API trả về { orders: [...], counts: {...} } - đã sắp xếp theo createdAt mới nhất trước
