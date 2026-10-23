@@ -96,7 +96,16 @@ async function shopeeGet(
 async function fetchTrackingNumber(cfg: ShopeeSyncConfig, orderSn: string): Promise<string> {
   try {
     const r = await shopeeGet(cfg, '/api/v2/logistics/get_tracking_number', { order_sn: orderSn });
-    return String(r?.tracking_number || '');
+    const code = String(r?.tracking_number || '');
+    if (code) return code;
+  } catch {
+    // Fall through to get_tracking_info
+  }
+  // Fallback: get_tracking_info cho đơn cũ đã giao
+  try {
+    const { getTrackingInfo } = await import('./shipment');
+    const info = await getTrackingInfo(cfg, orderSn);
+    return info.trackingNumber || '';
   } catch {
     return '';
   }

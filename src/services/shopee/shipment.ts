@@ -208,6 +208,27 @@ export async function getAwbPdf(cfg: ShopeeSyncConfig, orderSn: string): Promise
   return pdf;
 }
 
+/**
+ * Lấy thông tin tracking chi tiết của đơn (timeline vận chuyển).
+ * Dùng cho đơn cũ đã giao mà get_tracking_number không trả về mã.
+ * Trả về tracking_number nếu có.
+ */
+export async function getTrackingInfo(
+  cfg: ShopeeSyncConfig,
+  orderSn: string
+): Promise<{ trackingNumber: string | null; timeline: any[] }> {
+  try {
+    const result = await signedGet(cfg, '/api/v2/logistics/get_tracking_info', {
+      order_sn: orderSn,
+    });
+    const trackingNumber = String(result?.tracking_number || '') || null;
+    const timeline = Array.isArray(result?.tracking_info) ? result.tracking_info : [];
+    return { trackingNumber, timeline };
+  } catch {
+    return { trackingNumber: null, timeline: [] };
+  }
+}
+
 /** In phiếu hàng loạt (thermal A6) cho nhiều đơn cùng lúc. */
 export async function getBulkAwbPdf(
   cfg: ShopeeSyncConfig,
