@@ -152,6 +152,27 @@ async function buildProductItems(inv: any): Promise<any[]> {
       grouped.set(r.productId, g);
     }
     items = Array.from(grouped.values());
+  } else if (inv.sourceOrderIds) {
+    // Hóa đơn từ phiếu xuất kho (delivery order)
+    try {
+      const srcIds: string[] = JSON.parse(inv.sourceOrderIds || '[]');
+      const deliveryId = srcIds.find((s: string) => s.startsWith('delivery:'))?.replace('delivery:', '');
+      if (deliveryId) {
+        const { deliveryOrderItems, editions } = await import('@/db/schema');
+        const dItems = await db.select().from(deliveryOrderItems).where(eq(deliveryOrderItems.deliveryOrderId, deliveryId));
+        // Map sang format chung
+        items = await Promise.all(dItems.map(async (di: any) => {
+          const edRows = await db.select({ title: editions.title }).from(editions).where(eq(editions.id, di.editionId)).limit(1);
+          return {
+            productId: di.editionId,
+            quantity: di.quantity,
+            unitSellingPrice: di.unitPrice || 0,
+            totalAmount: (di.quantity || 0) * (di.unitPrice || 0),
+            _name: edRows[0]?.title || 'Hàng hóa',
+          };
+        }));
+      }
+    } catch {}
   } else {
     if (!inv.orderId) return [];
     items = await db.select().from(orderItems).where(eq(orderItems.orderId, inv.orderId));
@@ -160,9 +181,14 @@ async function buildProductItems(inv: any): Promise<any[]> {
   const vatRate = Number(inv.vatRate || 0);
   const result: any[] = [];
   for (const it of items) {
-    const prodRows = await db.select({ name: products.name, productKind: products.productKind })
-      .from(products).where(eq(products.id, it.productId)).limit(1);
-    const prod = prodRows[0] as any;
+    // Với delivery items, tên đã có sẵn trong _name
+    const prodName = (it as any)._name;
+    let prod: any = null;
+    if (!prodName) {
+      const prodRows = await db.select({ name: products.name, productKind: products.productKind })
+        .from(products).where(eq(products.id, it.productId)).limit(1);
+      prod = prodRows[0] as any;
+    }
     const qty = Number(it.quantity || 0);
     if (qty <= 0) continue;
     const grossUnit = Number(it.unitSellingPrice || 0);
@@ -174,7 +200,7 @@ async function buildProductItems(inv: any): Promise<any[]> {
     result.push({
       quantity: qty,
       amount: netUnit,
-      description: prod?.name || 'Hàng hóa',
+      description: prodName || prod?.name || 'Hàng hóa',
       quantityUomDesc: prod?.productKind === 'BOOK' ? 'Cuốn' : 'Cái',
       isPromotion: 'N',
       amountTotal: netTotal,

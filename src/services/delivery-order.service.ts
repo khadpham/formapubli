@@ -536,6 +536,40 @@ export class DeliveryOrderService {
           items,
         };
 
+        // 5b. Nếu có yêu cầu xuất hóa đơn VAT, tạo einvoice và đẩy lên MS-Invoice
+        if (order.invoiceRequired && order.invoiceTaxCode && order.invoiceCompanyName) {
+          const { randomUUID } = await import('crypto');
+          const { einvoices } = await import('@/db/schema');
+          const totalAmount = Number(order.finalAmount || 0);
+          const vatRate = 0.05; // Sách 5%
+          const subtotal = Math.round(totalAmount / (1 + vatRate));
+          const vatAmount = totalAmount - subtotal;
+          const invoiceId = randomUUID();
+          await tx.insert(einvoices).values({
+            id: invoiceId,
+            invoiceKind: 'SINGLE',
+            buyerTaxCode: order.invoiceTaxCode,
+            buyerName: order.invoiceCompanyName,
+            buyerAddress: order.invoiceAddress || '',
+            subtotal,
+            vatRate,
+            vatAmount,
+            totalAmount,
+            status: 'PREPARED',
+            sourceOrderIds: JSON.stringify([`delivery:${order.id}`]),
+            createdBy: actorContext.staffId,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+          // Đẩy lên MS-Invoice (fire-and-forget, không chặn dispatch)
+          try {
+            const { MSInvoiceService } = await import('./msinvoice.service');
+            await MSInvoiceService.pushInvoice(invoiceId);
+          } catch (e) {
+            console.error('[dispatch] push MS-Invoice failed:', (e as Error).message);
+          }
+        }
+
         // 6. Ghi nhận Idempotency Key
         await tx.insert(idempotencyKeys).values({
           key: idempotencyKey,
