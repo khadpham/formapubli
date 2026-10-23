@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
         coverPrice: editions.coverPrice,
         pages: editions.pages,
         publisher: editions.publisher,
+        publicationYear: editions.publicationYear,
       })
       .from(editions)
       .where(inArray(editions.id, ids));
@@ -50,6 +51,10 @@ interface PublishBody {
   sku?: string;
   imageUrl?: string;
   weight?: number;
+  /** Năm xuất bản (ghi đè giá trị tự lấy từ editions). */
+  year?: string;
+  /** Nhà in / đơn vị phát hành (ghi đè giá trị tự lấy từ editions). */
+  printer?: string;
 }
 
 /**
@@ -138,8 +143,31 @@ export async function POST(req: NextRequest) {
     // 2. Upload ảnh lên Shopee, lấy image_id.
     const imageId = await uploadImageToShopee(cfg, imageBuffer, `${sku}.png`);
 
-    // 3. Tạo sản phẩm trên Shopee.
+    // 3. Build text attributes động từ editions (số trang, năm, nhà in).
+    // Không hardcode theo COMBO11 nữa - mỗi sản phẩm lấy đúng dữ liệu của mình.
+    let textAttributes: Array<{ attributeId: number; text: string }> | undefined;
+    if (editionIds.length > 0) {
+      const eds = await db
+        .select({ pages: editions.pages, publicationYear: editions.publicationYear, publisher: editions.publisher })
+        .from(editions)
+        .where(inArray(editions.id, editionIds));
+      if (eds.length > 0) {
+        const pageParts = eds.filter((e) => e.pages && e.pages > 0).map((e) => `${e.pages} trang`);
+        const publishers = [...new Set(eds.map((e) => (e.publisher || '').trim()).filter(Boolean))];
+        const years = [...new Set(eds.map((e) => e.publicationYear).filter((y): y is number => !!y))];
+        const yearText = years.length > 0 ? String(Math.max(...years)) : (body.year || '2026');
+        textAttributes = [
+          { attributeId: 100669, text: 'Vita Nova' }, // Publishing Company
+          { attributeId: 101024, text: body.year?.trim() || yearText }, // Year (ưu tiên user nhập)
+          { attributeId: 101269, text: pageParts.length > 0 ? pageParts.join(', ') : '300 trang' }, // Total Pages
+          { attributeId: 101294, text: body.printer?.trim() || publishers.join(', ') || 'NXB Lao động' }, // Book printer/distributor
+        ];
+      }
+    }
+
+    // 4. Tạo sản phẩm trên Shopee.
     const bookCategoryId = getBookCategoryId(baseUrl);
+    const isSandbox = /sandbox/i.test(baseUrl);
     const itemId = await addShopeeItem(cfg, {
       name,
       description,
@@ -150,9 +178,11 @@ export async function POST(req: NextRequest) {
       categoryId: bookCategoryId,
       weight,
       attributes: getDefaultBookAttributes(baseUrl),
+      // Production: dùng attributes động; sandbox: không cần text attributes.
+      textAttributes: isSandbox ? undefined : textAttributes,
     });
 
-    // 4. Lưu vào DB.
+    // 5. Lưu vào DB.
     await db.insert(shopeeProducts).values({
       itemId,
       itemSku: sku,

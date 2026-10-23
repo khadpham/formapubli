@@ -57,11 +57,13 @@ export const DEFAULT_BOOK_ATTRIBUTES_PROD = [
   { attributeId: 100673, valueId: 5471 }, // Language = Vietnamese
   { attributeId: 100676, valueId: 3518 }, // Import/Local = Local
 ];
-/** Attributes text bắt buộc trên production. */
+/** Attributes text mặc định cho production (fallback khi không có editionIds).
+ * Luồng chính: publish route tự build từ editions (số trang, năm, nhà in thật).
+ * Chỉ dùng fallback này khi không xác định được sách. */
 export const DEFAULT_BOOK_TEXT_ATTRIBUTES_PROD = [
   { attributeId: 100669, text: 'Vita Nova' }, // Publishing Company
   { attributeId: 101024, text: '2026' }, // Year
-  { attributeId: 101269, text: '272 trang, 228 trang' }, // Total Pages (theo COMBO11: Dot kho 272 + La do 228)
+  { attributeId: 101269, text: '300 trang' }, // Total Pages (fallback chung)
   { attributeId: 101294, text: 'NXB Lao động' }, // Book printer/distributor
 ];
 /** Giữ tên cũ cho tương thích: mặc định sandbox. */
