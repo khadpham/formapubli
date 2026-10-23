@@ -391,7 +391,14 @@ export class MSInvoiceService {
       if (l.msinvoiceId) byMsId.set(String(l.msinvoiceId), l);
     }
 
-    const invoices = list.map((r: any) => {
+    // Lọc bỏ hóa đơn đã hủy/đã xóa, sắp xếp mới nhất trước như portal
+    const filtered = list.filter((r: any) => {
+      const st = String(r.statusId || r.status || '');
+      return st !== 'InvoiceCancelled' && st !== 'Cancelled' && !st.toLowerCase().includes('cancel');
+    });
+    filtered.sort((a: any, b: any) => Number(b.invoiceDate || 0) - Number(a.invoiceDate || 0));
+
+    const invoices = filtered.map((r: any) => {
       const msId = String(r.invoiceId ?? r.id ?? '');
       const local = byMsId.get(msId) || null;
       return {
