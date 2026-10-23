@@ -537,7 +537,8 @@ export class DeliveryOrderService {
         };
 
         // 5b. Nếu có yêu cầu xuất hóa đơn VAT, tạo einvoice và đẩy lên MS-Invoice
-        if (order.invoiceRequired && order.invoiceTaxCode && order.invoiceCompanyName) {
+        // (invoiceTaxCode có giá trị = có tick VAT)
+        if (order.invoiceTaxCode && order.invoiceCompanyName) {
           const { randomUUID } = await import('crypto');
           const { einvoices } = await import('@/db/schema');
           const totalAmount = Number(order.finalAmount || 0);
