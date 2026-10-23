@@ -29,12 +29,44 @@ export interface DocxPackageCheckResult {
 /** Các part bắt buộc tối thiểu của một package OOXML (.docx) theo ECMA-376. */
 const REQUIRED_DOCX_PARTS = ['[Content_Types].xml', '_rels/.rels', 'word/document.xml'];
 
+/** MIME type theo đuôi file - dùng khi xuất file không phải docx. */
+const MIME_BY_EXT: Record<string, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  doc: 'application/msword',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+};
+
 /**
  * Engine merge .docx - 1 nguồn sự thật cho preview lẫn export (D1).
  * Extract/validate placeholder bằng inspect-module (D4): CẤM regex trên XML
  * vì Word bẻ `{ten_bien}` thành nhiều run.
  */
 export class ContractEngineService {
+  /** Chỉ file .docx mới fill được placeholder. Các loại khác (xls, pdf, ảnh...)
+   * trả về nguyên file gốc, không fill. */
+  static isFillableTemplate(filename: string): boolean {
+    return (filename || '').toLowerCase().trim().endsWith('.docx');
+  }
+
+  /** MIME type theo đuôi file, mặc định octet-stream nếu không nhận ra. */
+  static getMimeType(filename: string): string {
+    const ext = (filename || '').toLowerCase().trim().split('.').pop() || '';
+    return MIME_BY_EXT[ext] || 'application/octet-stream';
+  }
+
+  /** Render template: docx thì fill placeholder, loại khác trả nguyên file gốc. */
+  static renderTemplate(templateBase64: string, filename: string, data: Record<string, any>): Uint8Array {
+    if (!this.isFillableTemplate(filename)) {
+      return new Uint8Array(Buffer.from(templateBase64, 'base64'));
+    }
+    return this.generateDocx(templateBase64, data);
+  }
+
   static generateDocx(templateBase64: string, data: Record<string, any>): Uint8Array {
     const zip = new PizZip(toBinary(templateBase64));
     const doc = new Docxtemplater(zip, ENGINE_OPTIONS);

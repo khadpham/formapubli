@@ -110,7 +110,7 @@ async function run() {
   await ContractService.uploadFinalDocx(d1.id, finalTpl, 'final.docx');
   const [row1b] = await db.select().from(schema.contractDocuments).where(eq(schema.contractDocuments.id, d1.id));
   assert.equal(row1b.status, 'FINALIZED');
-  const exported = await ContractService.exportDocx(d1.id);
+  const exported = (await ContractService.exportDocx(d1.id)).bytes;
   const xmlExp = docTextFromBytes(exported);
   assert.ok(xmlExp.includes('BẢN CUỐI ĐÃ SỬA NGOÀI WORD'), 'export phải trả bản cuối');
   console.log('✓ Upload bản cuối thắng khi export (D9)');

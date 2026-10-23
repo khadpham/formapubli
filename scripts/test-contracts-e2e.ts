@@ -112,7 +112,7 @@ async function run() {
     createdBy: 'staff-admin',
   });
   if (doc1.contractNumber !== '01/2026/HĐXB-FORMA') throw new Error('số HĐ sai: ' + doc1.contractNumber);
-  const exported1 = await ContractService.exportDocx(doc1.id);
+  const exported1 = (await ContractService.exportDocx(doc1.id)).bytes;
   const zip1 = new PizZip(Buffer.from(exported1).toString('binary'));
   const xml1 = zip1.file('word/document.xml')!.asText();
   for (const tag of ND30_TEMPLATE_FIELDS) {
@@ -137,7 +137,7 @@ async function run() {
     return z.generate({ type: 'base64', compression: 'DEFLATE' });
   })();
   await ContractService.uploadFinalDocx(doc1.id, finalB64, 'ban-cuoi-e2e.docx');
-  const exported2 = await ContractService.exportDocx(doc1.id);
+  const exported2 = (await ContractService.exportDocx(doc1.id)).bytes;
   const xml2 = new PizZip(Buffer.from(exported2).toString('binary')).file('word/document.xml')!.asText();
   if (!xml2.includes('BẢN CUỐI E2E')) throw new Error('export không trả bản cuối');
   console.log('✓ Upload bản cuối thắng khi export');
