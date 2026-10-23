@@ -161,9 +161,11 @@ async function buildProductItems(inv: any): Promise<any[]> {
         const { deliveryOrderItems, editions } = await import('@/db/schema');
         const dItems = await db.select().from(deliveryOrderItems).where(eq(deliveryOrderItems.deliveryOrderId, deliveryId));
         // Map sang format chung
+        // QUAN TRỌNG: dùng giá bìa GỐC (chưa chiết khấu) để MS-Invoice tự trừ CK ở cấp hóa đơn
+        // Nếu dùng unitSellingPrice (đã CK) + invoice discount nữa sẽ bị trừ 2 lần
         items = await Promise.all(dItems.map(async (di: any) => {
           const edRows = await db.select({ title: editions.title }).from(editions).where(eq(editions.id, di.editionId)).limit(1);
-          const unitPrice = di.unitSellingPrice ?? di.unitCoverPrice ?? 0;
+          const unitPrice = di.unitCoverPrice ?? di.unitSellingPrice ?? 0;
           return {
             productId: di.editionId,
             quantity: di.quantity,
