@@ -78,16 +78,59 @@ export function ShopeeOrdersSellerCenter() {
     else setSelectedIds(new Set(orders.map(o => o.id)));
   };
 
+  const [shipping, setShipping] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const handleMassShip = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Xác nhận giao ${selectedIds.size} đơn đã chọn?`)) return;
-    // TODO: gọi API mass ship
-    alert('Chức năng đang phát triển');
+    if (!confirm(`Xác nhận giao ${selectedIds.size} đơn đã chọn cho đơn vị vận chuyển?`)) return;
+    setShipping(true);
+    const selectedOrders = orders.filter(o => selectedIds.has(o.id));
+    let success = 0;
+    let failed = 0;
+    for (const o of selectedOrders) {
+      try {
+        const res = await fetch('/api/shopee/ship', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderSn: o.orderSn }),
+        });
+        const data = await res.json();
+        if (data?.success) success++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    setShipping(false);
+    setSelectedIds(new Set());
+    showToast(`Đã giao: ${success} thành công, ${failed} thất bại`);
+    loadOrders();
   };
 
   const handleArrangeShipment = async (orderSn: string) => {
-    // TODO: gọi API arrange shipment
-    alert('Chức năng đang phát triển: ' + orderSn);
+    if (!confirm(`Sắp xếp vận chuyển cho đơn ${orderSn}?`)) return;
+    try {
+      const res = await fetch('/api/shopee/ship', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderSn }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        showToast(`Đã sắp xếp vận chuyển cho ${orderSn}`);
+        loadOrders();
+      } else {
+        showToast(`Lỗi: ${data?.error || 'Không rõ'}`);
+      }
+    } catch (e: any) {
+      showToast(`Lỗi: ${e.message}`);
+    }
   };
 
   const handlePrintAwb = async () => {
@@ -102,6 +145,11 @@ export function ShopeeOrdersSellerCenter() {
 
   return (
     <div className="space-y-4">
+      {toast && (
+        <div className="fixed top-4 right-4 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg z-50 max-w-sm">
+          {toast}
+        </div>
+      )}
       {/* Tabs kiểu Seller Center */}
       <div className="flex gap-2 border-b overflow-x-auto">
         {TABS.map(t => (
@@ -140,11 +188,11 @@ export function ShopeeOrdersSellerCenter() {
           <>
             <button
               onClick={handleMassShip}
-              disabled={selectedIds.size === 0}
+              disabled={selectedIds.size === 0 || shipping}
               className="px-4 py-2 bg-orange-600 text-white rounded-lg flex items-center gap-2 hover:bg-orange-700 disabled:opacity-50"
             >
               <Truck className="w-4 h-4" />
-              Giao hàng loạt ({selectedIds.size})
+              {shipping ? 'Đang giao...' : `Giao hàng loạt (${selectedIds.size})`}
             </button>
             <button
               onClick={handlePrintAwb}
