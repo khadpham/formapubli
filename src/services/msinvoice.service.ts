@@ -278,9 +278,14 @@ export class MSInvoiceService {
         toName: inv.buyerName || 'Khách lẻ',
         productItems,
       };
-      // Chiết khấu toàn hóa đơn (nếu có)
-      if (inv.discountPercent) payload.invoiceDiscountPercent = Number(inv.discountPercent);
-      if (inv.discountAmount) payload.invoiceDiscountTotal = Number(inv.discountAmount);
+      // Chiết khấu toàn hóa đơn (nếu có) - phải set discountTypeEnumId thì mới hiện trên hóa đơn
+      if (inv.discountPercent && Number(inv.discountPercent) > 0) {
+        payload.discountTypeEnumId = 'InvDiscByTotal'; // Theo tổng giá trị
+        payload.invoiceDiscountPercent = Number(inv.discountPercent);
+      }
+      if (inv.discountAmount && Number(inv.discountAmount) > 0) {
+        payload.invoiceDiscountTotal = Number(inv.discountAmount);
+      }
       if (inv.buyerAddress) payload.toAddress = inv.buyerAddress;
       if (inv.buyerTaxCode) payload.toPartyTaxId = inv.buyerTaxCode;
       if (inv.orderId) {
