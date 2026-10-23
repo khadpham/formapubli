@@ -277,6 +277,9 @@ export class MSInvoiceService {
         toName: inv.buyerName || 'Khách lẻ',
         productItems,
       };
+      // Chiết khấu toàn hóa đơn (nếu có)
+      if (inv.discountPercent) payload.invoiceDiscountPercent = Number(inv.discountPercent);
+      if (inv.discountAmount) payload.invoiceDiscountTotal = Number(inv.discountAmount);
       if (inv.buyerAddress) payload.toAddress = inv.buyerAddress;
       if (inv.buyerTaxCode) payload.toPartyTaxId = inv.buyerTaxCode;
       if (inv.orderId) {

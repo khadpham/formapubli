@@ -545,6 +545,9 @@ export class DeliveryOrderService {
           const vatRate = 0.05; // Sách 5%
           const subtotal = Math.round(totalAmount / (1 + vatRate));
           const vatAmount = totalAmount - subtotal;
+          // Chiết khấu: discountRate là % (VD 35 = 35%)
+          const discountPercent = Number(order.discountRate || 0);
+          const discountAmount = Math.round(Number(order.subtotal || 0) * discountPercent / 100);
           const invoiceId = randomUUID();
           await tx.insert(einvoices).values({
             id: invoiceId,
@@ -556,6 +559,8 @@ export class DeliveryOrderService {
             vatRate,
             vatAmount,
             totalAmount,
+            discountPercent,
+            discountAmount,
             status: 'PREPARED',
             sourceOrderIds: JSON.stringify([`delivery:${order.id}`]),
             createdBy: actorContext.staffId,

@@ -1375,6 +1375,8 @@ export const einvoices = sqliteTable('einvoices', {
   createdBy: text('created_by'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+  discountPercent: real('discount_percent').default(0),
+  discountAmount: real('discount_amount').default(0),
 }, (table) => ({
   orderIdx: index('idx_einvoices_order').on(table.orderId),
   statusIdx: index('idx_einvoices_status').on(table.status),
