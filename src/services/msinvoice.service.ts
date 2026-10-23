@@ -268,6 +268,10 @@ export class MSInvoiceService {
         throw new Error('Hóa đơn không có dòng hàng nào để đẩy');
       }
 
+      // Quy tắc họ tên người mua (user 2026-10-24):
+      // - Hóa đơn công ty (có MST): để trống họ tên người mua, chỉ có tên đơn vị
+      // - Hóa đơn bán lẻ (không MST): ghi "Khách lẻ không lấy hóa đơn", bỏ trống các thông tin còn lại
+      const isBusiness = !!(inv.buyerTaxCode && inv.buyerTaxCode.trim());
       const payload: any = {
         invoiceDate: null, // null = ngày hiện tại theo MS-Invoice
         invoiceForm: config.form,
@@ -276,8 +280,8 @@ export class MSInvoiceService {
         currencyUomId: 'VND',
         paymentInstrumentEnumId: 'PiCashOrWireTransfer',
         thirdPartyCode: inv.id, // mã đối soát về ERP
-        toPartyName: inv.buyerName || 'Khách lẻ',
-        toName: inv.buyerName || 'Khách lẻ',
+        toPartyName: isBusiness ? (inv.buyerName || '') : '',
+        toName: isBusiness ? '' : 'Bán cho người tiêu dùng',
         productItems,
       };
       // Chiết khấu toàn hóa đơn (nếu có) - phải set discountTypeEnumId thì mới hiện trên hóa đơn
