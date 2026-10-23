@@ -14,6 +14,7 @@ interface EditionDetail extends EditionBrief {
   coverPrice: number;
   pages: number | null;
   publisher: string | null;
+  publicationYear: number | null;
 }
 
 function fmtVnd(n: number): string {
@@ -58,6 +59,8 @@ export function ShopeeProductPublishDialog({
   const [sku, setSku] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [weight, setWeight] = useState('0.5');
+  const [year, setYear] = useState('2026');
+  const [printer, setPrinter] = useState('');
 
   const [showPreview, setShowPreview] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -101,6 +104,11 @@ export function ShopeeProductPublishDialog({
         }
         setDescription(buildDescription(ds));
         setPrice(String(ds.reduce((s, d) => s + Number(d.coverPrice || 0), 0)));
+        // Tự điền năm và nhà in từ sách đã chọn (user sửa lại nếu cần).
+        const yrs = ds.map((d) => d.publicationYear).filter((y): y is number => !!y);
+        if (yrs.length > 0) setYear(String(Math.max(...yrs)));
+        const pubs = [...new Set(ds.map((d) => (d.publisher || '').trim()).filter(Boolean))];
+        if (pubs.length > 0) setPrinter(pubs.join(', '));
       })
       .catch(() => setDetails([]))
       .finally(() => setLoadingDetails(false));
@@ -145,6 +153,8 @@ export function ShopeeProductPublishDialog({
           sku: sku.trim(),
           imageUrl: imageUrl.trim(),
           weight: Number(weight) || 0.5,
+          year: year.trim(),
+          printer: printer.trim(),
         }),
       }).then((x) => x.json());
       if (r?.success) {
@@ -300,6 +310,28 @@ export function ShopeeProductPublishDialog({
                   step={0.1}
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-600" htmlFor="pub-year">Năm xuất bản</label>
+                <input
+                  id="pub-year"
+                  type="text"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder="2026"
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-600" htmlFor="pub-printer">Nhà in / phát hành</label>
+                <input
+                  id="pub-printer"
+                  type="text"
+                  value={printer}
+                  onChange={(e) => setPrinter(e.target.value)}
+                  placeholder="NXB Lao động"
                   className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
                 />
               </div>
