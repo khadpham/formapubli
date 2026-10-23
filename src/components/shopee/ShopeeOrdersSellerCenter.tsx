@@ -345,8 +345,14 @@ export function ShopeeOrdersSellerCenter() {
 
       {/* Modal chi tiết đơn */}
       {detailOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4"
+          onClick={() => setDetailOrder(null)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold">Chi tiết đơn hàng</h3>
@@ -381,6 +387,32 @@ export function ShopeeOrdersSellerCenter() {
                 <div className="border-t pt-4">
                   <div className="font-bold mb-2 flex items-center gap-2">
                     <Truck className="w-4 h-4" /> Thông tin vận chuyển
+                    {!detailOrder.trackingCode && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/shopee/sync-tracking', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ orderSn: detailOrder.orderSn }),
+                            });
+                            const data = await res.json();
+                            if (data?.success) {
+                              showToast('Đã lấy mã vận đơn');
+                              setDetailOrder({ ...detailOrder, trackingCode: data.data.trackingCode });
+                              loadOrders(true);
+                            } else {
+                              showToast(`Lỗi: ${data?.error || 'Không rõ'}`);
+                            }
+                          } catch (e: any) {
+                            showToast(`Lỗi: ${e.message}`);
+                          }
+                        }}
+                        className="ml-2 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Lấy mã vận đơn
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
