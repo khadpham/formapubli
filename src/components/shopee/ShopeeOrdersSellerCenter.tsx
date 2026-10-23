@@ -32,11 +32,11 @@ interface ShopeeOrder {
 }
 
 const TABS = [
-  { key: 'all', label: 'Tất cả' },
-  { key: 'to_ship', label: 'Chờ lấy hàng', highlight: true },
-  { key: 'shipping', label: 'Đang giao' },
-  { key: 'completed', label: 'Đã giao' },
-  { key: 'cancelled', label: 'Đã hủy' },
+  { key: 'all', label: 'Tất cả', apiTab: 'all' },
+  { key: 'to_ship', label: 'Chờ lấy hàng', highlight: true, apiTab: 'moi' },
+  { key: 'shipping', label: 'Đang giao', apiTab: 'dang_giao' },
+  { key: 'completed', label: 'Đã giao', apiTab: 'hoan_thanh' },
+  { key: 'cancelled', label: 'Đã hủy', apiTab: 'huy_hoan_tra' },
 ] as const;
 
 export function ShopeeOrdersSellerCenter() {
@@ -52,11 +52,15 @@ export function ShopeeOrdersSellerCenter() {
   const loadOrders = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/shopee/orders?tab=${activeTab}&search=${encodeURIComponent(search)}`);
+      const currentTab = TABS.find(t => t.key === activeTab);
+      const apiTab = currentTab?.apiTab || 'all';
+      const res = await fetch(`/api/shopee/orders?tab=${apiTab}&q=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (data?.success) {
+        // API trả về { orders: [...], counts: {...} }
+        const orderList = data.data?.orders || [];
         // Sắp xếp: đơn hỏa tốc lên đầu
-        const sorted = [...(data.data || [])].sort((a: ShopeeOrder, b: ShopeeOrder) => {
+        const sorted = [...orderList].sort((a: ShopeeOrder, b: ShopeeOrder) => {
           if (!!a.isInstant === !!b.isInstant) return 0;
           return a.isInstant ? -1 : 1;
         });
