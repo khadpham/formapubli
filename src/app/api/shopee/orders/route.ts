@@ -21,6 +21,10 @@ export const dynamic = 'force-dynamic';
  */
 const TAB_FILTER: Record<string, any> = {
   moi: eq(orders.shippingStatus, 'CREATED'),
+  // Chờ xác nhận: chưa bấm Chuẩn bị đơn hàng (chưa có mã vận đơn)
+  cho_xac_nhan: and(eq(orders.shippingStatus, 'CREATED'), sql`${orders.trackingCode} IS NULL`),
+  // Đã xử lý: đã bấm Chuẩn bị đơn hàng (có mã vận đơn), đang đợi shipper đến lấy
+  da_xu_ly: and(eq(orders.shippingStatus, 'CREATED'), sql`${orders.trackingCode} IS NOT NULL`),
   ban_giao: eq(orders.shippingStatus, 'PICKED_UP'),
   dang_giao: eq(orders.shippingStatus, 'IN_TRANSIT'),
   hoan_thanh: eq(orders.shippingStatus, 'DELIVERED'),
