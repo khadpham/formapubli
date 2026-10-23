@@ -46,9 +46,11 @@ export function ShopeeOrdersSellerCenter() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [detailOrder, setDetailOrder] = useState<ShopeeOrder | null>(null);
   const [search, setSearch] = useState('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const loadOrders = async () => {
-    setLoading(true);
+  const loadOrders = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/shopee/orders?tab=${activeTab}&search=${encodeURIComponent(search)}`);
       const data = await res.json();
@@ -59,12 +61,25 @@ export function ShopeeOrdersSellerCenter() {
           return a.isInstant ? -1 : 1;
         });
         setOrders(sorted);
+        setLastUpdated(new Date());
       }
     } catch {}
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => { loadOrders(); }, [activeTab]);
+
+  // Tự động làm mới mỗi 30 giây khi bật auto-refresh và tab đang hiển thị
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      // Chỉ refresh khi tab trình duyệt đang active để đỡ tốn tài nguyên
+      if (!document.hidden) {
+        loadOrders(true);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, activeTab, search]);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -180,10 +195,24 @@ export function ShopeeOrdersSellerCenter() {
             className="w-full pl-10 pr-4 py-2 border rounded-lg"
           />
         </div>
-        <button onClick={loadOrders} className="px-4 py-2 border rounded-lg flex items-center gap-2 hover:bg-gray-50">
+        <button onClick={() => loadOrders()} className="px-4 py-2 border rounded-lg flex items-center gap-2 hover:bg-gray-50">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Làm mới
         </button>
+        <label className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-gray-50 text-sm">
+          <input
+            type="checkbox"
+            checked={autoRefresh}
+            onChange={e => setAutoRefresh(e.target.checked)}
+            className="w-4 h-4"
+          />
+          Tự động cập nhật
+        </label>
+        {lastUpdated && (
+          <span className="text-xs text-gray-500">
+            Cập nhật: {lastUpdated.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+          </span>
+        )}
         {activeTab === 'to_ship' && (
           <>
             <button
