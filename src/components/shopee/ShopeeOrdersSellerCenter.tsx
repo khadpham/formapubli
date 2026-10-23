@@ -31,13 +31,13 @@ interface ShopeeOrder {
   shipperPhone?: string;
 }
 
-const TABS = [
+const TABS: Array<{ key: string; label: string; highlight?: boolean; apiTab: string }> = [
   { key: 'all', label: 'Tất cả', apiTab: 'all' },
   { key: 'to_ship', label: 'Chờ lấy hàng', highlight: true, apiTab: 'moi' },
   { key: 'shipping', label: 'Đang giao', apiTab: 'dang_giao' },
   { key: 'completed', label: 'Đã giao', apiTab: 'hoan_thanh' },
   { key: 'cancelled', label: 'Đã hủy', apiTab: 'huy_hoan_tra' },
-] as const;
+];
 
 export function ShopeeOrdersSellerCenter() {
   const [activeTab, setActiveTab] = useState<string>('to_ship');
