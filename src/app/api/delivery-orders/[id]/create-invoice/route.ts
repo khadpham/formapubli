@@ -47,48 +47,18 @@ export async function POST(
     );
   }
 
-  // Kiểm tra đã có hóa đơn chưa - nếu có thì kiểm tra còn tồn tại trên MS-Invoice không
-  const allInvoices = await db.select().from(einvoices);
-  let existingInv: any = null;
-  for (const inv of allInvoices as any[]) {
+  // Kiểm tra đã có hóa đơn chưa
+  const existing = await db.select().from(einvoices).where(eq(einvoices.sourceOrderIds, JSON.stringify([`delivery:${id}`]))).limit(1);
+  // Tìm theo LIKE vì sourceOrderIds là JSON string
+  const allInvoices = await db.select({ id: einvoices.id, sourceOrderIds: einvoices.sourceOrderIds }).from(einvoices);
+  const alreadyHas = allInvoices.some((inv: any) => {
     try {
       const ids = JSON.parse(inv.sourceOrderIds || '[]');
-      if (ids.includes(`delivery:${id}`)) {
-        existingInv = inv;
-        break;
-      }
-    } catch {}
-  }
-  if (existingInv) {
-    // Kiểm tra hóa đơn còn trên MS-Invoice không
-    if (existingInv.msinvoiceId && existingInv.status === 'SYNCED') {
-      try {
-        const baseUrl = process.env.MSINVOICE_BASE_URL || 'https://hoadon.msinvoice.vn';
-        const username = process.env.MSINVOICE_USERNAME;
-        const password = process.env.MSINVOICE_PASSWORD;
-        const loginRes = await fetch(`${baseUrl}/erp/rest/s1/iam-invoice/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password }),
-        });
-        const loginData = await loginRes.json();
-        const token = loginData.token || loginData.accessToken || loginData.data?.token;
-        if (token) {
-          const checkRes = await fetch(
-            `${baseUrl}/api/rest/s1/iam-invoice/invoices/${existingInv.msinvoiceId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (checkRes.status === 404) {
-            // Đã xóa trên portal -> xóa local để tạo lại
-            await db.delete(einvoices).where(eq(einvoices.id, existingInv.id));
-            existingInv = null;
-          }
-        }
-      } catch {}
-    }
-    if (existingInv) {
-      return NextResponse.json({ error: 'Phiếu này đã có hóa đơn' }, { status: 400 });
-    }
+      return ids.includes(`delivery:${id}`);
+    } catch { return false; }
+  });
+  if (alreadyHas) {
+    return NextResponse.json({ error: 'Phiếu này đã có hóa đơn' }, { status: 400 });
   }
 
   // Lưu lại thông tin hóa đơn vào phiếu xuất kho để lần sau tự điền
