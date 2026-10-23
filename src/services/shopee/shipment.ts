@@ -192,7 +192,7 @@ export async function getAwbPdf(cfg: ShopeeSyncConfig, orderSn: string): Promise
   }
   const created = await signedPost(cfg, '/api/v2/logistics/create_shipping_document', {
     order_list: [{ order_sn: orderSn, tracking_number: trackingNumber }],
-    shipping_document_type: 'NORMAL_AIR_WAYBILL',
+    shipping_document_type: 'THERMAL_AIR_WAYBILL',
   });
   const fail = (created?.result_list ?? []).find((x: any) => x.fail_error);
   if (fail) {
@@ -200,10 +200,34 @@ export async function getAwbPdf(cfg: ShopeeSyncConfig, orderSn: string): Promise
   }
   const pdf = await signedPost(cfg, '/api/v2/logistics/download_shipping_document', {
     order_list: [{ order_sn: orderSn, tracking_number: trackingNumber }],
-    shipping_document_type: 'NORMAL_AIR_WAYBILL',
+    shipping_document_type: 'THERMAL_AIR_WAYBILL',
   });
   if (!Buffer.isBuffer(pdf) || pdf.byteLength === 0) {
     throw new Error('Tải vận đơn thất bại.');
+  }
+  return pdf;
+}
+
+/** In phiếu hàng loạt (thermal A6) cho nhiều đơn cùng lúc. */
+export async function getBulkAwbPdf(
+  cfg: ShopeeSyncConfig,
+  orderList: Array<{ order_sn: string; tracking_number: string }>
+): Promise<Buffer> {
+  if (orderList.length === 0) throw new Error('Thiếu danh sách đơn.');
+  const created = await signedPost(cfg, '/api/v2/logistics/create_shipping_document', {
+    order_list: orderList,
+    shipping_document_type: 'THERMAL_AIR_WAYBILL',
+  });
+  const fail = (created?.result_list ?? []).find((x: any) => x.fail_error);
+  if (fail) {
+    throw new Error(`Tạo chứng từ Shopee lỗi: ${fail.fail_error} - ${fail.fail_message || ''}`);
+  }
+  const pdf = await signedPost(cfg, '/api/v2/logistics/download_shipping_document', {
+    order_list: orderList,
+    shipping_document_type: 'THERMAL_AIR_WAYBILL',
+  });
+  if (!Buffer.isBuffer(pdf) || pdf.byteLength === 0) {
+    throw new Error('Tải vận đơn hàng loạt thất bại.');
   }
   return pdf;
 }
