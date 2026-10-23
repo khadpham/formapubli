@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, deliveryOrders, einvoices, partners } from '@/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { requireRole } from '@/lib/api-auth';
+import { requireSessionRole } from '@/lib/auth-session';
 import { MSInvoiceService } from '@/services/msinvoice.service';
 
 /**
@@ -14,8 +14,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const session = await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER', 'ROLE_CASHIER']);
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
@@ -73,7 +72,7 @@ export async function POST(
     discountAmount,
     status: 'PREPARED',
     sourceOrderIds: JSON.stringify([`delivery:${id}`]),
-    createdBy: (auth as any).actorId || 'system',
+    createdBy: (session as any).actorId || 'system',
     createdAt: now,
     updatedAt: now,
   } as any);

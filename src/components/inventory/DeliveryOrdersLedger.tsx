@@ -617,7 +617,7 @@ export function DeliveryOrdersLedger({
 
       {/* Modal xuất hóa đơn bổ sung cho phiếu cũ */}
       <Modal
-        isOpen={!!invoiceTarget}
+        open={!!invoiceTarget}
         onClose={() => setInvoiceTarget(null)}
         title={`Xuất hóa đơn VAT - ${invoiceTarget?.code || ''}`}
       >
