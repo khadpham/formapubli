@@ -5,7 +5,7 @@ import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2, FolderK
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
-import { CompanyProfileForm } from './CompanyProfileForm';
+import { PartyAManager } from './PartyAManager';
 import { AITemplateBuilder } from './AITemplateBuilder';
 import { AIContractReview } from './AIContractReview';
 import { AISmartDraft } from './AISmartDraft';
@@ -62,6 +62,11 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<any | null>(null);
+  const [sortBy, setSortBy] = useState<string>('newest');
+  const [yearFilter, setYearFilter] = useState<string>('');
+  const [partyAFilter, setPartyAFilter] = useState<string>('');
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const canManage = currentRole === 'ROLE_OWNER' || currentRole === 'ROLE_MANAGER';
 
@@ -114,10 +119,40 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
     }
   }, [presetSearch]);
 
+  /** Xem trước hợp đồng trong modal. */
+  const previewContract = async (doc: any) => {
+    try {
+      setErrorMessage(null);
+      const res = await fetch(`/api/contracts/documents/${encodeURIComponent(doc.id)}/export-docx`);
+      if (!res.ok) throw new Error('Không tải được file xem trước');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+      setPreviewDoc(doc);
+    } catch (e: any) {
+      setErrorMessage(e.message);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewDoc(null);
+  };
+
+  /** Tên file tải về theo đúng định dạng gốc. */
+  const getDownloadLabel = (doc: any): string => {
+    const fn = doc.finalFilename || '';
+    if (fn.endsWith('.xls') || fn.endsWith('.xlsx')) return 'Tải Excel';
+    if (fn.endsWith('.pdf')) return 'Tải PDF';
+    if (fn.match(/\.(jpg|jpeg|png|gif|webp)$/i)) return 'Tải ảnh';
+    return 'Tải Word';
+  };
+
   const downloadDocx = async (doc: any) => {
     try {
       const res = await fetch(`/api/contracts/documents/${encodeURIComponent(doc.id)}/export-docx`);
-      if (!res.ok) throw new Error('Không tải được file Word');
+      if (!res.ok) throw new Error('Không tải được file');
       const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -189,16 +224,60 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
 
   const filteredDocs = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return docs;
-    return docs.filter((d: any) => {
-      const partnerName = partnerMap.get(d.partnerId) || '';
-      return (
-        `${d.contractNumber || ''}`.toLowerCase().includes(q) ||
-        `${d.title || ''}`.toLowerCase().includes(q) ||
-        partnerName.toLowerCase().includes(q)
-      );
-    });
-  }, [docs, search, partnerMap]);
+    let result = docs;
+    // Lọc theo từ khóa
+    if (q) {
+      result = result.filter((d: any) => {
+        const partnerName = partnerMap.get(d.partnerId) || '';
+        return (
+          `${d.contractNumber || ''}`.toLowerCase().includes(q) ||
+          `${d.title || ''}`.toLowerCase().includes(q) ||
+          partnerName.toLowerCase().includes(q)
+        );
+      });
+    }
+    // Lọc theo năm
+    if (yearFilter) {
+      result = result.filter((d: any) => {
+        const dateStr = d.signedDate || d.createdAt;
+        if (!dateStr) return false;
+        return new Date(dateStr).getFullYear().toString() === yearFilter;
+      });
+    }
+    // Sắp xếp
+    const sorted = [...result];
+    switch (sortBy) {
+      case 'newest':
+        sorted.sort((a: any, b: any) => new Date(b.signedDate || b.createdAt || 0).getTime() - new Date(a.signedDate || a.createdAt || 0).getTime());
+        break;
+      case 'oldest':
+        sorted.sort((a: any, b: any) => new Date(a.signedDate || a.createdAt || 0).getTime() - new Date(b.signedDate || b.createdAt || 0).getTime());
+        break;
+      case 'name_asc':
+        sorted.sort((a: any, b: any) => `${a.title || ''}`.localeCompare(`${b.title || ''}`, 'vi'));
+        break;
+      case 'name_desc':
+        sorted.sort((a: any, b: any) => `${b.title || ''}`.localeCompare(`${a.title || ''}`, 'vi'));
+        break;
+      case 'value_desc':
+        sorted.sort((a: any, b: any) => Number(b.totalAmount || 0) - Number(a.totalAmount || 0));
+        break;
+      case 'value_asc':
+        sorted.sort((a: any, b: any) => Number(a.totalAmount || 0) - Number(b.totalAmount || 0));
+        break;
+    }
+    return sorted;
+  }, [docs, search, partnerMap, yearFilter, sortBy]);
+
+  // Danh sách năm có hợp đồng để làm filter
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    for (const d of docs) {
+      const dateStr = d.signedDate || d.createdAt;
+      if (dateStr) years.add(new Date(dateStr).getFullYear().toString());
+    }
+    return Array.from(years).sort().reverse();
+  }, [docs]);
 
   const totalPages = Math.max(1, Math.ceil(filteredDocs.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -267,9 +346,9 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
             type="button"
             onClick={() => setProfileOpen(true)}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition"
-            aria-label="Thông tin công ty Bên A"
+            aria-label="Quản lý bên A"
           >
-            <Building2 className="w-4 h-4 inline mr-1" />Thông Tin Công Ty
+            <Building2 className="w-4 h-4 inline mr-1" />Bên A
           </button>
         </div>
       </div>
@@ -300,6 +379,30 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
           {Object.entries(STATUS_LABEL).map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
+        </select>
+        <label className="text-xs font-bold text-slate-600">Năm:</label>
+        <select
+          value={yearFilter}
+          onChange={(e) => setYearFilter(e.target.value)}
+          className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold outline-none"
+        >
+          <option value="">Tất cả</option>
+          {availableYears.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+        <label className="text-xs font-bold text-slate-600">Sắp xếp:</label>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold outline-none"
+        >
+          <option value="newest">Mới nhất</option>
+          <option value="oldest">Cũ nhất</option>
+          <option value="name_asc">Tên A-Z</option>
+          <option value="name_desc">Tên Z-A</option>
+          <option value="value_desc">Giá trị cao nhất</option>
+          <option value="value_asc">Giá trị thấp nhất</option>
         </select>
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -346,7 +449,8 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
                     {(d.status === 'DRAFT') && (
                       <button type="button" onClick={() => { setEditingDoc(d); setComposerOpen(true); }} className="px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-lg text-[11px] font-bold" aria-label={`Sửa ${d.contractNumber}`}>Sửa</button>
                     )}
-                    <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`Tải file Word ${d.contractNumber} để chỉnh sửa`}>Tải file Word (chỉnh sửa được)</button>
+                    <button type="button" onClick={() => previewContract(d)} className="px-2 py-1 text-blue-700 hover:bg-blue-50 rounded-lg text-[11px] font-bold" aria-label={`Xem trước ${d.contractNumber}`}>Xem trước</button>
+                    <button type="button" onClick={() => downloadDocx(d)} className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold" aria-label={`${getDownloadLabel(d)} ${d.contractNumber}`}>{getDownloadLabel(d)}</button>
                     {(d.status === 'DRAFT' || d.status === 'FINALIZED') && (
                     <label className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded-lg text-[11px] font-bold cursor-pointer" aria-label={`Tải bản cuối ${d.contractNumber}`}>
                       Tải bản cuối lên
@@ -434,7 +538,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
           onClose={() => { setAiDraftOpen(false); setSmartDraftInit(null); }}
         />
       )}
-      {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
+      {profileOpen && <PartyAManager onClose={() => setProfileOpen(false)} />}
 
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDelete(null)}>
@@ -481,6 +585,44 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
               >
                 Đánh dấu hủy
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xem trước hợp đồng */}
+      {previewDoc && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={closePreview}>
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-bold">Xem trước: {previewDoc.contractNumber}</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { downloadDocx(previewDoc); }}
+                  className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold hover:bg-teal-700"
+                >
+                  {getDownloadLabel(previewDoc)}
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700"
+                >
+                  In / PDF
+                </button>
+                <button
+                  onClick={closePreview}
+                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold hover:bg-slate-50"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {previewUrl ? (
+                <iframe src={previewUrl} className="w-full h-[60vh] border rounded-lg" title="Xem trước hợp đồng" />
+              ) : (
+                <p className="text-center text-slate-500">Đang tải...</p>
+              )}
             </div>
           </div>
         </div>

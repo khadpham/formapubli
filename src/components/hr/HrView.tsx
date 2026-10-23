@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Users, ChevronDown } from 'lucide-react';
+import { Search, Users, ChevronDown, Plus, Pencil } from 'lucide-react';
 import ModulePlaceholder from '@/components/ui/ModulePlaceholder';
+import Modal from '@/components/ui/Modal';
+import { COLLAB_ROLES } from '@/lib/collab-roles';
 
 const TYPE_LABELS: Record<string, string> = {
   thiet_ke_bia: 'Thiết kế bìa',
   dich_gia: 'Dịch giả',
   bien_tap: 'Biên tập',
+  dan_trang: 'Dàn trang',
   doc_morat: 'Đọc morat',
+  tac_gia: 'Tác giả',
   hanh_chinh: 'Hành chính',
   dai_dien_ben_a: 'Đại diện bên A',
   ben_b: 'Bên B',
@@ -143,24 +147,28 @@ export default function HrView() {
   const [type, setType] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Collaborator | null>(null);
 
-  useEffect(() => {
+  const reload = () => {
     const params = new URLSearchParams();
     if (q.trim()) params.set('q', q.trim());
     if (type) params.set('type', type);
-    const t = setTimeout(() => {
-      fetch(`/api/collaborators?${params.toString()}`)
-        .then((r) => r.json())
-        .then((j) => {
-          if (j.success) {
-            setRows(j.data);
-            setError('');
-          } else {
-            setError(j.message || 'Không tải được danh sách.');
-          }
-        })
-        .catch(() => setError('Không tải được danh sách.'));
-    }, 250);
+    fetch(`/api/collaborators?${params.toString()}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) {
+          setRows(j.data);
+          setError('');
+        } else {
+          setError(j.message || 'Không tải được danh sách.');
+        }
+      })
+      .catch(() => setError('Không tải được danh sách.'));
+  };
+
+  useEffect(() => {
+    const t = setTimeout(reload, 250);
     return () => clearTimeout(t);
   }, [q, type]);
 
@@ -173,12 +181,18 @@ export default function HrView() {
           <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <Users className="w-5 h-5" />
           </div>
-          <div>
+          <div className="flex-1">
             <h2 className="text-lg font-black text-slate-900">Cộng tác viên</h2>
             <p className="text-sm text-slate-500">
               {rows.length} người - thông tin định danh làm cơ sở điền hợp đồng và tra cứu
             </p>
           </div>
+          <button
+            onClick={() => { setEditing(null); setFormOpen(true); }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold"
+          >
+            <Plus className="w-4 h-4" /> Thêm
+          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 mt-4 mb-4">
@@ -241,6 +255,14 @@ export default function HrView() {
                 </button>
                 {open && (
                   <div className="px-4 pb-4 pt-1 space-y-1.5 bg-slate-50/60">
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => { setEditing(c); setFormOpen(true); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Sửa
+                      </button>
+                    </div>
                     <DetailRow label="Ngày sinh" value={c.dob} />
                     <DetailRow label="CCCD/CMND" value={c.idNumber} />
                     <DetailRow label="Ngày cấp" value={c.idIssuedDate} />
@@ -279,6 +301,152 @@ export default function HrView() {
           'Phân ca làm việc theo tuần cho quầy và kho',
         ]}
       />
+
+      {formOpen && (
+        <CollaboratorFormModal
+          editing={editing}
+          onClose={() => { setFormOpen(false); setEditing(null); }}
+          onSaved={() => { setFormOpen(false); setEditing(null); reload(); }}
+        />
+      )}
     </div>
+  );
+}
+
+const FORM_FIELDS: { key: keyof Collaborator; label: string; type?: string }[] = [
+  { key: 'penName', label: 'Bút danh' },
+  { key: 'roleTitle', label: 'Chức danh (ghi tay)' },
+  { key: 'dob', label: 'Ngày sinh', type: 'date' },
+  { key: 'idNumber', label: 'Số CCCD/CMND' },
+  { key: 'idIssuedDate', label: 'Ngày cấp', type: 'date' },
+  { key: 'idIssuedPlace', label: 'Nơi cấp' },
+  { key: 'taxId', label: 'Mã số thuế cá nhân' },
+  { key: 'address', label: 'Địa chỉ thường trú' },
+  { key: 'phone', label: 'Điện thoại' },
+  { key: 'email', label: 'Email', type: 'email' },
+  { key: 'bankAccount', label: 'Số tài khoản' },
+  { key: 'bankName', label: 'Tên ngân hàng' },
+  { key: 'bankOwner', label: 'Chủ tài khoản' },
+  { key: 'notes', label: 'Ghi chú' },
+];
+
+function CollaboratorFormModal({
+  editing,
+  onClose,
+  onSaved,
+}: {
+  editing: Collaborator | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<Record<string, string>>(() => {
+    const c = editing;
+    return {
+      fullName: c?.fullName || '',
+      penName: c?.penName || '',
+      roleTitle: c?.roleTitle || '',
+      collabType: c?.collabType || 'khac',
+      dob: c?.dob || '',
+      idNumber: c?.idNumber || '',
+      idIssuedDate: c?.idIssuedDate || '',
+      idIssuedPlace: c?.idIssuedPlace || '',
+      taxId: c?.taxId || '',
+      address: c?.address || '',
+      phone: c?.phone || '',
+      email: c?.email || '',
+      bankAccount: c?.bankAccount || '',
+      bankName: c?.bankName || '',
+      bankOwner: c?.bankOwner || '',
+      notes: c?.notes || '',
+    };
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    if (!form.fullName.trim()) {
+      setErr('Hãy nhập họ tên.');
+      return;
+    }
+    setSaving(true);
+    setErr('');
+    try {
+      const url = editing
+        ? `/api/collaborators/${encodeURIComponent(editing.id)}`
+        : '/api/collaborators';
+      const res = await fetch(url, {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Không lưu được');
+      onSaved();
+    } catch (e: any) {
+      setErr(e.message || 'Không lưu được');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="md"
+      title={editing ? `Sửa: ${editing.fullName}` : 'Thêm cộng tác viên'}
+      subtitle="Thông tin định danh làm cơ sở điền hợp đồng"
+    >
+      {err && (
+        <p className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold mb-3">{err}</p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <label className="block">Họ và tên *
+          <input
+            value={form.fullName}
+            onChange={(e) => set('fullName', e.target.value)}
+            className="mt-0.5 w-full px-2.5 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </label>
+        <label className="block">Vai trò *
+          <select
+            value={form.collabType}
+            onChange={(e) => set('collabType', e.target.value)}
+            className="mt-0.5 w-full px-2.5 py-2 border rounded-xl outline-none bg-white focus:ring-2 focus:ring-indigo-500"
+          >
+            {COLLAB_ROLES.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+        </label>
+        {FORM_FIELDS.map((f) => (
+          <label key={f.key} className="block">{f.label}
+            <input
+              type={f.type || 'text'}
+              value={form[f.key] || ''}
+              onChange={(e) => set(f.key, e.target.value)}
+              className="mt-0.5 w-full px-2.5 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2 mt-4">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 border rounded-xl text-sm font-bold hover:bg-slate-50"
+        >
+          Hủy
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+        >
+          {saving ? 'Đang lưu...' : editing ? 'Lưu' : 'Thêm'}
+        </button>
+      </div>
+    </Modal>
   );
 }
