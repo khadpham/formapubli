@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Store } from 'lucide-react';
 import type { UserRole } from '@/lib/roles';
 import { PortalOrdersPanel } from './PortalOrdersPanel';
-import { ShopeeOrdersHub } from './ShopeeOrdersHub';
+import { ShopeeOrdersSellerCenter } from './ShopeeOrdersSellerCenter';
 import { ShopeeOverviewPanel } from './ShopeeOverviewPanel';
 import { ShopeeProductsPanel } from './ShopeeProductsPanel';
 import { ShopeeReturnsPanel } from './ShopeeReturnsPanel';
@@ -186,7 +186,7 @@ export function ShopeeTab({ sessionRole }: { sessionRole: UserRole }) {
           </nav>
 
           {hubTab === 'tong_quan' && <ShopeeOverviewPanel onToast={showToast} />}
-          {hubTab === 'don_shopee' && <ShopeeOrdersHub onToast={showToast} />}
+          {hubTab === 'don_shopee' && <ShopeeOrdersSellerCenter />}
           {hubTab === 'don_portal' && <PortalOrdersPanel currentRole={sessionRole} />}
           {hubTab === 'tra_hang' && <ShopeeReturnsPanel onToast={showToast} />}
           {hubTab === 'san_pham' && <ShopeeProductsPanel onToast={showToast} sessionRole={sessionRole} />}
