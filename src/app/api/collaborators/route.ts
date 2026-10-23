@@ -48,3 +48,55 @@ export async function GET(req: NextRequest) {
     return handleApiError(error);
   }
 }
+
+/**
+ * POST /api/collaborators - Thêm cộng tác viên mới.
+ * Body: { fullName (bắt buộc), collabType, penName, roleTitle, dob, idNumber,
+ *   idIssuedDate, idIssuedPlace, taxId, address, phone, email,
+ *   bankAccount, bankName, bankOwner, notes }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER']);
+    const body = await req.json();
+    const fullName = `${body.fullName || ''}`.trim();
+    if (!fullName) {
+      return NextResponse.json({ success: false, error: 'Thiếu họ tên.' }, { status: 400 });
+    }
+    const slug = fullName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'ctv';
+    const id = `ctv-${slug}-${Date.now().toString(36)}`;
+    const str = (v: any) => {
+      const s = `${v ?? ''}`.trim();
+      return s ? s : null;
+    };
+    await db.insert(collaborators).values({
+      id,
+      fullName,
+      penName: str(body.penName),
+      roleTitle: str(body.roleTitle),
+      collabType: str(body.collabType) || 'khac',
+      dob: str(body.dob),
+      idNumber: str(body.idNumber),
+      idIssuedDate: str(body.idIssuedDate),
+      idIssuedPlace: str(body.idIssuedPlace),
+      taxId: str(body.taxId),
+      address: str(body.address),
+      phone: str(body.phone),
+      email: str(body.email),
+      bankAccount: str(body.bankAccount),
+      bankName: str(body.bankName),
+      bankOwner: str(body.bankOwner),
+      notes: str(body.notes),
+      isActive: true,
+    });
+    return NextResponse.json({ success: true, data: { id } });
+  } catch (error: any) {
+    return handleApiError(error);
+  }
+}

@@ -8,6 +8,7 @@ import { readVietnameseNumber } from '@/lib/vietnamese-number-reader';
 import { ContractPrintPreview } from './ContractPrintPreview';
 import { PresetManagerModal } from './PresetManagerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
+import { COLLAB_ROLES, templateCodeForRole } from '@/lib/collab-roles';
 
 interface ComposerProps {
   currentRole?: UserRole;
@@ -60,6 +61,10 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  // Vai trò CTV -> chọn người -> tự điền thông tin vào form
+  const [roleFilter, setRoleFilter] = useState('');
+  const [rolePeople, setRolePeople] = useState<any[]>([]);
+  const [rolePersonId, setRolePersonId] = useState('');
   const previewBox = useRef<HTMLDivElement>(null);
   const debounce = useRef<any>(null);
 
@@ -102,6 +107,61 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
       setSchemaFields([]);
     }
   }, [templateId, templates]);
+
+  // Chọn vai trò: tự chọn mẫu hợp đồng phù hợp + nạp danh sách người theo vai trò
+  useEffect(() => {
+    if (!roleFilter) {
+      setRolePeople([]);
+      setRolePersonId('');
+      return;
+    }
+    // Tự chọn mẫu theo vai trò (nếu có mẫu tương ứng và đang soạn mới)
+    if (!initialDoc) {
+      const code = templateCodeForRole(roleFilter);
+      if (code) {
+        const tpl = templates.find((t: any) => t.code === code);
+        if (tpl) setTemplateId(tpl.id);
+      }
+    }
+    // Nạp danh sách cộng tác viên theo vai trò
+    fetch(`/api/collaborators?type=${encodeURIComponent(roleFilter)}&active=1`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) setRolePeople(j.data || []);
+        else setRolePeople([]);
+      })
+      .catch(() => setRolePeople([]));
+    setRolePersonId('');
+  }, [roleFilter, templates, initialDoc]);
+
+  // Chọn người: tự điền thông tin định danh vào form (chỉ điền ô còn trống)
+  const applyRolePerson = (personId: string) => {
+    setRolePersonId(personId);
+    const p = rolePeople.find((x: any) => x.id === personId);
+    if (!p) return;
+    const mapping: Record<string, string> = {
+      ben_b_ten: p.fullName || '',
+      ben_b_but_danh: p.penName || '',
+      ben_b_cccd: p.idNumber || '',
+      ben_b_ngay_cap: p.idIssuedDate || '',
+      ben_b_noi_cap: p.idIssuedPlace || '',
+      ben_b_dia_chi: p.address || '',
+      ben_b_dien_thoai: p.phone || '',
+      ben_b_email: p.email || '',
+      ben_b_mst: p.taxId || '',
+      ben_b_tai_khoan: p.bankAccount || '',
+      ben_b_ngan_hang: p.bankName || '',
+      ben_b_chu_tk: p.bankOwner || '',
+      ben_b_ngay_sinh: p.dob || '',
+    };
+    setForm((prev) => {
+      const next = { ...prev };
+      for (const [k, v] of Object.entries(mapping)) {
+        if (v && (next[k] ?? '') === '') next[k] = v;
+      }
+      return next;
+    });
+  };
 
   const applyAutofill = async () => {
     if (!partnerId) return;
@@ -249,6 +309,42 @@ export function ContractComposerModal({ currentRole = 'ROLE_OWNER', initialDoc, 
         )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="space-y-3 text-xs lg:max-h-[62vh] lg:overflow-y-auto lg:pr-2">
+            <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block font-bold text-indigo-900">Vai trò
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white font-normal"
+                  >
+                    <option value="">- Chọn vai trò -</option>
+                    {COLLAB_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block font-bold text-indigo-900">Người thực hiện
+                  <select
+                    value={rolePersonId}
+                    onChange={(e) => applyRolePerson(e.target.value)}
+                    disabled={!roleFilter || rolePeople.length === 0}
+                    className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white font-normal disabled:opacity-50"
+                  >
+                    <option value="">
+                      {!roleFilter ? '- Chọn vai trò trước -' : rolePeople.length === 0 ? '- Không có ai -' : '- Chọn người -'}
+                    </option>
+                    {rolePeople.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.fullName}{p.penName ? ` (${p.penName})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {rolePersonId && (
+                <p className="text-[11px] text-indigo-700">Đã điền thông tin người được chọn vào các ô còn trống bên dưới.</p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="block">Mẫu
                 <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg outline-none bg-white">
