@@ -20,9 +20,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Tên bên A không được để trống.' }, { status: 400 });
     }
     if (is_default) {
-      await db.execute(sql`UPDATE contract_party_a SET is_default = 0 WHERE id != ${id}`);
+      await db.$client.execute(sql`UPDATE contract_party_a SET is_default = 0 WHERE id != ${id}`);
     }
-    await db.execute(sql`
+    await db.$client.execute(sql`
       UPDATE contract_party_a
       SET name = ${name.trim()},
           representative = ${representative || ''},
@@ -46,12 +46,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await requireSessionRole(req, ROLES);
     const { id } = await params;
-    const check = await db.execute(sql`SELECT is_default FROM contract_party_a WHERE id = ${id}`);
+    const check = await db.$client.execute(sql`SELECT is_default FROM contract_party_a WHERE id = ${id}`);
     const row = (check.rows || [])[0] as any;
     if (row?.is_default) {
       return NextResponse.json({ success: false, error: 'Không xóa được bên A mặc định.' }, { status: 400 });
     }
-    await db.execute(sql`DELETE FROM contract_party_a WHERE id = ${id}`);
+    await db.$client.execute(sql`DELETE FROM contract_party_a WHERE id = ${id}`);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return handleApiError(error);
