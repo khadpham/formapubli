@@ -129,7 +129,7 @@ export function ShopeeOrdersSellerCenter() {
   };
 
   const handleArrangeShipment = async (orderSn: string) => {
-    if (!confirm(`Sắp xếp vận chuyển cho đơn ${orderSn}?`)) return;
+    if (!confirm(`Chuẩn bị đơn hàng ${orderSn}? Shopee sẽ điều phối shipper đến lấy.`)) return;
     try {
       const res = await fetch('/api/shopee/ship', {
         method: 'POST',
@@ -138,7 +138,7 @@ export function ShopeeOrdersSellerCenter() {
       });
       const data = await res.json();
       if (data?.success) {
-        showToast(`Đã sắp xếp vận chuyển cho ${orderSn}`);
+        showToast(`Đã chuẩn bị đơn ${orderSn}, Shopee đang điều phối shipper`);
         loadOrders();
       } else {
         showToast(`Lỗi: ${data?.error || 'Không rõ'}`);
@@ -290,7 +290,7 @@ export function ShopeeOrdersSellerCenter() {
                       onClick={() => handleArrangeShipment(o.orderSn)}
                       className="px-3 py-1.5 text-sm bg-orange-600 text-white rounded hover:bg-orange-700"
                     >
-                      Sắp xếp vận chuyển
+                      Chuẩn bị đơn hàng
                     </button>
                   )}
                 </div>
