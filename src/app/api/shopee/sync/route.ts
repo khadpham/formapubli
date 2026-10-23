@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
 import { requireSessionRole } from '@/lib/auth-session';
 import { handleApiError } from '@/lib/api-response';
 import type { UserRole } from '@/lib/roles';
@@ -6,6 +7,30 @@ import { pullShopeeOrders } from '@/services/shopee/order-sync';
 import { getShopeeConfig, resolveShopeeShopId } from '@/services/shopee/shop-config';
 
 export const dynamic = 'force-dynamic';
+
+/** Chấp nhận session hoặc Bearer CRON_SECRET (cho cron VPS). */
+async function authorized(req: NextRequest): Promise<boolean> {
+  try {
+    await requireSessionRole(req, [
+      'ROLE_OWNER',
+      'ROLE_MANAGER',
+      'ROLE_WAREHOUSE',
+      'ROLE_SHOPEE_OPS',
+    ] as UserRole[]);
+    return true;
+  } catch {
+    /* không có phiên - thử CRON_SECRET cho cron VPS */
+  }
+  const secret = `${process.env.CRON_SECRET || ''}`.trim();
+  if (!secret) return false;
+  const header = `${req.headers.get('authorization') || ''}`.trim();
+  if (!header.toLowerCase().startsWith('bearer ')) return false;
+  const given = header.slice(7).trim();
+  const a = Buffer.from(given);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 /**
  * POST /api/shopee/sync { hours?, from_date? } - kéo đơn Shopee chủ động (UI nút bấm tay
@@ -15,12 +40,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
   try {
-    await requireSessionRole(req, [
-      'ROLE_OWNER',
-      'ROLE_MANAGER',
-      'ROLE_WAREHOUSE',
-      'ROLE_SHOPEE_OPS',
-    ] as UserRole[]);
+    if (!(await authorized(req))) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const body = (await req.json().catch(() => ({}))) as { hours?: number; from_date?: string };
     const partnerId = Number(process.env.SHOPEE_PARTNER_ID || '0');
     const partnerKey = `${process.env.SHOPEE_PARTNER_KEY || ''}`;
