@@ -306,6 +306,10 @@ export class MSInvoiceService {
       const msinvoiceId = String(
         data?.invoiceId ?? data?.id ?? data?.invoice?.invoiceId ?? data?.invoice?.id ?? ''
       );
+      // Chặn dữ liệu rác: không có msinvoiceId thì coi như đẩy thất bại, không đánh dấu SYNCED
+      if (!msinvoiceId || msinvoiceId === 'undefined' || msinvoiceId === 'null') {
+        throw new Error('MS-Invoice không trả về mã hóa đơn (msinvoiceId rỗng)');
+      }
       await db.update(einvoices).set({
         status: 'SYNCED',
         msinvoiceId,
@@ -466,8 +470,14 @@ export class MSInvoiceService {
       }
 
       const number = String(r.number || r.invoiceNo || local.invoiceNumber || '');
+      // Chặn số hóa đơn rác: không nhận "--------", chuỗi toàn dấu gạch, hoặc rỗng khi chuyển sang SIGNED
+      const isValidNumber = number && !/^[-_.\s]+$/.test(number);
       const update: any = { status: target, updatedAt: now };
       if (target === 'SIGNED') {
+        if (!isValidNumber) {
+          summary.skipped++; // số HĐ không hợp lệ - không đánh dấu SIGNED
+          continue;
+        }
         update.isSigned = 'Y';
         const msDate = Number(r.raw?.invoiceDate ?? NaN);
         update.issuedAt = Number.isFinite(msDate) ? new Date(msDate).toISOString() : now;
