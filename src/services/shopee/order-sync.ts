@@ -130,8 +130,10 @@ function mapShopeeStatus(shopeeStatus: string): {
       return { orderStatus: 'COMPLETED', shippingStatus: 'CREATED', deductInventory: true };
     case 'SHIPPED':
       return { orderStatus: 'COMPLETED', shippingStatus: 'IN_TRANSIT', deductInventory: true };
-    case 'COMPLETED':
     case 'TO_CONFIRM_RECEIVE':
+      // Seller Center tính TO_CONFIRM_RECEIVE vào "Đang giao", map theo cho khớp
+      return { orderStatus: 'COMPLETED', shippingStatus: 'IN_TRANSIT', deductInventory: true };
+    case 'COMPLETED':
       return { orderStatus: 'COMPLETED', shippingStatus: 'DELIVERED', deductInventory: true };
     case 'CANCELLED':
       return { orderStatus: 'CANCELLED', shippingStatus: 'FAILED', deductInventory: false };
