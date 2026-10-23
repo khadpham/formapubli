@@ -1397,18 +1397,26 @@ return {
     totalQuantity: number;
     lines?: Array<{ name: string; quantity: number; unitPrice: number; isGift: boolean }>;
   }): Promise<void> {
-    const url = process.env.N8N_ORDER_WEBHOOK_URL;
-    if (!url) return;
-    try {
-      await fetch(url, {
+    const urls: string[] = [];
+    const mainUrl = process.env.N8N_ORDER_WEBHOOK_URL;
+    if (mainUrl) urls.push(mainUrl);
+    // Kênh Shopee: bắn thêm về webhook riêng cho workflow Telegram đơn Shopee.
+    if (payload.channel === 'SHOPEE') {
+      const shopeeUrl = process.env.N8N_SHOPEE_ORDER_WEBHOOK_URL;
+      if (shopeeUrl && !urls.includes(shopeeUrl)) urls.push(shopeeUrl);
+    }
+    if (urls.length === 0) return;
+    const body = JSON.stringify({ ...payload, timestamp: new Date().toISOString() });
+    await Promise.all(urls.map((url) =>
+      fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() }),
+        body,
         signal: AbortSignal.timeout(5000),
-      });
-    } catch {
-      // Bo qua loi webhook
-    }
+      }).catch(() => {
+        // Bo qua loi webhook - khong duoc lam hong luong tao don.
+      })
+    ));
   }
 
   /**
