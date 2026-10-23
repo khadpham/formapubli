@@ -57,6 +57,13 @@ export function DeliveryOrdersLedger({
   /** Dialog xac nhan thay window.confirm. */
   const [confirmDlg, setConfirmDlg] = useState<{ msg: string; onOk: () => void } | null>(null);
 
+  /** Modal xuất hóa đơn bổ sung cho phiếu cũ */
+  const [invoiceTarget, setInvoiceTarget] = useState<any | null>(null);
+  const [invoiceTaxCode, setInvoiceTaxCode] = useState('');
+  const [invoiceCompanyName, setInvoiceCompanyName] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
+  const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
+
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
@@ -139,6 +146,36 @@ export function DeliveryOrdersLedger({
   };
 
   const [isDeletingDraftId, setIsDeletingDraftId] = useState<string | null>(null);
+
+  // Tạo hóa đơn bổ sung cho phiếu cũ đã xuất kho
+  const handleCreateInvoice = async () => {
+    if (!invoiceTarget) return;
+    if (!invoiceTaxCode.trim() || !invoiceCompanyName.trim()) {
+      showToast('Vui lòng nhập MST và tên công ty', 'error');
+      return;
+    }
+    setIsCreatingInvoice(true);
+    try {
+      const res = await fetch(`/api/delivery-orders/${invoiceTarget.id}/create-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taxCode: invoiceTaxCode.trim(),
+          companyName: invoiceCompanyName.trim(),
+          address: invoiceAddress.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Tạo hóa đơn thất bại');
+      showToast('Đã tạo hóa đơn và đẩy lên MS-Invoice', 'success');
+      setInvoiceTarget(null);
+      fetchOrders();
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setIsCreatingInvoice(false);
+    }
+  };
 
   // Xóa phiếu xuất kho DRAFT
   const handleDeleteDraft = async (id: string, code: string) => {
@@ -476,6 +513,22 @@ export function DeliveryOrdersLedger({
                               <RotateCcw className="w-4 h-4" />
                             </button>
                           )}
+
+                          {/* Xuất hóa đơn bổ sung nếu là DISPATCHED_LOCKED */}
+                          {o.status === 'DISPATCHED_LOCKED' && (
+                            <button
+                              onClick={() => {
+                                setInvoiceTarget(o);
+                                setInvoiceTaxCode('');
+                                setInvoiceCompanyName('');
+                                setInvoiceAddress('');
+                              }}
+                              className="p-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition"
+                              title="Xuất hóa đơn VAT bổ sung"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -561,6 +614,74 @@ export function DeliveryOrdersLedger({
           onClose={() => setSelectedOrderForPrint(null)}
         />
       )}
+
+      {/* Modal xuất hóa đơn bổ sung cho phiếu cũ */}
+      <Modal
+        isOpen={!!invoiceTarget}
+        onClose={() => setInvoiceTarget(null)}
+        title={`Xuất hóa đơn VAT - ${invoiceTarget?.code || ''}`}
+      >
+        {invoiceTarget && (
+          <>
+            <div className="space-y-3 text-sm">
+              <p className="text-slate-600">
+                Phiếu <b>{invoiceTarget.code}</b> - Tổng tiền:{' '}
+                <b className="text-slate-900">
+                  {Number(invoiceTarget.finalAmount || 0).toLocaleString('vi-VN')}đ
+                </b>
+              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Mã số thuế *</label>
+                <input
+                  value={invoiceTaxCode}
+                  onChange={(e) => setInvoiceTaxCode(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
+                  placeholder="VD: 0109641386"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Tên công ty *</label>
+                <input
+                  value={invoiceCompanyName}
+                  onChange={(e) => setInvoiceCompanyName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
+                  placeholder="VD: CÔNG TY TNHH BÌNH BOOK"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Địa chỉ</label>
+                <input
+                  value={invoiceAddress}
+                  onChange={(e) => setInvoiceAddress(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
+                  placeholder="Địa chỉ người mua"
+                />
+              </div>
+              <p className="text-xs text-slate-500 italic">
+                Hóa đơn sẽ tự tính VAT 5% tách từ tổng tiền và đẩy lên MS-Invoice.
+              </p>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setInvoiceTarget(null)}
+                disabled={isCreatingInvoice}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+              >
+                Quay Lại
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateInvoice}
+                disabled={isCreatingInvoice}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50"
+              >
+                {isCreatingInvoice ? 'Đang tạo...' : 'Tạo Hóa Đơn'}
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }
