@@ -34,6 +34,20 @@ export async function POST(
     return NextResponse.json({ error: 'Không tìm thấy phiếu xuất kho' }, { status: 404 });
   }
 
+  // Tự điền từ hồ sơ đối tác nếu body không gửi
+  let taxCode = body.taxCode;
+  let companyName = body.companyName;
+  let address = body.address;
+  if ((!taxCode || !companyName) && order.partnerId) {
+    const partnerRows = await db.select().from(partners).where(eq(partners.id, order.partnerId)).limit(1);
+    const partner: any = partnerRows[0];
+    if (partner) {
+      if (!taxCode) taxCode = partner.taxCode;
+      if (!companyName) companyName = partner.name;
+      if (!address) address = partner.address;
+    }
+  }
+
   // Kiểm tra đã có hóa đơn chưa
   const existing = await db.select().from(einvoices).where(eq(einvoices.sourceOrderIds, JSON.stringify([`delivery:${id}`]))).limit(1);
   // Tìm theo LIKE vì sourceOrderIds là JSON string
