@@ -5,7 +5,7 @@ import { FileText, Plus, Upload, Building2, Sparkles, ScanSearch, Wand2, FolderK
 import { UserRole } from '@/lib/roles';
 import { ContractComposerModal } from './ContractComposerModal';
 import { TemplateManagerModal } from './TemplateManagerModal';
-import { CompanyProfileForm } from './CompanyProfileForm';
+import { PartyAManager } from './PartyAManager';
 import { AITemplateBuilder } from './AITemplateBuilder';
 import { AIContractReview } from './AIContractReview';
 import { AISmartDraft } from './AISmartDraft';
@@ -346,9 +346,9 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
             type="button"
             onClick={() => setProfileOpen(true)}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition"
-            aria-label="Thông tin công ty Bên A"
+            aria-label="Quản lý bên A"
           >
-            <Building2 className="w-4 h-4 inline mr-1" />Thông Tin Công Ty
+            <Building2 className="w-4 h-4 inline mr-1" />Bên A
           </button>
         </div>
       </div>
@@ -538,7 +538,7 @@ export function ContractsTab({ currentRole = 'ROLE_OWNER', presetSearch }: Contr
           onClose={() => { setAiDraftOpen(false); setSmartDraftInit(null); }}
         />
       )}
-      {profileOpen && <CompanyProfileForm onClose={() => setProfileOpen(false)} />}
+      {profileOpen && <PartyAManager onClose={() => setProfileOpen(false)} />}
 
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDelete(null)}>
