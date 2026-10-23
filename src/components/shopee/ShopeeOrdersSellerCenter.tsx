@@ -48,12 +48,18 @@ export function ShopeeOrdersSellerCenter() {
   const [search, setSearch] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // Trạng thái con trong tab Chờ lấy hàng: cho_xac_nhan (Chưa xử lý) / da_xu_ly (Đã xử lý)
+  const [subTab, setSubTab] = useState<string>('all');
 
   const loadOrders = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const currentTab = TABS.find(t => t.key === activeTab);
-      const apiTab = currentTab?.apiTab || 'all';
+      let apiTab = currentTab?.apiTab || 'all';
+      // Trong tab Chờ lấy hàng, dùng trạng thái con nếu đã chọn
+      if (activeTab === 'to_ship' && (subTab === 'cho_xac_nhan' || subTab === 'da_xu_ly')) {
+        apiTab = subTab;
+      }
       const res = await fetch(`/api/shopee/orders?tab=${apiTab}&q=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (data?.success) {
@@ -71,7 +77,7 @@ export function ShopeeOrdersSellerCenter() {
     if (!silent) setLoading(false);
   };
 
-  useEffect(() => { loadOrders(); }, [activeTab]);
+  useEffect(() => { loadOrders(); }, [activeTab, subTab]);
 
   // Tự động làm mới mỗi 30 giây khi bật auto-refresh và tab đang hiển thị
   useEffect(() => {
@@ -83,7 +89,7 @@ export function ShopeeOrdersSellerCenter() {
       }
     }, 30000);
     return () => clearInterval(interval);
-  }, [autoRefresh, activeTab, search]);
+  }, [autoRefresh, activeTab, subTab, search]);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -183,7 +189,7 @@ export function ShopeeOrdersSellerCenter() {
         {TABS.map(t => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => { setActiveTab(t.key); setSubTab('all'); }}
             className={`px-4 py-2 whitespace-nowrap font-medium ${
               activeTab === t.key
                 ? 'text-orange-600 border-b-2 border-orange-600'
@@ -195,6 +201,30 @@ export function ShopeeOrdersSellerCenter() {
           </button>
         ))}
       </div>
+
+      {/* Trạng thái con trong tab Chờ lấy hàng: Chờ xác nhận / Đã xử lý */}
+      {activeTab === 'to_ship' && (
+        <div className="flex gap-2 items-center py-2">
+          <span className="text-sm text-gray-600">Trạng thái đơn hàng:</span>
+          {[
+            { key: 'all', label: 'Tất cả' },
+            { key: 'cho_xac_nhan', label: 'Chờ xác nhận' },
+            { key: 'da_xu_ly', label: 'Đã xử lý' },
+          ].map(s => (
+            <button
+              key={s.key}
+              onClick={() => setSubTab(s.key)}
+              className={`px-3 py-1 text-sm rounded-full border ${
+                subTab === s.key
+                  ? 'text-orange-600 border-orange-600 bg-orange-50'
+                  : 'text-gray-600 border-gray-300 hover:border-gray-400'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Thanh công cụ: tìm kiếm + nút hành động */}
       <div className="flex flex-wrap gap-2 items-center">
