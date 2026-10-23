@@ -57,6 +57,7 @@ interface PartnerItem {
   discountRate?: number;
   address?: string | null;
   phone?: string | null;
+  taxCode?: string | null;
 }
 
 interface WholesaleDispatchModalProps {
@@ -274,6 +275,9 @@ export function WholesaleDispatchModal({
       if (partners[0].discountRate) {
         setDiscountPercent(Math.round(partners[0].discountRate * 100));
       }
+      setInvoiceTaxCode(partners[0].taxCode || '');
+      setInvoiceCompany(partners[0].name || '');
+      setInvoiceAddress(partners[0].address || '');
     }
     if (availableSourceWarehouses.length > 0) {
       setFromWarehouseId(availableSourceWarehouses[0].id);
@@ -443,15 +447,24 @@ export function WholesaleDispatchModal({
       if (partners[0].discountRate && partners[0].discountRate > 0) {
         setDiscountPercent(Math.round(partners[0].discountRate * 100));
       }
+      setInvoiceTaxCode(partners[0].taxCode || '');
+      setInvoiceCompany(partners[0].name || '');
+      setInvoiceAddress(partners[0].address || '');
     }
   }, [partners, partnerId, editingDraftId]);
 
   // Khi đổi partner, tự động điền tỷ lệ chiết khấu hợp đồng của họ nếu có
+  // và điền sẵn thông tin xuất hóa đơn (MST, tên công ty, địa chỉ) từ database
   const handleSelectPartner = (pId: string) => {
     setPartnerId(pId);
     const p = partners.find((it) => it.id === pId);
     if (p && p.discountRate && p.discountRate > 0) {
       setDiscountPercent(Math.round(p.discountRate * 100));
+    }
+    if (p) {
+      setInvoiceTaxCode(p.taxCode || '');
+      setInvoiceCompany(p.name || '');
+      setInvoiceAddress(p.address || '');
     }
   };
 
@@ -1007,13 +1020,25 @@ export function WholesaleDispatchModal({
                   <input
                     type="checkbox"
                     checked={invoiceRequired}
-                    onChange={(e) => setInvoiceRequired(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setInvoiceRequired(checked);
+                      if (checked) {
+                        const p = partners.find((it) => it.id === partnerId);
+                        if (p) {
+                          if (!invoiceTaxCode) setInvoiceTaxCode(p.taxCode || '');
+                          if (!invoiceCompany) setInvoiceCompany(p.name || '');
+                          if (!invoiceAddress) setInvoiceAddress(p.address || '');
+                        }
+                      }
+                    }}
                     className="w-4 h-4 rounded"
                   />
                   <span className="text-xs font-bold text-slate-700">Xuất hóa đơn VAT cho đơn này</span>
                 </label>
                 {invoiceRequired && (
                   <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <p className="text-[11px] text-slate-500">Thông tin tự điền từ hồ sơ đối tác, sửa lại nếu cần.</p>
                     <input
                       value={invoiceTaxCode}
                       onChange={(e) => setInvoiceTaxCode(e.target.value)}
