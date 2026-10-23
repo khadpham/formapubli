@@ -517,11 +517,26 @@ export function DeliveryOrdersLedger({
                           {/* Xuất hóa đơn bổ sung nếu là DISPATCHED_LOCKED */}
                           {o.status === 'DISPATCHED_LOCKED' && (
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 setInvoiceTarget(o);
-                                setInvoiceTaxCode('');
-                                setInvoiceCompanyName('');
-                                setInvoiceAddress('');
+                                // Tự điền từ API (lấy từ hồ sơ đối tác)
+                                try {
+                                  const res = await fetch(`/api/delivery-orders/${o.id}/invoice-prefill`);
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    setInvoiceTaxCode(data.taxCode || '');
+                                    setInvoiceCompanyName(data.companyName || '');
+                                    setInvoiceAddress(data.address || '');
+                                  } else {
+                                    setInvoiceTaxCode('');
+                                    setInvoiceCompanyName('');
+                                    setInvoiceAddress('');
+                                  }
+                                } catch {
+                                  setInvoiceTaxCode('');
+                                  setInvoiceCompanyName('');
+                                  setInvoiceAddress('');
+                                }
                               }}
                               className="p-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition"
                               title="Xuất hóa đơn VAT bổ sung"
