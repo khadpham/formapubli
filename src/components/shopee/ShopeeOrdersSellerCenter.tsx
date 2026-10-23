@@ -31,17 +31,18 @@ interface ShopeeOrder {
   shipperPhone?: string;
 }
 
-const TABS: Array<{ key: string; label: string; highlight?: boolean; apiTab: string }> = [
-  { key: 'all', label: 'Tất cả', apiTab: 'all' },
-  { key: 'to_ship', label: 'Chờ lấy hàng', highlight: true, apiTab: 'moi' },
-  { key: 'shipping', label: 'Đang giao', apiTab: 'dang_giao' },
-  { key: 'completed', label: 'Đã giao', apiTab: 'hoan_thanh' },
-  { key: 'cancelled', label: 'Đã hủy', apiTab: 'huy_hoan_tra' },
+const TABS: Array<{ key: string; label: string; highlight?: boolean; apiTab: string; countKey: string }> = [
+  { key: 'all', label: 'Tất cả', apiTab: 'all', countKey: 'all' },
+  { key: 'to_ship', label: 'Chờ lấy hàng', highlight: true, apiTab: 'moi', countKey: 'moi' },
+  { key: 'shipping', label: 'Đang giao', apiTab: 'dang_giao', countKey: 'dang_giao' },
+  { key: 'completed', label: 'Đã giao', apiTab: 'hoan_thanh', countKey: 'hoan_thanh' },
+  { key: 'cancelled', label: 'Đã hủy', apiTab: 'huy_hoan_tra', countKey: 'huy_hoan_tra' },
 ];
 
 export function ShopeeOrdersSellerCenter() {
   const [activeTab, setActiveTab] = useState<string>('to_ship');
   const [orders, setOrders] = useState<ShopeeOrder[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [detailOrder, setDetailOrder] = useState<ShopeeOrder | null>(null);
@@ -63,14 +64,10 @@ export function ShopeeOrdersSellerCenter() {
       const res = await fetch(`/api/shopee/orders?tab=${apiTab}&q=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (data?.success) {
-        // API trả về { orders: [...], counts: {...} }
+        // API trả về { orders: [...], counts: {...} } - đã sắp xếp theo createdAt mới nhất trước
         const orderList = data.data?.orders || [];
-        // Sắp xếp: đơn hỏa tốc lên đầu
-        const sorted = [...orderList].sort((a: ShopeeOrder, b: ShopeeOrder) => {
-          if (!!a.isInstant === !!b.isInstant) return 0;
-          return a.isInstant ? -1 : 1;
-        });
-        setOrders(sorted);
+        setOrders(orderList);
+        setCounts(data.data?.counts || {});
         setLastUpdated(new Date());
       }
     } catch {}
@@ -186,7 +183,9 @@ export function ShopeeOrdersSellerCenter() {
       )}
       {/* Tabs kiểu Seller Center */}
       <div className="flex gap-2 border-b overflow-x-auto">
-        {TABS.map(t => (
+        {TABS.map(t => {
+          const c = counts[t.countKey];
+          return (
           <button
             key={t.key}
             onClick={() => { setActiveTab(t.key); setSubTab('all'); }}
@@ -196,10 +195,11 @@ export function ShopeeOrdersSellerCenter() {
                 : 'text-gray-600 hover:text-gray-900'
             } ${'highlight' in t && t.highlight ? 'bg-orange-50' : ''}`}
           >
-            {t.label}
+            {t.label}{typeof c === 'number' ? ` (${c})` : ''}
             {'highlight' in t && t.highlight && <span className="ml-1 text-orange-600">★</span>}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       {/* Trạng thái con trong tab Chờ lấy hàng: Chờ xác nhận / Đã xử lý */}
@@ -207,10 +207,12 @@ export function ShopeeOrdersSellerCenter() {
         <div className="flex gap-2 items-center py-2">
           <span className="text-sm text-gray-600">Trạng thái đơn hàng:</span>
           {[
-            { key: 'all', label: 'Tất cả' },
-            { key: 'cho_xac_nhan', label: 'Chờ xác nhận' },
-            { key: 'da_xu_ly', label: 'Đã xử lý' },
-          ].map(s => (
+            { key: 'all', label: 'Tất cả', countKey: 'moi' },
+            { key: 'cho_xac_nhan', label: 'Chờ xác nhận', countKey: 'cho_xac_nhan' },
+            { key: 'da_xu_ly', label: 'Đã xử lý', countKey: 'da_xu_ly' },
+          ].map(s => {
+            const c = counts[s.countKey];
+            return (
             <button
               key={s.key}
               onClick={() => setSubTab(s.key)}
@@ -220,9 +222,10 @@ export function ShopeeOrdersSellerCenter() {
                   : 'text-gray-600 border-gray-300 hover:border-gray-400'
               }`}
             >
-              {s.label}
+              {s.label}{typeof c === 'number' ? ` (${c})` : ''}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
 
