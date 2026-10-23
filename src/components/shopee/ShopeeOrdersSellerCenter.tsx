@@ -95,6 +95,8 @@ export function ShopeeOrdersSellerCenter() {
 
   const [shipping, setShipping] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [shipDialog, setShipDialog] = useState<{ orderSn: string } | null>(null);
+  const [shipMode, setShipMode] = useState<'pickup' | 'dropoff'>('pickup');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -128,13 +130,20 @@ export function ShopeeOrdersSellerCenter() {
     loadOrders();
   };
 
-  const handleArrangeShipment = async (orderSn: string) => {
-    if (!confirm(`Chuẩn bị đơn hàng ${orderSn}? Shopee sẽ điều phối shipper đến lấy.`)) return;
+  const handleArrangeShipment = (orderSn: string) => {
+    setShipDialog({ orderSn });
+    setShipMode('pickup');
+  };
+
+  const confirmArrangeShipment = async () => {
+    if (!shipDialog) return;
+    const orderSn = shipDialog.orderSn;
+    setShipDialog(null);
     try {
       const res = await fetch('/api/shopee/ship', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderSn }),
+        body: JSON.stringify({ orderSn, mode: shipMode }),
       });
       const data = await res.json();
       if (data?.success) {
@@ -221,7 +230,7 @@ export function ShopeeOrdersSellerCenter() {
               className="px-4 py-2 bg-orange-600 text-white rounded-lg flex items-center gap-2 hover:bg-orange-700 disabled:opacity-50"
             >
               <Truck className="w-4 h-4" />
-              {shipping ? 'Đang giao...' : `Giao hàng loạt (${selectedIds.size})`}
+              {shipping ? 'Đang tìm shipper...' : `Tìm shipper (${selectedIds.size})`}
             </button>
             <button
               onClick={handlePrintAwb}
@@ -229,7 +238,7 @@ export function ShopeeOrdersSellerCenter() {
               className="px-4 py-2 border border-orange-600 text-orange-600 rounded-lg flex items-center gap-2 hover:bg-orange-50 disabled:opacity-50"
             >
               <Printer className="w-4 h-4" />
-              In phiếu ({selectedIds.size})
+              In phiếu hàng loạt ({selectedIds.size})
             </button>
           </>
         )}
@@ -369,6 +378,57 @@ export function ShopeeOrdersSellerCenter() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dialog Chuẩn bị đơn hàng: chọn Pickup hoặc Drop-off */}
+      {shipDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-bold mb-4">Chuẩn bị đơn hàng {shipDialog.orderSn}</h3>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="shipMode"
+                  checked={shipMode === 'pickup'}
+                  onChange={() => setShipMode('pickup')}
+                  className="mt-1"
+                />
+                <div>
+                  <div className="font-medium">Shipper đến lấy hàng</div>
+                  <div className="text-sm text-gray-600">Shopee sẽ điều phối shipper đến địa chỉ kho để lấy kiện hàng.</div>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="shipMode"
+                  checked={shipMode === 'dropoff'}
+                  onChange={() => setShipMode('dropoff')}
+                  className="mt-1"
+                />
+                <div>
+                  <div className="font-medium">Tự mang ra bưu cục</div>
+                  <div className="text-sm text-gray-600">Bạn tự mang kiện hàng ra điểm gửi của đơn vị vận chuyển.</div>
+                </div>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setShipDialog(null)}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmArrangeShipment}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                Xác nhận
+              </button>
             </div>
           </div>
         </div>
