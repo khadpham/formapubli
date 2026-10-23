@@ -61,6 +61,29 @@ export async function POST(
     return NextResponse.json({ error: 'Phiếu này đã có hóa đơn' }, { status: 400 });
   }
 
+  // Lưu lại thông tin hóa đơn vào phiếu xuất kho để lần sau tự điền
+  await db.update(deliveryOrders).set({
+    invoiceTaxCode: taxCode,
+    invoiceCompanyName: companyName,
+    invoiceAddress: address || '',
+    updatedAt: new Date().toISOString(),
+  } as any).where(eq(deliveryOrders.id, id));
+
+  // Cập nhật hồ sơ đối tác nếu thông tin mới chính xác hơn
+  if (order.partnerId) {
+    const partnerRows = await db.select().from(partners).where(eq(partners.id, order.partnerId)).limit(1);
+    const partner: any = partnerRows[0];
+    if (partner) {
+      const patch: any = {};
+      if (taxCode && taxCode !== partner.taxCode) patch.taxCode = taxCode;
+      if (companyName && companyName !== partner.name) patch.name = companyName;
+      if (address && address !== partner.address) patch.address = address;
+      if (Object.keys(patch).length > 0) {
+        await db.update(partners).set(patch).where(eq(partners.id, order.partnerId));
+      }
+    }
+  }
+
   // Tạo einvoice
   const totalAmount = Number(order.finalAmount || 0);
   const vatRate = 0.05;
