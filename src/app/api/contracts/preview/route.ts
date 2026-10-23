@@ -9,7 +9,8 @@ import { ContractEngineService } from '@/services/contract-engine.service';
 
 export const dynamic = 'force-dynamic';
 
-/** POST /api/contracts/preview - merge template + data, trả bytes docx (D1, debounce 400ms ở client). */
+/** POST /api/contracts/preview - merge template + data.
+ * Docx thì fill placeholder, loại khác (xls/pdf/ảnh) trả nguyên file gốc. */
 export async function POST(req: NextRequest) {
   try {
     await requireSessionRole(req, ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[]);
@@ -18,11 +19,13 @@ export async function POST(req: NextRequest) {
     if (!body.data || typeof body.data !== 'object') throw AppError.invalid('Thiếu dữ liệu biến (data object).');
     const [tpl] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, body.templateId)).limit(1);
     if (!tpl) return NextResponse.json({ success: false, error: 'Không tìm thấy mẫu.' }, { status: 404 });
-    const bytes = ContractEngineService.generateDocx(tpl.templateData, body.data);
+    const filename = (tpl as any).templateFilename || '';
+    const bytes = ContractEngineService.renderTemplate(tpl.templateData, filename, body.data);
+    const mime = ContractEngineService.getMimeType(filename);
     // Copy sang ArrayBuffer mới: .buffer của Uint8Array có thể là SharedArrayBuffer (tsc từ chối làm BodyInit).
     const bodyBuf = Uint8Array.from(bytes).buffer as ArrayBuffer;
     return new Response(bodyBuf, {
-      headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+      headers: { 'Content-Type': mime },
     });
   } catch (error: any) {
     return handleApiError(error);

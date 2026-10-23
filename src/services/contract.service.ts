@@ -171,7 +171,7 @@ export class ContractService {
           notes: input.notes ?? null,
         }).returning();
         const binary = tpl.templateData
-          ? ContractEngineService.generateDocx(tpl.templateData, {
+          ? ContractEngineService.renderTemplate(tpl.templateData, tpl.templateFilename || '', {
               ...input.payloadData,
               so_hop_dong: contractNumber,
             })
@@ -212,7 +212,7 @@ export class ContractService {
         if (!Number.isFinite(nextTotal)) throw AppError.invalid('Tổng tiền hợp đồng không hợp lệ.');
         const [tpl] = await tx.select().from(contractTemplates).where(eq(contractTemplates.id, doc.templateId)).limit(1);
         const binary = tpl
-          ? ContractEngineService.generateDocx(tpl.templateData, { ...nextPayload, so_hop_dong: doc.contractNumber })
+          ? ContractEngineService.renderTemplate(tpl.templateData, tpl.templateFilename || '', { ...nextPayload, so_hop_dong: doc.contractNumber })
           : null;
         await tx.update(contractDocuments).set({
           title: patch.title ?? doc.title,
@@ -234,18 +234,21 @@ export class ContractService {
     );
   }
 
-  /** Xuất file Word: bản cuối upload thắng, rồi tới snapshot, rồi re-render. */
-  static async exportDocx(id: string): Promise<Uint8Array> {
+  /** Xuất file: bản cuối upload thắng, rồi tới snapshot, rồi re-render.
+   * Trả về bytes + filename gốc để route đặt đúng MIME type (docx/xls/pdf/ảnh...). */
+  static async exportDocx(id: string): Promise<{ bytes: Uint8Array; filename: string }> {
     const [doc] = await db.select().from(contractDocuments).where(eq(contractDocuments.id, id)).limit(1);
     if (!doc) throw AppError.invalid(`Không tìm thấy hợp đồng ${id}.`);
     const b64 = doc.finalDocx ?? doc.renderedDocx;
-    if (b64) return base64ToBytes(b64);
     const [tpl] = await db.select().from(contractTemplates).where(eq(contractTemplates.id, doc.templateId)).limit(1);
+    const filename = doc.finalFilename || tpl?.templateFilename || `${doc.contractNumber}.docx`;
+    if (b64) return { bytes: base64ToBytes(b64), filename };
     if (!tpl) throw AppError.invalid('Mẫu hợp đồng gốc đã mất, không re-render được.');
-    return ContractEngineService.generateDocx(tpl.templateData, {
+    const bytes = ContractEngineService.renderTemplate(tpl.templateData, tpl.templateFilename || '', {
       ...JSON.parse(doc.payloadData || '{}'),
       so_hop_dong: doc.contractNumber,
     });
+    return { bytes, filename: tpl.templateFilename || `${doc.contractNumber}.docx` };
   }
 
   /** Upload bản cuối sau khi sửa ngoài Word (D9): validate mở được rồi mới lưu.
