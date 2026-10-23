@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const synced = await db.select().from(einvoices).where(eq(einvoices.status, 'SYNCED'));
   let cleaned = 0;
 
-  for (const inv: any of synced) {
+  for (const inv of synced as any[]) {
     if (!inv.msinvoiceId) continue;
     try {
       // Kiểm tra hóa đơn có còn trên portal không
