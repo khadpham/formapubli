@@ -163,11 +163,12 @@ async function buildProductItems(inv: any): Promise<any[]> {
         // Map sang format chung
         items = await Promise.all(dItems.map(async (di: any) => {
           const edRows = await db.select({ title: editions.title }).from(editions).where(eq(editions.id, di.editionId)).limit(1);
+          const unitPrice = di.unitSellingPrice ?? di.unitCoverPrice ?? 0;
           return {
             productId: di.editionId,
             quantity: di.quantity,
-            unitSellingPrice: di.unitPrice || 0,
-            totalAmount: (di.quantity || 0) * (di.unitPrice || 0),
+            unitSellingPrice: unitPrice,
+            totalAmount: (di.quantity || 0) * unitPrice,
             _name: edRows[0]?.title || 'Hàng hóa',
           };
         }));

@@ -18,14 +18,6 @@ export async function POST(
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  const { taxCode, companyName, address } = body;
-
-  if (!taxCode || !companyName) {
-    return NextResponse.json(
-      { error: 'Thiếu MST hoặc tên công ty người mua' },
-      { status: 400 }
-    );
-  }
 
   // Lấy phiếu xuất kho
   const orderRows = await db.select().from(deliveryOrders).where(eq(deliveryOrders.id, id)).limit(1);
@@ -46,6 +38,13 @@ export async function POST(
       if (!companyName) companyName = partner.name;
       if (!address) address = partner.address;
     }
+  }
+
+  if (!taxCode || !companyName) {
+    return NextResponse.json(
+      { error: 'Thiếu MST hoặc tên công ty người mua' },
+      { status: 400 }
+    );
   }
 
   // Kiểm tra đã có hóa đơn chưa
