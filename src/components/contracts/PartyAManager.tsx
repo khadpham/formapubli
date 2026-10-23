@@ -82,7 +82,7 @@ export function PartyAManager({ onClose }: { onClose: () => void }) {
     setForm(f => ({ ...f, [k]: e.target.value }));
 
   return (
-    <Modal onClose={onClose}>
+    <Modal open={true} onClose={onClose}>
       <div className="p-6 w-full max-w-2xl">
         <h3 className="text-lg font-bold mb-4">Quản lý bên A</h3>
         {error && <p className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 mb-3">{error}</p>}
