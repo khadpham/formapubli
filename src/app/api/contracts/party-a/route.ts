@@ -13,7 +13,7 @@ const ROLES = ['ROLE_OWNER', 'ROLE_MANAGER'] as UserRole[];
 export async function GET(req: NextRequest) {
   try {
     await requireSessionRole(req, ROLES);
-    const rows = await db.execute(sql`
+    const rows = await db.$client.execute(sql`
       SELECT id, name, representative, position, address, tax_code, phone, email, is_default,
              created_at, updated_at
       FROM contract_party_a
@@ -37,9 +37,9 @@ export async function POST(req: NextRequest) {
     const id = `party-a-${Date.now().toString(36)}`;
     // Nếu đặt làm mặc định, bỏ mặc định của các bên khác
     if (is_default) {
-      await db.execute(sql`UPDATE contract_party_a SET is_default = 0`);
+      await db.$client.execute(sql`UPDATE contract_party_a SET is_default = 0`);
     }
-    await db.execute(sql`
+    await db.$client.execute(sql`
       INSERT INTO contract_party_a (id, name, representative, position, address, tax_code, phone, email, is_default)
       VALUES (${id}, ${name.trim()}, ${representative || ''}, ${position || 'Giám đốc'},
               ${address || ''}, ${tax_code || ''}, ${phone || ''}, ${email || ''}, ${is_default ? 1 : 0})
