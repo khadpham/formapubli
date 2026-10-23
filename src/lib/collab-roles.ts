@@ -1,7 +1,5 @@
 /**
- * Vai trò cộng tác viên dùng chung cho Nhân sự và Hợp đồng.
- * - collab_type trong DB là TEXT tự do, giá trị dưới đây là chuẩn.
- * - templateCode: mã mẫu hợp đồng tương ứng (code trong contract_templates).
+ * Vai tro cong tac vien dung chung cho Nhan su va Hop dong.
  */
 export interface CollabRole {
   value: string;
@@ -17,13 +15,18 @@ export const COLLAB_ROLES: CollabRole[] = [
   { value: 'doc_morat', label: 'Đọc morat', templateCode: 'HD_DOC_MORAT' },
   { value: 'tac_gia', label: 'Tác giả', templateCode: null },
   { value: 'khac', label: 'Cộng tác viên khác', templateCode: null },
+];
+
+export const COLLAB_ROLE_LABELS: Record<string, string> = {
+  dich_gia: 'Dịch giả',
+  thiet_ke_bia: 'Thiết kế bìa',
+  bien_tap: 'Biên tập viên',
+  dan_trang: 'Dàn trang',
+  doc_morat: 'Đọc morat',
+  tac_gia: 'Tác giả',
+  khac: 'Cộng tác viên khác',
 };
 
-export const COLLAB_ROLE_LABELS: Record<string, string> = Object.fromEntries(
-  COLLAB_ROLES.map((r) => [r.value, r.label])
-);
-
-/** Các collab_type cũ vẫn hiển thị được (tương thích ngược). */
 export const LEGACY_ROLE_LABELS: Record<string, string> = {
   hanh_chinh: 'Hành chính',
   dai_dien_ben_a: 'Đại diện bên A',
